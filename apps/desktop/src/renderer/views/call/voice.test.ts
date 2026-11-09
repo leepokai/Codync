@@ -44,3 +44,19 @@ test('a call takes another engine only when what its engine is built from change
     seen.push(choice)
   }
 })
+
+
+test('Windows and Linux retain automatic call fallback until a provider is explicitly picked', async () => {
+  const { VoiceSettings } = await import('./voice.ts')
+  const settings = await import('../settings/voice-settings.ts')
+  for (const platform of ['win32', 'linux']) {
+    Object.assign(window, { codync: { platform } })
+    settings.engine.set('device')
+    // The picker offers a supported choice, but startup still enters configured-provider fallback.
+    assert.equal(settings.engine.get(), 'openai')
+    assert.equal(VoiceSettings.provider(), null)
+    settings.engine.set('gemini')
+    assert.equal(VoiceSettings.provider(), 'gemini')
+    assert.equal(settings.engine.get(), 'gemini')
+  }
+})

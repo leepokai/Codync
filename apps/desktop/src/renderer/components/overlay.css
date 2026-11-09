@@ -85,7 +85,7 @@
 .anchored-panel::after,
 .account-panel::after,
 .action-menu::after,
-.command-menu::after {
+.composer-menu::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -138,6 +138,20 @@
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
+/* A text field in a dialog (a name to type). */
+.dialog-field {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--field);
+  border-radius: var(--radius-m);
+  color: var(--text);
+  font-size: var(--text-body);
+  user-select: text;
+  cursor: text;
+}
+.dialog-field:focus {
+  outline: 2px solid var(--secondary);
+}
 .dialog-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -178,9 +192,12 @@
   background: var(--danger-fill);
   color: var(--on-danger);
 }
-.dialog-button:active {
+.dialog-button:active:not(:disabled) {
   transform: scale(0.98);
   opacity: 0.85;
+}
+.dialog-button:disabled {
+  opacity: 0.4;
 }
 
 /* Floating layers cover the title bar's drag regions (sidebar header, thread chrome), which
@@ -236,7 +253,9 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 8px 10px;
+  min-height: 34px;
+  line-height: 1.35;
   border-radius: var(--radius-s);
   font-size: var(--text-callout);
   color: var(--text);
@@ -245,8 +264,19 @@
 .menu-row.destructive {
   color: var(--danger);
 }
+.menu-row:disabled {
+  color: var(--secondary);
+  cursor: default;
+}
+.menu-row:disabled.highlight {
+  background: none;
+}
 .menu-row.highlight {
   background: rgba(var(--text-rgb), 0.07);
+}
+.menu-row:disabled {
+  opacity: 0.4;
+  background: none;
 }
 .menu-icon {
   width: 18px;
@@ -256,8 +286,13 @@
 }
 .menu-title {
   flex: 1;
-  margin-right: 16px;
+  min-width: 0;
+  margin-right: 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
+.menu-title.with-detail { display: flex; flex-direction: column; gap: 2px; }
+.menu-detail { font-size: var(--text-caption); color: var(--secondary); }
 
 .reaction-button {
   display: grid;

@@ -28,6 +28,8 @@ struct BotDetailsView: View {
     @Environment(\.dismissModal) private var dismiss
     @State private var draft: BotDraft?
     @State private var saveError: String?
+    /// Off once the page closes: a save that fails after that shows over the app instead.
+    @State private var presence = PagePresence()
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
 
@@ -64,6 +66,8 @@ struct BotDetailsView: View {
             if let base, let fresh, base.id == fresh.id { draft = draft?.rebased(from: base, onto: fresh) }
         }
         .onChange(of: draft) { _, draft in autosave(draft) }
+        .onAppear { presence.shown = true }
+        .onDisappear { presence.shown = false }
         .codyncSheet(item: $template) { BotTemplateView(draft: $0.draft) }
     }
 
@@ -118,6 +122,7 @@ struct BotDetailsView: View {
         switch tab {
         case .details:
             VStack(alignment: .leading, spacing: 28) {
+                if let bot, !bot.devServers.isEmpty { DevServersSection(bot: bot) }
                 if let draft = Binding($draft) {
                     BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .often)
                 }
@@ -134,7 +139,7 @@ struct BotDetailsView: View {
                             .outlinedCard()
                     }
                 }
-                RoutinesView(botId: botId, initialId: routineId) { dismiss() }
+                RoutinesView(botId: botId, initialId: routineId)
             }
         case .library:
             LibraryView(botId: botId, openArtifact: openArtifact)
@@ -158,8 +163,13 @@ struct BotDetailsView: View {
                 _ = try await model.save(draft.normalized)
                 saveError = nil
             } catch {
-                saveError = error.localizedDescription
+                if presence.shown { saveError = error.localizedDescription } else { model.lastError = error.localizedDescription }
             }
         }
     }
+}
+
+/// Whether a page is on screen, for work that outlives it.
+@MainActor private final class PagePresence {
+    var shown = true
 }

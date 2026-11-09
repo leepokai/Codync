@@ -83,14 +83,14 @@ export async function grant(env: Env, discordId: string, earned: Role[], reason:
 
 /**
  * Posts to a channel and says whether it went out. A failure is logged and never fails the caller's flow.
- * Only the mention kinds in `pings` notify anyone (none by default).
+ * Mentions in it notify no one.
  */
-export async function send(env: Env, channelId: string, content: string, pings: "everyone"[] = []): Promise<boolean> {
+export async function send(env: Env, channelId: string, content: string): Promise<boolean> {
   const res = await fetch(`${DISCORD}/channels/${channelId}/messages`, {
     method: "POST",
     headers: { ...bot(env), "Content-Type": "application/json" },
     // Flag 4 drops link previews.
-    body: JSON.stringify({ content, allowed_mentions: { parse: pings }, flags: 4 }),
+    body: JSON.stringify({ content, allowed_mentions: { parse: [] }, flags: 4 }),
   });
   if (!res.ok) console.error("send failed", { channel: channelId, status: res.status, body: await res.text() });
   return res.ok;

@@ -4,7 +4,9 @@ import { DOT_RADIUS, dotGrid } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 import { Icon } from './Icon'
 import './avatar.css'
+import { AgentIcon, agentTint } from './AgentIcon'
 import { LeadAgentBadge } from './LeadAgentBadge'
+import { CustomIcon } from './CustomIcon'
 
 export type Mood = 'idle' | 'working' | 'needsInput' | 'failed'
 
@@ -70,6 +72,11 @@ export function characterPath(kind: string, w: number, h: number) {
   return { path: p, stroke }
 }
 
+export function CharacterAvatar(props: CharacterProps) {
+  return <CustomIcon icon={props.customIcon} size={props.size ?? 40} color={props.tint ?? avatarColor(props.color)}
+    fallback={<GeneratedCharacterAvatar {...props} mood={props.customIcon ? 'idle' : props.mood} />} />
+}
+
 interface Dot {
   row: number
   col: number
@@ -102,6 +109,7 @@ function grid(shape: string, size: number, cells: number): Dot[] {
 }
 
 interface CharacterProps {
+  customIcon?: import('@shared/custom-icons').CustomIcon
   shape: string
   /** An avatar palette id, or a CSS color with `tint`. */
   color: string
@@ -116,7 +124,7 @@ interface CharacterProps {
  * Grok-Bot-style character drawn like the app icon: an even grid of dots shaded as if the
  * silhouette were a ball, with hollow eyes that glance while it works and blink now and then.
  */
-export const CharacterAvatar = memo(function CharacterAvatar({ shape, color, tint, size = 40, mood = 'idle', dark: forceDark }: CharacterProps) {
+const GeneratedCharacterAvatar = memo(function GeneratedCharacterAvatar({ shape, color, tint, size = 40, mood = 'idle', dark: forceDark }: CharacterProps) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const dark = useDark() || forceDark === true
   const reduce = useReduceMotion()
@@ -227,7 +235,9 @@ export function moodOf(bot: Bot, animated = true): Mood {
 }
 
 export function BotAvatar({ bot, size = 40, animated = true }: { bot: Bot; size?: number; animated?: boolean }) {
-  return <CharacterAvatar shape={bot.avatarShape} color={bot.avatarColor} size={size} mood={moodOf(bot, animated)} />
+  return <CustomIcon icon={bot.customIcon} size={size} color={avatarColor(bot.avatarColor)} fallback={
+    <CharacterAvatar shape={bot.avatarShape} color={bot.avatarColor} size={size} mood={moodOf(bot, animated && !bot.customIcon)} />
+  } />
 }
 
 /**
@@ -279,11 +289,22 @@ export function GroupAvatar({ members, size = 40, animated = true }: { members: 
   return <div aria-hidden className="avatar-frame" style={{ width: size, height: size }}>{content}</div>
 }
 
-/** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members. */
-export function AvatarWithStatus({ bot, members = [], size = 44 }: { bot: Bot; members?: Bot[]; size?: number }) {
+/** A bot's character, or a group's members (Android `BotAvatar`). */
+export function BotOrGroupAvatar({ bot, members = [], size = 44, animated = true }: { bot: Bot; members?: Bot[]; size?: number; animated?: boolean }) {
+  return isGroup(bot) && !bot.customIcon ? <GroupAvatar members={members} size={size} animated={animated} /> : <BotAvatar bot={bot} size={size} animated={animated} />
+}
+
+/** Avatar with the roster status dot: filled = unread, amber = needs you. A group shows its members; `agent`
+ * (a registry id) puts the agent's logo in the bottom-left corner. */
+export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }: { bot: Bot; members?: Bot[]; size?: number; agent?: string | null }) {
   return (
     <div className={`avatar-frame ${bot.lead ? 'lead-avatar' : ''}`} style={{ width: size, height: size }}>
-      {isGroup(bot) ? <GroupAvatar members={members} size={size} /> : <BotAvatar bot={bot} size={size} />}
+      <BotOrGroupAvatar bot={bot} members={members} size={size} />
+      {agent ? (
+        <span className="avatar-agent" style={{ width: size * 0.4, height: size * 0.4 }}>
+          <AgentIcon registry={agent} size={size * 0.28} color={agentTint(agent)} />
+        </span>
+      ) : null}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
       {needsInput(bot) ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>

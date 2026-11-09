@@ -165,15 +165,15 @@ private extension Dictation {
     }
 }
 
-/// Without the provider's key on the computer it says where to add one, and never opens the microphone.
-@MainActor @Test func dictatingWithoutAKeySaysWhereToAddOne() async {
+/// Without the provider's key on the computer it opens settings, and never opens the microphone.
+@MainActor @Test func dictatingWithoutAKeyRequestsSettings() async {
     let key = Pending<Bool>(), mic = Mic()
     await dictating(hasKey: { try await key.call() }, mic: mic) { dictation, store in
         let starting = Task { await dictation.start(after: "", model: store) { _ in } }
         #expect(await key.asked())
         key.answer(false)
         await starting.value
-        #expect(dictation.failure == "Add your OpenAI key in Voice chat settings to dictate with it.")
+        #expect(dictation.failure == nil && dictation.needsKey)
         #expect(!dictation.listening && mic.heard == nil)
     }
 }

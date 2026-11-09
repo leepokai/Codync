@@ -74,7 +74,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
                                     val choices = (feed.usage.providers.map { it.id to it.name } + listOf("claude" to "Claude", "codex" to "Codex")).distinctBy { it.first }
                                     ValueRow("Provider") { ChoicePicker(provider, choices, { provider = it }, label = "Provider") }
                                 } else for ((spot, label) in listOf("Top left", "Top right", "Bottom left", "Bottom right").withIndex()) row {
-                                    val choices = listOf("" to "Automatic") + feed.bots.map { it.id to it.name }
+                                    val choices = listOf("" to "Automatic") + feed.bots.map { it.key to it.name }
                                     ValueRow(label) {
                                         ChoicePicker(team[spot].orEmpty(), choices, { pick -> team = team.toMutableList().also { it[spot] = pick.ifEmpty { null } } },
                                             label = label)

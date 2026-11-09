@@ -49,10 +49,13 @@ import kotlin.math.roundToInt
 
 enum class ProviderLayout { Small, Medium, Large }
 
-/** Claude keeps its orange; everyone else is ink, like the rest of the app. */
-/** ACP registry id of the provider's agent, for its logo: Claude and Codex run through ACP adapters. */
-internal val UsageProvider.registry: String get() = if (id in listOf("claude", "codex")) "$id-acp" else id
+/**
+ * ACP registry id of the provider's agent, for its logo. A host or a saved widget that doesn't name it:
+ * Claude and Codex run through ACP adapters, others go by their own id.
+ */
+internal val UsageProvider.logoRegistry: String get() = registry ?: if (id in listOf("claude", "codex")) "$id-acp" else id
 
+/** Claude keeps its orange; everyone else is ink, like the rest of the app. */
 @Composable internal fun UsageProvider.tint(): Color = if (id == "claude") Color(0xFFD97757) else Palette.accent
 
 /** Gauges add Codex's blue so two providers' bars tell apart (CodyncKit `widgetTint`). */
@@ -126,7 +129,7 @@ internal fun until(at: Long, now: Long): String {
     val context = androidx.compose.ui.platform.LocalContext.current
     val revision by WidgetStore.changes.collectAsState()
     val original = remember(revision) { WidgetStore.originalIcons(context) }
-    val logo = agentIconRes(provider.registry)
+    val logo = agentIconRes(provider.logoRegistry)
     Box(Modifier.size(size)) {
         if (original && logo != null) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(logo), null,
             Modifier.fillMaxSize().padding(size * 0.08f), colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(provider.tint()))
@@ -285,7 +288,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 summary()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
-                        for (bot in ordered.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 23.dp)
+                        for (bot in ordered.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 23.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                     }
                     Spacer(Modifier.weight(1f))
                     if (working > 0 && needs > 0) Text("$working working", style = Type.system(9f), color = Palette.secondary)
@@ -300,7 +303,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
         for (bot in bots) {
             val (label, tint) = widgetState(bot.status)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp)
+                CharacterAvatar(bot.avatarShape, bot.avatarColor, 24.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                     Text(widgetName(bot), style = Type.system(11f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val activity = activities[bot.id]?.takeIf { bot.status == "working" || bot.status == "needsInput" }
@@ -322,7 +325,7 @@ private fun rank(bot: WidgetBot) = when (bot.status) { "needsInput" -> 0; "worki
                 if (bot == null) Box(Modifier.size(26.dp)) { CharacterAvatar("blob", "gray", 26.dp, monochrome = Palette.text.copy(alpha = 0.18f)) }
                 else {
                     Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status)
+                        CharacterAvatar(bot.avatarShape, bot.avatarColor, 30.dp, bot.status, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                         Text(widgetName(bot), style = Type.system(9f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (bot.status == "working" || bot.status == "error") Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(7.dp)

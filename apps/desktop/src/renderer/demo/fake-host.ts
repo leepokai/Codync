@@ -215,8 +215,6 @@ export class FakeHost {
         this.settle(id)
         return {}
       }
-      case 'newSession':
-        return {}
       case 'createBot':
       case 'updateBot':
         return { bot: this.saveBot(b as unknown as BotDraft | GroupDraft) }
@@ -225,6 +223,16 @@ export class FakeHost {
           const bot = this.bots.get(id)
           if (bot) this.emitBot(Object.assign(bot, { position }))
         })
+        return {}
+      }
+      case 'renameSection': {
+        const to = typeof b.to === 'string' ? b.to.trim() || undefined : undefined
+        for (const bot of this.bots.values()) if (bot.section === str('from')) this.emitBot(Object.assign(bot, { section: to }))
+        return {}
+      }
+      case 'setLead': {
+        const lead = str('botId')
+        for (const bot of this.bots.values()) if (bot.lead !== (bot.id === lead)) this.emitBot(Object.assign(bot, { lead: bot.id === lead }))
         return {}
       }
       case 'deleteBot': {
@@ -244,6 +252,8 @@ export class FakeHost {
         }
       case 'routines':
         return { routines: [], runs: [] }
+      case 'agentGear':
+        return { skills: [], connectors: [], rules: [], plugins: [] }
       case 'skills':
       case 'connectors':
       case 'marketSkills':
@@ -259,6 +269,9 @@ export class FakeHost {
         return { configured: false, keyUrl: '' }
       case 'credentialStatus':
         return { provider: '', onePasswordConnected: false }
+      case 'setUsageShown':
+      case 'setUsageOrder':
+        return story.usage(Date.now())
       case 'setAnalytics':
         this.analytics = b.enabled === true
         return { enabled: this.analytics }

@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactElement, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { reduceMotion } from '../lib/theme'
 import { afterExit } from '../lib/exit-delay'
+import { stackModals } from '../lib/modal-stack'
 import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
-import { HStack, VStack } from './Stack'
+import { VStack } from './Stack'
 import { Text } from './Text'
 import './overlay.css'
 
@@ -37,18 +38,18 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
 
-/** Stack depth: only the top layer takes Escape. */
-const stack: number[] = []
+/** Layers in the order they opened: Escape goes to the newest one still live (not inert under the modal on top). */
+const stack: { id: number; layer: RefObject<HTMLElement | null> }[] = []
 let nextLayer = 0
-export function useEscape(active: boolean, onEscape: () => void) {
+export function useEscape(active: boolean, onEscape: () => void, layer: RefObject<HTMLElement | null>) {
   const handler = useRef(onEscape)
   handler.current = onEscape
   useEffect(() => {
     if (!active) return
     const id = ++nextLayer
-    stack.push(id)
+    stack.push({ id, layer })
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stack[stack.length - 1] === id) {
+      if (e.key === 'Escape' && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
         e.preventDefault()
         e.stopPropagation()
         handler.current()
@@ -57,15 +58,34 @@ export function useEscape(active: boolean, onEscape: () => void) {
     window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      stack.splice(stack.indexOf(id), 1)
+      stack.splice(stack.findIndex((entry) => entry.id === id), 1)
     }
-  }, [active])
+  }, [active, layer])
 }
 
 const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 /** The open modal's title id, so its `ModalHeader` names the dialog. */
 const ModalTitleContext = createContext<string | undefined>(undefined)
+
+/** The open modals with where focus returns when each closes, and the page layers they made inert. */
+const openModals = new Map<HTMLElement, HTMLElement | null>()
+const mutedByModals = new WeakSet<HTMLElement>()
+
+/** Applies `stackModals` to the page and moves focus into the modal on top. */
+function syncModals() {
+  const layers = [...document.body.children].filter((el): el is HTMLElement => el instanceof HTMLElement)
+  const { top, mute, unmute } = stackModals(layers.map((el) => ({ el, z: Number(getComputedStyle(el).zIndex) || 0, modal: openModals.has(el), inert: el.inert, muted: mutedByModals.has(el) })))
+  for (const el of mute) {
+    el.inert = true
+    mutedByModals.add(el)
+  }
+  for (const el of unmute) {
+    el.inert = false
+    mutedByModals.delete(el)
+  }
+  if (top && !top.contains(document.activeElement)) (top.querySelector<HTMLElement>('[data-autofocus]') ?? top.querySelector<HTMLElement>('[data-modal-card]'))?.focus({ preventScroll: true })
+}
 
 /**
  * An open modal holds focus: everything behind it goes inert, focus moves in (to a
@@ -75,10 +95,8 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
   useEffect(() => {
     const node = layer.current
     if (!open || !node) return
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const muted = [...document.body.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== node && !el.inert)
-    for (const el of muted) el.inert = true
-    if (!node.contains(document.activeElement)) (node.querySelector<HTMLElement>('[data-autofocus]') ?? node.querySelector<HTMLElement>('[data-modal-card]'))?.focus({ preventScroll: true })
+    openModals.set(node, document.activeElement instanceof HTMLElement ? document.activeElement : null)
+    syncModals()
     // Tab cycles inside the top modal instead of leaving the page.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab' || node.inert) return
@@ -95,8 +113,15 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
     window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      for (const el of muted) el.inert = false
-      if (previous?.isConnected) previous.focus({ preventScroll: true })
+      const previous = openModals.get(node)
+      openModals.delete(node)
+      syncModals()
+      if (previous?.isConnected && !previous.closest('[inert]')) {
+        previous.focus({ preventScroll: true })
+        return
+      }
+      // Its opener is under a modal still open: the modal opened from this one returns there instead.
+      for (const [other, theirs] of openModals) if (theirs && node.contains(theirs)) openModals.set(other, previous ?? null)
     }
   }, [open, mounted, layer])
 }
@@ -118,7 +143,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   const layer = useRef<HTMLDivElement>(null)
   const titleId = useId()
   if (open) last.current = children
-  useEscape(open, onClose)
+  useEscape(open, onClose, layer)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
   return createPortal(
@@ -139,40 +164,50 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
 export interface DialogAction {
   title: string
   destructive?: boolean
+  disabled?: boolean
   action: () => void
 }
 
 /** A centered card over a dimmed screen with the actions and Cancel (`.codyncDialog`). */
-export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClose }: {
+export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCancel, onClose, children }: {
   open: boolean
   title: string
   message?: string | null
   actions: DialogAction[]
   cancel?: string | null
+  /** Closed without an action; `onClose` follows, as it does after an action. */
+  onCancel?: () => void
   onClose: () => void
+  /** A field between the text and the buttons (a name to type); `data-autofocus` on it takes the focus. */
+  children?: ReactNode
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const tr = useTr()
-  const last = useRef({ title, message, actions })
+  const last = useRef({ title, message, actions, children })
   const layer = useRef<HTMLDivElement>(null)
   const id = useId()
-  if (open) last.current = { title, message, actions }
-  useEscape(open && cancel !== null, onClose)
+  if (open) last.current = { title, message, actions, children }
+  const dismiss = () => {
+    onCancel?.()
+    onClose()
+  }
+  useEscape(open && cancel !== null, dismiss, layer)
   useModalFocus(open, mounted, layer)
   if (!mounted) return null
   const shownContent = last.current
   return createPortal(
     <div ref={layer} className={`dialog ${shown ? 'shown' : ''}`} role="alertdialog" aria-modal aria-labelledby={`${id}-title`} aria-describedby={shownContent.message ? `${id}-message` : undefined}>
-      <div className="dialog-dim" onClick={() => cancel !== null && onClose()} />
+      <div className="dialog-dim" onClick={() => cancel !== null && dismiss()} />
       <div className="dialog-card" data-modal-card tabIndex={-1}>
         <div className="dialog-text">
           {/* Callers translate the sentence, then insert names. A second pass would also translate a device named "Done". */}
           <Text as="h2" id={`${id}-title`} size="title3" weight="semibold">{shownContent.title}</Text>
           {shownContent.message ? <Text as="div" id={`${id}-message`} size="body" tone="secondary">{shownContent.message}</Text> : null}
         </div>
+        {shownContent.children}
         <div className="dialog-buttons">
           {cancel !== null ? (
-            <button className="dialog-button" data-autofocus onClick={onClose}>
+            <button className="dialog-button" data-autofocus onClick={dismiss}>
               {tr(cancel)}
             </button>
           ) : null}
@@ -180,6 +215,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
             <button
               key={a.title}
               className={`dialog-button ${a.destructive ? 'destructive' : 'prominent'}`}
+              disabled={a.disabled}
               onClick={() => {
                 onClose()
                 a.action()
@@ -195,175 +231,24 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onClo
   )
 }
 
-/** One row in a Codync menu: an action, or a choice when `selected` is set. */
-export interface MenuItem {
-  title: string
-  icon?: string
-  /** A picture in the icon's place (an agent's logo). */
-  leading?: ReactNode
-  selected?: boolean
-  destructive?: boolean
-  divider?: boolean
-  action: () => void
-}
-
-/** A row of emoji above a message's menu (Slack's quick reactions). */
-export interface ReactionPick {
-  emoji: string[]
-  chosen: string[]
-  toggle: (emoji: string) => void
-}
-
-export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick; dismiss?: () => void; size?: number }) {
-  return (
-    <HStack align="stretch">
-      {pick.emoji.map((emoji) => {
-        const chosen = pick.chosen.includes(emoji)
-        return (
-          <button
-            key={emoji}
-            className={`reaction-button ${chosen ? 'chosen' : ''}`}
-            style={{ width: size, height: size, borderRadius: size * 0.28 }}
-            title={chosen ? `Remove ${emoji}` : `React ${emoji}`}
-            aria-label={chosen ? `Remove reaction ${emoji}` : `React ${emoji}`}
-            onClick={() => {
-              dismiss?.()
-              pick.toggle(emoji)
-            }}
-          >
-            <Text size={14}>{emoji}</Text>
-          </button>
-        )
-      })}
-    </HStack>
-  )
-}
-
-/** The floating panel of menu rows. */
-export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number }) {
-  const tr = useTr()
-  const [highlight, setHighlight] = useState(-1)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault()
-        setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
-      } else if (e.key === 'Enter' && highlight >= 0) {
-        e.preventDefault()
-        dismiss()
-        items[highlight]?.action()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [items, highlight, dismiss])
-  return (
-    <div className="menu-panel" role="menu" style={{ maxHeight }}>
-      {reactions ? (
-        <div className={items.length ? 'menu-reactions' : undefined}>
-          <ReactionStrip pick={reactions} dismiss={dismiss} />
-        </div>
-      ) : null}
-      {items.map((item, i) => (
-        <div key={`${item.title}-${i}`} role="none">
-          {item.divider ? <div className="menu-divider" role="separator" /> : null}
-          <button
-            className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
-            role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
-            aria-checked={item.selected}
-            title={tr(item.title)}
-            onMouseEnter={() => setHighlight(i)}
-            onClick={() => {
-              dismiss()
-              item.action()
-            }}
-          >
-            {item.leading || item.icon ? (
-              <span className="menu-icon">
-                {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
-              </span>
-            ) : null}
-            <span className="menu-title">{tr(item.title)}</span>
-            {item.selected !== undefined ? (
-              <span className={`check-slot${item.selected ? ' on' : ''}`}>
-                <Icon name="checkmark" size={10} weight="semibold" />
-              </span>
-            ) : null}
-          </button>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/**
- * Where a panel opens beside `rect`: below it or above (whichever has more room), aligned to the
- * anchor's leading or trailing edge and kept on screen. `room` is the height available.
- */
-export function anchorPlacement(rect: DOMRect) {
-  const W = window.innerWidth
-  const H = window.innerHeight
-  const roomBelow = Math.max(0, H - rect.bottom - 14)
-  const roomAbove = Math.max(0, rect.top - 14)
-  const below = roomBelow >= roomAbove
-  const leading = rect.left + rect.width / 2 < W * 0.6
-  const width = Math.min(320, W - 16)
-  const inset = Math.max(8, W - width - 8)
-  const style: React.CSSProperties = {
-    [below ? 'top' : 'bottom']: below ? rect.bottom + 6 : H - rect.top + 6,
-    ...(leading ? { left: Math.min(Math.max(8, rect.left), inset) } : { right: Math.min(Math.max(8, W - rect.right), inset) }),
-    transformOrigin: `${below ? 'top' : 'bottom'} ${leading ? 'left' : 'right'}`,
-  }
-  return { style, width, room: below ? roomBelow : roomAbove }
-}
-
-/**
- * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
- * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
- */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
-  open: boolean
-  onClose: () => void
-  anchor?: RefObject<HTMLElement | null>
-  point?: { x: number; y: number } | null
-  items: () => MenuItem[]
-  reactions?: ReactionPick
+/** A `Dialog`'s text box, focused as it opens: Return, once the IME has finished composing, runs `onSubmit`. */
+export function DialogField({ value, onChange, onSubmit, placeholder, label, inputMode }: {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  placeholder: string
+  label: string
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
 }) {
-  const { mounted, shown } = usePresence(open, 120)
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  const frozen = useRef<MenuItem[]>([])
-  if (open) frozen.current = items()
-  useLayoutEffect(() => {
-    if (!open) return
-    if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
-    else if (anchor?.current) setRect(anchor.current.getBoundingClientRect())
-  }, [open, point, anchor])
-  useEscape(open, onClose)
-  if (!mounted || !rect) return null
-  const { style, width, room } = anchorPlacement(rect)
-  return createPortal(
-    <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
-      </div>
-    </div>,
-    document.body,
+  return (
+    <input className="dialog-field" data-autofocus value={value} placeholder={placeholder} aria-label={label} inputMode={inputMode} spellCheck={false}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
+        e.preventDefault()
+        onSubmit()
+      }} />
   )
-}
-
-/** Right-click opens a Codync menu at the pointer (kit's `.contextActions`). */
-export function useContextMenu() {
-  const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
-  return {
-    point,
-    open: point !== null,
-    onContextMenu: (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setPoint({ x: e.clientX, y: e.clientY })
-    },
-    close: () => setPoint(null),
-  }
 }
 
 /** A sheet's content: a full-height column on the page color, usually a ModalHeader and a body. */

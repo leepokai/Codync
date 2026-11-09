@@ -9,13 +9,14 @@ impl Hub {
     /// skipped; bots left out (hidden ones) keep their place.
     pub fn reorder_bots(&self, ids: &[String]) -> Result<()> {
         for (position, id) in (0_i64..).zip(ids) {
-            let Some(mut row) = self.store.bot(id)?.filter(|r| !r.deleted) else { continue };
-            if row.config.position == position {
-                continue;
-            }
-            row.config.position = position;
             {
+                // Read and save under one lock: an edit in between would otherwise be written back.
                 let _g = self.emit_lock.locked();
+                let Some(mut row) = self.store.bot(id)?.filter(|r| !r.deleted) else { continue };
+                if row.config.position == position {
+                    continue;
+                }
+                row.config.position = position;
                 self.store.save_bot(&row.config)?;
             }
             self.emit_bot(id);

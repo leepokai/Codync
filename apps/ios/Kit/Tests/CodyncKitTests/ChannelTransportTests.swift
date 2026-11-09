@@ -138,6 +138,21 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     return nil
 }
 
+@Test(.timeLimit(.minutes(1))) func withNoRelayAnAddressFoundOnTheNetworkIsDialed() async throws {
+    let (dial, sockets) = fakeDialer()
+    var computer = v.computer
+    computer.cloud = nil
+    computer.urls = []
+    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false,
+                             discovered: { _ in ["http://192.168.1.9:19222"] })
+    await t.start()
+    var socketIterator = sockets.makeAsyncIterator()
+    let socket = try #require(await socketIterator.next())
+    guard case let .direct(url) = socket.endpoint else { Issue.record("not direct"); return }
+    #expect(url.absoluteString == "ws://192.168.1.9:19222/channel?v=1")
+    await t.shutdown()
+}
+
 @Test(.timeLimit(.minutes(1))) func directChannelMultiplexesCallsAndStreams() async throws {
     let (dial, sockets) = fakeDialer()
     var computer = v.computer
@@ -215,6 +230,36 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
         Issue.record("expected unauthorized"); return
     }
     await #expect(throws: HostError.self) { _ = try await t.call("hello", body: Data(), timeout: 1) }
+    await t.shutdown()
+}
+
+@Test(.timeLimit(.minutes(1))) func screenCandidateStreamIsBoundedAndCancelledOnOverflow() async throws {
+    let (dial, sockets) = fakeDialer()
+    var computer = v.computer
+    computer.urls = ["http://127.0.0.1:1"]
+    let t = ChannelTransport(computer: computer, identity: v.identity, pairingCode: nil, dial: dial, watchesNetwork: false)
+    await t.start()
+    var it = sockets.makeAsyncIterator()
+    var host = HostSide(try #require(await it.next()))
+    try await host.accept()
+    let hello = try await host.receive()
+    try await host.send(["id": hello["id"] ?? 0, "ok": helloBody()])
+
+    let candidates = t.stream(.screenCandidates("s"))
+    let sub = try await host.receive()
+    #expect(sub["sub"] as? String == "screenCandidates")
+    #expect((sub["b"] as? [String: Any])?["session"] as? String == "s")
+    // Nobody reads: one event past the buffer ends the stream and the host's subscription.
+    for _ in 0...ScreenCandidate.maxCount + 2 {
+        try await host.send(["id": sub["id"] ?? 0, "ev": ["type": "candidate"]])
+    }
+    let cancel = try await host.receive()
+    #expect(cancel["id"] as? Int == sub["id"] as? Int && cancel["cancel"] as? Bool == true)
+    var read = 0
+    await #expect(throws: ScreenError.candidateOverflow) {
+        for try await _ in candidates { read += 1 }
+    }
+    #expect(read == ScreenCandidate.maxCount + 2)
     await t.shutdown()
 }
 
@@ -381,6 +426,31 @@ private func waitFor(_ states: AsyncStream<LinkState>, _ match: (LinkState) -> B
     await socket.toDevice.close(4100)
     #expect(await waitFor(t.states()) { if case .failed = $0 { true } else { false } } == .failed("Paired."))
     await t.shutdown()
+}
+
+/// Pairing shows the account's certificate and claim; a computer in no account answers with the claim it
+/// signed, which comes back as it was sent, for the cloud.
+@Test(.timeLimit(.minutes(1))) func pairCarriesTheAccountProofAndReturnsTheSignedClaim() async throws {
+    let (dial, sockets) = fakeDialer()
+    var direct = v.computer
+    direct.urls = ["http://127.0.0.1:1"]
+    let computer = direct
+    let certificate = DeviceCertificate(payload: #"{"v":1,"exp":1}"#, sig: "c2ln")
+    async let paired = HostConnector.pair(Pairing(computer: computer, code: v.str("pairing", "code")), identity: v.identity,
+                                          deviceName: "iPhone", platform: "ios", certificate: certificate,
+                                          claim: CloudClaim(claimId: "clm_1", nonce: "n1"), dial: dial)
+    var it = sockets.makeAsyncIterator()
+    var host = HostSide(try #require(await it.next()))
+    try await host.accept()
+    let request = try await host.receive()
+    let body = try #require(request["b"] as? [String: Any])
+    #expect(body["certificate"] as? [String: String] == ["payload": certificate.payload, "sig": certificate.sig])
+    #expect(body["claim"] as? [String: String] == ["claimId": "clm_1", "nonce": "n1"])
+    let signed = ["computerId": computer.id, "signKey": computer.signKey, "version": "2.36.0", "sig": "s"]
+    try await host.send(["id": request["id"] ?? 0, "ok": ["computerId": computer.id, "name": "Studio", "claim": signed]])
+    let result = try await paired
+    #expect(result.computer.name == "Studio")
+    #expect(try JSONSerialization.jsonObject(with: try #require(result.claim)) as? [String: String] == signed)
 }
 
 @Test func lapsedLeaseIsRetriedNotARevocation() throws {

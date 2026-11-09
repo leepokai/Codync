@@ -2,7 +2,6 @@ package com.codync.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
 import kotlinx.coroutines.runBlocking
@@ -33,17 +32,14 @@ class LiveRoutinesTest {
             val response = runBlocking { channel.call("createBot", BotDraft.from(parent).copy(id = null, name = "Routine acceptance " + UUID.randomUUID().toString().take(6), permission = "auto").body()) }
             val bot = HostClient.decode(response.jsonObject.getValue("bot").jsonObject)
             clone = bot
-            val store = ViewModelProvider(compose.activity)[AppStore::class.java]
+            val store = compose.computerStore()
             compose.waitUntil(30_000) { !store.state.value.loading && store.state.value.bots.any { it.id == bot.id } }
             compose.runOnUiThread { store.refreshUsage(false) }
             compose.waitUntil(15_000) { "usage" !in store.state.value.busy }
             assertNull(store.state.value.error)
             compose.runOnUiThread { store.openBot(bot.id) }
             compose.openChatDetails()
-            compose.onNodeWithContentDescription("Ask the bot for a routine").performScrollTo().performClick()
-            compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction() and hasText("I want a routine that ")).fetchSemanticsNodes().size == 1 }
-            compose.runOnUiThread { store.editDraft(bot.id, "") }
-            compose.openChatDetails()
+            compose.onNodeWithContentDescription("Ask the bot for a routine").assertDoesNotExist()
             compose.waitUntil(10_000) { "routines:${bot.id}" !in store.state.value.busy && store.state.value.routines[bot.id] != null }
             compose.onNodeWithText("No routines yet. Ask the bot for one, or set it up yourself with +.").assertIsDisplayed()
             compose.onNodeWithContentDescription("Set up a routine").performScrollTo().performClick()

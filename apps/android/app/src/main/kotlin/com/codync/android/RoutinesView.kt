@@ -63,10 +63,9 @@ import kotlinx.coroutines.launch
 
 /**
  * A bot's routines, on its details' Details page (iOS `RoutinesView`); a row opens its editor.
- * `initialId`: open on that routine's editor (a run's notice in the chat was tapped). `leave` goes back to the chat once a
- * request to the bot is in the composer.
+ * `initialId`: open on that routine's editor (a run's notice in the chat was tapped).
  */
-@Composable fun RoutinesView(bot: Bot, state: AppState, store: AppStore, initialId: String?, leave: () -> Unit) {
+@Composable fun RoutinesView(bot: Bot, state: AppState, store: AppStore, initialId: String?) {
     val online = state.actualConnection is LinkState.Ready
     val listing = state.routines[bot.id]
     val busy = "routines:${bot.id}" in state.busy
@@ -76,7 +75,6 @@ import kotlinx.coroutines.launch
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionHeading("Routines", Modifier.weight(1f).padding(start = 2.dp))
-            IconButton("Ask the bot for a routine", "text.bubble", enabled = online) { store.editDraft(bot.id, "I want a routine that "); leave() }
             IconButton("Set up a routine", "plus", enabled = online) { editing = "" }
         }
         val routines = listing?.routines.orEmpty()
@@ -319,7 +317,8 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
                         IconButton(if (copied == "key") "Copied" else "Copy", if (copied == "key") "checkmark" else "doc.on.doc") { copy("key", value) }
                     }
                 }
-                Note(if (value.url == null) "The Codync cloud is off, so only this computer can send to it."
+                Note(if (value.url == null && value.needsAccount) "This computer isn't in an account, so only it can send to this address. Add it to your account for a public one."
+                    else if (value.url == null) "The Codync cloud is off, so only this computer can send to it."
                     else "POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. " +
                         "Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them.")
             }

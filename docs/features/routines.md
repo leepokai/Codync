@@ -4,8 +4,8 @@ Routines belong to an agent bot and are usually created by talking to it ("I wan
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
-(name, schedule, on/off switch). The header's chat button puts "I want a routine
-that " in the composer; **+** opens the form for doing it by hand. A row opens
+(name, schedule, on/off switch). **+** opens the form for doing it by hand;
+requests to the bot are typed directly in the chat. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two
 Claude Code routines also offer besides GitHub events) and a run timeout. A schedule
@@ -16,7 +16,7 @@ cron, checks it and shows the summary and next run. One-off times, intervals, ev
 triggers are left to the bot: editing such a routine shows its current triggers as
 the selected type and keeps them until Schedule or Webhook replaces them. The TUI (`n` form with a typed When: `daily 09:00`, `weekdays 09:00`,
 `weekly mon 09:00`, `hourly :30`, `every 2h`, a cron or `webhook`, optionally ending
-in a time zone that Tab completes; `c` asks the bot) match.
+in a time zone that Tab completes) offers the same actions.
 A saved webhook routine's form shows its public URL and key (copy, reveal, replace
 with confirmation; TUI `w` copies a curl command and `W` replaces the
 key). Creation/update notices open the routine.
@@ -67,7 +67,7 @@ A routine has an OR list of triggers:
 - `interval`: `seconds` (1 second through 365 days).
 - `once`: `at` (Unix milliseconds, in the future when created).
 - `cron`: a five-field `expression` and IANA `timeZone`, including DST.
-- `webhook`: every authenticated JSON delivery runs the routine.
+- `webhook`: every authenticated JSON delivery runs the routine. The public address needs the computer in an account (`needsAccount` in `routine_webhook`); otherwise only the local address works.
 - `event`: `source`, `event` (`*` matches all), and optional exact-match `filters`.
   `messageContains` matches a substring of `text`. Source names are `slack`,
   `github`, `origin`, `microsoftTeams`, `linear`, `sentry`, `pagerduty`, and `email`.
@@ -88,10 +88,11 @@ its reply, which is the result, all in the turn the notice takes when the run be
 message sent meanwhile gets the next one). It runs in a fresh agent session of its own
 (`routines::session_slot`, kept in kv `lane.session.<bot>@<bot>/routine-<run>` so a
 restart can resume it, and forgotten once the run's outcome is saved). When the run ends, the agent stops if nothing else has a
-session open (it ran just for the run; not on Windows, see
-[agent processes](../architecture/conversation-runtime.md)); otherwise only the run's
+session open (it ran just for the run) and nothing it started holds it, see
+[agent processes](../architecture/conversation-runtime.md); otherwise only the run's
 session closes (agents that can close sessions). Either way a frequent schedule
-doesn't keep a set of MCP servers alive per run. A successful run alerts with its
+doesn't keep a set of MCP servers alive per run, except on Codex while another session
+is open: it keeps a closed session's until the agent stops. A successful run alerts with its
 reply through normal encrypted push delivery; a failed or interrupted one leaves a
 "Routine could not finish" notice. Returning `(pass)` or no text completes silently.
 Replying to a run's result goes to the bot's main session, with the result quoted. A test run can run a paused routine. Pausing or
@@ -135,7 +136,7 @@ host checks the run's turn for a tool call whose ACP kind isn't `read`, `search`
 
 Each run has a timeout (default one hour, configurable from 1 to 86400 seconds).
 A hung agent is terminated so subsequent work can proceed. When the time limit cuts
-session setup short, an agent that can load sessions is stopped too, so a session it was
+session setup short, an agent that can reopen sessions is stopped too, so a session it was
 still opening can't stay open unknown to the host; one that can't keeps running with the
 sessions it has. A run's outcome is
 saved before it is reported, and a failure notice has a stable transcript ID, so a
@@ -237,7 +238,10 @@ session recovery, hung-agent timeout, recurring work after failure, single-host
 ownership, silent completion, and the advertised routine MCP server (including key
 rotation). `host/tests/routine_retry_e2e.rs` checks a webhook run that failed before
 acting waiting 1 minute with its event (and running at once on a test run), and one
-that acted waiting for `retryRoutineRun`, which reuses the event once. Unit tests cover
+that acted waiting for `retryRoutineRun`, which reuses the event once.
+`host/tests/routine_unread_e2e.rs` checks that a routine result counts one unread in the
+main chat, that `markRead` clears it once the run has released its session, and that a
+follow-up reply counts once again when it is final. Unit tests cover
 the retry ladder, a queued scheduled fire standing in for the retry, paused routines,
 keeping only the latest failure's event, the user retry's busy/paused refusals and
 deleting the routine (`routines/retry.rs`), waiting retries vs. Stop, the tick and a

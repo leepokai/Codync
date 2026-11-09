@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
-import { agentIconURL } from '../../components/AgentIcon'
+import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -9,48 +9,20 @@ import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
+import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
 type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
-
-/** Registry logos are one-color; paint the ones with a known brand color in it. */
-export function agentTint(registry: string | null | undefined) {
-  switch (registry) {
-    case 'claude-acp': return 'rgb(217, 120, 87)'
-    case 'gemini': return 'linear-gradient(to top right, rgb(71, 150, 227), rgb(145, 120, 199), rgb(201, 102, 115))'
-    case 'antigravity-acp': return 'rgb(66, 133, 245)'
-    case 'mistral-vibe': return 'rgb(250, 82, 15)'
-    case 'qwen-code': return 'rgb(97, 92, 237)'
-    case 'amp-acp': return 'rgb(242, 79, 64)'
-    case 'kiro': return 'rgb(143, 69, 255)'
-    case 'dsh': return 'rgb(77, 107, 254)'
-    case 'cortex-code': return 'rgb(41, 181, 232)'
-    case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
-    default: return 'var(--text)'
-  }
-}
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
   return (
     <div className="agent-tile" style={{ width: tile, height: tile, borderRadius: radius }}>
-      <TintedAgentIcon registry={registry} size={icon} />
+      <AgentIcon registry={registry} size={icon} color={agentTint(registry)} />
     </div>
-  )
-}
-
-/** `AgentIcon` painted with `agentTint` (which can be a gradient, so a mask over `background`). */
-function TintedAgentIcon({ registry, size }: { registry?: string | null; size: number }) {
-  const url = agentIconURL(registry)
-  if (!url) return <Icon name="terminal" size={size * 0.8} scaled={false} />
-  return (
-    <span
-      aria-hidden
-      className="agent-icon"
-      style={{ width: size, height: size, background: agentTint(registry), WebkitMaskImage: `url("${url}")` }}
-    />
   )
 }
 
@@ -247,6 +219,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
           {signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null}
           {options}
         </CardSection>
+        <AgentBrings backendId={backend.id} />
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
     </SheetPage>
@@ -309,7 +282,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
           </CardSection>
           <VStack gap={6} className="agent-keys-notes">
             {method.description ? <span>{method.description}</span> : null}
-            <span>Saved on {store.hostName} only and given to {backend.name} when it starts.</span>
+            <span>{fill(tr('Saved on {name} only and given to {other} when it starts.'), { name: store.hostName, other: backend.name })}</span>
             {method.link && URL.canParse(method.link) ? <WebLink title="Get a key" url={method.link} /> : null}
           </VStack>
         </VStack>

@@ -14,6 +14,7 @@ export const sshBridge: SSHBridge = {
   connect: (id) => ipcRenderer.send('ssh:connect', id),
   disconnect: (id) => ipcRenderer.send('ssh:disconnect', id),
   trustHostKey: (id) => ipcRenderer.send('ssh:trustHostKey', id),
+  install: (id) => ipcRenderer.send('ssh:install', id),
   chooseKey: () => ipcRenderer.invoke('ssh:chooseKey') as Promise<string | null>,
   configHosts: () => ipcRenderer.invoke('ssh:configHosts') as Promise<SSHConfigHosts>,
   setConfigAccess: (access) => ipcRenderer.invoke('ssh:setConfigAccess', access) as Promise<SSHConfigHosts>,

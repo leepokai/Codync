@@ -1,6 +1,7 @@
 //! Video: a PipeWire monitor stream encoded as H.264 and sent over GStreamer
-//! `webrtcbin` (non-trickle, like the macOS helper), plus one-off JPEG stills.
+//! `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
+use crate::negotiation::ice_uri;
 use crate::portal::Display;
 use crate::video::{h264_format, h264_payload};
 use crate::{Helper, input};
@@ -10,8 +11,7 @@ use gst::prelude::*;
 use serde_json::{Value, json};
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 /// The PipeWire source for one portal stream. Only properties every supported PipeWire has
 /// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
@@ -41,8 +41,10 @@ const ENCODERS: &[&str] = &[
 const BITRATE_KBPS: u32 = 8000;
 
 pub struct Session {
-    pipeline: gst::Pipeline,
-    webrtc: gst::Element,
+    pub(super) pipeline: gst::Pipeline,
+    pub(super) webrtc: gst::Element,
+    /// The phone's candidates so far; `None` for a complete-SDP session.
+    pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
 }
 
 impl Session {
@@ -50,7 +52,7 @@ impl Session {
         id: String,
         display: &Display,
         fd: OwnedFd,
-        helper: Arc<Helper>,
+        helper: &Arc<Helper>,
         config: &Value,
     ) -> Result<Self> {
         let payload = h264_payload(config["sdp"].as_str().context("missing offer")?)?;
@@ -178,66 +180,19 @@ impl Session {
                 None
             }
         });
-        webrtc.connect_notify(Some("ice-connection-state"), move |w, _| {
-            let state = w.property::<gst_webrtc::WebRTCICEConnectionState>("ice-connection-state");
-            if matches!(
-                state,
-                gst_webrtc::WebRTCICEConnectionState::Failed
-                    | gst_webrtc::WebRTCICEConnectionState::Closed
-            ) {
-                helper.ended(&id);
-            }
-        });
+        let trickle = config["trickle"] == true;
+        if trickle {
+            crate::candidates::observe(&webrtc, &id, helper);
+        }
+        crate::connection::observe(&webrtc, id, helper);
         pipeline
             .set_state(gst::State::Ready)
             .context("preparing the video pipeline")?;
-        Ok(Self { pipeline, webrtc })
-    }
-
-    /// Answers an offer (first connect or ICE restart) once every local candidate is in.
-    pub async fn answer(&self, offer: &str) -> Result<String> {
-        let sdp = gst_sdp::SDPMessage::parse_buffer(offer.as_bytes())
-            .map_err(|_| anyhow!("bad offer"))?;
-        let offer =
-            gst_webrtc::WebRTCSessionDescription::new(gst_webrtc::WebRTCSDPType::Offer, sdp);
-        let (p, done) = promise();
-        self.webrtc
-            .emit_by_name::<()>("set-remote-description", &[&offer, &p]);
-        done.await?;
-        let (p, done) = promise();
-        self.webrtc
-            .emit_by_name::<()>("create-answer", &[&None::<gst::Structure>, &p]);
-        let reply = done.await?;
-        let reply = reply.ok_or_else(|| anyhow!("no answer"))?;
-        let answer = reply
-            .get::<gst_webrtc::WebRTCSessionDescription>("answer")
-            .map_err(|_| anyhow!("no answer"))?;
-        let (p, done) = promise();
-        self.webrtc
-            .emit_by_name::<()>("set-local-description", &[&answer, &p]);
-        done.await?;
-        // Negotiate the profile before the encoder fixes its output caps.
-        self.pipeline
-            .set_state(gst::State::Playing)
-            .context("starting the video pipeline")?;
-        for _ in 0..200 {
-            if self
-                .webrtc
-                .property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state")
-                == gst_webrtc::WebRTCICEGatheringState::Complete
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        let local = self
-            .webrtc
-            .property::<Option<gst_webrtc::WebRTCSessionDescription>>("local-description");
-        let local = local.unwrap_or(answer);
-        local
-            .sdp()
-            .as_text()
-            .map_err(|_| anyhow!("couldn't write the answer"))
+        Ok(Self {
+            pipeline,
+            webrtc,
+            incoming: trickle.then(Mutex::default),
+        })
     }
 
     pub fn close(self) {
@@ -359,35 +314,6 @@ fn make(name: &str) -> Result<gst::Element> {
         .with_context(|| format!("GStreamer element {name} is missing"))
 }
 
-/// Convert WebRTC's ICE URL syntax to GStreamer's URI syntax without exposing credentials.
-fn ice_uri(url: &str, username: Option<&str>, credential: Option<&str>) -> Result<String> {
-    let (scheme, address) = url.split_once(':').context("invalid ICE URL")?;
-    if scheme == "stun" {
-        return Ok(format!("stun://{address}"));
-    }
-    if !matches!(scheme, "turn" | "turns") {
-        bail!("unsupported ICE scheme");
-    }
-    let username = username.context("missing TURN username")?;
-    let credential = credential.context("missing TURN credential")?;
-    let escape = |s: &str| -> String {
-        use std::fmt::Write as _;
-        s.bytes().fold(String::new(), |mut out, byte| {
-            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-                out.push(char::from(byte));
-            } else {
-                let _ = write!(out, "%{byte:02X}");
-            }
-            out
-        })
-    };
-    Ok(format!(
-        "{scheme}://{}:{}@{address}",
-        escape(username),
-        escape(credential)
-    ))
-}
-
 fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
     let name = ENCODERS
         .iter()
@@ -412,14 +338,6 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
     }
     tracing::info!(encoder = name, "video encoder");
     Ok(e)
-}
-
-fn promise() -> (gst::Promise, oneshot::Receiver<Option<gst::Structure>>) {
-    let (tx, rx) = oneshot::channel();
-    let p = gst::Promise::with_change_func(move |reply| {
-        let _ = tx.send(reply.ok().flatten().map(ToOwned::to_owned));
-    });
-    (p, rx)
 }
 
 /// One still for agents: `width`×`height` JPEG, base64.
@@ -452,26 +370,70 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
 }
 
 #[cfg(test)]
-mod ice_tests {
+mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::candidates::Candidate;
 
-    #[test]
-    fn turn_uri_preserves_transport_and_escapes_credentials() {
-        assert_eq!(
-            ice_uri(
-                "turns:turn.cloudflare.com:443?transport=tcp",
-                Some("a:b"),
-                Some("c+/@")
-            )
-            .unwrap(),
-            "turns://a%3Ab:c%2B%2F%40@turn.cloudflare.com:443?transport=tcp"
+    #[tokio::test]
+    async fn trickle_answer_does_not_wait_for_candidate_gathering() {
+        gst::init().unwrap();
+        let pipeline = gst::parse::launch(
+            "videotestsrc is-live=true ! videoconvert ! video/x-raw,format=I420 \
+             ! x264enc tune=zerolatency ! h264parse ! rtph264pay pt=96 \
+             ! application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000 \
+             ! webrtcbin name=peer",
+        )
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .unwrap();
+        let webrtc = pipeline.by_name("peer").unwrap();
+        pipeline.set_state(gst::State::Ready).unwrap();
+        let session = Session {
+            pipeline,
+            webrtc,
+            incoming: Some(Mutex::default()),
+        };
+        let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
+            m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\
+            a=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=setup:actpass\r\n\
+            a=ice-ufrag:test\r\na=ice-pwd:testpasswordforthevideooffer\r\n\
+            a=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00\r\n\
+            a=rtpmap:96 H264/90000\r\n\
+            a=fmtp:96 packetization-mode=1;profile-level-id=42e01f\r\n";
+        // A silent local STUN endpoint keeps gathering active deterministically.
+        let silent_stun = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = silent_stun.local_addr().unwrap().port();
+        session
+            .webrtc
+            .set_property("stun-server", format!("stun://127.0.0.1:{port}"));
+        let answer_result =
+            tokio::time::timeout(std::time::Duration::from_secs(2), session.answer(offer)).await;
+        let answer_result = answer_result.expect("the answer must not wait for STUN gathering");
+        let answer = answer_result.unwrap();
+        let sdp = gst_sdp::SDPMessage::parse_buffer(answer.as_bytes()).unwrap();
+        let video = sdp.media(0).unwrap();
+        assert_ne!(video.port(), 0, "the H.264 video offer must be accepted");
+        assert_eq!(video.formats().collect::<Vec<_>>(), ["96"]);
+        assert!(video.attributes().any(|a| a.key() == "sendonly"));
+        assert_eq!(session.pipeline.current_state(), gst::State::Playing);
+        assert_ne!(
+            session
+                .webrtc
+                .property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state"),
+            gst_webrtc::WebRTCICEGatheringState::Complete
         );
-        assert_eq!(
-            ice_uri("stun:stun.cloudflare.com:3478", None, None).unwrap(),
-            "stun://stun.cloudflare.com:3478"
+        assert!(
+            !answer.contains("a=candidate:"),
+            "trickle returns the original SDP, not a gathered snapshot"
         );
-        assert!(ice_uri("turn:turn.cloudflare.com:3478", None, None).is_err());
+        let host = Candidate::Candidate {
+            candidate: "candidate:1 1 UDP 1 192.0.2.1 5000 typ host".into(),
+            sdp_m_line_index: 0,
+        };
+        session.candidate(&host).unwrap();
+        session.candidate(&Candidate::Complete).unwrap();
+        assert!(session.candidate(&Candidate::Complete).is_err());
     }
 }
 

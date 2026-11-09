@@ -1,6 +1,6 @@
 //! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (whether it
 //! may use the computer, and its routines), Library (the artifacts it made and the files shared in its
-//! chat), Memory and Settings. Shift+←→ moves between them.
+//! chat), Memory and Settings. Shift+←→ moves between them. What an agent brings is on its own sheet.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -63,6 +63,7 @@ mod tests {
         assert_eq!(Page::Details.step(key(KeyCode::Right)), Some(Page::Library));
         assert_eq!(Page::Memory.step(key(KeyCode::Left)), Some(Page::Library));
         assert_eq!(Page::Library.step(key(KeyCode::Left)), Some(Page::Details));
+        assert_eq!(Page::Settings.step(key(KeyCode::Left)), Some(Page::Memory));
         assert_eq!(Page::Settings.step(key(KeyCode::Right)), None);
         assert_eq!(Page::Details.step(key(KeyCode::Left)), None);
         assert_eq!(

@@ -22,6 +22,10 @@ pub struct Identity {
     /// The skills block the agent is told (`market::skills_brief`), so a skill renamed or redescribed counts too.
     #[serde(default)]
     pub skills_brief: String,
+    /// Whether it's the user's lead bot (`chat::lead`), a role the user moves. None in a snapshot from before it
+    /// could move (`parse` reads it from the instructions).
+    #[serde(default)]
+    pub lead: Option<bool>,
 }
 
 impl Identity {
@@ -30,9 +34,16 @@ impl Identity {
             name: cfg.name.trim().to_owned(),
             description: cfg.description.trim().to_owned(),
             skills_brief: crate::market::skills_brief(store, &cfg.skills).unwrap_or_default(),
+            lead: Some(cfg.lead),
         }
     }
 }
+
+/// The start of `lead::BRIEF` in every version of it: instructions that hold it gave the bot the lead's role.
+const LEAD_ROLE: &str = "\nLead: you are the user's lead bot";
+
+/// What a bot that led hears once it no longer does.
+const NOT_LEAD: &str = "Lead: you are no longer the user's lead bot; ignore the earlier Lead instructions.";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -93,7 +104,16 @@ pub fn bump_epoch(store: &Store, bot_id: &str, session: &str, compaction_id: &st
 }
 
 fn load(store: &Store, bot_id: &str, session: &str) -> Option<Snapshot> {
-    store.kv_get(&key(bot_id, session)).and_then(|v| serde_json::from_str(&v).ok())
+    store.kv_get(&key(bot_id, session)).and_then(|v| parse(&v))
+}
+
+/// A stored snapshot. One from before the lead could move (2.33.0) told the agent its role in `system` alone.
+fn parse(raw: &str) -> Option<Snapshot> {
+    let mut s: Snapshot = serde_json::from_str(raw).ok()?;
+    let led = Some(s.system.contains(LEAD_ROLE));
+    s.system_identity.lead = s.system_identity.lead.or(led);
+    s.announced.lead = s.announced.lead.or(led);
+    Some(s)
 }
 
 fn save(store: &Store, bot_id: &str, s: &Snapshot) -> Result<()> {
@@ -141,7 +161,7 @@ pub fn refresh(store: &Store, bot_id: &str, session: &str) -> Result<()> {
 /// Every session of the bot renders its instructions again on its next turn (after the move from the old memory).
 pub fn invalidate(store: &Store, bot_id: &str) -> Result<()> {
     for k in store.kv_prefix(&format!("context.{bot_id}.")) {
-        match store.kv_get(&k).and_then(|v| serde_json::from_str::<Snapshot>(&v).ok()) {
+        match store.kv_get(&k).and_then(|v| parse(&v)) {
             Some(mut s) => {
                 s.system.clear();
                 save(store, bot_id, &s)?;
@@ -203,7 +223,7 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         crate::agent::fallback::name(&cfg.backend)
     };
     lines.push(format!(
-        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. To start over, the user starts a New session for this chat in Codync (the chat's menu in the apps, S in the terminal UI)."
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on, with no new session or clear for the user to start, so don't suggest starting over."
     ));
     lines.push(String::new());
     lines.push(format!("Messages: {}", crate::chat::outbox::INSTRUCTIONS));
@@ -213,7 +233,14 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
             .to_owned(),
     );
     lines.push(String::new());
+    lines.push(
+        "Other computers: the user's other computers and their bots are reached through Codync's network. To see, ask or hand work to a bot or Codync on another computer, use list_bots and message_bot (ids like name@computer), not SSH, remote shells or your engine's own agent and session tools, which only see this computer. Use SSH only when the user asks for it or the task is about that computer's files or system rather than its bots."
+            .to_owned(),
+    );
+    lines.push(String::new());
     lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, if crate::agent::workspace::is_managed(cfg) { "Codync allocated it for you alone." } else { "The user chose this project folder." }));
+    lines.push(String::new());
+    lines.push(crate::dev_servers::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);
@@ -238,15 +265,27 @@ pub fn profile_update(store: &Store, snapshot: &Snapshot, cfg: &BotConfig) -> Op
     }
     let or_none = |s: &str, none: &str| if s.is_empty() { none.to_owned() } else { s.to_owned() };
     let skills = if identity.skills_brief.is_empty() { "Skills: none." } else { &identity.skills_brief };
+    // Its role, when it leads or its instructions or an earlier update said it did.
+    let role = if identity.lead == Some(true) {
+        crate::chat::lead::BRIEF
+    } else if snapshot.announced.lead == Some(true) || snapshot.system_identity.lead == Some(true) {
+        NOT_LEAD
+    } else {
+        ""
+    };
     let text = [
         "<agent_profile_update>".to_owned(),
         "Your agent profile changed. This full update is authoritative and supersedes the Agent profile section in your instructions and every earlier profile update in this conversation.".to_owned(),
         format!("Current name: {}", or_none(&identity.name, "(no name)")),
         format!("Current description: {}", or_none(&identity.description, "(no description)")),
         skills.to_owned(),
+        role.to_owned(),
         "Use this identity until a future conversation summary folds it into the Agent profile section.".to_owned(),
         "</agent_profile_update>".to_owned(),
     ]
+    .into_iter()
+    .filter(|line| !line.is_empty())
+    .collect::<Vec<_>>()
     .join("\n");
     Some((text, identity))
 }
@@ -300,6 +339,7 @@ mod tests {
         assert!(system.contains("requests from other bots, send_message isn't available"));
         assert!(system.contains("Replies to your own message_bot requests arrive as a turn of their own"));
         assert!(system.contains("These rules apply to the current turn"));
+        assert!(system.contains("use list_bots and message_bot (ids like name@computer), not SSH"));
     }
 
     #[test]
@@ -363,6 +403,33 @@ mod tests {
         let snap = resolve(&store, &b, "s1").expect("resolve");
         assert!(snap.system.contains("Description: Fix bugs and write tests"), "re-rendered");
         assert!(profile_update(&store, &snap, &b).is_some(), "the agent never heard the new description");
+    }
+
+    #[test]
+    fn the_lead_role_is_announced_as_it_moves() {
+        let store = store();
+        let mut lead = cfg("Fixer", "Fix bugs");
+        lead.lead = true;
+        adopt(&store, &lead, "s1", render(&store, &lead), String::new()).expect("adopt");
+        // A snapshot from before the lead could move: the role was in its instructions alone.
+        let k = key(&lead.id, "s1");
+        let mut old: serde_json::Value = serde_json::from_str(&store.kv_get(&k).expect("saved")).expect("json");
+        for identity in ["systemIdentity", "announced"] {
+            old[identity].as_object_mut().expect("an identity").remove("lead");
+        }
+        store.kv_set(&k, &old.to_string()).expect("save");
+        let snap = resolve(&store, &lead, "s1").expect("resolve");
+        assert!(profile_update(&store, &snap, &lead).is_none(), "it heard its role in its instructions");
+
+        let mut other = lead.clone();
+        other.lead = false;
+        let (text, identity) = profile_update(&store, &snap, &other).expect("the role moved");
+        assert!(text.contains(NOT_LEAD) && !text.contains(crate::chat::lead::BRIEF), "{text}");
+        mark_announced(&store, &lead.id, &snap, identity).expect("mark");
+        let snap = resolve(&store, &other, "s1").expect("resolve");
+        assert!(profile_update(&store, &snap, &other).is_none(), "told once");
+        let (text, _) = profile_update(&store, &snap, &lead).expect("it leads again");
+        assert!(text.contains(crate::chat::lead::BRIEF), "{text}");
     }
 
     #[test]

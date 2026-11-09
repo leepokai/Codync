@@ -13,6 +13,7 @@ export interface IslandStep {
 
 /** One bot as the island shows it (`ref` = computerId/botId). */
 export interface IslandBot {
+  customIcon?: import('./custom-icons').CustomIcon
   ref: string
   name: string
   shape: string
@@ -43,7 +44,7 @@ export interface IslandOption {
 export interface IslandPermission {
   ref: string
   entryId: string
-  bot: Pick<IslandBot, 'name' | 'shape' | 'color' | 'backend'>
+  bot: Pick<IslandBot, 'name' | 'shape' | 'color' | 'backend' | 'customIcon'>
   headline: string
   title: string
   options: IslandOption[]

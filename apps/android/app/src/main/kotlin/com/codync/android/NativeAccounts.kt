@@ -1,6 +1,7 @@
 package com.codync.android
 
 import android.app.Activity
+import android.content.Context
 import com.clerk.api.Clerk
 import com.clerk.api.ClerkConfigurationOptions
 import com.clerk.api.hostedauth.HostedAuthCancellationException
@@ -9,20 +10,33 @@ import com.clerk.api.network.serialization.errorMessage
 import com.clerk.api.session.Session
 import com.clerk.api.sso.OAuthProvider
 import com.clerk.api.sso.SSOCancellationException
+import com.clerk.api.user.delete
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.io.IOException
 
 /** A sign-in that ended without an account, and why. */
 internal class SignInError(val reason: SignInFailure, message: String, cause: Throwable? = null) : IOException(message, cause)
 
-data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?)
+data class SavedAccount(val userId: String, val sessionId: String, val email: String, val avatar: String?) {
+    /** The real address: [email] holds a label for an account without one (`observe`). */
+    val address: String? get() = email.takeIf { "@" in it }
+}
 data class AccountState(val ready: Boolean = false, val configured: Boolean = NativeAccounts.configured,
     val userId: String? = null, val accounts: List<SavedAccount> = emptyList(),
-    val multiple: Boolean = false, val error: String? = null)
+    val multiple: Boolean = false, val error: String? = null) {
+    /** Clerk is still restoring the saved sign-in: the launch layer and the root wait, rather than show the welcome. */
+    val restoring: Boolean get() = configured && !ready && error == null
+    /** The signed-in account. */
+    val current: SavedAccount? get() = accounts.firstOrNull { it.userId == userId }
+}
 
 /** Clerk owns browser authentication, encrypted credentials and session restoration. */
 object NativeAccounts {
@@ -51,33 +65,68 @@ object NativeAccounts {
 
     private fun Session.usableUserId(): String? = takeIf { it.status == Session.SessionStatus.ACTIVE && it.expireAt > System.currentTimeMillis() }?.user?.id
 
-    suspend fun signIn(apple: Boolean) {
+    internal suspend fun signIn(provider: SignInProvider) = when (provider) {
+        SignInProvider.Apple -> oauthSignIn(OAuthProvider.APPLE, "Apple")
+        SignInProvider.Google -> oauthSignIn(OAuthProvider.GOOGLE, "Google")
+        SignInProvider.GitHub -> oauthSignIn(OAuthProvider.GITHUB, "GitHub")
+        SignInProvider.Hosted -> hostedSignIn()
+    }
+
+    /** [name] words the messages as the iPhone does (`AccountSession.signIn`), so they share its translations. */
+    private suspend fun oauthSignIn(provider: OAuthProvider, name: String) {
         require(Clerk.isInitialized.value) { "Wait for sign-in to finish loading." }
-        val result = Clerk.auth.signInWithOAuth(if (apple) OAuthProvider.APPLE else OAuthProvider.GOOGLE)
-        when (result) {
+        when (val result = Clerk.auth.signInWithOAuth(provider)) {
             is ClerkResult.Failure -> throw signInError(result)
             is ClerkResult.Success -> {
-                val sessionId = result.value.signIn?.createdSessionId ?: result.value.signUp?.createdSessionId
-                    ?: throw SignInError(SignInFailure.Verification, "Sign-in needs additional verification. Continue using the other sign-in options.")
+                val (signIn, signUp) = result.value
+                val sessionId = signIn?.createdSessionId ?: signUp?.createdSessionId ?: throw SignInError(SignInFailure.Verification,
+                    if (signUp != null) "$name sign-up needs additional account information. Your account is not signed in yet."
+                    else "$name sign-in needs additional verification. Your account is not signed in yet.")
                 val activated = Clerk.auth.setActive(sessionId)
-                requireSuccess(activated)
+                if (activated is ClerkResult.Failure) throw signInError(activated)
             }
         }
     }
 
-    suspend fun hostedSignIn() {
+    /**
+     * A worktree's emulator signs into its sandbox's Clerk test account with a one-time token that
+     * `npm run phone-account` leaves through adb's run-as, as the desktop sandbox does: debug builds against Clerk's
+     * development instance only, and only while signed out.
+     */
+    suspend fun signInForDevelopment(context: Context) {
+        if (!BuildConfig.DEBUG || !BuildConfig.CLERK_PUBLISHABLE_KEY.startsWith("pk_test_")) return
+        val file = File(context.filesDir, "dev-sign-in-ticket")
+        val ticket = withContext(Dispatchers.IO) { file.takeIf(File::exists)?.readText()?.trim().also { file.delete() } }
+        if (ticket.isNullOrEmpty()) return
+        Clerk.isInitialized.first { it }
+        if (activeUserId() != null) return
+        when (val result = Clerk.auth.signInWithTicket(ticket)) {
+            // Clerk's own text, which names what went wrong with the ticket.
+            is ClerkResult.Failure -> requireSuccess(result)
+            is ClerkResult.Success -> result.value.createdSessionId?.let { requireSuccess(Clerk.auth.setActive(it)) }
+        }
+    }
+
+    private suspend fun hostedSignIn() {
         val result = Clerk.auth.startHostedAuth()
         if (result is ClerkResult.Failure) throw signInError(result)
     }
 
+    /**
+     * Clerk's own text for a closed browser or an unreachable server is "Error occurred with unknown message.", so a
+     * sign-in that fails reads as on the iPhone; the browser closed ([SignInFailure.Cancelled]) shows nothing at all.
+     * Clerk also reports a refusal on the redirect (`error`, `__clerk_error_code`) as an [SSOCancellationException], with
+     * that text in place of its own "Authentication cancelled" (Clerk 1.4.1 `SSOService.cancellation`): a failure.
+     */
     private fun signInError(failure: ClerkResult.Failure<com.clerk.api.network.model.error.ClerkErrorResponse>): SignInError {
         val cause = failure.throwable
         val reason = when {
-            cause is SSOCancellationException || cause is HostedAuthCancellationException -> SignInFailure.Cancelled
+            cause is HostedAuthCancellationException -> SignInFailure.Cancelled
+            cause is SSOCancellationException && cause.message == "Authentication cancelled" -> SignInFailure.Cancelled
             cause?.isTimeout == true -> SignInFailure.Timeout
             else -> SignInFailure.Error
         }
-        return SignInError(reason, failure.errorMessage, cause)
+        return SignInError(reason, "Couldn't sign in. Check your connection and try again.", cause)
     }
 
     suspend fun switch(account: SavedAccount) {
@@ -89,6 +138,12 @@ object NativeAccounts {
         // An explicit session keeps local credentials intact if the server rejects logout.
         val result = Clerk.auth.signOut(sessionId)
         requireSuccess(result)
+    }
+
+    /** Deletes the signed-in user; Clerk's `user.deleted` then takes the account's computers and devices off the cloud. */
+    suspend fun deleteUser() {
+        val user = requireNotNull(Clerk.activeUser) { "Sign in again to delete your account." }
+        requireSuccess(user.delete())
     }
 
     suspend fun reset() {

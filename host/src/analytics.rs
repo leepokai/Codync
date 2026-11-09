@@ -21,13 +21,19 @@ pub mod reported;
 mod session;
 mod turns;
 
-pub use lifecycle::{KV_STARTED, Via, device_paired, host_started, phone_connected};
-pub use observe::{answered, observe_call};
+pub use lifecycle::{
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, Via, cloud_keeper_checked, device_paired, discovery_failed,
+    host_started, join_from_phone_answered, phone_connected,
+};
+pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{TurnOutcome, TurnSource, agent_fell_back, turn_finished};
+pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, context_compacted, message_steered, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
-/// The account the install id was last merged into (one `$identify` per account).
+/// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
+const KV_ENV: &str = "analytics_env";
+/// The account the install id was merged into. An id merges into one account and a second is
+/// refused, so a later account on this computer starts its own profile.
 const KV_IDENTIFIED: &str = "analytics_identified";
 /// Write-only project token: safe to ship in public builds.
 const TOKEN: &str = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX";
@@ -61,12 +67,19 @@ pub enum Event {
     BotCreated,
     BotUpdated,
     BotsReordered,
+    SectionRenamed,
     BotDeleted,
     MessageSent,
+    /// The user had a queued message handled now (`agent::bot::steer`).
+    MessageSteered,
+    QueuedMessageRemoved,
     TurnStopped,
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
+    ContextCompacted,
+    UsageReadFailed,
     SessionReset,
     PermissionAnswered,
     ReactionAdded,
@@ -76,15 +89,27 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot's `start_dev_server` ended (`outcome`).
+    DevServerStarted,
+    /// A dev server ended (`by`).
+    DevServerStopped,
+    /// A person acted on a dev server (`action`).
+    DevServerAction,
+    /// A bot left a server running through its own shell, not `start_dev_server`.
+    DevServerDetected,
     VoiceCallStarted,
     VoiceCallFinished,
     /// How one engine of a call fared (time to ready, reconnects, a phase stuck, failure).
     VoiceCallQuality,
+    /// A desktop window's crashed page loaded again, or crashed too often and stays down.
+    WindowRecovery,
     RemoteScreenOpened,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
+    BotsImported,
     ConnectorRemoved,
+    ConnectorUpdated,
     ConnectorSigninStarted,
     SkillInstalled,
     SkillRemoved,
@@ -95,10 +120,28 @@ pub enum Event {
     AgentSetupStarted,
     AgentSignedIn,
     SettingChanged,
+    /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
+    ReachAccountAnswered,
+    ContinuedWithoutAccount,
+    JoinOfferAnswered,
+    /// The user gave Codync Cloud the key to their own account with a cloud provider (desktop; phones send their own).
+    CloudKeySaved,
+    /// The user created a Codync Cloud computer on one of their providers (desktop; phones send their own).
+    CloudComputerCreated,
+    /// The user renamed a Codync Cloud computer (desktop; phones send their own).
+    CloudComputerRenamed,
+    /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
+    CloudKeeperChecked,
+    /// A paired phone asked to add this computer to its account, and the computer answered.
+    JoinFromPhoneAnswered,
+    /// Advertising on the local network failed, so a computer in no account can't be found at a new address.
+    DiscoveryFailed,
     HostUpdateInstalled,
     /// `networkCreate` or `networkJoin`: this computer is in a network of the user's computers.
     NetworkJoined,
     NetworkChanged,
+    /// A network step failed (`NetworkStage`): starting a node, a letter, or a `network*` call.
+    NetworkFailed,
     /// Error tracking (`errors`): a panic or an uncaught error.
     Exception,
 }
@@ -126,11 +169,16 @@ impl Event {
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
+            Self::SectionRenamed => "section_renamed",
             Self::BotDeleted => "bot_deleted",
             Self::MessageSent => "message_sent",
+            Self::MessageSteered => "message_steered",
+            Self::QueuedMessageRemoved => "queued_message_removed",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::ContextCompacted => "context_compacted",
+            Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
             Self::PermissionAnswered => "permission_answered",
             Self::ReactionAdded => "reaction_added",
@@ -140,14 +188,21 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::DevServerStarted => "dev_server_started",
+            Self::DevServerStopped => "dev_server_stopped",
+            Self::DevServerAction => "dev_server_action",
+            Self::DevServerDetected => "dev_server_detected",
             Self::VoiceCallStarted => "voice_call_started",
             Self::VoiceCallFinished => "voice_call_finished",
             Self::VoiceCallQuality => "voice_call_quality",
+            Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",
+            Self::BotsImported => "bots_imported",
             Self::ConnectorRemoved => "connector_removed",
+            Self::ConnectorUpdated => "connector_updated",
             Self::ConnectorSigninStarted => "connector_signin_started",
             Self::SkillInstalled => "skill_installed",
             Self::SkillRemoved => "skill_removed",
@@ -157,16 +212,53 @@ impl Event {
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::SettingChanged => "setting_changed",
+            Self::ReachAccountAnswered => "reach_account_answered",
+            Self::ContinuedWithoutAccount => "continued_without_account",
+            Self::JoinOfferAnswered => "join_offer_answered",
+            Self::CloudKeySaved => "cloud_key_saved",
+            Self::CloudComputerCreated => "cloud_computer_created",
+            Self::CloudComputerRenamed => "cloud_computer_renamed",
+            Self::CloudKeeperChecked => "cloud_keeper_checked",
+            Self::JoinFromPhoneAnswered => "join_from_phone_answered",
+            Self::DiscoveryFailed => "discovery_failed",
             Self::HostUpdateInstalled => "host_update_installed",
             Self::NetworkJoined => "network_joined",
             Self::NetworkChanged => "network_changed",
+            Self::NetworkFailed => "network_failed",
             Self::Exception => "$exception",
         }
     }
 }
 
+/// Where a network of the user's computers failed (`network_failed`'s `stage`); a failed
+/// `network*` call is `action` (`observe::failed`).
+#[derive(Clone, Copy, Debug)]
+pub enum NetworkStage {
+    /// A saved network's node didn't start with the host.
+    Start,
+    /// A bot's letter to another computer didn't go (refused, or no such computer).
+    Send,
+    /// The outcome of another computer's request didn't go back.
+    Reply,
+    /// A letter from another computer couldn't be taken in.
+    Receive,
+}
+
+/// Reports a network step that failed; never the error's text, a name or an address.
+pub fn network_failed(hub: &Hub, stage: NetworkStage) {
+    let stage = match stage {
+        NetworkStage::Start => "start",
+        NetworkStage::Send => "send",
+        NetworkStage::Reply => "reply",
+        NetworkStage::Receive => "receive",
+    };
+    capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
+}
+
 pub struct Analytics {
     enabled: Mutex<bool>,
+    /// Every event's `env`: the build's, or `dev` on a test machine.
+    env: &'static str,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
     session: Mutex<session::Session>,
@@ -184,10 +276,20 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
+        // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
+        // location or version. Stored, so a release the machine updates to keeps the mark.
+        if std::env::var("CODYNC_ANALYTICS_ENV").as_deref() == Ok("dev")
+            && let Err(e) = store.kv_set(KV_ENV, "dev")
+        {
+            tracing::warn!(error = format!("{e:#}"), "couldn't mark this machine's analytics as dev");
+        }
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        let env = if store.kv_get(KV_ENV).as_deref() == Some("dev") { "dev" } else { built };
         let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             enabled: Mutex::new(enabled),
+            env,
             tx,
             rx: Mutex::new(Some(rx)),
             session: Mutex::default(),
@@ -200,10 +302,15 @@ impl Analytics {
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
-        store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
+        save_choice(store, on)?;
         *self.enabled.locked() = on;
         Ok(())
     }
+}
+
+/// Saves the owner's choice; a host that isn't running reads it when it starts (`Analytics::load`).
+pub fn save_choice(store: &Store, on: bool) -> Result<()> {
+    store.kv_set(KV_ENABLED, if on { "1" } else { "0" })
 }
 
 /// A phone's platform as the catalog names it.
@@ -230,7 +337,7 @@ pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
     }
     let account = hub.cloud.status().owner.map(|o| o.user_id);
     if let Some(user) = &account
-        && hub.store.kv_get(KV_IDENTIFIED).as_deref() != Some(user.as_str())
+        && hub.store.kv_get(KV_IDENTIFIED).is_none()
     {
         // Merges this install's earlier, anonymous events into the account.
         let identify = json!({"$anon_distinct_id": hub.host_id, "$process_person_profile": true});
@@ -247,7 +354,7 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
+        ("env".into(), hub.analytics.env.into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
@@ -351,11 +458,50 @@ mod tests {
         assert!(Analytics::load(&store).state());
         Analytics::load(&store).set_enabled(&store, false).unwrap();
         assert!(!Analytics::load(&store).state(), "an off stays off");
+        save_choice(&store, true).unwrap();
+        assert!(Analytics::load(&store).state(), "a choice saved before the host starts counts");
+    }
+
+    #[test]
+    fn a_test_machine_stays_marked_dev() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        assert_eq!(Analytics::load(&store).env, built);
+        store.kv_set(KV_ENV, "dev").unwrap();
+        assert_eq!(Analytics::load(&store).env, "dev", "the stored mark wins over the build's environment");
     }
 
     #[test]
     fn computer_tag_matches_the_iphone() {
         // Same vector as the iPhone's AnalyticsTests.
         assert_eq!(computer_tag("AAECAwQFBgcICQoLDA0ODw"), "2d6878bee20aba04");
+    }
+
+    #[test]
+    fn the_install_id_merges_into_the_first_account_only() {
+        use crate::remote::cloud::{Owner, update_status};
+        let dir = std::env::temp_dir().join(format!("codync-analytics-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
+
+        for user in ["user_1", "user_2"] {
+            update_status(&hub, |s| s.owner = Some(Owner { user_id: user.into(), email: None }));
+            capture(&hub, Event::AppOpened, Map::new());
+        }
+
+        let mut rx = hub.analytics.rx.locked().take().unwrap();
+        let mut sent = Vec::new();
+        while let Ok(Msg::Event(event)) = rx.try_recv() {
+            sent.push(event);
+        }
+        assert_eq!(
+            sent.iter().map(|e| (e["event"].as_str().unwrap(), e["distinct_id"].as_str().unwrap())).collect::<Vec<_>>(),
+            [("$identify", "user_1"), ("app_opened", "user_1"), ("app_opened", "user_2")]
+        );
+        assert_eq!(sent[0]["properties"]["$anon_distinct_id"], "h");
+        assert_eq!(hub.store.kv_get(KV_IDENTIFIED).as_deref(), Some("user_1"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

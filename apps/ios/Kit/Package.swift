@@ -25,6 +25,9 @@ let package = Package(
             .copy("Resources/Languages/fr.json"),
             .copy("Resources/Languages/de.json"),
             .copy("Resources/Languages/es.json"),
+            .copy("Resources/Languages/pt-BR.json"),
+            .copy("Resources/Languages/ru.json"),
+            .copy("Resources/Languages/it.json"),
             .process("Resources/ProviderIcons.xcassets"),
         ]),
         .target(

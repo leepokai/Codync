@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -72,6 +73,16 @@ import kotlin.math.roundToInt
             Spacer(Modifier.weight(1f))
             trailing()
         }
+    }
+}
+
+/** A screen with nothing to show (iOS `EmptyState`): a large symbol, a title and, under it, an optional line. */
+@Composable fun EmptyState(symbol: String, title: String, modifier: Modifier = Modifier, message: String? = null) {
+    Column(modifier.padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
+        Symbol(symbol, size = 48.dp, tint = Palette.tertiary)
+        Text(tr(title), style = Type.title3.semibold, color = Palette.text, textAlign = TextAlign.Center)
+        message?.let { Text(tr(it), style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center) }
     }
 }
 
@@ -165,3 +176,7 @@ private val TAB_WIDTH = 90.dp
     val (source, pressed) = rememberPress()
     return clickable(source, null, enabled = enabled, role = role, onClick = action).graphicsLayer { alpha = if (pressed) 0.6f else 1f }
 }
+
+/** A quiet "Beta" pill beside a feature still in beta (Network, Codync Cloud; iOS `BetaTag`). */
+@Composable fun BetaTag() = Text(tr("Beta"), style = Type.caption.semibold, color = Palette.secondary,
+    modifier = Modifier.clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 7.dp, vertical = 2.dp))

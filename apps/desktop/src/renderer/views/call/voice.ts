@@ -2,12 +2,13 @@ import type { HostClient } from '../../client/host-client'
 import type { VoiceFailure } from '@shared/analytics'
 import type { CallCue } from '@shared/calls'
 import { Observable } from '../../lib/observable'
+import { trNow } from '../../lib/l10n.ts'
 import {
   addVoiceUsage,
   chosenModel,
   chosenVoice,
   dictationEngine,
-  engine,
+  callEngineChoice,
   isVoiceProvider,
   language,
   mode,
@@ -30,13 +31,13 @@ export const SPEECH_CHUNK: Record<VoiceProvider, number> = { openai: 600, gemini
 export const onDeviceAvailable = () => window.codync.speech.available
 export const onDeviceUnavailableReason = () =>
   window.codync.platform === 'darwin'
-    ? "On-device speech isn't available in this build."
+    ? trNow("On-device speech isn't available in this build.")
     : `On-device speech isn't available on ${window.codync.platform === 'win32' ? 'Windows' : 'Linux'}.`
 
 export const VoiceSettings = {
   /** The provider picked in the call settings; null for on-device. */
   provider: (): VoiceProvider | null => {
-    const value = engine.get()
+    const value = callEngineChoice()
     return isVoiceProvider(value) ? value : null
   },
   /** The provider picked for dictation; null for on-device. */

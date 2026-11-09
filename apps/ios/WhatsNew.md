@@ -6,22 +6,42 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.30.0
-
+## 2.42.1
 ### zh-Hant
-- 新增 DeepSeek Harness（dsh）：電腦上裝好 dsh 並存好 DeepSeek API 金鑰後，Bot 就能使用 DeepSeek 的模型。
-- Agent、模型、推理強度與 Fast mode 整合成可收合的精簡設定；每個 Bot 可獨立保存推理強度，Default 也會顯示預設值。
-- 評分邀請只會在你使用一段時間、看完 Bot 的成果並回到列表後出現，不會在開啟 App 時打擾你。也可以隨時從設定前往 App Store 評分。
-- 「設定」現在是「狀態」右邊的獨立分頁，只放這支 iPhone 自己的設定。每台電腦的擴充套件、語音、螢幕、推送通知與連線，都移到「管理電腦」裡那台電腦的卡片上；推送通知可以逐台電腦開關。
-- 電腦卡片最下方的「Codync」會顯示那台電腦的版本；有新版時可以直接點「更新」，從手機叫那台電腦更新。
-- 電腦卡片多了網路按鈕（Beta）：一台電腦可以加入多個網路，這裡列出每個網路裡有哪些電腦、是否在線、各自提供哪些 Bot、誰可以傳訊息給這裡的 Bot，以及雲端助理是否開啟。網路的建立與邀請要在電腦上的 Codync 進行。
-- Bot 設定多了「提供給網路」與「雲端助理可聯繫」兩個開關，決定其他電腦上的 Bot 與 ChatGPT、Claude 能不能找到它。
+- bot 詳情「智慧體」區塊的「壓縮對話」預設改為「自動」：交給 Claude Code 或 Codex 在對話快滿時自己壓縮。想讓 Codync 提早壓縮，可以改選提早、接近上限或指定數量（從 100K、200K… 裡挑，或自己輸入）。已經是「提早」的 bot 會保留原設定，想交給智慧體自己壓縮可以改選「自動」。
 
 ### en-US
-- New agent: DeepSeek Harness (dsh). With dsh installed and a DeepSeek API key saved on your computer, a bot can run on DeepSeek's models.
-- Agent, model, reasoning effort and Fast mode now share compact, expandable settings. Each bot keeps its own effort preference, with the default level shown.
-- Rating invitations wait until you have used Codync for a while, viewed a bot's result, and returned to the list. You can also rate Codync anytime from Settings.
-- Settings is now its own tab, next to State, with only this iPhone's own settings. Each computer's Extensions, Voice chat, Screen, Push notifications and Connection are on its card in Manage computers, and push can be turned off for each computer.
-- Codync at the bottom of a computer's card shows the version it runs; when a newer one is out, tap Update to have that computer update from your phone.
-- A network button (beta) on each computer's card: a computer can be in several networks, and it shows each one's computers, whether each answers, the bots it offers, who may message the bots here, and whether cloud assistants are on. You set up and invite computers in Codync on a computer.
-- Bot settings have Offered to the network and Reachable by cloud assistants, so you choose whether bots on your other computers, ChatGPT or Claude can find a bot.
+- Summarize long chats, in a bot's Agent section, now defaults to Auto: Claude Code or Codex summarizes a chat on its own once it fills up. Pick Early, Near the limit or a size (100K, 200K and so on, or one you type) to have Codync summarize sooner. Bots already on Early keep it; pick Auto to leave it to the agent.
+
+## 2.42.0
+### zh-Hant
+- bot 詳情的「智慧體」區塊新增「壓縮對話」：選擇 Codync 什麼時候把長對話壓縮成摘要。可以選提早（預設）、接近上限、不主動壓縮，或指定數量：從 100K、200K… 裡挑，或自己輸入，最多到模型裝得下的上限。適用於 Claude Code 和 Codex 的 bot。
+
+### en-US
+- New Summarize long chats setting in a bot's Agent section: choose when Codync summarizes a long chat. Pick Early (default), Near the limit, Only when full, or a size: 100K, 200K and so on, or one you type, up to what the model holds. For Claude Code and Codex bots.
+
+## 2.41.0
+### zh-Hant
+- 不登入也能用了：在歡迎畫面選擇「不登入繼續」，手機掃電腦的 QR 碼就能配對，透過 Wi-Fi 或 Tailscale 連線。之後登入，配對會留在手機上；到「管理電腦」按「加入帳號」，電腦確認後就能從任何地方連線。
+- 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
+- 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
+- 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
+
+### en-US
+- Use Codync without an account: choose Continue without an account on the welcome screen, then scan your computer's QR code. It connects over Wi-Fi or Tailscale. Sign in later and your computers stay paired; Add to account in Manage computers brings each into your account once the computer confirms.
+- A computer can stay out of your account. It asks when you pair; without it, your phone connects only over Wi-Fi or Tailscale, and you can add it later in Manage computers.
+- Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
+- Typing @ in a group lists its members one per row, like the / command list.
+
+## 2.40.3
+### zh-Hant
+- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
+- 用量頁面可以自己選要看哪些服務並調整順序：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務，或拖曳排列。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
+- 修正 bot 更新時，選單偶爾點了沒反應的問題。
+- 修正 iOS 27.2 之後的部分測試版上，登入後 app 當掉，之後每次開啟都立刻關閉（重新安裝也一樣）的問題。
+
+### en-US
+- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
+- Choose and arrange which agents show in Usage: by default it lists the ones your bots run, and you can turn others on, hide them or drag them into order. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
+- Fixed menus sometimes ignoring a tap while a bot was updating.
+- Fixed a crash on some betas of iOS 27.2 and later that closed the app after sign-in and at every launch afterwards, even after reinstalling.

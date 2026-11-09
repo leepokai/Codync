@@ -2,7 +2,7 @@ A routine is a task a bot does on its own: on a schedule, at a set time, or when
 
 Each routine belongs to one bot and runs on your computer, with that bot's agent, folder, tools and approval setting. Its results show up in the bot's chat.
 
-Your lead bot comes with one routine, **Check in**, twice a day; it's an ordinary routine you can change, pause or delete. See [Your lead bot](/docs/bots#your-lead-bot).
+The lead bot Codync sets up comes with one routine, **Check in**, twice a day; it's an ordinary routine you can change, pause or delete, and it stays with that bot if you pick another lead. See [Your lead bot](/docs/bots#your-lead-bot).
 
 ## Find a bot's routines
 
@@ -20,7 +20,7 @@ Tell the bot what you want, in its chat:
 
 > I want a routine that summarizes yesterday's commits in ~/code/shop every weekday at 9:00.
 
-The speech-bubble button in the routine list (**Ask the bot for a routine**) puts "I want a routine that " in the message box for you. In the terminal UI, press `c` in the routine list.
+Type your request directly in the chat. To set up a routine by hand, use **+** in the routine list (`n` in the terminal UI).
 
 The bot saves it with Codync's built-in routine tools; your system's cron isn't involved. It asks only about what's missing or unclear, such as the time zone. It checks that the tools, sign-ins and files the task needs are there, looks at its existing routines so it doesn't make a duplicate, then saves and tells you what it saved: the schedule, time zone, next run and whether it's on. A "Created routine" line appears in the chat; tap it to open the routine.
 
@@ -76,7 +76,7 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 - **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
 - **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
-- **Approvals.** If the bot's **Permissions** are **Ask me**, a run that needs approval waits for you on a card in the chat, within its timeout.
+- **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
 
 ## Failed runs and retries
 
@@ -109,7 +109,7 @@ The run's prompt tells the bot that the delivery's contents are untrusted data t
 
 ### What the Codync cloud sees
 
-A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that uses [your own relay](/docs/remote-access#your-own-relay) has no public URL: only the local one works.
+A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that isn't in an account, or that uses [your own relay](/docs/remote-access#your-own-relay), has no public URL: only the local one works.
 
 - Deliveries to the public URL are **not end-to-end encrypted**. The cloud handles the HTTPS connection, can read each delivery, and stores the key to check it. Your computer checks the key again before anything runs.
 - If your computer is off or offline, the cloud keeps deliveries for up to 72 hours and hands them over once the host is back.

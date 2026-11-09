@@ -259,6 +259,10 @@ async fn run(
         _ => -1,
     };
     tracing::info!(term = %id, code, "setup terminal finished");
+    // A finished sign-in is believed again, over the prompt its agent refused before.
+    if term.key.1 == Step::Login && code == 0 {
+        backends::clear_prompt_refused(&term.key.0);
+    }
     term.finish(code);
     tokio::time::sleep(LINGER).await;
     terms.0.locked().remove(&id);

@@ -39,6 +39,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -49,6 +50,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -79,12 +82,12 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
  * trailing button morphs between call, send, stop and interrupt. `onInterrupt` cuts the bot off
  * while it speaks in a voice call. `replyTo` is the message the next send quotes, shown on top. `about`, in an artifact's
  * viewer: the artifact's title, which the box names in place of the quote (its card) it sends with; `draftKey` is then the
- * artifact's draft, apart from the chat's.
+ * artifact's draft, apart from the chat's. `queued`: the user's messages waiting behind the bot's work, shown on top ([QueuedMessages]).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable fun MessageComposer(bot: Bot, state: AppState, store: AppStore, onCall: (() -> Unit)?,
     onInterrupt: (() -> Unit)? = null, replyTo: ReplyQuote? = null, cancelReply: () -> Unit = {}, about: String? = null,
-    draftKey: String = bot.id) {
+    draftKey: String = bot.id, queued: List<Entry> = emptyList()) {
     val draft = state.drafts[draftKey]
     val text = rememberTextFieldState(initialText = draft?.text.orEmpty())
     val files = draft?.files.orEmpty()
@@ -106,8 +109,12 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         if (external != text.text.toString() && external !in echoes) text.setTextAndPlaceCursorAtEnd(external)
     }
     val clipboard = LocalClipboard.current
-    val clips = LocalContext.current.getSystemService(ClipboardManager::class.java)
+    val context = LocalContext.current
+    val clips = context.getSystemService(ClipboardManager::class.java)
     val scope = rememberCoroutineScope()
+    // Dictation stops with its chat or draft (another chat, an artifact's box) and when the box goes.
+    val dictation = remember(draftKey) { Dictation(context, scope) }
+    DisposableEffect(dictation) { onDispose { dictation.stop() } }
     val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
         if (uris.isNotEmpty()) store.importFiles(uris) { store.addDraftFiles(draftKey, it) }
     }
@@ -124,8 +131,9 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     } }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
-    // Offline computers still take text when the relay can hold it; files need the computer.
-    val canSend = !empty && !importing && !queuing && (online || state.actualConnection is LinkState.ComputerOffline && files.isEmpty())
+    // Offline computers still take text: the relay holds it for them, or with no relay this phone does. Files need the computer.
+    val canHold = state.actualConnection is LinkState.ComputerOffline || holdsOnPhone(state.computer.cloud, state.actualConnection)
+    val canSend = !empty && !importing && !queuing && (online || canHold && files.isEmpty())
     val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
@@ -148,10 +156,11 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     val startingCommand = typed == "/"
     LaunchedEffect(startingCommand) { if (startingCommand && online) store.refreshPlugins() }
     // The one way a group's box differs: @ asks one of its bots.
-    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed)?.let { query ->
+    val mentions = if (bot.kind != "group") emptyList() else mentionQuery(typed, members)?.let { query ->
         members.filter { query.isEmpty() || it.name.contains(query, true) }
     }.orEmpty()
     fun clear() = text.edit { replace(0, length, "") }
+    fun mention(member: Bot) = text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ")
     fun run(command: SlashCommand) {
         val skill = command.skill
         when {
@@ -160,16 +169,21 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
         }
     }
     fun send() {
+        // Words still on their way would land in the emptied box.
+        dictation.stop()
         val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed, members) else null
         if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // Over the box, past the + button.
+    QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
         CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))
     }
-    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-        MentionChips(mentions, state.bots) { member -> text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ") }
+    AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
+        exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
+        MentionList(mentions, state.bots, ::mention, Modifier.padding(horizontal = 16.dp))
     }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -210,11 +224,17 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
                     textStyle = Type.body.copy(color = Palette.text), cursorBrush = SolidColor(Palette.accent),
                     lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
                     decorator = { input -> Box { if (text.text.isEmpty()) Text(placeholder, style = Type.body, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis); input() } })
+                Box(Modifier.padding(bottom = 4.dp)) {
+                    DictationButton(dictation, state, store, 34.dp, { text.text.toString() }) { change ->
+                        text.setTextAndPlaceCursorAtEnd(change(text.text.toString()))
+                    }
+                }
                 TrailingButton(trailing, canSend, Modifier.padding(bottom = 4.dp)) {
                     when (trailing) {
                         Trailing.Interrupt -> onInterrupt?.invoke()
                         Trailing.Stop -> store.command("stop", body("botId" to bot.id))
-                        Trailing.Call -> onCall?.invoke()
+                        // The call takes the microphone.
+                        Trailing.Call -> { dictation.stop(); onCall?.invoke() }
                         Trailing.Send -> send()
                     }
                 }

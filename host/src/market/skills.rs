@@ -13,8 +13,8 @@ static SKILLS_LOCK: Mutex<()> = Mutex::new(());
 /// `Skill::source` of a skill written in Codync rather than downloaded.
 const CUSTOM: &str = "custom";
 
-/// `name` and `description` from a SKILL.md front matter.
-fn front_matter(md: &str) -> (Option<String>, Option<String>) {
+/// `name` and `description` from a SKILL.md front matter, including a folded `description: >` block.
+pub(crate) fn front_matter(md: &str) -> (Option<String>, Option<String>) {
     let mut name = None;
     let mut description = None;
     let mut lines = md.lines();
@@ -41,7 +41,7 @@ fn front_matter(md: &str) -> (Option<String>, Option<String>) {
 }
 
 /// `SKILL.md` without its front matter: what a skill tells the agent to do.
-fn body(md: &str) -> &str {
+pub(crate) fn body(md: &str) -> &str {
     let mut lines = md.split_inclusive('\n');
     if lines.next().map(str::trim) != Some("---") {
         return md.trim();

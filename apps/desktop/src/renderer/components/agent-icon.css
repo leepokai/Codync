@@ -1,0 +1,8 @@
+/* An agent's logo as a mask over its color (which can be a gradient, as agentTint's are). */
+.agent-icon {
+  display: inline-block;
+  flex: none;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}

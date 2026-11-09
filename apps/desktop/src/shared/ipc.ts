@@ -35,6 +35,8 @@ export interface HostSnapshot {
 export interface CallError {
   status: number
   message: string
+  /** An account computer that isn't connected to the relay (a cloud computer asleep, or one that's off). */
+  offline?: boolean
 }
 
 /** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
@@ -44,6 +46,21 @@ export interface TrayImage {
 }
 
 /** What the tray menu shows; the renderer owns the stores and sends this on every change. */
+/** The SF Symbols beside the tray menu's actions. */
+export const TRAY_SYMBOLS = [
+  'macwindow',
+  'qrcode',
+  'square.on.square',
+  'arrow.down.circle',
+  'arrow.clockwise.circle',
+  'list.bullet.rectangle',
+  'person.crop.circle.badge.checkmark',
+  'display',
+  'gearshape',
+  'power',
+] as const
+export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
+
 export interface TraySummary {
   status: string
   canPair: boolean
@@ -57,11 +74,15 @@ export interface TraySummary {
   } | null
   /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
   networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
+  /** The Network row's codync-network mark (SF Symbols has none), drawn on every platform; a template image on macOS. */
+  networkIcon: TrayImage | null
+  /** Windows and Linux: the actions' symbols drawn by the renderer (macOS menus draw SF Symbols); null on macOS. */
+  symbols: Partial<Record<TraySymbol, TrayImage>> | null
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
   /** The menu bar is a system menu, so the main process translates its labels from this. */
-  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es'
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
@@ -124,6 +145,9 @@ export type SpeechEvent =
   | { type: 'stopped' }
   | { type: 'error'; message: string }
 
+/** A dropped, pasted or picked file: its name and bytes. */
+export type PickedFile = { name: string; data: Uint8Array }
+
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
   appName: string
@@ -146,12 +170,20 @@ export interface CodyncBridge {
     /** SSE on a loopback host: each `data:` line, then `onEnd` (with an error when it failed). */
     stream(url: string, token: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
   }
+  /** An account computer over the relay's encrypted channel, with the same calls and streams as `host`. */
+  channel: {
+    call(computerId: string, signKey: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+    /** `path`: `/events?…` or `/term/{id}`, as on a loopback host. */
+    stream(computerId: string, signKey: string, path: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
+  }
   account: {
     state(): Promise<AccountState>
     onChange(cb: (s: AccountState) => void): () => void
     /** Why it ended without an account; null once signed in (or while another sign-in runs). */
     signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
+    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
   }
@@ -200,6 +232,8 @@ export interface CodyncBridge {
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
+    /** Asks a Codync Cloud computer for this device's access and waits for its answer (it approves by itself). */
+    requestAccess(computerId: string): Promise<{ ok: true; value: { status: string } } | { ok: false; error: { status: number; code: string; message: string | null } }>
   }
   updates: {
     state(): Promise<UpdateState>
@@ -223,14 +257,21 @@ export interface CodyncBridge {
     cancel(id: string): Promise<void>
   }
   app: {
+    /** Whether someone is looking at this window (shown, and the computer in use), then each change. */
+    attended(): Promise<boolean>
+    onAttended(cb: (attended: boolean) => void): () => void
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */
     reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
     /** Files picked in the system dialog: name and bytes. */
-    pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
-    readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    pickFiles(): Promise<PickedFile[]>
+    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickExport(): Promise<string | null>
+    readClipboardFiles(): Promise<PickedFile[]>
     setTraySummary(summary: TraySummary): void
+    /** Brings the chat window forward (a phone waits for this computer to let it in). */
+    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>

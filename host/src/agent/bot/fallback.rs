@@ -111,6 +111,14 @@ impl Actor {
         }
     }
 
+    /// A message that joined the running turn (`steer`) goes with it to the next agent.
+    pub(super) fn relay_joined(&mut self, entry_id: &str, text: &str) {
+        if let Some(attempt) = &mut self.relay.attempt {
+            attempt.entries.push(entry_id.to_owned());
+            attempt.text = format!("{}\n\n{text}", attempt.text);
+        }
+    }
+
     /// A turn (or its retry) starting on step `target`: the agents before it that rest because a bot found them
     /// signed out ask to be signed in here too.
     fn left_signed_out_before(&mut self, target: usize, now: i64) {
@@ -333,9 +341,10 @@ impl Actor {
     }
 
     /// The failure notice: with a failure that moves on, a bot without fallbacks offers to add one, and a bot whose
-    /// agents all failed this turn (`fall_back` ran out of them) says how each one is.
-    pub(super) fn failure_notice(&self, error: &anyhow::Error, text: &str) {
-        let mut data = json!({"text": text, "style": NoticeStyle::Error});
+    /// agents all failed this turn (`fall_back` ran out of them) says how each one is. It carries the turn's stop
+    /// `reason` (see `stop_notice`).
+    pub(super) fn failure_notice(&self, error: &anyhow::Error, text: &str, reason: &str) {
+        let mut data = json!({"text": text, "style": NoticeStyle::Error, "stopReason": reason});
         match fallback::reason::of(error) {
             Some(Reason::UsageLimit | Reason::OutOfCredits | Reason::RateLimited | Reason::Overloaded)
                 if self.base.fallbacks.is_empty() =>

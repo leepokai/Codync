@@ -1,6 +1,7 @@
 package com.codync.android
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -169,10 +172,12 @@ import kotlinx.coroutines.launch
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SourceLine()
                         Pins()
-                        LazyColumn(Modifier.weight(1f), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) { lists() }
+                        ScrollEdges(listState, Modifier.weight(1f)) {
+                            LazyColumn(Modifier.fillMaxSize(), listState, verticalArrangement = Arrangement.spacedBy(4.dp)) { lists() }
+                        }
                         Foot()
                     }
-                } else LazyColumn(Modifier.weight(1f), listState, contentPadding = PaddingValues(horizontal = 44.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                } else ScrollEdges(listState, Modifier.weight(1f)) { LazyColumn(Modifier.fillMaxSize(), listState, contentPadding = PaddingValues(horizontal = 44.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     item {
                         Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TabChoice(section, ExtensionSection.entries.map { it to it.title }, { section = it })
@@ -182,7 +187,7 @@ import kotlinx.coroutines.launch
                     if (pinned) item { Box(Modifier.padding(bottom = 12.dp)) { Pins() } }
                     lists()
                     item { Foot() }
-                }
+                } }
             }
         }
         // The sheet's own close, over the page.
@@ -199,12 +204,23 @@ import kotlinx.coroutines.launch
 }
 
 /** The computer it all lives on, credentials beside the title, and the way to what's installed. */
+/** A list whose rows blur and fade out under either edge while there is more past it (the desktop's Extensions lists). */
+@Composable private fun ScrollEdges(listState: LazyListState, modifier: Modifier, list: @Composable () -> Unit) {
+    GlassStage(modifier, chrome = {
+        val top by animateFloatAsState(if (listState.canScrollBackward) 1f else 0f, Motion.fade(), label = "Top edge")
+        val bottom by animateFloatAsState(if (listState.canScrollForward) 1f else 0f, Motion.fade(), label = "Bottom edge")
+        ScrollEdge(Edge.Top, 32.dp, Modifier.graphicsLayer { alpha = top })
+        ScrollEdge(Edge.Bottom, 32.dp, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom })
+    }) { list() }
+}
+
 @Composable private fun Header(state: AppState, modifier: Modifier, showInstalled: () -> Unit, showCredentials: () -> Unit) {
     val connectors = state.plugins?.connectors.orEmpty()
-    val count = connectors.size + state.plugins?.skills.orEmpty().size
+    val skills = state.plugins?.skills.orEmpty()
+    val count = connectors.size + skills.size
     Column(modifier.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ComputerBadge(state.hello?.text("device"), 32.dp, state.computers.firstOrNull()?.color)
+            ComputerBadge(state.hello?.text("device"), 32.dp, state.computer.color)
             Column(Modifier.weight(1f)) {
                 Text(tr("Extensions"), style = Type.title2.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(state.hostName, style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -221,6 +237,9 @@ import kotlinx.coroutines.launch
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy((-8).dp)) {
                 for (c in connectors.take(3)) ServiceLogo(null, c.name, c.registryName, 26.dp)
+                repeat(minOf(skills.size, maxOf(0, 3 - connectors.size))) {
+                    Box(Modifier.size(26.dp)) { SkillGlyph() }
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(tr("{count} installed").replace("{count}", "$count"), style = Type.body, color = Palette.secondary)

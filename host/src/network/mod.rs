@@ -268,6 +268,7 @@ pub async fn start(hub: &Arc<Hub>) {
         let id = saved.id.clone();
         if let Err(error) = boot(hub, &saved).await {
             tracing::warn!(network = id, error = format!("{error:#}"), "couldn't start a network");
+            crate::analytics::network_failed(hub, crate::analytics::NetworkStage::Start);
         }
     }
 }

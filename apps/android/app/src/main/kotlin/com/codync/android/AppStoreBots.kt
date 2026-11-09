@@ -2,14 +2,27 @@ package com.codync.android
 
 import com.codync.android.core.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 
 // Bots and groups, their routines, usage, and the host queries the screens make.
 
-fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onSuccess: () -> Unit = {}) = action(key) {
-    val active = ready()
-    val response = active.call(method, body)
+/** [onFailure] runs when the computer didn't take it (unreachable or refused, before the error shows) or it never went (still loading, or [key] under way). */
+fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), key: String = method, onFailure: () -> Unit = {},
+    onSuccess: () -> Unit = {}) {
+    val started = action(key) {
+        val response = try { ready().call(method, body) }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { onFailure(); throw error }
+        receiveReply(response)
+        onSuccess()
+    }
+    if (!started) onFailure()
+}
+
+/** Takes in the bot or entry a command's reply carries, then shows it. */
+private suspend fun AppStore.receiveReply(response: JsonElement) {
     response.jsonObject["bot"]?.let { value ->
         withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
     }
@@ -17,8 +30,36 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
         withContext(Dispatchers.IO) { requireNotNull(database).receive(listOf(Entry.decode(value.jsonObject))) }
     }
     refresh()
-    onSuccess()
 }
+
+/** Moves a bot into the roster section [section], or out of any (null). */
+fun AppStore.setSection(botId: String, section: String?) = moveSections(listOf(botId), section, "updateBot", sectionUpdate(botId, section))
+
+/**
+ * Moves every bot of the section [from] into [to] (merging into a section of that name), or out of any (null: removes the section);
+ * [onRefused] when the computer doesn't take it.
+ */
+fun AppStore.renameSection(from: String, to: String?, onRefused: () -> Unit) =
+    moveSections(state.value.bots.filter { it.section == from }.map(Bot::id), to, "renameSection", sectionRename(from, to), onRefused)
+
+/**
+ * Shows bots [ids] in [section] at once, then sends [method] (iOS `BotStore.show`): each move shows over the mirror until it's
+ * answered, so a refused one leaves the bot where the computer has it, or where a later move put it.
+ */
+private fun AppStore.moveSections(ids: List<String>, section: String?, method: String, body: JsonObject, onRefused: () -> Unit = {}) {
+    val moves = ids.map { SectionMove(it, section) }
+    pendingSectionMoves += moves
+    showSectionMoves()
+    // A key of its own: a later move of the same bot goes while this one is answered.
+    command(method, body, "section:" + java.util.UUID.randomUUID(), onFailure = {
+        pendingSectionMoves.removeAll(moves)
+        // The bots and the caller's folds go back in one update.
+        showSectionMoves()
+        onRefused()
+    }) { pendingSectionMoves.removeAll(moves) }
+}
+
+private fun AppStore.showSectionMoves() = mutableState.update { it.copy(bots = withMoves(mirrorBots, pendingSectionMoves)) }
 
 fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val active = ready()
@@ -26,12 +67,19 @@ fun AppStore.saveBot(draft: BotDraft, onSaved: () -> Unit) = action("editor") {
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
-/** A saved bot's settings from its details, saved as they're edited: the chat stays where it is. */
-fun AppStore.saveSettings(draft: BotDraft) = command("updateBot", draft.body(), "settings:" + draft.id)
+/** A saved bot's settings from its details, saved as they're edited; [done] gets the error, or null once it took. */
+fun AppStore.saveSettings(draft: BotDraft, done: (String?) -> Unit) = action("settings:" + draft.id) {
+    try {
+        receiveReply(ready().call("updateBot", draft.body()))
+        done(null)
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (error: Exception) { done(error.message ?: "Couldn't save the changes.") }
+}
 
 fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor") {
     val payload = draft.body(state.value.bots)
@@ -40,7 +88,8 @@ fun AppStore.saveGroup(draft: GroupDraft, onSaved: () -> Unit) = action("editor"
     val bot = HostClient.decode(result.jsonObject.getValue("bot").jsonObject)
     withContext(Dispatchers.IO) { requireNotNull(database).receive(bot) }
     refresh()
-    openBot(bot.id)
+    // A new bot or group opens its chat; an edit stays where it was made (iOS `BotEditorView.save`).
+    if (draft.id == null) openBot(bot.id)
     onSaved()
 }
 
@@ -66,6 +115,12 @@ fun AppStore.deleteBot(bot: Bot, onDeleted: () -> Unit) = action("delete:" + bot
     persistDrafts()
     onDeleted()
 }
+
+/** A refusal shows; the bot's next update shows the rest. */
+fun AppStore.devServerAction(action: DevServerAction, botId: String, id: String) = command(action.method, body("botId" to botId, "id" to id), action.method + ":" + id)
+
+suspend fun AppStore.devServerLogs(botId: String, id: String): String =
+    hostQuery("devServerLogs", body("botId" to botId, "id" to id)).jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
 
 /** A host call for the screens that keep their own state (memory): waits for the connection first. */
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
@@ -116,19 +171,39 @@ suspend fun AppStore.agentModels(backend: String): AgentModels {
 suspend fun AppStore.reloadUsage() { refreshUsage(true); actions["usage"]?.join() }
 fun AppStore.refreshUsage(force: Boolean = true) = action("usage") {
     val active = ready()
-    // The existing host can spend up to a minute reading an installed provider.
-    val result = active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000)
-    val response = result.jsonObject
+    // The host answers within a minute: an agent that reads slower lands through its events.
+    landUsage(active.call("usage", buildJsonObject { put("refresh", force) }, timeoutMillis = 75_000).jsonObject)
+}
+/** Whether this computer lists one agent's limits. */
+fun AppStore.setUsageShown(id: String, shown: Boolean) = action("usageShown.$id") {
+    landUsage(ready().call("setUsageShown", buildJsonObject { put("id", id); put("shown", shown) }).jsonObject)
+}
+/**
+ * The order this computer lists its agents in, back once the host has answered. A host older than this refuses the call:
+ * the error shows and the order stays. Drops while one is on its way replace each other, so only the last goes out next.
+ */
+suspend fun AppStore.setUsageOrder(ids: List<String>) {
+    usageOrders.trySend(ids)
+    action("usageOrder") {
+        usageOrders.sendEach { order -> landUsage(ready().call("setUsageOrder", buildJsonObject { putJsonArray("ids") { order.forEach(::add) } }).jsonObject) }
+    }
+    actions["usageOrder"]?.join()
+}
+/** Hands over what waits in this conflated channel, one at a time, until nothing does. */
+internal suspend fun <T : Any> Channel<T>.sendEach(deliver: suspend (T) -> Unit) {
+    while (true) deliver(tryReceive().getOrNull() ?: return)
+}
+private suspend fun AppStore.landUsage(response: JsonObject) {
     UsageReport.decode(response)
     withContext(Dispatchers.IO) { requireNotNull(database).apply(MirrorEvent.Usage(response)) }
     refresh()
-    widgetOwner?.let { owner ->
-        val current = state.value
-        withContext(Dispatchers.IO) { WidgetStore.publish(getApplication(), owner, current.computers.firstOrNull(),
-            current.bots, UsageReport.decode(current.usage), false, true) }
-        CodyncWidgets.update(getApplication())
-    }
+    usageRead(this)
 }
+suspend fun AppStore.selectWorkspace(path: String): String {
+    return hostQuery("selectWorkspace", body("path" to path)).jsonObject["path"]?.jsonPrimitive?.content
+        ?: error("Missing selected folder")
+}
+
 suspend fun AppStore.listDirs(path: String?): DirListing {
     val response = hostQuery("listDirs", body("path" to path))
     return WireJson.decodeFromJsonElement(response)
@@ -145,3 +220,15 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
     val response = hostQuery("routineWebhook", buildJsonObject { put("botId", botId); put("id", id); put("rotate", rotate) })
     return WireJson.decodeFromJsonElement(response)
 }
+
+/** Saves a dragged roster order (the host syncs it to every device). */
+internal fun AppStore.reorder(ids: List<String>) =
+    command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+
+/** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
+internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =
+    command("updateBot", buildJsonObject { put("id", bot.id); put("harnessMemory", on) }, "memory:" + bot.id)
+
+/** Whether the bot uses what all the user's bots share (iOS `setSharedMemory`). */
+internal fun AppStore.setSharedMemory(bot: Bot, shared: Boolean) =
+    command("updateBot", buildJsonObject { put("id", bot.id); put("sharedMemory", shared) }, "memory:" + bot.id)

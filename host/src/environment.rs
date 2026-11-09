@@ -77,6 +77,15 @@ impl Environment {
         }
     }
 
+    /// The public half of the cloud's device certificate key (b64url Ed25519), `DEVICE_CERT_KEY` in `cloud/`.
+    #[cfg_attr(test, expect(dead_code, reason = "tests sign certificates with a fixed key"))]
+    pub const fn device_cert_key(self) -> &'static str {
+        match self {
+            Self::Main => "jhV6Zn1dssGFaqaQKAKtthx_YGia3RZfF7nQ9iRGif4",
+            Self::Dev => "9ppxYC4IiF7d4FEKIxFr0AdUoI0IDOP5y6cZa-OC2YQ",
+        }
+    }
+
     pub const fn url_scheme(self) -> &'static str {
         match self {
             Self::Main => "codync",

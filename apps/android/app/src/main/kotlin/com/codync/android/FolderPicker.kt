@@ -1,95 +1,124 @@
 package com.codync.android
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.codync.android.core.DirListing
 import com.codync.android.design.*
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
-/** Browses folders on the computer, drilling down in place (iOS `FolderPicker`). */
-@Composable internal fun FolderPicker(start: String?, online: Boolean, load: suspend (String?) -> DirListing, pick: (String) -> Unit) {
-    var stack by remember { mutableStateOf(listOf(start)) }
-    var forward by remember { mutableStateOf(true) }
-    BackHandler(stack.size > 1) { forward = false; stack = stack.dropLast(1) }
+/** Host-specific recent selections and browsing; never mixes paths from different computers. */
+@Composable internal fun FolderPicker(start: String?, online: Boolean, computer: String,
+    load: suspend (String?) -> DirListing, select: suspend (String) -> String, pick: (String) -> Unit) {
+    val state = remember { WorkspacePickerState() }
+    val scope = rememberCoroutineScope()
+    val open = state::open
+    val recent = state::showRecent
+    val noRecent = state.mode == FolderMode.Recent && !state.busy && state.listing?.recent.orEmpty().isEmpty()
+    BackHandler(state.mode == FolderMode.Browse) { recent() }
+    LaunchedEffect(state.request, online) { state.load(online, load) }
     Column(Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (stack.size > 1) Box(Modifier.padding(start = 12.dp)) { BackButton { forward = false; stack = stack.dropLast(1) } }
-            Box(Modifier.weight(1f)) { ModalHeader(stack.last()?.trimEnd('/')?.substringAfterLast('/')?.ifEmpty { "/" } ?: "Folders") }
-        }
-        AnimatedContent(stack, transitionSpec = {
-            val sign = if (forward) 1 else -1
-            slideInHorizontally(Motion.layoutOffset) { it * sign } togetherWith slideOutHorizontally(Motion.layoutOffset) { -it * sign }
-        }, label = "Folder") { shown ->
-            FolderLevel(shown.last(), online, load, pick) { forward = true; stack = stack + it }
-        }
-    }
-}
-
-/** One folder's subfolders, filterable, with "Use" on top. */
-@Composable private fun FolderLevel(path: String?, online: Boolean, load: suspend (String?) -> DirListing, pick: (String) -> Unit, open: (String) -> Unit) {
-    var listing by remember { mutableStateOf<DirListing?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var filter by remember { mutableStateOf("") }
-    LaunchedEffect(path, online) {
-        if (!online) { error = "Connect to this computer to browse its folders."; return@LaunchedEffect }
-        try { listing = load(path); error = null }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "Couldn't open this folder." }
-    }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        SearchField(filter, { filter = it })
-        val current = listing
-        when {
-            current != null -> {
-                CardSection(footer = current.path) {
-                    row {
-                        Row(Modifier.fillMaxWidth().plainButton { pick(current.path) }, verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Symbol("checkmark.circle.fill", size = 20.dp, tint = Palette.accent)
-                            Text("Use “${current.path.trimEnd('/').substringAfterLast('/').ifEmpty { "/" }}”", style = Type.headline, color = Palette.accent)
+        ModalHeader("Choose workspace")
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(tr("Your bot will work in this folder."), style = Type.subheadline, color = Palette.secondary)
+            Row(Modifier.fillMaxWidth().background(Palette.surface, RoundedCornerShape(12.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Symbol("desktopcomputer", size = 18.dp)
+                Text(computer, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = Type.body)
+                Text(tr(if (online) "Connected" else "Disconnected"), style = Type.caption, color = Palette.secondary)
+            }
+            if (noRecent) FolderBrowse(!state.saving) { open(start) }
+            if (state.mode == FolderMode.Browse) Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton("Recent workspaces", "chevron.left", enabled = !state.saving) { recent() }
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    val ancestors = state.listing?.ancestors
+                    if (ancestors != null) ancestors.forEachIndexed { i, dir ->
+                        if (i > 0) Text("/", color = Palette.tertiary, style = Type.caption)
+                        Text(dir.name, Modifier.padding(6.dp).plainButton(enabled = !state.saving) { open(dir.path) }, style = Type.caption, maxLines = 1)
+                    } else Text(state.listing?.path ?: tr("Folders"), style = Type.caption, maxLines = 1)
+                }
+                IconButton("Parent folder", "arrow.up", enabled = state.listing?.parent != null && !state.busy && !state.saving) { state.listing?.parent?.let(open) }
+                IconButton("Enter folder path", "pencil", enabled = !state.saving) { state.pathInput = state.listing?.path.orEmpty(); state.pathOpen = !state.pathOpen }
+            }
+            AnimatedVisibility(state.pathOpen) {
+                Row(Modifier.background(Palette.surface, RoundedCornerShape(10.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PlainTextField(state.pathInput, { state.pathInput = it }, Modifier.weight(1f), prompt = "Paste an absolute path", singleLine = true, enabled = !state.saving)
+                    IconButton("Go to folder", "arrow.right", enabled = state.pathInput.isNotBlank() && !state.saving) { open(state.pathInput.trim()) }
+                }
+            }
+            if (!noRecent) {
+                SearchField(state.filter, { state.filter = it }, prompt = if (state.mode == FolderMode.Recent) "Search recent workspaces" else "Filter this folder")
+                Text(tr(if (state.mode == FolderMode.Recent) "Recent workspaces" else "Folders"), style = Type.caption, color = Palette.secondary)
+                when {
+                    state.busy -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Spinner(20.dp) }
+                    state.mode == FolderMode.Recent -> {
+                        val items = state.listing?.recent.orEmpty().filter { it.path.contains(state.filter, ignoreCase = true) }
+                        Column {
+                            items.forEach { item ->
+                                Row(Modifier.fillMaxWidth().background(if (state.selected == item.path) Palette.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(12.dp))
+                                    .plainButton(enabled = !state.saving) { state.selected = item.path }.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Symbol("folder", size = 18.dp, tint = Palette.secondary)
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(item.path.split('/', '\\').lastOrNull { it.isNotEmpty() } ?: item.path, style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(item.path, style = Type.caption, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    if (state.selected == item.path) Symbol("checkmark", size = 16.dp)
+                                }
+                            }
+                            if (items.isEmpty()) FolderEmpty(if (state.filter.isEmpty()) "Choose a folder to see it here next time." else "No matching folders.")
                         }
                     }
-                }
-                val dirs = current.dirs.filter { filter.isBlank() || it.name.contains(filter.trim(), ignoreCase = true) }
-                if (dirs.isNotEmpty()) CardSection {
-                    for (dir in dirs) row {
-                        Row(Modifier.fillMaxWidth().plainButton { open(dir.path) }, verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
-                                Symbol(if (dir.isGit) "arrow.triangle.branch" else "folder", size = 18.dp, tint = if (dir.isGit) Palette.accent else Palette.secondary)
+                    else -> {
+                        val dirs = state.listing?.dirs.orEmpty().filter { it.name.contains(state.filter, ignoreCase = true) }
+                        Column {
+                            dirs.forEach { dir ->
+                                Row(Modifier.fillMaxWidth().plainButton(enabled = !state.saving) { open(dir.path) }.padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Symbol(if (dir.isGit) "arrow.triangle.branch" else "folder", size = 18.dp, tint = Palette.secondary)
+                                    Text(dir.name, Modifier.weight(1f), style = Type.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Symbol("chevron.right", size = 12.dp, tint = Palette.tertiary)
+                                }
                             }
-                            Text(dir.name, Modifier.weight(1f), style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
+                            if (state.listing != null && dirs.isEmpty()) FolderEmpty(if (state.filter.isEmpty()) "No subfolders. You can use this folder." else "No matching folders.")
                         }
                     }
                 }
             }
-            error != null -> Text(tr(error.orEmpty()), style = Type.body, color = Palette.danger)
-            else -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Spinner(20.dp) }
+            state.error?.let { Text(tr(it), style = Type.subheadline, color = Palette.danger) }
+            if (state.mode == FolderMode.Recent && !noRecent) FolderBrowse(!state.saving) { open(start) }
+            Spacer(Modifier.height(12.dp))
         }
+        Row(Modifier.fillMaxWidth().background(Palette.surface).padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(tr(if (state.mode == FolderMode.Recent) "Selected folder" else "Current folder"), style = Type.caption, color = Palette.secondary)
+                Text(state.selected.ifEmpty { tr("Choose a folder") }, style = Type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            PrimaryButton(if (state.saving) "Saving…" else "Use this folder", enabled = state.selected.isNotEmpty() && online && !state.busy && !state.saving) {
+                scope.launch { state.confirm(load, select)?.let(pick) }
+            }
+        }
+    }
+}
+
+@Composable private fun FolderEmpty(message: String) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+        Text(tr(message), style = Type.subheadline, color = Palette.secondary)
+    }
+}
+
+@Composable private fun FolderBrowse(enabled: Boolean, onBrowse: () -> Unit) {
+    Row(Modifier.fillMaxWidth().plainButton(enabled = enabled, action = onBrowse).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Symbol("folder", size = 18.dp)
+        Text(tr("Browse other folders"), Modifier.weight(1f), style = Type.body)
+        Symbol("chevron.right", size = 12.dp)
     }
 }

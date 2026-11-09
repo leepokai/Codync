@@ -24,6 +24,15 @@ impl Routines {
             || s.runs.iter().any(|r| r.status.active())
     }
 
+    /// A cloud computer may sleep only when no run is queued or going, and it wakes for the next one.
+    pub fn sleep_window(&self) -> (bool, Option<i64>) {
+        let s = self.state.locked();
+        let active = s.runs.iter().any(|r| r.status.active());
+        let next =
+            s.routines.iter().filter(|r| !r.deleted && r.enabled).flat_map(|r| r.next_runs.iter().flatten()).min();
+        (active, next.copied())
+    }
+
     pub async fn stop(&self) {
         self.stopping.store(true, Ordering::Release);
         let task = self.scheduler.locked().take();
@@ -170,6 +179,16 @@ impl Routines {
         })?;
         self.release(bot);
         Ok(())
+    }
+
+    /// Rewrites routine `id`'s instruction as `to` while it still reads `from`, the host's own words.
+    pub fn reword(&self, store: &Store, id: &str, from: &str, to: &str) -> Result<()> {
+        self.change(store, |s| {
+            if let Some(r) = s.routines.iter_mut().find(|r| r.id == id && r.instruction == from) {
+                to.clone_into(&mut r.instruction);
+            }
+            Ok(())
+        })
     }
 
     /// Retry reporting independently of task execution: a successful run's reply is already in the chat and only

@@ -57,6 +57,16 @@ impl App {
         f.saving = true;
         f.error = None;
         match &f.submit {
+            Submit::Icon(target) => {
+                let mut body = json!({"target": target, "tinted": f.choice == 1});
+                if f.choice == 2 {
+                    body["remove"] = true.into();
+                } else if let Some(source) = values.get("source").and_then(Value::as_str) {
+                    let key = if source.starts_with("https://") { "url" } else { "localFile" };
+                    body[key] = source.into();
+                }
+                self.sheet("setIcon", body, Reply::FieldsSaved);
+            }
             Submit::Connection(_) => self.submit_connection(f, &values),
             Submit::AgentEnv(backend) => {
                 if values.is_empty() {
@@ -77,6 +87,15 @@ impl App {
             Submit::Import => self.sheet("importConnectors", json!({"config": values["config"]}), Reply::FieldsSaved),
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
+            }
+            Submit::Section(bot) => {
+                self.sheet("updateBot", json!({"id": bot, "section": values.get("name")}), Reply::FieldsSaved);
+            }
+            Submit::RenameSection(from) => {
+                self.section_order = self.shown_section_names();
+                let to = values.get("name").and_then(Value::as_str).map(str::to_owned);
+                let r = Reply::SectionRenamed { from: from.clone(), to: to.clone() };
+                self.sheet("renameSection", json!({"from": from, "to": to}), r);
             }
             Submit::RenameArtifact { bot, artifact } => {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
@@ -106,5 +125,28 @@ pub fn handoff_fields(entry: &Entry) -> Fields {
         error: None,
         saving: false,
         submit: Submit::Handoff(entry.id.clone()),
+    }
+}
+
+/// Asks for a section name: where a bot goes, or a section's new name. Empty is allowed.
+pub fn section_fields(title: &str, note: String, current: Option<&str>, submit: Submit) -> Fields {
+    Fields {
+        title: title.into(),
+        note,
+        choices: vec![],
+        choice: 0,
+        inputs: vec![Input {
+            name: "name".into(),
+            label: "Section".into(),
+            secret: false,
+            required: false,
+            multiline: false,
+            placeholder: "Section name".into(),
+            ed: Editor::with(current.unwrap_or_default()),
+        }],
+        cursor: 0,
+        error: None,
+        saving: false,
+        submit,
     }
 }

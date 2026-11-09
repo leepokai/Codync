@@ -16,7 +16,7 @@ struct OpenLiveModeIntent: AppIntent {
     }
 
     @MainActor func perform() async throws -> some IntentResult {
-        // No lead to call (an older computer, or one not synced yet): ask, as the action did before leads.
+        // No lead to call (an older computer, the user deleted it, or not synced yet): ask, as the action did before leads.
         guard let target = bot ?? ShortcutBotQuery.lead(in: SharedStore.activeContext) else {
             throw $bot.needsValueError("Which bot would you like to talk to?")
         }

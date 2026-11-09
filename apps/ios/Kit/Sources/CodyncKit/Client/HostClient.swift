@@ -1,6 +1,7 @@
 import Foundation
 
 public enum HostEvent: Sendable {
+    case icons([String: CustomIcon], revision: Int64)
     /// The stream's first event; `network` is nil from hosts before the network view.
     case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
     case bot(Bot)
@@ -14,6 +15,8 @@ public enum HostEvent: Sendable {
     case call(CallCue)
     /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
     case network(NetworkView)
+    /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
+    case name(String)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -32,14 +35,13 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model }
+    private enum CodingKeys: String, CodingKey { case model, mode }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
-        if draft.model == nil {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeNil(forKey: .model)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if draft.model == nil { try container.encodeNil(forKey: .model) }
+        if draft.mode == nil { try container.encodeNil(forKey: .mode) }
     }
 }
 
@@ -108,6 +110,9 @@ public struct HostClient: Sendable {
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
+        case "icons":
+            struct Icons: Decodable { var icons: [String: CustomIcon]; var iconsRevision: Int64? }
+            return (try? d.decode(Icons.self, from: data)).map { .icons($0.icons, revision: $0.iconsRevision ?? 0) }
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
@@ -132,6 +137,9 @@ public struct HostClient: Sendable {
         case "network":
             // Not worth a rewind: the next stream's hello carries the view again.
             return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
+        case "name":
+            struct NameWrap: Decodable { var name: String }
+            return (try? d.decode(NameWrap.self, from: data)).map { .name($0.name) }
         case "resync":
             return .resync
         default:
@@ -151,6 +159,14 @@ public extension HostClient {
     /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
     func installHostUpdate() async throws {
         let _: Empty = try await call("installHostUpdate")
+    }
+
+    /// The computer asks its user (up to 90 seconds), then signs `claim` for this phone's account
+    /// (`Hello.canJoinAccount`), as JSON to pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim, certificate: DeviceCertificate) async throws -> Data {
+        struct Body: Encodable { var claimId: String; var nonce: String; var certificate: DeviceCertificate }
+        let body = Body(claimId: claim.claimId, nonce: claim.nonce, certificate: certificate)
+        return try await transport.call("joinAccount", body: try Self.encoder.encode(body), timeout: 120)
     }
 
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
@@ -199,6 +215,12 @@ public extension HostClient {
         return res.bot
     }
 
+    /// Puts the bot in `section`, or takes it out of its own (nil, sent as null); nothing else changes.
+    func setSection(_ botId: String, to section: String?) async throws {
+        let body: [String: String?] = ["id": botId, "section": section]
+        let _: Empty = try await call("updateBot", body)
+    }
+
     func deleteBot(_ id: String) async throws {
         let _: Empty = try await call("deleteBot", ["botId": id])
     }
@@ -206,6 +228,13 @@ public extension HostClient {
     /// The roster as the user dragged it, top first.
     func reorderBots(_ ids: [String]) async throws {
         let _: Empty = try await call("reorderBots", ["ids": ids])
+    }
+
+    /// Moves every bot of the computer in section `from` to `to` (a name already in use merges the
+    /// two); nil removes the section, its bots staying without one.
+    func renameSection(from: String, to: String?) async throws {
+        let body: [String: String?] = ["from": from, "to": to]
+        let _: Empty = try await call("renameSection", body)
     }
 
     /// The chat read; a no-op when nothing there is unread.
@@ -265,6 +294,11 @@ public extension HostClient {
         return out
     }
 
+    /// The user makes this bot the lead, in place of the one before.
+    func setLead(_ botId: String) async throws {
+        let _: Empty = try await self.call("setLead", ["botId": botId])
+    }
+
     /// A call's audio is live: a lead opens it, and its opening is the call's.
     func callStarted(_ botId: String, call: String) async throws {
         let _: Empty = try await self.call("callStarted", ["botId": botId, "callId": call])
@@ -315,8 +349,25 @@ public extension HostClient {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
-    func newSession(_ botId: String) async throws {
-        let _: Empty = try await call("newSession", ["botId": botId])
+    /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
+    func steer(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    }
+
+    /// A queued message taken back: it never goes out (host 2.39.0).
+    func unqueue(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
+    }
+
+    func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {
+        let _: Empty = try await call(action.rawValue, ["botId": botId, "id": id])
+    }
+
+    /// The server's recent output.
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        struct Res: Decodable { var text: String }
+        let res: Res = try await call("devServerLogs", ["botId": botId, "id": id])
+        return res.text
     }
 
     func respondPermission(entryId: String, optionId: String?) async throws {
@@ -330,49 +381,35 @@ public extension HostClient {
         let _: Empty = try await call("registerDevice", Body(ticket: ticket, relay: relay, name: name, pushKey: pushKey, ctx: ctx))
     }
 
-    /// Stops this device's alerts; used when notifications are switched off in the app.
+    /// Stops this device's alerts: notifications switched off in the app, or the phone signed out.
     func unregisterDevice() async throws {
         let _: Empty = try await call("unregisterDevice")
+    }
+
+    /// Removes this device from the computer (deleting the account, starting over): its access and alerts go.
+    /// A computer older than `forgetDevice` only stops the alerts; the key is erased right after either way.
+    func forgetDevice() async throws {
+        do {
+            let _: Empty = try await call("forgetDevice")
+        } catch {
+            let _: Empty = try await call("unregisterDevice")
+        }
     }
 
     func registerActivity(botId: String, ticket: String) async throws {
         let _: Empty = try await call("registerActivity", ["botId": botId, "ticket": ticket])
     }
 
-    func usage(refresh: Bool = false) async throws -> Usage {
-        try await call("usage", ["refresh": refresh])
+    func selectWorkspace(_ path: String) async throws -> String {
+        struct Reply: Decodable { var path: String }
+        let reply: Reply = try await call("selectWorkspace", ["path": path])
+        return reply.path
     }
 
     func listDirs(_ path: String?) async throws -> DirListing {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))
     }
-
-    // MARK: remote screen
-
-    func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
-
-    func screenPrepare() async throws -> ScreenConnection {
-        let relay = if let channel = transport as? ChannelTransport { try await channel.screenRelayRequired() } else { false }
-        return try await call("screenPrepare", ["relay": relay])
-    }
-
-    /// Sends a WebRTC offer (with all its ICE candidates); returns the session id and the answer.
-    /// Passing `session` restarts ICE on an existing session.
-    func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {
-        struct Body: Encodable { var sdp: String; var session: String?; var display: UInt32? }
-        return try await call("screenOffer", Body(sdp: sdp, session: session, display: display), timeout: 30)
-    }
-
-    func screenClose(session: String) async throws {
-        let _: Empty = try await call("screenClose", ["session": session])
-    }
-
-    /// Takes control from bots (they can still look) or hands it back.
-    func screenTakeover(_ on: Bool) async throws -> ScreenState {
-        try await call("screenTakeover", ["on": on])
-    }
-
 }
 
 // MARK: - Agent setup
@@ -426,9 +463,4 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
-}
-
-public struct ScreenAnswer: Codable, Sendable {
-    public var session: String
-    public var sdp: String
 }

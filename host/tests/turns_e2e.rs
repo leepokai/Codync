@@ -1,5 +1,6 @@
 //! A real host driving scripted ACP agents: Stop on an agent that ignores it, room turns
-//! that a newer group message replaced, a reaction as the whole reply, and Fast mode across session resumes.
+//! that a newer group message replaced, a reaction as the whole reply, Fast mode across session resumes, and the
+//! agent mode a bot works in.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -7,7 +8,7 @@ mod common;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 struct Host {
@@ -90,17 +91,9 @@ impl Host {
     }
 }
 
-fn python_missing() -> bool {
-    let missing = Command::new(common::python()).arg("--version").output().is_err();
-    if missing {
-        eprintln!("skipping: Python not available");
-    }
-    missing
-}
-
 #[tokio::test]
 async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -116,7 +109,7 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
 
 #[tokio::test]
 async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -155,7 +148,7 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
 
 #[tokio::test]
 async fn a_reaction_can_be_the_whole_reply() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -220,7 +213,7 @@ const FAST_OFF: &str = r#""configId": "fast", "value": "off""#;
 
 #[tokio::test]
 async fn fast_mode_switches_live_sessions_without_a_restart() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -249,7 +242,7 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
 
 #[tokio::test]
 async fn an_agent_without_config_options_has_no_fast_mode() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -266,7 +259,7 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
 
 #[tokio::test]
 async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -297,8 +290,95 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
 }
 
 #[tokio::test]
+async fn a_new_bot_works_in_its_agents_auto_mode_until_the_user_picks_another() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let cwd = host.home.join("Moded");
+    std::fs::create_dir_all(&cwd).unwrap();
+    // The agent leaves the mode by itself during a turn, as Claude leaves Plan.
+    std::fs::write(cwd.join("planless"), "").unwrap();
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mode_agent.py");
+    let bot = json!({"name": "Moded", "backend": "custom", "command": common::python_agent(&agent), "cwd": cwd, "notify": false});
+    let created = host.call("createBot", bot).await["bot"].clone();
+    assert_eq!(
+        (&created["permission"], &created["mode"]),
+        (&json!("ask"), &json!("auto")),
+        "the default: Auto, then ask"
+    );
+    let bot = created["id"].as_str().unwrap().to_owned();
+    let log = || std::fs::read_to_string(cwd.join("calls.jsonl")).unwrap();
+
+    // `auto` is the agent's Auto mode under its own id.
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("mode agent ", "one")).await;
+    // Leaving it stands for the rest of the session: the mode is set once per session.
+    host.call("send", json!({"botId": bot, "text": "two"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("mode agent-full-access ", "two")).await;
+    assert_eq!(log().matches(r#""configId": "mode""#).count(), 1, "{}", log());
+
+    // The user's pick switches the live session before its next turn.
+    host.call("updateBot", json!({"id": bot, "mode": "read-only"})).await;
+    host.call("send", json!({"botId": bot, "text": "three"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("mode read-only ", "three")).await;
+    // Left again (planless); without a mode of its own, the bot goes back to the one its session opened in.
+    host.call("updateBot", json!({"id": bot, "permission": "ask", "mode": null})).await;
+    host.call("send", json!({"botId": bot, "text": "four"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("mode read-only ", "four")).await;
+    let log = log();
+    assert!(!log.contains("session/load"), "{log}");
+    assert_eq!(log.matches(r#""value": "read-only""#).count(), 2, "{log}");
+}
+
+#[tokio::test]
+async fn a_mode_switch_leaves_fast_mode_to_its_own() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Both", "tests/fixtures/fast_mode_agent.py").await;
+    let folder = host.home.join("Both");
+    std::fs::write(folder.join("moded"), "").unwrap();
+    host.call("updateBot", json!({"id": bot, "fastMode": true, "mode": "auto"})).await;
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("fast on", "one")).await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, &bot)["fastModeSupport"], "offered", "the mode switch's answer isn't a refusal");
+    let log = std::fs::read_to_string(folder.join("calls.jsonl")).unwrap();
+    assert!(log.contains(r#""configId": "mode", "value": "agent""#) && log.contains(FAST_ON), "{log}");
+}
+
+#[tokio::test]
+async fn a_bot_never_works_in_a_mode_its_agent_refused_to_switch_to() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Stuck", "tests/fixtures/mode_agent.py").await;
+    let folder = host.home.join("Stuck");
+    std::fs::write(folder.join("stuck"), "").unwrap();
+    host.call("updateBot", json!({"id": bot, "mode": "auto"})).await;
+
+    host.call("send", json!({"botId": bot, "text": "one"})).await;
+    let refused = |e: &Value| e["data"]["text"].as_str().is_some_and(|t| t.contains("mode switch refused"));
+    let notice = host.wait_for(&bot, Duration::from_mins(1), refused).await;
+    assert_eq!(notice["kind"], "notice", "{notice}");
+    // Once the agent switches, the next turn runs in the bot's mode.
+    std::fs::remove_file(folder.join("stuck")).unwrap();
+    host.call("send", json!({"botId": bot, "text": "two"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), speed_reply("mode agent ", "two")).await;
+    let entries = host.entries(&bot).await;
+    assert!(
+        !entries
+            .iter()
+            .any(|e| e["kind"] == "agent" && e["data"]["text"].as_str().is_some_and(|t| t.contains("· one")))
+    );
+}
+
+#[tokio::test]
 async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -317,7 +397,7 @@ async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
 
 #[tokio::test]
 async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let mut host = Host::start().await;

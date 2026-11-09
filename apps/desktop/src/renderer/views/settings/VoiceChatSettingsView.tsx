@@ -1,6 +1,6 @@
 import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { HostClient } from '../../client/host-client'
+import { LoopbackTransport, type HostClient } from '../../client/host-client'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -13,6 +13,7 @@ import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 
 
 /**
@@ -49,7 +50,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
               <ValueRow key="engine" label="Engine">
                 <ChoicePicker
                   selection={engine}
-                  options={[...(window.codync.speech.available || engine === 'device' ? [{ id: 'device', label: 'On device' }] : []), ...voice.VOICE_PROVIDERS.map((p) => ({ id: p, label: voice.voiceInfo[p].name }))]}
+                  options={voice.engineOptions()}
                   onChange={setEngine}
                 />
               </ValueRow>,
@@ -118,7 +119,8 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
   const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
-  const notConnected = { ok: false, text: `Not connected to ${store.hostName}.` }
+  const canEditKey = store.client?.transport instanceof LoopbackTransport
+  const notConnected = { ok: false, text: tr('Not connected to {name}.').replaceAll('{name}', () => store.hostName) }
 
   const loadModels = async (client: HostClient) => {
     let list: VoiceModels
@@ -191,12 +193,13 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
         if (dictationOnly) await voice.voiceModels(client, provider)
         else if (speechMode) await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK')
         else await voice.voiceSession(client, provider, model, chosenVoice)
-        setResult({ ok: true, text: 'Key works' })
+        setResult({ ok: true, text: tr('Key works') })
       } else {
+        if (!(client.transport instanceof LoopbackTransport)) return
         setSaved(voice.configured(await voice.setVoiceKey(client, provider, typed), provider))
         setKey('')
         setReplacing(false)
-        setResult({ ok: true, text: `Key works and is saved on ${store.hostName}` })
+        setResult({ ok: true, text: tr('Key works and is saved on {name}').replaceAll('{name}', () => store.hostName) })
       }
       await loadModels(client)
     })
@@ -204,6 +207,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
 
   const remove = () =>
     run(async (client) => {
+      if (!(client.transport instanceof LoopbackTransport)) return
       setSaved(voice.configured(await voice.setVoiceKey(client, provider, ''), provider))
       setResult(null)
     })
@@ -217,7 +221,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const dimmed = hasKey ? 'settings-dimmable' : 'settings-dimmable dimmed'
   let footer: string | null = null
   if (!hasKey) footer = `Add a key to choose from ${info.name}'s models.`
-  else if (dictationOnly) footer = 'For dictation in the message box.'
+  else if (dictationOnly) footer = tr('For dictation in the message box.')
   const keyArea = (
     <VStack key="key" gap={8}>
       {hasKey && !replacing ? (
@@ -226,18 +230,25 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
           <Icon name="key.fill" size={13} color="var(--secondary)" />
           <VStack grow className="settings-stack">
             <Text tone="text" truncate>{tr(`Key saved`)}</Text>
-            <Text size="caption" tone="tertiary" truncate>Stays on {store.hostName}</Text>
+            <Text size="caption" tone="tertiary" truncate>{tr('Stays on {name}').replaceAll('{name}', () => store.hostName)}</Text>
           </VStack>
           {busy ? (
             <Spinner />
           ) : (
             <>
               <IconButton title="Test key" icon="checkmark.seal" onClick={test} />
-              <IconButton title="Replace key" icon="pencil" onClick={() => { setReplacing(true); setResult(null) }} />
-              <IconButton title="Remove key" icon="trash" onClick={remove} />
+              {canEditKey ? <>
+                <IconButton title="Replace key" icon="pencil" onClick={() => { setReplacing(true); setResult(null) }} />
+                <IconButton title="Remove key" icon="trash" onClick={remove} />
+              </> : null}
             </>
           )}
         </div>
+      ) : !canEditKey ? (
+        <VStack gap={4} className="settings-row">
+          <Text>{fill(tr('No {name} key on {other}'), { name: info.name, other: store.hostName })}</Text>
+          <Text size="footnote" tone="secondary">{tr('Add it in Codync on {name}: Settings → Voice chat, or connect to that computer over SSH.').replaceAll('{name}', () => store.hostName)}</Text>
+        </VStack>
       ) : (
         // Paste a key; the computer checks it with the provider before keeping it.
         <VStack gap={10}>
@@ -263,7 +274,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
           </HStack>
           <Text as="div" size="footnote" className="settings-row">
             <button className="settings-link" onClick={() => window.codync.app.openExternal(info.keyPage)}>
-              Get a key from {info.name}
+              {tr('Get a key from {name}').replaceAll('{name}', () => info.name)}
             </button>
             <Spacer />
             {replacing ? (
@@ -290,13 +301,13 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
       {[
         keyArea,
         ...(transcribes
-          ? [<div key="stt" className={dimmed}><ValueRow label="Speech to text">{picker(transcribeModel, models.transcribe, pick('transcribe', setTranscribeModel))}</ValueRow></div>]
+          ? [<div key="stt" className={dimmed}><ValueRow label={tr('Speech to text')}>{picker(transcribeModel, models.transcribe, pick('transcribe', setTranscribeModel))}</ValueRow></div>]
           : []),
         ...(dictationOnly
           ? []
           : [
               speechMode
-                ? <div key="tts" className={dimmed}><ValueRow label="Text to speech">{picker(speechModel, models.speech, pick('speech', setSpeechModel))}</ValueRow></div>
+                ? <div key="tts" className={dimmed}><ValueRow label={tr('Text to speech')}>{picker(speechModel, models.speech, pick('speech', setSpeechModel))}</ValueRow></div>
                 : <div key="model" className={dimmed}><ValueRow label="Model">{picker(model, models.models, pick('realtime', setModel))}</ValueRow></div>,
               <div key="voice" className={dimmed}>
                 <ValueRow label="Voice">
@@ -311,7 +322,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
                 </ValueRow>
               </div>,
               <div key="minutes" className={dimmed}>
-                <ValueRow label="This month">≈ {voice.voiceMinutes(provider)} min</ValueRow>
+                <ValueRow label={tr('This month')}>{tr('≈ {minutes} min').replaceAll('{minutes}', () => String(voice.voiceMinutes(provider)))}</ValueRow>
               </div>,
             ]),
       ]}

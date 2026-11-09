@@ -3,7 +3,7 @@ import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
 import { Dialog } from './Overlay'
 
-const leadAgentDescription = 'Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. Its Check in routine runs twice a day by default; you can change or pause it in Routines.'
+const leadAgentDescription = 'Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.'
 
 /** The roster badge is decorative; the larger details badge opens the role explanation. */
 export function LeadAgentBadge({ size, interactive = false }: { size: number; interactive?: boolean }) {

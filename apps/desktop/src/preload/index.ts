@@ -11,6 +11,11 @@ ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
   streams.delete(id)
   s?.onEnd(error)
 })
+// A page that goes (a reload, its window closing) closes its streams: the next page numbers its own from 1 again.
+window.addEventListener('pagehide', () => {
+  for (const id of streams.keys()) ipcRenderer.send('host:stream:close', id)
+  streams.clear()
+})
 
 function listen<T>(channel: string, cb: (value: T) => void) {
   const handler = (_e: IpcRendererEvent, value: T) => cb(value)
@@ -19,16 +24,19 @@ function listen<T>(channel: string, cb: (value: T) => void) {
 }
 
 // A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at
-// its welcome flow (`reset`); see tools/dev.mjs.
+// its welcome flow (`reset`); see tools/dev.mjs. Skipping also answers the GitHub star ask, which a
+// fresh sandbox would otherwise show at once as an installation that never saw the setup page.
 const devOnboarding = ipcRenderer.sendSync('app:devOnboarding') as 'skip' | 'reset' | null
 if (devOnboarding) {
   try {
     if (devOnboarding === 'reset') {
       localStorage.removeItem('macAccountOnboardingCompleted')
       localStorage.removeItem('computerAccessSetup')
+      localStorage.removeItem('githubStarAsk')
     } else {
       if (localStorage.getItem('macAccountOnboardingCompleted') === null) localStorage.setItem('macAccountOnboardingCompleted', 'true')
       if (localStorage.getItem('computerAccessSetup') === null) localStorage.setItem('computerAccessSetup', '"later"')
+      if (localStorage.getItem('githubStarAsk') === null) localStorage.setItem('githubStarAsk', '{"kind":"done"}')
     }
   } catch (error) {
     // Storage unavailable: the window just shows onboarding, which only costs a dev run a click.
@@ -67,11 +75,30 @@ const bridge: CodyncBridge = {
       }
     },
   },
+  channel: {
+    async call(computerId, signKey, method, body, timeoutMs) {
+      const result = (await ipcRenderer.invoke('channel:call', computerId, signKey, method, body, timeoutMs)) as
+        | { ok: true; value: unknown }
+        | { ok: false; error: CallError }
+      if (!result.ok) throw result.error
+      return result.value
+    },
+    stream(computerId, signKey, path, onData, onEnd) {
+      const id = `s${++streamId}`
+      streams.set(id, { onData, onEnd })
+      ipcRenderer.send('channel:stream:open', id, computerId, signKey, path)
+      return () => {
+        if (!streams.delete(id)) return
+        ipcRenderer.send('channel:stream:close', id)
+      }
+    },
+  },
   account: {
     state: () => ipcRenderer.invoke('account:state'),
     onChange: (cb) => listen('account:change', cb),
     signIn: (provider) => ipcRenderer.invoke('account:signIn', provider),
     signOut: () => ipcRenderer.invoke('account:signOut'),
+    deleteAccount: () => ipcRenderer.invoke('account:delete'),
     token: () => ipcRenderer.invoke('account:token'),
   },
   speech: {
@@ -107,6 +134,7 @@ const bridge: CodyncBridge = {
   },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),
+    requestAccess: (computerId) => ipcRenderer.invoke('cloud:requestAccess', computerId),
   },
   updates: {
     state: () => ipcRenderer.invoke('updates:state'),
@@ -127,12 +155,16 @@ const bridge: CodyncBridge = {
     cancel: (id) => ipcRenderer.invoke('files:cancel', id),
   },
   app: {
+    attended: () => ipcRenderer.invoke('app:attended'),
+    onAttended: (cb) => listen('app:attended', cb),
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
+    pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),
     setTraySummary: (summary: TraySummary) => ipcRenderer.send('app:traySummary', summary),
+    showWindow: () => ipcRenderer.send('app:showWindow'),
     onCommand: (cb: (c: WindowCommand) => void) => listen('app:command', cb),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
     setLaunchAtLogin: (on) => ipcRenderer.invoke('app:setLaunchAtLogin', on),

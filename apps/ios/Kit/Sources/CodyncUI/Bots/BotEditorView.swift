@@ -73,6 +73,8 @@ struct BotSettingsForm: View {
     @State private var pickingFolder = false
     @State private var pickingAvatar = false
     @State private var viewingSkill: SkillRef?
+    /// Retry model list reloads Permissions too: its modes come from the same list.
+    @State private var modelReload = 0
 
     /// The saved bot, as the host has it now.
     private var bot: Bot? { draft.id.flatMap { model.bots[$0] } }
@@ -106,6 +108,7 @@ struct BotSettingsForm: View {
                 fallbackBanner
                 modelPicker
                 fallbackList
+                compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
             if let error {
@@ -130,7 +133,7 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.backend)?.line)
+                         restLine: bot?.rest(of: draft.backend)?.line, onReload: { modelReload += 1 })
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -141,6 +144,14 @@ struct BotSettingsForm: View {
     /// Only from a host that has fallbacks (its bots say).
     @ViewBuilder private var fallbackList: some View {
         if draft.fallbacks != nil { FallbackList(draft: $draft, bot: bot) }
+    }
+
+    /// Only where the host summarizes this bot's chat (its bot says).
+    @ViewBuilder private var compactionPicker: some View {
+        if bot?.compaction != nil, draft.compaction != nil {
+            CompactionPicker(selection: Binding(get: { draft.compaction ?? .off }, set: { draft.compaction = $0 }),
+                             range: bot?.compactionTokens)
+        }
     }
 
     @ViewBuilder private var sections: some View {
@@ -155,7 +166,7 @@ struct BotSettingsForm: View {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { pickingAvatar.toggle() }
                     } label: {
                         ValueRow("Avatar") {
-                            CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 28)
+                            CharacterAvatar(shape: draft.avatarShape, color: draft.avatarColor, size: 28, customIcon: draft.id.flatMap { model.icons["bot:\($0)"] })
                                 .padding(5)
                                 .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
@@ -164,7 +175,10 @@ struct BotSettingsForm: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Edit Bot avatar")
                     if pickingAvatar {
-                        AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                        VStack(spacing: 16) {
+                            AvatarPicker(shape: $draft.avatarShape, color: $draft.avatarColor)
+                            if let id = draft.id { CustomIconEditor(target: "bot:\(id)") }
+                        }
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -184,8 +198,9 @@ struct BotSettingsForm: View {
                     Text(model.hostName).lineLimit(1)
                 }
                 if part == .all {
-                        modelPicker
+                    modelPicker
                     fallbackList
+                    compactionPicker
                 }
                 ValueRow("Workspace", detail: draft.cwd.isEmpty
                          ? "This bot has its own space for files. It can work in other folders when you ask."
@@ -209,11 +224,7 @@ struct BotSettingsForm: View {
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
-                ValueRow("Permissions", detail: draft.permission == "auto"
-                         ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
-                         : "You'll get an approval card and a notification whenever the agent asks.") {
-                    ChoicePicker(selection: $draft.permission, options: [("ask", "Ask me"), ("auto", "Approve automatically")])
-                }
+                ApprovalPicker(draft: $draft, reload: modelReload)
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 

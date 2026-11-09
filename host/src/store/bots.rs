@@ -1,5 +1,6 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
+use super::entries::NOT_REMOVED;
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
@@ -26,6 +27,8 @@ fn parse_bot((id, cfg, rev, deleted, session_id, read_rev): RawBot) -> Option<Bo
 }
 
 const BOT_COLS: &str = "id, config, rev, deleted, session_id, read_rev";
+const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
+     ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
 impl Store {
     pub fn bots(&self) -> Result<Vec<BotRow>> {
@@ -44,12 +47,20 @@ impl Store {
     pub fn save_bot(&self, cfg: &BotConfig) -> Result<i64> {
         let c = self.db.locked();
         let rev = next_rev(&c)?;
-        c.execute(
-            "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
-             ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0",
-            params![cfg.id, rev, serde_json::to_string(cfg)?],
-        )?;
+        c.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
         Ok(rev)
+    }
+
+    /// Saves several bots in one transaction, each with its own rev: all of them or, on an error, none.
+    pub fn save_bots(&self, cfgs: &[BotConfig]) -> Result<()> {
+        let mut c = self.db.locked();
+        let tx = c.transaction()?;
+        for cfg in cfgs {
+            let rev = next_rev(&tx)?;
+            tx.execute(SAVE_BOT, params![cfg.id, rev, serde_json::to_string(cfg)?])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn touch_bot(&self, id: &str) -> Result<i64> {
@@ -78,6 +89,17 @@ impl Store {
         c.execute(
             "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
             [format!("context.{id}.*"), format!("context.epoch.{id}.*")],
+        )?;
+        // Its conversations as compaction tracks them, their summaries, its window and cache life
+        // (`agent::bot::compaction`).
+        c.execute(
+            "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2 OR k = ?3 OR k = ?4",
+            [
+                format!("compaction.{id}.*"),
+                format!("compaction.summary.{id}.*"),
+                format!("context.window.{id}"),
+                format!("cache.life.{id}"),
+            ],
         )?;
         // Its artifacts' details (`chat::artifacts`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("artifact.{id}.*")])?;
@@ -121,10 +143,12 @@ impl Store {
     pub fn last_message(&self, id: &str) -> Option<LastMessage> {
         let c = self.db.locked();
         let row = c.query_row(
-            "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
-               json_extract(data, '$.call') IS NULL
-             ORDER BY seq DESC LIMIT 1",
+            &format!(
+                "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND
+                   (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
+                   json_extract(data, '$.call') IS NULL AND {NOT_REMOVED}
+                 ORDER BY seq DESC LIMIT 1"
+            ),
             [id],
             |r| {
                 let kind: String = r.get(0)?;
@@ -163,6 +187,7 @@ mod tests {
             command: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
+            mode: None,
             model: None,
             model_options: std::collections::BTreeMap::new(),
             fast_mode: false,
@@ -172,6 +197,7 @@ mod tests {
             lead: false,
             position: 0,
             hidden: false,
+            section: None,
             notify: None,
             connectors: vec![],
             skills: vec![],
@@ -182,9 +208,16 @@ mod tests {
             created_by: None,
             shared_memory: None,
             harness_memory: false,
+            compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
             created_at: 0,
         };
+        // Several at once: each with its own rev, in order.
+        let other = BotConfig { id: "b0".into(), ..cfg.clone() };
+        let before = s.current_rev();
+        s.save_bots(&[other.clone(), other]).unwrap();
+        assert_eq!(s.current_rev(), before + 2);
+        assert_eq!(s.bot("b0").unwrap().map(|r| r.rev), Some(before + 2));
         s.save_bot(&cfg).unwrap();
         let u = s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"text": "hi"})).unwrap();
         let a = s
@@ -214,8 +247,15 @@ mod tests {
         s.kv_set("fallback.session.b1.codex", "s1").unwrap();
         s.kv_set("fallback.on.b1", "codex").unwrap();
         s.kv_set("fallback.on.b10", "codex").unwrap();
+        let compaction = ["compaction.b1.s1", "compaction.summary.b1.s1", "context.window.b1", "cache.life.b1"];
+        for k in compaction {
+            s.kv_set(k, "1").unwrap();
+        }
+        s.kv_set("context.window.b10", "1").unwrap();
         s.delete_bot("b1").unwrap();
         assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
+        assert!(compaction.iter().all(|k| s.kv_get(k).is_none()), "its compaction records");
+        assert!(s.kv_get("context.window.b10").is_some(), "another bot's window");
         assert!(s.kv_get("fallback.on.b10").is_some(), "another bot's");
         assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());
         s.save_bot(&cfg).unwrap();

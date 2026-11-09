@@ -10,25 +10,19 @@ use std::sync::Arc;
 /// The bot or group `b` asks for, with the defaults for what the caller left out.
 pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
     b["id"] = "".into();
-    // Only the host makes the lead (`chat::lead`).
+    // A lead is made by the host or picked by the user (`chat::lead`), never on creation.
     b["lead"] = false.into();
     // Connectors are on for a new bot unless the client picked them.
-    // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
     if b["connectors"].is_null() && b["kind"] != "group" {
-        b["connectors"] = match market::vault::unlock(hub.clone()).await {
-            Ok(()) => json!(market::connector_ids(&hub.store)?),
-            Err(e) => {
-                tracing::warn!(
-                    error = format!("{e:#}"),
-                    "credential store unavailable; new bot starts without connectors"
-                );
-                json!([])
-            }
-        };
+        b["connectors"] = default_connectors(hub).await?;
     }
     // Skills too: every installed one is on unless the client picked them, but a bot's skill stays with that bot.
     if b["skills"].is_null() && b["kind"] != "group" {
         b["skills"] = json!(market::Installed::Skills.ids(&hub.store)?);
+    }
+    // A bot works in its agent's Auto mode and asks about the rest, unless the client picked how it approves.
+    if b["permission"].is_null() && b["mode"].is_null() && b["kind"] != "group" {
+        b["mode"] = crate::agent::modes::AUTO.into();
     }
     // And the agent, when the client names none.
     if b["backend"].as_str().is_none_or(str::is_empty) && b["kind"] != "group" {
@@ -36,6 +30,22 @@ pub async fn with_defaults(hub: &Arc<Hub>, mut b: Value) -> Result<BotConfig> {
         b["backend"] = default_backend(&agents).into();
     }
     serde_json::from_value(b).context("invalid bot")
+}
+
+/// Every connector a new bot gets. With none saved the credential store stays shut, which is what keeps the
+/// lead bot of a new computer from opening it at start-up.
+async fn default_connectors(hub: &Arc<Hub>) -> Result<Value> {
+    if !market::connectors_saved(&hub.store)? {
+        return Ok(json!([]));
+    }
+    // Without a credential store (headless Linux) no connector can run, so the bot starts with none.
+    Ok(match market::vault::unlock(hub.clone()).await {
+        Ok(()) => json!(market::connector_ids(&hub.store)?),
+        Err(e) => {
+            tracing::warn!(error = format!("{e:#}"), "credential store unavailable; new bot starts without connectors");
+            json!([])
+        }
+    })
 }
 
 /// A new bot's agent (`agents` as `backends::list` gives them): Claude when it runs here, else the

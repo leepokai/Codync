@@ -665,7 +665,9 @@ struct BotLiveActivity: Widget {
     @ViewBuilder
     private func indicator(_ context: ActivityViewContext<BotActivityAttributes>, state: BotActivityPresentation, size: CGFloat) -> some View {
         ZStack {
-            if state.phase == .working {
+            if context.attributes.currentCustomIconName != nil {
+                BotActivityIndicator(state: state, size: size)
+            } else if state.phase == .working {
                 WorkingOrb(since: context.state.startedAt ?? .now, color: state.tint, size: size)
                     .transition(.opacity)
             } else {
@@ -680,7 +682,9 @@ struct BotLiveActivity: Widget {
     @ViewBuilder
     private func avatar(_ context: ActivityViewContext<BotActivityAttributes>, state: BotActivityPresentation, size: CGFloat) -> some View {
         ZStack {
-            if state.phase == .working {
+            if context.attributes.currentCustomIconName != nil {
+                CustomActivityIcon(attributes: context.attributes, size: size)
+            } else if state.phase == .working {
                 WorkingBotFace(shape: context.attributes.avatarShape, color: context.attributes.avatarColor,
                                since: context.state.startedAt ?? .now, size: size)
                     .transition(.opacity)

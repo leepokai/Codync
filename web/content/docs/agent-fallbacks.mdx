@@ -22,7 +22,7 @@ Each agent can appear once, and the bot's own agent isn't offered. The info butt
 
 In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
 
-Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it.
+Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A mode only the bot's own agent has (Claude Code's Plan, say) doesn't carry over: a fallback without it doesn't take the turn, and the chat says why.
 
 > **Note:** A fallback that runs on an API key instead of a subscription costs money with that provider.
 

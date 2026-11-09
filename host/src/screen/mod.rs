@@ -14,9 +14,11 @@
 //! - helper → host notifications
 //!   - `status` [`HelperStatus`]
 //!   - `session {session, state: "connected" | "closed"}`
+//!   - `candidate {session, candidate}`: ordered ICE candidates and completion for trickle sessions
 //! - host → helper requests
-//!   - `answer {session, sdp, display?, iceServers, maxBitrateBps, maxFramerate}` → `{sdp}`:
-//!     non-trickle ICE, with short-lived STUN/TURN credentials for remote connections.
+//!   - `answer {session, sdp, trickle?, display?, iceServers, maxBitrateBps, maxFramerate}` → `{sdp}`:
+//!     incremental ICE when negotiated by `screenPrepare`, complete SDP otherwise.
+//!   - `candidate {session, candidate}` → `{}`: apply one candidate after answering.
 //!   - `close {session}`, `closeAll {}`
 //!   - `focusedField {pid?}` → `{app, pid, url?, secure}`: the focused control of that app (the
 //!     frontmost one by default), for `type_login`
@@ -37,6 +39,7 @@ mod helper;
 mod helper_tools;
 mod permissions;
 mod protocol;
+mod signaling;
 mod viewer;
 
 pub use computer::{computer, computer_tools};
@@ -55,7 +58,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 /// How long after its last computer call a bot still counts as "using the computer".
 const AGENT_HOLD: Duration = Duration::from_secs(20);
@@ -79,11 +82,39 @@ impl Control {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum ViewerState {
+    Prepared,
+    Started,
+    #[cfg(any(unix, test))]
+    Connected,
+    Failed,
+}
+
 struct Viewer {
     owner: String,
     ice: IceConfig,
-    started: bool,
+    state: ViewerState,
     pending_until: i64,
+    link_id: u64,
+    signaling: Option<signaling::Signaling>,
+}
+
+impl Viewer {
+    fn started(&self) -> bool {
+        !matches!(self.state, ViewerState::Prepared | ViewerState::Failed)
+    }
+
+    #[cfg(any(unix, test))]
+    fn media_connected(&self) -> bool {
+        self.state == ViewerState::Connected
+    }
+
+    fn expired(&self, now: i64) -> bool {
+        self.state == ViewerState::Failed
+            || self.ice.expires_at <= now
+            || (!self.started() && self.pending_until <= now)
+    }
 }
 
 pub struct Screen {
@@ -97,10 +128,13 @@ pub struct Screen {
     driver: cua::Driver,
     #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     next_link: AtomicU64,
+    #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
+    helper_generation: watch::Sender<u64>,
 }
 
 impl Screen {
     pub fn new(enabled: Option<bool>, events: broadcast::Sender<Value>) -> Self {
+        let (helper_generation, _) = watch::channel(0);
         Self {
             enabled: Mutex::new(enabled),
             events,
@@ -110,6 +144,7 @@ impl Screen {
             sessions: Mutex::default(),
             driver: cua::Driver::default(),
             next_link: AtomicU64::new(1),
+            helper_generation,
         }
     }
 
@@ -132,7 +167,7 @@ impl Screen {
     pub fn state(&self) -> Value {
         let st = self.status.locked().clone();
         let connected = self.link.locked().is_some();
-        let viewers = self.sessions.locked().values().filter(|v| v.started).count();
+        let viewers = self.sessions.locked().values().filter(|v| v.started()).count();
         let c = self.control.locked();
         json!({
             "enabled": self.enabled(),
@@ -154,10 +189,16 @@ impl Screen {
     }
 
     fn link(&self) -> Result<Arc<Link>> {
+        self.with_link(|link| Ok(link.clone()))
+    }
+
+    fn with_link<T>(&self, action: impl FnOnce(&Arc<Link>) -> Result<T>) -> Result<T> {
         if !self.enabled() {
             bail!("Remote screen is turned off on this computer. Turn it on in Codync's menu there.");
         }
-        self.link.locked().clone().ok_or_else(|| anyhow!("The screen helper isn't running on this computer."))
+        let slot = self.link.locked();
+        let link = slot.as_ref().ok_or_else(|| anyhow!("The screen helper isn't running on this computer."))?;
+        action(link)
     }
 
     #[cfg(target_os = "linux")]

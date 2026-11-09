@@ -14,6 +14,19 @@ public struct CloudError: LocalizedError, Sendable, Equatable {
         self.message = message
     }
 
+    /// A refused response's body.
+    init(status: Int, body: Data) {
+        struct Failure: Decodable {
+            struct Detail: Decodable { var code: String; var message: String? }
+            var error: Detail
+        }
+        let e = try? JSONDecoder().decode(Failure.self, from: body)
+        self.init(status: status, code: e?.error.code ?? "http\(status)", message: e?.error.message)
+    }
+
+    /// The cloud's emergency floor turned this app version away.
+    var isAppUpdateRequired: Bool { status == 426 && code == "appUpdateRequired" }
+
     public var errorDescription: String? {
         switch code {
         case "requestExpired": "The request expired. Ask again."
@@ -35,6 +48,8 @@ public struct CloudClient: Sendable {
     let identity: DeviceIdentity?
     let token: @Sendable () async throws -> String
     let session: URLSession
+    /// Where an emergency floor's refusal goes.
+    let floor: AppFloor
     /// How often `requestAccess` polls for the host's nonce.
     var pollInterval: Duration = .seconds(2)
 
@@ -42,12 +57,18 @@ public struct CloudClient: Sendable {
         self.init(baseURL: baseURL, identity: identity, session: .shared, token: token)
     }
 
-    init(baseURL: URL, identity: DeviceIdentity?, session: URLSession, token: @escaping @Sendable () async throws -> String) {
+    init(baseURL: URL, identity: DeviceIdentity?, session: URLSession, floor: AppFloor = .shared,
+         token: @escaping @Sendable () async throws -> String) {
         self.baseURL = baseURL
         self.identity = identity
         self.session = session
+        self.floor = floor
         self.token = token
     }
+
+    /// `Codync-App`, sent with every request to the Worker (the relay upgrade too): the cloud records this
+    /// app's version and updates a cloud computer to its `minHost` before it talks to it.
+    static let appHeader = "ios/\(AppVersion.current); minHost=\(VersionMismatch.minHost)"
 
     // MARK: account and devices
 
@@ -58,10 +79,43 @@ public struct CloudClient: Sendable {
         let _: Res = try await request("POST", "v1/devices", body: ["name": name, "platform": platform], signed: true)
     }
 
+    /// What pairing shows a computer to prove this device's account. 403: the key isn't registered (or was revoked).
+    public func deviceCertificate() async throws -> DeviceCertificate {
+        struct Res: Decodable { var certificate: DeviceCertificate }
+        let res: Res = try await request("POST", "v1/devices/certificate", signed: true)
+        return res.certificate
+    }
+
     public func devices() async throws -> [CloudDevice] {
         struct Res: Decodable { var devices: [CloudDevice] }
         let res: Res = try await request("GET", "v1/devices")
         return res.devices
+    }
+
+    /// Signing out: this device keeps its key and access, but the account's computers stop its alerts until it
+    /// registers again (signing back in).
+    public func signOutThisDevice() async throws {
+        guard identity != nil else { return }
+        try await send("POST", "v1/devices/sign-out", signed: true)
+    }
+
+    /// Start over: this device leaves the account, and with it every grant and pending request.
+    public func revokeThisDevice() async throws {
+        guard let device = try await thisDevice() else { return }
+        try await send("DELETE", "v1/devices/\(device.deviceId)")
+    }
+
+    /// This device in the account; nil without a device key or when it was never registered.
+    private func thisDevice() async throws -> CloudDevice? {
+        guard let identity else { return nil }
+        return try await devices().first(where: { $0.deviceKey == identity.publicKey })
+    }
+
+    /// This client on the session token it would send now, for a call that goes out after signing out: a
+    /// session token stays valid until it expires (about a minute). Nil when there's no token to take.
+    public func pinningToken() async -> CloudClient? {
+        guard let token = try? await token() else { return nil }
+        return CloudClient(baseURL: baseURL, identity: identity, session: session) { token }
     }
 
     // MARK: computers
@@ -85,8 +139,8 @@ public struct CloudClient: Sendable {
 
     /// Revokes only this phone's grants, so it can request a fresh approval without removing the computer.
     public func revokeDeviceAccess(_ id: ComputerID) async throws {
-        guard let identity else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
-        guard let device = try await devices().first(where: { $0.deviceKey == identity.publicKey }) else {
+        guard identity != nil else { throw CloudError(status: 0, code: "noDeviceKey", message: "Sign in again on this device.") }
+        guard let device = try await thisDevice() else {
             throw CloudError(status: 404, code: "notFound", message: "This phone isn't registered in your account. Sign in again.")
         }
         for grant in try await grants(id) where grant.deviceId == device.deviceId {
@@ -149,15 +203,72 @@ public struct CloudClient: Sendable {
         try await send("DELETE", "v1/access-requests/\(requestId)")
     }
 
-    // MARK: claims (§4.2 A)
+    // MARK: Codync Cloud
+
+    /// The account's cloud computers, whether this account may create them and how many, and the provider keys it gave.
+    public func cloudStatus() async throws -> CloudStatus {
+        try await request("GET", "v1/cloud-computers")
+    }
+
+    /// Gives Codync Cloud the key to the user's own account with `provider`. The cloud checks it there and keeps it
+    /// sealed; a refusal (`422 keyRefused`) says what to fix.
+    public func saveCloudKey(_ key: String, provider: String) async throws -> CloudCredential {
+        struct Res: Decodable { var credential: CloudCredential }
+        let res: Res = try await request("PUT", "v1/cloud-credentials/\(provider)", body: ["key": key])
+        return res.credential
+    }
+
+    /// Forgets the key (`409 conflict` while a cloud computer runs on that provider).
+    public func deleteCloudKey(provider: String) async throws {
+        try await send("DELETE", "v1/cloud-credentials/\(provider)")
+    }
+
+    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` off the allowlist, `409` at the
+    /// account's limit or without that provider's key).
+    public func createCloudMachine(provider: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider, "name": name])
+        return res.cloudComputer
+    }
+
+    /// Gives it a new name; its computer in the account, and its host, take it too.
+    public func renameCloudMachine(_ id: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("PATCH", "v1/cloud-computers/\(id)", body: ["name": name])
+        return res.cloudComputer
+    }
+
+    /// Deletes the machine, its snapshots and backup, and takes its computer out of the account.
+    public func deleteCloudMachine(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)")
+    }
+
+    /// Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps).
+    public func deleteCloudSnapshots(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)/snapshots")
+    }
+
+    public func createClaim() async throws -> CloudClaim {
+        try await request("POST", "v1/claims")
+    }
+
+    /// `claim`: the JSON object the computer signed while pairing, sent as it came.
+    public func completeClaim(claimId: String, claim: Data) async throws {
+        let _: Ignored = try await request("POST", "v1/claims/\(claimId)/complete", json: claim, signed: false)
+    }
+
+    // MARK: pairing codes
+
+    /// The pairing link a short code (`Pairing.shortCode`) stands for. The cloud hands it out once.
+    public func pairingLink(code: String) async throws -> String {
+        struct Res: Decodable { var link: String }
+        let res: Res = try await request("GET", "v1/pairing-codes/\(code)")
+        return res.link
+    }
 
     // MARK: plumbing
 
     private struct NoBody: Encodable {}
-    private struct Failure: Decodable {
-        struct Detail: Decodable { var code: String; var message: String? }
-        var error: Detail
-    }
     private struct Ignored: Decodable {}
 
     private func send(_ method: String, _ path: String, body: (some Encodable)? = NoBody?.none, signed: Bool = false) async throws {
@@ -165,15 +276,20 @@ public struct CloudClient: Sendable {
     }
 
     func request<T: Decodable>(_ method: String, _ path: String, body: (some Encodable)? = NoBody?.none, signed: Bool = false) async throws -> T {
+        try await request(method, path, json: try body.map { try JSONEncoder().encode($0) }, signed: signed)
+    }
+
+    private func request<T: Decodable>(_ method: String, _ path: String, json: Data?, signed: Bool) async throws -> T {
         let url = baseURL.appending(path: path)
         var req = URLRequest(url: url, timeoutInterval: 20)
         req.httpMethod = method
-        let data = try body.map { try JSONEncoder().encode($0) } ?? Data()
-        if body != nil {
+        let data = json ?? Data()
+        if json != nil {
             req.httpBody = data
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
+        req.setValue(Self.appHeader, forHTTPHeaderField: "Codync-App")
         if signed, let identity {
             let header = try identity.signatureHeader(method: method, authority: RelayCrypto.authority(of: url),
                                                       pathAndQuery: RelayCrypto.pathAndQuery(of: url), body: data)
@@ -182,8 +298,9 @@ public struct CloudClient: Sendable {
         let (bytes, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            let e = try? JSONDecoder().decode(Failure.self, from: bytes)
-            throw CloudError(status: status, code: e?.error.code ?? "http\(status)", message: e?.error.message)
+            let error = CloudError(status: status, body: bytes)
+            if error.isAppUpdateRequired { await floor.refuse(error.message) }
+            throw error
         }
         return try JSONDecoder().decode(T.self, from: bytes.isEmpty ? Data("{}".utf8) : bytes)
     }

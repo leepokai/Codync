@@ -21,6 +21,8 @@ data class Bot(
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",
+    /** The agent mode it works in ([AgentMode]); null for the agent's default. */
+    val mode: String? = null,
     val model: String? = null,
     /** The model's own settings (effort, fast…): agent option id → value. */
     val modelOptions: Map<String, String> = emptyMap(),
@@ -41,6 +43,18 @@ data class Bot(
     val reachableByAssistants: Boolean? = null,
     /** The bot that created this one; null when the user did. */
     val createdBy: String? = null,
+    /** Uses the memory all the user's bots share ("About you"); null from an older host. */
+    val sharedMemory: Boolean? = null,
+    /** Keeps the harness's own memory (Claude Code's…) on beside Codync's; null where it has no switch. */
+    val harnessMemory: Boolean? = null,
+    /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
+    val harnessMemoryShared: Boolean? = null,
+    /** When Codync summarizes its chat; null where it doesn't (an agent it can't ask to, a group, an older host). */
+    val compaction: Compaction? = null,
+    /** The sizes its agent's window allows; null until the agent has told its window. */
+    val compactionTokens: CompactionTokens? = null,
+    /** Moves whenever memory changes, so an open memory screen fetches it again. */
+    val memoryRev: Long? = null,
     val autoName: Boolean = false,
     val createdAt: Long = 0,
     val startedAt: Long? = null,
@@ -51,8 +65,10 @@ data class Bot(
     val activity: String = "",
     val backend: String = "",
     val pinned: Boolean = false,
-    /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
+    /** The computer's lead bot: the host makes the first, and the user may pick another (`setLead`) or delete it. Placed in the roster like any bot, never hidden. */
     val lead: Boolean = false,
+    /** The roster section the user put it in; null for none (or a host without sections). Kept while pinned or hidden. */
+    val section: String? = null,
     /** Where the user dragged it in the roster, synced by the host to every device. */
     val position: Int = 0,
     val hidden: Boolean = false,
@@ -67,9 +83,12 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** What it keeps running on the computer. Empty from an older host, and for a group. */
+    val devServers: List<DevServer> = emptyList(),
+    val customIcon: CustomIcon? = null,
 ) {
-    /** Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band. */
-    val band: Int get() = when { lead -> 0; pinned -> 1; else -> 2 }
+    /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
+    val band: Int get() = if (pinned) 0 else 1
 
     /** [agent]'s rest, unless it's over. */
     fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
@@ -84,8 +103,10 @@ data class Bot(
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
 
+    /** Working anywhere: its own chat, a room or a routine. */
+    val isWorking: Boolean get() = status in listOf("working", "needsInput")
     /** Working right now in this chat (its own, or a group it's in). */
-    fun isWorking(chat: String): Boolean = status in listOf("working", "needsInput") && (workingChat ?: id) == chat
+    fun isWorking(chat: String): Boolean = isWorking && (workingChat ?: id) == chat
 }
 
 object HostClient {
@@ -100,7 +121,7 @@ object HostClient {
         val updated = computer.copy(
             name = hello.text("name")?.takeIf(String::isNotBlank) ?: computer.name,
             boxKey = hello.text("boxKey") ?: computer.boxKey,
-            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.filter(::isDirectUrl) ?: computer.urls,
+            urls = hello["urls"]?.jsonArray?.map { it.jsonPrimitive.content }?.let(::directUrls) ?: computer.urls,
             cloud = hello.text("cloud"),
         )
         updated.validate()

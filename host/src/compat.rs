@@ -8,7 +8,7 @@ use serde_json::Value;
 /// Raise it only when this host stops sending or accepting something older clients depend on;
 /// the release gate (tools/release-gate.py) then offers the release once the App Store has that
 /// iPhone app.
-pub const MIN_APP: &str = "2.21.0";
+pub const MIN_APP: &str = "2.36.0";
 
 /// The oldest host the terminal client works with.
 pub const MIN_HOST: &str = "2.20.1";
@@ -40,6 +40,11 @@ fn parse(version: &str) -> Option<(u64, u64, u64)> {
 /// Whether `version` is below `minimum`; unreadable versions never are.
 fn below(version: &str, minimum: &str) -> bool {
     matches!((parse(version), parse(minimum)), (Some(v), Some(m)) if v < m)
+}
+
+/// Whether `version` is `minimum` or newer; unreadable versions count as newer.
+pub fn at_least(version: &str, minimum: &str) -> bool {
+    !below(version, minimum)
 }
 
 /// Checks a client of version `app` with floor `min_host` against a host's `hello`.

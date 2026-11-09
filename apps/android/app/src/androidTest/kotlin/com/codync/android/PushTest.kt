@@ -71,7 +71,7 @@ class PushTest {
     @Test fun delegatedTasksRejectStaleWrongGenerationAndPostCompletionUpdates() {
         val local = LocalStore(context, "task-test-${UUID.randomUUID()}")
         try {
-            val feed = TaskFeed(local.directory)
+            val feed = TaskFeed(local.directory, "computer")
             val watch = feed.start(Bot("bot", "Reviewer", rev = 1))
             val now = System.currentTimeMillis() / 1000
             val data = mapOf("taskId" to watch.taskId, "status" to "needsInput", "timestamp" to now.toString(), "staleDate" to (now + 900).toString(), "event" to "update")
@@ -92,7 +92,7 @@ class PushTest {
     @Test fun aTaskAlreadyRunningWhenItsSendIsAcknowledgedCanFinishLocally() {
         val local = LocalStore(context, "task-running-test-${UUID.randomUUID()}")
         try {
-            val feed = TaskFeed(local.directory)
+            val feed = TaskFeed(local.directory, "computer")
             val started = feed.start(Bot("bot", "Reviewer", status = "needsInput", rev = 5))
             assertTrue(started.seenRunning)
             assertEquals("needsInput", started.status)
@@ -103,7 +103,7 @@ class PushTest {
     @Test fun delegatedTaskMarkersAreBoundedAndAnIdleAcknowledgementCannotFinishThem() {
         val local = LocalStore(context, "task-limit-test-${UUID.randomUUID()}")
         try {
-            val feed = TaskFeed(local.directory)
+            val feed = TaskFeed(local.directory, "computer")
             repeat(24) { feed.start(Bot("bot-$it", "Bot", rev = 1)) }
             assertEquals(16, feed.all().size)
             assertNull(feed.local(Bot("bot-23", "Bot", status = "idle", rev = 2)))

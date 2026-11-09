@@ -39,7 +39,7 @@ internal class VoiceBinding(val id: String, val botId: String, val generation: I
 
 private val voiceHttp by lazy { OkHttpClient() }
 
-internal fun AppStore.voiceChoices(): VoiceChoices = VoicePreferences.choices(getApplication())
+internal fun AppStore.voiceChoices(): VoiceChoices = VoicePreferences.choices(application)
 
 fun AppStore.startVoice(botId: String, expectedGeneration: Int = state.value.generation) {
     if (state.value.generation != expectedGeneration || state.value.loading || state.value.voice != null) return
@@ -48,9 +48,9 @@ fun AppStore.startVoice(botId: String, expectedGeneration: Int = state.value.gen
     }
     val id = UUID.randomUUID().toString()
     voiceGeneration = expectedGeneration
-    val starting = VoiceState(settings = VoicePreferences.load(getApplication()), provider = voiceChoices().provider)
+    val starting = VoiceState(settings = VoicePreferences.load(application), provider = voiceChoices().provider)
     mutableState.update { it.copy(voice = VoiceCallViewState(id, botId, starting)) }
-    try { VoiceService.start(getApplication(), this, id, botId); PushDelivery.foreground = true }
+    try { VoiceService.start(application, this, id, botId); PushDelivery.foreground = true }
     catch (_: Exception) { finishVoice(id, "Couldn't start voice chat. Allow microphone access and wait for any previous call to finish.") }
 }
 
@@ -70,7 +70,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
     val choices = voiceChoices()
     // Picks up the computer's newest models for the next call; this one starts right away.
     if (provider != null) contextScope.launch { try { choices.remember(voiceStatus()) } catch (_: Exception) { } }
-    val settings = VoicePreferences.load(getApplication())
+    val settings = VoicePreferences.load(application)
     call.choice = choices.engineChoice(provider, callLanguage())
     // A muted call stays muted on the engine that takes over (what the call last showed).
     val muted = call.state.value.muted
@@ -83,14 +83,14 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
         else -> VoiceEngineKind.Gemini
     }
     val engine: VoiceEngine = if (provider == null) {
-        val audio = LocalVoiceAudio(getApplication(), VoicePreferences.language(getApplication()))
+        val audio = LocalVoiceAudio(application, VoicePreferences.language(application))
         call.recording = { audio.recordingSessionId }
         startCallOnHost(call, "device", null)
         VoiceSession(contextScope, audio, settings) { sendFromCall(call, it) }
     } else {
         val voice = choices.voice(provider)
         val model = choices.model(provider, VoiceChoices.Model.Realtime)
-        fun mic() = AndroidMic(getApplication()).also { mic -> call.recording = { mic.recordingSessionId } }
+        fun mic() = AndroidMic(application).also { mic -> call.recording = { mic.recordingSessionId } }
         when {
             choices.speechMode(provider) -> {
                 startCallOnHost(call, "speech", provider)
@@ -103,7 +103,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
             }
             // WebRTC records the microphone itself.
             provider == VoiceProvider.OpenAI -> OpenAIRealtimeEngine(contextScope, settings, model, voice,
-                choices.model(provider, VoiceChoices.Model.Transcribe), link, WebRtcPeer(getApplication())) { secret, offer ->
+                choices.model(provider, VoiceChoices.Model.Transcribe), link, WebRtcPeer(application)) { secret, offer ->
                 OpenAIRealtimeEngine.answer(voiceHttp, secret, offer)
             }
             else -> GeminiLiveEngine(contextScope, settings, model, voice, link, mic(), AndroidPcmPlayer(), voiceHttp)
@@ -202,7 +202,7 @@ internal fun AppStore.hearCalls(events: List<MirrorEvent>) {
 
 fun AppStore.endVoice(error: String? = null) {
     val id = state.value.voice?.id ?: return
-    finishVoice(id, error); VoiceService.stop(getApplication(), id)
+    finishVoice(id, error); VoiceService.stop(application, id)
 }
 
 internal fun AppStore.finishVoice(id: String, error: String? = null) {
@@ -231,7 +231,7 @@ internal suspend fun AppStore.retireVoice() {
     val call = voiceBinding; voiceBinding = null; voiceGeneration = null
     val callId = state.value.voice?.id
     mutableState.update { it.copy(voice = null) }
-    if (callId != null) VoiceService.stop(getApplication(), callId)
+    if (callId != null) VoiceService.stop(application, callId)
     call?.quality?.report()
     call?.engine?.end(); call?.engine?.awaitEnd()
 }
@@ -242,24 +242,24 @@ fun AppStore.resumeVoice() { voiceBinding?.engine?.focus(true) }
 internal fun AppStore.focusVoice(active: Boolean) { voiceBinding?.engine?.focus(active) }
 internal fun AppStore.voiceRecordingSession(): Int? = voiceBinding?.recording?.invoke()
 /** The language on-device calls hear; empty follows the phone. */
-internal fun AppStore.callLanguage(): String = VoicePreferences.language(getApplication())
+internal fun AppStore.callLanguage(): String = VoicePreferences.language(application)
 
 /** Picks it, and has Android fetch it when it hears it on device but hasn't downloaded it yet. */
 internal fun AppStore.callLanguage(tag: String) {
-    VoicePreferences.language(getApplication(), tag)
+    VoicePreferences.language(application, tag)
     if (tag.isNotEmpty()) contextScope.launch {
-        val support = PlatformSpeech.support(getApplication())
-        if (tag !in support.installed && tag in support.downloadable) PlatformSpeech.download(getApplication(), tag)
+        val support = PlatformSpeech.support(application)
+        if (tag !in support.installed && tag in support.downloadable) PlatformSpeech.download(application, tag)
     }
 }
 
 /** What on-device calls can hear on this phone: Android's on-device languages, and English always. */
 internal suspend fun AppStore.callLanguages(): List<String> {
-    val onDevice = PlatformSpeech.support(getApplication()).onDevice
+    val onDevice = PlatformSpeech.support(application).onDevice
     return if (onDevice.any { VoiceLanguages.base(java.util.Locale.forLanguageTag(it)) == "en" }) onDevice else onDevice + VoiceLanguages.ENGLISH
 }
 
-fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(getApplication(), settings); voiceBinding?.engine?.settings(settings) }
+fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(application, settings); voiceBinding?.engine?.settings(settings) }
 
 // The computer's voice methods: it holds the provider keys and does the provider calls that need them.
 

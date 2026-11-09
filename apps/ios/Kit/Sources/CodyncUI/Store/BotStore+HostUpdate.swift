@@ -35,9 +35,10 @@ public struct HostVersionLine: Equatable, Sendable {
     /// Nil when there's nothing to update, or this phone can't update it.
     public var accessory: Accessory?
 
-    /// `latest` is the latest release the computer found (nil while it doesn't know: then no verdict).
+    /// `latest` is the latest release the computer found (nil while it doesn't know: then no verdict);
+    /// `cloud`: a Codync Cloud computer.
     public static func make(version: String, latest: String?, mismatch: VersionMismatch?, offer: HostUpdateOffer,
-                            host: String, os: String?) -> HostVersionLine {
+                            host: String, os: String?, cloud: Bool = false) -> HostVersionLine {
         let minimum: String? = if case let .updateHost(_, minimum) = mismatch { minimum } else { nil }
         let available = latest.flatMap { AppVersion.isBelow(version, $0) ? $0 : nil }
         let due = minimum.map { "This app needs \($0) or newer." } ?? available.map { "Version \($0) is available." }
@@ -52,7 +53,7 @@ public struct HostVersionLine: Equatable, Sendable {
         case let (.available(nil), due?):
             return HostVersionLine(version: version, detail: [due], warns: minimum != nil, accessory: .button("Update"))
         case let (.unavailable, due?):
-            return HostVersionLine(version: version, detail: [due, UpdateNeededText.how(os: os)], warns: minimum != nil)
+            return HostVersionLine(version: version, detail: [due, UpdateNeededText.how(os: os, cloud: cloud)], warns: minimum != nil)
         }
     }
 }
@@ -62,7 +63,7 @@ extension BotStore {
     public func hostVersionLine(now: Date = .now) -> HostVersionLine? {
         guard let hello else { return nil }
         return .make(version: hello.version, latest: hello.latestVersion, mismatch: mismatch,
-                     offer: hostUpdateOffer(now: now), host: hostName, os: hello.os)
+                     offer: hostUpdateOffer(now: now), host: hostName, os: hello.os, cloud: cloudHosting != nil)
     }
 
     /// When an update asked from here stops reading as under way; nil when none was asked.
@@ -74,6 +75,10 @@ extension BotStore {
     static let hostUpdateWait: TimeInterval = 10 * 60
     /// While it updates, `hello` is asked this often, so the notice goes away soon after.
     static let updatingRecheck: Duration = .seconds(5)
+
+    /// Out of reach while an update asked from here installs: the computer restarts on its own, so it
+    /// reads as updating, not as a lost connection or access to ask for.
+    public var isUpdating: Bool { connection != .online && hostUpdateOffer() == .updating }
 
     public func hostUpdateOffer(now: Date = .now) -> HostUpdateOffer {
         if case let .requested(at) = hostUpdate, now.timeIntervalSince(at) < Self.hostUpdateWait { return .updating }

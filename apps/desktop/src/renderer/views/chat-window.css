@@ -73,44 +73,6 @@
   align-self: flex-start;
 }
 
-/* The GitHub star ask (StarPrompt): the ask, where it goes, the answers. */
-.star-prompt {
-  width: 420px;
-}
-.star-prompt-body {
-  padding: 4px 20px 20px;
-}
-.star-prompt-message {
-  line-height: 1.5;
-}
-.star-prompt-repo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px 10px 10px;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  text-align: left;
-  transition: background-color var(--hover), transform var(--press);
-}
-.star-prompt-repo:hover {
-  background: var(--field);
-}
-.star-prompt-repo:active {
-  transform: scale(0.99);
-}
-.star-prompt-icon {
-  width: 44px;
-  height: 44px;
-  flex: none;
-}
-/* The star turns as the pointer reaches the button. */
-.star-prompt-star > :first-child {
-  transition: transform var(--layout);
-}
-.star-prompt-star:hover > :first-child {
-  transform: rotate(-12deg) scale(1.15);
-}
 
 .split {
   display: flex;
@@ -309,10 +271,6 @@ html[data-platform="darwin"] .sidebar-header {
   height: 100%;
   object-fit: cover;
 }
-.profile-avatar-busy {
-  position: absolute;
-  inset: 0;
-}
 
 .rail-actions {
   display: flex;
@@ -376,7 +334,8 @@ html[data-platform="darwin"] .sidebar-header {
   -webkit-app-region: no-drag;
 }
 .account-panel,
-.action-menu {
+.action-menu,
+.action-submenu {
   position: absolute;
   padding: 7px;
   background: var(--panel);
@@ -393,9 +352,15 @@ html[data-platform="darwin"] .sidebar-header {
 .account-panel.compact {
   bottom: 68px;
 }
-.action-menu {
+.action-menu,
+.action-submenu {
   width: 260px;
   border-radius: var(--radius-l);
+}
+/* Rows past the window's height scroll; the menu's outline stays put. */
+.action-menu-rows {
+  max-height: calc(100vh - 30px);
+  overflow-y: auto;
 }
 @keyframes panel-in {
   from {

@@ -17,7 +17,8 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 - UI follows Grok Bot: a floating capsule over the top of the chat (`ThreadView` overlay), and the
   chat stays readable and usable underneath. Left to right: the bot's avatar (pulses while
   speaking; tap it to interrupt), a dotted level line (your voice while listening, a ripple while
-  the bot speaks, a slow breath while it works; while the engine connects, an indeterminate progress
+  the bot speaks, a slow breath while it works, a still row otherwise, always in the text color so a dark bot's line
+  doesn't vanish on the dark bar; while the engine connects, an indeterminate progress
   line instead: a short segment gliding back and forth along a faint track, easing at both ends
   (white in dark mode, black in light), still at the left under Reduce Motion, fading back to the dots
   once the call is really connected), gear (call settings), mic (mute), red ✕ (end). Connected means
@@ -63,7 +64,7 @@ was recognized so far. The desktop island's message field has the same mic and p
 A `chevron.up` beside the composer's mic picks dictation's engine, kept on the device apart from the
 call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** on the user's
 own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
-means an error before anything is recorded), then records; the pill (and its time) appears only once
+opens Voice chat settings before anything is recorded), then records; the pill (and its time) appears only once
 the microphone is open, so nothing said before it is lost; nothing is typed while recording. The
 pill's stop turns the pill into "Transcribing…" and the whole recording goes through
 `voiceTranscribe` with the call settings' speech-to-text model; the text lands after what's in the
@@ -78,8 +79,7 @@ on-device (its window doesn't reach the host).
 - Desktop (`views/thread/dictation.ts`, the model, tested with a stub platform; the helper,
   microphone and host wired in `dictation-platform.ts`; pieces in `dictation-pieces.ts`; menu in
   `DictationEngineMenu.tsx`): on-device speech is the speech helper, macOS only. Linux and Windows
-  show the mic too, for a provider; with **On device** picked each press says on-device speech isn't
-  available there. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
+  show the mic too, for a provider; **On device** is hidden and old dictation selections use OpenAI. An unpackaged `npm run dev` can't use the helper: macOS stops it because the dev
   Electron has no speech usage description, so test it in a packaged build (`dist:mac:dev`), like
   calls.
 - Desktop: the speech helper serves one window at a time. When another window starts it (the
@@ -87,9 +87,17 @@ on-device (its window doesn't reach the host).
   the window that lost it (`stopped`) and ignores that window's stop.
 - iPhone (`Thread/Dictation.swift`, pill in `Thread/RecordingPill.swift`, menu in
   `Thread/DictationEngineMenu.swift`, dots shared with the call bar in `LevelDots.swift`):
-  `SFSpeechRecognizer` on device; with no microphone route (some simulators) the mic does nothing.
-  A provider's errors (no key, no connection) show in a dialog.
-- Android has no composer mic yet.
+  `SFSpeechRecognizer` on device, set up as the call sets it up (`Call/OnDeviceSpeech.swift`). Why it couldn't
+  start or stopped early shows in the *Couldn't dictate* dialog: a denied permission, no microphone route (some
+  simulators), no recognizer for the language, a recognizer error ("Couldn't hear you. Check the microphone and
+  Speech Recognition in Settings."), and a provider's errors (no key, no connection). A pause with nothing said ends
+  it without a dialog, as on Android.
+- Android (`Dictation.kt`, pill and engine menu in `DictationControls.kt`, dots shared with the call
+  bar): Android's on-device recognizer (Android 12+) in the call's language. Where the phone has none,
+  or it lacks the language, the phone's own recognizer listens instead, and that one may send the
+  audio to its provider (Google on most phones). A provider records through `AndroidMic`; the key
+  check, microphone and transcription sit behind `DictationService`, so `DictationTest` runs on the JVM.
+  A missing key opens Voice chat settings, with a card for a dictation-only provider.
 - The terminal UI has no microphone, so no mic.
 
 ### Voice input shortcut
@@ -97,7 +105,8 @@ on-device (its window doesn't reach the host).
 Desktop on macOS, set in **Settings → General → System** (*Voice input shortcut*: off, the right ⌘
 twice (the default) or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app, a
 double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
-while the island is on, else into the chat window's composer (the top bot when no chat is open).
+while the island is on, else into the chat window's composer (when no chat is open, the lead, or the top bot where
+no computer has one).
 One more tap stops it and sends what was said once the last words are in; the pill's stop leaves
 the words in the field unsent, and an error leaves nothing for the tap to send.
 Double-tapping to stop counts as that one tap, not a new start. While a call is on (any engine),
@@ -170,8 +179,8 @@ at the end, cloud minutes counted up to the switch, mute kept, a fallback notice
 to On device tries the picked cloud engine again the same way. Desktop and Android check whenever a voice
 settings view closes (desktop: the gear, Settings; Android: the gear, the computer's card in Computer
 management); on the iPhone only the gear is open during a call.
-Where on-device speech is missing (desktop on Linux or Windows), the provider standing in for On device keeps
-running while On device stays picked.
+On Windows and Linux, an old/default On device call preference first selects a configured provider
+and remembers it. The picker offers only OpenAI and Gemini.
 
 | Engine | Needs | Transport | Code |
 | --- | --- | --- | --- |
@@ -223,10 +232,12 @@ shows the provider's name next to the dots whenever audio leaves the device.
 
 ### Where the key lives
 
-- On the computer, in the host's vault (`host/src/voice.rs`, slot `voice`: encrypted in
+- On the computer, in the host's vault (`host/src/voice/keys.rs`, slot `voice`: encrypted in
   `codync.db` with the vault key from Keychain / Secret Service), so one key serves the iPhone and the
   desktop app. It reaches the host once, over the encrypted channel, and never leaves it again; it is never
-  logged and never sent to the relay or our cloud.
+  logged and never sent to the relay or our cloud. On a Codync Cloud computer it goes on to the computer's keeper
+  instead (`host/src/voice/keys.rs`, proxied slot `voice:<provider>`), and the host reaches the provider through a
+  10-minute grant that adds the key: [Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets).
 - Host methods (control scope): `voiceStatus` (which providers have a key), `setVoiceKey
   {provider, key}` (checked with one credential mint before it's kept; empty removes it),
   `voiceSession {provider, model, voice}` → `{credential}`, `voiceModels {provider}` → `{models,
@@ -299,8 +310,10 @@ carries audio and talks to these methods:
   across a reconnect; an ended call can't start again. The call's actors (a group's members) hear `CallEnded`. A one-shot of the bot's harness (`chat::oneshot`) titles it from the conversation, in the user's
   language, into the notice's `text` ("Voice chat" until then, or when there's nothing to sum up); older apps
   show the title too. The line shows a waveform, the title and the length; tapping it opens the conversation
-  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): the user's lines, the voice's lines, what
-  it relayed and the bot's messages, in order. The chat an app holds may not reach back to an older call (the
+  (iPhone and Android sheets, the desktop `Sheet`, `o` in the terminal): under a header with the bot's avatar and name,
+  the line's time and the call's length (not in the terminal), the user's lines, the voice's lines, what it relayed and
+  the bot's messages, in order; a short call reads from the top, a long one opens at its end, and each time you speak
+  after the other side starts an exchange with more room above it. The chat an app holds may not reach back to an older call (the
   desktop mirror keeps the newest 200 entries), so opening the conversation fetches the call's own messages,
   `callEntries {botId, callId}` → the newest 500, and merges them with the loaded chat, each entry once; it shows
   a spinner until they arrive and the error if they can't. `logCall` stays for older apps.
@@ -360,6 +373,12 @@ carries audio and talks to these methods:
   resume." (as Android does). Route changes (AirPods) restart the iPhone's audio engine (`AVAudioEngineConfigurationChange`);
   the desktop restarts the microphone (and moves OpenAI's track) on `devicechange`. The desktop's on-device engine
   uses the speech helper's own microphone and isn't restarted.
+- On-device recognition that stops with an error mid-call sends what was heard and listens again. The iPhone
+  (`OnDeviceEngine`, counted by `RecognitionFailures`) and Android (`VoiceSession`) fail the call with the error
+  (iPhone: "Couldn't hear you. Check the microphone and Speech Recognition in Settings.", `provider`) after three in
+  a row that each failed within 2 s of listening (no speech assets, Siri and Dictation off); words heard, or a
+  recognition that ran longer, start the count over. The desktop's on-device engine fails when the speech helper gives
+  up again within 1 s of its last restart.
 - After the voice's turn, playback that reports no progress for 4 s returns the call to listening, so a stuck player
   (#214) can't hold the bot's replies back (`onStall`, counted as stuck `speaking`).
 - Each engine of a call sends one `voice_call_quality` when it's replaced or the call ends: milliseconds until ready,
@@ -436,3 +455,7 @@ simulated: on a physical iPhone, check both engines with a real key (talk over a
 are you doing?", approve by voice, and turn Wi-Fi off for a moment mid-call: the bar shows Reconnecting, comes back
 to Listening and still says the replies; with no network at all, after three tries, the call falls back to on-device
 voice).
+
+### Missing dictation keys
+
+Desktop and iPhone dictation open Voice chat settings when the selected provider has no key, before opening the microphone. Connection failures still show an error. Keys can be edited through local or SSH-loopback connections; paired remote connections show instructions to add the key on that computer. Windows and Linux hide On device in both engine pickers; old dictation preferences use OpenAI, while calls keep their configured-provider fallback. macOS keeps its on-device option. Android does the same and always offers On device. The terminal UI has no microphone input, so this dictation change does not apply to it.

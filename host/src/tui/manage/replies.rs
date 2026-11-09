@@ -1,8 +1,10 @@
 //! Replies to the sheets' commands.
 
 use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 
-use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
+use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::l10n::tr;
 use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
@@ -59,6 +61,10 @@ impl App {
             Reply::CallEntries(call) => {
                 self.call_entries.insert(call, entries_of(&v));
             }
+            Reply::DevServerLogs(id) => {
+                let text = v["text"].as_str().unwrap_or_default().to_owned();
+                self.dev_server_logs(&id, Ok(text));
+            }
             Reply::BotChat { bot, peer } => {
                 let entries = entries_of(&v);
                 for o in &mut self.overlays {
@@ -88,6 +94,22 @@ impl App {
                 }
             }
             Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
+            Reply::Gear(backend) => {
+                let lists = super::gear::GearLists {
+                    skills: super::gear::items(&v["skills"]),
+                    connectors: super::gear::items(&v["connectors"]),
+                    rules: super::gear::items(&v["rules"]),
+                    plugins: super::gear::items(&v["plugins"]),
+                };
+                for overlay in &mut self.overlays {
+                    if let Overlay::Gear(gear) = overlay
+                        && gear.backend == backend
+                    {
+                        gear.lists = Some(lists.clone());
+                        gear.failed = false;
+                    }
+                }
+            }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
                     self.overlays.truncate(i);
@@ -101,11 +123,7 @@ impl App {
                     s(&v, "key")
                 );
                 super::super::app::copy(&text);
-                self.flash(if v["url"].is_string() {
-                    "Copied a curl command for the public URL (with its key)"
-                } else {
-                    "Copied a curl command (the cloud is off: this computer only)"
-                });
+                self.flash(webhook_copied(&v));
             }
             Reply::Registry { search, cursor } => self.with_market(|app, m| {
                 if !m.awaits(&search, cursor.as_deref()) {
@@ -165,13 +183,31 @@ impl App {
                 self.flash("Saved");
                 self.refresh_sheets();
             }
+            Reply::SectionRenamed { from, to } => {
+                rename_fold(&mut self.folded, &from, to.as_deref());
+                self.rename_section_order(&from, to.as_deref());
+                self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
+            }
             Reply::SignIn => {
                 let url = s(&v, "url");
-                super::super::app::copy(&url);
-                if open_browser(&url, &self.url) {
-                    self.flash("Finish in the browser, then ^r refreshes");
+                let opened = open_browser(&url, &self.url);
+                // A sign-in with a code (GitHub): the code is what to paste, and it stays up meanwhile.
+                if let Some(code) = v["code"].as_str() {
+                    super::super::app::copy(code);
+                    let text = if opened {
+                        tr("Code {code} copied: paste it on the page that opened, then ^r refreshes")
+                    } else {
+                        tr("Code {code} copied: paste it at {url}, then ^r refreshes")
+                    };
+                    let text = text.replace("{code}", code).replace("{url}", &url);
+                    self.hint = Some((text, Instant::now() + Duration::from_mins(2)));
                 } else {
-                    self.flash("Sign-in link copied: open it on this computer, then ^r refreshes");
+                    super::super::app::copy(&url);
+                    self.flash(if opened {
+                        "Finish in the browser, then ^r refreshes"
+                    } else {
+                        "Sign-in link copied: open it on this computer, then ^r refreshes"
+                    });
                 }
             }
             Reply::Models(backend) => {
@@ -198,6 +234,7 @@ impl App {
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }
+                self.modes.insert(backend.clone(), crate::tui::app::parse_modes(&v));
                 self.models.insert(backend, Some(list));
             }
             Reply::Downloaded => {
@@ -225,7 +262,7 @@ impl App {
                     f.error = Some(e);
                 }
             }
-            Reply::FieldsSaved => match self.overlays.last_mut() {
+            Reply::FieldsSaved | Reply::SectionRenamed { .. } => match self.overlays.last_mut() {
                 Some(Overlay::Fields(f)) => {
                     f.saving = false;
                     f.error = Some(e);
@@ -264,6 +301,7 @@ impl App {
                 self.unfolded.retain(|id| !lines.contains(id));
                 self.flash(&e);
             }
+            Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
@@ -290,6 +328,22 @@ impl App {
                         && l.bot == *bot
                     {
                         l.items.get_or_insert_with(Vec::new);
+                    }
+                }
+                self.flash(&e);
+            }
+            Reply::Gear(backend) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Gear(gear) = o
+                        && gear.backend == *backend
+                    {
+                        gear.lists.get_or_insert_with(|| super::gear::GearLists {
+                            skills: Vec::new(),
+                            connectors: Vec::new(),
+                            rules: Vec::new(),
+                            plugins: Vec::new(),
+                        });
+                        gear.failed = true;
                     }
                 }
                 self.flash(&e);
@@ -329,6 +383,7 @@ impl App {
     /// Loads what every open sheet shows again, after a change.
     pub(in crate::tui) fn refresh_sheets(&mut self) {
         let mut calls: Vec<(&'static str, Value, After)> = vec![];
+        let mut gear_ids = Vec::new();
         for o in &self.overlays {
             match o {
                 Overlay::Memory(m) => {
@@ -343,12 +398,16 @@ impl App {
                 Overlay::Library(l) => {
                     calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
                 }
+                Overlay::Gear(gear) => gear_ids.push(gear.backend.clone()),
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
                     calls.push(("skills", json!({}), After::Skills));
                 }
                 _ => {}
             }
+        }
+        for backend in gear_ids {
+            calls.push(("agentGear", json!({"backend": backend}), After::Sheet(Reply::Gear(backend))));
         }
         calls.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
         for (m, body, after) in calls {
@@ -376,6 +435,29 @@ impl App {
 }
 
 /// The entries in a host reply (`callEntries`, `botConversation`).
+/// What copying a routine's curl command says about where it works.
+fn webhook_copied(v: &Value) -> &'static str {
+    if v["url"].is_string() {
+        "Copied a curl command for the public URL (with its key)"
+    } else if v["needsAccount"] == true {
+        "Copied a curl command (not in an account: this computer only)"
+    } else {
+        "Copied a curl command (the cloud is off: this computer only)"
+    }
+}
+
 fn entries_of(v: &Value) -> Vec<Entry> {
     v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_copied_webhook_says_where_it_works() {
+        assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
+    }
 }

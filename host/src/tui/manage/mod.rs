@@ -8,7 +8,10 @@
 mod agent;
 mod analytics;
 mod bot_chat;
+mod dev_servers;
 mod fields;
+mod gear;
+mod icons;
 mod library;
 mod market;
 mod memory;
@@ -22,7 +25,10 @@ mod skill;
 mod when;
 
 pub use analytics::AnalyticsSheet;
-pub use fields::handoff_fields;
+pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
+pub use fields::{handoff_fields, section_fields};
+pub use gear::{Gear, GearRow};
+pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
 pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
@@ -45,6 +51,8 @@ pub const REACTIONS: [&str; 6] = ["👍", "❤️", "😂", "🎉", "👀", "✅
 /// Replies to the sheets' commands.
 #[derive(Clone)]
 pub enum Reply {
+    /// A dev server's log, by the server's id.
+    DevServerLogs(String),
     Memory(String),
     MemorySaved(String),
     /// A note the bot's memory sheet has open.
@@ -53,6 +61,8 @@ pub enum Reply {
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),
+    /// What an agent brings on its own (`agentGear`), for its sign-in sheet.
+    Gear(String),
     /// A routine's webhook URL and key: copied as a ready-to-run curl.
     Webhook,
     /// A bot conversation's fetched history.
@@ -73,6 +83,11 @@ pub enum Reply {
     Auth(String),
     Setup,
     FieldsSaved,
+    /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
+    SectionRenamed {
+        from: String,
+        to: Option<String>,
+    },
     SignIn,
     Models(String),
     Downloaded,
@@ -177,6 +192,8 @@ pub enum SetupRow {
     Login,
     Method(Value),
     Check,
+    /// Opens the read-only lists of what this agent already brings.
+    Brings,
 }
 
 pub struct Input {
@@ -190,12 +207,17 @@ pub struct Input {
 }
 
 pub enum Submit {
+    Icon(String),
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),
+    /// A bot's section (its id): a name, or empty for none.
+    Section(String),
+    /// A section's new name (its current one), or empty to remove it.
+    RenameSection(String),
     RenameArtifact {
         bot: String,
         artifact: String,

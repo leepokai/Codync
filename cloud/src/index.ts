@@ -4,12 +4,17 @@
 
 import * as api from "./api";
 import { ApiError, type Ctx } from "./api";
+import { checkAppFloor, parseApp } from "./app-versions";
 import type { ComputerRelay } from "./relay";
 import { nudgeReleaseGate } from "./release-gate";
+import { icon, MAX_ICON_BYTES } from "./routes/icons";
+import { readBody } from "./request-body";
 
 export { ComputerRelay } from "./relay";
 
 export interface Env {
+  ICONS?: R2Bucket;
+  ICON_LIMITER?: RateLimit;
   DB: D1Database;
   RELAY: DurableObjectNamespace<ComputerRelay>;
   /** Workers Rate Limiting binding for new computer registrations. */
@@ -22,14 +27,44 @@ export interface Env {
   HOOK_LIMITER?: RateLimit;
   /** Cloud assistant (MCP connector) requests per account. */
   ASSISTANT_LIMITER?: RateLimit;
+  /** Short pairing codes typed per account and per IP. */
+  PAIRING_CODE_LIMITER?: RateLimit;
   CLERK_ISSUER: string;
   CLERK_SECRET_KEY?: string;
   /** dev / e2e only: networkless verification with this public key. */
   CLERK_JWT_KEY?: string;
   CLERK_AUTHORIZED_PARTIES?: string;
   CLERK_WEBHOOK_SECRET?: string;
+  /** Ed25519 private key (JWK JSON) that signs device certificates; hosts compile in its public half. */
+  DEVICE_CERT_KEY?: string;
+  /** "1": the relay and public webhooks are only for computers in an account (`relayNeedsAccount`). */
+  RELAY_NEEDS_ACCOUNT?: string;
   /** GitHub token (Actions: write) that wakes the release gate; unset outside production. */
   RELEASE_GATE_TOKEN?: string;
+  /** Codync Cloud, on each user's own provider account: the keys that seal the API keys users give it (`secrets.ts`;
+   * unset = no cloud computers), the providers' base URLs (tests), and how often one account may save a key. */
+  CLOUD_SECRET_KEYS?: string;
+  BOAT_API_URL?: string;
+  INSTABOX_API_URL?: string;
+  CLOUD_KEY_LIMITER?: RateLimit;
+  /** Comma-separated Clerk user ids allowed a cloud computer (`*`: everyone). */
+  CLOUD_COMPUTER_USERS?: string;
+  /** Dev and test clouds (docs/guides/cloud-computer-testing.md): `CODYNC_…=value` pairs for a cloud computer's
+   * host service (its cloud URL, analytics off, a short idle time); a host build to run instead of the release;
+   * the provider name prefix, so test machines are easy to find and sweep. */
+  CLOUD_HOST_ENV?: string;
+  CLOUD_HOST_BINARY_URL?: string;
+  CLOUD_MACHINE_PREFIX?: string;
+  /** Seconds after which the provider stops a cloud computer on its own; needed on Boat's trial (≤ 7200). */
+  CLOUD_AUTO_STOP_SECONDS?: string;
+  /** Emergency floors (docs/plans/codync-cloud.md, cloud hard update): cloud hosts below `HOST_FLOOR` update at
+   * once and self-hosted ones may not register; apps below their platform's floor get `426`. */
+  HOST_FLOOR?: string;
+  HOST_FLOOR_REASON?: string;
+  APP_FLOOR_IOS?: string;
+  APP_FLOOR_ANDROID?: string;
+  APP_FLOOR_DESKTOP?: string;
+  APP_FLOOR_REASON?: string;
 }
 
 type Handler = (c: Ctx, params: string[]) => Promise<unknown>;
@@ -43,14 +78,27 @@ const RELEASE_GATE_CRON = "*/5 * * * *";
 
 const ID = "([A-Za-z0-9_-]{1,64})";
 const routes: [string, RegExp, Handler][] = [
+  ["PUT", /^\/v1\/host\/icons\/([^/]+)$/, icon],
+  ["GET", /^\/v1\/host\/icons\/([^/]+)$/, icon],
+  ["DELETE", /^\/v1\/host\/icons\/([^/]+)$/, icon],
   ["GET", /^\/v1\/health$/, api.health],
   ["GET", /^\/v1\/oauth\/callback$/, api.oauthCallback],
   ["GET", /^\/v1\/oauth\/callback\/dev$/, api.oauthDevCallback],
   ["GET", /^\/v1\/me$/, api.me],
   ["POST", /^\/v1\/devices$/, api.registerDevice],
   ["GET", /^\/v1\/devices$/, api.listDevices],
+  ["POST", /^\/v1\/devices\/certificate$/, api.deviceCertificate],
+  ["POST", /^\/v1\/devices\/sign-out$/, api.signOutDevice],
   ["DELETE", new RegExp(`^/v1/devices/${ID}$`), api.revokeDevice],
   ["POST", /^\/v1\/claims$/, api.createClaim],
+  ["POST", /^\/v1\/cloud-computers$/, api.createCloudComputer],
+  ["GET", /^\/v1\/cloud-computers$/, api.getCloudComputers],
+  ["PATCH", new RegExp(`^/v1/cloud-computers/${ID}$`), api.renameCloudComputer],
+  ["DELETE", new RegExp(`^/v1/cloud-computers/${ID}$`), api.deleteCloudComputer],
+  ["DELETE", new RegExp(`^/v1/cloud-computers/${ID}/snapshots$`), api.deleteCloudSnapshots],
+  ["GET", /^\/v1\/keeper\/vault-key$/, api.keeperVaultKey],
+  ["PUT", new RegExp(`^/v1/cloud-credentials/${ID}$`), api.saveCloudCredential],
+  ["DELETE", new RegExp(`^/v1/cloud-credentials/${ID}$`), api.deleteCloudCredential],
   ["POST", new RegExp(`^/v1/claims/${ID}/complete$`), api.completeClaim],
   ["GET", /^\/v1\/computers$/, api.listComputers],
   ["PATCH", new RegExp(`^/v1/computers/${ID}$`), api.renameComputer],
@@ -62,12 +110,17 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", new RegExp(`^/v1/access-requests/${ID}/reveal$`), api.revealAccessRequest],
   ["DELETE", new RegExp(`^/v1/access-requests/${ID}$`), api.cancelAccessRequest],
   ["POST", /^\/v1\/host\/register$/, api.hostRegister],
+  ["POST", /^\/v1\/host\/claim$/, api.hostClaim],
+  ["POST", /^\/v1\/host\/sleep$/, api.hostSleep],
+  ["GET", /^\/v1\/host\/sleep$/, api.hostSleepState],
   ["GET", /^\/v1\/host\/state$/, api.hostState],
   ["POST", /^\/v1\/host\/screen-ice$/, api.hostScreenIce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/nonce$`), api.hostNonce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/decision$`), api.hostDecision],
   ["POST", new RegExp(`^/v1/host/grants/${ID}/revoke$`), api.hostRevokeGrant],
   ["POST", /^\/v1\/host\/unclaim$/, api.hostUnclaim],
+  ["POST", /^\/v1\/host\/pairing-codes$/, api.createPairingCode],
+  ["GET", new RegExp(`^/v1/pairing-codes/${ID}$`), api.redeemPairingCode],
   ["GET", /^\/v1\/relay\/host$/, api.relayHost],
   // Any segment reaches the handler so a malformed computerId gets its 400 (§7.1).
   ["GET", /^\/v1\/relay\/device\/([^/]+)$/, api.relayDevice],
@@ -86,13 +139,13 @@ export default {
     const requestId = req.headers.get("cf-ray") ?? crypto.randomUUID();
     try {
       const url = new URL(req.url);
+      // An app below an emergency floor is told to update before anything else.
+      checkAppFloor(env, parseApp(req.headers.get("Codync-App")));
       for (const [method, pattern, handler] of routes) {
         const m = pattern.exec(url.pathname);
         if (!m || req.method !== method) continue;
         // Every route takes small bodies; refuse a big one before reading it.
-        if (Number(req.headers.get("content-length") ?? 0) > MAX_REQUEST) throw new ApiError("tooLarge");
-        const raw = new Uint8Array(await req.arrayBuffer());
-        if (raw.length > MAX_REQUEST) throw new ApiError("tooLarge");
+        const raw = await readBody(req, handler === icon ? MAX_ICON_BYTES : MAX_REQUEST);
         const out = await handler({ req, env, exec, url, raw, now: Date.now() }, m.slice(1));
         return out instanceof Response ? out : Response.json(out);
       }

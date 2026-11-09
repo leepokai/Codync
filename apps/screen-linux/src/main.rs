@@ -6,18 +6,21 @@
 //! GStreamer `webrtcbin`, and the accessibility tree over AT-SPI.
 
 mod a11y;
+mod candidates;
+mod connection;
 mod input;
+mod link;
+mod negotiation;
 mod portal;
+mod sessions;
 mod stream;
 mod video;
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc};
 
@@ -34,7 +37,7 @@ pub type Outbox = mpsc::UnboundedSender<Value>;
 pub struct Helper {
     portal: Arc<Mutex<Option<portal::Portal>>>,
     last_status: Mutex<Option<Value>>,
-    sessions: Mutex<HashMap<String, stream::Session>>,
+    sessions: sessions::Sessions,
     out: Outbox,
     /// GStreamer calls `ended` from its own threads, outside the Tokio runtime.
     rt: tokio::runtime::Handle,
@@ -66,21 +69,11 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(sock: UnixStream, portal: &Arc<Mutex<Option<portal::Portal>>>) -> Result<()> {
-    let (rd, mut wr) = sock.into_split();
-    let (out, mut outbox) = mpsc::unbounded_channel::<Value>();
-    let writer = tokio::spawn(async move {
-        while let Some(msg) = outbox.recv().await {
-            let mut line = msg.to_string();
-            line.push('\n');
-            if wr.write_all(line.as_bytes()).await.is_err() {
-                break;
-            }
-        }
-    });
+    let (out, outbox) = mpsc::unbounded_channel::<Value>();
     let helper = Arc::new(Helper {
         portal: portal.clone(),
         last_status: Mutex::new(None),
-        sessions: Mutex::default(),
+        sessions: sessions::Sessions::default(),
         out: out.clone(),
         rt: tokio::runtime::Handle::current(),
     });
@@ -92,38 +85,14 @@ async fn serve(sock: UnixStream, portal: &Arc<Mutex<Option<portal::Portal>>>) ->
             watched.send_status().await;
         }
     });
-    let mut lines = BufReader::new(rd).lines();
-    let result = loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) => break Ok(()),
-            Err(error) => break Err(error.into()),
-        };
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-            continue;
-        };
-        let (Some(method), Some(id)) = (
-            msg["method"].as_str().map(str::to_owned),
-            msg.get("id").cloned(),
-        ) else {
-            continue;
-        };
-        let helper = helper.clone();
-        tokio::spawn(async move {
-            let reply = match handle(&helper, &method, &msg["params"]).await {
-                Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-                Err(error) => {
-                    json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": format!("{error:#}")}})
-                }
-            };
-            let _ = helper.out.send(reply);
-        });
-    };
-    writer.abort();
+    let serving = helper.clone();
+    let result = link::serve(sock, out, outbox, move |method, params| {
+        let helper = serving.clone();
+        async move { handle(&helper, &method, &params).await }
+    })
+    .await;
     status_task.abort();
-    for (_, s) in helper.sessions.lock().await.drain() {
-        s.close();
-    }
+    helper.sessions.close_all().await;
     result
 }
 
@@ -140,9 +109,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
                 if previous.is_active() {
                     previous.session().close().await?;
                 }
-                for (_, session) in h.sessions.lock().await.drain() {
-                    session.close();
-                }
+                h.sessions.close_all().await;
             }
             *portal = Some(next);
         }
@@ -152,16 +119,12 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
     }
     // Close requests remain valid before setup; all other methods require a granted session.
     if method == "closeAll" {
-        for (_, s) in h.sessions.lock().await.drain() {
-            s.close();
-        }
+        h.sessions.close_all().await;
         return Ok(json!({}));
     }
     if method == "close" {
-        if let Some(id) = p["session"].as_str()
-            && let Some(s) = h.sessions.lock().await.remove(id)
-        {
-            s.close();
+        if let Some(id) = p["session"].as_str() {
+            h.sessions.close(id).await;
         }
         return Ok(json!({}));
     }
@@ -176,15 +139,24 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
             let sdp = p["sdp"]
                 .as_str()
                 .ok_or_else(|| anyhow!("sdp is required"))?;
-            if let Some(s) = h.sessions.lock().await.get(&id) {
-                return Ok(json!({"sdp": s.answer(sdp).await?}));
-            }
-            let d = display()?;
-            let fd = portal.pipewire_fd().await?;
-            let session = stream::Session::new(id.clone(), &d, fd, h.clone(), p)?;
-            let answer = session.answer(sdp).await?;
-            h.sessions.lock().await.insert(id, session);
+            let creating = id.clone();
+            let answer = h
+                .sessions
+                .answer(id, sdp, async {
+                    let d = display()?;
+                    let fd = portal.pipewire_fd().await?;
+                    let session = stream::Session::new(creating, &d, fd, h, p)?;
+                    let answer = session.answer(sdp).await?;
+                    Ok((session, answer))
+                })
+                .await?;
             json!({"sdp": answer})
+        }
+        "candidate" => {
+            let id = p["session"].as_str().context("missing session")?;
+            let candidate = serde_json::from_value(p["candidate"].clone())?;
+            h.sessions.candidate(id, &candidate).await?;
+            json!({})
         }
         "screenshot" => {
             let (w, h2) = (
@@ -218,27 +190,44 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
 
 impl Helper {
     async fn portal(&self) -> Result<portal::Portal> {
-        self.portal
-            .lock()
-            .await
+        let portal = self.portal.lock().await;
+        portal
             .clone()
             .filter(portal::Portal::is_active)
             .ok_or_else(|| anyhow!("Set up Computer access in Codync on this computer first."))
     }
 
     async fn send_status(&self) {
-        let status = self.portal.lock().await.as_ref().map_or_else(
-            || json!({"platform": "linux", "permissionApp": "Codync Screen", "capture": false, "input": false, "displays": []}),
+        let portal = self.portal.lock().await;
+        let status = portal.as_ref().map_or_else(
+            || json!({"platform": "linux", "permissionApp": "Codync Screen", "version": env!("CARGO_PKG_VERSION"), "trickle": true, "capture": false, "input": false, "displays": []}),
             portal::Portal::status,
         );
+        drop(portal);
         let mut last = self.last_status.lock().await;
         if last.as_ref() == Some(&status) {
             return;
         }
         *last = Some(status.clone());
-        let _ = self
-            .out
-            .send(json!({"jsonrpc": "2.0", "method": "status", "params": status}));
+        // Fails only once the host link is gone; the next link starts a new Helper that sends its status first.
+        let _ = self.notify("status", status);
+    }
+
+    /// One notification to the host; fails once the host link is gone.
+    fn notify(&self, method: &str, params: Value) -> Result<()> {
+        let mut message = json!({"jsonrpc": "2.0", "method": method});
+        message["params"] = params;
+        self.out
+            .send(message)
+            .map_err(|_| anyhow!("the host link closed"))
+    }
+
+    /// Tells the host a session's state. It fails only once the host link is gone, and the host drops every session
+    /// of a helper whose link ended, so a lost notice changes nothing there.
+    fn notify_session(&self, id: &str, state: &str) {
+        if let Err(error) = self.notify("session", json!({"session": id, "state": state})) {
+            tracing::debug!(%error, session = id, state, "session notice not sent");
+        }
     }
 
     /// A session's WebRTC connection ended on its own.
@@ -246,10 +235,23 @@ impl Helper {
         let this = self.clone();
         let id = id.to_owned();
         self.rt.spawn(async move {
-            if let Some(s) = this.sessions.lock().await.remove(&id) {
-                s.close();
-            }
-            let _ = this.out.send(json!({"jsonrpc": "2.0", "method": "session", "params": {"session": id, "state": "closed"}}));
+            this.sessions.close(&id).await;
+            this.notify_session(&id, "closed");
         });
+    }
+
+    async fn connected(&self, id: &str, peer: &gst::Element) {
+        let live = self.sessions.is_live(id, peer).await;
+        if live {
+            self.notify_session(id, "connected");
+        }
+    }
+
+    async fn ended_peer(&self, id: &str, peer: &gst::Element) {
+        self.sessions
+            .close_peer(id, peer, || {
+                self.notify_session(id, "closed");
+            })
+            .await;
     }
 }

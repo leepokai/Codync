@@ -3,6 +3,7 @@ import { VoiceKeyRouter, type VoiceKey } from '../../../shared/voice-shortcut.ts
 import { Observable } from '../../lib/observable.ts'
 import type { VoiceProvider } from '../settings/voice-settings.ts'
 import { inOrder, joinDictated, MIN_SAMPLES, pieces } from './dictation-pieces.ts'
+import { trNow } from '../../lib/l10n.ts'
 
 /** The running dictation: one recognizer at a time, and a call stops dictation first. */
 let active: Dictation | null = null
@@ -23,8 +24,9 @@ export interface DictationPlatform {
   language(): string | null
   /** The provider picked beside the mic; null is on-device. */
   provider(): VoiceProvider | null
-  /** Rejects, saying what to do, unless the host holds `provider`'s key. */
-  checkKey(provider: VoiceProvider): Promise<void>
+  /** Whether the host holds the provider key. Network failures still reject. */
+  checkKey(provider: VoiceProvider): Promise<boolean>
+  configureKey(provider: VoiceProvider): void
   /** Opens the microphone as 16 kHz PCM; resolves to what closes it. */
   microphone(out: (pcm: Int16Array, level: number) => void): Promise<() => void>
   /** One piece of a recording, as the provider's text. */
@@ -103,7 +105,7 @@ export class Dictation extends Observable {
       this.recording = { provider, pcm: [], stopMic: null }
       return void this.record(this.recording, ++this.generation)
     }
-    if (!speech) return this.fail(`${this.platform.noSpeech} Pick OpenAI or Gemini beside the mic.`)
+    if (!speech) return this.fail(trNow('{error} Pick OpenAI or Gemini beside the mic.').replaceAll('{error}', () => this.platform.noSpeech))
     this.off = speech.onEvent((e) => this.event(e))
     speech.start(this.platform.language())
     this.listen()
@@ -162,8 +164,13 @@ export class Dictation extends Observable {
    */
   private async record(recording: Recording, generation: number) {
     try {
-      await this.platform.checkKey(recording.provider)
+      const hasKey = await this.platform.checkKey(recording.provider)
       if (generation !== this.generation) return
+      if (!hasKey) {
+        this.end()
+        this.platform.configureKey(recording.provider)
+        return
+      }
       const stop = await this.platform.microphone((pcm, level) => {
         recording.pcm.push(pcm)
         this.level = level

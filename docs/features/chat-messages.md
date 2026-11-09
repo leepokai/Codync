@@ -18,13 +18,21 @@ it has no pointer tooltip or link-opening action.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to
   the old rule: its last text becomes the turn's final message, unless that text is `(pass)`: a message that
-  needs neither words nor a reaction gets nothing, as in a group.
+  needs neither words nor a reaction gets nothing, as in a group. In a turn a steered message joined, what the agent
+  wrote after its last `send_message` or reaction becomes a final message too, since either may have answered only
+  what came before that message.
 - File cards are separate final entries. Sharing a file preserves an intended final text
   reply; a files-only turn uses its filename for the completion summary. See
   [file attachments](file-attachments.md#files-from-a-bot). Artifact cards (`publish_artifact`) are final entries the
   same way; see [artifacts](artifacts.md).
 - Group room turns, bot requests (`message_bot`) and routines reject `send_message` and `send_file`: their reply
   is the turn's last text, as before (`chat/group.rs`, `chat/team.rs`, `routines`).
+- Between turns, work the agent goes on with in the background (a subagent's result) can still `send_message`
+  (`send_between_turns`): a final entry in the bot's main lane, numbered with its latest turn, plus a *done* push;
+  refused when the user stopped the last turn. `send_file` and `publish_artifact` need a running turn, and say to
+  use `send_message` instead. The host can't tell a background call from the running turn's own (the `chat` MCP
+  call names no session), so one that lands during a room, request or routine turn is refused like that turn's
+  and told to send again once it ends.
 - A bot request's reply stays in the recipient's trace and the request notice; it does
   not also become a message to the user. It goes back to the requesting bot as a turn of its own in
   that bot's main chat, and that turn's reply is an ordinary message to the user.

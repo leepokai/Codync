@@ -349,15 +349,7 @@ async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .ok_or_else(|| anyhow!("give a command or a URL"))?;
-    let mut words = match b["args"].as_array() {
-        Some(args) => {
-            std::iter::once(line.to_owned()).chain(args.iter().filter_map(|a| a.as_str().map(str::to_owned))).collect()
-        }
-        None => shlex::split(line).ok_or_else(|| anyhow!("the command has an unclosed quote"))?,
-    }
-    .into_iter();
-    c.command = words.next();
-    c.args = words.collect();
+    (c.command, c.args) = super::command_line::split_command(line, b.get("args"))?;
     Ok(c)
 }
 

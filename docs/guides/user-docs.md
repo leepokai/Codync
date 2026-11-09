@@ -18,13 +18,14 @@ the change.
 | Page | Covers | Sources |
 | --- | --- | --- |
 | `getting-started` | Install, pair, first bot | `README.md`, [updates](updates.md), [dev app](dev-app.md) for names only |
-| `bots` | Creating, settings, workspaces, hiding, permissions, new session | [bot workspaces](../features/bot-workspaces.md), [conversation runtime](../architecture/conversation-runtime.md) |
+| `bots` | Creating, settings, workspaces, hiding, permissions, new session, importing from Grok Bot | [bot workspaces](../features/bot-workspaces.md), [conversation runtime](../architecture/conversation-runtime.md), [bot import](../features/bot-import.md) |
 | `agents` | Known agents, registry, custom command, Extensions, sign-in, models | [extensions](../features/marketplace.md), `host/src/agent/backends.rs` |
-| `conversations` | Messages, files, approval cards, stop, replies, reactions, commands, fresh conversations, notifications | [chat messages](../features/chat-messages.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
+| `conversations` | Messages, files, approval cards, stop, replies, reactions, commands, fresh conversations, notifications, sending from a script (`codync-host send`) | `README.md` (`codync-host send`), [chat messages](../features/chat-messages.md), [file attachments](../features/file-attachments.md), [context and memory](../features/context-and-memory.md), [notifications](../design/push-and-live-activity.md) |
 | `groups` | Group chats | [groups and replies](../features/groups-and-replies.md) |
 | `teamwork` | Bots messaging bots, bots on your other computers, Manage the team | [bot collaboration](../features/bot-collaboration.md), [codync-network](../features/codync-network.md) |
 | `cloud-assistants` | The MCP connector for ChatGPT, Claude and other assistants: turning it on, adding it, what it can do, privacy | [cloud assistants](../features/cloud-assistants.md) |
 | `routines` | Schedules, webhooks, runs | [routines](../features/routines.md) |
+| `dev-servers` | Programs a bot keeps running: starting, ports, stopping | [dev servers](../features/dev-servers.md) |
 | `artifacts` | Artifacts, the Library | [artifacts](../features/artifacts.md) |
 | `memory` | Layers, dreaming, the agent's own memory | [context and memory](../features/context-and-memory.md), [bot memory](../design/bot-memory.md) |
 | `connectors-and-skills` | MCP connectors, apps, skills | [connector credentials](../features/connector-credentials.md), [extensions](../features/marketplace.md) |
@@ -43,7 +44,7 @@ the change.
   unless the reader types them (a CLI command, an environment variable).
 - Where the apps differ, say how in each, briefly: **iPhone**, **Desktop**, **Terminal UI**.
 - Describe the current release only. Leave out the Android app until it's public, Codync 1.x, products the UI
-  was modeled on, multiple computers per account, roadmap and internal investigations.
+  was modeled on, roadmap and internal investigations.
 - Every claim is checkable against the code or a doc above. Numbers and limits are written as the code has them.
   Security guidance (what the relay sees, loopback-only API, reverse-proxy rules) is exact.
 - MDX: the page's title (its `#` heading) and description live in `pages.ts`, so the file holds only `##` and

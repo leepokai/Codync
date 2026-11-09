@@ -320,11 +320,6 @@ function Row({ entry, prev, chats, respond }: { entry: Entry; prev?: Entry; chat
           <p className="rounded-[22px] px-[16px] py-[10px] text-[17px] leading-[22px] whitespace-pre-wrap" style={{ background: palette.bubbleUser, color: palette.text }}>
             {entry.text}
           </p>
-          {entry.queued && (
-            <span className="text-[11px]" style={{ color: palette.tertiary }}>
-              Queued until this response finishes
-            </span>
-          )}
         </div>
       );
     case "agent": {

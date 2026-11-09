@@ -32,6 +32,7 @@ class VoiceTest {
         override suspend fun stopSpeaking() { speakerStops++ }
         override suspend fun close() { closed++; if (failedClose) error("Fixture close failure") }
         fun text(value: String, final: Boolean = false, owner: Long = generation) { input?.invoke(VoiceInput.Text(owner, value, final)) }
+        fun failed() { input?.invoke(VoiceInput.Failed(generation, "Couldn't hear you.")) }
     }
     @Test fun markdownBecomesSpeechAndChunksKeepSurrogatePairsIntact() {
         val text = SpokenText.from("# Title\n\n**Hello**, [friend](https://example.com) and `code`.\n```sh\nsecret command\n```\n| A | B |\n|---|---|\n| one | two |")
@@ -43,7 +44,7 @@ class VoiceTest {
     }
     @Test fun unchangedPartialResultsDoNotDelaySubmissionAndLateFinalsCannotResend() = runTest {
         val audio = Audio(); val sent = mutableListOf<String>()
-        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), sent::add)
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), send = sent::add)
         runCurrent(); val original = audio.generation
         audio.text("  first utterance  "); runCurrent(); advanceTimeBy(1_000)
         audio.text("  first utterance  "); runCurrent(); advanceTimeBy(500); runCurrent()
@@ -55,9 +56,28 @@ class VoiceTest {
         assertEquals(VoicePhase.Listening, session.state.value.phase)
         session.end(); runCurrent(); session.awaitEnd(); assertEquals(1, audio.closed)
     }
+    @Test fun aRecognizerErrorSendsWhatWasHeardAndOnlyRepeatedQuickOnesEndTheCall() = runTest {
+        val audio = Audio(); val sent = mutableListOf<String>()
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), { testScheduler.currentTime }, sent::add)
+        fun failed() { audio.failed(); runCurrent() }
+        runCurrent()
+        audio.text("turn on the lights"); runCurrent(); failed(); failed()
+        assertEquals(listOf("turn on the lights"), sent)
+        // A recognition the call stopped after a while worked: the count starts over.
+        advanceTimeBy(3_000); session.mute(true); runCurrent(); session.mute(false); runCurrent()
+        failed(); failed()
+        // So does one that failed only after a while.
+        advanceTimeBy(3_000); failed()
+        failed(); failed()
+        assertEquals(VoicePhase.Listening, session.state.value.phase)
+        failed()
+        assertEquals(VoicePhase.Failed, session.state.value.phase); assertEquals("Couldn't hear you.", session.state.value.error)
+        assertEquals(listOf("turn on the lights"), sent)
+        session.end(); runCurrent(); session.awaitEnd()
+    }
     @Test fun muteAndAudioInterruptionDiscardPartialSpeechAndRespectMuteOnReturn() = runTest {
         val audio = Audio(); val sent = mutableListOf<String>()
-        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), sent::add)
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), send = sent::add)
         runCurrent(); val original = audio.generation
         audio.text("Never send this"); runCurrent(); session.mute(true); runCurrent()
         audio.text("Never send this", true, original); advanceTimeBy(3_000); runCurrent()

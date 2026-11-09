@@ -48,11 +48,12 @@ extension BotStore {
     }
 
     /// Waits while the user signs in in the computer's browser (the host catches the return).
+    /// A connector set up with a token reads `none` until then, so this waits for `signedIn` itself.
     public func waitForSignIn(_ id: String) async throws {
         for _ in 0..<150 {
             try await Task.sleep(for: .seconds(2))
             await refreshPlugins()
-            if installedConnectors.first(where: { $0.id == id })?.needsSignIn == false { return }
+            if installedConnectors.first(where: { $0.id == id })?.auth == "signedIn" { return }
         }
     }
 
@@ -78,6 +79,11 @@ extension BotStore {
 
     func skillDetails(_ skill: SkillRef) async throws -> String {
         try await ready().skillDetails(skill.request)
+    }
+
+    /// What `backend` already has in the user's home.
+    public func agentBrings(_ backend: String) async throws -> AgentGear {
+        try await ready().agentGear(backend: backend)
     }
 
     /// Re-detects agents on the computer (after an install or sign-in).

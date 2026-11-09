@@ -12,11 +12,13 @@ public struct CharacterAvatar: View {
     let size: CGFloat
     let mood: Mood
     let still: Bool
+    var customIcon: CustomIcon?
 
     /// `still` draws one frame of the mood (widgets and Live Activities render one frame);
     /// a change of mood then moves the halftone highlight and the eyes, animatable dot by dot.
-    public init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
+    public init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false, customIcon: CustomIcon? = nil) {
         self.init(shape: shape, tint: AvatarPalette.color(color), size: size, mood: mood, still: still)
+        self.customIcon = customIcon
     }
 
     public init(shape: String, tint: Color, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
@@ -34,15 +36,23 @@ public struct CharacterAvatar: View {
             size: size,
             mood: animated ? bot.mood : .idle
         )
+        customIcon = bot.customIcon
     }
 
     /// The bot's current mood, drawn as one frame.
     public init(bot: Bot, size: CGFloat = 40, still: Bool) {
         self.init(shape: bot.avatarShape, color: bot.avatarColor, size: size, mood: bot.mood, still: still)
+        customIcon = bot.customIcon
     }
 
     public var body: some View {
-        DottedBody(shape: shape, color: color, size: size, mood: mood, paused: still)
+        Group {
+            if let customIcon, customIcon.image != nil {
+                CustomIconView(icon: customIcon, size: size, tint: color)
+            } else {
+                DottedBody(shape: shape, color: color, size: size, mood: mood, paused: still || customIcon != nil)
+            }
+        }
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -311,6 +321,29 @@ public struct GroupAvatar: View {
     }
 }
 
+/// A bot's character, or a group's `members` (Android `BotAvatar`).
+public struct BotAvatar: View {
+    let bot: Bot
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+
+    public init(bot: Bot, members: [Bot] = [], size: CGFloat = 44, animated: Bool = true) {
+        self.bot = bot
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    public var body: some View {
+        if bot.isGroup && bot.customIcon == nil {
+            GroupAvatar(members: members, size: size, animated: animated)
+        } else {
+            CharacterAvatar(bot: bot, size: size, animated: animated)
+        }
+    }
+}
+
 /// Avatar with the roster status dot: lime = unread, orange = needs you.
 /// A group shows its `members`.
 public struct AvatarWithStatus: View {
@@ -325,9 +358,7 @@ public struct AvatarWithStatus: View {
     }
 
     public var body: some View {
-        Group {
-            if bot.isGroup { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
-        }
+        BotAvatar(bot: bot, members: members, size: size)
             .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")

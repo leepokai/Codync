@@ -64,7 +64,6 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 /** One row of a conversation, as iOS `ChatItem` builds them. */
 internal sealed interface ChatItem {
     val id: String
@@ -75,8 +74,9 @@ internal sealed interface ChatItem {
     data class Exchanges(override val id: String, val group: BotExchangeGroup) : ChatItem
 }
 
-/** Chat-visible entries plus time separators (gaps over an hour) and author grouping. */
-internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<ChatItem> {
+/** Chat-visible entries plus time separators (gaps over an hour) and author grouping. While the bot is [busy], queued
+ *  messages wait above the composer instead ([queuedMessages]); the send each came from doesn't show again either. */
+internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: Boolean = false): List<ChatItem> {
     val out = mutableListOf<ChatItem>()
     var last: Long? = null
     var author: String? = null
@@ -84,7 +84,7 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
     val units = mutableListOf<Pair<Long, Any>>()
     var run = mutableListOf<BotExchange>()
     fun flush() { if (run.isNotEmpty()) { units += run.first().createdAt to BotExchangeGroup(run); run = mutableListOf() } }
-    for (entry in entries) {
+    for (entry in if (busy) entries.filterNot(Entry::isQueued) else entries) {
         val exchange = BotExchange.of(entry)
         if (exchange == null) { flush(); units += entry.createdAt to entry; continue }
         if (run.isNotEmpty() && run.last().peerId != exchange.peerId) flush()
@@ -136,12 +136,15 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>): List<C
         }
         "permission" -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group) AuthorLabel(entry.data.text("author"), state)
-            PermissionCard(entry, state.computers.firstOrNull()?.name.orEmpty(), answering = "permission:" + entry.id in state.busy) {
+            PermissionCard(entry, state.hostName, answering = "permission:" + entry.id in state.busy) {
                 store.respond(entry, it)
             }
         }
         else -> if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
+        } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
+            // A fresh conversation starts at the left, as on the iPhone.
+            HandoffCardRow(entry, entry.data["handoff"] as JsonObject, state, store)
         } else Box(Modifier.padding(top = 10.dp)) {
             // In a group, the member whose agent failed.
             val owner = state.bots.firstOrNull { it.id == (entry.data.text("author") ?: entry.botId) && it.kind != "group" }
@@ -157,7 +160,7 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 @Composable internal fun AuthorLabel(botId: String?, state: AppState, name: String? = null) {
     val bot = state.bots.firstOrNull { it.id == botId }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp)
+        if (bot != null) CharacterAvatar(bot.avatarShape, bot.avatarColor, 26.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
         Text(state.authorName(botId, name), style = Type.subheadline.medium, color = bot?.let { AvatarPalette.tint(it.avatarColor) } ?: Palette.secondary)
     }
 }
@@ -190,7 +193,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
                 messageMenu(context, entry, reply, null)
             }) { UserText(entry.text, quote) }
-        SendStatusLine(entry.status, state.bots.firstOrNull { it.id == entry.botId }?.status == "working")
+        SendStatusLine(entry.status)
     }
 }
 
@@ -209,15 +212,14 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     }
 }
 
-@Composable private fun SendStatusLine(status: String?, botWorking: Boolean) {
+@Composable private fun SendStatusLine(status: String?) {
     val text = when (status) {
         "sending" -> "Sending…"
-        "queued" -> if (botWorking) "Queued until this response finishes" else "Queued"
         "cancelled" -> "Not sent — stopped"
         "delivering" -> "Delivered to the computer"
         else -> null
     }
-    if (text != null) Text(text, style = Type.caption2, color = Palette.tertiary)
+    if (text != null) Text(tr(text), style = Type.caption2, color = Palette.tertiary)
 }
 
 /** A message this phone is still delivering: the same bubble, with how far it got. */
@@ -231,7 +233,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             SendStatus.Sending -> Text(state.uploadProgress[send.nonce]?.let { "Uploading files · $it%" } ?: "Sending…",
                 style = Type.caption2, color = Palette.tertiary)
             SendStatus.Delivering -> Text("Delivered to the computer", style = Type.caption2, color = Palette.tertiary)
-            SendStatus.Waiting -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SendStatus.Waiting, SendStatus.Held -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Waiting for the computer to come online", style = Type.caption2, color = Palette.tertiary)
                 Box(Modifier.clickable(role = Role.Button) { store.cancelQueued(send) }.semantics { contentDescription = "Don't send" }) {
                     Symbol("xmark.circle", size = 14.dp, tint = Palette.tertiary)
@@ -300,7 +302,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(emoji, style = Type.system(15f))
                 Row(horizontalArrangement = Arrangement.spacedBy((-5).dp)) {
-                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp)
+                    for (bot in bots.take(3)) CharacterAvatar(bot.avatarShape, bot.avatarColor, 16.dp, customImage = bot.customIcon?.dataUrl, customTinted = bot.customIcon?.tinted == true)
                 }
             }
         }
@@ -319,7 +321,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
         Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
-            Text(entry.text.ifEmpty { "Routine" }, style = Type.footnote, color = Palette.secondary)
+            Text(tr(entry.text.ifEmpty { "Routine" }), style = Type.footnote, color = Palette.secondary)
         }
         if (entry.data["retry"]?.jsonPrimitive?.booleanOrNull == true) {
             if (retrying) Spinner(14.dp)
@@ -330,30 +332,24 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 
 /** A line from the computer. `addFallback`, on a failure the bot's fallbacks could have carried, opens them. */
 @Composable private fun NoticeRow(entry: Entry, addFallback: (() -> Unit)?) {
-    val text = entry.text
-    val seconds = entry.data["callSeconds"]?.jsonPrimitive?.longOrNull
+    val text = tr(entry.text)
+    val length = callLength(entry)
     when {
-        seconds != null -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        length.isNotEmpty() -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Symbol("waveform", size = 15.dp, tint = Palette.secondary)
             Spacer(Modifier.width(6.dp))
-            Text("$text · %02d:%02d".format(seconds / 60, seconds % 60), style = Type.footnote.monospacedDigit, color = Palette.secondary)
+            Text(text + length, style = Type.footnote.monospacedDigit, color = Palette.secondary)
         }
         entry.data.text("style") == "error" -> Row(Modifier.fillMaxWidth().clip(RoundedRectangle(12.dp))
             .background(Palette.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Symbol("exclamationmark.triangle.fill", size = 16.dp, tint = Palette.danger)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectionContainer { Text(text, style = Type.footnote, color = Palette.text) }
+                SelectionContainer { Text(tr(text), style = Type.footnote, color = Palette.text) }
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }
         "agentSwitch" in entry.data -> AgentSwitchLine(text, (entry.data["agentSwitch"] as? JsonObject)?.text("carried"))
-        // A fresh conversation starts at the left, as on the iPhone.
-        "handoff" in entry.data -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Symbol("arrow.triangle.branch", size = 13.dp, tint = Palette.secondary)
-            Text(text, style = Type.footnote, color = Palette.secondary)
-        }
-        else -> Text(text, Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
+        else -> Text(tr(text), Modifier.fillMaxWidth(), style = Type.footnote, color = Palette.secondary, textAlign = TextAlign.Center)
     }
 }
 
@@ -440,7 +436,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             members.joinToString(" · ") { it.name }.takeIf { bot.name != members.joinToString(", ") { it.name } },
             bot.description.ifEmpty { null }) else listOfNotNull(
             if (bot.managedWorkspace) "${backendName(state, bot.backend)} · ${tr("Personal workspace")}"
-            else tr("{agent} in {path}").replace("{agent}", backendName(state, bot.backend)).replace("{path}", bot.cwd),
+            else fill(tr("{agent} in {path}"), "agent" to backendName(state, bot.backend), "path" to bot.cwd),
             bot.description.ifEmpty { null })
         for (line in lines) Text(line, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
         Text(if (bot.kind == "group") "Everyone answers in turn. @mention a bot to ask just that one."

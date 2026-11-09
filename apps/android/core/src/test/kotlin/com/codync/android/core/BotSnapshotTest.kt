@@ -41,4 +41,26 @@ class BotSnapshotTest {
             botSnapshot(flowOf(header(8), buildJsonObject { put("type", "resync") }))
         } }
     }
+
+    @Test fun `icon-only revisions complete the advertised catch-up and decorate bot faces`() = runBlocking {
+        val icon = CustomIcon("data:image/png;base64,iVBORw0KGgo=", true)
+        val stream = flow {
+            emit(buildJsonObject { put("type", "hello"); put("rev", 50); put("catchUp", 2) })
+            emit(buildJsonObject { put("type", "icons"); put("iconsRevision", 50)
+                put("icons", WireJson.encodeToJsonElement(mapOf("bot:b" to icon))) })
+            emit(bot("b", 3))
+            fail("An icon revision need not be a bot/entry revision to finish the snapshot")
+        }
+        assertEquals(icon, botSnapshot(stream).single().customIcon)
+    }
+
+    @Test fun `empty icon snapshot removes stale inline custom faces`() = runBlocking {
+        val result = botSnapshot(flowOf(
+            buildJsonObject { put("type", "hello"); put("rev", 3); put("catchUp", 2) },
+            buildJsonObject { put("type", "icons"); put("icons", buildJsonObject {}) },
+            buildJsonObject { put("type", "bot"); put("rev", 3)
+                put("bot", WireJson.encodeToJsonElement(Bot("b", "Bot", rev = 3, customIcon = CustomIcon("stale")))) },
+        ))
+        assertNull(result.single().customIcon)
+    }
 }

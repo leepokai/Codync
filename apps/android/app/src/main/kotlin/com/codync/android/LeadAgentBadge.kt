@@ -29,7 +29,7 @@ import com.codync.android.design.*
         Column(Modifier.fillMaxSize().background(Palette.background)) {
             ModalHeader("Lead agent")
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                Text(tr("Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. Its Check in routine runs twice a day by default; you can change or pause it in Routines."), style = Type.body, color = Palette.secondary)
+                Text(tr("Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines."), style = Type.body, color = Palette.secondary)
             }
         }
     }

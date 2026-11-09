@@ -7,7 +7,7 @@ use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::Result;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// ACP's `systemPrompt`: the bot's instructions added to the agent's own.
@@ -46,7 +46,7 @@ pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
     })
 }
 
-/// Switches a session (`session/new` or `session/load` answered `res`) to the bot's
+/// Switches a session (`session/new`, `session/load` or `session/resume` answered `res`) to the bot's
 /// chosen model, then sets that model's options (effort, fast…). Returns the answer holding
 /// the session's config options now: a model can change them.
 pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotConfig) -> Result<Value> {
@@ -73,6 +73,12 @@ pub(crate) async fn select_model(acp: &Acp, res: &Value, sid: &str, cfg: &BotCon
         if answer["configOptions"].is_array() {
             current = answer;
         }
+    }
+    // The older `modes` field comes only with the session (`agent::modes`).
+    if current.get("modes").is_none()
+        && let Some(modes) = res.get("modes")
+    {
+        current["modes"] = modes.clone();
     }
     Ok(current)
 }
@@ -146,11 +152,18 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
             return Err(acp::Failure::error(acp::FailureKind::Timeout, message));
         }
     };
+    let reopen = if init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false) {
+        Some("session/load")
+    } else {
+        init["agentCapabilities"]["sessionCapabilities"]["resume"].is_object().then_some("session/resume")
+    };
     let sessions = SessionCaps {
-        load: init["agentCapabilities"]["loadSession"].as_bool().unwrap_or(false),
+        reopen,
         close: init["agentCapabilities"]["sessionCapabilities"]["close"].is_object(),
         system_prompt: init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object(),
         additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
+        // Claude's, Codex's and omp's adapters say so in the top-level `_meta`.
+        steering: init["_meta"]["steering"]["supported"] == true,
     };
     Ok(Conn {
         acp,
@@ -161,8 +174,11 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         started: Instant::now(),
         opening: false,
         fast_options: HashMap::new(),
+        modes: HashMap::new(),
+        mode_set: HashSet::new(),
         reports_compaction: false,
         usage: HashMap::new(),
+        renamed: HashMap::new(),
     })
 }
 

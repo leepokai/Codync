@@ -2,7 +2,6 @@ package com.codync.android
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.core.app.ActivityScenario
-import androidx.lifecycle.ViewModelProvider
 import com.codync.android.core.HostClient
 import com.codync.android.core.HostConnector
 import kotlinx.coroutines.runBlocking
@@ -49,31 +48,32 @@ class LiveRosterTest {
         val user = PushPreferences.activeUser(instrumentation.targetContext)
         val expectedContext = LocalStore.referenceId(user ?: "local")
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            var model: AppStore? = null
+            var model: AccountStore? = null
             scenario.onActivity { activity ->
-                val store = ViewModelProvider(activity)[AppStore::class.java]
-                model = store
+                val accounts = accountStore(activity)
+                model = accounts
                 // A locked test phone may stop the Activity while we inspect sync independently.
-                store.setForeground(true)
+                accounts.setForeground(true)
             }
-            val store = requireNotNull(model)
+            val accounts = requireNotNull(model)
             try {
                 runBlocking {
                     withTimeout(60_000) {
-                        store.state.first { !it.loading && it.contextId == expectedContext && (user == null || it.account.ready) }
+                        accounts.state.first { !it.loading && it.contextId == expectedContext && (user == null || it.account.ready) }
+                        val store = accounts.stores.first { it.isNotEmpty() }.first()
                         val synced = store.state.first { it.rosterLoaded && it.bots.isNotEmpty() }
                         println("Account mirror populated: ${synced.bots.size} bots")
                         if (InstrumentationRegistry.getArguments().getString("inspectCatchup") == "true") {
                             val head = requireNotNull(synced.hello).getValue("rev").jsonPrimitive.long
                             val local = LocalStore(instrumentation.targetContext, user ?: "local")
-                            MirrorDatabase(instrumentation.targetContext, local.directory, synced.computers.first().id).use { mirror ->
+                            MirrorDatabase(instrumentation.targetContext, local.directory, synced.computer.id).use { mirror ->
                                 while (withContext(Dispatchers.IO) { mirror.revision() } < head) delay(100)
                                 println("Account mirror committed catch-up through the host head")
                             }
                         }
                     }
                 }
-            } finally { instrumentation.runOnMainSync { store.setForeground(false) } }
+            } finally { instrumentation.runOnMainSync { accounts.setForeground(false) } }
         }
     }
 

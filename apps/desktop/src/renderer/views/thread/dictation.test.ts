@@ -23,7 +23,8 @@ function setup(over: Partial<DictationPlatform> = {}) {
     host: true,
     language: () => null,
     provider: () => null,
-    checkKey: async () => {},
+    checkKey: async () => true,
+    configureKey: (provider) => void log.push(`configure ${provider}`),
     microphone: async (out) => {
       feed = out
       log.push('mic.open')
@@ -97,11 +98,12 @@ test('without on-device speech or a provider, the mic says what to pick', () => 
   assert.equal(s.dictation.listening, false)
 })
 
-test('a provider without a key never opens the microphone', async () => {
-  const s = setup({ provider: () => 'openai', checkKey: async () => Promise.reject(new Error('Add your OpenAI key.')) })
+test('a provider without a key opens settings without an error or microphone', async () => {
+  const s = setup({ provider: () => 'openai', checkKey: async () => false })
   s.dictation.start(s.box())
   await settle()
-  assert.equal(s.dictation.error, 'Add your OpenAI key.')
+  assert.equal(s.dictation.error, null)
+  assert.deepEqual(s.log, ['configure openai'])
   assert.ok(!s.log.includes('mic.open'))
   assert.equal(s.dictation.busy, false)
 })

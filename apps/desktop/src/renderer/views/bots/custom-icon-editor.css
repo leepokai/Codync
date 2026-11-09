@@ -1,0 +1,9 @@
+.custom-icon-editor { width: 100%; text-align: center; }
+.custom-icon-help { text-align: center; }
+.custom-icon-editor .styled-button { white-space: nowrap; }
+.custom-icon-url { display: flex; flex-direction: column; gap: 6px; opacity: 0; transform: translateY(-4px); transition: opacity 160ms ease, transform 160ms ease; }
+.custom-icon-url.shown { opacity: 1; transform: translateY(0); }
+.custom-icon-url label { text-align: left; font-size: 13px; color: var(--secondary); }
+.custom-icon-url .field-box { flex: 1; min-width: 0; width: 0; }
+.custom-icon-url .icon-button { flex-shrink: 0; background: var(--bubble-user); }
+@media (prefers-reduced-motion: reduce) { .custom-icon-url { transition: none; transform: none; } }

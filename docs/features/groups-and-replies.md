@@ -34,9 +34,10 @@ quotes itself.
 |---|---|---|
 | `send` | `botId, text, clientNonce, replyTo?` | `botId` is a bot or a group. `replyTo`: the id of a user message or final reply in that chat; anything else is refused. Works in the relay mailbox too. |
 | `createBot` | `{kind:"group", name, description?, members}` | Returns the existing group when these exact bots already share one. |
-| `updateBot` | `{id, name?, members?, pinned?, hidden?}` | A group can't become a bot or the reverse. |
+| `updateBot` | `{id, name?, members?, pinned?, hidden?, section?}` | A group can't become a bot or the reverse. `section`: a name, or `null` for none. |
 | `deleteBot` | `botId` | A group's bots stay. A deleted bot leaves its groups. |
 | `reorderBots` | `ids` | The roster as the user dragged it, top first; groups count as rows. See [bot order](computer-order.md#bot-order). |
+| `renameSection` | `from, to` | Every row in section `from` moves to `to`, groups too; an existing name merges them, `null` removes the section. See [bot order](computer-order.md#bot-order). |
 | `stop` | `botId` | For a group: ends its room turn and stops members working in it. |
 | `react` | `entryId, emoji` | Toggles the user's reaction on a chat message (`data.reactions`, oldest first, at most 8). A reacted-to message never turns unread again. The bot isn't told, except in a group, where members see reactions on the room lines they're shown. Bots react themselves with the `chat` server's `react` ([bot reactions](chat-messages.md#bot-reactions)). |
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
@@ -48,6 +49,13 @@ quotes itself.
 - Who answers the first round: the members the user @-mentioned (full name, name without
   spaces, or first word; `@all` / `@everyone`) or replied to, or everyone if none is. A reply to
   a member's message counts like `@`-mentioning it.
+- Typing `@` lists the group's members above the box, filtered by what follows it: each row shows
+  the face, name and description, in the same list as the `/` commands
+  ([marketplace](marketplace.md#commands)). On the desktop, with the caret at the end of the
+  draft, ↑/↓ move the highlight and Tab or Return picks it, and Escape hides the list until the
+  draft changes; on the phones a tap picks. A member's full name and its space end the list, so
+  the next Return sends, and Return on a whole `@all` / `@everyone` sends, since the list doesn't
+  offer them. The terminal has no `@` list: you type the name.
 - Who answers a later round: only the members another member @-mentioned in this room turn
   (a member's `@all` / `@everyone`: all the others) and who haven't spoken or been asked since
   (one that passed after seeing the mention isn't asked again). Nobody named,

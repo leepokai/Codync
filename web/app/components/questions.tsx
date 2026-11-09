@@ -1,6 +1,7 @@
-import { DiscordLogo, Plus } from "@phosphor-icons/react/ssr";
+import Link from "next/link";
+import { DiscordLogo, Plus, WechatLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
-import { DISCORD } from "../links";
+import { CHINA_COMMUNITY, DISCORD } from "../links";
 
 const questions: [string, string][] = [
   [
@@ -17,19 +18,19 @@ const questions: [string, string][] = [
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair.",
+    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
   ],
   [
     "Where does my data go?",
-    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network, or through an end-to-end encrypted relay anywhere else, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
+    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network or over Tailscale. With an account, it can also go through an end-to-end encrypted relay, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
   ],
   [
     "Do I need an account?",
-    "No. Pair your phone by scanning a code. Signing in with Apple or Google is optional: it lists every computer on your account on your phone, and each computer still approves each device itself.",
+    "No. Without one, your phone pairs by scanning a code and connects over Wi-Fi or Tailscale. A free account (Apple, Google or GitHub) adds the relay, which needs the computer and the phone in the same account, and lists your computers on your phone. An account alone never unlocks a computer: you still pair in person by scanning a code, or approve a 6-digit code on the computer.",
   ],
   [
     "Which computers can run it?",
-    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the Mac and Linux apps add other machines over SSH, with their bots in the same sidebar.",
+    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
   ],
   [
     "What happens when my agent runs out of usage?",
@@ -65,13 +66,16 @@ export default function Questions() {
           <p className="mt-4 max-w-[22rem] text-lg leading-relaxed text-neutral-400">
             Short answers about price, setup, agents and your data.
           </p>
-          <a
-            href={DISCORD}
-            className="mt-6 inline-flex items-center gap-2 font-medium text-neutral-200 hover:text-white"
-          >
-            <DiscordLogo size={20} />
-            <span className="underline underline-offset-4">Ask on Discord</span>
-          </a>
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-4 font-medium text-neutral-200">
+            <a href={DISCORD} className="inline-flex items-center gap-2 hover:text-white">
+              <DiscordLogo size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">Ask on Discord</span>
+            </a>
+            <Link href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+              <WechatLogo size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">微信 / Lark 中国用户交流群</span>
+            </Link>
+          </div>
         </Reveal>
         <Reveal delay={0.05}>
           <div className="divide-y divide-neutral-800">

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, clipboard, Menu, nativeImage, shell, Tray as ElectronTray } from 'electron'
-import type { TrayImage, TraySummary, WindowCommand } from '../shared/ipc'
+import type { TrayImage, TraySummary, TraySymbol, WindowCommand } from '../shared/ipc'
 import type { HostController } from './host-controller'
 import type { Updates } from './updates'
 import { updateAction } from '../shared/update-action'
@@ -22,8 +22,6 @@ interface Deps {
 
 const resources = () => (app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'))
 const TEXT_SIZES = [11, 12, 13, 14, 15, 16, 18]
-/** macOS menus show an SF Symbol beside each action; Linux and Windows keep plain rows. */
-const symbol = (name: string) => (process.platform === 'darwin' ? nativeImage.createMenuSymbol(name) : undefined)
 
 /** The menu bar icon and its system menu: macOS owns layout, selection and submenus. */
 export class Tray {
@@ -64,13 +62,24 @@ export class Tray {
     return translate(text, preference, 'en')
   }
 
-  /** The renderer draws menu images at 1× and 2× (`tray-summary.ts`): each screen gets its own pixels. */
-  private image(drawn: TrayImage | null) {
+  /**
+   * The renderer draws menu images at 1× and 2× (`tray-summary.ts`): each screen gets its own pixels.
+   * A template image follows the menu's highlight and appearance on macOS, like its SF Symbols.
+   */
+  private image(drawn: TrayImage | null, template = false) {
     if (!drawn) return undefined
     const image = nativeImage.createEmpty()
     image.addRepresentation({ scaleFactor: 1, dataURL: drawn.x1 })
     image.addRepresentation({ scaleFactor: 2, dataURL: drawn.x2 })
-    return image.isEmpty() ? undefined : image
+    if (image.isEmpty()) return undefined
+    image.setTemplateImage(template)
+    return image
+  }
+
+  /** The symbol beside an action: SF Symbols on macOS, the renderer's drawing of it on Windows and Linux. */
+  private symbol(name: TraySymbol) {
+    if (process.platform === 'darwin') return nativeImage.createMenuSymbol(name)
+    return this.image(this.summary?.symbols?.[name] ?? null)
   }
 
   private rebuild() {
@@ -85,9 +94,9 @@ export class Tray {
       : state.kind === 'failed' ? 'Host problem'
       : (s?.status ?? 'Connected')
     items.push({ label: this.tr(status), enabled: false })
-    items.push({ label: this.tr('Open {name}').replaceAll('{name}', app.getName()), icon: symbol('macwindow'), accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
+    items.push({ label: this.tr('Open {name}').replaceAll('{name}', app.getName()), icon: this.symbol('macwindow'), accelerator: 'CmdOrCtrl+O', click: () => this.deps.openChat() })
     if (state.kind === 'running') {
-      items.push({ label: this.tr('Pair iPhone…'), icon: symbol('qrcode'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
+      items.push({ label: this.tr('Pair iPhone…'), icon: this.symbol('qrcode'), enabled: s?.canPair ?? false, click: () => this.deps.openPairing() })
     }
     items.push({ type: 'separator' })
 
@@ -98,22 +107,22 @@ export class Tray {
           break
         }
         items.push({ label: this.tr('Reinstall Codync or install the host with Homebrew.'), enabled: false })
-        items.push({ label: this.tr('Copy host install command'), icon: symbol('square.on.square'), click: () => clipboard.writeText('brew install leepokai/codync/codync-host') })
+        items.push({ label: this.tr('Copy host install command'), icon: this.symbol('square.on.square'), click: () => clipboard.writeText('brew install leepokai/codync/codync-host') })
         break
       case 'notInstalled':
-        items.push({ label: this.tr('Install host'), icon: symbol('arrow.down.circle'), click: () => void host.install() })
+        items.push({ label: this.tr('Install host'), icon: this.symbol('arrow.down.circle'), click: () => void host.install() })
         break
       case 'starting':
         items.push({ label: this.tr('Starting the host…'), enabled: false })
         break
       case 'failed':
         items.push({ label: this.tr(state.message), enabled: false })
-        items.push({ label: this.tr('Restart host'), icon: symbol('arrow.clockwise.circle'), click: () => host.restart() })
-        items.push({ label: this.tr('Open log'), icon: symbol('list.bullet.rectangle'), click: () => void shell.openPath(host.logPath) })
+        items.push({ label: this.tr('Restart host'), icon: this.symbol('arrow.clockwise.circle'), click: () => host.restart() })
+        items.push({ label: this.tr('Open log'), icon: this.symbol('list.bullet.rectangle'), click: () => void shell.openPath(host.logPath) })
         break
       case 'running':
         if (s?.approval) {
-          items.push({ label: this.tr('Review access request from {name}…').replaceAll('{name}', s.approval), icon: symbol('person.crop.circle.badge.checkmark'), click: () => send({ kind: 'reviewApprovals' }) })
+          items.push({ label: this.tr('Review access request from {name}…').replaceAll('{name}', s.approval), icon: this.symbol('person.crop.circle.badge.checkmark'), click: () => send({ kind: 'reviewApprovals' }) })
           items.push({ type: 'separator' })
         }
         if (!s || s.bots.length === 0) {
@@ -129,8 +138,8 @@ export class Tray {
           }
         }
         if (s?.screen || s?.networks) items.push({ type: 'separator' })
-        if (s?.screen) items.push({ label: this.tr('Remote screen'), icon: symbol('display'), submenu: this.screenMenu(s.screen) })
-        if (s?.networks) items.push({ label: this.tr('Network'), icon: symbol('point.3.connected.trianglepath.dotted'), submenu: this.networkMenu(s.networks) })
+        if (s?.screen) items.push({ label: this.tr('Remote screen'), icon: this.symbol('display'), submenu: this.screenMenu(s.screen) })
+        if (s?.networks) items.push({ label: this.tr('Network'), icon: this.image(s.networkIcon, process.platform === 'darwin'), submenu: this.networkMenu(s.networks) })
         if (s && s.usage.length) {
           items.push({ type: 'separator' })
           for (const provider of s.usage) {
@@ -146,8 +155,8 @@ export class Tray {
 
     items.push({ type: 'separator' })
     // Settings and Quit close the menu as a pair; the version lives in Settings → Updates.
-    items.push({ label: this.tr('Settings'), icon: symbol('gearshape'), submenu: this.settingsMenu() })
-    items.push({ label: this.tr('Quit {name}').replaceAll('{name}', app.getName()), icon: symbol('power'), accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
+    items.push({ label: this.tr('Settings'), icon: this.symbol('gearshape'), submenu: this.settingsMenu() })
+    items.push({ label: this.tr('Quit {name}').replaceAll('{name}', app.getName()), icon: this.symbol('power'), accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
     this.tray.setContextMenu(Menu.buildFromTemplate(items))
   }
 

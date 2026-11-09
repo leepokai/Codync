@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
-import { draftOf, type Bot, type BotDraft, type DirListing } from '@shared/models'
+import { draftOf, type Bot, type BotDraft } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
-import { CardSection, ChoicePicker, DropdownMenu, IconButton, Pill, SearchField, Spinner, ValueRow } from '../../components/Controls'
+import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
-import { HStack, IconSlot } from '../../components/Stack'
+import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
+import { ApprovalRow } from './ApprovalRow'
+import { CompactionRow } from './CompactionRow'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { errorText, isValid, lastPathComponent, normalized, useFollowSaved, usePlugins, type Plugins } from './drafts'
 import { FormSheet } from '../marketplace/pieces'
 import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import { NetworkSwitches } from './NetworkSwitches'
+import { FolderPicker } from './FolderPicker'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
+import { CustomIconEditor } from './CustomIconEditor'
 
 
 /** Edit a bot in a modal: the settings form plus Close / Save. New bots start in `NewBotView`. */
@@ -164,6 +168,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       onChange={(on) => set('selfFallbacks', on)}
     />,
   ] : null
+  // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
+  const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
   if (part === 'often') {
     return (
@@ -174,6 +180,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             {step}
             {agent}
             {fallbacks}
+            {compaction}
           </CardSection>
           {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
         </div>
@@ -187,11 +194,12 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <CardSection title="Profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
-              <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} />
+              <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
             </button>
             <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
               <div className="avatar-picker-panel">
                 <AvatarPicker shape={draft.avatarShape} color={draft.avatarColor} onShape={(s) => set('avatarShape', s)} onColor={(c) => set('avatarColor', c)} />
+                {draft.id && <CustomIconEditor target={`bot:${draft.id}`} />}
               </div>
             </AnchoredPanel>
           </ValueRow>
@@ -211,6 +219,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           </ValueRow>
           {part === 'all' ? agent : null}
           {part === 'all' ? fallbacks : null}
+          {part === 'all' ? compaction : null}
           <ValueRow
             label="Workspace"
             detail={
@@ -220,7 +229,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             }
           >
             <DropdownMenu
-              title={draft.cwd || 'A persistent workspace allocated for this bot'}
+              title={draft.cwd || tr('A persistent workspace allocated for this bot')}
               items={() => [
                 { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
                 { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
@@ -232,23 +241,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
               </Pill>
             </DropdownMenu>
           </ValueRow>
-          <ValueRow
-            label="Permissions"
-            detail={
-              draft.permission === 'auto'
-                ? "Tool requests are approved automatically. Your agent's own settings (like Claude Code's permission rules) still apply."
-                : "You'll get an approval card and a notification whenever the agent asks."
-            }
-          >
-            <ChoicePicker
-              selection={draft.permission}
-              options={[
-                { id: 'ask', label: 'Ask me' },
-                { id: 'auto', label: 'Approve automatically' },
-              ]}
-              onChange={(id) => set('permission', id)}
-            />
-          </ValueRow>
+          <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
         </CardSection>
 
         <CardSection title="Activity">
@@ -341,109 +334,10 @@ function PluginToggles({ title, empty, items, selection, onChange, onInfo }: {
         return onInfo ? (
           <HStack key={item.id} gap={4}>
             <div className="plugin-toggle">{row}</div>
-            <IconButton title={`About ${item.name}`} icon="info.circle" onClick={() => onInfo(item)} />
+            <IconButton title={tr('About {name}').replaceAll('{name}', () => item.name)} icon="info.circle" onClick={() => onInfo(item)} />
           </HStack>
         ) : row
       })}
     </CardSection>
-  )
-}
-
-/** Browses folders on the host, drilling down in place. */
-function FolderPicker({ start, onPick }: { start: string | null; onPick: (path: string) => void }) {
-  // The folders opened so far; the last one is shown.
-  const [stack, setStack] = useState<(string | null)[]>([start])
-  const [forward, setForward] = useState(true)
-  const current = stack[stack.length - 1] ?? null
-  return (
-    <SheetPage>
-      <HStack>
-        {stack.length > 1 ? (
-          <HStack align="stretch" className="fade-in folder-back">
-            <IconButton
-              title="Back"
-              icon="chevron.left"
-              onClick={() => {
-                setForward(false)
-                setStack((s) => s.slice(0, -1))
-              }}
-            />
-          </HStack>
-        ) : null}
-        <div className="folder-title">
-          <ModalHeader title={current ? lastPathComponent(current) : 'Folders'} />
-        </div>
-      </HStack>
-      <div className="folder-levels">
-        <FolderLevel
-          key={stack.length}
-          path={current}
-          forward={forward}
-          onPick={onPick}
-          onOpen={(path) => {
-            setForward(true)
-            setStack((s) => [...s, path])
-          }}
-        />
-      </div>
-    </SheetPage>
-  )
-}
-
-/** One folder's subfolders. */
-function FolderLevel({ path, forward, onPick, onOpen }: { path: string | null; forward: boolean; onPick: (path: string) => void; onOpen: (path: string) => void }) {
-  const store = useStore()
-  const [listing, setListing] = useState<DirListing | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState('')
-
-  useEffect(() => {
-    let live = true
-    store
-      .listDirs(path)
-      .then((l) => live && setListing(l))
-      .catch((e: unknown) => live && setError(errorText(e)))
-    return () => {
-      live = false
-    }
-  }, [store, path])
-
-  const dirs = listing?.dirs.filter((d) => !filter || d.name.toLowerCase().includes(filter.toLowerCase())) ?? []
-
-  return (
-    <div className={`bot-form level-slide ${forward ? 'from-trailing' : 'from-leading'}`}>
-      <div className="bot-form-content folder-level-content">
-        <SearchField value={filter} onChange={setFilter} />
-        {listing ? (
-          <>
-            <CardSection footer={listing.path}>
-              <button className="press folder-use" onClick={() => onPick(listing.path)}>
-                <Icon name="checkmark.circle.fill" size={13} />
-                <Text truncate>{`Use “${lastPathComponent(listing.path)}”`}</Text>
-              </button>
-            </CardSection>
-            {dirs.length ? (
-              <CardSection>
-                {dirs.map((dir) => (
-                  <button key={dir.path} className="press folder-row" onClick={() => onOpen(dir.path)}>
-                    <IconSlot width={20}>
-                      <Icon name={dir.isGit ? 'arrow.triangle.branch' : 'folder'} size={12} color={dir.isGit ? 'var(--accent)' : 'var(--secondary)'} />
-                    </IconSlot>
-                    <Text tone="text" truncate grow>{dir.name}</Text>
-                    <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />
-                  </button>
-                ))}
-              </CardSection>
-            ) : null}
-          </>
-        ) : error ? (
-          <Text tone="danger">{error}</Text>
-        ) : (
-          <HStack align="stretch" justify="center">
-            <Spinner size={20} />
-          </HStack>
-        )}
-      </div>
-    </div>
   )
 }

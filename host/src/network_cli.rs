@@ -1,6 +1,6 @@
 //! `codync-host network`: this computer's network of the user's computers (codync-network).
 
-use crate::local_call;
+use crate::local_api::local_call;
 use anyhow::Result;
 use clap::Subcommand;
 use serde_json::{Value, json};

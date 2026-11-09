@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 
 class WidgetStoreTest {
     @Test fun reconnectingDoesNotFreshenCachedActivityUntilTheMirrorCatchesUp() {
-        val cached = AppState(loading = false, rosterLoaded = true, mirrorRevision = 9,
+        val cached = AppState(previewComputer, loading = false, rosterLoaded = true, mirrorRevision = 9,
             actualConnection = LinkState.Ready(HostRoute.Direct), hello = buildJsonObject { put("rev", 10) })
         assertFalse(cached.widgetBotsCurrent)
         val caughtUp = cached.copy(mirrorRevision = 10)
@@ -30,24 +30,35 @@ class WidgetStoreTest {
         assertNull(PushPreferences.activeUser(context))
         val originalFile = AtomicFile(File(context.noBackupFilesDir, "widget-owner.json"))
         val original = if (originalFile.baseFile.exists()) originalFile.readFully() else null
-        val computer = LocalStore(context).computers().single()
+        // The emulator's app may have more than one computer paired; the test needs one of them.
+        val computer = LocalStore(context).computers().first()
         val first = LocalStore(context, "widget-test-a-" + UUID.randomUUID())
         val second = LocalStore(context, "widget-test-b-" + UUID.randomUUID())
         try {
             first.saveComputers(listOf(computer)); second.saveComputers(listOf(computer))
             val a = WidgetStore.activate(context, first.contextId)
-            assertTrue(WidgetStore.publish(context, a, computer, listOf(Bot("shared", "Account A", lastMessage = "Private chat")), UsageReport(), true, false))
+            assertTrue(WidgetStore.publish(context, a, listOf(WidgetComputer(computer, listOf(Bot("shared", "Account A", lastMessage = "Private chat")), true)), computer, UsageReport(), false))
             val b = WidgetStore.activate(context, second.contextId)
-            assertTrue(WidgetStore.publish(context, b, computer, listOf(Bot("shared", "Account B")), UsageReport(), true, false))
-            assertFalse(WidgetStore.publish(context, a, computer, listOf(Bot("shared", "Late Account A")), UsageReport(), true, false))
+            assertTrue(WidgetStore.publish(context, b, listOf(WidgetComputer(computer, listOf(Bot("shared", "Account B")), true)), computer, UsageReport(), false))
+            assertFalse(WidgetStore.publish(context, a, listOf(WidgetComputer(computer, listOf(Bot("shared", "Late Account A")), true)), computer, UsageReport(), false))
             assertEquals("Account B", WidgetStore.feed(context).bots.single().name)
             val revision = WidgetStore.changes.value
-            WidgetStore.publish(context, b, computer, listOf(Bot("shared", "Newer Account B")), UsageReport(), true, false)
-            assertFalse(WidgetStore.publish(context, b, computer, listOf(Bot("shared", "Old background B")), UsageReport(), true, false,
+            WidgetStore.publish(context, b, listOf(WidgetComputer(computer, listOf(Bot("shared", "Newer Account B")), true)), computer, UsageReport(), false)
+            assertFalse(WidgetStore.publish(context, b, listOf(WidgetComputer(computer, listOf(Bot("shared", "Old background B")), true)), computer, UsageReport(), false,
                 expectedRevision = revision))
             assertEquals("Newer Account B", WidgetStore.feed(context).bots.single().name)
             val persisted = File(second.directory, "widget-feed.json").readText()
             assertFalse(persisted.contains("Private chat")); assertFalse(persisted.contains("lastMessage"))
+            // A second computer: unreachable, it keeps the bots it showed; forgotten here, they go with it.
+            val key = ByteArray(32) { 3 }
+            val laptop = Computer(RelayCrypto.computerId(key), "Laptop", java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(key))
+            second.saveComputers(listOf(computer, laptop))
+            WidgetStore.publish(context, b, listOf(WidgetComputer(computer, listOf(Bot("shared", "Newer Account B")), true),
+                WidgetComputer(laptop, listOf(Bot("laptop", "Laptop bot")), true)), computer, UsageReport(), false)
+            WidgetStore.publish(context, b, listOf(WidgetComputer(computer, emptyList(), true), WidgetComputer(laptop, null, false)), computer, UsageReport(), false)
+            assertEquals(listOf("Laptop bot"), WidgetStore.feed(context).bots.map { it.name })
+            second.saveComputers(listOf(computer))
+            assertTrue(WidgetStore.feed(context).bots.isEmpty())
             second.saveComputers(emptyList())
             assertNull(WidgetStore.feed(context).computerId)
             assertTrue(WidgetStore.feed(context).bots.isEmpty())

@@ -6,6 +6,9 @@
 #[allow(dead_code)]
 mod common;
 
+#[path = "routines_e2e/timeout.rs"]
+mod timeout;
+
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -175,15 +178,11 @@ async fn routines_execute_pause_deduplicate_and_reject_wrong_webhook_keys() {
         .await
         .unwrap();
     assert_eq!(first["run"]["id"], second["run"]["id"]);
-    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
-    let run_sessions = || -> i64 {
-        db.query_row("SELECT COUNT(*) FROM kv WHERE k GLOB 'lane.session.*/routine-*'", [], |r| r.get(0)).unwrap()
-    };
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let listing = host.call("routines", json!({"botId":bot})).await;
             // A finished run's session is forgotten.
-            if listing["runs"][0]["status"] == "succeeded" && run_sessions() == 0 {
+            if listing["runs"][0]["status"] == "succeeded" && common::routine_sessions(&host.home) == 0 {
                 break;
             }
             assert_ne!(listing["runs"][0]["status"], "failed", "{listing}");
@@ -337,8 +336,9 @@ async fn an_agent_started_for_a_run_stops_when_the_run_ends() {
     host.wait_event("only-runs", "finished", "LATER").await;
     let events = host.agent_events("only-runs");
     let count = |event: &str| events.iter().filter(|e| e["event"] == event).count();
-    // The message started the agent again: the run's agent stopped with the run. Windows never stops an agent (it
-    // can't tell a dev server from an MCP server, see `lifecycle`), so there the run's session closes instead.
+    // The message started the agent again: the run's agent stopped with the run. On Windows this fixture has no MCP
+    // server of Codync's, so its job can't be told from a dev server (see `background_work`): the agent counts as
+    // busy, and the run's session closes instead.
     assert_eq!((count("initialize"), count("closed")), if cfg!(windows) { (1, 1) } else { (2, 0) });
 }
 
@@ -390,21 +390,6 @@ async fn busy_bot_keeps_work_pending_and_honors_pause_delete_and_edit_across_res
         let text = e["text"].as_str().unwrap();
         text.contains("SHOULD_NOT_RUN") || text.contains("OLD_INSTRUCTION")
     }));
-}
-
-#[tokio::test]
-async fn a_hung_routine_times_out_and_the_next_task_still_runs() {
-    let host = Host::start().await;
-    let bot = host.stable_bot("timeout").await;
-    let hung = host.save(&bot, "hung", "BLOCK[forever] IGNORE_CANCEL", json!([{"type":"webhook"}]), 2).await;
-    let next = host.save(&bot, "next", "AFTER_TIMEOUT", json!([{"type":"webhook"}]), 30).await;
-    host.call("runRoutine", json!({"botId":bot,"id":hung})).await;
-    host.wait_event("timeout", "started", "BLOCK[forever]").await;
-    host.call("runRoutine", json!({"botId":bot,"id":next})).await;
-    let failed = host.wait_status(&bot, &hung, "failed").await;
-    assert!(failed["detail"].as_str().unwrap().contains("time limit"));
-    host.wait_status(&bot, &next, "succeeded").await;
-    host.wait_event("timeout", "finished", "AFTER_TIMEOUT").await;
 }
 
 #[tokio::test]

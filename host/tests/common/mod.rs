@@ -1,15 +1,30 @@
 //! Shared by the end-to-end tests.
 
 pub mod host;
+pub mod steer;
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// The seed of the cloud key a test host trusts for device certificates.
+pub const TEST_CLOUD_SEED: [u8; 32] = [9; 32];
+
+fn test_cloud_key() -> String {
+    use base64::Engine as _;
+    let key = ed25519_dalek::SigningKey::from_bytes(&TEST_CLOUD_SEED).verifying_key();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
+}
+
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
 pub async fn serve(home: &Path) -> (Child, String) {
+    serve_with(home, &[]).await
+}
+
+/// [`serve`] with `env` on top of the test host's own.
+pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
     let log = home.join("host-stderr.log");
@@ -21,14 +36,21 @@ pub async fn serve(home: &Path) -> (Child, String) {
             .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
             .env("CODYNC_HOME", home)
             .env("CODYNC_CLOUD", "off")
+            // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
+            .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
+            // A test host leaves the computer's agent CLIs and the user's logins alone.
+            .env("CODYNC_AGENT_CHECKS", "off")
+            // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
+            .env("CODYNC_VAULT", "folder")
+            .envs(env.iter().copied())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
-            match reqwest::get(format!("{base}/health")).await {
-                Ok(_) => return (child, base),
-                Err(e) => last = format!("{e:?}"),
+            match ready(&base, home).await {
+                Ok(()) => return (child, base),
+                Err(e) => last = e,
             }
             assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -37,12 +59,25 @@ pub async fn serve(home: &Path) -> (Child, String) {
     }
 }
 
-/// Why a test host didn't answer: the last health check's error and the end of the host's log.
+/// Why a test host didn't answer: the last readiness check's error and the end of the host's log.
 fn not_started(log: &Path, last: &str) -> String {
     let text = std::fs::read_to_string(log).unwrap_or_default();
     let lines: Vec<&str> = text.lines().collect();
     let tail = lines[lines.len().saturating_sub(30)..].join("\n");
-    format!("host didn't start; last health check: {last}\n--- host log ---\n{tail}")
+    format!("host didn't start; last readiness check: {last}\n--- host log ---\n{tail}")
+}
+
+/// Whether `base` is this home's host: on a reused port another test's host answers `/health` too.
+pub async fn ready(base: &str, home: &Path) -> Result<(), String> {
+    let token = std::fs::read_to_string(home.join("token")).map_err(|e| format!("no token yet: {e}"))?;
+    let res = reqwest::Client::new()
+        .get(format!("{base}/events?since=0&client=test"))
+        .bearer_auth(token.trim())
+        .timeout(Duration::from_secs(1))
+        .send()
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    res.status().is_success().then_some(()).ok_or_else(|| format!("status {}", res.status()))
 }
 
 /// Stops a test host the way launchd does (SIGTERM), so it shuts down its own
@@ -61,9 +96,29 @@ pub fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.
+#[allow(dead_code, reason = "only some tests wait this way")]
+pub async fn eventually(what: &str, within: Duration, mut done: impl AsyncFnMut() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done().await {
+        assert!(Instant::now() < deadline, "timed out waiting until {what}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// Python as the test machine names it.
 pub fn python() -> &'static str {
     if cfg!(windows) { "python" } else { "python3" }
+}
+
+/// Whether the test machine lacks Python, which a test of a Python fixture then skips.
+#[allow(dead_code, reason = "only the tests of Python fixtures check")]
+pub fn python_missing() -> bool {
+    let missing = Command::new(python()).arg("--version").output().is_err();
+    if missing {
+        eprintln!("skipping: Python not available");
+    }
+    missing
 }
 
 /// The agent command that runs a Python fixture (quoted for `sh -c` / `cmd /c`). UTF-8 mode makes it read the host's
@@ -75,6 +130,13 @@ pub fn python_agent(script: &Path) -> String {
     } else {
         format!("{} -X utf8 -u '{}'", python(), path.replace('\'', "'\\''"))
     }
+}
+
+/// The command of a program that listens on `port` of this computer until it's stopped.
+#[allow(dead_code, reason = "only the tests of dev servers use it")]
+pub fn port_server(port: u16) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/port_server.py");
+    format!("{} {port}", python_agent(&script))
 }
 
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,
@@ -115,6 +177,18 @@ pub async fn snapshot(base: &str, token: &str) -> serde_json::Value {
         }
     }
     serde_json::json!({"rev": rev, "bots": bots, "entries": entries})
+}
+
+/// How many routine runs still hold a session in `home`'s store: the host keeps each as a
+/// `lane.session.<bot>@<bot>/routine-<run>` row (`store::model::run_session_key`) and forgets
+/// it when the run ends.
+#[allow(dead_code, reason = "only the routine tests wait for runs")]
+pub fn routine_sessions(home: &Path) -> i64 {
+    rusqlite::Connection::open(home.join("codync.db"))
+        .and_then(|db| {
+            db.query_row("SELECT COUNT(*) FROM kv WHERE k GLOB 'lane.session.*/routine-*'", [], |r| r.get(0))
+        })
+        .expect("read the host's store")
 }
 
 /// Bot `id` in a [`snapshot`] (which also holds the lead bot every host makes).

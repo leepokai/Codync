@@ -14,9 +14,10 @@ Cloudflare Worker for accounts and the off-LAN relay (spec: [docs/reference/remo
   Setup and checks: [docs/features/cloud-assistants.md](../docs/features/cloud-assistants.md).
 - **`ComputerRelay`** (`src/relay.ts`): one Durable Object per computer (SQLite storage, WebSocket
   Hibernation). It admits device sockets against the host-signed ACL, forwards channel frames it can't
-  read, reports presence, holds the offline mailbox, and queues routine webhook deliveries (`hookbox`,
-  checked against the keys the host registers; `src/hooks.ts`). It is reachable only through requests the Worker
-  builds itself (`X-Codync-Internal: 1`); `/internal/*` has no public route.
+  read, reports presence, holds the offline mailbox (`src/relay-mailbox.ts`), queues routine webhook deliveries
+  (`src/relay-hooks.ts`, checked against the keys the host registers; `src/hooks.ts`), and wakes a sleeping cloud
+  computer (`src/cloud-machines.ts`). Limits and wire types: `src/relay-wire.ts`. It is reachable only through
+  requests the Worker builds itself (`X-Codync-Internal: 1`); `/internal/*` has no public route.
 - **Auth** (`src/auth.ts`): Clerk session JWTs via `@clerk/backend` (`CLERK_SECRET_KEY` → JWKS fetched and
   cached per isolate; `CLERK_JWT_KEY` → networkless, dev/e2e only) and Ed25519 request signatures
   (WebCrypto).
@@ -55,9 +56,11 @@ Development deployment (see [environment readiness](../docs/guides/environments-
 ```bash
 # Only if the database does not exist: npx wrangler d1 create codync-dev
 # Confirm its database_id in [env.dev] before applying migrations.
-npx wrangler d1 migrations apply codync-dev --env dev --remote
+npx wrangler d1 migrations apply codync-dev --env dev --remote   # includes 0005 (short pairing codes), 0006 (signed-out devices)
 npx wrangler secret put CLERK_SECRET_KEY --env dev
 npx wrangler secret put CLERK_WEBHOOK_SECRET --env dev
+# The device certificate key: without it phones can't pair (503 notConfigured).
+grep '^CODYNC_DEVICE_CERT_KEY=' ../.env.development | cut -d= -f2- | npx wrangler secret put DEVICE_CERT_KEY --env dev
 npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 ```
 
@@ -65,11 +68,25 @@ npx wrangler deploy --env dev               # → https://dev-api.codync.dev
 |---|---|---|
 | `CLERK_SECRET_KEY` | secret | JWKS for session tokens |
 | `CLERK_WEBHOOK_SECRET` | secret | Svix signature on `/v1/webhooks/clerk` (`user.deleted`) |
+| `DEVICE_CERT_KEY` | secret | Ed25519 private key (JWK JSON) that signs device certificates (`POST /v1/devices/certificate`); hosts compile in its public half (`host/src/environment.rs`), `CODYNC_DEVICE_CERT_KEY` on a host overrides it for a self-hosted cloud. Kept in the git-ignored `.env.development` / `.env.production` as `CODYNC_DEVICE_CERT_KEY` |
 | `RELEASE_GATE_TOKEN` | secret, main only | fine-grained GitHub token, *Actions: write* on `leepokai/Codync`: dispatches the release gate |
 | `CLERK_ISSUER` | var | Clerk Frontend API URL; tokens must carry this `iss` |
 | `CLERK_AUTHORIZED_PARTIES` | var, optional | comma-separated; a token with `azp` must match |
 | `CLERK_JWT_KEY` | var, dev/e2e only | public key for networkless verification |
 | `ASSISTANT_LIMITER` | rate limit binding | cloud assistant (MCP connector) requests per account, 120 per minute |
+| `PAIRING_CODE_LIMITER` | rate limit binding | short pairing codes typed per account and per IP, 10 per minute, a miss counting twice |
+| `CLOUD_SECRET_KEYS` | secret, optional | Codync Cloud: `id:base64` AES-256 keys (space-separated, the first seals) that seal the provider keys users give it (`src/secrets.ts`; [bring your own cloud](../docs/plans/codync-cloud.md#bring-your-own-cloud)); unset = no cloud computers. Make one with `echo "k1:$(openssl rand -base64 32)"`; never reuse one across environments |
+| `CLOUD_KEY_LIMITER` | rate limit binding | provider keys saved per account (each save calls the provider), 5 per minute |
+| `CLOUD_COMPUTER_USERS` | var, optional | comma-separated Clerk user ids allowed a cloud computer (`*`: everyone) |
+| `BOAT_API_URL`, `INSTABOX_API_URL`, `CLOUD_AUTO_STOP_SECONDS` | var, dev/e2e only | Boat and InstaBox base URLs; provider auto-stop (Boat's trial needs ≤ 7200; InstaBox ignores it and pauses a machine idle for 30 minutes) |
+| `CLOUD_HOST_ENV`, `CLOUD_HOST_BINARY_URL`, `CLOUD_MACHINE_PREFIX` | var, dev/e2e only | a cloud computer's host service environment (`CODYNC_…=value`, e.g. its cloud URL, analytics off); a host build to boot instead of the release; the machine name prefix ([cloud computer testing](../docs/guides/cloud-computer-testing.md)) |
+| `HOST_FLOOR`, `HOST_FLOOR_REASON` | var, emergencies only | cloud hosts below it update at once; self-hosted ones below it get `426 hostUpdateRequired` at registration |
+| `APP_FLOOR_IOS`, `APP_FLOOR_ANDROID`, `APP_FLOOR_DESKTOP`, `APP_FLOOR_REASON` | var, emergencies only | apps below their platform's floor get `426 appUpdateRequired` on every request |
+
+Cloud computers (`src/routes/cloud-computers.ts`, provider calls in the sans-I/O `machines/` package) are
+tested end to end on a real Boat sandbox with `npm run e2e:cloud`, and with the real apps against a local cloud with
+`npm run cloud:stack` ([cloud computer testing](../docs/guides/cloud-computer-testing.md);
+[trial log](../docs/plans/codync-cloud-boat-trial.md)).
 
 `RELEASE_GATE_TOKEN` is a fine-grained token without expiry. If it's revoked, set a new one with
 `npx wrangler secret put RELEASE_GATE_TOKEN`: without a working token the release gate runs only after

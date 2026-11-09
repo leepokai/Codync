@@ -79,7 +79,7 @@ interface VoiceAudio {
 
 /** Serial audio ownership: no late recognizer/TTS callback can submit or restart a retired call. */
 class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settings: VoiceSettings,
-    private val send: (String) -> Unit) : VoiceEngine {
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 }, private val send: (String) -> Unit) : VoiceEngine {
     private sealed interface Event {
         data class Input(val value: VoiceInput) : Event
         data class Submit(val generation: Long, val revision: Long) : Event
@@ -97,6 +97,8 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     override val state = mutableState.asStateFlow()
     private var generation = 0L; private var revision = 0L; private var utterance = 0L
     private var silence: Job? = null
+    /** When the current recognition started (null while not listening), and how many in a row failed right after. */
+    private var listenedAt: Long? = null; private var quickFailures = 0
     private val replies = ArrayDeque<String>()
     init { scope.launch {
         try {
@@ -132,6 +134,8 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     override suspend fun awaitEnd() { job.join() }
 
     private suspend fun stopListening() {
+        // A recognition that ran a while works, however it ended.
+        listenedAt?.let { if (clock() - it >= QUICK_FAILURE_MS) quickFailures = 0 }; listenedAt = null
         generation++; revision++; silence?.cancel(); silence = null
         audio.stopListening()
         mutableState.update { it.copy(level = 0f) }
@@ -139,7 +143,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     private suspend fun listen() {
         mutableState.update { it.copy(phase = VoicePhase.Listening, heard = "", level = 0f) }
         if (state.value.muted) return
-        generation++
+        generation++; listenedAt = clock()
         audio.listen(generation) { post(Event.Input(it)) }
     }
     private suspend fun speakNext() {
@@ -160,6 +164,15 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
         if (text.isNotEmpty()) send(text)
         listen() // Bot work never stops listening to the next utterance.
     }
+    /**
+     * The recognizer stopped with an error: what was heard goes and it listens again, as on the iPhone, unless it failed
+     * within [QUICK_FAILURE_MS] of listening [FAILURES_IN_A_ROW] times running (listening again won't help).
+     */
+    private suspend fun recognitionFailed(message: String) {
+        val startedAt = listenedAt ?: return
+        quickFailures = if (clock() - startedAt < QUICK_FAILURE_MS) quickFailures + 1 else 0
+        if (quickFailures >= FAILURES_IN_A_ROW) fail(message) else submit()
+    }
     private suspend fun fail(message: String) {
         stopListening(); utterance++; replies.clear(); audio.stopSpeaking()
         mutableState.update { it.copy(phase = VoicePhase.Failed, error = message) }
@@ -170,6 +183,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
             is Event.Input -> when (val input = event.value) {
                 is VoiceInput.Text -> if (input.generation == generation && state.value.phase == VoicePhase.Listening && !state.value.muted) {
                     require(input.value.length <= 16 * 1024)
+                    if (input.value.isNotBlank()) quickFailures = 0
                     if (input.value != state.value.heard) {
                         mutableState.update { it.copy(heard = input.value) }; revision++; silence?.cancel()
                         val owner = generation; val version = revision
@@ -181,7 +195,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
                 }
                 is VoiceInput.Level -> if (input.generation == generation && state.value.phase == VoicePhase.Listening && !state.value.muted)
                     mutableState.update { it.copy(level = if (input.value.isFinite()) input.value.coerceIn(0f, 1f) else 0f) }
-                is VoiceInput.Failed -> if (input.generation == generation) fail(input.message)
+                is VoiceInput.Failed -> if (input.generation == generation) recognitionFailed(input.message)
             }
             is Event.Submit -> if (event.generation == generation && event.revision == revision && state.value.phase == VoicePhase.Listening && !state.value.muted) submit()
             is Event.Reply -> {
@@ -214,4 +228,5 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
             }
         }
     }
+    private companion object { const val QUICK_FAILURE_MS = 2_000L; const val FAILURES_IN_A_ROW = 3 }
 }

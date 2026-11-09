@@ -14,6 +14,10 @@ class ConversationTest {
         assertTrue(bot.copy(workingChat = "group").isWorking("group"))
         assertFalse(bot.copy(workingChat = "group").isWorking("b"))
         assertFalse(bot.copy(status = "idle").isWorking("b"))
+        // Anywhere, for the messages waiting in its own chat.
+        assertTrue(bot.copy(workingChat = "group").isWorking)
+        assertTrue(bot.copy(status = "needsInput").isWorking)
+        assertFalse(bot.copy(status = "idle").isWorking)
     }
 
     @Test fun `users and final replies can be quoted, and the quote reads leniently`() {
@@ -65,6 +69,14 @@ class ConversationTest {
         }
     }
 
+    @Test fun `a queued message waits above the composer`() {
+        fun user(status: String) = Entry("u", 1, "b", rev = 1, kind = "user", data = buildJsonObject { put("text", "hi"); put("status", status) })
+        assertTrue(user("queued").isQueued)
+        assertTrue(user("queued").isChat)
+        assertFalse(user("sent").isQueued)
+        assertFalse(Entry("n", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("status", "queued") }).isQueued)
+    }
+
     @Test fun `malformed known events fail before a checkpoint while unknown events are ignored`() {
         assertFails<IllegalArgumentException> { MirrorEvent.decode(buildJsonObject { put("type", "entry"); put("entry", buildJsonObject { put("id", "broken") }) }) }
         assertEquals(MirrorEvent.Ignored, MirrorEvent.decode(buildJsonObject { put("type", "future"); put("rev", 999) }))
@@ -72,13 +84,20 @@ class ConversationTest {
 
     @Test fun `templates preserve portable settings and exclude identity and runtime flags`() {
         val bot = Bot("identity", "Reviewer", description = "Review carefully", model = "chosen", connectors = listOf("c"),
-            skills = listOf("s"), pinned = true, hidden = true, managedWorkspace = true, cwd = "/host/workspace", rev = 77)
+            skills = listOf("s"), pinned = true, hidden = true, managedWorkspace = true, cwd = "/host/workspace", rev = 77, section = "Work")
         val template = WireJson.parseToJsonElement(BotDraft.from(bot).template()).jsonObject
-        for (key in listOf("id", "pinned", "hidden", "rev", "status", "autoName", "createdAt")) assertFalse(key in template)
+        for (key in listOf("id", "pinned", "hidden", "rev", "status", "autoName", "createdAt", "section")) assertFalse(key in template)
+        // Saving the editor leaves the section to the roster's menu: updateBot keeps a field it isn't sent.
+        assertFalse("section" in BotDraft.from(bot).body())
         assertEquals("", template.getValue("cwd").jsonPrimitive.content)
         assertEquals("chosen", template.getValue("model").jsonPrimitive.content)
         assertEquals(listOf(JsonPrimitive("c")), template.getValue("connectors").jsonArray.toList())
         assertEquals(JsonNull, BotDraft.from(bot).copy(model = null).body()["model"])
+    }
+
+    @Test fun `a bot decodes its roster section, and an older host's without one`() {
+        assertEquals("Work", HostClient.decode(WireJson.parseToJsonElement("""{"id":"b","name":"Scout","section":"Work"}""").jsonObject).section)
+        assertNull(HostClient.decode(WireJson.parseToJsonElement("""{"id":"b","name":"Scout"}""").jsonObject).section)
     }
 
     @Test fun `a settings draft takes changes made elsewhere and keeps its own edits`() {

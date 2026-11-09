@@ -4,7 +4,7 @@ import { usePixelRatio } from '../../lib/theme'
 import { useResetLine, useTr } from '../../lib/use-language'
 import { UsageBar } from '../usage/UsageBar'
 import { mascotDataURL } from '../usage/ProviderMascot'
-import { providerTintCSS, resetDescription, tightest, windowReading, windowTitle } from '../usage/usage-model'
+import { providerTintCSS, resetDescription, tightest, usedText, windowReading, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
 
 // Codync's own part of the island: the plan limits the menu bar already tracks (local usage
@@ -30,19 +30,20 @@ function tightestOverall(usage: UsageProvider[]): { provider: UsageProvider; win
 
 /** Header: the tightest limit as its provider's character, a short bar and the percent; opens Usage. */
 export function UsageMeter({ model }: { model: IslandModel }) {
+  const tr = useTr()
+  const line = useResetLine()
   const top = tightestOverall(model.summary.usage)
   if (!top) return null
   const { provider, window } = top
-  const tr = useTr()
-  const line = useResetLine()
   const title = tr(windowTitle(window))
   const reset = resetDescription(window)
   const spoken = reset ? line(reset) : ''
+  const used = usedText(window.percent, tr)
   return (
     <button
       className="island-meter"
-      title={`${provider.name} · ${title} · ${Math.round(window.percent)}%${spoken ? ` · ${spoken}` : ''}`}
-      aria-label={`Usage: ${provider.name} ${title} ${Math.round(window.percent)} percent`}
+      title={`${provider.name} · ${title} · ${used}${spoken ? ` · ${spoken}` : ''}`}
+      aria-label={`${tr('Usage')}: ${provider.name} ${title} ${used}`}
       onClick={() => model.setTab('usage')}
     >
       <Mascot provider={provider} size={15} />
@@ -88,7 +89,7 @@ export function UsageView({ model }: { model: IslandModel }) {
               ) : (
                 <>
                   <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-                  <span className="island-usage-value">{windowReading(w)}</span>
+                  <span className="island-usage-value">{windowReading(w, tr)}</span>
                   <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
                 </>
               )}

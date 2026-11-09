@@ -20,10 +20,3 @@
   word-break: break-all;
   user-select: all;
 }
-/* The network is a beta feature: a quiet tag beside its title. */
-.beta-tag {
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  background: var(--field);
-  color: var(--secondary);
-}

@@ -3,7 +3,7 @@ import { registerAppearance } from './appearance'
 import { execFileSync } from 'node:child_process'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, WindowCommand } from '../shared/ipc'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
@@ -19,11 +19,15 @@ import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
+import { registerCloudAccess } from './cloud-access'
+import { registerChannels } from './channel'
+import { watchAttention } from './attention'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
 import { Island } from './island'
 import { registerErrorReports } from './error-reports'
+import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
 
@@ -38,10 +42,16 @@ function computerName() {
 }
 
 // UI checks drive the renderer over the DevTools protocol (development builds only).
-if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+  // As Playwright does for the Chromium it launches. Reloading the dev server's unbundled modules holds about 750 MB of
+  // shared memory until a garbage collection; past a Linux VM's /dev/shm (half its memory) requests fail and the window stays blank.
+  app.commandLine.appendSwitch('disable-dev-shm-usage')
+}
 
 const host = new HostController()
 registerErrorReports(host)
+registerRendererRecovery(host)
 host.on('setupFailed', reportHostSetupFailure)
 const account = new AccountService()
 const updates = new Updates(host)
@@ -87,6 +97,7 @@ function openChat() {
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
+  watchAttention(chat)
   keepArtifactsInFrame(chat.webContents)
   void chat.loadURL(rendererURL('chat'))
   return chat
@@ -175,14 +186,19 @@ function registerIPC(tray: Tray) {
   })
   ipcMain.on('app:copy', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('app:pickFiles', async (e) => {
-    const window = BrowserWindow.fromWebContents(e.sender)
-    const result = window
-      ? await dialog.showOpenDialog(window, { properties: ['openFile', 'multiSelections'] })
-      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    const result = await openDialog(e, { properties: ['openFile', 'multiSelections'] })
     return result.canceled ? [] : readFiles(result.filePaths)
+  })
+  ipcMain.handle('app:pickExport', async (e) => {
+    const result = await openDialog(e, { defaultPath: app.getPath('downloads'), properties: ['openFile'], filters: [{ name: 'Bot export', extensions: ['zip'] }] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   ipcMain.handle('app:clipboardFiles', () => readClipboardFiles())
   ipcMain.on('app:traySummary', (_e, summary) => tray.update(summary))
+  ipcMain.on('app:showWindow', () => {
+    openChat()
+    if (isMac) app.focus({ steal: true })
+  })
   ipcMain.handle('app:showInDock', () => showInDock())
   ipcMain.handle('app:setShowInDock', (_e, on: boolean) => {
     const visible = setShowInDock(on)
@@ -207,6 +223,12 @@ function registerIPC(tray: Tray) {
     quitLifecycle.beginQuit()
     app.exit(0)
   })
+}
+
+/** An open panel on the window that asked (a sheet on macOS), or a free one when it has none. */
+function openDialog(e: IpcMainInvokeEvent, options: OpenDialogOptions) {
+  const window = BrowserWindow.fromWebContents(e.sender)
+  return window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options)
 }
 
 if (yieldsToInstall()) {
@@ -245,6 +267,8 @@ if (yieldsToInstall()) {
     registerSpeech()
     registerScreenIPC()
     registerCloud(account)
+    registerCloudAccess(account)
+    registerChannels(account)
     registerSSH(() => BrowserWindow.getAllWindows())
     registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.

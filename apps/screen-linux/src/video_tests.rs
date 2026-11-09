@@ -30,7 +30,11 @@ async fn baseline_offer_starts_video_after_the_answer_is_negotiated() {
     .unwrap();
     let webrtc = pipeline.by_name("peer").unwrap();
     pipeline.set_state(gst::State::Ready).unwrap();
-    let session = Session { pipeline, webrtc };
+    let session = Session {
+        pipeline,
+        webrtc,
+        incoming: None,
+    };
     let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 102\r\nc=IN IP4 0.0.0.0\r\n\
             a=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=setup:actpass\r\n\

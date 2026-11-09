@@ -2,6 +2,7 @@
 
 pub mod artifacts;
 pub mod files;
+mod icons;
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -55,6 +56,13 @@ impl Client {
     }
 
     pub async fn call(&self, method: &str, body: &Value) -> Result<Value, String> {
+        let prepared;
+        let body = if method == "setIcon" {
+            prepared = icons::prepare(body).await.map_err(|e| format!("{e:#}"))?;
+            &prepared
+        } else {
+            body
+        };
         let token = self.token().ok_or(NOT_INSTALLED)?;
         let started = std::time::Instant::now();
         let res = loop {
@@ -173,19 +181,12 @@ impl Client {
                 let _ = tx.send(Msg::Term(id, json!({"type": "exit", "code": -1})));
                 return;
             };
-            let mut body = res.bytes_stream();
-            let mut buf = Vec::new();
-            while let Some(Ok(chunk)) = body.next().await {
-                buf.extend_from_slice(&chunk);
-                while let Some(i) = buf.iter().position(|&b| b == b'\n') {
-                    let line: Vec<u8> = buf.drain(..=i).collect();
-                    let line = String::from_utf8_lossy(&line);
-                    let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
-                    if let Ok(v) = serde_json::from_str::<Value>(data.trim_start())
-                        && tx.send(Msg::Term(id.clone(), v)).is_err()
-                    {
-                        return;
-                    }
+            let mut events = std::pin::pin!(sse_values(res));
+            while let Some(v) = events.next().await {
+                if let Ok(v) = v
+                    && tx.send(Msg::Term(id.clone(), v)).is_err()
+                {
+                    return;
                 }
             }
         });
@@ -237,29 +238,27 @@ impl Client {
                     if tx.send(Msg::Online(true)).is_err() || tx.send(Msg::Connected { since }).is_err() {
                         return;
                     }
-                    let mut body = res.bytes_stream();
-                    let mut buf = Vec::new();
-                    'read: while let Some(Ok(chunk)) = body.next().await {
-                        buf.extend_from_slice(&chunk);
-                        while let Some(i) = buf.iter().position(|&b| b == b'\n') {
-                            let line: Vec<u8> = buf.drain(..=i).collect();
-                            let line = String::from_utf8_lossy(&line);
-                            let Some(data) = line.trim_end().strip_prefix("data:") else { continue };
-                            let Ok(v) = serde_json::from_str::<Value>(data.trim_start()) else {
+                    let mut events = std::pin::pin!(sse_values(res));
+                    while let Some(v) = events.next().await {
+                        let v = match v {
+                            Ok(v) => v,
+                            // A dropped connection reconnects from the last rev, like the stream ending.
+                            Err(SseError::Read(_)) => break,
+                            Err(SseError::Json(_)) => {
                                 // Never skip what we can't read: start over from scratch.
                                 c.rev.store(0, Ordering::Relaxed);
                                 let _ = tx.send(Msg::Rewind);
-                                break 'read;
-                            };
-                            if v["type"] == "resync" {
-                                break 'read;
+                                break;
                             }
-                            if let Some(rev) = v["rev"].as_i64() {
-                                c.rev.fetch_max(rev, Ordering::Relaxed);
-                            }
-                            if tx.send(Msg::Event(v)).is_err() {
-                                return;
-                            }
+                        };
+                        if v["type"] == "resync" {
+                            break;
+                        }
+                        if let Some(rev) = v["rev"].as_i64() {
+                            c.rev.fetch_max(rev, Ordering::Relaxed);
+                        }
+                        if tx.send(Msg::Event(v)).is_err() {
+                            return;
                         }
                     }
                 }
@@ -270,6 +269,51 @@ impl Client {
             }
         });
     }
+}
+
+/// Why an event stream gave something other than an event.
+pub enum SseError {
+    /// The connection failed; the stream ends after it.
+    Read(reqwest::Error),
+    /// An event that isn't JSON.
+    Json(serde_json::Error),
+}
+
+impl std::fmt::Display for SseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read(e) => write!(f, "{e}"),
+            Self::Json(e) => write!(f, "an event that isn't JSON ({e})"),
+        }
+    }
+}
+
+/// The JSON of each `data:` line of a server-sent event stream until it ends.
+pub fn sse_values(res: reqwest::Response) -> impl futures::Stream<Item = Result<Value, SseError>> {
+    let body = Box::pin(res.bytes_stream());
+    let lines = futures::stream::unfold(Some((body, Vec::new())), |state| async move {
+        let (mut body, mut buf) = state?;
+        loop {
+            if let Some(i) = buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = buf.drain(..=i).collect();
+                return Some((Ok(line), Some((body, buf))));
+            }
+            match body.next().await? {
+                Ok(chunk) => buf.extend_from_slice(&chunk),
+                Err(e) => return Some((Err(SseError::Read(e)), None)),
+            }
+        }
+    });
+    lines.filter_map(|line| async move {
+        let line = match line {
+            Ok(line) => line,
+            Err(e) => return Some(Err(e)),
+        };
+        let line = String::from_utf8_lossy(&line);
+        line.trim_end()
+            .strip_prefix("data:")
+            .map(|data| serde_json::from_str(data.trim_start()).map_err(SseError::Json))
+    })
 }
 
 /// `dir/name`, or `name (2)` … when that's taken. The name is only its last part (no `../`).

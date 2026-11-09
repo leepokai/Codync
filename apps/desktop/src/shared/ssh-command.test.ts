@@ -177,9 +177,9 @@ for (const [preferred, fallback] of [
 
 test('each copy of the app clears only its own leftover tunnels', () => {
   const tunnel = (dir: string) => ['/usr/bin/ssh', ...tunnelArguments(profile, 19333, '/Users/me', dir)].join(' ')
-  const dev = new RegExp(orphanTunnelPattern('/Users/me/.codync-dev'))
+  const dev = new RegExp(orphanTunnelPattern('/usr/bin/ssh', '/Users/me/.codync-dev'))
   assert.match(tunnel('/Users/me/.codync-dev'), dev)
   assert.doesNotMatch(tunnel('/Users/me/.codync-dev-feat-x'), dev)
   assert.doesNotMatch(tunnel('/Users/me/xcodync-dev'), dev)
-  assert.doesNotMatch(tunnel('/Users/me/.codync-dev'), new RegExp(orphanTunnelPattern('/Users/me/.codync-dev-feat-x')))
+  assert.doesNotMatch(tunnel('/Users/me/.codync-dev'), new RegExp(orphanTunnelPattern('/usr/bin/ssh', '/Users/me/.codync-dev-feat-x')))
 })

@@ -10,9 +10,11 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
+mod gear_view;
 mod library_view;
 mod market_view;
 mod memory_view;
+pub use gear_view::draw as gear;
 pub use library_view::draw as library;
 pub use market_view::draw as market;
 pub use memory_view::draw as memory;
@@ -22,16 +24,11 @@ use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, Routine
 use super::md::truncate;
 use super::view::{
     centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
-    using_line, when_future,
+    using_line, when_future, window,
 };
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or_default()
-}
-
-/// Rows `off..` of a list that fit `h` lines with `cursor` on screen.
-fn window(cursor: usize, h: usize) -> usize {
-    cursor.saturating_sub(h.saturating_sub(1))
 }
 
 /// A selectable row's background, highlighted when `sel`.
@@ -67,8 +64,8 @@ fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
-/// A bot's pages on the top line (Details, Memory, Settings) with this one marked; returns the
-/// area under it.
+/// A bot's pages on the top line (Details, Library, Memory, Settings) with this one marked.
+/// Returns the area under it.
 pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let t = theme();
     let mut x = inner.x;
@@ -135,7 +132,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                 inner.x,
                 inner.y + 1,
                 inner.width,
-                &tr("No routines. c asks the bot for one; n sets one up here."),
+                &tr("No routines. n sets one up here, or ask the bot in chat."),
                 t.secondary.patch(t.panel),
             );
         }
@@ -174,12 +171,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
             }
         }
     }
-    footer(
-        buf,
-        inner,
-        None,
-        "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
-    );
+    footer(buf, inner, None, "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc");
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
@@ -324,6 +316,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
+            SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
         };
         let title = tr(&title);
         let detail = tr(&detail);

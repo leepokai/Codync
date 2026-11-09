@@ -88,9 +88,9 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
   const summary = (routine: Routine) => {
     const active = runs.find((r) => r.routineId === routine.id && isActiveRun(r))
     if (active) return runLabel(active)
-    if (routine.lastError) return 'Schedule needs attention'
+    if (routine.lastError) return tr('Schedule needs attention')
     const last = runs.find((r) => r.routineId === routine.id)
-    if (last && ['failed', 'interrupted'].includes(last.status)) return `Last run ${runLabel(last).toLowerCase()}`
+    if (last && ['failed', 'interrupted'].includes(last.status)) return tr('Last run {status}').replaceAll('{status}', () => runLabel(last).toLowerCase())
     return routine.triggerDescriptions.join(' · ')
   }
 
@@ -111,10 +111,6 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
       <HStack>
         <Text size="body" weight="semibold" className="routines-title">{tr(`Routines`)}</Text>
         <Spacer />
-        <IconButton title="Ask the bot for a routine" icon="text.bubble" disabled={store.isOffline} onClick={() => {
-          store.setRoutineDraft(botId, 'I want a routine that ')
-          onClose?.()
-        }} />
         <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
         {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
       </HStack>

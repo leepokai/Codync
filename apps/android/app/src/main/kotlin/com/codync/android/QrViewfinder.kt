@@ -32,7 +32,11 @@ import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.codync.android.core.PairingQr
 import com.codync.android.core.PairingScan
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -78,9 +82,11 @@ import java.util.concurrent.atomic.AtomicBoolean
         val main = ContextCompat.getMainExecutor(context)
         val reader = PairingQr(BuildConfig.URL_SCHEME)
         val preview = Preview.Builder().build().apply { setSurfaceProvider(view.surfaceProvider) }
+        // A pairing code is dense and small on a laptop screen: at 720p it reads only from so close that many
+        // main cameras can't focus. 1080p reads it from farther back, where they can.
         val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(
-                ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
+                ResolutionStrategy(Size(1920, 1080), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
         var lastFrame = 0L
         analysis.setAnalyzer(executor) { image ->
             try {
@@ -127,8 +133,22 @@ import java.util.concurrent.atomic.AtomicBoolean
             executor.shutdownNow()
         }
     }
+    // Continuous focus alone hunts on a glowing screen or settles on what's behind the code: focus where the code is
+    // (the middle, or where it was tapped) again every couple of seconds until it reads.
+    var focusAt by remember { mutableStateOf<MeteringPoint?>(null) }
+    LaunchedEffect(camera, focusAt) {
+        val active = camera ?: return@LaunchedEffect
+        val point = focusAt ?: SurfaceOrientedMeteringPointFactory(1f, 1f).createPoint(0.5f, 0.5f, 0.3f)
+        while (true) {
+            active.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                .setAutoCancelDuration(2, TimeUnit.SECONDS).build())
+            delay(2_500)
+        }
+    }
     Box(modifier) {
-        AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+        AndroidView(factory = { view }, modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            detectTapGestures { focusAt = view.meteringPointFactory.createPoint(it.x, it.y) }
+        })
         if (camera?.cameraInfo?.hasFlashUnit() == true) Box(Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
             IconButton(if (torch) "Turn flashlight off" else "Turn flashlight on", "bolt", tint = Color.White) {
                 val active = camera ?: return@IconButton

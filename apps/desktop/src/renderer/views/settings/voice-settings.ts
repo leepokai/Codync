@@ -1,3 +1,4 @@
+import { voiceEngine, voiceEngineIds } from '../../../shared/voice-engine'
 import type { HostClient } from '../../client/host-client'
 import { pref, type Pref } from '../../lib/prefs'
 
@@ -54,9 +55,20 @@ export const isVoiceProvider = (s: string): s is VoiceProvider => s === 'openai'
 export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some((x) => x.provider === p && x.configured)
 
 /** `device` (on-device speech) or a provider. */
-export const engine = pref('callEngine', 'device')
+function enginePref(stored: Pref<string>): Pref<string> {
+  return { ...stored, get: () => voiceEngine(stored.get(), window.codync.platform) }
+}
+
+export const engineOptions = () => voiceEngineIds(window.codync.platform).map((id) => ({
+  id, label: isVoiceProvider(id) ? voiceInfo[id].name : 'On device',
+}))
+
+const storedCallEngine = pref('callEngine', 'device')
+/** Keep an old/default device choice available to call startup's configured-provider fallback. */
+export const callEngineChoice = storedCallEngine.get
+export const engine = enginePref(storedCallEngine)
 /** The same choice for dictation into the message box, picked beside its mic. */
-export const dictationEngine = pref('dictationEngine', 'device')
+export const dictationEngine = enginePref(pref('dictationEngine', 'device'))
 /** On-device reading speed (AVSpeechUtterance's scale: 0.5 is normal). */
 export const DEFAULT_RATE = 0.5
 export const rate = pref('callRate', DEFAULT_RATE)

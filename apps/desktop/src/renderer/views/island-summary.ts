@@ -6,6 +6,7 @@ import { refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './thread/PermissionCard'
+import { trNow } from '../lib/l10n.ts'
 
 /** Tool calls in the island's ticker. */
 const STEPS = 3
@@ -49,13 +50,14 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     ref,
     name,
     shape: bot.avatarShape,
+    customIcon: bot.customIcon,
     color: bot.avatarColor,
     status: bot.status,
     backend: store.backendName(bot.backend),
     folder: folderName(bot),
     detail: botDetail(bot),
     steps: isWorking(bot)
-      ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || 'Use a tool', kind: e.data.toolKind ?? 'other' }))
+      ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || trNow('Use a tool'), kind: e.data.toolKind ?? 'other' }))
       : [],
     error: bot.status === 'error' ? (lastError(entries) ?? null) : null,
   }
@@ -74,7 +76,7 @@ function pendingCards({ ref, bot, store }: RosterItem): IslandPermission[] {
       return {
         ref: refKey(ref),
         entryId: e.id,
-        bot: { name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
+        bot: { customIcon: author.customIcon, name: author.name, shape: author.avatarShape, color: author.avatarColor, backend: store.backendName(author.backend) },
         headline: permissionHeadline(e.data.toolKind),
         title: e.data.title ?? '',
         options: sortedOptions(e.data.options ?? []).map((o) => ({ id: o.optionId, label: optionLabel(o), kind: o.kind })),

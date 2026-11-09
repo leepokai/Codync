@@ -1,0 +1,366 @@
+package com.codync.android
+
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.codync.android.core.*
+import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.serialization.json.JsonObject
+
+/**
+ * The ViewModel the UI talks to (iOS `AccountStore`): the active account, its computers with one
+ * [AppStore] each, and the one writer of [AccountContext]. This file holds the account context's
+ * lifecycle (load, retire) and the computers' list; signing in, pairing, access and links are
+ * `AccountStore` extensions in the `AccountStore*.kt` files beside it.
+ */
+class AccountStore(application: Application) : AndroidViewModel(application) {
+    internal val activityOwnerId: String = UUID.randomUUID().toString()
+    internal var local = LocalStore(application)
+    private var contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
+    internal var contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
+    internal val transitions = Mutex()
+    /** One change to the saved computers at a time. */
+    private val computerChanges = Mutex()
+    internal var cloud: CloudClient? = null
+    /** The account proof pairing sends, kept for this account context while it lasts. */
+    internal var deviceCertificate: DeviceCertificate? = null
+    /** Computers joining this account ([joinAccount]). */
+    internal val joining: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private var sessionJob: Job? = null
+    internal var linkJob: Job? = null
+    internal var pairingJob: Job? = null
+    internal val actions = mutableMapOf<String, Job>()
+    internal val mutableState = MutableStateFlow(AccountContext())
+    val state = mutableState.asStateFlow()
+    private val mutableStores = MutableStateFlow<List<AppStore>>(emptyList())
+    /** One store per computer, in the order the computers show. */
+    val stores = mutableStores.asStateFlow()
+    /** Every computer's state, by computer ID. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val computerStates: StateFlow<Map<String, AppState>> = mutableStores.flatMapLatest { stores ->
+        if (stores.isEmpty()) flowOf(emptyMap()) else combine(stores.map { it.state }) { states -> states.associateBy { it.computer.id } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    internal var foreground = false
+    internal var widgetOwner: WidgetOwner? = null
+    /** Cloud computers this account context already asked for access by itself (the tap's stand-in). */
+    internal val askedCloud = mutableSetOf<String>()
+
+    init {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { PushPreferences.splitSwitch(getApplication()) }
+            transitions.withLock { loadContext(null) }
+            launch {
+                try { NativeAccounts.signInForDevelopment(getApplication()) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { mutableState.update { it.copy(error = "Couldn't sign in to the test account: ${error.message}") } }
+            }
+            NativeAccounts.observe(viewModelScope) { account ->
+                mutableState.update { it.copy(account = account) }
+                if (account.ready) transitions.withLock {
+                    // Clerk's account now, not this (maybe older) update: a sign-out or deletion that held the lock
+                    // already left that account, and loading it again would bring its data back.
+                    val userId = NativeAccounts.activeUserId()
+                    if ((userId ?: "local") != local.contextId) {
+                        retireContext()
+                        loadContext(userId)
+                    } else if (cloud == null && userId != null) {
+                        configureCloud(userId)
+                        refreshCloud()
+                    }
+                }
+            }
+        }
+    }
+
+    fun store(id: String?): AppStore? = id?.let { wanted -> stores.value.firstOrNull { it.id == wanted } }
+
+    internal suspend fun loadContext(userId: String?) {
+        try {
+            WidgetRefreshWorker.stop(getApplication())
+            local = LocalStore(getApplication(), userId ?: "local")
+            val rescan = if (userId != null) {
+                withoutAccountChosen = false
+                adoptSignedOut()
+            } else false
+            widgetOwner = withContext(Dispatchers.IO) { WidgetStore.activate(getApplication(), local.contextId) }
+            PushDelivery.activate(getApplication(), userId)
+            val computers = withContext(Dispatchers.IO) { local.computers() }
+            val complete = withContext(Dispatchers.IO) { local.setupComplete() }
+            val last = withContext(Dispatchers.IO) { local.lastComputer() }
+            val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
+            mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
+                computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
+                setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded,
+                withoutAccount = userId == null && withoutAccountChosen,
+                error = if (rescan) SCAN_AGAIN else null) }
+            // A computer that can't open (damaged drafts) is reported; the others, the cloud and the widgets go on.
+            for (computer in computers) try { open(computer) }
+                catch (error: CancellationException) { throw error }
+                catch (error: Exception) { mutableState.update { it.copy(error = error.message ?: "Couldn't open ${computer.name}.") } }
+            // Outgoing files no queued message or draft of any computer needs anymore.
+            withContext(Dispatchers.IO) { AttachmentFiles(getApplication(), local.directory).retainPending(stores.value.flatMap { it.pendingFiles() }) }
+            if (userId != null) configureCloud(userId)
+            mutableState.update { it.copy(loading = false) }
+            observeWidgets(requireNotNull(widgetOwner))
+            observeShortcut()
+            refreshCloud()
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) {
+            showError(error)
+            // No refresh follows: setup would wait on it forever.
+            mutableState.update { it.copy(cloudLoaded = true) }
+        }
+    }
+
+    /** Go on without signing in (iOS `withoutAccount`): only over Wi-Fi or Tailscale. */
+    fun continueWithoutAccount() {
+        Analytics.capture(AnalyticsEvent.ContinuedWithoutAccount)
+        withoutAccountChosen = true
+        mutableState.update { it.copy(withoutAccount = true) }
+    }
+
+    /** Back on the welcome screen, signing in is on offer again. */
+    fun backToWelcome() {
+        withoutAccountChosen = false
+        mutableState.update { it.copy(withoutAccount = false) }
+    }
+
+    internal var withoutAccountChosen: Boolean
+        get() = getApplication<Application>().getSharedPreferences(ACCOUNT_PREFS, Context.MODE_PRIVATE).getBoolean(WITHOUT_ACCOUNT, false)
+        set(value) { getApplication<Application>().getSharedPreferences(ACCOUNT_PREFS, Context.MODE_PRIVATE).edit().putBoolean(WITHOUT_ACCOUNT, value).apply() }
+
+    /**
+     * Signing in: the signed-out context's pairings move into this account (`LocalStore.adopt`), with their
+     * device keys when the account is new on this phone. A failure leaves them where they are; the account still opens.
+     * True when they have to be paired again: this account has its own key on this phone.
+     */
+    private suspend fun adoptSignedOut(): Boolean {
+        try {
+            val adopted = withContext(Dispatchers.IO) {
+                val signedOut = LocalStore(getApplication(), "local")
+                local.adopt(signedOut)?.also { AccountImages.cacheDir(getApplication(), signedOut.referenceId).deleteRecursively() }
+            } ?: return false
+            if (adopted.computers == 0) return false
+            Analytics.capture(AnalyticsEvent.SignedOutPairingsMoved(adopted.computers, adopted.keys))
+            return adopted.keys == MovedKeys.Rescan
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) {
+            android.util.Log.w("Codync", "Couldn't move the signed-out pairings", error)
+            return false
+        }
+    }
+
+    private suspend fun configureCloud(userId: String) {
+        val identity = withContext(Dispatchers.IO) { local.identity() }
+        cloud = CloudClient(BuildConfig.CLOUD_URL, identity, BuildConfig.VERSION_NAME) { NativeAccounts.token(userId) }
+    }
+
+    /** Join every writer before closing a context's databases or replacing its identity. */
+    internal suspend fun retireContext() = withContext(NonCancellable) {
+        mutableState.update { it.copy(loading = true) }
+        withContext(Dispatchers.IO) { WidgetStore.retire(getApplication(), widgetOwner) }
+        widgetOwner = null
+        WidgetRefreshWorker.stop(getApplication())
+        try { CodyncWidgets.update(getApplication()) } catch (_: Exception) { }
+        val writers = actions.values.toList()
+        writers.forEach { it.cancel() }; writers.forEach { it.join() }
+        PushDelivery.retire(getApplication())
+        val retiring = stores.value
+        mutableStores.value = emptyList()
+        retiring.forEach { it.retire() }
+        contextJob.cancelAndJoin()
+        AccountImages.retire()
+        pairingJob = null
+        actions.clear(); cloud = null; deviceCertificate = null; askedCloud.clear()
+        withContext(Dispatchers.IO) { ConnectorOAuthBook(local.directory).clear() }
+        contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
+        contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
+    }
+
+    /** Opens [computer]'s store and, in the foreground, its link (iOS `AccountStore.open`). */
+    internal suspend fun open(computer: Computer) {
+        val context = state.value
+        val store = AppStore(getApplication(), local, computer, context.contextId, context.generation, contextJob, ::saveComputer, opened = { opened ->
+            for (other in stores.value) if (other !== opened) other.openBot(null)
+            mutableState.update { it.copy(removedChat = false) }
+            noteActive(opened.id)
+        }, usageRead = ::publishUsage)
+        store.open()
+        store.setAccountView(context.cloudOf(computer.id), context.appFloor)
+        mutableStores.update { list -> list.filter { it.id != computer.id } + store }
+        sortStores()
+        if (foreground) store.setForeground(true)
+    }
+
+    /** Forgets [id] here: its link, mirror and drafts; its bots and chats stay on the computer. */
+    internal suspend fun close(id: String) {
+        val store = store(id) ?: return
+        val chatOpen = store.state.value.selectedBot != null
+        mutableStores.update { list -> list.filter { it.id != id } }
+        if (chatOpen) mutableState.update { it.copy(removedChat = true) }
+        store.retire()
+        computerChanges.withLock {
+            val computers = state.value.computers.filter { it.id != id }
+            withContext(Dispatchers.IO) {
+                local.saveComputers(computers)
+                MirrorDatabase.delete(local.directory, id)
+                DraftBook.delete(local.directory, id)
+            }
+            mutableState.update { it.copy(computers = computers) }
+        }
+    }
+
+    /** Saves a computer's latest copy among the others (a new one goes last), then shows the list. */
+    internal suspend fun saveComputer(computer: Computer) = computerChanges.withLock {
+        val saved = state.value.computers
+        val computers = if (saved.any { it.id == computer.id }) saved.map { if (it.id == computer.id) computer else it } else saved + computer
+        withContext(Dispatchers.IO) { local.saveComputers(computers) }
+        mutableState.update { it.copy(computers = computers) }
+    }
+
+    /**
+     * Shows the computers (with their bots) in the order of [ids], on this phone only (iOS `AccountStore.move`);
+     * computers [ids] leaves out keep their places after it.
+     */
+    fun orderComputers(ids: List<String>) = action("orderComputers") {
+        computerChanges.withLock {
+            val saved = state.value.computers
+            val computers = ids.mapNotNull { wanted -> saved.firstOrNull { it.id == wanted } } + saved.filter { it.id !in ids }
+            if (computers == saved) return@withLock
+            withContext(Dispatchers.IO) { local.saveComputers(computers) }
+            mutableState.update { it.copy(computers = computers) }
+        }
+        sortStores()
+    }
+
+    private fun sortStores() {
+        val order = state.value.computers.map { it.id }
+        mutableStores.update { list -> list.sortedBy { store -> order.indexOf(store.id).let { if (it < 0) Int.MAX_VALUE else it } } }
+    }
+
+    /** The computer a chat was opened or sent on: the Usage sheet and widget follow it (iOS `lastComputerId`). */
+    internal fun noteActive(id: String) {
+        if (state.value.lastComputerId == id) return
+        mutableState.update { it.copy(lastComputerId = id) }
+        contextScope.launch(Dispatchers.IO) { local.saveLastComputer(id) }
+    }
+
+    /** Opens a chat on its computer, closing the one open on another; null closes it. */
+    fun openBot(ref: BotDestination?) {
+        mutableState.update { it.copy(removedChat = false) }
+        for (store in stores.value) store.openBot(if (store.id == ref?.computerId) ref.botId else null)
+    }
+
+    fun setForeground(active: Boolean) {
+        foreground = active
+        PushDelivery.foreground = active || stores.value.any { it.state.value.voice != null }
+        for (store in stores.value) store.setForeground(active)
+        if (active && !state.value.loading) refreshCloud()
+        if (!active) pairingJob?.cancel()
+    }
+
+    /** Signing in or out, removing a computer, starting over: one at a time, a second while one runs is dropped. */
+    internal fun sessionAction(operation: suspend () -> Unit) {
+        if (sessionJob?.isActive == true) return
+        sessionJob = viewModelScope.launch {
+            mutableState.update { it.copy(busy = it.busy + "session", error = null) }
+            try { operation() }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { showError(error) }
+            finally { mutableState.update { it.copy(busy = it.busy - "session") } }
+        }
+    }
+
+    /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
+    internal fun action(key: String, operation: suspend () -> Unit): Boolean {
+        if (state.value.loading || key in state.value.busy) return false
+        mutableState.update { it.copy(busy = it.busy + key, error = null, failedAction = null) }
+        val job = contextScope.launch(start = CoroutineStart.LAZY) {
+            try { operation() }
+            catch (error: CancellationException) { throw error }
+            catch (error: Exception) { showError(error, key) }
+            finally { actions.remove(key); mutableState.update { it.copy(busy = it.busy - key) } }
+        }
+        actions[key] = job
+        job.start()
+        return true
+    }
+
+    /** [action]: the [AccountStore.action] key [error] came from, if any. */
+    internal fun showError(error: Exception, action: String? = null) {
+        // Not an error to dismiss: every computer's Update this app card says it and stays.
+        if (error is CloudError && error.code == "appUpdateRequired") {
+            mutableState.update { it.copy(loading = false, appFloor = error.message) }
+            shareAccountView()
+        } else mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.", failedAction = action) }
+    }
+
+    /** Every computer registers (or drops) this phone's push again, after the permission changed. */
+    fun syncPush() { for (store in stores.value) store.syncPush() }
+
+    /** The account's error and every computer's: the one dialog shows the first, OK clears them all. */
+    fun clearError() {
+        mutableState.update { it.copy(error = null) }
+        for (store in stores.value) store.clearError()
+    }
+
+    /** Only what the widgets show, so a streaming answer doesn't publish (or hold off) anything. */
+    private data class WidgetSource(val paired: Boolean, val computers: List<WidgetComputer>, val usageComputer: Computer?, val usage: JsonObject?)
+
+    /** The Bots widgets show every computer's bots; Usage the last active computer's (iOS `BotsEntry`, `UsageTimeline`). */
+    @OptIn(FlowPreview::class)
+    private fun observeWidgets(owner: WidgetOwner) {
+        contextScope.launch {
+            combine(state, computerStates) { context, states -> context to states }
+                .filter { (context, _) -> !context.loading && context.contextId == owner.scope }
+                .map { (context, states) ->
+                    val usage = states[context.currentComputerId]
+                    WidgetSource(context.computers.isNotEmpty(), context.computers.mapNotNull { states[it.id] }
+                        .map { WidgetComputer(it.computer, it.bots, it.widgetBotsCurrent) }, usage?.computer, usage?.usage)
+                }
+                .distinctUntilChanged().debounce(350).collect { source ->
+                    try {
+                        val accepted = withContext(Dispatchers.IO) {
+                            WidgetStore.publish(getApplication(), owner, source.computers, source.usageComputer,
+                                UsageReport.decode(source.usage ?: JsonObject(emptyMap())), false)
+                        }
+                        if (!accepted) return@collect
+                        WidgetRefreshWorker.schedule(getApplication(), source.paired)
+                        CodyncWidgets.update(getApplication())
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { mutableState.update { it.copy(error = "Couldn't update widgets. Open State and try again.") } }
+                }
+        }
+    }
+
+    /** The app icon's "Talk to Codync" is there while a computer is paired. */
+    private fun observeShortcut() {
+        contextScope.launch {
+            state.filter { !it.loading }.map { it.computers.isNotEmpty() }.distinctUntilChanged()
+                .collect { paired -> withContext(Dispatchers.IO) { LiveShortcut.publish(getApplication(), paired) } }
+        }
+    }
+
+    /** A usage read just finished on [store]: the Usage widget shows it as fresh when that's its computer. */
+    private suspend fun publishUsage(store: AppStore) {
+        val owner = widgetOwner ?: return
+        if (state.value.currentComputerId != store.id) return
+        val current = store.state.value
+        withContext(Dispatchers.IO) { WidgetStore.publishUsage(getApplication(), owner, current.computer, UsageReport.decode(current.usage), true) }
+        CodyncWidgets.update(getApplication())
+    }
+
+    override fun onCleared() {
+        for (store in stores.value) store.close(CoroutineScope(Dispatchers.IO))
+        super.onCleared()
+    }
+}
+
+private const val SCAN_AGAIN = "This account already has its own key on this phone. Scan the code of each computer you paired without an account again; your messages are kept."
+private const val ACCOUNT_PREFS = "codync-account"
+private const val WITHOUT_ACCOUNT = "without_account"

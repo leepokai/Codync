@@ -19,12 +19,19 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - The agent gets the message text plus an "Attached files" list of absolute paths and reads them with
   its own tools (Claude and Codex read images too). The entry keeps `attachments: [{id, name, size}]`
   for display.
+- A queued message taken back (`unqueue`) deletes its uploads: the bot finds nothing of it in its folder, and
+  `readUpload` refuses them. A message Stop dropped keeps its files, for the chat's *Not sent* row.
 - Files don't go through the relay mailbox: while the computer is offline, a message with files
   waits in the composer's send button (disabled) instead. A failed send keeps its files on the device
-  for Resend until the app quits.
+  for Resend until the app quits. After that the iPhone and desktop refuse Resend with an error and the
+  message stays failed, never sent as text alone (`filesGone`, `filesToResend`); Android saves the files
+  with the pending row and the terminal keeps them in its draft.
 - Chat: images show as pictures (tap for full size), other files as cards. Other devices fetch a
   sent file with `readUpload {botId, uploadId, offset}` (384 KiB chunks) and cache it; the sender
   caches its own copy at upload.
+- Desktop opens an image in a large panel that fits the window; a large image shrinks to fit
+  below the header without cropping, even when the window is resized, and a small one keeps its
+  own size. Sent and bot-shared images use the same viewer.
 - Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.

@@ -8,7 +8,7 @@ use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::json;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 impl Actor {
@@ -17,8 +17,12 @@ impl Actor {
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
+            Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
+            Cmd::Steer { entry_id } => self.steer(entry_id).await,
+            Cmd::Steered { entry_id, outcome } => self.steer_answered(&entry_id, &outcome, done_tx).await,
+            Cmd::Unqueue { entry_id } => self.unqueue(&entry_id),
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
                 self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane == turn.lane));
@@ -76,7 +80,7 @@ impl Actor {
                 // The harness reads its own memory's switch when it starts: an agent that can resume its session
                 // restarts into it, one that can't starts afresh.
                 let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
-                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
+                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
                     || cfg.cwd != self.cfg.cwd
@@ -89,11 +93,19 @@ impl Actor {
                     || memory_changed;
                 // Live sessions switch before their next turn (see `fast_mode`).
                 let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
+                let mode_changed = cfg.mode != self.cfg.mode;
+                let threshold_changed = cfg.compaction != self.cfg.compaction;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
                 self.cfg = cfg;
+                if threshold_changed {
+                    self.threshold_changed();
+                }
                 if fast_changed {
                     self.fast_mode_changed();
+                }
+                if mode_changed {
+                    self.mode_changed();
                 }
                 if memory_changed {
                     // Claude Code's notes come or go on the memory screen.
@@ -163,7 +175,7 @@ impl Actor {
     }
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
-    async fn restart_agent(&mut self) {
+    pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
@@ -313,7 +325,7 @@ impl Actor {
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
-            self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"));
+            self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
         }
         // What the chain carried in (a recap, a takeover) was this turn's; the user's handoff waits for the next.
         self.relay.carried = None;
@@ -337,21 +349,34 @@ impl Actor {
 
     /// When `e` asks for signing in: marks the harness signed out and puts a sign-in card in the
     /// chat, which sends this turn's messages again once the user has signed in. Whether it did.
+    /// A process older than the turn may hold a sign-in replaced since: a new one tries its messages first.
     pub(super) fn invite_sign_in(&mut self, e: &anyhow::Error) -> bool {
         let backend = self.cfg.backend.clone();
         if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
             return false;
         }
+        // The process keeps the credentials it started with (Claude's revoked token): the next turn starts a new one.
+        self.restart_after_turn = true;
         let held = self.held_for_sign_in().to_vec();
-        crate::agent::backends::set_signed_in(&backend, Some(false));
-        // WorkBuddy can still report an account after this, which is not a working login.
-        // Other agents' own checks are left alone, so a terminal or saved keys can sign them in.
-        // WorkBuddy's current process was opened before that, so drop it.
-        crate::agent::backends::note_prompt_refused(&backend);
-        if !crate::agent::backends::session_proves_sign_in(&backend) {
-            self.restart_after_turn = true;
+        if self.process_predates_turn() && !held.is_empty() {
+            match agent_sign_in::send_again(&self.hub, &self.cfg.id, held.iter().map(String::as_str)) {
+                Ok(()) => return true,
+                Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
+            }
         }
+        crate::agent::backends::set_signed_in(&backend, Some(false));
+        // An account check can still say signed in (`claude auth status` with a revoked token): this refusal wins.
+        crate::agent::backends::note_prompt_refused(&backend);
         self.sign_in_card(&backend, &held)
+    }
+
+    /// The agent's process was already running when this turn started.
+    fn process_predates_turn(&self) -> bool {
+        let (Some(conn), Some(started_at)) = (&self.conn, self.hub.runtime(&self.id()).started_at) else {
+            return false;
+        };
+        let turn_age = Duration::from_millis(u64::try_from(now_ms() - started_at).unwrap_or(0));
+        conn.started.elapsed() > turn_age
     }
 
     /// Agent `backend`'s sign-in card in the chat, holding `entries`. Whether it's there.

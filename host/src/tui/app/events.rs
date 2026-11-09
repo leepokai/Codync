@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, PairCode, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
@@ -64,6 +64,13 @@ impl App {
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
+            Some("cloud") => self.cloud = v["cloud"].clone(),
+            Some("name") => {
+                if let Some(name) = v["name"].as_str() {
+                    name.clone_into(&mut self.host);
+                }
+            }
+            Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
                 self.memory_moved(&v["bot"]);
@@ -165,6 +172,14 @@ impl App {
             self.network_reply(n, r);
             return;
         }
+        if let After::UsageOrder(to) = after {
+            self.usage_order_answered(to, r);
+            return;
+        }
+        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
+            self.pair_reply(&after, r);
+            return;
+        }
         let v = match r {
             Ok(v) => v,
             Err(e) => {
@@ -189,15 +204,12 @@ impl App {
                         }
                         _ => {}
                     },
-                    After::Dirs => {
-                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+                    After::Dirs(id) | After::WorkspaceSelected(id) => {
+                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                            && p.request_id == id
+                        {
                             p.error = Some(e);
-                        }
-                    }
-                    // In place of the code, which may have expired.
-                    After::Pairing => {
-                        if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
-                            *code = PairCode::Failed(e);
+                            p.busy = false;
                         }
                     }
                     _ => self.flash(&e),
@@ -211,16 +223,23 @@ impl App {
             | After::Answered(_)
             | After::Sheet(_)
             | After::Network(_)
+            | After::UsageOrder(_)
             | After::Sent(_)
-            | After::Connection(_, _) => {}
+            | After::Connection(_, _)
+            | After::Pairing
+            | After::Cloud
+            | After::PairingRequests
+            | After::PairingDecided => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
                 self.call("hello", json!({}), After::Hello);
             }
             After::Hello => {
+                self.custom_icons = v["icons"].is_object();
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
+                v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
@@ -247,9 +266,30 @@ impl App {
                     }
                 }
             }
-            After::Dirs => {
-                if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+            After::WorkspaceSelected(id) => {
+                if matches!(self.overlays.last(), Some(Overlay::Folder(p)) if p.request_id == id)
+                    && let Some(path) = v["path"].as_str().filter(|p| !p.is_empty())
+                {
+                    self.overlays.pop();
+                    self.folder_chosen(path.to_owned());
+                }
+            }
+            After::Dirs(id) => {
+                if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                    && p.request_id == id
+                {
                     v["path"].as_str().unwrap_or_default().clone_into(&mut p.path);
+                    p.busy = false;
+                    p.remembers = v["recent"].is_array();
+                    p.recent = v["recent"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|item| {
+                            let path = item["path"].as_str()?;
+                            Some(Dir { name: path.to_owned(), path: path.to_owned(), git: false })
+                        })
+                        .collect();
                     p.parent = v["parent"].as_str().map(str::to_owned);
                     p.dirs = v["dirs"]
                         .as_array()
@@ -264,14 +304,6 @@ impl App {
                     p.query.clear();
                     p.cursor = 0;
                     p.error = None;
-                }
-            }
-            After::Pairing => {
-                if let Some(Overlay::Pair(code)) = self.overlays.last_mut() {
-                    *code = match v["pairingUrl"].as_str() {
-                        Some(url) => PairCode::Ready(url.to_owned()),
-                        None => PairCode::Failed("The host sent no pairing code.".into()),
-                    };
                 }
             }
             After::Saved => {

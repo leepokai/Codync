@@ -1,6 +1,6 @@
 //! The composer's `/` commands, listed while the draft is just `/partial`: Fast mode runs here
-//! (`updateBot`; a new session is `S`); a skill fills in `/<id> `, which the host turns into "read
-//! this skill first" (`market::expand_command`). A group offers the same, over its members.
+//! (`updateBot`); a skill fills in `/<id> `, which the host turns into "read this skill first"
+//! (`market::expand_command`). A group offers the same, over its members.
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
@@ -11,6 +11,7 @@ use super::{After, App, Bot, Editor};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlashAction {
     Fast,
+    DevServers,
     Skill,
 }
 
@@ -29,7 +30,7 @@ impl SlashCommand {
         match self.action {
             SlashAction::Skill if self.detail.is_empty() => self.title.clone(),
             SlashAction::Skill => self.detail.replace('\n', " "),
-            SlashAction::Fast => format!("{} · {}", self.title, self.detail),
+            SlashAction::Fast | SlashAction::DevServers => format!("{} · {}", self.title, self.detail),
         }
     }
 }
@@ -50,11 +51,23 @@ impl App {
     fn built_in(&self) -> Vec<SlashCommand> {
         let bots = self.fast_bots();
         let detail = match bots.as_slice() {
-            [] => return vec![],
-            [bot] if self.bot().is_some_and(|b| !b.group) => bot.fast_detail(),
-            _ => group_fast_detail(&bots),
+            [] => None,
+            [bot] if self.bot().is_some_and(|b| !b.group) => Some(bot.fast_detail()),
+            _ => Some(group_fast_detail(&bots)),
         };
-        vec![SlashCommand { name: "fast".into(), title: "Fast mode".into(), detail, action: SlashAction::Fast }]
+        let fast = detail.map(|detail| SlashCommand {
+            name: "fast".into(),
+            title: "Fast mode".into(),
+            detail,
+            action: SlashAction::Fast,
+        });
+        let servers = self.bot().filter(|bot| !bot.dev_servers.is_empty()).map(|bot| SlashCommand {
+            name: "servers".into(),
+            title: "Dev servers".into(),
+            detail: bot.dev_servers.iter().map(|server| server.name.as_str()).collect::<Vec<_>>().join(", "),
+            action: SlashAction::DevServers,
+        });
+        fast.into_iter().chain(servers).collect()
     }
 
     /// Built-in commands, then the skills the bot (or any member of a group) has on, whose name
@@ -132,6 +145,10 @@ impl App {
                 self.flash(if on { "Fast mode off" } else { "Fast mode on" });
                 String::new()
             }
+            SlashAction::DevServers => {
+                self.open_dev_servers();
+                String::new()
+            }
             SlashAction::Skill => format!("/{} ", command.name),
         };
         if let Some(key) = self.selected.clone() {
@@ -191,7 +208,7 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "only skills the bot has on");
         app.drafts.insert("b".into(), super::Editor::with("/new"));
-        assert!(names(&app).is_empty(), "a new session is S");
+        assert!(names(&app).is_empty(), "no command for a new session");
         app.bots.get_mut("b").expect("the bot").fast_support = "unknown".into();
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");
@@ -247,6 +264,22 @@ mod tests {
         app.drafts.insert("g".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["docx", "xlsx"], "no member offers Fast mode");
         assert!(!app.built_in_command("/fast"), "then it reaches the bots as typed");
+    }
+
+    #[tokio::test]
+    async fn servers_opens_the_sheet_only_while_the_bot_has_some() {
+        let mut app = app_with(&json!({"id": "b", "name": "Bot", "devServers": []}));
+        assert!(!names(&app).contains(&"servers".to_owned()));
+        assert!(!app.built_in_command("/servers"), "reaches the agent as typed");
+        assert!(app.overlays.is_empty());
+
+        let server = json!({"id": "a", "name": "web", "status": "running", "ports": [], "managed": true});
+        let mut app = app_with(&json!({"id": "b", "name": "Bot", "devServers": [server]}));
+        app.drafts.insert("b".into(), super::Editor::with("/"));
+        assert!(names(&app).contains(&"servers".to_owned()));
+        assert!(!app.built_in_command("/servers now"), "only the bare command");
+        assert!(app.built_in_command("/servers"));
+        assert!(matches!(app.overlays.last(), Some(super::super::Overlay::DevServers(_))));
     }
 
     #[tokio::test]

@@ -22,6 +22,45 @@ class MirrorDatabaseTest {
 
     @After fun cleanup() { mirror.close(); directory.deleteRecursively() }
 
+    @Test fun iconCacheTracksNewerRevisionsAndResetsWithTheHostDatabase() {
+        mirror.setStamp("old", "build")
+        val first = CustomIcon("first")
+        val latest = CustomIcon("latest", true)
+        mirror.apply(MirrorEvent.Icons(mapOf("bot:b" to first), 1))
+        val cached = mirror.icons()
+        assertSame(cached, mirror.icons())
+        MirrorDatabase(context, directory, computer).use { other ->
+            other.apply(MirrorEvent.Icons(mapOf("bot:b" to latest), 2))
+        }
+        assertEquals(latest, mirror.icons()["bot:b"])
+        mirror.apply(MirrorEvent.Icons(mapOf("bot:b" to first), 1))
+        assertEquals(latest, mirror.icons()["bot:b"])
+        mirror.apply(MirrorEvent.Icons(emptyMap(), 3))
+        assertTrue(mirror.icons().isEmpty())
+        mirror.setStamp("new", "build")
+        mirror.apply(MirrorEvent.Icons(mapOf("bot:b" to first), 0))
+        assertEquals(first, mirror.icons()["bot:b"])
+    }
+
+    @Test fun reconnectAcceptsSameHostRollbackAboveBotCursorAndRejectsOldSaveReplies() {
+        mirror.setStamp("same-host", "build")
+        mirror.apply(MirrorEvent.BotChanged(Bot("b", "Bot", rev = 50)))
+        val old = CustomIcon("old")
+        mirror.apply(MirrorEvent.Icons(mapOf("bot:b" to old), 100))
+        val oldEpoch = mirror.iconEpoch()
+        val currentEpoch = mirror.beginIconConnection()
+        assertEquals(old, mirror.icons()["bot:b"]) // Keep the offline picture until catch-up arrives.
+        mirror.apply(MirrorEvent.Hello("same-host", 90, JsonObject(emptyMap()), null))
+        val restored = CustomIcon("restored")
+        mirror.apply(MirrorEvent.Icons(mapOf("bot:b" to restored), 90))
+        assertEquals(50, mirror.revision())
+        assertEquals(restored, mirror.icons()["bot:b"])
+        assertFalse(mirror.applyIconReply(MirrorEvent.Icons(mapOf("bot:b" to old), 110), oldEpoch))
+        assertEquals(restored, mirror.icons()["bot:b"])
+        assertTrue(mirror.applyIconReply(MirrorEvent.Icons(emptyMap(), 91), currentEpoch))
+        assertTrue(mirror.icons().isEmpty())
+    }
+
     @Test fun rpcRepliesAndHelloCannotCheckpointPastUnseenEvents() {
         mirror.apply(MirrorEvent.Hello("database", 100, JsonObject(emptyMap()), null))
         mirror.receive(listOf(entry(90)))

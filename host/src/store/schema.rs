@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// Current schema version (kv `schema`).
-const SCHEMA: i64 = 6;
+const SCHEMA: i64 = 8;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -15,6 +15,9 @@ const SCHEMA: i64 = 6;
 /// per-bot ones go.
 /// 5: threads merge into their chats (quote replies took their place, see [`migrate_5`]).
 /// 6: the dividers that announced a fresh agent session go; the chat no longer shows session resets.
+/// 7: each device records the account it was let in for (`devices.account`), so a computer that changes
+/// accounts drops the old account's devices.
+/// 8: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
@@ -30,7 +33,13 @@ fn migrate(c: &Connection) -> Result<()> {
     if version < 5 {
         migrate_5(c)?;
     }
-    migrate_6(c)
+    if version < 6 {
+        migrate_6(c)?;
+    }
+    if version < 7 {
+        migrate_7(c)?;
+    }
+    migrate_8(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -131,6 +140,28 @@ fn migrate_6(c: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_7(c: &Connection) -> Result<()> {
+    let has: bool =
+        c.query_row("SELECT count(*) > 0 FROM pragma_table_info('devices') WHERE name = 'account'", [], |r| r.get(0))?;
+    if !has {
+        c.execute_batch("ALTER TABLE devices ADD COLUMN account TEXT;")?;
+    }
+    c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '7') ON CONFLICT(k) DO UPDATE SET v = '7';")?;
+    Ok(())
+}
+
+fn migrate_8(c: &Connection) -> Result<()> {
+    let has: bool =
+        c.query_row("SELECT count(*) > 0 FROM pragma_table_info('devices') WHERE name = 'no_account'", [], |r| {
+            r.get(0)
+        })?;
+    if !has {
+        c.execute_batch("ALTER TABLE devices ADD COLUMN no_account INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '8') ON CONFLICT(k) DO UPDATE SET v = '8';")?;
+    Ok(())
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let c = Connection::open(path)?;
@@ -158,7 +189,13 @@ impl Store {
         } else {
             None
         };
-        Ok(Self { db: Mutex::new(c), connector_lock: Mutex::new(()), secret_key: Mutex::new(secret_key) })
+        Ok(Self {
+            icon_lock: tokio::sync::Mutex::new(()),
+            db: Mutex::new(c),
+            connector_lock: Mutex::new(()),
+            secret_key: Mutex::new(secret_key),
+            vault_unlock: std::sync::Arc::default(),
+        })
     }
 }
 
@@ -186,7 +223,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("6"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -209,7 +246,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("6"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("8"));
     }
 
     #[test]

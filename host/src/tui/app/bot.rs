@@ -30,6 +30,8 @@ pub struct Bot {
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
+    /// The agent mode it works in (`agent::modes`); none for the agent's default.
+    pub mode: Option<String>,
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): option id → value.
     pub model_options: BTreeMap<String, String>,
@@ -39,11 +41,13 @@ pub struct Bot {
     /// Why the agent refused it.
     pub fast_issue: Option<String>,
     pub pinned: bool,
-    /// The computer's lead bot (`chat::lead`): first in the roster, never deleted or hidden.
+    /// The computer's lead bot (`chat::lead`), placed like any bot; `*` makes another bot the lead.
     pub lead: bool,
     /// Where the user dragged it (see `App::roster`).
     pub position: i64,
     pub hidden: bool,
+    /// Its roster section; `None` for none (the host trims and checks the name).
+    pub section: Option<String>,
     pub notify: bool,
     pub computer: bool,
     /// It creates bots and changes any bot's setup (`chat::manage`); `None` from a host without it.
@@ -56,6 +60,10 @@ pub struct Bot {
     pub created_at: i64,
     /// The harness's own memory beside Codync's; `None` where the screen says nothing about it.
     pub harness_memory: Option<OwnMemory>,
+    /// When Codync summarizes its chat; `None` where it doesn't.
+    pub compaction: Option<codync_mem::compaction::Threshold>,
+    /// The sizes it may take; `None` until the agent has told its window.
+    pub compaction_sizes: Option<codync_mem::compaction::Sizes>,
     /// Agents that carry on, in order, when its own can't answer (`agent::fallback`).
     pub fallbacks: Vec<crate::store::Fallback>,
     /// The bot may set its own fallbacks.
@@ -64,6 +72,8 @@ pub struct Bot {
     pub agent_step: Option<String>,
     /// Agents of its chain resting now.
     pub resting: Vec<Rest>,
+    /// What it keeps running.
+    pub dev_servers: Vec<super::super::manage::DevServer>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
     pub status: Status,
@@ -159,7 +169,7 @@ impl Bot {
         if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
     }
 
-    pub(super) fn parse(v: &Value) -> Option<Self> {
+    pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
@@ -171,6 +181,7 @@ impl Bot {
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
+            mode: v["mode"].as_str().map(str::to_owned),
             model: v["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned),
             model_options: v["modelOptions"]
                 .as_object()
@@ -185,6 +196,7 @@ impl Bot {
             lead: v["lead"] == true,
             position: v["position"].as_i64().unwrap_or(0),
             hidden: v["hidden"].as_bool().unwrap_or(false),
+            section: v["section"].as_str().map(str::to_owned),
             notify: v["notify"].as_bool().unwrap_or(true),
             computer: v["computer"].as_bool().unwrap_or(false),
             manage_team: v["manageTeam"].as_bool(),
@@ -196,10 +208,13 @@ impl Bot {
                 .as_bool()
                 .map(OwnMemory::Switch)
                 .or_else(|| (v["harnessMemoryShared"] == true).then_some(OwnMemory::Shared)),
+            compaction: serde_json::from_value(v["compaction"].clone()).ok().flatten(),
+            compaction_sizes: serde_json::from_value(v["compactionTokens"].clone()).ok().flatten(),
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
+            dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
             status: match v["status"].as_str() {
@@ -219,15 +234,9 @@ impl Bot {
         })
     }
 
-    /// Its band in the roster: the lead, then pinned bots, then the rest. Reordering stays inside a band.
+    /// Its band in the roster: pinned bots, then the rest. Reordering stays inside a band.
     pub fn band(&self) -> u8 {
-        if self.lead {
-            0
-        } else if self.pinned {
-            1
-        } else {
-            2
-        }
+        u8::from(!self.pinned)
     }
 
     /// Agent `agent`'s rest, while it lasts at `now`.

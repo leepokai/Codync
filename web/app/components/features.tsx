@@ -15,7 +15,7 @@ export default function Features() {
       <div className="mx-auto max-w-6xl">
         <Reveal>
           <h2 className="max-w-[36rem] text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">
-            A team of bots in your sandbox.
+            A team of bots on your own computer.
           </h2>
           <p className="mt-5 max-w-[34rem] text-lg leading-relaxed text-neutral-400">
             Each bot keeps its own chat, memory, folder and agent. Message one, or put a few in a room.

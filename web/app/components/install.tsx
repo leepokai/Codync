@@ -4,7 +4,7 @@ import { AppleLogo } from "./apple-logo";
 import CopyCommand from "./copy-command";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, PRODUCT_HUNT, WINDOWS } from "../links";
+import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 export default function Install() {
   return (
@@ -16,23 +16,6 @@ export default function Install() {
           <p className="mt-5 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
             Put Codync on the computer your agents run on, then pair your phone from it.
           </p>
-          <a
-            href={PRODUCT_HUNT}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-8 inline-flex items-center gap-3 transition hover:opacity-80"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- live badge served by Product Hunt */}
-            <img
-              src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1267264&theme=dark"
-              alt="Codync on Product Hunt"
-              width={250}
-              height={54}
-              loading="lazy"
-              className="h-10 w-auto"
-            />
-            <span className="text-sm font-medium text-neutral-300">#16 Product of the Day</span>
-          </a>
         </Reveal>
 
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

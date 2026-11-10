@@ -21,7 +21,7 @@ const steps = [
   },
 ];
 
-// The tagline, unpacked: rendered here on the server; the scroller only tracks which step is in view.
+// Bring your own sandbox, agent and subscription, one step at a time: rendered here on the server; the scroller only tracks which step is in view.
 // On phones each step carries its own heading.
 export default function BringYourOwn() {
   return (

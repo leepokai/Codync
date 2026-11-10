@@ -6,7 +6,7 @@ const cards = [
   {
     id: "cloud",
     title: "Codync Cloud",
-    body: "No computer on all day? Start a Linux sandbox on your own Boat or InstaBox account. It sleeps while your bots are idle and wakes when you message one. Codync charges nothing for it.",
+    body: "No computer on all day? Start a Linux computer on your own Boat or InstaBox account. It sleeps while your bots are idle and wakes when you message one. Codync charges nothing for it.",
     panel: <CloudPanel />,
   },
   {
@@ -17,14 +17,14 @@ const cards = [
   },
 ];
 
-// Past one computer: a sandbox in the cloud, and bots on different computers working together.
+// Past one computer: a computer in the cloud, and bots on different computers working together.
 export default function Computers() {
   return (
     <section className="px-4 py-24 sm:px-6 md:py-32">
       <div className="mx-auto max-w-6xl">
         <Reveal>
           <h2 className="max-w-[36rem] text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">
-            More than one sandbox.
+            More than one computer.
           </h2>
           <p className="mt-5 max-w-[34rem] text-lg leading-relaxed text-neutral-400">
             Add servers over SSH from the desktop app, start one in the cloud, and let bots on different computers work

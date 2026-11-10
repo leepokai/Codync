@@ -29,7 +29,7 @@ export default function Privacy() {
             Private by design.
           </h2>
           <p className="mt-5 max-w-[34rem] text-lg leading-relaxed text-neutral-400">
-            The phone is a remote for a sandbox you own. Nothing about your work passes through anyone else in the clear.
+            The phone is a remote for a computer you own. Nothing about your work passes through anyone else in the clear.
           </p>
         </Reveal>
 

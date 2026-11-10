@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Codync: bring your own sandbox for Claude Code, Codex and any agent",
+    default: "Codync: Claude Code, Codex and any AI agent on your phone, free",
     template: "%s | Codync",
   },
   description: DESCRIPTION,

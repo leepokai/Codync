@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, MotionConfig, useMotionValueEvent, useScroll } from "framer-motion";
-import { ease } from "./motion";
+import { MotionConfig, useMotionValueEvent, useScroll } from "framer-motion";
+import BlurSwap from "./blur-swap";
 
 type Step = { word: string; id?: string; content: React.ReactNode };
 
@@ -27,21 +27,7 @@ export default function ByoScroller({ steps }: { steps: Step[] }) {
           <div className="sticky top-0 flex h-[100dvh] items-center">
             <p className="text-6xl leading-[1.05] font-semibold tracking-tighter text-neutral-50 lg:text-7xl">
               Bring your own{" "}
-              {/* The leaving and arriving words share one grid cell, so they cross in place. */}
-              <span className="grid">
-                <AnimatePresence initial={false}>
-                  <motion.span
-                    key={steps[active].word}
-                    initial={{ opacity: 0, y: "0.4em", filter: "blur(10px)" }}
-                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                    exit={{ opacity: 0, y: "-0.4em", filter: "blur(10px)" }}
-                    transition={{ duration: 0.6, ease }}
-                    className="col-start-1 row-start-1"
-                  >
-                    {steps[active].word}
-                  </motion.span>
-                </AnimatePresence>
-              </span>
+              <BlurSwap id={steps[active].word}>{steps[active].word}</BlurSwap>
             </p>
           </div>
         </div>

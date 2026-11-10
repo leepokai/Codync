@@ -3,7 +3,7 @@ export const SITE = "https://www.codync.dev";
 
 /** The search snippet: kept under 160 characters so it isn't cut off. */
 export const DESCRIPTION =
-  "Bring your own sandbox, agent and subscription: Claude Code, Codex or 40+ AI agents as bots you message from iPhone, Mac, Windows or Linux. Free, open source.";
+  "Bring Claude Code, Codex or any of 40+ AI agents and your own subscription, then message them as bots from iPhone, Mac, Windows or Linux. Free and open source.";
 
 /** The long form, for structured data and AI answer engines. */
 export const ABOUT =

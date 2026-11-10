@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Hero from "./components/hero";
-import Agents from "./components/agents";
 import BringYourOwn from "./components/bring-your-own";
 import Demo from "./components/demo";
 import Features from "./components/features";
@@ -19,9 +18,8 @@ export default function Home() {
       <SiteHeader />
       <main className="flex-1">
         <Hero />
-        <Agents />
-        <BringYourOwn />
         <Demo />
+        <BringYourOwn />
         <Features />
         <Computers />
         <Privacy />

@@ -120,8 +120,9 @@ fun AppStore.loadHistory() {
             // Grow the window by the chat rows this page added; rows that arrived live meanwhile were already inside it.
             // A page of only tool or thought rows still has to move the window (the read allows ten stored rows per chat row), or the next chat row stays out of reach.
             val added = entries.count { it.isChat }
-            val held = state.value.entries.count { it.botId == id && it.isChat }
-            if (entries.isNotEmpty()) windows.merge(id, held + maxOf(added, entries.size / 10 + 1)) { old, wanted -> maxOf(old, wanted) }
+            // Grown from the window the reader already has, not from what the screen shows: removed messages and tool rows
+            // are stored rows the read still counts, and the ceiling and the byte budget bound the growth.
+            if (entries.isNotEmpty()) windows.merge(id, residency().limit(id) + maxOf(added, entries.size / 10 + 1)) { old, wanted -> maxOf(old, wanted) }
         }
         refresh()
         // The page is stored but the window still ends where it did: the chat's memory budget stopped it, so stop offering more.

@@ -67,6 +67,7 @@ export type AnalyticsEvent =
   | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
   | { event: 'kofi_invite_shown' }
   | { event: 'kofi_invite_answered'; opened: boolean }
+  | { event: 'whats_new_shown' }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

@@ -131,6 +131,7 @@ impl App {
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
+            Overlay::WhatsNew(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.
             o @ Overlay::Pair(_)
                 if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>

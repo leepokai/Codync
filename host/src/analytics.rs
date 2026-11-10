@@ -136,6 +136,9 @@ pub enum Event {
     /// or dismissed.
     KofiInviteShown,
     KofiInviteAnswered,
+    /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
+    /// phones send their own).
+    WhatsNewShown,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
     /// A paired phone asked to add this computer to its account, and the computer answered.
@@ -227,6 +230,7 @@ impl Event {
             Self::CloudComputerRenamed => "cloud_computer_renamed",
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
+            Self::WhatsNewShown => "whats_new_shown",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",

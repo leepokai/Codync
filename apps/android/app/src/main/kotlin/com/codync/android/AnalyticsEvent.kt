@@ -95,6 +95,8 @@ internal sealed class AnalyticsEvent(val name: String) {
     data object ReviewLinkOpened : AnalyticsEvent("review_link_opened") {
         override val properties get() = mapOf("source" to JsonPrimitive("settings"))
     }
+    /** The What's new window is on screen after an update (iOS `whatsNewShown`). */
+    data object WhatsNewShown : AnalyticsEvent("whats_new_shown")
     data class LinkOpened(val link: OutboundLink) : AnalyticsEvent("link_opened") {
         override val properties get() = mapOf("link" to link.json)
     }

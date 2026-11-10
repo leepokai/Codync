@@ -77,16 +77,16 @@ export class ReadMarks {
     })
   }
 
-  /** Shows the chat read at once; a refusal gives back what was there, unless a newer bot event from the host replaced it. */
+  /** Shows the chat read at once; a refusal gives back what was there, unless a newer bot event from the host replaced it. A chat not cached yet (opened from a notification) is still read on the host. */
   private read(botId: string, perform: Perform) {
     const bot = this.host.bots().get(botId)
-    if (!bot) return
     const kept = this.beforeReads.get(botId)
-    const before = kept?.rev === bot.rev ? kept : bot
-    this.beforeReads.set(botId, before)
-    this.patch(botId, { unread: 0, keptUnread: false })
+    const before = bot && (kept?.rev === bot.rev ? kept : bot)
+    if (before) this.beforeReads.set(botId, before)
+    else this.beforeReads.delete(botId)
+    if (bot) this.patch(botId, { unread: 0, keptUnread: false })
     void this.inOrder(botId, perform, (c) => c.call('markRead', { botId }), () => {
-      if (this.host.bots().get(botId)?.rev === before.rev) this.patch(botId, { unread: before.unread, keptUnread: before.keptUnread })
+      if (before && this.host.bots().get(botId)?.rev === before.rev) this.patch(botId, { unread: before.unread, keptUnread: before.keptUnread })
     })
   }
 

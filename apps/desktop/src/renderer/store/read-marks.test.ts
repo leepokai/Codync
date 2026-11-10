@@ -73,6 +73,13 @@ test('opening a chat reads it whatever is known here of it, so a mark set elsewh
   assert.deepEqual(sent, [['markRead', { botId: 'a' }]])
 })
 
+test('opening a chat not cached yet still reads it on the host', async () => {
+  const { reads, sent } = computer({})
+  reads.open('b')
+  await settle()
+  assert.deepEqual(sent, [['markRead', { botId: 'b' }]])
+})
+
 test('a queued mark starts its retry window only once the mark before it is done', async () => {
   const { reads, answer, performed } = computer({ unread: 2 })
   reads.markRead('a')

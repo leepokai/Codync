@@ -83,10 +83,9 @@ extension BotStore {
     }
 
     /// Shows the chat read at once. A refused read gives back what was there, unless a newer bot event from
-    /// the host replaced it.
+    /// the host replaced it. A chat not cached yet (opened from a notification) is still read on the host.
     private func readAll(_ botId: String, failed: @escaping @MainActor (any Error) -> Void) {
-        guard let bot = bots[botId] else { return }
-        let before = beforeReads[botId].flatMap { $0.rev == bot.rev ? $0 : nil } ?? bot
+        let before = bots[botId].map { bot in beforeReads[botId].flatMap { $0.rev == bot.rev ? $0 : nil } ?? bot }
         beforeReads[botId] = before
         bots[botId]?.unread = 0
         bots[botId]?.keptUnread = false
@@ -94,7 +93,7 @@ extension BotStore {
             do {
                 try await self.withLink(replay: true) { try await $0.markRead(botId) }
             } catch {
-                if self.bots[botId]?.rev == before.rev {
+                if let before, self.bots[botId]?.rev == before.rev {
                     self.bots[botId]?.unread = before.unread
                     self.bots[botId]?.keptUnread = before.keptUnread
                 }

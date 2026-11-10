@@ -39,6 +39,21 @@ import Testing
     #expect(await until { await fake.automaticReads == [false] })
 }
 
+@MainActor @Test func openingAChatNotCachedYetStillReadsItOnTheHost() async throws {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let fake = FakeRemote(.ready(.direct))
+    let store = BotStore(computer: randomComputer("Mac"), storage: storage) { _ in fake }
+    store.setActive(true)
+    defer { store.setActive(false) }
+    #expect(await until { await fake.subscribed })
+    await fake.emit(botEvent("b0", name: "Other", rev: 1))
+    #expect(await until { store.connection == .online })
+    #expect(store.bots["b1"] == nil)
+    store.openConversation("b1")
+    #expect(await until { await fake.automaticReads == [false] })
+}
+
 @MainActor @Test func aChatThatFailsToOpenStaysQuietAndIsReadAsOpenedOnceOnScreenWithALink() async throws {
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }

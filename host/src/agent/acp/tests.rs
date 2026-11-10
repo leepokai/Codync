@@ -44,6 +44,32 @@ async fn actor_unwinding_releases_its_process_tree() {
     assert_descendant_pipes_close(rx).await;
 }
 
+/// #399: Antigravity's Windows server is a `PyInstaller` onefile launcher that removes its ~131 MB `_MEI*` folder only
+/// after its agent child ends, which takes it a moment. Stopping it must let the launcher clean up, not kill both at
+/// once, also with parents under the agent that outlive what they started.
+#[tokio::test]
+async fn a_stopped_onefile_agent_leaves_no_unpacked_folder() {
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/onefile_agent.py");
+    let unpacked = std::env::temp_dir().join(format!("codync-_MEI-{}", uuid::Uuid::new_v4()));
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let quote = |path: &std::path::Path| crate::shell::quote(&path.display().to_string());
+    let command = format!("{python} -u {} {}", quote(&script), quote(&unpacked));
+    let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+    let ready = tokio::time::timeout(Duration::from_secs(15), rx.recv()).await.unwrap();
+    assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
+    assert!(unpacked.is_dir());
+    acp.kill().await;
+    stopped().await;
+    // The launcher's cleanup is the last thing it does; give it a moment past the stop.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while unpacked.exists() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let left = unpacked.exists();
+    let _ = std::fs::remove_dir_all(&unpacked);
+    assert!(!left, "stopping the agent left its unpacked folder behind");
+}
+
 #[tokio::test]
 async fn timed_out_requests_do_not_accumulate_pending_answers() {
     let (acp, rx) = descendant_agent().await;

@@ -7,14 +7,19 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.43.2
+## 2.44.1
 ### zh-Hant
-- 修正 Codync 在 bot 很多或聊天紀錄很長時自動關閉的問題：現在每個聊天只會先載入最新的訊息，較舊的訊息往回捲動時再載入。
-- 新增「低記憶體模式」（設定）：若 Codync 仍會自動關閉，可開啟以減少載入的訊息。
+- 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。
 
 ### en-US
-- Fixed Codync closing by itself with many bots or very long chats. Each chat now loads its newest messages first, and older ones load as you scroll back.
-- New Low memory mode in Settings: turn it on if Codync still closes by itself, to keep even less of each chat loaded.
+- After an important update, Codync shows a What's new window the first time you open it, listing what changed. Most updates don't show one.
+
+## 2.43.2
+### zh-Hant
+- bot 頭像的點變大了：大頭像也改用 9 × 9 的大點，看起來更清楚。
+
+### en-US
+- Bot avatars have larger dots: large avatars now use the same 9 × 9 grid of big dots, so they read more clearly.
 
 ## 2.43.1
 ### zh-Hant

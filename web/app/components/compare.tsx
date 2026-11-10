@@ -1,7 +1,8 @@
 import { Check, Plus } from "@phosphor-icons/react/ssr";
-import Eyebrow from "./eyebrow";
+import CompareCards from "./compare-cards";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
+import SectionHeader from "./section-header";
 import { GITHUB } from "../links";
 
 const same = [
@@ -24,62 +25,54 @@ const different = [
   ["On every screen you have", "A native SwiftUI app on iPhone, a desktop app on Mac, Windows and Linux, and a terminal UI over SSH."],
 ];
 
+// The features Codync shares with Grok Bot and Muse as chips, what sets it apart as a list, then one card per comparison page.
 export default function Compare() {
   return (
-    <section id="compare" className="px-4 py-20 sm:px-6 md:py-28">
+    <section id="compare" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
       <div className="mx-auto max-w-6xl">
+        <SectionHeader label="Compare" title="Everything Grok Bot and Muse do. Open source, with any agent." />
         <Reveal>
-          <Eyebrow>Compare</Eyebrow>
-          <h2 className="max-w-[40rem] text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">
-            Everything Grok Bot and Muse do. Open source, with any agent.
-          </h2>
-          <p className="mt-5 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
-            Codync is a 1:1 alternative: the same bot-based way of working, rebuilt in the open so it isn&apos;t tied
-            to one model or one subscription.
-          </p>
+          <ul className="mt-12 flex flex-wrap justify-center gap-2">
+            {same.map((s) => (
+              <li key={s} className="inline-flex items-center gap-2 rounded-full bg-neutral-900 py-2 pr-4 pl-3 text-sm text-neutral-300">
+                <Check size={14} weight="bold" className="shrink-0 text-neutral-50" />
+                {s}
+              </li>
+            ))}
+          </ul>
         </Reveal>
 
-        <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Reveal>
-            <div className="h-full rounded-3xl bg-neutral-900 p-8 md:p-10">
-              <h3 className="text-xl font-semibold text-neutral-50">Same features</h3>
-              <ul className="mt-6 space-y-3">
-                {same.map((s) => (
-                  <li key={s} className="flex gap-3 leading-relaxed text-neutral-300">
-                    <Check size={20} weight="bold" className="mt-0.5 shrink-0 text-neutral-50" />
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Reveal>
+        <Reveal>
+          <div className="relative mt-4 overflow-hidden rounded-3xl bg-neutral-50 p-8 md:p-10">
+            <Halftone className="w-80 text-neutral-950 opacity-[0.1]" />
+            <h3 className="relative text-2xl font-semibold tracking-tight text-neutral-950">What&apos;s different</h3>
+            <ul className="relative mt-8 grid grid-cols-1 gap-x-12 gap-y-8 md:grid-cols-2 lg:grid-cols-3">
+              {different.map(([title, body]) => (
+                <li key={title}>
+                  <p className="flex items-center gap-2 font-medium text-neutral-950">
+                    <Plus size={16} weight="bold" className="shrink-0" />
+                    {title}
+                  </p>
+                  <p className="mt-2 leading-relaxed text-neutral-600">{body}</p>
+                </li>
+              ))}
+              <li className="flex items-end">
+                <a href={GITHUB} className="font-medium text-neutral-950 underline underline-offset-4 hover:text-black">
+                  Read the code on GitHub
+                </a>
+              </li>
+            </ul>
+          </div>
+        </Reveal>
 
-          <Reveal delay={0.05}>
-            <div className="relative h-full overflow-hidden rounded-3xl bg-neutral-50 p-8 md:p-10">
-              <Halftone className="w-72 text-neutral-950 opacity-[0.12]" />
-              <h3 className="relative text-xl font-semibold text-neutral-950">What&apos;s different</h3>
-              <ul className="relative mt-6 space-y-6">
-                {different.map(([title, body]) => (
-                  <li key={title} className="flex gap-3">
-                    <Plus size={20} weight="bold" className="mt-0.5 shrink-0 text-neutral-950" />
-                    <div>
-                      <p className="font-medium text-neutral-950">{title}</p>
-                      <p className="mt-1 leading-relaxed text-neutral-600">{body}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <a href={GITHUB} className="relative mt-8 inline-block font-medium text-neutral-950 underline underline-offset-4 hover:text-black">
-                Read the code on GitHub
-              </a>
-            </div>
-          </Reveal>
-        </div>
-
-        <p className="mt-6 text-sm text-neutral-600">
-          Grok Bot and Muse are products of their respective owners. Codync is an independent project and isn&apos;t
-          affiliated with them.
-        </p>
+        <Reveal className="mt-16">
+          <h3 className="mb-6 text-xl font-semibold text-neutral-50">Compare Codync</h3>
+          <CompareCards />
+          <p className="mt-6 text-sm text-neutral-600">
+            Grok Bot and Muse are products of their respective owners. Codync is an independent project and isn&apos;t
+            affiliated with them.
+          </p>
+        </Reveal>
       </div>
     </section>
   );

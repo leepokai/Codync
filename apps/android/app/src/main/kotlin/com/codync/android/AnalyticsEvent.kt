@@ -67,6 +67,18 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class CloudComputerRenamed(val outcome: CloudRenameOutcome) : AnalyticsEvent("cloud_computer_renamed") {
         override val properties get() = mapOf("outcome" to outcome.json)
     }
+    /** The user deleted one of their Codync Cloud computers ([provider]: the cloud's id for the one it ran on; iOS `cloudComputerDeleted`). */
+    data class CloudComputerDeleted(val outcome: CloudDeleteOutcome, val provider: String) : AnalyticsEvent("cloud_computer_deleted") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
+    }
+    /** The user deleted a Codync Cloud computer's snapshots ([provider]: the cloud's id for the one it runs on; iOS `cloudSnapshotsDeleted`). */
+    data class CloudSnapshotsDeleted(val outcome: CloudDeleteOutcome, val provider: String) : AnalyticsEvent("cloud_snapshots_deleted") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
+    }
+    /** The user removed the key to their own account with [provider] (the cloud's id for it; iOS `cloudKeyRemoved`). */
+    data class CloudKeyRemoved(val outcome: CloudRemoveOutcome, val provider: String) : AnalyticsEvent("cloud_key_removed") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
+    }
     /** Signing in took the signed-out pairings ([MovedKeys]). */
     data class SignedOutPairingsMoved(val computers: Int, val keys: MovedKeys) : AnalyticsEvent("signed_out_pairings_moved") {
         override val properties get() = mapOf("computers" to JsonPrimitive(computers), "keys" to keys.json)
@@ -95,6 +107,8 @@ internal sealed class AnalyticsEvent(val name: String) {
     data object ReviewLinkOpened : AnalyticsEvent("review_link_opened") {
         override val properties get() = mapOf("source" to JsonPrimitive("settings"))
     }
+    /** The What's new window is on screen after an update (iOS `whatsNewShown`). */
+    data object WhatsNewShown : AnalyticsEvent("whats_new_shown")
     data class LinkOpened(val link: OutboundLink) : AnalyticsEvent("link_opened") {
         override val properties get() = mapOf("link" to link.json)
     }
@@ -168,6 +182,24 @@ internal enum class CloudCreateOutcome(override val wire: String) : CatalogValue
 
 internal enum class CloudRenameOutcome(override val wire: String) : CatalogValue {
     Renamed("renamed"), Failed("failed")
+}
+
+/** [Deleted]; [Refused]: the cloud said no (`409`: its snapshots while it sleeps); [Failed]: anything else. */
+internal enum class CloudDeleteOutcome(override val wire: String) : CatalogValue {
+    Deleted("deleted"), Refused("refused"), Failed("failed");
+
+    companion object {
+        fun of(error: Throwable): CloudDeleteOutcome = if (error is CloudError && error.status == 409) Refused else Failed
+    }
+}
+
+/** [Removed]; [Refused]: the cloud said no (`409`: a computer still runs on that provider); [Failed]: anything else. */
+internal enum class CloudRemoveOutcome(override val wire: String) : CatalogValue {
+    Removed("removed"), Refused("refused"), Failed("failed");
+
+    companion object {
+        fun of(error: Throwable): CloudRemoveOutcome = if (error is CloudError && error.status == 409) Refused else Failed
+    }
 }
 
 internal enum class AddToAccountFailure(override val wire: String) : CatalogValue {

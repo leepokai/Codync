@@ -1,23 +1,27 @@
 // Codync Cloud, the host's side (docs/plans/codync-cloud.md): an idle cloud computer asks to sleep, and is
 // offered a newer release to install instead (the cloud soft update); a host still running after its request
-// asks whether it was woken. Urgent updates reach it in `/v1/host/state` (`urgentUpdate`).
+// asks whether it was woken; its owner's analytics switch decides whether the cloud reports its wakes. Urgent
+// updates reach it in `/v1/host/state` (`urgentUpdate`).
 
 import { drivers } from "../../machines/src";
 import { softUpdate } from "../app-versions";
 import { providerSend } from "../cloud-credentials";
-import { machineFor, setState, undoStopping } from "../cloud-machines";
+import { machineFor, setAnalytics, setState, undoStopping } from "../cloud-machines";
 import { value } from "./cloud-computers";
 import { ApiError, body, host, type Ctx } from "./common";
 
 /**
- * `POST /v1/host/sleep {wakeAt}` (Sig(host)): an idle cloud computer asks to be stopped. Answers
+ * `POST /v1/host/sleep {wakeAt, analytics}` (Sig(host)): an idle cloud computer asks to be stopped. Answers
  * `{update}` without stopping it when a newer release suits every device of the account (installed now, so a
  * wake never lands on a restart); refused with `conflict` while a device is connected to its relay; otherwise
- * the relay wakes it at `wakeAt` or when needed.
+ * the relay wakes it at `wakeAt` or when needed. `analytics`: whether its owner shares usage analytics (`analytics.ts`).
  */
 export async function hostSleep(c: Ctx) {
   const comp = await host(c);
-  const wakeAt = body(c).wakeAt ?? null;
+  const b = body(c);
+  // Recorded first, so a sleep refused below still counts; a host that doesn't say leaves it as it was.
+  if (typeof b.analytics === "boolean") await setAnalytics(c.env, comp.id, b.analytics);
+  const wakeAt = b.wakeAt ?? null;
   if (wakeAt !== null && (typeof wakeAt !== "number" || !Number.isSafeInteger(wakeAt))) throw new ApiError("badRequest", "Invalid wakeAt");
   const row = await machineFor(c.env, comp.id);
   if (!row) throw new ApiError("notFound");
@@ -56,4 +60,14 @@ export async function hostSleepState(c: Ctx) {
   const row = await machineFor(c.env, comp.id);
   if (!row) throw new ApiError("notFound");
   return { state: row.state };
+}
+
+/** `POST /v1/host/analytics {analytics}` (Sig(host)): a cloud computer's owner turned its usage analytics on or off. The
+ * cloud reports its wakes only while on (`analytics.ts`), so it hears at once; each sleep request says it again. */
+export async function hostAnalytics(c: Ctx) {
+  const comp = await host(c);
+  const on = body(c).analytics;
+  if (typeof on !== "boolean") throw new ApiError("badRequest", "Invalid analytics");
+  await setAnalytics(c.env, comp.id, on);
+  return {};
 }

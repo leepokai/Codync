@@ -204,7 +204,7 @@ Read the item (\`gh ${it.kind} view ${it.number} --comments\`${it.kind === 'pr' 
 
 // A PR's own defects: security concerns (defects in the fix: anything deliberate stopped at the security check), the
 // judge's deviations, the part of the problem it misses. We fix a routine bug fix's; anything bigger goes back to its author.
-const needsOurEdits = (sec, repro, verdict) => sec.verdict === 'concerns' || verdict.approach === 'needs_changes' || repro.pr_fixes_it === 'partly'
+const needsOurEdits = (sec, repro, verdict) => sec.verdict === 'concerns' || verdict.approach === 'needs_changes' || verdict.deviations.length > 0 || repro.pr_fixes_it === 'partly'
 
 const route = (it, sec, repro, verdict, routine) => {
   if (!repro) return 'unfinished'
@@ -340,7 +340,7 @@ const reviewItem = async (it, sec) => {
   // after-change's reviewers check again that each security finding is gone, so one the fix pass left out of its report still gets caught.
   const change = way === 'fix'
     ? `Fix for issue #${it.number} ("${sec.facts.title}") on branch ${repro.branch}: ${fixesText(fixed)}. Walk the reproduction again; it must pass now: ${repro.test ?? repro.evidence}`
-    : `Pull request #${it.number} ("${sec.facts.title}") by ${sec.facts.author}, checked out as branch pr-${it.number} with origin/dev merged in. ${verdict.summary} The problem it fixes: ${repro.evidence}. ${fixed ? `Our fixes on its branch: ${fixesText(fixed)}. ` : ''}${concerns ? `Its security check's findings, each fixed now: ${JSON.stringify(sec.findings)}. ` : ''}Walk: ${repro.test ?? 'the flows it changes'}.`
+    : `Pull request #${it.number} ("${sec.facts.title}") by ${sec.facts.author}, checked out as branch pr-${it.number} with origin/dev merged in. ${verdict.summary} The problem it fixes: ${repro.evidence}. ${fixed ? `Our fixes on its branch: ${fixesText(fixed)}. ` : ''}${concerns ? `Its security check found these; check each one is gone, and treat one that remains as a confirmed finding: ${JSON.stringify(sec.findings)}. ` : ''}Walk: ${repro.test ?? 'the flows it changes'}.`
   const report = await workflow('after-change', { change: `${change} ${UNTRUSTED}`, base: 'origin/dev', dir: repro.worktree, e2e })
   const gap = afterChangeGap(report, repro)
   if (gap) return { outcome: 'unfinished', ...seen, fix: fixed, afterChange: report, why: gap }

@@ -88,6 +88,11 @@ x = await run('pr 31', { ...pr, 'confirm:': { ...real, pr_fixes_it: 'partly' } }
 check(x.outcome === 'merged' && x.calls.indexOf('fix:pr#31') > -1 && x.calls.indexOf('fix:pr#31') < x.calls.findIndex((c) => c.startsWith('workflow:')), `a partial fix is finished by us before after-change: ${x.outcome}`)
 x = await run({ items: 'pr 32', approved: [32] }, { ...pr, 'judge:': { ...feature, approach: 'needs_changes' }, 'confirm:': { ...real, greptile_ok: true } })
 check(x.outcome === 'changes' && !x.ran('fix:pr'), `approved feature needing edits goes back to its author: ${x.outcome}`)
+const deviation = [{ rule: 'docs kept current', where: 'docs/x.md', why: 'stale' }]
+x = await run('pr 34', { ...pr, 'judge:': { ...bug, deviations: deviation } })
+check(x.outcome === 'merged' && x.ran('fix:pr#34') && x.prompts['fix:pr#34'].includes('stale'), `a sound bug fix with rule breaks gets our fix pass: ${x.outcome}`)
+x = await run({ items: 'pr 35', approved: [35] }, { ...pr, 'judge:': { ...feature, deviations: deviation }, 'confirm:': { ...real, greptile_ok: true } })
+check(x.outcome === 'changes' && !x.ran('fix:pr'), `approved feature with rule breaks goes back to its author: ${x.outcome}`)
 
 // A routine bug fix's security concerns are defects we fix on its branch; anything bigger sends them to its author.
 const concerns = { ...clean, verdict: 'concerns', findings: [{ where: 'a.rs:1', severity: 'medium', summary: 'unbounded retries', evidence: 'loop {}' }] }

@@ -78,6 +78,7 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                 Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
                     when (tab) {
                         DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+                            BotOverview(bot)
                             BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often)
                             state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
                             RoutinesView(bot, state, store, routineId, leave = dismiss)

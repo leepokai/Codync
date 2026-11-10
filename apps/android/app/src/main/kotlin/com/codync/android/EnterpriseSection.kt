@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codync.android.design.*
@@ -21,6 +22,26 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+
+
+private data class EnterpriseMember(val id: String, val userName: String, val displayName: String)
+
+private suspend fun AppStore.enterpriseMembers(): List<EnterpriseMember> {
+    val list = hostQuery("members", buildJsonObject { }).jsonObject["members"]?.jsonArray ?: return emptyList()
+    return list.mapNotNull { item ->
+        val row = item.jsonObject
+        val id = row["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+        EnterpriseMember(id, row["userName"]?.jsonPrimitive?.content.orEmpty(), row["displayName"]?.jsonPrimitive?.content.orEmpty())
+    }
+}
+
+private suspend fun AppStore.addEnterpriseMember(email: String, name: String) {
+    hostQuery("addMember", buildJsonObject { put("email", email); put("name", name) })
+}
+
+private suspend fun AppStore.removeEnterpriseMember(id: String) {
+    hostQuery("removeMember", buildJsonObject { put("id", id) })
+}
 
 private data class EnterpriseStatus(
     val configured: Boolean = false,
@@ -58,8 +79,15 @@ private suspend fun AppStore.setEnterprise(issuer: String, clientId: String, dom
     var token by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var members by remember { mutableStateOf<List<EnterpriseMember>>(emptyList()) }
+    var email by remember { mutableStateOf("") }
+    var personName by remember { mutableStateOf("") }
+    fun loadMembers() = scope.launch {
+        members = runCatching { store.enterpriseMembers() }.getOrDefault(emptyList())
+    }
     fun load() = scope.launch { try { status = store.enterpriseStatus() } catch (e: Exception) { error = e.message } }
     LaunchedEffect(state.contextId) { load() }
+    LaunchedEffect(state.contextId, status?.configured) { if (status?.configured == true) loadMembers() }
     CardSection("Company sign-in", "An OpenID Connect provider such as Microsoft Entra ID, Okta or Google Workspace. Discovery is checked before saving. SCIM lists the owner and this computer's devices (read-only).") {
         row {
             val shown = status ?: return@row
@@ -88,6 +116,23 @@ private suspend fun AppStore.setEnterprise(issuer: String, clientId: String, dom
                     }
                     token?.let { Text("SCIM token (shown once): $it", style = Type.caption, color = Palette.warning) }
                     Text("SCIM URL: /scim/v2/Users on the host's local port.", style = Type.caption, color = Palette.secondary)
+                    Text("People: ${members.size}", style = Type.caption, color = Palette.text)
+                    for (member in members) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(member.displayName.ifBlank { member.userName }, Modifier.weight(1f), style = Type.caption, color = Palette.text)
+                            SecondaryButton("Remove", enabled = !busy) {
+                                scope.launch { runCatching { store.removeEnterpriseMember(member.id) }; loadMembers() }
+                            }
+                        }
+                    }
+                    FieldBox(email, { email = it }, "Email", 1, 1, fill = Palette.bubbleUser, capitalize = false)
+                    FieldBox(personName, { personName = it }, "Name", 1, 1, fill = Palette.bubbleUser)
+                    SecondaryButton("Add", enabled = !busy && email.isNotBlank()) {
+                        scope.launch {
+                            try { store.addEnterpriseMember(email.trim(), personName.trim()); email = ""; personName = ""; loadMembers() }
+                            catch (e: Exception) { error = e.message }
+                        }
+                    }
                 }
                 error?.let { Text(it, style = Type.caption, color = Palette.danger) }
             }

@@ -28,6 +28,12 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case cloudOfferOpened(provider: String)
     /// The user renamed one of their Codync Cloud computers; never the name.
     case cloudComputerRenamed(CloudRenameOutcome)
+    /// The user deleted one of their Codync Cloud computers (`provider`: the cloud's id for the one it ran on).
+    case cloudComputerDeleted(CloudDeleteOutcome, provider: String)
+    /// The user deleted a Codync Cloud computer's snapshots (`provider`: the cloud's id for the one it runs on).
+    case cloudSnapshotsDeleted(CloudDeleteOutcome, provider: String)
+    /// The user removed the key to their own account with `provider` (the cloud's id for it).
+    case cloudKeyRemoved(CloudRemoveOutcome, provider: String)
     case pairingFailed(PairingFailure)
     case computerPaired(via: PairVia, computer: ComputerID)
     case accessRequested
@@ -109,6 +115,24 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case renamed, failed
     }
 
+    /// `deleted`; `refused`: the cloud said no (`409`: its snapshots while it sleeps); `failed`: anything else.
+    public enum CloudDeleteOutcome: String, Sendable {
+        case deleted, refused, failed
+
+        public init(_ error: any Error) {
+            self = (error as? CloudError)?.status == 409 ? .refused : .failed
+        }
+    }
+
+    /// `removed`; `refused`: the cloud said no (`409`: a computer still runs on that provider); `failed`: anything else.
+    public enum CloudRemoveOutcome: String, Sendable {
+        case removed, refused, failed
+
+        public init(_ error: any Error) {
+            self = (error as? CloudError)?.status == 409 ? .refused : .failed
+        }
+    }
+
     public enum AddToAccountFailure: String, Sendable {
         case declined, certificate, unreachable, other
 
@@ -175,6 +199,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .cloudComputerCreated: "cloud_computer_created"
         case .cloudOfferOpened: "cloud_offer_opened"
         case .cloudComputerRenamed: "cloud_computer_renamed"
+        case .cloudComputerDeleted: "cloud_computer_deleted"
+        case .cloudSnapshotsDeleted: "cloud_snapshots_deleted"
+        case .cloudKeyRemoved: "cloud_key_removed"
         case .pairingFailed: "pairing_failed"
         case .computerPaired: "computer_paired"
         case .accessRequested: "access_requested"
@@ -211,6 +238,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .cloudComputerCreated(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .cloudOfferOpened(provider): return ["provider": .string(provider)]
         case let .cloudComputerRenamed(outcome): return ["outcome": .string(outcome.rawValue)]
+        case let .cloudComputerDeleted(outcome, provider), let .cloudSnapshotsDeleted(outcome, provider):
+            return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
+        case let .cloudKeyRemoved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .signedOutPairingsMoved(computers, keys): return ["computers": .int(computers), "keys": .string(keys.rawValue)]
         case let .pairingFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .computerPaired(via, computer):

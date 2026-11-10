@@ -1,7 +1,8 @@
 import {
-  actionMachine, canCreate, canRemoveKey, cloudCreateOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed,
+  actionMachine, canCreate, canRemoveKey, cloudCreateOutcome, cloudDeleteOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed,
   type CloudComputerAction, type CloudCredential, type CloudMachine, type CloudProvider,
 } from '../lib/cloud-computer'
+import type { AnalyticsEvent } from '@shared/analytics'
 import { Observable } from '../lib/observable'
 import { account } from './account'
 import { analytics } from './analytics'
@@ -11,6 +12,18 @@ import { request } from './cloud'
 /** Asked again this often while a new cloud computer claims itself (about 10 s), slower if it takes long. */
 const PREPARING_POLL_MS = 3_000
 const PREPARING_POLL_MAX_MS = 30_000
+
+/** `call`, reporting what came of it: `ok` once the cloud answered, `failed(error)` when it threw. */
+async function tracked<T>(call: Promise<T>, ok: AnalyticsEvent, failed: (error: unknown) => AnalyticsEvent): Promise<T> {
+  try {
+    const result = await call
+    analytics.track(ok)
+    return result
+  } catch (error) {
+    analytics.track(failed(error))
+    throw error
+  }
+}
 
 /**
  * Computers → Codync Cloud: the providers the cloud can run a computer on with the keys the user gave them, the
@@ -102,16 +115,14 @@ export class CloudComputerModel extends Observable {
   async saveKey(provider: string, key: string): Promise<boolean> {
     let saved = false
     await this.run(`saveKey:${provider}`, async (current) => {
-      try {
-        const res = await request<{ credential: CloudCredential }>('PUT', `v1/cloud-credentials/${provider}`, { key: key.trim() })
-        analytics.track({ event: 'cloud_key_saved', outcome: 'saved', provider })
-        if (!current()) return
-        this.setCredential(provider, res.credential)
-        saved = true
-      } catch (error) {
-        analytics.track({ event: 'cloud_key_saved', outcome: cloudKeyOutcome(error), provider })
-        throw error
-      }
+      const res = await tracked(
+        request<{ credential: CloudCredential }>('PUT', `v1/cloud-credentials/${provider}`, { key: key.trim() }),
+        { event: 'cloud_key_saved', outcome: 'saved', provider },
+        (error) => ({ event: 'cloud_key_saved', outcome: cloudKeyOutcome(error), provider }),
+      )
+      if (!current()) return
+      this.setCredential(provider, res.credential)
+      saved = true
     })
     return saved
   }
@@ -129,7 +140,11 @@ export class CloudComputerModel extends Observable {
   /** Refused (409) while a cloud computer runs on that provider. */
   removeKey(provider: string) {
     return this.run(`removeKey:${provider}`, async (current) => {
-      await request('DELETE', `v1/cloud-credentials/${provider}`)
+      await tracked(
+        request('DELETE', `v1/cloud-credentials/${provider}`),
+        { event: 'cloud_key_removed', outcome: 'removed', provider },
+        (error) => ({ event: 'cloud_key_removed', outcome: cloudDeleteOutcome(error), provider }),
+      )
       if (current()) this.setCredential(provider, null)
     })
   }
@@ -142,17 +157,15 @@ export class CloudComputerModel extends Observable {
   async create(provider: string, name: string): Promise<boolean> {
     let created = false
     await this.run('create', async (current) => {
-      try {
-        const res = await request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', { provider, name })
-        analytics.track({ event: 'cloud_computer_created', outcome: 'created', provider })
-        if (!current()) return
-        this.generation++
-        this.show([...this.machines, res.cloudComputer])
-        created = true
-      } catch (error) {
-        analytics.track({ event: 'cloud_computer_created', outcome: cloudCreateOutcome(error), provider })
-        throw error
-      }
+      const res = await tracked(
+        request<{ cloudComputer: CloudMachine }>('POST', 'v1/cloud-computers', { provider, name }),
+        { event: 'cloud_computer_created', outcome: 'created', provider },
+        (error) => ({ event: 'cloud_computer_created', outcome: cloudCreateOutcome(error), provider }),
+      )
+      if (!current()) return
+      this.generation++
+      this.show([...this.machines, res.cloudComputer])
+      created = true
     })
     return created
   }
@@ -160,11 +173,11 @@ export class CloudComputerModel extends Observable {
   /** Its account computer and its host take the name too; shown here at once (the host, asleep perhaps, says so later). */
   rename(id: string, name: string) {
     return this.run(`rename:${id}`, async (current) => {
-      const res = await request<{ cloudComputer: CloudMachine }>('PATCH', `v1/cloud-computers/${id}`, { name }).catch((error: unknown) => {
-        analytics.track({ event: 'cloud_computer_renamed', outcome: 'failed' })
-        throw error
-      })
-      analytics.track({ event: 'cloud_computer_renamed', outcome: 'renamed' })
+      const res = await tracked(
+        request<{ cloudComputer: CloudMachine }>('PATCH', `v1/cloud-computers/${id}`, { name }),
+        { event: 'cloud_computer_renamed', outcome: 'renamed' },
+        () => ({ event: 'cloud_computer_renamed', outcome: 'failed' }),
+      )
       if (!current()) return
       this.generation++
       this.show(this.machines.map((m) => (m.cloudComputerId === id ? res.cloudComputer : m)))
@@ -173,18 +186,34 @@ export class CloudComputerModel extends Observable {
     })
   }
 
-  /** Erases the earlier saved states and the backup; the computer stays. Refused (409) while it sleeps. */
-  deleteSnapshots(id: string) {
-    return this.run(`deleteSnapshots:${id}`, async () => {
-      await request('DELETE', `v1/cloud-computers/${id}/snapshots`)
+  /**
+   * Erases the earlier saved states and the backup; the computer stays. Refused (409) while it sleeps. `id` is a listed
+   * machine (its row asked); one gone from the list meanwhile has nothing left to act on.
+   */
+  async deleteSnapshots(id: string) {
+    const provider = this.machines.find((m) => m.cloudComputerId === id)?.provider
+    if (!provider) return
+    await this.run(`deleteSnapshots:${id}`, async () => {
+      await tracked(
+        request('DELETE', `v1/cloud-computers/${id}/snapshots`),
+        { event: 'cloud_snapshots_deleted', outcome: 'deleted', provider },
+        (error) => ({ event: 'cloud_snapshots_deleted', outcome: cloudDeleteOutcome(error), provider }),
+      )
       await this.refresh()
     })
   }
 
-  /** Erases the machine, its snapshots and its backup, and takes its computer out of the account. */
-  delete(id: string) {
-    return this.run(`delete:${id}`, async (current) => {
-      await request('DELETE', `v1/cloud-computers/${id}`)
+  /** Erases the machine, its snapshots and its backup, and takes its computer out of the account. `id` is a listed
+   * machine, as for `deleteSnapshots`. */
+  async delete(id: string) {
+    const provider = this.machines.find((m) => m.cloudComputerId === id)?.provider
+    if (!provider) return
+    await this.run(`delete:${id}`, async (current) => {
+      await tracked(
+        request('DELETE', `v1/cloud-computers/${id}`),
+        { event: 'cloud_computer_deleted', outcome: 'deleted', provider },
+        (error) => ({ event: 'cloud_computer_deleted', outcome: cloudDeleteOutcome(error), provider }),
+      )
       if (!current()) return
       this.generation++
       this.show(this.machines.filter((m) => m.cloudComputerId !== id))

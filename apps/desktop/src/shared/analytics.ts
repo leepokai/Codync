@@ -65,6 +65,9 @@ export type AnalyticsEvent =
   | { event: 'cloud_computer_created'; outcome: 'created' | 'refused' | 'failed'; provider: string }
   | { event: 'cloud_offer_opened'; provider: string }
   | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
+  | { event: 'cloud_computer_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_snapshots_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_key_removed'; outcome: 'removed' | 'refused' | 'failed'; provider: string }
   | { event: 'kofi_invite_shown' }
   | { event: 'kofi_invite_answered'; opened: boolean }
   | { event: 'whats_new_shown' }

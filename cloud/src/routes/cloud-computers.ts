@@ -127,6 +127,8 @@ export async function createCloudComputer(c: Ctx) {
     vault_sealed: vault.sealed,
     vault_key_id: vault.keyId,
     keeper_key: null,
+    // Its host says once it asks to sleep.
+    analytics: null,
     created_at: c.now,
     updated_at: c.now,
   };

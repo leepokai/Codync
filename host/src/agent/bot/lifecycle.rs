@@ -1,12 +1,13 @@
 //! Idle agents give their resources back. A session unused for [`IDLE`] is closed (a routine run's
-//! as soon as the run ends); once every session is idle, or a routine run ends with none other open,
-//! the agent stops with its process group.
+//! as soon as the run ends); once every session is idle, or a routine run ends with none other open
+//! or with its session left open (an agent that can't close one), the agent stops with everything it started.
 //! The next message starts the agent again and reopens the session, so the conversation carries on.
 //! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
 //! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
 
 use super::Actor;
 use super::background_work::background_work;
+use crate::analytics::Retired;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -79,16 +80,19 @@ impl Actor {
         if conn.sessions.reopen.is_none() {
             return;
         }
-        let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now());
+        // A spent session waits for the agent to stop (`stop_spent`), which it did not while something ran detached.
+        let release = if conn.spent.is_empty() {
+            plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now())
+        } else {
+            Release::Agent
+        };
         if release == Release::Nothing || background_work(&conn.acp).await {
             return;
         }
         match release {
             Release::Agent => {
-                tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
-                if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
-                }
+                let reason = if conn.spent.is_empty() { Retired::Idle } else { Retired::SessionNotClosed };
+                self.retire(reason).await;
             }
             Release::Sessions(sessions) => {
                 for sid in sessions {
@@ -123,7 +127,9 @@ impl Actor {
 
     /// A routine run's session is spent once the run is. When it was the only session open and nothing waits, the
     /// agent ran just for the run and stops with it, with everything it started; otherwise the session alone closes,
-    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
+    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`]. One the agent couldn't
+    /// close (Cursor can't) goes with the agent instead, once nothing runs or waits ([`Self::stop_spent`]): the main
+    /// chat reopens its own session on its next turn.
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
         if conn.sessions.reopen.is_none() {
@@ -131,30 +137,46 @@ impl Actor {
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
         if alone && !background_work(&conn.acp).await {
-            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
-            if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
-            }
-        } else {
-            self.close_reopenable(sid).await;
+            self.retire(Retired::RoutineFinished).await;
+        } else if !self.close_reopenable(sid).await
+            && let Some(conn) = self.conn.as_mut()
+        {
+            conn.spent.push(sid.to_owned());
         }
+    }
+
+    /// Stops an agent holding a spent session (`release_spent`) once nothing runs or waits, unless something runs
+    /// detached under it: then the idle check tries again.
+    pub(super) async fn stop_spent(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        if !conn.spent.is_empty() && self.turn.is_none() && self.queue.is_empty() && !background_work(&conn.acp).await {
+            self.retire(Retired::SessionNotClosed).await;
+        }
+    }
+
+    /// Stops the agent with everything it started, to give that back; the next turn starts it again and reopens its
+    /// session.
+    async fn retire(&mut self, reason: Retired) {
+        let Some(conn) = self.conn.take() else { return };
+        tracing::info!(bot = %self.cfg.id, ?reason, "stopping the agent");
+        crate::analytics::agent_retired(&self.hub, &self.cfg.backend, reason);
+        conn.acp.kill().await;
     }
 
     /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
-    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead.
-    pub(super) async fn close_reopenable(&mut self, sid: &str) {
-        if self
-            .conn
-            .as_ref()
-            .is_some_and(|c| c.sessions.close && c.sessions.reopen.is_some() && c.loaded.contains_key(sid))
-        {
-            self.close_session(sid).await;
+    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead. Whether it's no longer open.
+    pub(super) async fn close_reopenable(&mut self, sid: &str) -> bool {
+        let Some(conn) = &self.conn else { return true };
+        if !conn.loaded.contains_key(sid) {
+            return true;
         }
+        conn.sessions.close && conn.sessions.reopen.is_some() && self.close_session(sid).await
     }
 
-    async fn close_session(&mut self, sid: &str) {
+    /// Whether the agent closed it.
+    async fn close_session(&mut self, sid: &str) -> bool {
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
-        let Some(conn) = self.conn.as_mut() else { return };
+        let Some(conn) = self.conn.as_mut() else { return false };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
@@ -165,11 +187,13 @@ impl Actor {
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
                 self.applied_system.remove(sid);
+                true
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
                 conn.loaded.insert(sid.to_owned(), Instant::now());
+                false
             }
         }
     }

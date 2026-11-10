@@ -48,3 +48,14 @@ test('marking an empty chat unread shows no badge, like the real host', async ()
   assert.equal(bot.unread, 0)
   assert.equal(bot.keptUnread ?? false, false)
 })
+
+test('marking a read chat unread brings back how many replies were unread, like the real host', async () => {
+  const host = new FakeHost('2.45.0', macBook)
+  const reply = (host as unknown as { add(e: { botId: string; kind: string; data: object }): void }).add.bind(host)
+  reply({ botId: 'scout', kind: 'agent', data: { text: 'one', final: true } })
+  reply({ botId: 'scout', kind: 'agent', data: { text: 'two', final: true } })
+  await host.call('markRead', { botId: 'scout' })
+  const { bot } = (await host.call('markUnread', { botId: 'scout' })) as { bot: Bot }
+  assert.equal(bot.unread, 3)
+  assert.equal(bot.keptUnread, true)
+})

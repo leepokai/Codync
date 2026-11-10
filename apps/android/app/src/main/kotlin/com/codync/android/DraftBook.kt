@@ -38,8 +38,8 @@ class DraftBook(private val directory: File, computerId: String) {
     }
 
     /** A crash between pending-send commit and draft removal cannot offer the same draft twice. */
-    @Synchronized fun recover(snapshot: MirrorSnapshot): List<ComposerDraft> {
-        val queued = snapshot.pending.map { it.nonce }.toSet() + snapshot.entries.mapNotNull { it.clientNonce }
+    @Synchronized fun recover(snapshot: MirrorSnapshot, confirmedNonces: Set<String> = emptySet()): List<ComposerDraft> {
+        val queued = snapshot.pending.map { it.nonce }.toSet() + snapshot.entries.mapNotNull { it.clientNonce } + confirmedNonces
         val drafts = read().filter { it.nonce !in queued }
         save(drafts)
         return drafts

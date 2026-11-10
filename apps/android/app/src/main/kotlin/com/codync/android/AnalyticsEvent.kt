@@ -235,7 +235,7 @@ internal enum class NotificationKind(override val wire: String, val category: St
     }
 }
 
-internal enum class PhoneSetting(override val wire: String) : CatalogValue { Push("push"), LiveActivities("live_activities") }
+internal enum class PhoneSetting(override val wire: String) : CatalogValue { Push("push"), LiveActivities("live_activities"), LowMemory("low_memory") }
 
 /** What an outbound link leads to (`install_command`: an install command copied; `install_link`: the website link copied). */
 internal enum class OutboundLink(override val wire: String) : CatalogValue {

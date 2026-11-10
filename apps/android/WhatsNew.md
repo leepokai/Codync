@@ -7,6 +7,15 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.43.2
+### zh-Hant
+- 修正 Codync 在 bot 很多或聊天紀錄很長時自動關閉的問題：現在每個聊天只會先載入最新的訊息，較舊的訊息往回捲動時再載入。
+- 新增「低記憶體模式」（設定）：若 Codync 仍會自動關閉，可開啟以減少載入的訊息。
+
+### en-US
+- Fixed Codync closing by itself with many bots or very long chats. Each chat now loads its newest messages first, and older ones load as you scroll back.
+- New Low memory mode in Settings: turn it on if Codync still closes by itself, to keep even less of each chat loaded.
+
 ## 2.43.1
 ### zh-Hant
 - 新功能 Codync Cloud（Beta）：登入 Codync 帳號後，可以在你自己的 Boat（歐洲）或 InstaBox（美國）帳號上開雲端電腦，你的電腦沒開，bot 也能工作。Codync 不收費，機器由供應商依它的方案向你的帳號收費。在「管理電腦」的 Codync Cloud 區塊按 +。

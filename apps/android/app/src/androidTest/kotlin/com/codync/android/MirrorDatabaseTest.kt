@@ -143,6 +143,40 @@ class MirrorDatabaseTest {
         assertEquals(1, mirror.snapshot().entries.size)
     }
 
+    @Test fun boundedSnapshotKeepsResidentChatsWholeAndPreviewsTheRest() {
+        val keep = (1L..40L).map { chat("keep", it) }
+        val previewed = (1L..40L).map { chat("drop", it) }
+        val short = (1L..2L).map { chat("short", it) }
+        mirror.receive(keep + previewed + short)
+        mirror.save(PendingSend("unsent", "drop", text = "waiting", createdAt = 1))
+        val everything = mirror.snapshot()
+        assertEquals(everything.entries.map { it.id }.sorted(), mirror.snapshot(Residency.All).entries.map { it.id }.sorted())
+        val bounded = mirror.snapshot(Residency(full = setOf("keep"), preview = 30, window = 40))
+        assertEquals((1L..40L).toList(), bounded.entries.filter { it.botId == "keep" }.map { it.seq })
+        assertEquals((11L..40L).toList(), bounded.entries.filter { it.botId == "drop" }.map { it.seq })
+        assertEquals(listOf(1L, 2L), bounded.entries.filter { it.botId == "short" }.map { it.seq })
+        assertFalse(bounded.entries.any { it.clientNonce == "n-drop-1" })
+        assertEquals(everything.rev, bounded.rev)
+        assertEquals(listOf("unsent"), bounded.pending.map { it.nonce })
+        assertEquals(setOf("n-drop-1"), mirror.confirmedNonces(listOf(ComposerDraft("drop", nonce = "n-drop-1"), ComposerDraft("drop", nonce = "never-sent"))))
+        assertTrue(mirror.hasNonce("drop", "n-drop-1"))
+        assertFalse(mirror.hasNonce("keep", "n-drop-1"))
+        assertTrue(mirror.snapshot(Residency(emptySet(), preview = 0)).entries.isEmpty())
+    }
+
+    @Test fun aResidentChatLoadsOnlyItsWindowAndOlderRowsStayReachable() {
+        mirror.receive((1L..50L).map { chat("big", it) })
+        val windowed = mirror.snapshot(Residency(setOf("big"), preview = 5, window = 20))
+        assertEquals((31L..50L).toList(), windowed.entries.map { it.seq })
+        assertTrue(mirror.hasOlder("big", 31))
+        assertFalse(mirror.hasOlder("big", 1))
+        val grown = mirror.snapshot(Residency(setOf("big"), preview = 5, window = 20, windows = mapOf("big" to 45)))
+        assertEquals((6L..50L).toList(), grown.entries.map { it.seq })
+    }
+
+    private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
+        data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })
+
     @Test fun upgradingTheMirrorFetchesTheConversationAgainAndKeepsUnsentMessages() {
         mirror.close()
         val path = File(directory, "mirror-$computer.db")

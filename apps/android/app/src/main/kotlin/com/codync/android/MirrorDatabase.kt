@@ -84,13 +84,17 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         }
     }
 
-    @Synchronized fun snapshot(): MirrorSnapshot {
+    /**
+     * [residency] loads every row for [Residency.All] and for each resident chat.
+     * Every other chat keeps its newest [Residency.preview] rows, so a large roster is not decoded whole.
+     */
+    @Synchronized fun snapshot(residency: Residency = Residency.All): MirrorSnapshot {
         val db = readableDatabase
         val icons = icons()
         return MirrorSnapshot(
             rows(db, "SELECT payload FROM bots WHERE deleted=0") { WireJson.decodeFromString<Bot>(it) }
                 .map { it.copy(customIcon = icons["bot:${it.id}"]) },
-            rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) },
+            entries(db, residency),
             pending(db, "ORDER BY created"),
             meta(db, "rev")?.toLong() ?: 0,
             meta(db, "usage")?.let { WireJson.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap()),
@@ -98,6 +102,22 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             icons,
         )
     }
+
+    /** Whether [botId]'s chat already holds the sent message with id [nonce], even outside the rows in memory. */
+    @Synchronized internal fun hasNonce(botId: String, nonce: String): Boolean = readableDatabase.rawQuery(
+        "SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(botId, nonce)).use { it.moveToFirst() }
+
+    /** Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not offered twice. */
+    @Synchronized internal fun confirmedNonces(drafts: Collection<ComposerDraft>): Set<String> {
+        val db = readableDatabase
+        return drafts.filter { draft ->
+            db.rawQuery("SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(draft.botId, draft.nonce)).use { it.moveToFirst() }
+        }.mapTo(mutableSetOf()) { it.nonce }
+    }
+
+    /** Whether SQLite holds rows of [botId] older than [seq], so paging back can skip the computer. */
+    @Synchronized internal fun hasOlder(botId: String, seq: Long): Boolean = readableDatabase.rawQuery(
+        "SELECT 1 FROM entries WHERE bot_id=? AND seq<? LIMIT 1", arrayOf(botId, seq.toString())).use { it.moveToFirst() }
 
     @Synchronized fun revision(): Long = meta(readableDatabase, "rev")?.toLong() ?: 0
 
@@ -219,9 +239,36 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     }
     private fun pending(db: SQLiteDatabase, order: String = "") =
         rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
-    private fun <T> rows(db: SQLiteDatabase, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
-        buildList { while (it.moveToNext()) add(decode(it.getString(0))) }
+
+    /** Resident chats come back as their newest [Residency.limit] rows. Every other chat keeps its newest [Residency.preview] rows. */
+    private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> {
+        if (residency.preview < 0) return rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) }
+        val full = residency.full.filter { it.isNotBlank() }.toSet()
+        val preview = residency.preview.coerceAtLeast(0)
+        val loaded = mutableListOf<Entry>()
+        if (preview == 0 && full.isEmpty()) return emptyList()
+        for (bot in botIds(db)) {
+            if (preview == 0 && bot !in full) continue
+            val decoded = if (bot in full) {
+                rows(db, "SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT ${residency.limit(bot)}", arrayOf(bot)) {
+                    WireJson.decodeFromString<Entry>(it)
+                }.asReversed()
+            } else {
+                rows(db, "SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $preview", arrayOf(bot)) {
+                    WireJson.decodeFromString<Entry>(it)
+                }.asReversed()
+            }
+            loaded += decoded
+        }
+        return loaded.sortedBy { it.seq }
     }
+
+    private fun botIds(db: SQLiteDatabase): List<String> = db.rawQuery("SELECT DISTINCT bot_id FROM entries", null).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+    }
+
+    private fun <T> rows(db: SQLiteDatabase, query: String, args: Array<String>? = null, decode: (String) -> T): List<T> =
+        db.rawQuery(query, args).use { cursor -> buildList { while (cursor.moveToNext()) add(decode(cursor.getString(0))) } }
     private fun <T> transaction(block: (SQLiteDatabase) -> T): T {
         val db = writableDatabase
         db.beginTransaction()

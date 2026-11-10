@@ -15,8 +15,15 @@ fun AppStore.openBot(id: String?) {
     // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
+    if (id != null) residents.touch(id)
+    if (leaving) state.value.selectedBot?.let { windows.remove(it) }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
-    if (id != null) { opened(this); acknowledgeVisible() }
+    if (id != null) {
+        opened(this)
+        acknowledgeVisible()
+    }
+    // The open chat swaps its preview for its window, and the chat just left gives its extra rows back.
+    if (leaving) contextScope.launch { refresh() }
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
@@ -71,12 +78,22 @@ internal suspend fun AppStore.callEntries(botId: String, call: String): List<Ent
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
     action("history") {
+        // The open chat's window has to be loaded first: beforeSeq is its oldest row, not a preview's.
+        residents.touch(id)
+        refresh()
         val mirror = requireNotNull(database)
+        // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
+        val before = floors[id] ?: Long.MAX_VALUE
+        // Older rows the phone already stored come from SQLite, a page at a time, before the computer is asked.
+        if (withContext(Dispatchers.IO) { mirror.hasOlder(id, before) }) {
+            if (state.value.selectedBot == id) windows.merge(id, residency().window + Residency.PAGE) { old, _ -> old + Residency.PAGE }
+            refresh()
+            return@action
+        }
         if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
             mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
             return@action
         }
-        val before = state.value.entries.filter { it.botId == id }.minOfOrNull(Entry::seq) ?: Long.MAX_VALUE
         val active = ready()
         val response = active.call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
         val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
@@ -85,6 +102,7 @@ fun AppStore.loadHistory() {
             if (entries.size < 100) mirror.finishHistory(id)
         }
         if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
+        if (state.value.selectedBot == id) windows.merge(id, residency().window + entries.size) { old, _ -> old + entries.size }
         refresh()
     }
 }
@@ -113,6 +131,8 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {
         if (state.value.entries.any { it.botId == send.botId && it.clientNonce == send.nonce }) return
+        // The sent message may sit in older rows this phone holds on disk but not in memory.
+        if (withContext(Dispatchers.IO) { requireNotNull(database).hasNonce(send.botId, send.nonce) }) return
         savePending(send)
         val active = channel
         if (active?.state?.value is LinkState.ComputerOffline && send.files.isEmpty()) {

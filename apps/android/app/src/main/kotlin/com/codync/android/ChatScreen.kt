@@ -226,7 +226,9 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
     // Messages waiting behind the bot's work show above the composer instead.
     val items = chatItems(entries, pending, busy = bot.isWorking)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
-    val more = bot.id !in state.historyComplete
+    val held = state.entries.count { it.botId == bot.id }
+    // A chat holds at most Residency.ceiling rows in memory, so paging stops there instead of spinning.
+    val more = bot.id !in state.historyComplete && held < store.residency().ceiling
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
     ConversationList(items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop) {
@@ -234,7 +236,8 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
                 contentAlignment = Alignment.Center) { Spinner(14.dp) }
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
-            LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
+            // Keyed on what is held, so each page that lands asks for the next while the row is still on screen.
+            LaunchedEffect(held) { if ("history" !in state.busy) store.loadHistory() }
         }
         // Shown while earlier messages may still load, as on the iPhone.
         if (items.isEmpty()) item("intro") { IntroCard(bot, state) }

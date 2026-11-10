@@ -118,5 +118,7 @@
   "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "مهام سير العمل التي ينفذها n8n على الكمبيوتر. تشغيل إحداها ينشرها هناك. يُفتح محررها في Codync على الكمبيوتر.",
   "Workflows": "مهام سير العمل",
   "Turning one on publishes it in n8n.": "تشغيل إحداها ينشرها في n8n.",
-  "n8n: workflows and runs…": "n8n: مهام سير العمل وتشغيلاتها…"
+  "n8n: workflows and runs…": "n8n: مهام سير العمل وتشغيلاتها…",
+  "Do it with the computer's n8n workflows": "تنفيذ ذلك عبر مهام سير عمل n8n على الكمبيوتر",
+  "Make an image with ComfyUI": "إنشاء صورة باستخدام ComfyUI"
 }

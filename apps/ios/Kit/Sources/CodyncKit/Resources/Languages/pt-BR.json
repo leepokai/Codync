@@ -1812,5 +1812,7 @@
   "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Os workflows que o n8n executa no computador. Ativar um o publica lá. O editor abre no Codync do computador.",
   "Workflows": "Workflows",
   "Turning one on publishes it in n8n.": "Ativar um o publica no n8n.",
-  "n8n: workflows and runs…": "n8n: workflows e execuções…"
+  "n8n: workflows and runs…": "n8n: workflows e execuções…",
+  "Do it with the computer's n8n workflows": "Fazer isso com os workflows do n8n do computador",
+  "Make an image with ComfyUI": "Criar uma imagem com o ComfyUI"
 }

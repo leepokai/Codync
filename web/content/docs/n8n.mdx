@@ -40,6 +40,10 @@ The editor ships with a **Codync Bot** node (under **Custom Nodes**): it talks t
 
 The node finds the host on its own, so it needs no credentials. You can still configure a **Codync API** credential — the host's URL and token — if you point the node at another computer's host.
 
+## Tell a bot to use n8n
+
+In any chat, start a message with `/n8n` and say what to do, for example `/n8n run the daily report and tell me how it went`: the bot works the instance through its workflows and runs. If n8n is not running, the bot says so. A workflow can send the same kind of message with the Codync Bot node, so one flow can ask a bot to make an image with `/comfy …` or to run another workflow with `/n8n …`.
+
 ## Give your bots the instance
 
 While the instance runs, the host registers its MCP server as a connector named **n8n** on every bot, so a bot can work n8n the way it works any other connector: look at its workflows, start an execution, follow the result. While the instance runs, the settings page shows the connection under the **Instance** section.

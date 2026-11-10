@@ -100,8 +100,10 @@ Typing `/` at the start of a message to a bot (desktop, iPhone, Android, termina
 | --- | --- | --- |
 | `/fast` | Fast mode | Switches [Fast mode](#fast-mode) with `updateBot`; listed only while the bot offers it. Its detail says what picking it does, or why the agent refused it (warning color). |
 | `/<skill id>` | the skill's name | Fills in `/<skill id> ` for the rest of the message. |
+| `/n8n` | n8n | Fills in `/n8n ` for every bot: the request is done with the computer's n8n workflows. |
+| `/comfy` | ComfyUI | Fills in `/comfy ` for every bot: the request is an image made with ComfyUI. |
 
-Picking a built-in command, or sending a message that is just one (`/fast`), runs it in the client and clears the box; nothing reaches the agent. Return on a skill whose name is already typed out sends the message. The host sees a message starting with `/<id of a skill the bot has on>` and hands the agent `[Codync: the user picked the "<name>" skill for this message. Read <path> first and follow it.]` followed by the rest of the message; the chat keeps the text as typed. Any other `/command`, including `/fast` for a bot without Fast mode on offer, reaches the agent unchanged, so its own commands keep working.
+Picking a built-in command, or sending a message that is just one (`/fast`), runs it in the client and clears the box; nothing reaches the agent. Return on a skill whose name is already typed out sends the message. The host sees a message starting with `/<id of a skill the bot has on>` and hands the agent `[Codync: the user picked the "<name>" skill for this message. Read <path> first and follow it.]` followed by the rest of the message; the chat keeps the text as typed. A message starting with `/n8n` or `/comfy` (`host/src/chat/tool_commands.rs`, after the skills, so a skill with that id keeps the name) gets a note before the request: use the n8n connector's tools, or the `codync-comfyui` tools; if they aren't there the tool isn't running, so say so and where to start it. Workflows can send the same messages with the Codync Bot node. Any other `/command`, including `/fast` for a bot without Fast mode on offer, reaches the agent unchanged, so its own commands keep working.
 
 ## Sign-in for remote connectors (`host/src/market/oauth.rs`, discovery in `discovery.rs`)
 

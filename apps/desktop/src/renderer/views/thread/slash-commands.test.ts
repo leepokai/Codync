@@ -4,6 +4,9 @@ import { groupFastMode } from '../../../shared/fast-mode.ts'
 import { normalizeBot } from '../../../shared/models.ts'
 import { builtInCommand, returnRuns, slashCommands, slashQuery } from './slash-commands.ts'
 
+/** The tool commands every bot lists after its skills. */
+const tools = ['n8n', 'comfy']
+
 const installed = [
   { id: 'pdf', name: 'PDF', description: 'PDFs' },
   { id: 'code-review', name: 'Code Review', description: '' },
@@ -19,20 +22,23 @@ test('a leading slash opens the list until the name ends', () => {
 
 test('built-in commands come first, then only the bot\'s own skills, by name or title', () => {
   const bot = normalizeBot({ id: 'b', skills: ['pdf', 'code-review'], fastModeSupport: 'offered' })
-  assert.deepEqual(slashCommands(bot, '', installed).map((c) => c.name), ['fast', 'pdf', 'code-review'])
+  assert.deepEqual(slashCommands(bot, '', installed).map((c) => c.name), ['fast', 'pdf', 'code-review', ...tools])
   assert.deepEqual(slashCommands(bot, 'review', installed).map((c) => c.name), ['code-review'])
   assert.deepEqual(slashCommands(bot, 'new', installed), [], 'a new session is in the bot\'s menu')
+  assert.deepEqual(slashCommands(bot, 'comf', installed).map((c) => c.title), ['ComfyUI'], 'the tool commands match by name or title')
   assert.deepEqual(slashCommands(normalizeBot({ id: 'b', skills: ['pdf'] }), 'xl', installed), [])
-  assert.deepEqual(slashCommands(normalizeBot({ id: 'b' }), '', []).map((c) => c.name), ['fast'], 'offered until the agent says otherwise')
-  assert.deepEqual(slashCommands(normalizeBot({ id: 'b', fastModeSupport: 'unsupported' }), '', []), [], 'no Fast mode on offer')
+  const own = [...installed, { id: 'n8n', name: 'n8n', description: 'mine' }]
+  assert.deepEqual(slashCommands(normalizeBot({ id: 'b', skills: ['n8n'] }), 'n8n', own).map((c) => c.detail), ['mine'], 'a skill with a tool\'s name keeps it')
+  assert.deepEqual(slashCommands(normalizeBot({ id: 'b' }), '', []).map((c) => c.name), ['fast', ...tools], 'offered until the agent says otherwise')
+  assert.deepEqual(slashCommands(normalizeBot({ id: 'b', fastModeSupport: 'unsupported' }), '', []).map((c) => c.name), tools, 'no Fast mode on offer')
 })
 
 test('a group lists its bots\' commands: Fast mode for all of them, then every skill one of them has', () => {
   const group = normalizeBot({ id: 'g', kind: 'group', members: ['a', 'b'] })
   const a = normalizeBot({ id: 'a', name: 'Ada', skills: ['pdf'], fastModeSupport: 'offered' })
   const b = normalizeBot({ id: 'b', name: 'Bo', skills: ['pdf', 'xlsx'], fastModeSupport: 'unsupported' })
-  assert.deepEqual(slashCommands(group, '', installed, [a, b]).map((c) => c.name), ['fast', 'pdf', 'xlsx'])
-  assert.deepEqual(slashCommands(group, '', installed, [b]).map((c) => c.name), ['pdf', 'xlsx'], 'no bot here has Fast mode')
+  assert.deepEqual(slashCommands(group, '', installed, [a, b]).map((c) => c.name), ['fast', 'pdf', 'xlsx', ...tools])
+  assert.deepEqual(slashCommands(group, '', installed, [b]).map((c) => c.name), ['pdf', 'xlsx', ...tools], 'no bot here has Fast mode')
   assert.equal(builtInCommand(group, '/fast', [a, b])?.action.kind, 'fast')
   assert.equal(builtInCommand(group, '/fast', [b]), null)
 

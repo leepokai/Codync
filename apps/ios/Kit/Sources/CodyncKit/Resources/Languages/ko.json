@@ -1812,5 +1812,7 @@
   "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n이 컴퓨터에서 실행하는 워크플로입니다. 켜면 컴퓨터에서 게시됩니다. 편집기는 컴퓨터의 Codync에서 열립니다.",
   "Workflows": "워크플로",
   "Turning one on publishes it in n8n.": "켜면 n8n에서 게시됩니다.",
-  "n8n: workflows and runs…": "n8n: 워크플로와 실행…"
+  "n8n: workflows and runs…": "n8n: 워크플로와 실행…",
+  "Do it with the computer's n8n workflows": "이 컴퓨터의 n8n 워크플로로 처리하기",
+  "Make an image with ComfyUI": "ComfyUI로 이미지 만들기"
 }

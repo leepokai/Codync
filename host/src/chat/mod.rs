@@ -32,4 +32,5 @@ pub mod skills;
 pub mod takeover;
 pub mod teach;
 pub mod team;
+pub mod tool_commands;
 pub mod uploads;

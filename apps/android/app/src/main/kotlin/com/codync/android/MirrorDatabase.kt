@@ -24,6 +24,10 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         private const val RAW_PER_SHOWN = 10
 /** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
 private const val RESIDENT_BYTES = 6_000_000L
+private const val RESIDENT_BYTES_MAX = 24_000_000L
+private const val BYTES_PER_SHOWN = 20_000L
+/** Characters of stored payload a chat that isn't open may hold as its preview. */
+private const val PREVIEW_BYTES = 150_000L
 
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
@@ -127,17 +131,6 @@ private const val RESIDENT_BYTES = 6_000_000L
     /** How many of [botId]'s rows start at [seq] or later: the window that holds a page just fetched, whatever arrived meanwhile. */
     @Synchronized internal fun countSince(botId: String, seq: Long): Int = readableDatabase.rawQuery(
         "SELECT COUNT(*) FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
-
-    /** Chat rows ([Entry.isChat]) from [seq] on, so a fetched page sizes the window by what the chat shows. */
-    @Synchronized internal fun countShownSince(botId: String, seq: Long): Int {
-        var shown = 0
-        readableDatabase.rawQuery("SELECT payload FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { cursor ->
-            while (cursor.moveToNext()) if (WireJson.decodeFromString<Entry>(cursor.getString(0)).isChat) shown++
-        }
-        return shown
-    }
-
-
 
     /** Whether SQLite holds rows of [botId] older than [seq], so paging back can skip the computer. */
     @Synchronized internal fun hasOlder(botId: String, seq: Long): Boolean = readableDatabase.rawQuery(
@@ -284,9 +277,7 @@ private const val RESIDENT_BYTES = 6_000_000L
             if (preview == 0 && bot !in full) continue
             val decoded = if (bot in full) residentEntries(db, bot, residency.limit(bot))
             else {
-                rows(db, "SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $preview", arrayOf(bot)) {
-                    WireJson.decodeFromString<Entry>(it)
-                }.asReversed()
+                previewEntries(db, bot, preview)
             }
             loaded += decoded
         }
@@ -303,13 +294,29 @@ private const val RESIDENT_BYTES = 6_000_000L
         val decoded = mutableListOf<Entry>()
         var shown = 0
         var bytes = 0L
+        // Grows with the window so paging keeps reaching older rows, up to a fixed ceiling.
+        val budget = (target * BYTES_PER_SHOWN).coerceIn(RESIDENT_BYTES, RESIDENT_BYTES_MAX)
         db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $cap", arrayOf(bot)).use { cursor ->
-            while (cursor.moveToNext() && shown < target && bytes < RESIDENT_BYTES) {
+            while (cursor.moveToNext() && shown < target && bytes < budget) {
                 val text = cursor.getString(0)
                 bytes += text.length
                 val entry = WireJson.decodeFromString<Entry>(text)
                 decoded += entry
                 if (entry.isChat) shown++
+            }
+        }
+        return decoded.asReversed()
+    }
+
+    /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large: its newest row is always kept. */
+    private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<Entry> {
+        val decoded = mutableListOf<Entry>()
+        var bytes = 0L
+        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit", arrayOf(bot)).use { cursor ->
+            while (cursor.moveToNext() && (decoded.isEmpty() || bytes < PREVIEW_BYTES)) {
+                val text = cursor.getString(0)
+                bytes += text.length
+                decoded += WireJson.decodeFromString<Entry>(text)
             }
         }
         return decoded.asReversed()

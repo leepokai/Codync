@@ -96,6 +96,8 @@ data class AppState(
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     val historyComplete: Set<String> = emptySet(),
+    /** Chats whose memory budget is full: paging back stopped growing what the phone shows, so the earlier row is dropped. */
+    val windowFull: Set<String> = emptySet(),
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),

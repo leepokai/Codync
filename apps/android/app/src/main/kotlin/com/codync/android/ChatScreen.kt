@@ -230,7 +230,7 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
     // The ceiling counts rows the chat shows. Tool and thought rows stay in memory for Trace, but they do not fill it.
     val shown = entries.size
     val floor = state.entries.filter { it.botId == bot.id }.minOfOrNull { it.seq } ?: Long.MAX_VALUE
-    val more = store.residency().needsEarlier(shown, bot.id in state.historyComplete)
+    val more = store.residency().needsEarlier(shown, bot.id in state.historyComplete) && bot.id !in state.windowFull
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
     val settled = remember(bot.id) { mutableStateOf(false) }

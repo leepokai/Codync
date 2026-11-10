@@ -37,7 +37,7 @@ import kotlinx.serialization.json.jsonPrimitive
     val all = state.entries.filter { it.botId == bot.id }
     val held = state.entries.count { it.botId == bot.id && it.isChat }
     // Same gate as the chat: history still open, and the in-memory window is under its ceiling.
-    val more = bot.id !in state.historyComplete && held < store.residency().ceiling
+    val more = bot.id !in state.historyComplete && bot.id !in state.windowFull && held < store.residency().ceiling
     val turns = all.groupBy { it.turn }.toSortedMap().toList()
     // The running turn's thoughts start unfolded.
     val running = runningTurn(all, bot.isWorking(bot.id))

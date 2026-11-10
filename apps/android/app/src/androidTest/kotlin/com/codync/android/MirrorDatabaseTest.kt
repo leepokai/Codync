@@ -200,6 +200,21 @@ class MirrorDatabaseTest {
         assertEquals(0, mirror.countSince("other", 1))
     }
 
+    @Test fun largeRowsStopAChatFromGrowingPastItsByteBudgetAndAPreviewKeepsItsNewestRow() {
+        val filler = "x".repeat(60_000)
+        fun big(seq: Long) = Entry("e-big-$seq", seq, "big", rev = seq, kind = "user",
+            data = buildJsonObject { put("text", filler); put("clientNonce", "n-big-$seq") })
+        mirror.receive((1L..600L).map(::big))
+        val small = mirror.snapshot(Residency(setOf("big"), window = 300)).entries.filter { it.botId == "big" }
+        val wide = mirror.snapshot(Residency(setOf("big"), window = 500, windows = mapOf("big" to 500))).entries.filter { it.botId == "big" }
+        assertTrue("a chat of large rows stays inside its byte budget", small.size < 300)
+        assertTrue("and a wider window can't grow past it", wide.size <= 24_000_000 / 60_000)
+        assertEquals(600L, small.maxOf { it.seq })
+        val preview = mirror.snapshot(Residency(emptySet(), window = 300, preview = 30)).entries.filter { it.botId == "big" }
+        assertTrue("a preview of large rows is cut short but keeps the newest row", preview.size in 1..29)
+        assertEquals(600L, preview.maxOf { it.seq })
+    }
+
     private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
         data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })
 

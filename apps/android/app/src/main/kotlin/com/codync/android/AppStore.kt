@@ -173,7 +173,7 @@ class AppStore internal constructor(
     }
 
     /** Applies a changed memory setting now, so rows no longer wanted are released. */
-    fun reloadMirror() { windows.clear(); contextScope.launch { refresh() } }
+    fun reloadMirror() { windows.clear(); mutableState.update { it.copy(windowFull = emptySet()) }; contextScope.launch { refresh() } }
 
     internal suspend fun refresh() {
         if (database == null) return

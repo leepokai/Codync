@@ -19,7 +19,7 @@ fun AppStore.openBot(id: String?) {
     // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.
     if (leaving) state.value.selectedBot?.let { left ->
         windows.remove(left)
-        mutableState.update { it.copy(historyComplete = it.historyComplete - left) }
+        mutableState.update { it.copy(historyComplete = it.historyComplete - left, windowFull = it.windowFull - left) }
     }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
     if (id != null) {
@@ -99,6 +99,8 @@ fun AppStore.loadHistory() {
         if (withContext(Dispatchers.IO) { mirror.hasOlder(id, before) }) {
             if (state.value.selectedBot == id) windows.merge(id, residency().window + Residency.PAGE) { old, _ -> old + Residency.PAGE }
             refresh()
+            // The window grew and the same rows came back: this chat's memory budget is spent.
+            if (floors[id] == before) mutableState.update { it.copy(windowFull = it.windowFull + id) }
             return@action
         }
         if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
@@ -115,11 +117,9 @@ fun AppStore.loadHistory() {
         // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
         if (state.value.selectedBot == id) {
             if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
-            // Size the window by the chat rows from the page's first row on, so rows that arrived live meanwhile fit too.
-            entries.minOfOrNull(Entry::seq)?.let { oldest ->
-                val shown = withContext(Dispatchers.IO) { mirror.countShownSince(id, oldest) }
-                if (state.value.selectedBot == id) windows.merge(id, shown) { old, wanted -> maxOf(old, wanted) }
-            }
+            // Grow the window by the chat rows this page added; rows that arrived live meanwhile were already inside it.
+            val added = entries.count { it.isChat }
+            if (added > 0) windows[id] = residency().window + added
         }
         refresh()
     }

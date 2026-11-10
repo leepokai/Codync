@@ -78,6 +78,15 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     val signedIn = state.account.userId != null
     AnalyticsMilestones(state)
     val onboarding = !state.setupComplete && state.computers.isEmpty() && state.cloudComputers.isEmpty()
+    var guide by rememberSaveable { mutableStateOf(false) }
+    val guidePrefs = context.getSharedPreferences("codync", android.content.Context.MODE_PRIVATE)
+    fun closeGuide() {
+        guidePrefs.edit().putBoolean("guideDone", true).apply()
+        guide = false
+    }
+    LaunchedEffect(state.setupComplete, state.loading) {
+        if (state.setupComplete && !state.loading && !guidePrefs.getBoolean("guideDone", false)) guide = true
+    }
     // Signing in to an account that has computers completes setup, as pairing or skipping does.
     LaunchedEffect(state.cloudComputers.isNotEmpty(), state.loading) {
         if (!state.loading && !state.setupComplete && state.cloudComputers.isNotEmpty()) store.skipSetup()
@@ -144,6 +153,7 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     CodyncSheet(showPairing && !state.loading, { showPairing = false }) { PairingView(state, store, inModal = true) }
     CodyncSheet(showUsage && !state.loading, { showUsage = false }) { UsageScreen(state, store::refreshUsage, store::reloadUsage, store::weekSummary) }
     CodyncSheet(showMarketplace && root == Root.Tabs, { showMarketplace = false }) { MarketplaceView(state, store) }
+    CodyncSheet(guide, { closeGuide() }) { GettingStartedGuide(state) { closeGuide() } }
     CodyncSheet(groupEditor.takeIf { !state.loading }, { groupEditor = null }) { draft ->
         key(state.contextId, state.generation, draft.id) {
             if (draft.id == null) NewGroupView(state, store) else GroupEditor(state, draft, store)

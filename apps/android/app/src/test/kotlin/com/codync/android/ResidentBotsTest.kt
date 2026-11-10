@@ -1,6 +1,7 @@
 package com.codync.android
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +19,17 @@ class ResidentBotsTest {
         assertEquals(Residency.DEFAULT_WINDOW, residency.limit("b"))
         assertEquals(Residency.DEFAULT_WINDOW, residency.limit("none"))
         assertEquals(Residency.MAX_WINDOW, residency.limit("c"))
+    }
+
+    @Test fun `earlier rows continue only while the shown chat is under the ceiling`() {
+        val residency = Residency(setOf("a"))
+        assertTrue(residency.needsEarlier(0, false))
+        assertTrue(residency.needsEarlier(Residency.MAX_WINDOW - 1, false))
+        assertFalse(residency.needsEarlier(Residency.MAX_WINDOW, false))
+        assertFalse(residency.needsEarlier(0, true))
+        val low = Residency(setOf("a"), ceiling = 1000)
+        assertTrue(low.needsEarlier(999, false))
+        assertFalse(low.needsEarlier(1000, false))
     }
 
     @Test fun `a sixth open chat drops the least recently used`() {

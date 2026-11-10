@@ -81,6 +81,8 @@ class AppStore internal constructor(
     internal val windows = ConcurrentHashMap<String, Int>()
     /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */
     internal val floors = ConcurrentHashMap<String, Long>()
+    /** Residency applied by the last snapshot, so a history page can skip a repeat read when this chat's window is already loaded. */
+    @Volatile internal var published: Residency? = null
     /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */
     private val refreshes = Mutex()
 
@@ -136,6 +138,7 @@ class AppStore internal constructor(
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
+        published = null
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
@@ -183,6 +186,7 @@ class AppStore internal constructor(
         val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
         floors.clear()
         snapshot.entries.groupBy { it.botId }.forEach { (bot, rows) -> floors[bot] = rows.minOf { it.seq } }
+        published = wanted
         // Rows the window no longer reaches are paged back from the phone again, even after the host had nothing older.
         val open = state.value.selectedBot
         val stranded = open != null && open in state.value.historyComplete && floors[open]?.let { withContext(Dispatchers.IO) { mirror.hasOlder(open, it) } } == true

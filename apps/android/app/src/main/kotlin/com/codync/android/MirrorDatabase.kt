@@ -20,6 +20,9 @@ import kotlinx.serialization.json.jsonObject
 class MirrorDatabase(context: Context, directory: File, computerId: String) :
     SQLiteOpenHelper(context, file(directory, computerId).absolutePath, null, 3) {
     companion object {
+        /** Hidden rows read per chat row before a resident window stops. Keeps a tool-heavy chat bounded. */
+        private const val RAW_PER_SHOWN = 10
+
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
             return File(directory, "mirror-$computerId.db")
@@ -85,10 +88,10 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     }
 
     /**
-     * [residency] loads every row for [Residency.All] and for each resident chat.
-     * Every other chat keeps its newest [Residency.preview] rows, so a large roster is not decoded whole.
+     * [residency] loads every row for [Residency.All] and, for each resident chat, enough rows to hold
+     * [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows, so a large roster is not decoded whole.
      */
-    @Synchronized fun snapshot(residency: Residency = Residency.All): MirrorSnapshot {
+    @Synchronized fun snapshot(residency: Residency): MirrorSnapshot {
         val db = readableDatabase
         val icons = icons()
         return MirrorSnapshot(
@@ -122,6 +125,15 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     /** How many of [botId]'s rows start at [seq] or later: the window that holds a page just fetched, whatever arrived meanwhile. */
     @Synchronized internal fun countSince(botId: String, seq: Long): Int = readableDatabase.rawQuery(
         "SELECT COUNT(*) FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    /** Chat rows ([Entry.isChat]) from [seq] on, so a fetched page sizes the window by what the chat shows. */
+    @Synchronized internal fun countShownSince(botId: String, seq: Long): Int {
+        var shown = 0
+        readableDatabase.rawQuery("SELECT payload FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { cursor ->
+            while (cursor.moveToNext()) if (WireJson.decodeFromString<Entry>(cursor.getString(0)).isChat) shown++
+        }
+        return shown
+    }
 
 
 
@@ -259,7 +271,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     private fun pending(db: SQLiteDatabase, order: String = "") =
         rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
 
-    /** Resident chats come back as their newest [Residency.limit] rows. Every other chat keeps its newest [Residency.preview] rows. */
+    /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows. */
     private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> {
         if (residency.preview < 0) return rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) }
         val full = residency.full.filter { it.isNotBlank() }.toSet()
@@ -268,11 +280,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         if (preview == 0 && full.isEmpty()) return emptyList()
         for (bot in botIds(db)) {
             if (preview == 0 && bot !in full) continue
-            val decoded = if (bot in full) {
-                rows(db, "SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT ${residency.limit(bot)}", arrayOf(bot)) {
-                    WireJson.decodeFromString<Entry>(it)
-                }.asReversed()
-            } else {
+            val decoded = if (bot in full) residentEntries(db, bot, residency.limit(bot))
+            else {
                 rows(db, "SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $preview", arrayOf(bot)) {
                     WireJson.decodeFromString<Entry>(it)
                 }.asReversed()
@@ -280,6 +289,25 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             loaded += decoded
         }
         return loaded.sortedBy { it.seq }
+    }
+
+    /**
+     * Newest rows through the [target]-th chat row, oldest first. Hidden rows between those chat rows stay, so Trace
+     * and the working indicator still see them. A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table.
+     */
+    private fun residentEntries(db: SQLiteDatabase, bot: String, target: Int): List<Entry> {
+        if (target <= 0) return emptyList()
+        val cap = target.toLong() * RAW_PER_SHOWN
+        val decoded = mutableListOf<Entry>()
+        var shown = 0
+        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC", arrayOf(bot)).use { cursor ->
+            while (cursor.moveToNext() && decoded.size.toLong() < cap && shown < target) {
+                val entry = WireJson.decodeFromString<Entry>(cursor.getString(0))
+                decoded += entry
+                if (entry.isChat) shown++
+            }
+        }
+        return decoded.asReversed()
     }
 
     private fun botIds(db: SQLiteDatabase): List<String> = db.rawQuery("SELECT DISTINCT bot_id FROM entries", null).use { cursor ->

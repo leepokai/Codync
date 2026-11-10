@@ -43,10 +43,12 @@ import kotlinx.coroutines.launch
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
 @Composable internal fun ConversationList(last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
-    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, content: LazyListScope.() -> Unit) {
-    val list = rememberLazyListState()
+    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp,
+    listState: LazyListState = rememberLazyListState(), settled: MutableState<Boolean>? = null,
+    content: LazyListScope.() -> Unit) {
+    val list = listState
     val bottom = padding.calculateBottomPadding()
-    val following = rememberFollowing(list, last, rev, working, bottom)
+    val following = rememberFollowing(list, last, rev, working, bottom, settled)
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     // Child controls consume their taps; only a plain conversation tap clears the composer.
@@ -66,7 +68,8 @@ import kotlinx.coroutines.launch
 }
 
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
-@Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp): MutableState<Boolean> {
+@Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
+    settled: MutableState<Boolean>? = null): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
@@ -77,9 +80,12 @@ import kotlinx.coroutines.launch
             if (!scrolling && touched.value) { touched.value = false; following.value = !list.canScrollForward }
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(settled) {
+        // Already opened at the newest message. A new [settled] (another chat) scrolls again, then allows paging.
+        if (settled?.value == true) return@LaunchedEffect
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
+        settled?.value = true
     }
     // The working steps can grow without a new chat entry. Follow their measured size,
     // not its offset (scrolling itself changes offsets), and always yield to the reader.

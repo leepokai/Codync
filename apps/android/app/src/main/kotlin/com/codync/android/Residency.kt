@@ -1,9 +1,11 @@
 package com.codync.android
 
 /**
- * How much of each chat [MirrorDatabase.snapshot] loads. A resident chat (open or recently opened) loads its
- * newest [window] rows, more while the reader pages back (see [windows]) up to [MAX_WINDOW]; every other chat
- * keeps its newest [preview] rows. Older rows stay in SQLite and are read on demand, so no chat is read whole.
+ * How much of each chat [MirrorDatabase.snapshot] loads. A resident chat (open or recently opened) keeps its
+ * newest [window] chat rows ([com.codync.android.core.Entry.isChat]), more while the reader pages back
+ * (see [windows]) up to [MAX_WINDOW]. Tool and thought rows between those chat rows come along, so they do not
+ * use up the quota; the read still stops after a bounded multiple of [window] and never loads a chat whole.
+ * Every other chat keeps its newest [preview] rows. Older rows stay in SQLite and are read on demand.
  * A negative [preview] is the load-everything sentinel ([All]), not "no rows".
  */
 data class Residency(
@@ -14,6 +16,9 @@ data class Residency(
     val ceiling: Int = MAX_WINDOW,
 ) {
     fun limit(botId: String): Int = (windows[botId] ?: window).coerceIn(window, maxOf(window, ceiling))
+
+    /** Whether the open chat should ask for older rows. [shown] counts rows the chat list shows, not tool or thought rows. */
+    fun needsEarlier(shown: Int, complete: Boolean): Boolean = !complete && shown < ceiling
 
     companion object {
         const val DEFAULT_WINDOW = 300

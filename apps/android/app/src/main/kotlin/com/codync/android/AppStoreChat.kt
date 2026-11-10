@@ -82,12 +82,16 @@ internal suspend fun AppStore.callEntries(botId: String, call: String): List<Ent
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
     action(historyKey(id)) {
-        // The open chat's window has to be loaded first: beforeSeq is its oldest row, not a preview's. If that load
-        // already reached further back, the chat may be full now; the screen asks again if its earlier row is still showing.
+        // beforeSeq is the open window's oldest row, not the preview from before this chat was resident. When that
+        // read already reached further back, stop; the screen asks again only while its earlier row is still showing.
         residents.touch(id)
-        val loadedFrom = floors[id]
-        refresh()
-        if (floors[id] != loadedFrom) return@action
+        val current = residency()
+        val last = published
+        if (last == null || id !in last.full || last.limit(id) != current.limit(id) || last.ceiling != current.ceiling) {
+            val loadedFrom = floors[id]
+            refresh()
+            if (floors[id] != loadedFrom) return@action
+        }
         val mirror = requireNotNull(database)
         // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
         val before = floors[id] ?: Long.MAX_VALUE
@@ -111,15 +115,20 @@ fun AppStore.loadHistory() {
         // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
         if (state.value.selectedBot == id) {
             if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
-            // Size the window by what SQLite holds from the page's first row on, so rows that arrived live meanwhile fit too.
+            // Size the window by the chat rows from the page's first row on, so rows that arrived live meanwhile fit too.
             entries.minOfOrNull(Entry::seq)?.let { oldest ->
-                val held = withContext(Dispatchers.IO) { mirror.countSince(id, oldest) }
-                windows.merge(id, held) { old, wanted -> maxOf(old, wanted) }
+                val shown = withContext(Dispatchers.IO) { mirror.countShownSince(id, oldest) }
+                windows.merge(id, shown) { old, wanted -> maxOf(old, wanted) }
             }
         }
         refresh()
     }
 }
+
+/** The earlier row pages only once it is actually on screen, and only when that page would move the chat. */
+internal fun pageEarlier(
+    settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long, askedShown: Int, askedFloor: Long,
+): Boolean = settled && visible && !loading && (shown > askedShown || floor < askedFloor)
 
 /** One history load per chat at a time, so a chat still loading doesn't make the one opened next wait. */
 internal fun historyKey(botId: String) = "history:$botId"

@@ -56,9 +56,15 @@ pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
+/// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
+/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
+const HOST_EXIT: Duration = Duration::from_secs(40);
+
 /// Do not claim a restart succeeded while an old daemon still holds the data.
 fn wait_for_host_exit() -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // A moment past launchd's kill.
+    let deadline = Instant::now() + HOST_EXIT + Duration::from_secs(5);
     loop {
         match lock_host() {
             Ok(lock) => {

@@ -174,6 +174,32 @@ class MirrorDatabaseTest {
         assertEquals((6L..50L).toList(), grown.entries.map { it.seq })
     }
 
+    @Test fun anOldRowTheComputerRewritesDoesNotHideTheGapBeforeIt() {
+        mirror.receive((100L..120L).map { chat("big", it) })
+        mirror.apply(MirrorEvent.EntryChanged(chat("big", 5)))
+        assertFalse("a row below the oldest stored one waits to be paged in", mirror.hasNonce("big", "n-big-5"))
+        assertEquals(100L, mirror.snapshot(Residency(setOf("big"), window = 50)).entries.minOf { it.seq })
+        mirror.apply(MirrorEvent.EntryChanged(chat("big", 121)))
+        assertTrue(mirror.hasNonce("big", "n-big-121"))
+        mirror.receive(listOf(chat("big", 5)))
+        assertTrue("a history page may reach below the stored rows", mirror.hasNonce("big", "n-big-5"))
+        mirror.apply(MirrorEvent.EntryChanged(chat("fresh", 3)))
+        assertTrue("a chat with no rows yet takes whatever arrives", mirror.hasNonce("fresh", "n-fresh-3"))
+    }
+
+    @Test fun anArtifactDraftIsConfirmedByItsChatsMessage() {
+        mirror.receive(listOf(chat("bot", 1)))
+        val artifact = ComposerDraft("bot/artifact/a1", nonce = "n-bot-1")
+        val unsent = ComposerDraft("bot/artifact/a2", nonce = "never")
+        assertEquals(setOf("n-bot-1"), mirror.confirmedNonces(listOf(artifact, unsent)))
+    }
+
+    @Test fun countSinceSizesTheWindowThatHoldsAFetchedPage() {
+        mirror.receive((1L..30L).map { chat("big", it) })
+        assertEquals(21, mirror.countSince("big", 10))
+        assertEquals(0, mirror.countSince("other", 1))
+    }
+
     private fun chat(bot: String, seq: Long): Entry = Entry("e-$bot-$seq", seq, bot, rev = seq, kind = "user",
         data = buildJsonObject { put("text", "$bot-$seq"); put("clientNonce", "n-$bot-$seq") })
 

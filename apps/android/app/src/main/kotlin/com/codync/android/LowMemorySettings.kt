@@ -25,7 +25,7 @@ internal fun LowMemorySettings(store: AccountStore) {
     val on by LowMemoryMode.enabled.collectAsStateWithLifecycle()
     var about by remember { mutableStateOf(false) }
     val label = tr("Low memory mode")
-    CardSection("Memory", footer = "Only changes this device. Older messages stay on the phone and load as you scroll back.") {
+    CardSection("Device memory", footer = "Only changes this device. Older messages stay on the phone and load as you scroll back.") {
         row {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

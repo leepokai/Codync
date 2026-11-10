@@ -107,13 +107,23 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     @Synchronized internal fun hasNonce(botId: String, nonce: String): Boolean = readableDatabase.rawQuery(
         "SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(botId, nonce)).use { it.moveToFirst() }
 
-    /** Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not offered twice. */
+    /**
+     * Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not
+     * offered twice. A draft's key is its chat's id, or "chat/artifact/id" for one of its artifacts: the message is the chat's.
+     */
     @Synchronized internal fun confirmedNonces(drafts: Collection<ComposerDraft>): Set<String> {
         val db = readableDatabase
         return drafts.filter { draft ->
-            db.rawQuery("SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(draft.botId, draft.nonce)).use { it.moveToFirst() }
+            db.rawQuery("SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(draft.botId.substringBefore('/'), draft.nonce))
+                .use { it.moveToFirst() }
         }.mapTo(mutableSetOf()) { it.nonce }
     }
+
+    /** How many of [botId]'s rows start at [seq] or later: the window that holds a page just fetched, whatever arrived meanwhile. */
+    @Synchronized internal fun countSince(botId: String, seq: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+
 
     /** Whether SQLite holds rows of [botId] older than [seq], so paging back can skip the computer. */
     @Synchronized internal fun hasOlder(botId: String, seq: Long): Boolean = readableDatabase.rawQuery(
@@ -152,7 +162,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
                 // Hello's head revision precedes catch-up; it is never a checkpoint.
             }
             is MirrorEvent.BotChanged -> { writeBot(db, event.bot); bump(db, event.bot.rev) }
-            is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry); bump(db, event.entry.rev) }
+            is MirrorEvent.EntryChanged -> { writeEntry(db, event.entry, live = true); bump(db, event.entry.rev) }
             is MirrorEvent.Usage -> setMeta(db, "usage", event.value.toString())
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
             // Artifacts, the network and the name live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`, `setHostName`).
@@ -205,11 +215,20 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             db.delete("history", "lane=?", arrayOf(bot.id))
         }
     }
-    private fun writeEntry(db: SQLiteDatabase, entry: Entry) {
+    /**
+     * [live] is an event, not a history page. An old row the computer rewrote, one this phone never held, arrives
+     * below the chat's oldest stored row: keeping it would hide the gap before it from paging back, so it waits
+     * to be paged in (the iPhone leaves such rows out the same way).
+     */
+    private fun writeEntry(db: SQLiteDatabase, entry: Entry, live: Boolean = false) {
         val deleted = db.rawQuery("SELECT deleted FROM bots WHERE id=?", arrayOf(entry.botId)).use { it.moveToFirst() && it.getInt(0) == 1 }
         if (deleted) return
         val revision = db.rawQuery("SELECT rev FROM entries WHERE id=?", arrayOf(entry.id)).use { if (it.moveToFirst()) it.getLong(0) else -1 }
         if (revision > entry.rev) return
+        if (live && revision < 0) {
+            val oldest = db.rawQuery("SELECT MIN(seq) FROM entries WHERE bot_id=?", arrayOf(entry.botId)).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+            if (oldest != null && entry.seq < oldest) return
+        }
         check(db.insertWithOnConflict("entries", null, ContentValues().apply {
             put("id", entry.id); put("bot_id", entry.botId)
             put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))

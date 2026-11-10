@@ -16,7 +16,11 @@ fun AppStore.openBot(id: String?) {
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
     if (id != null) residents.touch(id)
-    if (leaving) state.value.selectedBot?.let { windows.remove(it) }
+    // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.
+    if (leaving) state.value.selectedBot?.let { left ->
+        windows.remove(left)
+        mutableState.update { it.copy(historyComplete = it.historyComplete - left) }
+    }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
     if (id != null) {
         opened(this)
@@ -77,10 +81,13 @@ internal suspend fun AppStore.callEntries(botId: String, call: String): List<Ent
 
 fun AppStore.loadHistory() {
     val id = state.value.selectedBot ?: return
-    action("history") {
-        // The open chat's window has to be loaded first: beforeSeq is its oldest row, not a preview's.
+    action(historyKey(id)) {
+        // The open chat's window has to be loaded first: beforeSeq is its oldest row, not a preview's. If that load
+        // already reached further back, the chat may be full now; the screen asks again if its earlier row is still showing.
         residents.touch(id)
+        val loadedFrom = floors[id]
         refresh()
+        if (floors[id] != loadedFrom) return@action
         val mirror = requireNotNull(database)
         // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
         val before = floors[id] ?: Long.MAX_VALUE
@@ -101,11 +108,21 @@ fun AppStore.loadHistory() {
             mirror.receive(entries)
             if (entries.size < 100) mirror.finishHistory(id)
         }
-        if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
-        if (state.value.selectedBot == id) windows.merge(id, residency().window + entries.size) { old, _ -> old + entries.size }
+        // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
+        if (state.value.selectedBot == id) {
+            if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
+            // Size the window by what SQLite holds from the page's first row on, so rows that arrived live meanwhile fit too.
+            entries.minOfOrNull(Entry::seq)?.let { oldest ->
+                val held = withContext(Dispatchers.IO) { mirror.countSince(id, oldest) }
+                windows.merge(id, held) { old, wanted -> maxOf(old, wanted) }
+            }
+        }
         refresh()
     }
 }
+
+/** One history load per chat at a time, so a chat still loading doesn't make the one opened next wait. */
+internal fun historyKey(botId: String) = "history:$botId"
 
 fun AppStore.retry(send: PendingSend) = action("send:" + send.nonce) { deliver(send.copy(status = SendStatus.Sending, error = null)) }
 fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {

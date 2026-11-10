@@ -236,8 +236,9 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
                 contentAlignment = Alignment.Center) { Spinner(14.dp) }
             // A chat shorter than the screen never scrolls, so showing the row is the trigger.
-            // Keyed on what is held, so each page that lands asks for the next while the row is still on screen.
-            LaunchedEffect(held) { if ("history" !in state.busy) store.loadHistory() }
+            // Keyed on what is held and on this chat's load finishing, so each page that lands asks for the next while the row is still on screen.
+            val loading = historyKey(bot.id) in state.busy
+            LaunchedEffect(bot.id, held, loading) { if (!loading) store.loadHistory() }
         }
         // Shown while earlier messages may still load, as on the iPhone.
         if (items.isEmpty()) item("intro") { IntroCard(bot, state) }

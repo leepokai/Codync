@@ -118,8 +118,9 @@ fun AppStore.loadHistory() {
         if (state.value.selectedBot == id) {
             if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
             // Grow the window by the chat rows this page added; rows that arrived live meanwhile were already inside it.
+            // A page of only tool or thought rows still has to move the window, or the next chat row stays out of reach.
             val added = entries.count { it.isChat }
-            if (added > 0) windows.merge(id, residency().limit(id) + added) { old, wanted -> maxOf(old, wanted) }
+            if (entries.isNotEmpty()) windows.merge(id, residency().limit(id) + maxOf(added, 1)) { old, wanted -> maxOf(old, wanted) }
         }
         refresh()
     }

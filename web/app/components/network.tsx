@@ -29,7 +29,7 @@ export function NetworkPanel() {
       {exchange.map(({ icon, computer, bot, line, text }) => (
         <div key={computer} className="flex flex-col gap-2">
           <ComputerLabel icon={icon} name={computer} />
-          <BotRow {...bot} line={line} className="bg-neutral-800">
+          <BotRow {...bot} line={line}>
             <span className="mt-1 text-sm leading-relaxed text-neutral-300">{text}</span>
           </BotRow>
         </div>

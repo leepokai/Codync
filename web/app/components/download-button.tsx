@@ -43,7 +43,7 @@ export default function DownloadButton({ size = "lg" }: { size?: "sm" | "lg" }) 
         >
           <CaretDown size={14} weight="bold" className="transition-transform group-open:rotate-180" />
         </summary>
-        <ul className="absolute right-0 z-40 mt-2 w-64 rounded-2xl bg-neutral-900 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
+        <ul className="absolute right-0 z-40 mt-2 w-64 text-left rounded-2xl bg-neutral-900 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
           {order
             .filter((key) => key !== os)
             .map((key) => {

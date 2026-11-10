@@ -3,7 +3,7 @@ import Hero from "./components/hero";
 import BringYourOwn from "./components/bring-your-own";
 import Demo from "./components/demo";
 import Features from "./components/features";
-import Computers from "./components/computers";
+import Away from "./components/away";
 import Privacy from "./components/privacy";
 import Compare from "./components/compare";
 import Questions from "./components/questions";
@@ -21,7 +21,7 @@ export default function Home() {
         <Demo />
         <BringYourOwn />
         <Features />
-        <Computers />
+        <Away />
         <Privacy />
         <Compare />
         <Questions />

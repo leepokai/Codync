@@ -21,6 +21,9 @@ export const agentName: Record<Agent, string> = {
   opencode: "OpenCode",
 };
 
+/** The agents the site names, in order. */
+export const agents: Agent[] = ["claude", "codex", "gemini", "cursor", "copilot", "opencode"];
+
 const src = (agent: keyof typeof simpleIcons, color = "ffffff") => `https://cdn.simpleicons.org/${simpleIcons[agent]}/${color}`;
 
 /** Fetches the marks up front, for marks that only mount later (the hero's rotating agent). */

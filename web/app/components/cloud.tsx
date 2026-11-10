@@ -17,14 +17,14 @@ export function CloudPanel() {
     >
       <div className="flex flex-col gap-2">
         <ComputerLabel icon={Cloud} name="Research" detail="Sleeping, wakes when you message" />
-        <BotRow name="Relay" shape="squircle" color="blue" line="Weekly report is ready" className="bg-neutral-800" />
+        <BotRow name="Relay" shape="squircle" color="blue" line="Weekly report is ready" />
       </div>
       <div>
         <p className="px-2 text-sm text-neutral-500">Runs on</p>
         <ul className="mt-2 flex flex-col gap-1">
           {providers.map((p) => (
-            <li key={p.name} className="flex items-center gap-3 rounded-2xl bg-neutral-800 px-3 py-2.5">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-neutral-700">
+            <li key={p.name} className="flex items-center gap-3 rounded-2xl bg-neutral-900 px-3 py-2.5">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-neutral-800">
                 <Cloud size={16} className="text-neutral-50" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col">

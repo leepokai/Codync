@@ -2,6 +2,7 @@ import { Check, Plus } from "@phosphor-icons/react/ssr";
 import CompareCards from "./compare-cards";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
+import SectionHeader from "./section-header";
 import { GITHUB } from "../links";
 
 const same = [
@@ -29,11 +30,9 @@ export default function Compare() {
   return (
     <section id="compare" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
       <div className="mx-auto max-w-6xl">
+        <SectionHeader label="Compare" title="Everything Grok Bot and Muse do. Open source, with any agent." />
         <Reveal>
-          <h2 className="max-w-[44rem] text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">
-            Everything Grok Bot and Muse do. Open source, with any agent.
-          </h2>
-          <ul className="mt-10 flex flex-wrap gap-2">
+          <ul className="mt-12 flex flex-wrap justify-center gap-2">
             {same.map((s) => (
               <li key={s} className="inline-flex items-center gap-2 rounded-full bg-neutral-900 py-2 pr-4 pl-3 text-sm text-neutral-300">
                 <Check size={14} weight="bold" className="shrink-0 text-neutral-50" />

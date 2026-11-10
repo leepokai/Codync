@@ -1,47 +1,61 @@
-import { AgentPanel, PlanPanel, SandboxPanel } from "./byo-panels";
-import ByoScroller from "./byo-scroller";
+import { AgentPanel, AgentsPanel, PlanPanel, SandboxPanel } from "./byo-panels";
+import Card from "./card";
+import { CloudPanel } from "./cloud";
 import Reveal from "./reveal";
+import SectionHeader from "./section-header";
 
-const steps = [
-  {
-    word: "sandbox.",
-    body: "Your Mac or PC, a Linux server over SSH, or a cloud computer on your own Boat or InstaBox account. Bots, chats and memory stay there.",
-    panel: <SandboxPanel />,
-  },
-  {
-    word: "agent.",
-    body: "Claude Code, Codex, Gemini, Cursor, Copilot, OpenCode or 40 more. Each bot picks its own, and another carries on when one runs out of usage.",
-    panel: <AgentPanel />,
-  },
-  {
-    word: "subscription.",
-    id: "cost",
-    body: "Bots run on the Claude, ChatGPT or other plans you already pay for. Codync itself is free, with no paid tier.",
-    panel: <PlanPanel />,
-  },
-];
-
-// Bring your own sandbox, agent and subscription, one step at a time: rendered here on the server; the scroller only tracks which step is in view.
-// On phones each step carries its own heading.
+// Bring your own sandbox: where the bots run, which agents they use and who gets paid, one card each.
 export default function BringYourOwn() {
   return (
-    <section className="px-4 sm:px-6">
-      <h2 className="sr-only">Bring your own sandbox, agent and subscription</h2>
-      <ByoScroller
-        steps={steps.map(({ word, id, body, panel }) => ({
-          word,
-          id,
-          content: (
-            <Reveal>
-              <h3 className="mb-8 text-4xl leading-[1.08] font-semibold tracking-tighter text-neutral-50 md:hidden">
-                Bring your own {word}
-              </h3>
-              {panel}
-              <p className="mt-6 max-w-[30rem] text-lg leading-relaxed text-neutral-400">{body}</p>
-            </Reveal>
-          ),
-        }))}
-      />
+    <section className="px-4 py-24 sm:px-6 md:py-32">
+      <div className="mx-auto max-w-6xl">
+        <SectionHeader label="Bring your own sandbox" title="Your computer, your agents, your plan.">
+          Codync brings the bots. They run on a machine you choose, with the agents and subscriptions you already have.
+        </SectionHeader>
+
+        <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Reveal>
+            <Card
+              title="Your sandbox"
+              body="Your Mac or PC, a Linux server over SSH, or a cloud computer on your own Boat or InstaBox account."
+            >
+              <SandboxPanel />
+            </Card>
+          </Reveal>
+          <Reveal delay={0.05}>
+            <Card title="Your agent" body="Claude Code, Codex and 40+ more over ACP, with the logins you already have. Each bot picks its own.">
+              <AgentsPanel />
+            </Card>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <Card
+              id="cost"
+              title="Your subscription"
+              body="Bots run on the Claude, ChatGPT or other plans you already pay for. Codync has no paid tier."
+              wellClassName="bg-neutral-50 p-5"
+            >
+              <PlanPanel />
+            </Card>
+          </Reveal>
+          <Reveal className="lg:col-span-2">
+            <Card
+              title="Out of usage? Another agent carries on."
+              body="When a bot's agent hits its limit, the next one in its list takes the same turn, with the same memory, folder and tools."
+            >
+              <AgentPanel />
+            </Card>
+          </Reveal>
+          <Reveal delay={0.05}>
+            <Card
+              id="cloud"
+              title="Codync Cloud (beta)"
+              body="No computer on all day? Start one on your own Boat or InstaBox account; InstaBox's free plan includes one machine. It sleeps while your bots are idle."
+            >
+              <CloudPanel />
+            </Card>
+          </Reveal>
+        </div>
+      </div>
     </section>
   );
 }

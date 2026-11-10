@@ -18,15 +18,13 @@ type BotRowProps = {
   shape: string;
   color: string;
   line: string;
-  /** The row's fill. */
-  className: string;
   /** More under the line, such as a message; the avatar then sits at the top. */
   children?: React.ReactNode;
 };
 
-export function BotRow({ name, shape, color, line, className, children }: BotRowProps) {
+export function BotRow({ name, shape, color, line, children }: BotRowProps) {
   return (
-    <div className={`flex gap-3 rounded-2xl px-3 py-2.5 ${children ? "items-start" : "items-center"} ${className}`}>
+    <div className={`flex gap-3 rounded-2xl bg-neutral-900 px-3 py-2.5 ${children ? "items-start" : "items-center"}`}>
       <CharacterAvatar shape={shape} color={color} size={32} ink="#fafafa" />
       <span className="flex min-w-0 flex-col">
         <span className="text-sm font-medium text-neutral-50">{name}</span>

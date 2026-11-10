@@ -1,5 +1,6 @@
-import { HardDrives, LockKey, WifiHigh } from "@phosphor-icons/react/ssr";
+import { DeviceMobile, HardDrives, Laptop, LockKey, ShieldCheck, WifiHigh } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
+import SectionHeader from "./section-header";
 
 const points = [
   {
@@ -19,33 +20,63 @@ const points = [
   },
 ];
 
-// Three promises as rows: the claim on the left, how it holds on the right.
+// The path a message takes, top to bottom: the phone, the relay that only forwards, the computer.
+const path = [
+  { icon: DeviceMobile, name: "Your phone", detail: "Seals each message to your computer's key" },
+  { icon: ShieldCheck, name: "Relay", detail: "Forwards ciphertext it can't open" },
+  { icon: Laptop, name: "Your computer", detail: "Bots, chats and memory, in the clear only here" },
+];
+
 export default function Privacy() {
   return (
     <section className="px-4 py-24 sm:px-6 md:py-32">
       <div className="mx-auto max-w-6xl">
-        <Reveal>
-          <h2 className="max-w-[36rem] text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">
-            Private by design.
-          </h2>
-          <p className="mt-5 max-w-[34rem] text-lg leading-relaxed text-neutral-400">
-            The phone is a remote for a computer you own. Nothing about your work passes through anyone else in the clear.
-          </p>
-        </Reveal>
+        <SectionHeader label="Privacy" title="Private by design.">
+          The phone is a remote for a computer you own. Nothing about your work passes through anyone else in the clear.
+        </SectionHeader>
 
-        <Reveal>
-          <ul className="mt-14">
-            {points.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="grid grid-cols-1 gap-3 border-t border-neutral-800 py-8 md:grid-cols-[1fr_1.4fr] md:gap-16 md:py-10">
-                <h3 className="flex items-center gap-4 text-2xl font-semibold tracking-tight text-neutral-50">
-                  <Icon size={26} className="shrink-0" />
-                  {title}
-                </h3>
-                <p className="max-w-[36rem] text-lg leading-relaxed text-neutral-400">{body}</p>
-              </li>
-            ))}
-          </ul>
-        </Reveal>
+        <div className="mt-16 grid grid-cols-1 items-center gap-12 md:grid-cols-[1fr_1fr] md:gap-20">
+          <Reveal>
+            <ul className="flex flex-col gap-8">
+              {points.map(({ icon: Icon, title, body }) => (
+                <li key={title} className="flex gap-4">
+                  <Icon size={24} className="mt-0.5 shrink-0 text-neutral-50" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-neutral-50">{title}</h3>
+                    <p className="mt-1.5 leading-relaxed text-neutral-400">{body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.05}>
+            <div
+              role="img"
+              aria-label="A message goes from your phone, through a relay that only forwards ciphertext, to your computer. On the same Wi-Fi or Tailscale it skips the relay."
+              className="rounded-3xl bg-neutral-900 p-6 md:p-8"
+            >
+              <ol className="flex flex-col">
+                {path.map(({ icon: Icon, name, detail }, i) => (
+                  <li key={name} className="flex flex-col">
+                    {i > 0 ? <span aria-hidden className="my-1 ml-6 h-10 border-l-2 border-dashed border-neutral-700" /> : null}
+                    <span className="flex items-center gap-4 rounded-2xl bg-neutral-950 p-4">
+                      <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-neutral-800">
+                        <Icon size={22} className="text-neutral-50" />
+                      </span>
+                      <span>
+                        <span className="block font-medium text-neutral-50">{name}</span>
+                        <span className="block text-sm text-neutral-400">{detail}</span>
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-6 text-sm leading-relaxed text-neutral-500">
+                On the same Wi-Fi or a Tailscale network, the phone skips the relay and reaches the computer directly.
+              </p>
+            </div>
+          </Reveal>
+        </div>
       </div>
     </section>
   );

@@ -178,7 +178,7 @@ codync.dev counts visits without cookies or anything stored on the visitor's dev
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
 without it PostHog drops these events): `$pageview`, `$pageleave` (time on page and scroll depth), `$web_vitals` (load speed, without attribution), `download_clicked` (`platform`:
 `mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
+`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, `cloud_new`, the homepage's "New" link to the Codync Cloud card, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
 link's `href` against its `links` table, so a new link needs a row there to be counted; the film counts as `demo` when focus moves
 into its frame. Events go through the site's own `/e` path, which `web/vercel.json` rewrites to
 PostHog, so content blockers don't drop them; only Vercel has the rewrite, so `next dev` on a LAN

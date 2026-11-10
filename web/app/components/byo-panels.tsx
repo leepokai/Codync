@@ -1,9 +1,9 @@
 import { ArrowBendDownRight, Cloud, HardDrives, Laptop } from "@phosphor-icons/react/ssr";
-import AgentMark, { agentName, type Agent } from "./agent-mark";
+import AgentMark, { agentName, agents, type Agent } from "./agent-mark";
 import Halftone from "./halftone";
 import { BotRow, ComputerLabel } from "./sidebar-rows";
 
-// The three pictures of "Bring your own": drawn like the apps' own sidebar, Agent card and cost.
+// The pictures in "Bring your own sandbox": drawn like the apps' own sidebar, agent list, Agent card and cost.
 
 const sandboxes = [
   {
@@ -43,7 +43,7 @@ export function SandboxPanel() {
           <ul className="mt-2.5 flex flex-col gap-1">
             {bots.map((bot) => (
               <li key={bot.name}>
-                <BotRow {...bot} className="bg-neutral-900" />
+                <BotRow {...bot} />
               </li>
             ))}
           </ul>
@@ -65,12 +65,11 @@ export function AgentPanel() {
     <div
       role="img"
       aria-label="A bot's agents: Claude Code, its usage resetting at 3:00 PM; Codex, in use; Gemini CLI. The chat says Codex carried on."
-      className="relative overflow-hidden rounded-3xl bg-neutral-900 p-6 md:p-8"
+      className="p-2"
     >
-      <Halftone className="w-80 text-neutral-50 opacity-[0.1]" />
-      <ol className="relative flex flex-col gap-2">
+      <ol className="flex flex-col gap-2">
         {chain.map(({ agent, resets, inUse }) => (
-          <li key={agent} className="flex items-center gap-3 rounded-2xl bg-neutral-800 px-4 py-3.5">
+          <li key={agent} className="flex items-center gap-3 rounded-2xl bg-neutral-900 px-4 py-3.5">
             <AgentMark agent={agent} className="size-[18px]" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className={`truncate font-medium ${resets ? "text-neutral-400" : "text-neutral-50"}`}>{agentName[agent]}</span>
@@ -82,11 +81,11 @@ export function AgentPanel() {
           </li>
         ))}
       </ol>
-      <p className="relative mt-6 flex items-start gap-2 text-sm leading-relaxed text-neutral-400">
+      <p className="mt-6 flex items-start gap-2 text-sm leading-relaxed text-neutral-400">
         <ArrowBendDownRight size={16} className="mt-0.5 shrink-0" />
         Claude Code reached its usage limit (resets in 2 h). Codex carried on.
       </p>
-      <p className="relative mt-3 max-w-[85%] rounded-2xl bg-neutral-800 px-4 py-3 text-sm leading-relaxed text-neutral-200">
+      <p className="mt-3 max-w-[85%] rounded-2xl bg-neutral-900 px-4 py-3 text-sm leading-relaxed text-neutral-200">
         Done: the date guard is in, and all 5 tests pass.
       </p>
     </div>
@@ -100,22 +99,39 @@ const bills: { agent?: Agent; name: string; paid: string }[] = [
   { name: "Codync Cloud", paid: "Your Boat or InstaBox account" },
 ];
 
+/** Drawn dark on light: it sits in a light well. */
 export function PlanPanel() {
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-neutral-50 p-6 text-neutral-950 md:p-8">
-      <Halftone className="w-72 text-neutral-950 opacity-[0.1]" />
-      <p className="relative text-[6.5rem] leading-none font-semibold tracking-tighter">$0</p>
-      <p className="relative mt-3 text-neutral-600">for Codync, with every feature included.</p>
-      <ul className="relative mt-8 flex flex-col gap-1">
+    <div className="relative text-neutral-950">
+      <Halftone className="w-56 text-neutral-950 opacity-[0.1]" />
+      <p className="relative text-7xl leading-none font-semibold tracking-tighter">$0</p>
+      <p className="relative mt-2 text-sm text-neutral-600">for Codync, with every feature included.</p>
+      <ul className="relative mt-6 flex flex-col gap-1">
         {bills.map(({ agent, name, paid }) => (
-          <li key={name} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-2xl bg-neutral-200/70 px-4 py-3">
-            {agent ? <AgentMark agent={agent} ink="dark" className="size-[18px]" /> : <Cloud size={18} weight="fill" />}
-            <span className="flex-1 font-medium">{name}</span>
-            {/* Under the name on phones, at the row's end from sm up. */}
-            <span className="w-full pl-[30px] text-sm text-neutral-600 sm:w-auto sm:pl-0">{paid}</span>
+          <li key={name} className="flex items-center gap-3 rounded-2xl bg-neutral-200/70 px-3 py-2.5">
+            {agent ? <AgentMark agent={agent} ink="dark" className="size-4 shrink-0" /> : <Cloud size={16} weight="fill" className="shrink-0" />}
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium">{name}</span>
+              <span className="truncate text-xs text-neutral-600">{paid}</span>
+            </span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/** The agents a bot can pick, as chips. */
+export function AgentsPanel() {
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {agents.map((agent) => (
+        <li key={agent} className="inline-flex items-center gap-2 rounded-full bg-neutral-900 py-2 pr-4 pl-3 text-sm text-neutral-200">
+          <AgentMark agent={agent} className="size-4" />
+          {agentName[agent]}
+        </li>
+      ))}
+      <li className="rounded-full px-3 py-2 text-sm text-neutral-500">and 40 more</li>
+    </ul>
   );
 }

@@ -1,20 +1,20 @@
+import Halftone from "./halftone";
 import MacWindow from "./mac-window";
 import Reveal from "./reveal";
 import { FILM } from "../links";
 
-// The real desktop app in a Mac window, then the launch film for those who'd rather watch.
+// The real desktop app in a Mac window straight under the hero, then the launch film for those who'd rather watch.
 export default function Demo() {
   return (
-    <section id="product" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
-      <div className="mx-auto max-w-6xl">
-        <Reveal className="mx-auto max-w-[40rem] text-center">
-          <h2 className="text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">Try the real app, right here.</h2>
-          <p className="mt-5 text-lg leading-relaxed text-neutral-400">
-            The Codync desktop app, running in your browser. Click a bot, open a room, send a message.
-          </p>
-        </Reveal>
-        <Reveal className="mt-12 md:mt-16" delay={0.05}>
+    <section id="product" className="relative scroll-mt-16 overflow-x-clip px-4 pb-24 sm:px-6 md:pb-32">
+      <Halftone corner="bottom-left" className="w-[40rem] max-w-[80vw] text-neutral-50 opacity-[0.1]" />
+      <Halftone corner="bottom-right" className="w-[40rem] max-w-[80vw] text-neutral-50 opacity-[0.1]" />
+      <div className="relative mx-auto max-w-6xl">
+        <Reveal>
           <MacWindow />
+          <p className="mt-5 text-center text-sm text-neutral-500">
+            The real Codync desktop app, running in your browser. Click a bot, open a room, send a message.
+          </p>
         </Reveal>
         <Reveal className="mt-20 grid grid-cols-1 items-center gap-8 md:mt-28 md:grid-cols-[1fr_1.6fr] md:gap-16">
           <div>

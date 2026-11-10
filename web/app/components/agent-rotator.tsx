@@ -19,7 +19,7 @@ export default function AgentRotator({ agents }: { agents: Agent[] }) {
 
   const agent = agents[shown];
   return (
-    <BlurSwap id={agent} className="inline-flex items-center gap-x-[0.22em] whitespace-nowrap">
+    <BlurSwap id={agent} className="inline-flex items-center gap-x-[0.22em] justify-self-center whitespace-nowrap">
       <AgentMark agent={agent} className="size-[0.82em]" />
       {agentName[agent]}
     </BlurSwap>

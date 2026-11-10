@@ -6,6 +6,17 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.44.0
+### zh-Hant
+- 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
+- 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
+- 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
+
+### en-US
+- Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
+- Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
+- Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
+
 ## 2.43.1
 ### zh-Hant
 - 新功能 Codync Cloud（Beta）：登入 Codync 帳號後，可以在你自己的 Boat（歐洲）或 InstaBox（美國）帳號上開雲端電腦，你的電腦沒開，bot 也能工作。Codync 不收費，機器由供應商依它的方案向你的帳號收費。在「管理電腦」的 Codync Cloud 區塊按 +。
@@ -37,18 +48,12 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
 - 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
 - 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
-- 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
-- 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
-- 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
 
 ### en-US
 - Use Codync without an account: choose Continue without an account on the welcome screen, then scan your computer's QR code. It connects over Wi-Fi or Tailscale. Sign in later and your computers stay paired; Add to account in Manage computers brings each into your account once the computer confirms.
 - A computer can stay out of your account. It asks when you pair; without it, your phone connects only over Wi-Fi or Tailscale, and you can add it later in Manage computers.
 - Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
 - Typing @ in a group lists its members one per row, like the / command list.
-- Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
-- Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
-- Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
 
 ## 2.40.3
 ### zh-Hant

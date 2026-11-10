@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.44.0
+### zh-Hant
+- 看圖時可以縮放、複製圖片和下載。
+
+### en-US
+- Zoom, copy and download pictures in the viewer.
+
 ## 2.43.1
 ### zh-Hant
 - 新功能 Codync Cloud（Beta）：登入 Codync 帳號後，可以在你自己的 Boat（歐洲）或 InstaBox（美國）帳號上開雲端電腦，你的電腦沒開，bot 也能工作。Codync 不收費，機器由供應商依它的方案向你的帳號收費。在「管理電腦」的 Codync Cloud 區塊按 +。
@@ -47,14 +54,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
 - 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
 - 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
-- 看圖時可以縮放、複製圖片和下載。
 
 ### en-US
 - No account needed: choose Continue without an account, then scan your computer's QR code to connect over Wi-Fi or Tailscale. Sign in later and your computers stay paired.
 - A computer can stay out of your account: it asks when you pair, and Manage computers can add it later.
 - Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
 - Typing @ in a group lists its members one per row, like the / command list.
-- Zoom, copy and download pictures in the viewer.
 
 ## 2.40.2
 ### zh-Hant

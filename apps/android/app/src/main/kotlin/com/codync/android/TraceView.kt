@@ -35,7 +35,7 @@ import kotlinx.serialization.json.jsonPrimitive
 /** "Full conversation": everything the agent did, grouped by turn (iOS `TraceView`). */
 @Composable internal fun TraceView(bot: Bot, state: AppState, store: AppStore) {
     val all = state.entries.filter { it.botId == bot.id }
-    val held = state.entries.count { it.botId == bot.id }
+    val held = state.entries.count { it.botId == bot.id && it.isChat }
     // Same gate as the chat: history still open, and the in-memory window is under its ceiling.
     val more = bot.id !in state.historyComplete && held < store.residency().ceiling
     val turns = all.groupBy { it.turn }.toSortedMap().toList()

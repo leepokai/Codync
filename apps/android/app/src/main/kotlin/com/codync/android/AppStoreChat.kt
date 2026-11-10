@@ -118,7 +118,7 @@ fun AppStore.loadHistory() {
             // Size the window by the chat rows from the page's first row on, so rows that arrived live meanwhile fit too.
             entries.minOfOrNull(Entry::seq)?.let { oldest ->
                 val shown = withContext(Dispatchers.IO) { mirror.countShownSince(id, oldest) }
-                windows.merge(id, shown) { old, wanted -> maxOf(old, wanted) }
+                if (state.value.selectedBot == id) windows.merge(id, shown) { old, wanted -> maxOf(old, wanted) }
             }
         }
         refresh()

@@ -22,6 +22,8 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     companion object {
         /** Hidden rows read per chat row before a resident window stops. Keeps a tool-heavy chat bounded. */
         private const val RAW_PER_SHOWN = 10
+/** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
+private const val RESIDENT_BYTES = 6_000_000L
 
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
@@ -300,9 +302,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
         val cap = target.toLong() * RAW_PER_SHOWN
         val decoded = mutableListOf<Entry>()
         var shown = 0
-        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC", arrayOf(bot)).use { cursor ->
-            while (cursor.moveToNext() && decoded.size.toLong() < cap && shown < target) {
-                val entry = WireJson.decodeFromString<Entry>(cursor.getString(0))
+        var bytes = 0L
+        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $cap", arrayOf(bot)).use { cursor ->
+            while (cursor.moveToNext() && shown < target && bytes < RESIDENT_BYTES) {
+                val text = cursor.getString(0)
+                bytes += text.length
+                val entry = WireJson.decodeFromString<Entry>(text)
                 decoded += entry
                 if (entry.isChat) shown++
             }

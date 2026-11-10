@@ -25,7 +25,8 @@ const keyPattern = /\btr\(\s*(['"])((?:(?!\1).){2,160})\1\s*\)/g
 for (const path of await files(root)) {
   const text = await readFile(path, 'utf8')
   for (const match of text.matchAll(keyPattern)) {
-    const key = match[2]
+    // A source `\n` inside tr('…') is a newline at runtime, which is how the catalog stores it.
+    const key = match[2].replaceAll('\\n', '\n')
     if (!used.has(key)) used.set(key, path)
   }
 }

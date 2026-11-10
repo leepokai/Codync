@@ -155,6 +155,9 @@ pub struct BotConfig {
     /// Optional geometric robot avatar look (`BOT_AVATAR_LOOKS`, Idea 21).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_look: Option<String>,
+    /// A small square photo as a data URL (PNG, JPEG or WebP), shown instead of the generated face.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_photo: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub backend: String,

@@ -20,6 +20,16 @@ pub(crate) fn validate(cfg: &BotConfig) -> Result<()> {
     if cfg.lead && cfg.hidden {
         bail!("the lead bot can't be hidden");
     }
+    if let Some(photo) = &cfg.avatar_photo
+        && !photo.is_empty()
+    {
+        let ok = ["data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,"]
+            .iter()
+            .any(|prefix| photo.starts_with(prefix));
+        if !ok || photo.len() > 400_000 {
+            bail!("Use a PNG, JPEG or WebP image of at most 300 KB");
+        }
+    }
     crate::agent::approval_rules::validate(&cfg.approval_rules)?;
     if !cfg.cwd.is_empty() && !std::path::Path::new(&cfg.cwd).is_dir() {
         bail!("workspace folder does not exist: {}", cfg.cwd);

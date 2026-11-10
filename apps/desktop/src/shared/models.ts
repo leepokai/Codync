@@ -37,6 +37,8 @@ export interface Bot {
   avatarColor: string
   avatarShape: string
   avatarLook?: string | null
+  /** A small square photo as a data URL, instead of the generated face. */
+  avatarPhoto?: string | null
   backend: string
   command?: string | null
   cwd: string
@@ -773,6 +775,8 @@ export interface BotDraft {
   avatarColor: string
   avatarShape: string
   avatarLook?: string | null
+  /** A small square photo as a data URL, instead of the generated face. */
+  avatarPhoto?: string | null
   backend: string
   command?: string | null
   cwd: string
@@ -822,6 +826,7 @@ export function draftOf(bot: Bot): BotDraft {
     avatarColor: bot.avatarColor,
     avatarShape: bot.avatarShape,
     avatarLook: bot.avatarLook ?? null,
+    avatarPhoto: bot.avatarPhoto ?? null,
     backend: bot.backend,
     command: bot.command ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,

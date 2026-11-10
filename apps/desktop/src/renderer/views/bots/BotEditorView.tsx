@@ -137,6 +137,22 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   const [proxyInput, setProxyInput] = useState('')
   const [proxyError, setProxyError] = useState<string | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const choosePhoto = (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 300 * 1024) {
+      setPhotoError(tr('The photo must be 300 KB or smaller.'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPhotoError(null)
+      set('avatarPhoto', typeof reader.result === 'string' ? reader.result : null)
+    }
+    reader.onerror = () => setPhotoError(tr('The photo could not be read.'))
+    reader.readAsDataURL(file)
+  }
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
   const setLayer = (layer: keyof Personality, value: string) =>
     onChange((d) => ({ ...d, personality: { soul: '', persona: '', heartbeat: '', ...d.personality, [layer]: value } }))
@@ -305,17 +321,24 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <CardSection title="Profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
-              {isRobotLook(draft.avatarLook) ? (
+              {draft.avatarPhoto ? (
+                <img src={draft.avatarPhoto} alt="" className="avatar-photo" style={{ width: 24, height: 24 }} draggable={false} />
+              ) : isRobotLook(draft.avatarLook) ? (
                 <RobotAvatar look={draft.avatarLook!} color={draft.avatarColor} size={24} />
               ) : (
                 <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} />
               )}
             </button>
+            <input ref={photoInput} type="file" accept="image/png,image/jpeg,image/webp" hidden
+              onChange={(e) => { choosePhoto(e.target.files?.[0]); e.target.value = '' }} />
+            <Button kind="secondary" onClick={() => photoInput.current?.click()}>{tr('Photo')}</Button>
+            {draft.avatarPhoto ? <Button kind="secondary" onClick={() => set('avatarPhoto', null)}>{tr('Remove photo')}</Button> : null}
             <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
               <div className="avatar-picker-panel">
                 <AvatarPicker shape={draft.avatarShape} color={draft.avatarColor} onShape={(s) => set('avatarShape', s)} onColor={(c) => set('avatarColor', c)} />
               </div>
             </AnchoredPanel>
+            {photoError ? <Text size="caption" tone="danger">{photoError}</Text> : null}
           </ValueRow>
           <ValueRow label="Chat color" detail="Tints this bot's chat so it is easy to tell apart.">
             <HStack gap={6} wrap>

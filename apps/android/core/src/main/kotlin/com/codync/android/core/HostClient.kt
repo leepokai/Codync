@@ -18,6 +18,8 @@ data class Bot(
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
     val avatarLook: String? = null,
+    /** A small square photo as a data URL, instead of the generated face. */
+    val avatarPhoto: String? = null,
     val actionRules: Map<String, String> = emptyMap(),
     val proactive: ProactiveSettings? = null,
     val command: String? = null,

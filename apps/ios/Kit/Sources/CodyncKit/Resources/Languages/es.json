@@ -1978,5 +1978,10 @@
   "Always allow keeps this rule for the bot. Edit it to cover more: * stands for any text.": "Permitir siempre guarda esta regla para el bot. Edítala para cubrir más: * representa cualquier texto.",
   "Keep rule and allow": "Guardar regla y permitir",
   "No rule can be kept for this request.": "No se puede guardar ninguna regla para esta solicitud.",
-  "Allow once": "Permitir una vez"
+  "Allow once": "Permitir una vez",
+  "Photo": "Foto",
+  "Remove photo": "Quitar foto",
+  "The photo must be 300 KB or smaller.": "La foto debe pesar 300 KB o menos.",
+  "The photo could not be read.": "No se pudo leer la foto.",
+  "Your coding agents,\\nas teammates.": "Tus agentes de programación,\ncomo compañeros de equipo."
 }

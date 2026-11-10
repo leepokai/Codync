@@ -229,6 +229,7 @@ mod tests {
             avatar_color: "blue".into(),
             avatar_shape: "blob".into(),
             avatar_look: None,
+            avatar_photo: None,
             backend: "claude".into(),
             command: None,
             cwd: "/tmp".into(),

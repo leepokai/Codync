@@ -62,3 +62,10 @@
 }
 .lead-agent-badge.interactive:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 .lead-avatar > .avatar-badge { bottom: auto; top: 0; }
+
+.avatar-photo {
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
+  background: var(--surface);
+}

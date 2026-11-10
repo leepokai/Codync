@@ -60,8 +60,9 @@ export default function Hero() {
               <AgentRotator agents={agents} />
               <span className="inline-flex items-center gap-x-[0.22em]">
                 into
-                <span className="inline-flex size-[0.95em] items-center justify-center rounded-[0.24em] bg-neutral-50 [&_svg]:size-[78%]">
-                  <CharacterAvatar shape="squircle" color="blue" size={88} mood="working" />
+                {/* Drawn like a bot in the apps' sidebar: light dots on the dark page, no tile. */}
+                <span className="inline-flex size-[0.95em] items-center justify-center [&_svg]:size-full">
+                  <CharacterAvatar shape="blob" color="blue" size={88} mood="working" ink="#fafafa" />
                 </span>
                 Codync
               </span>

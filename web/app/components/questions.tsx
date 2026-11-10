@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DiscordLogo, Plus, WechatLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
+import SectionHeader from "./section-header";
 import { CHINA_COMMUNITY, DISCORD } from "../links";
 
 const questions: [string, string][] = [
@@ -63,18 +64,17 @@ const faqJsonLd = {
 
 export default function Questions() {
   return (
-    <section id="faq" className="scroll-mt-20 px-4 py-20 sm:px-6 md:py-28">
+    <section id="faq" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd).replace(/</g, "\\u003c") }}
       />
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 md:grid-cols-[1fr_1.4fr] md:gap-20">
+      <div className="mx-auto max-w-3xl">
+        <SectionHeader label="Questions" title="Short answers.">
+          About price, setup, agents and your data.
+        </SectionHeader>
         <Reveal>
-          <h2 className="text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">Questions</h2>
-          <p className="mt-4 max-w-[22rem] text-lg leading-relaxed text-neutral-400">
-            Short answers about price, setup, agents and your data.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-4 font-medium text-neutral-200">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-4 font-medium text-neutral-200">
             <a href={DISCORD} className="inline-flex items-center gap-2 hover:text-white">
               <DiscordLogo size={20} aria-hidden="true" />
               <span className="underline underline-offset-4">Ask on Discord</span>
@@ -86,7 +86,7 @@ export default function Questions() {
           </div>
         </Reveal>
         <Reveal delay={0.05}>
-          <div className="divide-y divide-neutral-800">
+          <div className="mt-12 divide-y divide-neutral-800 border-y border-neutral-800">
             {questions.map(([q, a]) => (
               <details key={q} className="group py-5">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-lg font-medium text-neutral-100 [&::-webkit-details-marker]:hidden">

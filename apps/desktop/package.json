@@ -1,7 +1,7 @@
 {
   "name": "codync-desktop",
   "productName": "Codync",
-  "version": "2.43.1",
+  "version": "2.43.2",
   "description": "Codync for macOS, Linux and Windows: your coding agents as teammates.",
   "author": {
     "name": "leepokai",
@@ -15,7 +15,7 @@
     "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/dev.mjs",
     "phone-account": "node --experimental-strip-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/phone-account.mjs",
     "build": "electron-vite build",
-    "build:demo": "vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
+    "build:demo": "npm run icons && vite build --config vite.demo.config.ts && mv ../../web/public/demo/desktop/index.html ../../web/public/demo/desktop.html",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test --experimental-strip-types src/main/channel/*.test.ts src/shared/*.test.ts src/renderer/lib/*.test.ts src/renderer/store/*.test.ts src/renderer/views/*.test.ts src/renderer/views/thread/*.test.ts src/renderer/views/routines/*.test.ts src/renderer/views/call/*.test.ts src/renderer/views/marketplace/*.test.ts",
     "e2e": "playwright test -c e2e/playwright.config.ts",

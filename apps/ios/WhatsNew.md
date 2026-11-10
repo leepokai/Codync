@@ -6,6 +6,31 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.44.1
+### zh-Hant
+- 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。
+
+### en-US
+- After an important update, Codync shows a What's new window the first time you open it, listing what changed. Most updates don't show one.
+
+## 2.43.2
+### zh-Hant
+- bot 頭像的點變大了：大頭像也改用 9 × 9 的大點，看起來更清楚。
+
+### en-US
+- Bot avatars have larger dots: large avatars now use the same 9 × 9 grid of big dots, so they read more clearly.
+
+## 2.43.1
+### zh-Hant
+- 新功能 Codync Cloud（Beta）：登入 Codync 帳號後，可以在你自己的 Boat（歐洲）或 InstaBox（美國）帳號上開雲端電腦，你的電腦沒開，bot 也能工作。Codync 不收費，機器由供應商依它的方案向你的帳號收費。在「管理電腦」的 Codync Cloud 區塊按 +。
+- 雲端電腦閒置時會睡著，傳訊息給它的 bot 就會醒來。每個帳號最多三台，各自命名。
+- 還沒有 InstaBox 帳號？它的免費方案有一台機器，在 InstaBox 的 key 頁面點「Get a free sandbox」。
+
+### en-US
+- New: Codync Cloud (beta). Signed in to a Codync account, start a cloud computer on your own Boat (EU) or InstaBox (US) account, so your bots work while your computer is off. Codync charges nothing; the provider bills your account under its own plan. In Manage computers, choose + in the Codync Cloud section.
+- A cloud computer sleeps while idle and wakes when you message one of its bots. Up to three per account, each with its own name.
+- No InstaBox account yet? Its free plan includes one machine: choose Get a free sandbox on InstaBox's key sheet.
+
 ## 2.42.1
 ### zh-Hant
 - bot 詳情「智慧體」區塊的「壓縮對話」預設改為「自動」：交給 Claude Code 或 Codex 在對話快滿時自己壓縮。想讓 Codync 提早壓縮，可以改選提早、接近上限或指定數量（從 100K、200K… 裡挑，或自己輸入）。已經是「提早」的 bot 會保留原設定，想交給智慧體自己壓縮可以改選「自動」。

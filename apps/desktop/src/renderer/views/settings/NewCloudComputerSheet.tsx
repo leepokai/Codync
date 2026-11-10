@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, IconButton, Spinner } from '../../components/Controls'
+import { Button, DropdownMenu, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, useDismiss } from '../../components/Overlay'
 import { ProviderIcon } from '../../components/ProviderIcon'
@@ -14,8 +14,8 @@ import '../bots/agent-picker.css'
 /**
  * Computers → Codync Cloud → "+": the new cloud computer's name (the suggested one when left empty) and the provider it
  * runs on, every provider listed with its logo like the agents; one without a usable key opens that provider's key
- * (`openKey`) to add it, and one with a key opens it from its key button. At the account's limit it says so, and its
- * keys stay in reach.
+ * (`openKey`) to add it, and one with a key opens it, or removes it, from its row's `⋯`. At the account's limit it says
+ * so, and its keys stay in reach.
  */
 export function NewCloudComputerSheet({ model, openKey }: { model: CloudComputerModel; openKey: (provider: string) => void }) {
   const tr = useTr()
@@ -24,7 +24,8 @@ export function NewCloudComputerSheet({ model, openKey }: { model: CloudComputer
   const [picked, setPicked] = useState<string | null>(null)
   const provider = chosenProvider(model.providers, picked)
   const suggested = suggestedName(model.machines, tr)
-  const error = model.errorAt('create') ?? limitNote(model.machines.length, model.limit)
+  // A key removed from a row's `⋯` fails here, where it was asked.
+  const error = model.errorAt('create') ?? model.keyRemovalError ?? limitNote(model.machines.length, model.limit)
   const create = async () => {
     if (!provider || !model.canCreate) return
     if (await model.create(provider, name.trim() || suggested)) dismiss()
@@ -52,7 +53,7 @@ export function NewCloudComputerSheet({ model, openKey }: { model: CloudComputer
           <Text size="caption" weight="semibold" tone="secondary">{tr('Provider')}</Text>
           <VStack gap={2}>
             {model.providers.map((p) => (
-              <ProviderRow key={p.provider} provider={p} selected={p.provider === provider} pick={() => setPicked(p.provider)} openKey={() => openKey(p.provider)} />
+              <ProviderRow key={p.provider} provider={p} model={model} selected={p.provider === provider} pick={() => setPicked(p.provider)} openKey={() => openKey(p.provider)} />
             ))}
           </VStack>
         </VStack>
@@ -68,12 +69,14 @@ export function NewCloudComputerSheet({ model, openKey }: { model: CloudComputer
 }
 
 /** A provider on its logo tile with where it runs and its key; picked when its key is usable, else picked for once it is
- * and it opens its key. One with a key also opens it from its key button (replace or remove it). */
-function ProviderRow({ provider, selected, pick, openKey }: { provider: CloudProvider; selected: boolean; pick: () => void; openKey: () => void }) {
+ * and it opens its key. One with a key has a `⋯` in the same row: its key (replace it or see what to fix), and removing
+ * it while no cloud computer runs there. */
+function ProviderRow({ provider, model, selected, pick, openKey }: { provider: CloudProvider; model: CloudComputerModel; selected: boolean; pick: () => void; openKey: () => void }) {
   const tr = useTr()
   const option = providerOption(provider, tr)
+  const removing = model.busy === `removeKey:${provider.provider}`
   return (
-    <HStack gap={4} className="cloud-provider-row">
+    <HStack className="cloud-provider-row">
       <button
         className="agent-picker-item"
         aria-pressed={option.usable ? selected : undefined}
@@ -91,7 +94,21 @@ function ProviderRow({ provider, selected, pick, openKey }: { provider: CloudPro
         </VStack>
         {selected ? <Icon name="checkmark" size={12} /> : null}
       </button>
-      {option.usable ? <IconButton title={fill(tr('{provider} API key'), { provider: provider.name })} icon="key.fill" onClick={openKey} /> : null}
+      {!option.usable ? null : removing ? (
+        <span className="cloud-provider-menu"><Spinner /></span>
+      ) : (
+        <DropdownMenu
+          className="icon-button cloud-provider-menu"
+          title={tr('More')}
+          disabled={model.busy !== null}
+          items={() => [
+            { title: fill(tr('{provider} API key'), { provider: provider.name }), verbatim: true, icon: 'key.fill', action: openKey },
+            ...(model.canRemoveKey(provider.provider) ? [{ title: 'Remove key', icon: 'trash', destructive: true, action: () => void model.removeKey(provider.provider) }] : []),
+          ]}
+        >
+          <Icon name="ellipsis" size={14} weight="medium" />
+        </DropdownMenu>
+      )}
     </HStack>
   )
 }

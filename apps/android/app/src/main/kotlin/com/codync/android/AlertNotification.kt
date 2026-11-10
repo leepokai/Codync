@@ -72,7 +72,7 @@ internal fun notificationFace(context: Context, bot: Bot, members: List<Bot>): B
         val pixels = (FACE * fraction).toInt()
         val face = customAvatarBitmap(member.customIcon?.dataUrl, member.customIcon?.tinted == true, pixels,
             AvatarPalette.tint(member.avatarColor).toArgb())
-            ?: characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK, cells = 13)
+            ?: characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK)
         canvas.drawBitmap(face, x, y, null)
     }
     if (bot.kind != "group" || bot.customIcon != null) { place(bot, 1f, start, start); return bitmap }

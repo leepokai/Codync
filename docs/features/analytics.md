@@ -89,6 +89,15 @@ can be traced from the events around it:
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
+- **The Codync cloud** (Worker, `cloud/src/analytics.ts`) reports only what no device can see: asking
+  the provider to wake a sleeping Codync Cloud computer and how long until its host was back. It
+  follows that computer's own switch: the host tells the cloud as soon as it turns
+  (`POST /v1/host/analytics`, `remote::managed::share_analytics`) and again with every sleep
+  request (`POST /v1/host/sleep` `analytics`, which covers a change the cloud couldn't hear); the
+  cloud keeps it on the machine (`cloud_machines.analytics`) and sends nothing until a host has said
+  yes. Events are linked to the computer's account, carry no location (`$geoip_disable`) and the
+  same `computer` key as its host's; `env` is `dev` on the dev cloud (`ANALYTICS_ENV`), and nothing
+  is sent where `POSTHOG_HOST` is unset (local runs).
 - **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
   and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 

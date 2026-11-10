@@ -24,6 +24,7 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   applicationName: "Codync",
   keywords: [
+    "bring your own sandbox",
     "bring your own subscription",
     "agent-agnostic",
     "Claude Code mobile",
@@ -75,7 +76,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col bg-black text-neutral-200">
+      <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-200">
         <JsonLd />
         <Analytics />
         {children}

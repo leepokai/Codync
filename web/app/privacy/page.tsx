@@ -9,7 +9,7 @@ export default function Privacy() {
     <main className="flex-1 flex flex-col items-center px-6 py-16">
       <article className="max-w-2xl w-full space-y-6">
         <h1 className="text-3xl font-bold text-white">Privacy Policy</h1>
-        <p className="text-neutral-400 text-sm">Last updated: November 10, 2026</p>
+        <p className="text-neutral-400 text-sm">Last updated: November 11, 2026</p>
 
         <Section title="Overview">
           Codync is an independent open-source project by leepokai (&quot;we&quot;, &quot;us&quot;). It lets you message the AI agents that run on your own computer. It is built so that your files, conversations and credentials stay on your devices.
@@ -62,6 +62,7 @@ export default function Privacy() {
             <li><strong>Crash and error reports:</strong> when an app crashes or hits an unexpected error, or an agent fails to answer, we record what kind of error it was and where in Codync&apos;s own code it happened (type, function names and line numbers). The error&apos;s message is never sent, and file paths are cut down to Codync&apos;s own files.</li>
             <li><strong>What we never record:</strong> your messages, prompts, code, files, file names or paths, bot names, credentials or anything your agents produce. We don&apos;t store your IP address: it is only used to look up your approximate location (country and city), which is kept with the events.</li>
             <li><strong>Who it&apos;s linked to:</strong> your Codync account when you&apos;re signed in; otherwise a random ID created on that device.</li>
+            <li><strong>Codync Cloud computers:</strong> our cloud also records when it wakes one of your Codync Cloud computers, why (a device connected, a message, an access request or a routine) and how long until it was back. This is linked to your account, carries no location, and is sent only while that computer&apos;s own switch is on.</li>
             <li><strong>Why:</strong> to spot bugs sooner and serve you better, by seeing which features work and where people get stuck. It is never sold, never shared for advertising and never used to track you across other apps or websites.</li>
           </ul>
           <p className="mt-2">Codync has no advertising identifiers.</p>
@@ -71,7 +72,7 @@ export default function Privacy() {
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Apple Push Notification service</strong>: delivers notifications and Live Activity updates on iPhone.</li>
             <li><strong>Google Firebase Cloud Messaging</strong>: delivers notifications and live updates on Android.</li>
-            <li><strong>Cloudflare Workers</strong>: runs the push relay (nothing stored), the relay between your phone and your computer (computer registrations, messages waiting for an offline computer, webhook deliveries) and the Codync account service; its TURN service forwards a remote screen session&apos;s encrypted video when there&apos;s no direct path.</li>
+            <li><strong>Cloudflare Workers</strong>: runs the push relay (nothing stored), the relay between your phone and your computer (computer registrations, messages waiting for an offline computer, webhook deliveries) and the Codync account service, and sends your Codync Cloud computers&apos; wake events (described above) to PostHog; its TURN service forwards a remote screen session&apos;s encrypted video when there&apos;s no direct path.</li>
             <li><strong>Clerk</strong>: runs sign-in for the Codync account, including the sign-in an assistant you connect to Codync uses.</li>
             <li><strong>n0 (iroh public relays)</strong>: only if you connect your computers with codync-network using the default connector. When two of your computers can&apos;t connect directly, their encrypted traffic goes through iroh&apos;s public relays, and they find each other through n0&apos;s address lookup; these see the computers&apos; IP addresses and connection metadata, not what they say. With your own relay or the private connector, none of it reaches n0.</li>
             <li><strong>PostHog (US)</strong>: stores the usage analytics described above, unless you turned them off.</li>

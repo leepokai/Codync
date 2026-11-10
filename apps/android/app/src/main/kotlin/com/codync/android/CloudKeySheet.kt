@@ -28,11 +28,12 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.CloudCredential
 import com.codync.android.core.CloudOffer
 import com.codync.android.core.CloudProvider
+import com.codync.android.core.CloudProviderOffer
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.launch
 
-/** "Boat API key": a provider's key sheet, its key button and menu item, and its field. */
+/** "Boat API key": a provider's key sheet, its menu items, and its field. */
 @Composable internal fun keyTitle(providerName: String) = tr("{provider} API key").replace("{provider}", providerName)
 
 /**
@@ -52,6 +53,7 @@ import kotlinx.coroutines.launch
             CardSection(footer = "Your cloud computer runs on your own account. Keys stay encrypted; only their last four show.") {}
             CardSection {
                 row { KeyRow(p, cloudKeyAction(provider) in state.busy, offer.canRemoveKey(provider), state.cloudErrorAt(CloudErrorPlace.Key(provider)), store) }
+                p.offer?.let { row { OfferRow(p.provider, it) } }
                 row { SetupRow(p) }
             }
         }
@@ -108,6 +110,14 @@ import kotlinx.coroutines.launch
             focus.clearFocus()
             save(key) { key = "" }
         }
+    }
+}
+
+/** The provider's own free plan: what it includes, and its page. */
+@Composable private fun OfferRow(provider: String, offer: CloudProviderOffer) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(tr(offer.detail), style = Type.footnote, color = Palette.secondary)
+        WebLink(offer.label, offer.url, Type.footnote) { Analytics.capture(AnalyticsEvent.CloudOfferOpened(provider)) }
     }
 }
 

@@ -43,7 +43,7 @@ import kotlin.math.sin
  * The splash over the app until the account is open and its computers have caught up ([caughtUp]; true with none), held
  * at least 0.7 s so the motion reads and never past 1.8 s, the cached list being behind it (iOS `LaunchSplash`).
  */
-@Composable internal fun LaunchLayer(loading: Boolean, caughtUp: Boolean) {
+@Composable internal fun LaunchLayer(loading: Boolean, caughtUp: Boolean, gone: () -> Unit) {
     var visible by remember { mutableStateOf(true) }
     val started = remember { System.currentTimeMillis() }
     LaunchedEffect(loading, caughtUp) {
@@ -51,6 +51,7 @@ import kotlin.math.sin
         delay(maxOf(0L, 700 - (System.currentTimeMillis() - started)))
         if (!caughtUp) delay(maxOf(0L, 1_800 - (System.currentTimeMillis() - started)))
         visible = false
+        gone()
     }
     AnimatedVisibility(visible, enter = EnterTransition.None,
         exit = fadeOut(tween(300)) + scaleOut(tween(300), targetScale = if (reduceMotion()) 1f else 1.15f)) { LaunchSplash() }

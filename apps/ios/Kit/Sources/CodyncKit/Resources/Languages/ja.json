@@ -1941,6 +1941,9 @@
   "Cloud computer": "クラウドコンピュータ",
   "Cloud computer {n}": "クラウドコンピュータ {n}",
   "Add a key first": "先にキーを追加",
+  "Free sandbox available": "無料サンドボックスあり",
+  "Get a free sandbox": "無料サンドボックスを入手",
+  "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "InstaBox の無料プランにはマシンが 1 台含まれます（4 vCPU、8 GiB）。",
   "Rename…": "名前を変更…",
   "Rename cloud computer": "クラウドコンピュータの名前を変更",
   "Provider": "プロバイダ",
@@ -1948,5 +1951,6 @@
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "先にそのプロバイダのクラウドコンピュータを削除してください。スリープさせるために Codync はこのキーを使います。",
   "Codync Cloud updates it before it next sleeps.": "次にスリープする前に Codync Cloud が更新します。",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync は無料で、一人で作っています。役に立ったら、Ko-fi で応援していただけます。",
-  "Support on Ko-fi": "Ko-fi で応援する"
+  "Support on Ko-fi": "Ko-fi で応援する",
+  "What's new": "新機能"
 }

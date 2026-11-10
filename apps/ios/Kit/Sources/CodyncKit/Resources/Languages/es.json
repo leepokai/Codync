@@ -1941,6 +1941,9 @@
   "Cloud computer": "Ordenador en la nube",
   "Cloud computer {n}": "Ordenador en la nube {n}",
   "Add a key first": "Primero añade una clave",
+  "Free sandbox available": "Sandbox gratuito disponible",
+  "Get a free sandbox": "Obtener un sandbox gratuito",
+  "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).": "El plan gratuito de InstaBox incluye una máquina (4 vCPU, 8 GiB).",
   "Rename…": "Renombrar…",
   "Rename cloud computer": "Renombrar ordenador en la nube",
   "Provider": "Proveedor",
@@ -1948,5 +1951,6 @@
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "Primero elimina tus ordenadores en la nube de ese proveedor: Codync necesita la clave para ponerlos en reposo.",
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud lo actualiza antes de que vuelva a entrar en reposo.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync es gratis y lo hace una sola persona. Si te resulta útil, puedes apoyarlo en Ko-fi.",
-  "Support on Ko-fi": "Apoyar en Ko-fi"
+  "Support on Ko-fi": "Apoyar en Ko-fi",
+  "What's new": "Novedades"
 }

@@ -22,12 +22,7 @@ public struct NetworkSheet: View {
                     Image.codyncNetwork.resizable().scaledToFit().frame(width: 26, height: 26).accessibilityHidden(true)
                     Text(L10n.tr("Network"))
                     // The network is a beta feature.
-                    Text(L10n.tr("Beta"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.secondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Palette.bubbleAgent, in: Capsule())
+                    BetaTag()
                 }
             }
             CardForm {

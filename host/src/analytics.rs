@@ -22,14 +22,16 @@ mod session;
 mod turns;
 
 pub use lifecycle::{
-    DiscoveryStage, KV_STARTED, PairedAccount, Via, device_paired, discovery_failed, host_started,
-    join_from_phone_answered, phone_connected,
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, Via, cloud_keeper_checked, device_paired, discovery_failed,
+    host_started, join_from_phone_answered, phone_connected,
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
 pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, context_compacted, message_steered, turn_finished};
 
 const KV_ENABLED: &str = "analytics_enabled";
+/// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
+const KV_ENV: &str = "analytics_env";
 /// The account the install id was merged into. An id merges into one account and a second is
 /// refused, so a later account on this computer starts its own profile.
 const KV_IDENTIFIED: &str = "analytics_identified";
@@ -124,6 +126,20 @@ pub enum Event {
     ReachAccountAnswered,
     ContinuedWithoutAccount,
     JoinOfferAnswered,
+    /// The user gave Codync Cloud the key to their own account with a cloud provider (desktop; phones send their own).
+    CloudKeySaved,
+    /// The user created a Codync Cloud computer on one of their providers (desktop; phones send their own).
+    CloudComputerCreated,
+    /// The user opened a cloud provider's free plan from its key sheet (desktop; phones send their own).
+    CloudOfferOpened,
+    /// The user renamed a Codync Cloud computer (desktop; phones send their own).
+    CloudComputerRenamed,
+    /// The Ko-fi invitation under the first reply (desktop and terminal UI only) was shown; on the desktop, then opened
+    /// or dismissed.
+    KofiInviteShown,
+    KofiInviteAnswered,
+    /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
+    CloudKeeperChecked,
     /// A paired phone asked to add this computer to its account, and the computer answered.
     JoinFromPhoneAnswered,
     /// Advertising on the local network failed, so a computer in no account can't be found at a new address.
@@ -209,6 +225,13 @@ impl Event {
             Self::ReachAccountAnswered => "reach_account_answered",
             Self::ContinuedWithoutAccount => "continued_without_account",
             Self::JoinOfferAnswered => "join_offer_answered",
+            Self::CloudKeySaved => "cloud_key_saved",
+            Self::CloudComputerCreated => "cloud_computer_created",
+            Self::CloudOfferOpened => "cloud_offer_opened",
+            Self::CloudComputerRenamed => "cloud_computer_renamed",
+            Self::KofiInviteShown => "kofi_invite_shown",
+            Self::KofiInviteAnswered => "kofi_invite_answered",
+            Self::CloudKeeperChecked => "cloud_keeper_checked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",
             Self::HostUpdateInstalled => "host_update_installed",
@@ -247,6 +270,8 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
 
 pub struct Analytics {
     enabled: Mutex<bool>,
+    /// Every event's `env`: the build's, or `dev` on a test machine.
+    env: &'static str,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
     session: Mutex<session::Session>,
@@ -264,10 +289,20 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
+        // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
+        // location or version. Stored, so a release the machine updates to keeps the mark.
+        if std::env::var("CODYNC_ANALYTICS_ENV").as_deref() == Ok("dev")
+            && let Err(e) = store.kv_set(KV_ENV, "dev")
+        {
+            tracing::warn!(error = format!("{e:#}"), "couldn't mark this machine's analytics as dev");
+        }
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        let env = if store.kv_get(KV_ENV).as_deref() == Some("dev") { "dev" } else { built };
         let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
             enabled: Mutex::new(enabled),
+            env,
             tx,
             rx: Mutex::new(Some(rx)),
             session: Mutex::default(),
@@ -332,7 +367,7 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
+        ("env".into(), hub.analytics.env.into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
@@ -438,6 +473,15 @@ mod tests {
         assert!(!Analytics::load(&store).state(), "an off stays off");
         save_choice(&store, true).unwrap();
         assert!(Analytics::load(&store).state(), "a choice saved before the host starts counts");
+    }
+
+    #[test]
+    fn a_test_machine_stays_marked_dev() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        assert_eq!(Analytics::load(&store).env, built);
+        store.kv_set(KV_ENV, "dev").unwrap();
+        assert_eq!(Analytics::load(&store).env, "dev", "the stored mark wins over the build's environment");
     }
 
     #[test]

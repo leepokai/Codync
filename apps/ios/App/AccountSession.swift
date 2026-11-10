@@ -224,6 +224,34 @@ final class AccountSession {
         }
     }
 
+    #if DEBUG
+    /// End-to-end tests (`CODYNC_TEST_SIGN_IN`, docs/guides/cloud-computer-testing.md): signs in a Clerk test address
+    /// (`…+clerk_test@…`, whose code is always 424242 on a development instance), creating it the first time.
+    func signInTestAccount(_ email: String) async {
+        guard let clerk, !isSignedIn, email.contains("+clerk_test@") else { return }
+        do {
+            let sessionID: String?
+            do {
+                let signIn = try await clerk.auth.signInWithEmailCode(emailAddress: email).verifyCode("424242")
+                NSLog("CODYNC_TEST_SIGN_IN: sign-in %@", String(describing: signIn.status))
+                sessionID = signIn.createdSessionId
+            } catch {
+                NSLog("CODYNC_TEST_SIGN_IN: no account yet (%@), signing up", String(describing: error))
+                // The instance asks for a password at sign-up; later sign-ins use the email code.
+                let password = UUID().uuidString + UUID().uuidString
+                let signUp = try await clerk.auth.signUp(emailAddress: email, password: password).sendEmailCode().verifyEmailCode("424242")
+                NSLog("CODYNC_TEST_SIGN_IN: sign-up %@, missing %@", String(describing: signUp.status), String(describing: signUp.missingFields))
+                sessionID = signUp.createdSessionId
+            }
+            if let sessionID { try await clerk.auth.setActive(sessionId: sessionID) }
+            NSLog("CODYNC_TEST_SIGN_IN: done, session %@", sessionID ?? "none")
+        } catch {
+            errorMessage = "Test sign-in failed: \(error.localizedDescription)"
+            NSLog("CODYNC_TEST_SIGN_IN: failed: %@", String(describing: error))
+        }
+    }
+    #endif
+
     func handle(_ url: URL) async {
         guard let clerk else { return }
         do { try await clerk.handle(url) }

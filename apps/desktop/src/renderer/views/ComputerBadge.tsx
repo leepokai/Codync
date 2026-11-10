@@ -5,7 +5,7 @@ import linux from '../assets/computer-linux.svg'
 import './computer-badge.css'
 
 const symbol = (device?: string | null) =>
-  ({ laptop: 'laptopcomputer', macmini: 'macmini', macstudio: 'macstudio', imac: 'desktopcomputer', macpro: 'macpro.gen3' })[device ?? ''] ?? 'desktopcomputer'
+  ({ laptop: 'laptopcomputer', macmini: 'macmini', macstudio: 'macstudio', imac: 'desktopcomputer', macpro: 'macpro.gen3', cloud: 'cloud' })[device ?? ''] ?? 'desktopcomputer'
 
 /** A computer's icon showing what it is (laptop, Mac mini, Linux…), in the color picked for it. */
 export function ComputerBadge({ computer, size = 36 }: { computer: Computer | null; size?: number }) {

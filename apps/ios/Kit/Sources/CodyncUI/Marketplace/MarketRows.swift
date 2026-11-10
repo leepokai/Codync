@@ -205,15 +205,21 @@ struct SkillGlyph: View {
 struct WebLink: View {
     let title: String
     let url: URL
+    /// Runs as the page opens (an analytics event).
+    let opened: () -> Void
     @Environment(\.openURL) private var openURL
 
-    init(_ title: String, url: URL) {
+    init(_ title: String, url: URL, opened: @escaping () -> Void = {}) {
         self.title = title
         self.url = url
+        self.opened = opened
     }
 
     var body: some View {
-        Button(L10n.tr(title)) { openURL(url) }
+        Button(L10n.tr(title)) {
+            opened()
+            openURL(url)
+        }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.text)
             .underline()

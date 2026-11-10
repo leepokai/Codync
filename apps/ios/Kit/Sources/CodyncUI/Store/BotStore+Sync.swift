@@ -134,6 +134,8 @@ extension BotStore {
             screen = s
         case let .network(view):
             network = view
+        case let .name(name):
+            hello?.name = name
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

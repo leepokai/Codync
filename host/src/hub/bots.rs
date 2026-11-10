@@ -80,7 +80,7 @@ impl Hub {
     pub fn delete_bot(&self, id: &str) -> Result<()> {
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
-        self.groups.stop(self, id);
+        crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
         self.runtime.locked().remove(id);

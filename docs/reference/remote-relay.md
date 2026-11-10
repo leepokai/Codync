@@ -179,6 +179,8 @@ codync://pair?v=3&name=<pct>&id=<computerId>&sk=<signPub>&bk=<boxPub>&code=<pair
 
 手機也會讓 host 簽 claim：配對時（§4.1 第 4 步），以及配對沒加入帳號時之後的 control scope `joinAccount`（§4.1「之後加入帳號」）。
 
+雲端電腦（Codync Cloud，`docs/plans/codync-cloud.md`）由 host 自己 claim：Worker 建 claim（30 分鐘），把認主卡 `{claimId, nonce, userId, approval:"auto"}` 寫進 `~/.codync/managed.json`：建立時就收檔案的供應商（Boat）在開機前寫入；建立時什麼都不收的（InstaBox）等機器跑起來後由 app 的 `GET /v1/cloud-computers` 或 cron 觸發（`setUp`），以 `exec` 寫入，當下另建一張新的 claim（30 分鐘）；host 註冊後以 Sig(host) `POST /v1/host/claim`（同上的簽章內容加 `claimId`），成功或被最終拒絕後刪除該檔。`approval:"auto"` 讓 B 流程的 SAS 交換照跑（commit 必須相符），只省略使用者比對代碼。
+
 **B. 手機取得存取權**（commit-then-reveal SAS，ZRTP／BLE numeric comparison 同型）：
 1. 手機登入後 `POST /v1/devices`（Clerk + 該 device key 的 `Codync-Sig`）。
 2. `GET /v1/computers`（帶 `Codync-Sig` 則回傳每台的 `access`）。 手機在「電腦與設定」（Computers）列出帳號裡的電腦，不需掃 QR Code；存取申請只在使用者點該電腦的 **Ask for access** 後才開始（登入或重新整理都不會自動申請），點下後才顯示 6 位數代碼；關閉申請畫面後，等待中的申請仍以橫幅顯示代碼，直到電腦回應。核准後顯示該電腦的 bots。首次裝置授權仍由電腦上的使用者確認。
@@ -496,6 +498,8 @@ The route table below summarizes the contract. Executable schema and validation 
 
 所有 body 為 JSON；時間為 ms。「Clerk」= 需要 Bearer；「Sig(dev)」= 需要該 device key 的 `Codync-Sig`；「Sig(host)」= host key 的 `Codync-Sig`。
 
+**App 版本（所有 app 發出的請求）**：每個送到 Worker 的請求，以及 relay 裝置連線的 upgrade，都帶 `Codync-App: <ios|android|desktop>/<版本>; minHost=<版本>`。有簽章的裝置請求（relay 裝置連線、帶 Sig(dev) 的 `GET /v1/computers`）會把它記在該裝置的 `devices.app_version`／`min_host`／`app_seen_at`。版本低於該平台緊急下限（`APP_FLOOR_IOS`／`APP_FLOOR_ANDROID`／`APP_FLOOR_DESKTOP`）時，任何請求都回 `426 appUpdateRequired`，訊息是 `APP_FLOOR_REASON`。沒帶 header 的舊 app 不受影響。
+
 **公開**
 - `GET /v1/health` → `{"ok":true,"version":"2.2.0"}`
 
@@ -512,16 +516,23 @@ The route table below summarizes the contract. Executable schema and validation 
 - `GET /v1/computers`（Clerk，選配 Sig(dev)）→ `{"computers":[Computer]}`，
   `Computer = {"computerId","name","platform","device","signKey","boxKey","version","online":bool,"lastSeenAt","claimedAt","access":"none"|"pending"|"granted"|null}`（`access` 只在帶 Sig(dev) 且該 device 屬於此帳號時計算；`boxKey` 僅供顯示，client 不得用於封裝，§3.3）
 - `PATCH /v1/computers/{id}` `{"name"}` → `{"computer":…}`（只改雲端顯示名稱）
-- `DELETE /v1/computers/{id}` → `{}`；解除綁定：owner=NULL、grants 全撤（`unclaimed`）、pending requests → `cancelled`、DO block + changed。
+- `DELETE /v1/computers/{id}` → `{}`；解除綁定：owner=NULL、grants 全撤（`unclaimed`）、pending requests → `cancelled`、DO block + changed。Codync Cloud 電腦 → `409 conflict`（要用 `DELETE /v1/cloud-computers/{cloudComputerId}` 刪除，否則它會在沒有帳號的情況下繼續執行）。
 - `POST /v1/computers/{id}/access-requests`（Clerk + Sig(dev)，device 須已註冊未撤銷；computer 與 device 都必須屬於 `clerk.sub`，否則 `404`）`{"commit"}` → `{"requestId","expiresAt"}`；已有 pending → 先把它改為 `cancelled` 再建新的（commit 不可重用）；已有 active grant → `409 conflict`。成功後 DO `cloud.changed`。每帳號每小時最多 20 筆 → `429`。
 - `GET /v1/access-requests/{id}` → `{"requestId","computerId","status","expiresAt","hostNonce"?,"grantId"?}`（只有申請者可見）
 - `POST /v1/access-requests/{id}/reveal`（Clerk + Sig(dev)，必須是申請的那個 device）`{"nonce"}` → `{}`；成功後 DO `cloud.changed`。
 - `DELETE /v1/access-requests/{id}` → `{}`（申請者取消 pending）
 - `GET /v1/computers/{id}/grants` → `{"grants":[{"grantId","deviceId","deviceName","platform","scopes","createdAt"}]}`
 - `DELETE /v1/computers/{id}/grants/{grantId}` → `{}`（`owner`）+ DO block + changed
+- `POST /v1/cloud-computers` `{"provider"?, "name"?}` → `{"cloudComputer":{"cloudComputerId","name","provider","providerName","region","state","computerId"|null,"backupAt"|null,"snapshots":bool,"createdAt"}}`（`snapshots`：供應商有沒有保存歷史或備份讓 *Delete snapshots* 刪；`false`（InstaBox）時 app 不顯示 *Delete snapshots*；舊的 cloud 不帶，視為 `true`）：用使用者自己在該供應商的 key，在他的帳號再建立一台雲端電腦（每帳號最多 3 台，可以分在不同供應商；超過 → `409 conflict`）；`name` 是使用者取的名字（去頭尾空白、最多 64 字，省略時為 "Cloud computer"），電腦在帳號裡、host 的 `hello` 都用這個名字；`provider` 只有一個供應商有 key 時可省略；每個登入的帳號都能用，只要 Worker 設了 `CLOUD_SECRET_KEYS`，否則 `403 forbidden`；不認得的 `provider` → `400`；還沒存任何 key、或有好幾把卻沒指定 → `409 conflict`；供應商拒絕這把 key（撤銷、過期、缺權限、沒有方案、機器數已達上限）→ `422 keyRefused`，訊息是要修什麼；供應商忙或連不上 → `503 providerUnavailable`。`GET` 回傳 `{"cloudComputers":[…]}`（同一物件，含供應商的即時狀態，舊的在前；連不上的供應商上的機器回傳上次記錄的狀態，其他機器照常列出）、`limit`（每帳號最多幾台）、`available`（這個帳號能不能建立；app 只在 `available` 或已有雲端電腦時顯示 Codync Cloud）與 `providers`（`available` 時才有，否則 `[]`）：每個供應商 `{"provider","name","region","keyPrompt","setup":{"page","commands"},"credential"}`，`setup` 是建立 key 的指令，由 Worker 措辭；`credential` 是 `{"hint":"boat_…9abc","problem"|null,"blocking":bool,"updatedAt"}` 或 `null`，永遠不含 key 本身；`problem` 是供應商拒絕這把 key 時要使用者修的事（不點名供應商，app 把它顯示在供應商名稱下），app 翻譯這句話；`blocking` 表示問題出在 key 本身（被拒、過期），只有換一把 key 才能解，app 這時不讓在該供應商上建立，其他問題（方案、帳號上限、環境、缺權限）仍可按 Create 重試，成功的寫入會清掉它。
+- `PATCH /v1/cloud-computers/{cloudComputerId}` `{"name"}` → `{"cloudComputer":…}`：改名（空的 → `400`）；已 claim 的電腦在帳號裡一起改名，並通知 host（`cloud.changed`），host 從 `/v1/host/state` 的 `name` 拿到新名字，送 `{"type":"name","name"}` 事件給已連上的 app（它們把它寫進自己的 `hello`），其他 app 從下一次 `hello` 起看到。
+- `DELETE /v1/cloud-computers/{cloudComputerId}` → `{}`：刪除機器、所有快照與備份，並把電腦移出帳號；它 keeper 保險箱的鑰匙一起刪掉，留在別處的快照從此打不開。備份先刪（留下的備份永不過期）：刪不掉時請求失敗（供應商忙或連不上 → `503 providerUnavailable`；key 被拒 → `422 keyRefused`；其他 → `500`），電腦留在列表上，可以再刪一次。
+- `PUT /v1/cloud-credentials/:provider`（`boat`、`instabox`，其他 → `404`） `{"key"}` → `{"credential":…}`（同 `GET` 裡該供應商的 `credential`）：存下使用者自己在該供應商的 key（[bring your own cloud](../plans/codync-cloud.md#bring-your-own-cloud)），sealed 存進 D1、只寫不讀。每個登入的帳號都能存，只要 Worker 設了 `CLOUD_SECRET_KEYS`，否則 `403 forbidden`；每帳號每分鐘最多 5 次（`429 rateLimited`）。先跟供應商檢查：格式不對、供應商不接受、能管理整個帳號的 admin key（Boat：讀得到 webhooks；InstaBox：讀得到 workspace 的 invites）、已有這個供應商上的雲端電腦卻碰不到它（新 key 找不到電腦時，只有舊 key 也碰不到才收下）→ `422 keyRefused`，訊息是要修什麼；供應商忙或連不上（含 admin 檢查沒有明確答案）→ `503 providerUnavailable`，不存。
+- `DELETE /v1/cloud-credentials/:provider` → `{}`：忘掉 key；還有雲端電腦在這個供應商上時 `409 conflict`（沒有 key 就沒辦法讓它們睡、也刪不掉它們）。
+- `DELETE /v1/cloud-computers/{cloudComputerId}/snapshots` → `{}`：刪除這台雲端電腦保存的歷史（較早的快照與備份），電腦保留；保存歷史的供應商（Boat）睡著時 `409 conflict`（那時快照就是電腦本身）；不保存歷史的供應商（InstaBox）只刪備份（若有），不檢查是否睡著。
+- `GET /v1/computers` 的每台電腦多一個 `cloud`：`{"provider","providerName","region","state"}`，自己的電腦是 `null`。
 
 **Sig(host)（不需要帳號）**
-- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
+- `POST /v1/host/register` `{"boxKey","name","platform":"macos"|"linux"|"windows","device","version"}` → `{"computerId","owned":bool}`。以 kid 推導 id；upsert（`name`/`device`/`version`/`box_pub`/`updated_at`）。同 IP 每分鐘最多 10 次新建（Workers Rate Limiting binding；平台不支援時先略過並在 README 註記）。自己的電腦版本低於緊急下限 `HOST_FLOOR` 時回 `426 hostUpdateRequired`（訊息 `HOST_FLOOR_REASON`），host 收到後立刻檢查並安裝更新；雲端電腦照常註冊，改由 state 的更新指令處理。Host 指向 [private relay](../../private-relay/README.md) 時只在這個請求帶 `Codync-Relay-Token`（官方 cloud 忽略它）：私人中繼收新電腦必須 token 相符，不符回 `403 forbidden`（"This relay needs its relay token to add a new computer."），最多 32 台；已註冊的 key 不需要 token 就能 refresh。私人中繼的 `GET /v1/host/state` 永遠是空的，host 不拉它（不套用 grants、不處理 requests）。
 - `GET /v1/host/state` →
   ```json
   {"owner":{"userId":"user_…","email":"a@b.c"} | null,
@@ -530,16 +541,22 @@ The route table below summarizes the contract. Executable schema and validation 
    "signedOutDevices":[{"deviceKey","signedOutAgo"}]}
   ```
   grants 只含：grant active、device 未撤銷、device.owner == computer.owner。host 只把它當成「可續約／應刪除」的清單（§4.3）。`signedOutDevices` 是電腦所屬帳號裡登出的裝置（未撤銷）與登出多久了（ms，相對時間，兩邊時鐘不同步也沒關係），host 從收到回應的時間往回推，只刪掉它們在那之前登記的 push tickets（回應慢時寧可多刪一張剛登記的，手機下次連線會再送），不動裝置列：手機登回來後送來的新 ticket 可能比清掉標記的 `POST /v1/devices` 先到，要留著。
+  雲端電腦另有 `"name"`（使用者取的名字，host 存起來當自己的電腦名稱；它重新註冊時 Worker 也保留這個名字，不用 host 送來的）與 `"update": {"version", "force": true}`：帳號 30 天內的裝置需要的最高 `minHost`，或緊急下限 `HOST_FLOOR`，比 host 版本新時出現；host 立刻安裝那個版本（`force` 會中斷工作中的 bot，session 之後接續）。裝置帶著更高的 `minHost` 連上 relay 時，Worker 會送 `cloud.changed` 讓 host 馬上讀到。
 - `POST /v1/host/access-requests/{id}/nonce` `{"nonce"}` → `{}`（`cloud/src/routes/host.ts`；已設過 → `409`）
 - `POST /v1/host/grants/{grantId}/revoke` `{}` → `{}`（host 在本機撤銷帳號來源裝置時同步 D1，`revoked_reason='owner'`；失敗記錄並存入 `grant_revokes` 重試，本機撤銷已生效）
 - `POST /v1/host/access-requests/{id}/decision` `{"decision":"approve"|"deny"}` → `{"status","grantId"?}`（`cloud/src/routes/host.ts` 的原子更新；request 過期 → `410 requestExpired`；approve 要求 `device_nonce IS NOT NULL`，否則 `409`）
 - `POST /v1/host/unclaim` `{}` → `{}`（在電腦上移出帳號；同 `DELETE /v1/computers/{id}` 的效果）
+- `POST /v1/host/claim` `{"claimId", …claim 的 complete 欄位, "keeperKey"?}` → `{"computer":<Computer>}`：雲端電腦用認主卡自己 claim（§4.2 A 末段）；`signKey` 必須等於簽章的 kid，帳號取自該 claim。`keeperKey`（32 bytes，base64url）是這台機器 keeper 的 Ed25519 公鑰，只在第一次 claim 時記下（之後不能換）。
+- `GET /v1/keeper/vault-key`（Sig(keeper)：用 claim 記下的 `keeperKey` 簽）→ `{"key"}`（32 bytes，base64url）：雲端電腦 keeper 保險箱的鑰匙，Worker 在建立機器時產生並封存（`CLOUD_SECRET_KEYS`），只交給這把 keeper key；還沒有 claim 記下它、或機器已刪除 → `404`。keeper 每次啟動來拿，只放記憶體（[Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets)）。
+- `POST /v1/host/sleep` `{"wakeAt": ms | null}` → `{}`：閒置的雲端電腦請求睡眠。Worker 先把機器記成 `stopping`（之後讀到它的喚醒都會等停機生效；更早讀到 `running` 的喚醒，若 DO 在它進行中收到睡眠請求，也改成稍後重試，不收回 host），再問 DO：有裝置連線時 `409 conflict`，DO 連不上或回其他錯誤時 `500 internal`，兩者都把記錄改回原狀；否則 DO 記下 `wakeAt`（alarm）、立刻把 host 視為離線（停機後的 socket 不會乾淨關閉），Worker 再用電腦主人的 key 讓供應商停機（Boat：stop；InstaBox：pause，記憶體保留）；供應商明確拒絕停機（key 被拒 → `422 keyRefused`；忙碌 → `503 providerUnavailable`；其他拒絕）時記錄改回 `running`（機器沒停，下一次喚醒就把 host 收回），key 被拒時還請 DO 立刻把 host 標回上線（`/internal/awake`：喚醒讀不到機器）；供應商本身出錯（5xx）時可能還是停了，記錄維持 `stopping`。DO 在 host 離線時，遇到裝置連線、mailbox 訊息、routine webhook 或 `wakeAt` 到期，就請供應商 resume（每分鐘最多一次；機器還在停止中或達到啟動上限時 20 秒後重試；請求睡眠後 2 分鐘內供應商仍回報機器在執行，視為停機還沒生效：記錄維持 `stopping`，20 秒後重試；過了 2 分鐘仍在執行才算停機失敗，記成 `running` 並把原本的 host socket 收回）。非雲端電腦沒有影響。
+- `POST /v1/host/sleep` 在有更新的 release 適合帳號所有近期裝置時（`minApp` ≤ 最舊的 app、版本 ≥ 需要的 `minHost`，release 清單由 cron 從該 cloud 的 release channel 最新的 `codync-host-compat.json` 讀入 `host_releases`），回 `{"update": {"version", "force": false}}` 而不停機；host 安裝後重啟，下次閒置再睡。
+- `GET /v1/host/sleep` → `{"state"}`：雲端電腦最近一次的機器狀態。請求睡眠後還在執行的 host 每 3 秒問一次，狀態離開 `stopping`／`stopped` 就重新連上 relay（請求睡眠後 2 分鐘內，供應商即使還回報執行中也維持 `stopping`，host 繼續等；保留記憶體的快速喚醒會帶回同一個程序和舊 socket）。
 
 **Routine webhook（公開）**：`POST /v1/hooks/{computerId}/{routineId}`，§7.8。
 
 **Cloud assistant（MCP connector）**：`POST /mcp`、`GET /.well-known/oauth-protected-resource[/mcp]`、`GET /.well-known/oauth-authorization-server`，§7.9。
 
-**Relay**：§7.1。**Webhook**：`user.deleted` → accounts `status='deleted'`、devices 撤銷、grants 撤銷（`accountDeleted`）、computers owner=NULL、DO block + changed。
+**Relay**：§7.1。**Webhook**：`user.deleted` → accounts `status='deleted'`、devices 撤銷、grants 撤銷（`accountDeleted`）、computers owner=NULL、DO block + changed；雲端電腦用主人的 key 停機後，忘掉它和 key（供應商忙時 webhook 回 500，Clerk 重送）。
 
 ## 9. Host integration
 
@@ -549,7 +566,7 @@ The route table below summarizes the contract. Executable schema and validation 
 
 ## 10. iOS Swift integration
 
-`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app doesn't use the device channel; it reaches its own host and SSH computers over loopback. Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
+`CodyncKit/Client` (`apps/ios/Kit/`) owns transport, crypto, identity and cloud API models. `CodyncUI` owns account/per-computer stores and presentation. The desktop app reaches its own host and SSH computers over loopback, and only the account's Codync Cloud computer over the device channel (relay only, `apps/desktop/src/main/channel/`). Consumers must retain account and computer scope when handling asynchronous responses, links and cached widget data. See [file structure](../architecture/file-structure.md).
 
 ## 11. Apps and SSH
 

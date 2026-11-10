@@ -17,7 +17,10 @@ internal fun AccountStore.signIn(provider: SignInProvider) = sessionAction {
         NativeAccounts.signIn(provider)
     } catch (error: CancellationException) { throw error }
     catch (error: Exception) {
-        Analytics.capture(AnalyticsEvent.SignInFailed(provider, (error as? SignInError)?.reason ?: SignInFailure.Error))
+        val reason = (error as? SignInError)?.reason ?: SignInFailure.Error
+        Analytics.capture(AnalyticsEvent.SignInFailed(provider, reason))
+        // The user closed the browser: no error to show, as on the iPhone.
+        if (reason == SignInFailure.Cancelled) return@sessionAction
         throw error
     }
     // Clerk holds the new session already, so this counts toward the account.
@@ -103,8 +106,10 @@ fun AccountStore.refreshCloud() = action("cloud") {
         val client = cloud ?: return@action
         client.registerDevice(Build.MODEL.take(100))
         val computers = client.computers()
-        mutableState.update { it.copy(cloudComputers = computers) }
+        mutableState.update { it.copy(cloudComputers = computers, appFloor = null) }
+        shareAccountView()
         learnRelay(computers)
+        askCloudComputers(computers)
     } catch (error: IOException) {
         if (error is CloudError && !error.isTransient) throw error
         // Runs on every launch and foreground: a dropped connection, a busy cloud or a token not ready

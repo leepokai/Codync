@@ -50,6 +50,13 @@ const bridge: CodyncBridge = {
       return host.subscribe(since, onData)
     },
   },
+  channel: {
+    call: async () => { throw { status: 503, message: DEMO_UNAVAILABLE } },
+    stream: (_c, _k, _p, _d, onEnd) => {
+      onEnd({ status: 503, message: DEMO_UNAVAILABLE })
+      return () => {}
+    },
+  },
   account: {
     state: async () => account,
     onChange: none,
@@ -92,11 +99,16 @@ const bridge: CodyncBridge = {
     newBot() {},
     openApp() {},
   },
-  cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
+  cloud: {
+    request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }),
+    requestAccess: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }),
+  },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },
   files: { begin: unavailable, write: async () => {}, finish: async () => {}, cancel: async () => {} },
   app: {
+    attended: async () => true,
+    onAttended: none,
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
@@ -122,12 +134,13 @@ const bridge: CodyncBridge = {
 }
 
 // Every visit starts from the story: no mirror cache or drafts from a previous visit, onboarding done,
-// no GitHub star ask over the demo.
+// no GitHub star ask or Ko-fi invitation over the demo.
 try {
   for (const key of Object.keys(localStorage)) if (key.startsWith('codync-')) localStorage.removeItem(key)
   localStorage.setItem('macAccountOnboardingCompleted', 'true')
   localStorage.setItem('computerAccessSetup', JSON.stringify('later'))
   localStorage.setItem('githubStarAsk', JSON.stringify({ kind: 'done' }))
+  localStorage.setItem('kofiInvite', JSON.stringify({ kind: 'done' }))
 } catch {}
 
 // The dark palette everywhere (vite.demo.config.ts does the same for the CSS).

@@ -129,6 +129,10 @@ async fn supervise(hub: &Arc<Hub>, address: &cloud::Address) {
     loop {
         if !registered {
             if let Err(e) = cloud::register(hub, address).await {
+                // Below an emergency floor the cloud refuses this version: update instead of waiting a day.
+                if e.downcast_ref::<cloud::CloudError>().is_some_and(|c| c.status == 426) {
+                    crate::update::update_soon(hub.port);
+                }
                 tracing::warn!(error = format!("{e:#}"), "couldn't register with the Codync cloud");
                 cloud::update_status(hub, |s| s.last_error = Some(format!("{e:#}")));
                 sleep(register_wait.wait()).await;

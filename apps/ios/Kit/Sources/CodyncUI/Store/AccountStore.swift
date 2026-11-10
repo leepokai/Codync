@@ -37,6 +37,8 @@ public final class AccountStore {
     public private(set) var pendingAccess: [ComputerID: AccessTicket] = [:]
     /// The actual request approved most recently, distinct from a previously paired computer.
     public private(set) var approvedAccess: [ComputerID: String] = [:]
+    /// The account's Codync Cloud computer (Settings); nil when signed out.
+    public let cloudMachine: CloudMachineStore?
     public var lastError: String?
     /// While pairing: the code the computer shows if it asks whether to let this phone in.
     public internal(set) var pairingCheck: String?
@@ -72,6 +74,8 @@ public final class AccountStore {
     var joining: Set<ComputerID> = []
     /// Computers asked from here to join this account, with the code they show meanwhile.
     var addingToAccount: [ComputerID: String] = [:]
+    /// Cloud computers already asked for access by themselves this session.
+    private var askedCloud: Set<ComputerID> = []
     private var isActive = true
     private(set) var retired = false
 
@@ -88,9 +92,20 @@ public final class AccountStore {
         cloudListLoaded = cloud == nil
         computerOrder = ComputerOrderStore(storage: storage)
         self.makeStore = makeStore
+        cloudMachine = cloud.map(CloudMachineStore.init)
         saved = storage.computers.filter(\.isConsistent)
         for computer in saved { open(computer) }
         computerOrder.onChanged = { [weak self] in self?.refreshList() }
+        cloudMachine?.onAccountChanged = { [weak self] removed in
+            if let removed { self?.forget(removed) }
+            await self?.refreshCloud()
+        }
+        // Its host tells the apps connected to it; this one shows it at once (the host may be asleep).
+        cloudMachine?.onRenamed = { [weak self] id, name in
+            self?.stores[id]?.hello?.name = name
+            self?.updateSaved(id) { $0.name = name }
+            await self?.refreshCloud()
+        }
         refreshList()
     }
 
@@ -163,7 +178,9 @@ public final class AccountStore {
             let list = try await cloud.computers()
             guard !retired, version == cloudListVersion else { return }
             if list != cloudComputers { Motion.animate { cloudComputers = list } }
+            for (id, store) in stores { setHosting(store, id) }
             learnRelay(from: list, cloud: cloud)
+            askCloudComputers()
         } catch let error as CloudError where !error.isTransient {
             lastError = error.localizedDescription
         } catch {
@@ -230,6 +247,27 @@ public final class AccountStore {
             }
         }
         _ = try await ask.value
+    }
+
+    /// Codync Cloud computers approve this device by themselves: each one it can't use yet is asked once per
+    /// session, through the same request and code exchange as a tap on "Ask for access".
+    private func askCloudComputers() {
+        for computer in cloudComputers where computer.cloud != nil && computer.access == "none" && stores[computer.computerId] == nil {
+            let id = computer.computerId
+            guard askedCloud.insert(id).inserted else { continue }
+            Task { [weak self] in
+                do {
+                    try await self?.requestAccess(id)
+                } catch {
+                    log.info("cloud computer access request failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    private func setHosting(_ store: BotStore, _ id: ComputerID) {
+        let hosting = cloudComputers.first { $0.computerId == id }?.cloud
+        if store.cloudHosting != hosting { store.cloudHosting = hosting }
     }
 
     /// An offline account computer named like one this device uses or sees online: most likely the same
@@ -358,6 +396,7 @@ public final class AccountStore {
     public func retire() {
         retired = true
         computerOrder.retire()
+        cloudMachine?.retire()
         for store in stores.values { store.retire() }
         for poll in accessPolls.values { poll.cancel() }
         accessPolls = [:]
@@ -388,6 +427,7 @@ public final class AccountStore {
         }
         store.onComputerChanged = { [weak self] computer in self?.computerChanged(computer) }
         store.onRosterChanged = { [weak self] in self?.rosterChanged() }
+        setHosting(store, id)
         stores[id] = store
         if isActive { store.setActive(true) }
     }

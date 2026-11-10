@@ -47,6 +47,8 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     internal var foreground = false
     internal var widgetOwner: WidgetOwner? = null
+    /** Cloud computers this account context already asked for access by itself (the tap's stand-in). */
+    internal val askedCloud = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
@@ -155,7 +157,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
 
     private suspend fun configureCloud(userId: String) {
         val identity = withContext(Dispatchers.IO) { local.identity() }
-        cloud = CloudClient(BuildConfig.CLOUD_URL, identity) { NativeAccounts.token(userId) }
+        cloud = CloudClient(BuildConfig.CLOUD_URL, identity, BuildConfig.VERSION_NAME) { NativeAccounts.token(userId) }
     }
 
     /** Join every writer before closing a context's databases or replacing its identity. */
@@ -174,7 +176,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         contextJob.cancelAndJoin()
         AccountImages.retire()
         pairingJob = null
-        actions.clear(); cloud = null; deviceCertificate = null
+        actions.clear(); cloud = null; deviceCertificate = null; askedCloud.clear()
         withContext(Dispatchers.IO) { ConnectorOAuthBook(local.directory).clear() }
         contextJob = SupervisorJob(viewModelScope.coroutineContext[Job])
         contextScope = CoroutineScope(contextJob + Dispatchers.Main.immediate)
@@ -189,6 +191,7 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             noteActive(opened.id)
         }, usageRead = ::publishUsage)
         store.open()
+        store.setAccountView(context.cloudOf(computer.id), context.appFloor)
         mutableStores.update { list -> list.filter { it.id != computer.id } + store }
         sortStores()
         if (foreground) store.setForeground(true)
@@ -276,11 +279,11 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
     /** Runs [operation] as [key], its error shown; not while loading or while [key] still runs. Whether it started. */
     internal fun action(key: String, operation: suspend () -> Unit): Boolean {
         if (state.value.loading || key in state.value.busy) return false
-        mutableState.update { it.copy(busy = it.busy + key, error = null) }
+        mutableState.update { it.copy(busy = it.busy + key, error = null, failedAction = null) }
         val job = contextScope.launch(start = CoroutineStart.LAZY) {
             try { operation() }
             catch (error: CancellationException) { throw error }
-            catch (error: Exception) { showError(error) }
+            catch (error: Exception) { showError(error, key) }
             finally { actions.remove(key); mutableState.update { it.copy(busy = it.busy - key) } }
         }
         actions[key] = job
@@ -288,7 +291,14 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
         return true
     }
 
-    internal fun showError(error: Exception) { mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.") } }
+    /** [action]: the [AccountStore.action] key [error] came from, if any. */
+    internal fun showError(error: Exception, action: String? = null) {
+        // Not an error to dismiss: every computer's Update this app card says it and stays.
+        if (error is CloudError && error.code == "appUpdateRequired") {
+            mutableState.update { it.copy(loading = false, appFloor = error.message) }
+            shareAccountView()
+        } else mutableState.update { it.copy(loading = false, error = error.message ?: "Couldn't complete the action.", failedAction = action) }
+    }
 
     /** Every computer registers (or drops) this phone's push again, after the permission changed. */
     fun syncPush() { for (store in stores.value) store.syncPush() }

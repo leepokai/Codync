@@ -2,16 +2,10 @@ import type { Bot } from '@shared/models'
 import type { MenuItem } from '../components/Menu'
 import { sectionNames } from '../lib/roster-sections.ts'
 import type { BotStore } from '../store/bot-store'
-
-/** An open section name dialog: its title, the name it starts with, and what Save does with the typed one. */
-export interface SectionNaming {
-  title: string
-  name: string
-  save: (name: string) => void
-}
+import type { Naming } from './NameDialog'
 
 /** A bot row's "Move to section"; none while its computer runs a host without sections. */
-export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: SectionNaming) => void): MenuItem[] {
+export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: Naming) => void): MenuItem[] {
   if (!store.hasRosterSections) return []
   const others = sectionNames(store.bots.values()).filter((name) => name !== bot.section)
   const submenu: MenuItem[] = [
@@ -23,7 +17,7 @@ export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: 
 }
 
 /** A section header's right-click menu, `rename` taking the new name (null: remove it, its bots staying without one). None while the computer runs a host without sections. */
-export function sectionHeaderItems(section: string, store: BotStore, askName: (naming: SectionNaming) => void, rename: (to: string | null) => void): MenuItem[] {
+export function sectionHeaderItems(section: string, store: BotStore, askName: (naming: Naming) => void, rename: (to: string | null) => void): MenuItem[] {
   if (!store.hasRosterSections) return []
   return [
     { title: 'Rename section…', icon: 'pencil', action: () => askName({ title: 'Rename section', name: section, save: rename }) },

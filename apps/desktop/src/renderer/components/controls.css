@@ -413,3 +413,11 @@
   transform-origin: left;
   transition: transform var(--layout);
 }
+
+/* A feature still in beta (Network, Codync Cloud): a quiet tag beside its title. */
+.beta-tag {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--field);
+  color: var(--secondary);
+}

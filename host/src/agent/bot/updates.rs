@@ -13,8 +13,10 @@ use tokio::sync::oneshot;
 
 /// Who waits for an approval card's answer.
 pub(super) enum Answer {
-    /// The agent's `session/request_permission`, by its JSON-RPC id.
-    Agent(Value),
+    /// The agent's `session/request_permission`, by its JSON-RPC id, and the session it asked in (`None` when the
+    /// request named none): an Always allow covers that session, not the turn's, as background work in one session
+    /// can ask while a turn runs in another.
+    Agent { rpc_id: Value, session: Option<String> },
     /// A Codync tool (`Cmd::Approve`): true when the user allowed it.
     Codync(oneshot::Sender<bool>),
 }
@@ -164,6 +166,8 @@ impl Actor {
     }
 
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
+        // The request's own session: background work in one session asks while a turn runs in another.
+        let session = params["sessionId"].as_str().map(str::to_owned);
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
         if self.cfg.permission == Permission::Auto
@@ -181,6 +185,13 @@ impl Actor {
                 self.hub.store.entry(eid)?.data["title"].as_str().map(str::to_owned)
             })
             .unwrap_or_else(|| "Use a tool".into());
+        let asked = json!({"toolKind": tool["kind"].as_str().unwrap_or("other"), "title": title});
+        if let (Some(session), Some(conn)) = (session.as_deref(), &self.conn)
+            && let Some(option) = self.always_allowed.pick(session, &asked, &options)
+        {
+            let _ = conn.acp.respond(rpc_id, acp::permission_answer(Some(option))).await;
+            return;
+        }
         let mut detail = json!({"output": "", "diffs": []});
         merge_tool_content(&mut detail, &tool["content"]);
         let raw = &tool["rawInput"];
@@ -198,7 +209,7 @@ impl Actor {
             "status": "pending",
             "selected": Value::Null,
         });
-        self.show_card(&title, data, Answer::Agent(rpc_id));
+        self.show_card(&title, data, Answer::Agent { rpc_id, session });
     }
 
     /// A permission request from work the agent goes on with after its turn ended (a background subagent): no turn
@@ -269,20 +280,28 @@ impl Actor {
     pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
         let Some(answer) = self.perms.remove(entry_id) else { return };
         let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
-        match answer {
-            Answer::Agent(rpc_id) => {
+        let session = match answer {
+            Answer::Agent { rpc_id, session } => {
                 if let Some(conn) = &self.conn {
                     let _ = conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await;
                 }
+                session
             }
             Answer::Codync(reply) => {
                 // The tool stopped waiting (see `expire_abandoned`): nothing acts on the answer.
                 if reply.send(option_id.as_deref() == Some("allow")).is_err() {
                     status = "expired";
                 }
+                // Its card offers allow once and reject only, so no answer of it covers a kind.
+                None
             }
-        }
+        };
         if let Some(mut e) = self.hub.store.entry(entry_id) {
+            if let (Some(session), Some(option)) = (session.as_deref(), option_id.as_deref())
+                && status == "answered"
+            {
+                self.always_allowed.note(session, &e.data, option);
+            }
             e.data["status"] = status.into();
             e.data["selected"] = option_id.into();
             self.hub.set_entry(entry_id, &e.data);

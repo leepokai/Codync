@@ -422,7 +422,7 @@ impl Actor {
                 self.hub.set_entry(&id, &e.data);
             }
             // The agent would wait on a card no one can answer any more.
-            if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
+            if let (super::updates::Answer::Agent { rpc_id, .. }, Some(client)) = (answer, client.clone()) {
                 tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
             }
         }

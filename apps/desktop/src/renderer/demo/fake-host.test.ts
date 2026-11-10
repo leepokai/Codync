@@ -18,9 +18,10 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } })
 
 const { FakeHost } = await import('./fake-host.ts')
+const { macBook } = await import('./story.ts')
 
 test('sending from a chat marked unread reads it, like the real host', async () => {
-  const host = new FakeHost('2.44.0')
+  const host = new FakeHost('2.45.0', macBook)
   await host.call('markRead', { botId: 'scout' })
   const { bot: held } = (await host.call('markUnread', { botId: 'scout' })) as { bot: Bot }
   assert.equal(held.keptUnread, true)
@@ -41,7 +42,7 @@ test('sending from a chat marked unread reads it, like the real host', async () 
 })
 
 test('marking an empty chat unread shows no badge, like the real host', async () => {
-  const host = new FakeHost('2.44.0')
+  const host = new FakeHost('2.45.0', macBook)
   const { bot: created } = (await host.call('createBot', { name: 'Empty', kind: 'agent' })) as { bot: Bot }
   const { bot } = (await host.call('markUnread', { botId: created.id })) as { bot: Bot }
   assert.equal(bot.unread, 0)

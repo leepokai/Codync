@@ -184,8 +184,10 @@ class AppStore internal constructor(
         val mirror = database ?: return
         val wanted = residency()
         val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
-        floors.clear()
-        snapshot.entries.groupBy { it.botId }.forEach { (bot, rows) -> floors[bot] = rows.minOf { it.seq } }
+        // Updated in place, never emptied, so a page loading meanwhile doesn't read a chat as having no oldest row.
+        val oldest = snapshot.entries.groupBy { it.botId }.mapValues { (_, rows) -> rows.minOf { it.seq } }
+        floors.keys.retainAll(oldest.keys)
+        floors.putAll(oldest)
         published = wanted
         // Rows the window no longer reaches are paged back from the phone again, even after the host had nothing older.
         val open = state.value.selectedBot

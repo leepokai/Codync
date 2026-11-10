@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,8 +33,11 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /** "Full conversation": everything the agent did, grouped by turn (iOS `TraceView`). */
-@Composable internal fun TraceView(bot: Bot, state: AppState) {
+@Composable internal fun TraceView(bot: Bot, state: AppState, store: AppStore) {
     val all = state.entries.filter { it.botId == bot.id }
+    val held = state.entries.count { it.botId == bot.id }
+    // Same gate as the chat: history still open, and the in-memory window is under its ceiling.
+    val more = bot.id !in state.historyComplete && held < store.residency().ceiling
     val turns = all.groupBy { it.turn }.toSortedMap().toList()
     // The running turn's thoughts start unfolded.
     val running = runningTurn(all, bot.isWorking(bot.id))
@@ -43,6 +47,15 @@ import kotlinx.serialization.json.jsonPrimitive
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Full conversation")
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+            // A tap, not the chat's automatic pager: older rows stay out of this sheet until asked for.
+            if (more) item(key = "earlier") {
+                val loading = historyKey(bot.id) in state.busy
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (loading) Spinner(14.dp)
+                    else Text(tr("Load earlier"), Modifier.plainButton { store.loadHistory() }.padding(vertical = 8.dp),
+                        style = Type.subheadline, color = Palette.accent)
+                }
+            }
             if (turns.isEmpty()) item { Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary) }
             items(turns, key = { it.first }) { (turn, entries) ->
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

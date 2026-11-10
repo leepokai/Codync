@@ -132,7 +132,7 @@ import com.kyant.shapes.Capsule
     }
     CodyncSheet(state.trace, { store.showTrace(false) }) {
         AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Trace))
-        TraceView(bot, state)
+        TraceView(bot, state, store)
     }
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }

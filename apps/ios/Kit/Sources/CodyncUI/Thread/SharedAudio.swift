@@ -3,6 +3,9 @@ import CodyncKit
 import Foundation
 import Observation
 @preconcurrency import WebRTC
+import os
+
+private let log = Logger(subsystem: "com.pokai.Codync", category: "Thread")
 
 /// Plays a sound a bot shared (a voice note), fetched from the computer; one player per file card or
 /// voice-note bubble.
@@ -39,7 +42,12 @@ final class SharedAudio {
 
     init(load: @escaping @MainActor (BotStore, SharedFile, String) async -> Data? = { await $0.sharedFileData($1, entryId: $2) },
          deactivate: @escaping @MainActor () -> Void = {
-             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+             do {
+                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+             } catch {
+                 // The note is already stopped; other apps' audio just stays ducked until the next session change.
+                 log.error("voice note session release: \(error.localizedDescription, privacy: .public)")
+             }
          }) {
         self.load = load
         self.deactivate = deactivate

@@ -128,10 +128,6 @@ private const val PREVIEW_BYTES = 150_000L
         }.mapTo(mutableSetOf()) { it.nonce }
     }
 
-    /** How many of [botId]'s rows start at [seq] or later: the window that holds a page just fetched, whatever arrived meanwhile. */
-    @Synchronized internal fun countSince(botId: String, seq: Long): Int = readableDatabase.rawQuery(
-        "SELECT COUNT(*) FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
-
     /** Whether SQLite holds rows of [botId] older than [seq], so paging back can skip the computer. */
     @Synchronized internal fun hasOlder(botId: String, seq: Long): Boolean = readableDatabase.rawQuery(
         "SELECT 1 FROM entries WHERE bot_id=? AND seq<? LIMIT 1", arrayOf(botId, seq.toString())).use { it.moveToFirst() }

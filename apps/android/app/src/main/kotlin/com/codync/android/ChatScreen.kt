@@ -247,12 +247,12 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
             val loading = historyKey(bot.id) in state.busy
             val visible = list.layoutInfo.visibleItemsInfo.any { it.key == "earlier" }
             // A page that failed (offline, timed out) changed nothing, so it may be asked for again once the reader scrolls
-            // away and back, or the link comes back.
+            // away and back, or the link comes back. Pages already on the phone still load while offline.
             val linked = state.connection is LinkState.Ready
             LaunchedEffect(bot.id, linked, visible) {
-                if (!visible || !linked) { askedShown.intValue = -1; askedFloor.value = Long.MAX_VALUE }
+                if (!visible || linked) { askedShown.intValue = -1; askedFloor.value = Long.MAX_VALUE }
             }
-            LaunchedEffect(bot.id, shown, floor, loading, settled.value, visible) {
+            LaunchedEffect(bot.id, shown, floor, loading, settled.value, visible, linked) {
                 if (pageEarlier(settled.value, visible, loading, shown, floor, askedShown.intValue, askedFloor.value)) {
                     askedShown.intValue = shown
                     askedFloor.value = floor

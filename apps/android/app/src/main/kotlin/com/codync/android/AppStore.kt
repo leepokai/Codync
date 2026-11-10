@@ -138,7 +138,7 @@ class AppStore internal constructor(
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
-        published = null
+        published = null; windows.clear(); floors.clear()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 

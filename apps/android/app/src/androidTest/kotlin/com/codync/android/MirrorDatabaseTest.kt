@@ -194,12 +194,6 @@ class MirrorDatabaseTest {
         assertEquals(setOf("n-bot-1"), mirror.confirmedNonces(listOf(artifact, unsent)))
     }
 
-    @Test fun countSinceSizesTheWindowThatHoldsAFetchedPage() {
-        mirror.receive((1L..30L).map { chat("big", it) })
-        assertEquals(21, mirror.countSince("big", 10))
-        assertEquals(0, mirror.countSince("other", 1))
-    }
-
     @Test fun largeRowsStopAChatFromGrowingPastItsByteBudgetAndAPreviewKeepsItsNewestRow() {
         val filler = "x".repeat(60_000)
         fun big(seq: Long) = Entry("e-big-$seq", seq, "big", rev = seq, kind = "user",

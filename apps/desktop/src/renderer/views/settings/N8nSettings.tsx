@@ -8,6 +8,7 @@ import { Text } from '../../components/Text'
 import { lastPathComponent } from '../../lib/path'
 import { useTr } from '../../lib/use-language'
 import { StoreContext, useApp, useStore } from '../../store/context'
+import { N8nWorkflows } from './N8nWorkflows'
 import { errorText, thisMac } from './parts'
 
 /** The n8n instance this computer runs: where it lives, and whether it's on. */
@@ -129,6 +130,7 @@ function N8nSettingsBody() {
           <ValueRow label="MCP server" detail={live?.mcp ? tr('Connected') : tr('Not connected')} />
         ) : null}
       </CardSection>
+      {running ? <N8nWorkflows disabled={!online} /> : null}
       {starting ? (
         <CardSection>
           <HStack gap={8}>

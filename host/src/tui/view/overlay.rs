@@ -139,6 +139,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Documents(sheet) => super::super::sheets::documents(buf, area, app, sheet),
         Overlay::Computer(sheet) => super::super::sheets::computer(buf, area, sheet),
         Overlay::McpTools(sheet) => super::super::sheets::mcp_tools(buf, area, sheet),
+        Overlay::N8n(sheet) => super::super::sheets::n8n(buf, area, sheet),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),

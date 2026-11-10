@@ -18,6 +18,7 @@ mod library;
 mod market;
 pub(in crate::tui) mod mcp_tools;
 mod memory;
+pub(in crate::tui) mod n8n;
 mod network;
 mod network_rules;
 mod network_setup;
@@ -55,6 +56,7 @@ pub const REACTIONS: [&str; 6] = ["👍", "❤️", "😂", "🎉", "👀", "✅
 pub enum Reply {
     Computer(computer::ComputerReply),
     McpTools(mcp_tools::McpReply),
+    N8n(n8n::N8nReply),
     Documents(DocumentReply),
     Memory(String),
     MemorySaved(String),

@@ -1809,5 +1809,8 @@
   "Succeeded": "Correcta",
   "Crashed": "Se bloqueó",
   "Unknown": "Desconocido",
-  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Los flujos de trabajo que n8n ejecuta en el ordenador. Activar uno lo publica allí. Su editor se abre en Codync en el ordenador."
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Los flujos de trabajo que n8n ejecuta en el ordenador. Activar uno lo publica allí. Su editor se abre en Codync en el ordenador.",
+  "Workflows": "Flujos de trabajo",
+  "Turning one on publishes it in n8n.": "Activar uno lo publica en n8n.",
+  "n8n: workflows and runs…": "n8n: flujos de trabajo y ejecuciones…"
 }

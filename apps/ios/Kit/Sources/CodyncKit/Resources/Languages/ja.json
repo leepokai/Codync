@@ -1809,5 +1809,8 @@
   "Succeeded": "成功",
   "Crashed": "クラッシュ",
   "Unknown": "不明",
-  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n がコンピュータで実行しているワークフロー。オンにするとそこで公開されます。エディタはコンピュータの Codync で開きます。"
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n がコンピュータで実行しているワークフロー。オンにするとそこで公開されます。エディタはコンピュータの Codync で開きます。",
+  "Workflows": "ワークフロー",
+  "Turning one on publishes it in n8n.": "オンにすると n8n で公開されます。",
+  "n8n: workflows and runs…": "n8n：ワークフローと実行…"
 }

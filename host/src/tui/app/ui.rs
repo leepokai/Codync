@@ -54,6 +54,7 @@ pub enum Action {
     Details,
     Documents,
     Computer,
+    N8n,
     Library,
     RefreshAgents,
     Pair,
@@ -73,7 +74,7 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 26] = [
+pub const ACTIONS: [(&str, &str, Action); 27] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -81,6 +82,7 @@ pub const ACTIONS: [(&str, &str, Action); 26] = [
     ("Details of this bot…", "R", Action::Details),
     ("Documents, reviews and computer activity…", "", Action::Documents),
     ("Computer: permissions, files, terminal and activity…", "", Action::Computer),
+    ("n8n: workflows and runs…", "", Action::N8n),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Pair a phone…", "P", Action::Pair),
@@ -383,6 +385,7 @@ pub enum Overlay {
     Proposals(Box<super::ProposalsSheet>),
     Computer(Box<super::super::manage::computer::ComputerSheet>),
     McpTools(Box<super::super::manage::mcp_tools::McpToolsSheet>),
+    N8n(Box<super::super::manage::n8n::N8nSheet>),
     RosterTools,
     Goto(Goto),
     Help(Editor),

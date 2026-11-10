@@ -15,6 +15,8 @@ mod documents;
 pub use computer::draw as computer;
 mod mcp_tools;
 pub use mcp_tools::draw as mcp_tools;
+mod n8n;
+pub use n8n::draw as n8n;
 mod flow_view;
 mod library_view;
 mod market_view;

@@ -1809,5 +1809,8 @@
   "Succeeded": "Успешно",
   "Crashed": "Аварийно завершён",
   "Unknown": "Неизвестно",
-  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Рабочие процессы, которые n8n выполняет на компьютере. Включение публикует его там. Его редактор открывается в Codync на компьютере."
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "Рабочие процессы, которые n8n выполняет на компьютере. Включение публикует его там. Его редактор открывается в Codync на компьютере.",
+  "Workflows": "Рабочие процессы",
+  "Turning one on publishes it in n8n.": "Включение публикует процесс в n8n.",
+  "n8n: workflows and runs…": "n8n: рабочие процессы и запуски…"
 }

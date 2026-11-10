@@ -1809,5 +1809,8 @@
   "Succeeded": "成功",
   "Crashed": "已當機",
   "Unknown": "未知",
-  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n 在電腦上執行的工作流程。開啟開關會在電腦上發布它。其編輯器在電腦上的 Codync 中開啟。"
+  "The workflows n8n runs on the computer. Turning one on publishes it there. Its editor opens in Codync on the computer.": "n8n 在電腦上執行的工作流程。開啟開關會在電腦上發布它。其編輯器在電腦上的 Codync 中開啟。",
+  "Workflows": "工作流程",
+  "Turning one on publishes it in n8n.": "開啟開關會在 n8n 中發布它。",
+  "n8n: workflows and runs…": "n8n：工作流程和執行記錄…"
 }

@@ -1,6 +1,7 @@
 // Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker's cloud computer routes, the user's own Boat
 // key, and a claimed cloud computer with its host connected.
 
+import { runDurableObjectAlarm } from "cloudflare:test";
 import { expect, vi } from "vitest";
 import { saveCredential } from "../src/cloud-credentials";
 import worker, { type Env } from "../src/index";
@@ -104,6 +105,16 @@ export function stoppedBoat() {
 
 export const calls = (spy: ReturnType<typeof stoppedBoat>) => spy.mock.calls.map(([url, init]) => `${init?.method} ${url}`);
 export const relay = (host: TestHost) => env.RELAY.get(env.RELAY.idFromName(host.cid));
+
+/** Runs `host`'s relay alarm as if `ms` had passed (only `Date` moves). */
+export async function alarmAfter(host: TestHost, ms: number) {
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + ms });
+  try {
+    await runDurableObjectAlarm(relay(host));
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 /** The InstaBox key test users bring (`ibk_` and 52 of a–z, 2–7). */
 export const IBX_KEY = `ibk_${"a2".repeat(26)}`;

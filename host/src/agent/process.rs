@@ -10,6 +10,15 @@ use tokio::time::Instant;
 
 const REAP_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(100);
+/// How long a process whose children have all ended gets to finish by itself before it is ended too: a `PyInstaller`
+/// onefile launcher (Antigravity's Windows server) removes its ~131 MB unpacked folder only after its program ends (#399).
+const PARENT_GRACE: Duration = Duration::from_secs(3);
+/// The longest a tree unwinds that way before what is left is killed at once: [`PARENT_GRACE`] for each of a few levels
+/// of parents that outlive their children, like an agent under its launcher and an MCP server under the agent.
+pub(crate) const UNWIND: Duration = Duration::from_secs(15);
+/// The console window Windows gives a process started without one: no work of its own, and no child that keeps its
+/// parent going.
+const CONSOLE_HOST: &str = "conhost.exe";
 
 /// One process in an agent's tree: on Windows its job, on Unix what `ps` lists under it.
 #[derive(Clone)]
@@ -57,6 +66,29 @@ pub(crate) fn descendants(rows: &[JobProcess], leader: u32) -> Vec<JobProcess> {
         }
     }
     found
+}
+
+/// Whether `process` is a console window ([`CONSOLE_HOST`]).
+pub(crate) fn is_console(process: &JobProcess) -> bool {
+    process.name.eq_ignore_ascii_case(CONSOLE_HOST)
+}
+
+/// Whether nothing in `tree` runs under `process` but a console window. A pid listed as its own parent (a reused pid)
+/// isn't its child.
+pub(crate) fn starts_nothing(tree: &[JobProcess], process: &JobProcess) -> bool {
+    !tree.iter().any(|child| child.parent == process.pid && child.pid != process.pid && !is_console(child))
+}
+
+/// Which of `tree` to end at `now`, from its leaves up: at the first listing whatever starts nothing, at once; later a
+/// process left with nothing under it, [`PARENT_GRACE`] after it is first seen so, to finish by itself first. `ends_at`
+/// keeps those times from one listing to the next. A console window is left to the job's end: what it serves needs it.
+fn due(tree: &[JobProcess], ends_at: &mut HashMap<u32, Instant>, now: Instant) -> Vec<u32> {
+    let grace = if ends_at.is_empty() { Duration::ZERO } else { PARENT_GRACE };
+    tree.iter()
+        .filter(|process| !is_console(process) && starts_nothing(tree, process))
+        .filter(|process| now >= *ends_at.entry(process.pid).or_insert(now + grace))
+        .map(|process| process.pid)
+        .collect()
 }
 
 /// A process's program name without its folder.
@@ -166,20 +198,71 @@ impl Process {
 
     /// The ids of what is running in the agent's job.
     #[cfg(windows)]
-    pub(super) fn job_members(&self) -> Result<Vec<u32>> {
+    fn job_members(&self) -> Result<Vec<u32>> {
         super::process_windows::job_members(&self.tree.handle)
     }
 
-    /// Which of `candidates` belong to this program's tree. A descendant that left the group for a session of its
-    /// own isn't counted on Unix: stopping the program wouldn't reach it either.
+    /// Everything still running in the program's tree.
+    #[cfg(windows)]
+    pub(super) async fn processes(&self) -> Result<Vec<JobProcess>> {
+        let members = self.job_members()?;
+        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
+    }
+
+    /// Everything still running in the program's process group.
+    #[cfg(unix)]
+    async fn processes(&self) -> Result<Vec<JobProcess>> {
+        Ok(list_processes().await?.into_iter().filter(|process| self.in_group(process.pid)).collect())
+    }
+
+    /// Kills `pid` if it is still in the program's group.
+    #[cfg(unix)]
+    fn end(&self, pid: u32) -> std::io::Result<()> {
+        if !self.in_group(pid) {
+            return Ok(());
+        }
+        let pid = libc::pid_t::try_from(pid).expect("a pid in the group fits pid_t");
+        // SAFETY: kill only sends a signal, to a process just checked to be in the owned group.
+        if unsafe { libc::kill(pid, libc::SIGKILL) } == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    /// Ends `pid` if it is still in the program's job.
+    #[cfg(windows)]
+    fn end(&self, pid: u32) -> Result<()> {
+        super::process_windows::end(&self.tree.handle, pid)
+    }
+
+    /// Ends the tree from its leaves up ([`due`]) while its leader runs, for at most [`UNWIND`].
+    async fn unwind(&self) {
+        let deadline = Instant::now() + UNWIND;
+        let mut ends_at = HashMap::new();
+        while !self.exited().unwrap_or(true) && Instant::now() < deadline {
+            let Ok(tree) = self.processes().await else { return };
+            for pid in due(&tree, &mut ends_at, Instant::now()) {
+                if let Err(error) = self.end(pid) {
+                    tracing::debug!(pid, error = format!("{error:#}"), "couldn't end a program's process");
+                }
+            }
+            tokio::time::sleep(POLL).await;
+        }
+    }
+
+    /// Whether `pid` is in this program's process group. A descendant that left it for a session of its own isn't:
+    /// stopping the program wouldn't reach it either.
+    #[cfg(unix)]
+    fn in_group(&self, pid: u32) -> bool {
+        let Some(group) = self.tree.group else { return false };
+        // SAFETY: getpgid only reads the process table.
+        libc::pid_t::try_from(pid).is_ok_and(|pid| unsafe { libc::getpgid(pid) } == group)
+    }
+
+    /// Which of `candidates` belong to this program's tree ([`Self::in_group`]).
     #[cfg(unix)]
     pub(crate) fn members(&self, candidates: &[u32]) -> Vec<u32> {
-        let Some(group) = self.tree.group else { return Vec::new() };
-        let in_group = |pid: u32| {
-            // SAFETY: getpgid only reads the process table.
-            libc::pid_t::try_from(pid).is_ok_and(|pid| unsafe { libc::getpgid(pid) } == group)
-        };
-        candidates.iter().copied().filter(|pid| in_group(*pid)).collect()
+        candidates.iter().copied().filter(|pid| self.in_group(*pid)).collect()
     }
 
     /// Which of `candidates` belong to this program's job.
@@ -195,18 +278,11 @@ impl Process {
     }
 
     /// Ends a program that takes no input: asks it to stop and gives it `grace` to (Windows has no such request for a
-    /// program without a console of ours, so its job ends at once).
+    /// program without a console of ours, so there it unwinds at once).
     pub(crate) async fn stop_gracefully(&mut self, grace: Duration) {
         #[cfg(unix)]
-        {
-            self.tree.interrupt();
-            self.stop_within(grace).await;
-        }
-        #[cfg(windows)]
-        {
-            let _ = grace;
-            self.kill().await;
-        }
+        self.tree.interrupt();
+        self.stop_within(if cfg!(windows) { Duration::ZERO } else { grace }).await;
     }
 
     /// The graceful-shutdown task keeps ownership until its deadline.
@@ -215,16 +291,17 @@ impl Process {
     }
 
     /// Gives the leader and everything it started until `grace` runs out to finish by themselves,
-    /// then kills what is left. Returns as soon as nothing is left.
+    /// then ends what is left from its leaves up ([`Self::unwind`]). Returns as soon as nothing is left.
     pub(super) async fn stop_within(&mut self, grace: Duration) {
         let deadline = Instant::now() + grace;
         while !self.exited().unwrap_or(true) && Instant::now() < deadline {
             tokio::time::sleep(POLL).await;
         }
+        self.unwind().await;
         #[cfg(unix)]
         if self.exited().unwrap_or(false) {
             // Reaped, the leader no longer pins its PID: only a live group member does, and
-            // that is what `drained` waits out.
+            // that is what `drained` waits out. A group of zombies alone isn't signalled (macOS refuses it).
             let _ = self.child.wait().await;
             self.tree.drained(deadline).await;
         }
@@ -350,5 +427,39 @@ impl Tree {
             return Err(std::io::Error::last_os_error());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tree_ends_from_its_leaves_up() {
+        let process = |pid, parent, name: &str| JobProcess { pid, parent, name: name.to_owned() };
+        // Antigravity on Windows: cmd -> console window, launcher -> agent -> an MCP server.
+        let mut tree = vec![
+            process(1, 900, "cmd.exe"),
+            process(2, 1, "conhost.exe"),
+            process(3, 1, "agy_acp_server.exe"),
+            process(4, 3, "agy_acp_server.exe"),
+            process(5, 4, "codync-host.exe"),
+        ];
+        let mut ends_at = HashMap::new();
+        let mut now = Instant::now();
+        let mut ended = 5;
+        assert_eq!(due(&tree, &mut ends_at, now), [ended], "what starts nothing ends at once, but the console window");
+        // Each parent left alone gets its grace, the launcher too, to remove its folder; the console window keeps
+        // nothing going.
+        for parent in [4, 3, 1] {
+            tree.retain(|p| p.pid != ended);
+            assert_eq!(due(&tree, &mut ends_at, now), Vec::<u32>::new());
+            now += PARENT_GRACE;
+            assert_eq!(due(&tree, &mut ends_at, now), [parent]);
+            ended = parent;
+        }
+
+        // A pid listed as its own parent is still a leaf.
+        assert_eq!(due(&[process(7, 7, "x")], &mut HashMap::new(), Instant::now()), [7]);
     }
 }

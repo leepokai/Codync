@@ -44,7 +44,7 @@ quotes itself.
 | `markRead` | `botId, automatic?` | Reads the chat and clears `keptUnread`: the user opened it or picked Mark as read. `automatic: true` is the chat being on screen: the same, except that a chat with `keptUnread` is left as it is. A no-op when nothing there is unread or kept unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
 | `markUnread` | `botId` | Puts the chat back to unread: what was unread before its last read, or else its latest reply that can count. Anything already unread keeps its count. A no-op when nothing in the chat could count as unread (`Store::unread`: final agent replies and pending permission cards, without reactions or voice call replies). Returns `{bot}` as it is now. The bot shows `keptUnread` until the next `markRead` without `automatic`. From host 2.44.0: clients offer "Mark as unread" only on a host that has it. |
 
-## How a group answers (`host/src/chat/group.rs`, Grok Bot's design)
+## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 
 - The user's message starts a *room turn* in the group: up to 3 rounds, 10 replies in all.
 - Who answers the first round: the members the user @-mentioned (full name, name without
@@ -79,6 +79,12 @@ quotes itself.
   Newer messages in the group, and Stop in the member's own chat, don't drop that late answer;
   the group's Stop or removing the member from the group does, and a newer room turn that asks
   the member again replaces it.
+- A late answer (a busy member's, or one from a member the room stopped waiting for after 10
+  minutes) that @-mentions teammates gets a *late room turn*: it asks the members named from that
+  answer on who haven't spoken or been asked since, then goes on like any room turn. It starts
+  right away when no room turn runs, or as the running one ends (a newer message of the user's
+  drops it). Up to 3 late room turns follow one user message, and none after the group's Stop
+  until the user writes again.
 - A new message in the group, or Stop, ends a running room turn before its next speaker.
 - Tool calls, thoughts and permission cards of a member's group turn are written to the
   group (with `author`), not to the member's own chat. One "done" push per room turn, plus

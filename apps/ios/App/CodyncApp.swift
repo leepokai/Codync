@@ -15,10 +15,6 @@ struct CodyncApp: App {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage(AppLanguage.storageKey, store: AppLanguage.defaults) private var appLanguageRaw = AppLanguage.system.rawValue
-    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
-    /// screen, where signed-out computers wait to move into the account.
-    @State private var launching = !AppStore.shared.accounts.computers.isEmpty
-        && (AppStore.shared.accounts.accountId != nil || !AppStore.shared.account.isConfigured)
     init() {
         // A tapped widget bot arrives as an intent, not a URL.
         OpenBotIntent.open = { AppStore.shared.open($0) }
@@ -65,9 +61,9 @@ struct CodyncApp: App {
                     app.switchAccount(to: userID)
                 }
                 .overlay {
-                    if launching {
+                    if app.launching {
                         LaunchSplash(stores: app.accounts.computers.compactMap { app.accounts.store(for: $0.id) }) {
-                            withAnimation(.easeOut(duration: 0.35)) { launching = false }
+                            withAnimation(.easeOut(duration: 0.35)) { app.launching = false }
                         }
                     }
                 }
@@ -138,6 +134,11 @@ final class AppStore {
     var marketplace: ComputerID?
     /// While an account is being left: its stores stay open until its computers have been told.
     var leaving = false
+    /// Cold launch with a computer to reach: the splash covers its connect and catch-up. Not over the sign-in
+    /// screen, where signed-out computers wait to move into the account.
+    var launching = false
+    /// Decided now, before onboarding can finish this run (docs/features/whats-new.md).
+    let whatsNew = WhatsNew(usedBefore: UserDefaults.standard.bool(forKey: "onboardingCompleted"))
 
     private init() {
         let session = AccountSession()
@@ -159,6 +160,7 @@ final class AppStore {
         SharedStore.Context.splitPushSwitch(from: .standard,
                                             into: Set([nil, storage.accountID] + session.accounts.map(\.id)).map { SharedStore.Context(accountID: $0) })
         (accounts, cloud) = Self.makeAccounts(storage, session: session)
+        launching = !accounts.computers.isEmpty && (accounts.accountId != nil || !session.isConfigured)
         if rescan { accounts.lastError = Self.scanAgain }
     }
 

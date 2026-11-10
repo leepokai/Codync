@@ -134,6 +134,12 @@ struct RootView: View {
         .onChange(of: accounts.selection) { _, ref in
             if ref != nil { app.tab = .bots }
         }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        .codyncSheet(isPresented: Binding(get: { app.whatsNew.isPresented && !app.launching },
+                                          set: { app.whatsNew.isPresented = $0 })) {
+            WhatsNewSheet(announcements: app.whatsNew.due)
+                .onAppear { app.whatsNew.shown() }
+        }
     }
 
     private var screen: AnalyticsEvent.Screen {

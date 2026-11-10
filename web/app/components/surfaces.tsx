@@ -2,6 +2,7 @@ import Phone from "./phone";
 import Eyebrow from "./eyebrow";
 import Reveal from "./reveal";
 
+// The iPhone screens outside the app.
 const surfaces = [
   {
     src: "/screens/widget.webp",

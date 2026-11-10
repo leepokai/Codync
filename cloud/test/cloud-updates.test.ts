@@ -154,6 +154,32 @@ describe("snapshots", () => {
     expect(after).toEqual({ provider_id: "bx_restored" });
   });
 
+  it("times the backup from when it asked to sleep, though it was seen stopped only later", async () => {
+    const { userId, id } = await cloudComputer();
+    const old = Date.now() - 11 * 86_400_000;
+    await env.DB.prepare("UPDATE cloud_machines SET state = 'stopping', updated_at = ? WHERE id = ?").bind(old, id).run();
+    boat("archived");
+    expect((await cc("GET", userId)).body.cloudComputers[0].state).toBe("stopped");
+    const saving = boat("archived");
+    await saveBackups(env, Date.now());
+    expect(calls(saving)).toEqual(["POST https://boat.dev/api/v1/saved-snapshots"]);
+  });
+
+  it("keeps a computer whose backup couldn't be deleted yet, so deleting it can be tried again", async () => {
+    const { userId, id } = await cloudComputer();
+    await env.DB.prepare("UPDATE cloud_machines SET backup = 'codync-kept', backup_at = ? WHERE id = ?").bind(Date.now(), id).run();
+    const busy = boat("archived", { "/saved-snapshots/codync-kept": [429, { code: "rate_limited" }] });
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).body.error.code).toBe("providerUnavailable");
+    expect(calls(busy)).toEqual(["DELETE https://boat.dev/api/v1/saved-snapshots/codync-kept"]);
+    boat("archived", { "/saved-snapshots/codync-kept": [401, { code: "unauthorized" }] });
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).body.error.code).toBe("keyRefused");
+    expect((await cc("GET", userId)).body.cloudComputers).toHaveLength(1);
+    const gone = boat("cancelled");
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect(calls(gone)).toContain("DELETE https://boat.dev/api/v1/saved-snapshots/codync-kept");
+    expect((await cc("GET", userId)).body.cloudComputers).toEqual([]);
+  });
+
   it("times the backup from when it went to sleep, whatever it was renamed since", async () => {
     const { userId, id } = await cloudComputer();
     const old = Date.now() - 11 * 86_400_000;

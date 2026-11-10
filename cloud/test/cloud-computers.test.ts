@@ -2,8 +2,10 @@
 
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
-import { call, clerkToken, devicePath, newHost, sleep, socket } from "./helpers";
+import { STOP_SETTLE_MS } from "../src/cloud-machines";
+import { WAKE_RETRY_MS } from "../src/relay-wire";
+import { alarmAfter, boat, bothProviders, callWith, calls, cc, cloudComputer, hostClaim, instaboxApi, KEY, onBothProviders, relay, spyFetch, stoppedBoat, uid, withInstaboxKey, withKey } from "./cloud-helpers";
+import { call, clerkToken, devicePath, env, newHost, sleep, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
@@ -164,13 +166,50 @@ describe("several cloud computers", () => {
   });
 });
 
+/** The host asks to sleep and Boat takes the stop, but still reports the machine running when a device connects:
+ * the wake waits for the stop, and the machine stays recorded stopping, so its host keeps waiting too. */
+async function wakeWhileStopping({ host, device, hostWs }: Awaited<ReturnType<typeof cloudComputer>>) {
+  boat("archiving");
+  expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
+  const fetch = boat("ready");
+  const dev = await socket(devicePath(host), device);
+  expect((await dev.nextT("presence")).online).toBe(false);
+  await vi.waitFor(() => expect(calls(fetch)).toContain("GET https://boat.dev/api/v1/sandboxes/bx_test"));
+  await sleep(100);
+  expect(hostWs.msgs.some((m) => m.t === "open")).toBe(false);
+  expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("stopping");
+  return dev;
+}
+
 describe("sleep and wake", () => {
   it("stops an idle cloud computer, but not while a device is connected", async () => {
-    const { host, device } = await cloudComputer();
+    const { host, device, id } = await cloudComputer();
     const dev = await socket(devicePath(host), device);
     const fetch = boat("archiving");
-    const busy = await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    const state = async () => (await call("GET", "/v1/host/sleep", { key: host.sign })).body.state;
+    const before = await state();
+    // Recorded `stopping` before its relay is asked to take the host offline, and put back when the relay refuses or
+    // can't be reached.
+    const asked: unknown[] = [];
+    const RELAY = {
+      idFromName: (name: string) => env.RELAY.idFromName(name),
+      get: (doId: DurableObjectId) => ({
+        fetch: async (url: string, init: RequestInit) => {
+          asked.push((await env.DB.prepare("SELECT state FROM cloud_machines WHERE id = ?").bind(id).first())?.state);
+          return env.RELAY.get(doId).fetch(url, init);
+        },
+      }),
+    } as unknown as typeof env.RELAY;
+    const busy = await callWith({ RELAY }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
     expect(busy.body.error.code).toBe("conflict");
+    expect(asked).toEqual(["stopping"]);
+    expect(await state()).toBe(before);
+    const unreachable = {
+      idFromName: RELAY.idFromName,
+      get: () => ({ fetch: () => Promise.reject(new Error("relay unreachable")) }),
+    } as unknown as typeof env.RELAY;
+    expect((await callWith({ RELAY: unreachable }, "POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(500);
+    expect(await state()).toBe(before);
     // A relay from an earlier test may still be finishing a wake: only this computer's stop counts.
     const stop = "POST https://boat.dev/api/v1/sandboxes/bx_test/stop";
     expect(calls(fetch)).not.toContain(stop);
@@ -178,7 +217,7 @@ describe("sleep and wake", () => {
     await sleep(100);
     expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
     expect(calls(fetch).filter((c) => c === stop)).toHaveLength(1);
-    expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("stopping");
+    expect(await state()).toBe("stopping");
     expect((await call("POST", "/v1/host/sleep", { key: (await newHost()).sign, body: {} })).status).toBe(404);
   });
 
@@ -199,15 +238,57 @@ describe("sleep and wake", () => {
     expect((await dev.nextT("presence")).online).toBe(true);
   });
 
-  it("takes the host back when the machine never stopped", async () => {
-    const { host, device, hostWs } = await cloudComputer();
-    boat("archiving");
-    expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
-    boat("ready");
+  it("takes the host back at the first wake when the provider was too busy to stop it", async () => {
+    const { host, device } = await cloudComputer();
+    boat("ready", { "/sandboxes/bx_test/stop": [429, { code: "rate_limited" }] });
+    const refused = await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    expect(refused.body.error.code).toBe("providerUnavailable");
+    expect((await call("GET", "/v1/host/sleep", { key: host.sign })).body.state).toBe("running");
     const dev = await socket(devicePath(host), device);
     expect((await dev.nextT("presence")).online).toBe(false);
     expect((await dev.nextT("presence")).online).toBe(true);
-    expect((await hostWs.nextT("open")).dk).toBe(ref.b64url(device.pub));
+  });
+
+  it("doesn't take the host back for a wake that read its machine before it asked to sleep again", async () => {
+    const { host, device } = await cloudComputer();
+    // A stop turned down as busy: recorded running, its host connected but offline.
+    boat("ready", { "/sandboxes/bx_test/stop": [429, { code: "rate_limited" }] });
+    await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } });
+    // A wake reads it as running; the host asks to sleep again before the provider answers.
+    let answer!: () => void;
+    const held = new Promise<void>((r) => (answer = r));
+    const fetch = spyFetch().mockImplementation(async (_url, init) => {
+      if (init?.method !== "POST") await held;
+      return Response.json({ ok: true, sandbox: { id: "bx_test", state: init?.method === "POST" ? "archiving" : "ready" } });
+    });
+    const wakeBody = JSON.stringify({ wake: true });
+    const waking = relay(host).fetch("https://do/internal/changed", { method: "POST", headers: { "X-Codync-Internal": "1" }, body: wakeBody });
+    await vi.waitFor(() => expect(calls(fetch)).toContain("GET https://boat.dev/api/v1/sandboxes/bx_test"));
+    expect((await call("POST", "/v1/host/sleep", { key: host.sign, body: { wakeAt: null } })).status).toBe(200);
+    answer();
+    await waking;
+    // Still running only because its stop hasn't taken effect yet: the host stays offline.
+    const dev = await socket(devicePath(host), device);
+    expect((await dev.nextT("presence")).online).toBe(false);
+    await dev.none((m) => m.t === "presence" && m.online === true);
+  });
+
+  it("takes the host back when the machine never stopped", async () => {
+    const computer = await cloudComputer();
+    const dev = await wakeWhileStopping(computer);
+    // Its stop had all the time it needs, and the wake asks again.
+    await env.DB.prepare("UPDATE cloud_machines SET updated_at = updated_at - ? WHERE id = ?").bind(STOP_SETTLE_MS, computer.id).run();
+    await alarmAfter(computer.host, WAKE_RETRY_MS + 1_000);
+    expect((await dev.nextT("presence")).online).toBe(true);
+    expect((await computer.hostWs.nextT("open")).dk).toBe(ref.b64url(computer.device.pub));
+  });
+
+  it("keeps a wake that came while its stop was taking effect, and starts it once stopped", async () => {
+    const computer = await cloudComputer();
+    await wakeWhileStopping(computer);
+    const retried = stoppedBoat();
+    await alarmAfter(computer.host, WAKE_RETRY_MS + 1_000);
+    expect(calls(retried)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 
   it("wakes it when a device connects while it sleeps", async () => {
@@ -255,12 +336,7 @@ describe("sleep and wake", () => {
     // The retry runs from the alarm once its time has come.
     await sleep(100);
     const retried = stoppedBoat();
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 21_000 });
-    try {
-      await runDurableObjectAlarm(relay(host));
-    } finally {
-      vi.useRealTimers();
-    }
+    await alarmAfter(host, 21_000);
     expect(calls(retried)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 
@@ -278,12 +354,7 @@ describe("sleep and wake", () => {
     await socket(devicePath(host), device);
     await sleep(100);
     expect(calls(second)).toEqual([]);
-    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 61_000 });
-    try {
-      await runDurableObjectAlarm(relay(host));
-    } finally {
-      vi.useRealTimers();
-    }
+    await alarmAfter(host, 61_000);
     expect(calls(second)).toContain("POST https://boat.dev/api/v1/sandboxes/bx_test/resume");
   });
 });

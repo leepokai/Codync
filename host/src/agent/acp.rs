@@ -300,8 +300,7 @@ impl Acp {
     /// Everything still running in the agent's job.
     #[cfg(windows)]
     pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
-        let members = self.child.lock().await.job_members()?;
-        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
+        self.child.lock().await.processes().await
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -360,7 +359,8 @@ impl Acp {
     }
 }
 
-/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;

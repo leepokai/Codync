@@ -200,9 +200,11 @@ export class ComputerRelay extends DurableObject<Env> {
     const b = (await req.json().catch(() => null)) as { wakeAt?: unknown } | null;
     const wakeAt = typeof b?.wakeAt === "number" && Number.isSafeInteger(b.wakeAt) ? b.wakeAt : null;
     this.setMeta("wakeAt", wakeAt === null ? "" : String(wakeAt));
+    this.setMeta("sleepId", crypto.randomUUID());
     if (wakeAt !== null) await this.ensureAlarm(wakeAt);
     // Offline from now on: the machine stops within a minute, and its socket may never close cleanly. The host
-    // stays connected until then; a wake that finds the machine still running takes it back (`wakeHost`).
+    // stays connected until then; a wake that finds the machine still running once its stop had time to take
+    // effect takes it back (`wakeHost`; before that, `wake` retries).
     for (const [ws, a] of this.hosts()) if (a.ready) ws.serializeAttachment({ ...a, ready: false });
     await this.hostOffline(Date.now());
     return Response.json({});
@@ -216,13 +218,16 @@ export class ComputerRelay extends DurableObject<Env> {
     const woke = Number(this.meta("wokeAt") ?? 0);
     if (now - woke < WAKE_DEBOUNCE_MS) return this.wakeLater(woke + WAKE_DEBOUNCE_MS);
     this.setMeta("wokeAt", String(now));
+    const sleepId = this.meta("sleepId");
     const result = await wake(this.env, id, now).catch((e) => {
       console.error("cloud computer wake failed", { computerId: id, error: String(e) });
       return "retry" as const;
     });
-    if (result === "running") {
+    // A host that asked to sleep while `wake` read its machine runs only until its stop takes effect: retried, as
+    // a wake that found it `stopping` is.
+    if (result === "running" && this.meta("sleepId") === sleepId) {
       await this.takeBackHost(now);
-    } else if (result === "retry") {
+    } else if (result === "running" || result === "retry") {
       this.setMeta("wokeAt", "0");
       await this.wakeLater(now + WAKE_RETRY_MS);
     }

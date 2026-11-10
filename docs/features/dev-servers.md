@@ -22,7 +22,7 @@ owner agents use), so the agent can be stopped when idle while it runs.
 | Event | The server |
 |---|---|
 | Agent stopped when idle, crashed or changed; new session; routine run ended | Keeps running |
-| User or bot stops it | Its whole tree stops: SIGTERM, then SIGKILL after 3 s on Unix; the job ends at once on Windows |
+| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`agent/process.rs`) |
 | It ends by itself | Stopped (exit 0) or failed; it doesn't start again |
 | Bot deleted | Stopped and removed |
 | Host updated or restarted | Stopped, then started again |

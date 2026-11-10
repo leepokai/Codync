@@ -142,7 +142,7 @@ fn pick<'a>(options: &'a [Value], wanted: &str) -> Option<&'a Value> {
 
 fn stop(hub: &Arc<Hub>, cfg: &BotConfig) -> Result<Value> {
     if cfg.is_group() {
-        hub.groups.stop(hub, &cfg.id);
+        crate::chat::group::stop(hub, &cfg.id);
     } else {
         hub.send_cmd(&cfg.id, Cmd::Stop)?;
     }

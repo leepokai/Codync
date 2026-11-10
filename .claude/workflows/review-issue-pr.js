@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Security', detail: 'read-only, before anything from an item runs: code security and prompt injection' },
     { title: 'Confirm', detail: 'reproduce the problem on dev end to end; judge the fix against Codync\'s architecture and habits' },
-    { title: 'Fix', detail: 'issue: fixed in its worktree; PR: after-change on its branch' },
+    { title: 'Fix', detail: 'issue: fixed in its worktree; PR: its defects fixed on its branch, then after-change' },
     { title: 'Merge', detail: 'issue: into dev; PR: CI green and Greptile 4/5 or more on its head, then squashed into dev' },
   ],
 }
@@ -202,17 +202,21 @@ Read the item (\`gh ${it.kind} view ${it.number} --comments\`${it.kind === 'pr' 
 - author_owes: what the author still has to provide (end-to-end Validation on a real host and the clients touched, the after-change report when made with Claude Code, What's New sections, tests); empty for an issue.`,
   { label: `judge:${label(it)}`, phase: 'Confirm', schema: JUDGE, model: REVIEW_MODEL })
 
+// A PR's own defects: security concerns (defects in the fix: anything deliberate stopped at the security check), the
+// judge's deviations, the part of the problem it misses. We fix a routine bug fix's; anything bigger goes back to its author.
+const needsOurEdits = (sec, repro, verdict) => sec.verdict === 'concerns' || verdict.approach === 'needs_changes' || verdict.deviations.length > 0 || repro.pr_fixes_it === 'partly'
+
 const route = (it, sec, repro, verdict, routine) => {
   if (!repro) return 'unfinished'
   // Only a conflict with dev is the author's to resolve; a moved head or our own leftover work stays with us, worktree kept.
   if (repro.blocked !== 'none') return it.kind === 'pr' && repro.blocked === 'conflict' ? 'changes' : 'unfinished'
   if (repro.problem !== 'real') return 'reply'
   if (it.kind === 'issue') return 'fix'
-  if (sec.verdict === 'concerns' || verdict.approach === 'wrong' || repro.pr_fixes_it === 'no') return 'changes'
-  // Bug fixes get finished here; anything bigger reaches us only once its author has Greptile at 4/5 or more.
-  if (!routine && !repro.greptile_ok) return 'changes'
-  const needsOurEdits = verdict.approach === 'needs_changes' || repro.pr_fixes_it === 'partly'
-  if (needsOurEdits && sec.facts.cross_repository && sec.facts.maintainer_can_modify === false) return 'changes'
+  if (verdict.approach === 'wrong' || repro.pr_fixes_it === 'no') return 'changes'
+  // Bug fixes get finished here; anything bigger reaches us only once its author has fixed its defects and has
+  // Greptile at 4/5 or more.
+  if (!routine && (!repro.greptile_ok || needsOurEdits(sec, repro, verdict))) return 'changes'
+  if (needsOurEdits(sec, repro, verdict) && sec.facts.cross_repository && sec.facts.maintainer_can_modify === false) return 'changes'
   return 'merge'
 }
 
@@ -236,12 +240,21 @@ const skippedFindings = (report) => {
     : ''
 }
 
-const fixIssue = (it, sec, repro, verdict) => agent(`Fix issue #${it.number} ("${sec.facts.title}") in the worktree ${repro.worktree} (branch ${repro.branch}); work only there. ${UNTRUSTED}
+const fixItem = (it, sec, repro, verdict) => {
+  const pr = it.kind === 'pr'
+  const prPart = pr
+    ? `The branch is the PR's head with origin/dev merged in; it fixes the problem: ${repro.pr_fixes_it}. Its defects are ours to fix here, never sent back to the author: the deviations above, the rest of the problem when it fixes it only partly, and each finding of its security check ${JSON.stringify(sec.findings)}. Check each one against the code first; one that doesn't hold goes in skipped, with why. Keep the PR's tests and add one for each defect you fix.\n`
+    : ''
+  return agent(`${pr ? `Finish pull request #${it.number}` : `Fix issue #${it.number}`} ("${sec.facts.title}") in the worktree ${repro.worktree} (branch ${branchOf(it, repro)}); work only there. ${UNTRUSTED}
 The problem, confirmed: ${repro.evidence}
 Its reproduction: ${repro.test ?? 'see the evidence'}
-Judged: ${verdict.summary} ${verdict.reasons} Deviations to avoid: ${JSON.stringify(verdict.deviations)}
-Make the smallest correct fix at the root cause (grep every caller of what you change), keep the reproduction as a regression test, update the docs and user manual it makes stale, and carry the change to every client CLAUDE.md "Cross-platform UI changes" requires. Run the builds and tests of the parts you touched until they pass. Don't commit.`,
-  { label: `fix:${label(it)}`, phase: 'Fix', schema: FIXED })
+Judged: ${verdict.summary} ${verdict.reasons} Deviations to ${pr ? 'fix' : 'avoid'}: ${JSON.stringify(verdict.deviations)}
+${prPart}Make the smallest correct fix at the root cause (grep every caller of what you change), keep the reproduction as a regression test, update the docs and user manual it makes stale, and carry the change to every client CLAUDE.md "Cross-platform UI changes" requires. Run the builds and tests of the parts you touched until they pass. Don't commit.`,
+    { label: `fix:${label(it)}`, phase: 'Fix', schema: FIXED })
+}
+
+// What a fix pass did, for after-change's change text.
+const fixesText = (fixed) => `${fixed.applied.join('; ')}${fixed.skipped.length ? `; skipped: ${JSON.stringify(fixed.skipped)}` : ''}`
 
 const landIssue = (it, repro, report) => agent(`Land the fix for issue #${it.number} from the worktree ${repro.worktree} (branch ${repro.branch}). ${PATHS}${skippedFindings(report)}
 Commit it there (Conventional Commit in English that says what changed for the user; the body ends with "Refs #${it.number}", never Fixes or Closes), then follow this handoff exactly: ${report.next}
@@ -317,13 +330,17 @@ const reviewItem = async (it, sec) => {
 
   phase('Fix')
   let fixed = null
-  if (way === 'fix') {
-    fixed = await fixIssue(it, sec, repro, verdict)
+  const concerns = it.kind === 'pr' && sec.verdict === 'concerns'
+  if (way === 'fix' || needsOurEdits(sec, repro, verdict)) {
+    fixed = await fixItem(it, sec, repro, verdict)
     if (!fixed) return { outcome: 'unfinished', ...seen, why: 'fixing did not finish' }
+    // A skipped item may be a security finding, never dropped on the fix pass's word alone: the maintainer decides.
+    if (concerns && fixed.skipped.length) return { outcome: 'unfinished', ...seen, fix: fixed, why: `the fix pass left ${JSON.stringify(fixed.skipped)} unfixed on a PR whose security check had concerns` }
   }
+  // after-change's reviewers check again that each security finding is gone, so one the fix pass left out of its report still gets caught.
   const change = way === 'fix'
-    ? `Fix for issue #${it.number} ("${sec.facts.title}") on branch ${repro.branch}: ${fixed.applied.join('; ')}. Walk the reproduction again; it must pass now: ${repro.test ?? repro.evidence}`
-    : `Pull request #${it.number} ("${sec.facts.title}") by ${sec.facts.author}, checked out as branch pr-${it.number} with origin/dev merged in. ${verdict.summary} The problem it fixes: ${repro.evidence}. Walk: ${repro.test ?? 'the flows it changes'}.`
+    ? `Fix for issue #${it.number} ("${sec.facts.title}") on branch ${repro.branch}: ${fixesText(fixed)}. Walk the reproduction again; it must pass now: ${repro.test ?? repro.evidence}`
+    : `Pull request #${it.number} ("${sec.facts.title}") by ${sec.facts.author}, checked out as branch pr-${it.number} with origin/dev merged in. ${verdict.summary} The problem it fixes: ${repro.evidence}. ${fixed ? `Our fixes on its branch: ${fixesText(fixed)}. ` : ''}${concerns ? `Its security check found these; check each one is gone, and treat one that remains as a confirmed finding: ${JSON.stringify(sec.findings)}. ` : ''}Walk: ${repro.test ?? 'the flows it changes'}.`
   const report = await workflow('after-change', { change: `${change} ${UNTRUSTED}`, base: 'origin/dev', dir: repro.worktree, e2e })
   const gap = afterChangeGap(report, repro)
   if (gap) return { outcome: 'unfinished', ...seen, fix: fixed, afterChange: report, why: gap }
@@ -349,7 +366,7 @@ const reviewItem = async (it, sec) => {
   // head_moved, timed_out and failed keep the worktree for the maintainer; head_moved means new commits nobody security-checked.
   if (outcome === 'unfinished') return { outcome, ...done, why: shipped?.detail ?? 'shipping did not finish' }
   // cannot_push keeps the worktree: its fixes are what the review asks the author to apply.
-  const wrap = await wrapUp(it, sec, { route: outcome, ship: shipped, judge: verdict, ourFixes: report.fix?.applied ?? [] }, status === 'not_ready' ? repro : null)
+  const wrap = await wrapUp(it, sec, { route: outcome, ship: shipped, judge: verdict, ourFixes: [...(fixed?.applied ?? []), ...(report.fix?.applied ?? [])] }, status === 'not_ready' ? repro : null)
   return { outcome, ...done, drafts: wrap?.drafts ?? [] }
 }
 

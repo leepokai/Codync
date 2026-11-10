@@ -118,6 +118,7 @@ pub enum Reported {
     KofiInviteAnswered {
         opened: bool,
     },
+    WhatsNewShown,
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -435,6 +436,7 @@ mod tests {
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
             (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
             (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,

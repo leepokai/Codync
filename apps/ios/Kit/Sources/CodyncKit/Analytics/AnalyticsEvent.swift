@@ -43,6 +43,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case screenViewed(Screen)
     case reviewRequested(prompts: Int)
     case reviewLinkOpened
+    /// The What's new window is on screen after an update (docs/features/whats-new.md).
+    case whatsNewShown
     /// A dev server opened, or its address copied; the host reports what it does itself.
     case devServerAction(DevServerUse)
 
@@ -186,6 +188,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .screenViewed: "screen_viewed"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
+        case .whatsNewShown: "whats_new_shown"
         case .devServerAction: "dev_server_action"
         }
     }
@@ -202,7 +205,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
-             .addToAccountCompleted: return [:]
+             .addToAccountCompleted, .whatsNewShown: return [:]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .cloudKeySaved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .cloudComputerCreated(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]

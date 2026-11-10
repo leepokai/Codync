@@ -24,6 +24,7 @@ mod slash;
 mod steps;
 mod ui;
 mod usage_chooser;
+mod whats_new;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
@@ -39,6 +40,7 @@ pub use ui::{
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
     TraceMode, Width,
 };
+pub use whats_new::WhatsNew;
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};

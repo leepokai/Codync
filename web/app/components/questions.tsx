@@ -63,15 +63,15 @@ const faqJsonLd = {
 
 export default function Questions() {
   return (
-    <section id="faq" className="scroll-mt-20 px-4 py-20 sm:px-6 md:py-28">
+    <section id="faq" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd).replace(/</g, "\\u003c") }}
       />
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 md:grid-cols-[1fr_1.4fr] md:gap-20">
         <Reveal>
-          <h2 className="text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">Questions</h2>
-          <p className="mt-4 max-w-[22rem] text-lg leading-relaxed text-neutral-400">
+          <h2 className="text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">Questions</h2>
+          <p className="mt-5 max-w-[22rem] text-lg leading-relaxed text-neutral-400">
             Short answers about price, setup, agents and your data.
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-4 font-medium text-neutral-200">

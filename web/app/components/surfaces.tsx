@@ -2,7 +2,8 @@ import Phone from "./phone";
 import Eyebrow from "./eyebrow";
 import Reveal from "./reveal";
 
-const surfaces = [
+// The iPhone screens outside the app; the home page shows them too.
+export const surfaces = [
   {
     src: "/screens/widget.webp",
     alt: "The Widget gallery: a medium Home Screen widget with Claude session and weekly usage bars",

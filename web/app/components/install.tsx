@@ -2,22 +2,37 @@ import Image from "next/image";
 import { DeviceMobile, LinuxLogo, WindowsLogo } from "@phosphor-icons/react/ssr";
 import { AppleLogo } from "./apple-logo";
 import CopyCommand from "./copy-command";
-import Eyebrow from "./eyebrow";
 import Halftone from "./halftone";
 import Reveal from "./reveal";
-import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import { ANDROID_TEST, APP_STORE, DMG, INSTALL_SH, LINUX, LINUX_ARM, PRODUCT_HUNT, WINDOWS } from "../links";
 
 export default function Install() {
   return (
-    <section id="install" className="relative overflow-hidden px-4 py-20 sm:px-6 md:py-28">
+    <section id="install" className="relative overflow-hidden px-4 py-24 sm:px-6 md:py-32">
       <Halftone className="w-[36rem] max-w-[80vw] text-neutral-50 opacity-[0.12]" />
       <div className="relative mx-auto max-w-6xl">
         <Reveal>
-          <Eyebrow>Install</Eyebrow>
-          <h2 className="text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">Install once.</h2>
-          <p className="mt-4 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
+          <h2 className="text-4xl font-semibold tracking-tighter text-neutral-50 md:text-5xl">Install once.</h2>
+          <p className="mt-5 max-w-[36rem] text-lg leading-relaxed text-neutral-400">
             Put Codync on the computer your agents run on, then pair your phone from it.
           </p>
+          <a
+            href={PRODUCT_HUNT}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-8 inline-flex items-center gap-3 transition hover:opacity-80"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- live badge served by Product Hunt */}
+            <img
+              src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1267264&theme=dark"
+              alt="Codync on Product Hunt"
+              width={250}
+              height={54}
+              loading="lazy"
+              className="h-10 w-auto"
+            />
+            <span className="text-sm font-medium text-neutral-300">#16 Product of the Day</span>
+          </a>
         </Reveal>
 
         <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

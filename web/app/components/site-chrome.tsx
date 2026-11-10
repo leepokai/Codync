@@ -15,7 +15,7 @@ const nav: [href: string, label: string][] = [
 // The header and footer every page shares.
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-30 bg-black/80 backdrop-blur-md">
+    <header className="sticky top-0 z-30 bg-neutral-950/80 backdrop-blur-md">
       <nav className="mx-auto grid h-16 max-w-6xl grid-cols-[1fr_auto] items-center px-4 sm:px-6 lg:grid-cols-[1fr_auto_1fr]">
         <Link href="/" className="flex items-center gap-2.5 font-semibold text-neutral-50">
           <Image src="/icon.png" alt="" width={28} height={28} className="rounded-[7px]" />

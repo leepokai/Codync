@@ -18,12 +18,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Codync: Claude Code, Codex and any AI agent on your phone, free",
+    default: "Codync: bring your own sandbox for Claude Code, Codex and any agent",
     template: "%s | Codync",
   },
   description: DESCRIPTION,
   applicationName: "Codync",
   keywords: [
+    "bring your own sandbox",
     "bring your own subscription",
     "agent-agnostic",
     "Claude Code mobile",
@@ -75,7 +76,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col bg-black text-neutral-200">
+      <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-200">
         <JsonLd />
         <Analytics />
         {children}

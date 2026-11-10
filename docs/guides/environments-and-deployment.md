@@ -94,6 +94,11 @@ The repository is public, so its whole history counts as published. Last scan: 2
 | `0004_android_devices.sql` | 2026-11-01 | 2026-11-01 | dev `00003428-00000000-00005115-cc5e0e1311eab7918b2c9470a0e71611`, main `00000509-00063149-00005115-8caa0ba65c5566a0616c65bafa82e27f` |
 | `0005_pairing_codes.sql` | 2026-11-01 | 2026-11-02 | dev not recorded, main `00000519-0005d251-00005117-8acfe05ed62b5a5d6a6a8e47e17c98b9` (also before `0006`) |
 | `0006_signed_out_devices.sql` | 2026-11-02 | 2026-11-02 | dev not recorded, main as `0005` |
+| `0007_cloud_machines.sql` | 2026-11-09 | 2026-11-09 | dev not recorded, main `0000055e-0001fe5a-0000511e-b86080df83e6b9cbcbf226d32764ed40` (also before `0008` and `0009`) |
+| `0008_app_versions.sql` | 2026-11-09 | 2026-11-09 | as `0007` |
+| `0009_cloud_credentials.sql` | 2026-11-09 | 2026-11-09 | as `0007` |
+
+`0007`–`0009` add Codync Cloud: the `cloud_machines`, `cloud_credentials` and `host_releases` tables, and `devices.app_version`, `min_host` and `app_seen_at`; all additive (`0009` rebuilds only the new `cloud_machines`). On main, right after the 2.43.1 merge, the counts were unchanged (3803 devices, 4570 computers, 828 grants, 1130 access requests) with a clean `foreign_key_check`. The main Worker got its own `CLOUD_SECRET_KEYS` (copy in `.env.production`) before `deploy:main`; every new route then answered 401 without credentials.
 
 `0005` adds the `pairing_codes` table (short codes like `QRTX-4821`) and `0006` adds `devices.signed_out_at`; both are additive. On main, right after the 2.36.0 merge, the counts were unchanged (2381 devices, 3233 computers, 534 grants, 739 access requests) with a clean `foreign_key_check`. The main Worker got its `DEVICE_CERT_KEY` secret (from `.env.production`, the public half matching `host/src/environment.rs`) before `deploy:main`; every new route then answered 401 without credentials.
 

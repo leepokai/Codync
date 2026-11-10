@@ -100,7 +100,7 @@ fun AppStore.loadHistory() {
             if (state.value.selectedBot == id) windows.merge(id, residency().window + Residency.PAGE) { old, _ -> old + Residency.PAGE }
             refresh()
             // The window grew and the same rows came back: this chat's memory budget is spent.
-            if (floors[id] == before) mutableState.update { it.copy(windowFull = it.windowFull + id) }
+            if (floors[id] == before && state.value.selectedBot == id) mutableState.update { it.copy(windowFull = it.windowFull + id) }
             return@action
         }
         if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
@@ -119,7 +119,7 @@ fun AppStore.loadHistory() {
             if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
             // Grow the window by the chat rows this page added; rows that arrived live meanwhile were already inside it.
             val added = entries.count { it.isChat }
-            if (added > 0) windows[id] = residency().window + added
+            if (added > 0) windows.merge(id, residency().limit(id) + added) { old, wanted -> maxOf(old, wanted) }
         }
         refresh()
     }

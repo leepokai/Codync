@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { showsAsAudio, showsAsImage, type Entry, type SharedFile } from '@shared/models'
 import { useStore } from '../../store/context'
 import { Icon } from '../../components/Icon'
-import { AnchoredMenu, useContextMenu } from '../../components/Menu'
+import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
 import { IconButtonBase } from '../../components/Overlay'
 import { Spinner } from '../../components/Controls'
 import { HStack, VStack } from '../../components/Stack'
@@ -14,20 +14,26 @@ import { useSharedAudio } from './use-shared-audio'
 import { useTr } from '../../lib/use-language'
 import './attachments.css'
 
-export function FileDownloadCard({ entry, file }: { entry: Entry; file: SharedFile }) {
-  return showsAsAudio(file) ? <AudioFileCard entry={entry} file={file} /> : <FileCard entry={entry} file={file} />
+/** The message a card sits in: its menu's items and reactions, which the card's own menu continues with. */
+export interface MessageMenu {
+  items: () => MenuItem[]
+  reactions?: ReactionPick
+}
+
+export function FileDownloadCard({ entry, file, message }: { entry: Entry; file: SharedFile; message: MessageMenu }) {
+  return showsAsAudio(file) ? <AudioFileCard entry={entry} file={file} message={message} /> : <FileCard entry={entry} file={file} message={message} />
 }
 
 /** A voice note's card: its play state (and a spinner while it loads) in place of the file icon. */
-function AudioFileCard({ entry, file }: { entry: Entry; file: SharedFile }) {
+function AudioFileCard({ entry, file, message }: { entry: Entry; file: SharedFile; message: MessageMenu }) {
   const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
-  return <FileCard entry={entry} file={file} audio={snapshot} toggle={toggle} seek={seek} icon={<AudioIcon snapshot={snapshot} toggle={toggle} />} />
+  return <FileCard entry={entry} file={file} message={message} audio={snapshot} toggle={toggle} seek={seek} icon={<AudioIcon snapshot={snapshot} toggle={toggle} />} />
 }
 
 /** A message's voice note, at the top of its bubble: the play button, the progress bar and the clock on one row. */
-export function VoiceNotePlayer({ entry, file }: { entry: Entry; file: SharedFile }) {
+export function VoiceNotePlayer({ entry, file, message }: { entry: Entry; file: SharedFile; message: MessageMenu }) {
   const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
-  const stop = useFileStop(entry, file, snapshot, toggle, seek)
+  const stop = useFileStop(entry, file, message, snapshot, toggle, seek)
   return <>
     <div className="voice-note" {...stop.props} aria-label={`Voice note, ${stop.detail}`}>
       <HStack gap={10} aria-hidden>
@@ -43,12 +49,13 @@ export function VoiceNotePlayer({ entry, file }: { entry: Entry; file: SharedFil
 /**
  * One screen-reader and keyboard stop, as on the phones: the card reads its name and caption, a click, Enter or
  * Space does its first action, the arrow keys move a voice note's playhead, and its menu (right-click, Shift-F10,
- * VoiceOver's Show menu) offers all of them. The buttons and bar inside are for the pointer only.
+ * VoiceOver's Show menu) offers all of them, then the message's own (Reply, Copy, reactions).
+ * The buttons and bar inside are for the pointer only.
  */
-function FileCard({ entry, file, audio, toggle, seek, icon }: {
-  entry: Entry; file: SharedFile; audio?: AudioSnapshot; toggle?: () => void; seek?: (seconds: number) => void; icon?: React.ReactNode
+function FileCard({ entry, file, message, audio, toggle, seek, icon }: {
+  entry: Entry; file: SharedFile; message: MessageMenu; audio?: AudioSnapshot; toggle?: () => void; seek?: (seconds: number) => void; icon?: React.ReactNode
 }) {
-  const stop = useFileStop(entry, file, audio, toggle, seek)
+  const stop = useFileStop(entry, file, message, audio, toggle, seek)
   return <>
     <div className="file-card" {...stop.props} aria-label={`${file.name}, ${stop.detail}`}>
       <VStack gap={12} aria-hidden>
@@ -71,7 +78,7 @@ function FileCard({ entry, file, audio, toggle, seek, icon }: {
 }
 
 /** A shared file's keyboard and screen-reader stop: its caption, its actions with their menu, and the picture viewer. */
-function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, toggle?: () => void, seek?: (seconds: number) => void) {
+function useFileStop(entry: Entry, file: SharedFile, message: MessageMenu, audio?: AudioSnapshot, toggle?: () => void, seek?: (seconds: number) => void) {
   const store = useStore()
   const tr = useTr()
   const state = store.fileDownloads.states.get(file.id)
@@ -110,7 +117,8 @@ function useFileStop(entry: Entry, file: SharedFile, audio?: AudioSnapshot, togg
       onContextMenu: menu.onContextMenu,
     },
     overlays: <>
-      <AnchoredMenu open={menu.open} onClose={menu.close} point={menu.point} items={actions} />
+      <AnchoredMenu open={menu.open} onClose={menu.close} point={menu.point} reactions={message.reactions}
+        items={() => [...actions(), ...message.items().map((item, i) => i === 0 ? { ...item, divider: true } : item)]} />
       <AttachmentViewer source={viewing ? image : null} close={() => setViewing(false)} />
     </>,
   }

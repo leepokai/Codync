@@ -1,4 +1,4 @@
-import { FileDownloadCard, VoiceNotePlayer } from './FileDownloadCard'
+import { FileDownloadCard, VoiceNotePlayer, type MessageMenu } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
 import { groupBotReactions, isGroup, isReplyable, voiceNoteOf, type Bot, type Entry, type ReplyQuote } from '@shared/models'
@@ -177,33 +177,36 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
   const [hovering, setHovering] = useState(false)
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
   const voiceNote = voiceNoteOf(entry.data)
+  const reactions = reactionPick(store, entry)
+  const items = (download?: MenuItem): MenuItem[] => [
+    { title: 'Copy', icon: 'square.on.square', action: copy },
+    ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
+    ...(download ? [download] : []),
+    { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
+  ]
+  const message: MessageMenu = { items, reactions }
   return (
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
         <Bubble
           className={!voiceNote && (entry.data.files?.length || entry.data.artifact) ? 'file-message' : 'bubble agent'}
-          reactions={reactionPick(store, entry)}
-          items={() => [
-            { title: 'Copy', icon: 'square.on.square', action: copy },
-            ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-            ...(voiceNote ? [downloadItem(store.fileDownloads.states.get(voiceNote.id), () => store.fileDownloads.toggle(store.client, entry.id, voiceNote))] : []),
-            { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
-          ]}
+          reactions={reactions}
+          items={() => items(voiceNote ? downloadItem(store.fileDownloads.states.get(voiceNote.id), () => store.fileDownloads.toggle(store.client, entry.id, voiceNote)) : undefined)}
         >
           {entry.data.artifact ? (
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : voiceNote ? (
             <>
-              <VoiceNotePlayer entry={entry} file={voiceNote} />
+              <VoiceNotePlayer entry={entry} file={voiceNote} message={message} />
               <MarkdownText text={entry.data.text ?? ''} />
             </>
           ) : entry.data.files?.length ? (
-            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} />)}</div>
+            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} message={message} />)}</div>
           ) : (
             <MarkdownText text={entry.data.text ?? ''} />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} trace={openTrace} copy={copy} />
+        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={copy} />
       </div>
     </div>
   )

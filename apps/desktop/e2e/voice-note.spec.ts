@@ -27,6 +27,9 @@ test('a failed voice note offers retry in the selected language', async () => {
     await expect(player).toContainText('Lecture impossible. Cliquez pour réessayer.')
     await setPref(page, 'appLanguage', 'en')
     await expect(player).toContainText("Couldn't play. Click to retry.")
+    await player.click({ button: 'right' })
+    await expect(page.getByRole('menuitem')).toHaveText(['Play', 'Download', 'Copy', 'Reply', 'Show what it did'])
+    await page.keyboard.press('Escape')
   } finally {
     await setPref(page, 'appLanguage', 'en')
     if (botId) await api(page, 'deleteBot', { botId })

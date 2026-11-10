@@ -13,7 +13,7 @@ export default function Demo() {
         <Reveal>
           <MacWindow />
           <p className="mt-5 text-center text-sm text-neutral-500">
-            The real Codync desktop app, running in your browser. Click a bot, open a room, send a message.
+            The real Codync desktop app, running in your browser, with bots on a MacBook Pro and a Mac mini. Click a bot, open a room, send a message.
           </p>
         </Reveal>
         <Reveal className="mt-20 grid grid-cols-1 items-center gap-8 md:mt-28 md:grid-cols-[1fr_1.6fr] md:gap-16">

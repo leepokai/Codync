@@ -24,6 +24,8 @@ pkill -x "Codync Dev"
 
 `pkill` can return nonzero when no process exists.
 
+The website's live demo (`src/renderer/demo/`, served at `/demo/desktop/`) is rebuilt into `web/public/demo/` with `npm run build:demo` (macOS only: it exports the SF Symbols first); commit the rebuilt bundle with the change.
+
 ### Replace an installed macOS build completely
 
 For a requested **build and install**, replace the whole app and its running

@@ -5,11 +5,13 @@ import { rivals } from "../compare/rivals";
 
 // One card per comparison page; the halftone corner turns with each card so the row has rhythm.
 const corners = ["bottom-right", "top-left", "bottom-left", "top-right"] as const;
+// All the cards on one row on large screens.
+const columns: Record<number, string> = { 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5" };
 
 export default function CompareCards({ except }: { except?: string }) {
   const shown = rivals.filter((r) => r.slug !== except);
   return (
-    <ul className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${shown.length % 3 === 0 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
+    <ul className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${columns[shown.length] ?? "lg:grid-cols-4"}`}>
       {shown.map((r, i) => (
         <li key={r.slug}>
           <Link

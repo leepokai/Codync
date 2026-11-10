@@ -1,0 +1,15 @@
+# What held-message.yaml left waiting on the phone reaches the computer once, and what it took back never does. Start the
+# sandbox again, with the app still open on that chat, and then:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags held-message-delivered \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" -e BOT_ID=<the bot's id> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - held-message-delivered
+---
+- extendedWaitUntil:
+    notVisible: "Waiting for the computer to come online"
+    timeout: 60000
+- assertVisible: "held ${maestro.platform}"
+- assertNotVisible: "take back ${maestro.platform}"
+- takeScreenshot: held-delivered
+- runScript: held-message.js

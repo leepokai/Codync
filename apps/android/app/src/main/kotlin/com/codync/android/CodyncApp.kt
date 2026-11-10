@@ -45,8 +45,10 @@ private data class Editing<T>(val computerId: String, val draft: T)
 /**
  * The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet
  * on top. Each computer's screens get that computer's store ([computers] holds their states).
+ *
+ * @param launching the launch splash still covers it.
  */
-@Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore) {
+@Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore, launching: Boolean = false) {
     var welcomed by rememberSaveable { mutableStateOf(false) }
     // In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
     var pairingNew by rememberSaveable { mutableStateOf(false) }
@@ -83,22 +85,22 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
     }
     val signedIn = app.account.userId != null
-    // Every build with accounts requires sign-in (iOS `mustSignIn`); only builds without them pair signed out.
-    val required = app.account.configured
+    // Signed out, a build with accounts offers signing in or going on without one (iOS `mustSignIn`).
+    val required = app.account.configured && !app.withoutAccount
     val onboarding = !app.setupComplete && app.computers.isEmpty()
     // What the choice page offers: an older copy of a computer doesn't count as one more.
     val askable = app.cloudComputers.filterNot(app::isOlderCopy)
     val root = when {
         app.loading || app.account.restoring -> Root.Loading
         required && !signedIn -> Root.Welcome
-        onboarding && !welcomed && !signedIn -> Root.Welcome
+        onboarding && !welcomed && !signedIn && !app.withoutAccount -> Root.Welcome
         // Whether the account has computers decides the first page: none flashes by before that's known.
         onboarding && signedIn && !app.cloudLoaded -> Root.AwaitingAccount
         onboarding && !pairingNew && askable.isNotEmpty() -> Root.Choose
         onboarding -> Root.Pairing
         else -> Root.Tabs
     }
-    BackHandler(root == Root.Pairing && !signedIn) { welcomed = false }
+    BackHandler(root == Root.Pairing && !signedIn) { welcomed = false; accounts.backToWelcome() }
     BackHandler(root == Root.Pairing && askable.isNotEmpty()) { pairingNew = false }
     val states = app.computers.mapNotNull { computers[it.id] }
     val edit = { computerId: String, bot: Bot ->
@@ -118,8 +120,10 @@ private data class Editing<T>(val computerId: String, val draft: T)
                 when (shown) {
                     Root.Loading -> Box(Modifier.fillMaxSize())
                     Root.AwaitingAccount -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner(28.dp) }
-                    // Computers paired before sign-in was required wait in the signed-out context; signing in moves them.
-                    Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) { welcomed = true }
+                    // Computers paired signed out wait in the signed-out context; signing in moves them.
+                    Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) {
+                        if (app.account.configured) accounts.continueWithoutAccount() else welcomed = true
+                    }
                     Root.Choose -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         ChooseComputerView(app, askable, { access = it }, { pairingNew = true }, accounts::skipSetup) {
                             AccountSwitcherButton(app) { showAccount = true }
@@ -130,7 +134,7 @@ private data class Editing<T>(val computerId: String, val draft: T)
                             when {
                                 askable.isNotEmpty() -> BackButton { pairingNew = false }
                                 signedIn -> AccountSwitcherButton(app) { showAccount = true }
-                                else -> BackButton { welcomed = false }
+                                else -> BackButton { welcomed = false; accounts.backToWelcome() }
                             }
                         }
                     }
@@ -193,13 +197,21 @@ private data class Editing<T>(val computerId: String, val draft: T)
                 key(app.contextId, app.generation, target.computerId, target.draft.id) { BotEditor(state, target.draft, store) }
             }
         }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        CodyncSheet(root == Root.Tabs && !launching && WhatsNew.isPresented, { WhatsNew.isPresented = false }) {
+            LaunchedEffect(Unit) { WhatsNew.shown() }
+            WhatsNewSheet(WhatsNew.due)
+        }
         // The remote screen opens over the app once its sheets have slid away: any computer's request (chat header, Computers, `codync://screen`).
         val screen = states.firstOrNull { it.screenRequest != null }
         LaunchedEffect(screen?.computer?.id, screen?.screenRequest) { if (screen != null) { closeAll(); showUsage = false } }
         ScreenLayer(screen, screen?.let { accounts.store(it.computer.id) })
-        // One place for every computer's errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets do).
-        val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null
-        val error = app.error ?: states.firstNotNullOfOrNull { it.error }
+        // One place for every computer's errors the screen showing them doesn't handle itself (pairing, access, the new and edit sheets
+        // and Codync Cloud's sheets do; its card, while on screen, its cloud computers' own).
+        val inline = root == Root.Pairing || showPairing || access != null || creating != null || editor != null || groupEditor != null ||
+            app.cloudSheets > 0
+        val onCard = app.cloudCardShown && app.cloudErrorAt(CloudErrorPlace.Card) != null
+        val error = app.error?.takeUnless { onCard } ?: states.firstNotNullOfOrNull { it.error }
         CodyncDialog("Something went wrong", error != null && !inline, accounts::clearError, error, cancel = "OK") { emptyList() }
         // A connector sign-in with a code (GitHub), from wherever it started: the code, before its page opens.
         val coding = states.firstOrNull { it.signInCode != null }
@@ -238,8 +250,8 @@ private fun computerChoice(state: AppState): String =
             states.map { other -> MenuItem(other.computer.name, selected = other.computer.id == state.computer.id, verbatim = true) { accounts.noteActive(other.computer.id) } }
         }, label = "Computer: ${state.computer.name}") { ComputerBadge(state.hello?.text("device"), 28.dp, state.computer.color) }
     }
-    if (state == null || store == null) UsageScreen(null, {}, {}, picker)
-    else key(state.computer.id) { UsageScreen(state, store::refreshUsage, store::reloadUsage, picker) }
+    if (state == null || store == null) UsageScreen(null, {}, {}, { _, _ -> }, {}, picker)
+    else key(state.computer.id) { UsageScreen(state, store::refreshUsage, store::reloadUsage, { id, shown -> store.setUsageShown(id, shown) }, store::setUsageOrder, picker) }
 }
 
 /** The remote screen as a full-window layer that fades in and out (iOS `.codyncOverlay`); it keeps its computer while fading. */

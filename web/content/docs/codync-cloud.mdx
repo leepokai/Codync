@@ -1,0 +1,31 @@
+Codync Cloud runs a Linux computer for your bots on your own account with a cloud provider: **Boat** (in the EU) or **InstaBox** (in the US). Use it when no computer of yours stays on, or to give bots a machine of their own. Codync charges nothing for it; the provider bills your account under its own plan. Codync Cloud is a **beta** feature.
+
+It needs a free Codync account (Apple, Google or GitHub). Every app reaches a cloud computer like any other computer in your account: the iPhone and Android apps, and the desktop app while you're using its window (so the cloud computer can still sleep when you aren't).
+
+## Start a cloud computer
+
+1. Make an API key at your provider. In Codync, **How to make a key** on the provider's key sheet shows the steps and links to the provider's page. No InstaBox account yet? Its free plan includes one machine (4 vCPU, 8 GiB): **Get a free sandbox** on its key sheet opens it.
+2. Open **Manage computers** on the iPhone or Android (tap the connection status at the top of the Bots tab), or Settings → **Computers** in the desktop app, and in the **Codync Cloud** section choose **+**.
+3. Name the cloud computer, pick the provider, and paste its key when asked. The key is checked with the provider before it's saved.
+4. Choose **Create**. It shows "Preparing your cloud computer…" for a minute or two, then appears under its name with its own Codync bot.
+
+Each account can have up to three cloud computers, on either provider. A provider's key stays while a cloud computer runs there. To replace it, open the provider's **⋯** in **New cloud computer** (or the cloud computer's **⋯** menu) and choose its API key; **Remove key** appears there once no cloud computer uses it.
+
+## Sleep and wake
+
+A cloud computer goes to sleep while its bots have nothing to do, so it doesn't run up your provider's bill. It shows "Sleeping · wakes when you message", and it wakes when you message one of its bots, when a routine is due or when a webhook arrives. Waking takes a few seconds, longer after a long sleep.
+
+## Your keys
+
+- **The provider key** is stored encrypted, only for your account, and never shown again: the apps show its last four characters.
+- **What Codync does with it:** Codync's service opens the key to create your cloud computers, put them to sleep, wake them and delete them. A Boat key is limited to its `codync` environment and can't run commands on or read a running machine. An InstaBox key reaches every machine in its workspace and can run commands on them (that's how Codync installs the host there), so make the key in a workspace you use only for Codync.
+- **On the cloud computer**, your bots and their agents run as a user without sudo. Anthropic, OpenAI and Gemini API keys and voice keys you save there go through a keeper: the bots can use them but not read them. Other agent keys, connector settings and your agents' own sign-ins (Claude Code's or Codex's login) stay readable to the agents, as on any computer.
+- **The provider runs the hardware**, so it can in principle read a running machine's memory and files. Boat documents no encryption at rest for its disks, and its snapshots may be stored outside the EU.
+
+## Rename, snapshots and delete
+
+From the cloud computer's **⋯** menu:
+
+- **Rename…** changes its name in every app.
+- **Delete snapshots** erases the earlier states the provider keeps of the computer (where it keeps any), while it's awake.
+- **Delete cloud computer** deletes the machine at the provider, with its bots and files.

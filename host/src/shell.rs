@@ -129,50 +129,6 @@ pub fn env_prefix<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> St
     if pairs.is_empty() || cfg!(windows) { pairs } else { format!("env {pairs}") }
 }
 
-/// The executable named by a simple command, for identifying its Windows process. Shell
-/// composition or search-path overrides need stronger evidence and remain unidentified.
-#[cfg(any(windows, test))]
-pub(crate) fn simple_program(command: &str) -> Option<&str> {
-    let (env, rest) = split_env(command);
-    if env.iter().any(|(key, _)| ["PATH", "PATHEXT", "COMSPEC"].iter().any(|name| key.eq_ignore_ascii_case(name)))
-        || rest.contains(['&', '|', '<', '>', '^', '%', '!', '\n', '\r'])
-    {
-        return None;
-    }
-    let program = if let Some(quoted) = rest.strip_prefix('"') {
-        let end = quoted.find('"')?;
-        if !quoted[end + 1..].starts_with(char::is_whitespace) && !quoted[end + 1..].is_empty() {
-            return None;
-        }
-        &quoted[..end]
-    } else {
-        rest.split_whitespace().next()?
-    };
-    (!program.is_empty()).then_some(program)
-}
-
-/// Parse the selected program without touching the filesystem on an agent-spawn caller.
-#[cfg(windows)]
-pub(crate) fn agent_program(command: &str, env: &[(String, String)]) -> Option<String> {
-    simple_program(command)
-        .filter(|_| {
-            !env.iter().any(|(key, _)| ["PATH", "PATHEXT", "COMSPEC"].iter().any(|name| key.eq_ignore_ascii_case(name)))
-        })
-        .map(str::to_owned)
-}
-
-/// Resolve only executable files, off the runtime worker. Batch shims remain conservative
-/// rather than authorizing an arbitrary startup child.
-#[cfg(windows)]
-pub(crate) fn resolve_agent_program(selected: Option<String>) -> Option<String> {
-    selected
-        .map(|selected| program(&selected))
-        .filter(|path| {
-            path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("com"))
-        })
-        .and_then(|path| path.file_name().map(|name| name.to_string_lossy().into_owned()))
-}
-
 /// Opens a link or file with this computer's default app for it (a web page: the browser). Whether it started.
 pub fn open(target: &std::ffi::OsStr) -> bool {
     let mut command = if cfg!(windows) {
@@ -242,22 +198,6 @@ mod tests {
         assert_eq!(env, [("NO_BROWSER".to_owned(), "true".to_owned())]);
         assert_eq!(rest, "\"C:\\a b\\gemini.cmd\"");
         assert_eq!(split_env("claude --x=1").1, "claude --x=1");
-    }
-
-    #[test]
-    fn identifies_only_simple_executable_commands() {
-        assert_eq!(simple_program("KEY=value python -u agent.py"), Some("python"));
-        assert_eq!(simple_program(r#""C:\Program Files\agent.exe" --acp"#), Some(r"C:\Program Files\agent.exe"));
-        for command in [
-            "python agent.py & node server.js",
-            "echo hi | python agent.py",
-            "%AGENT% --acp",
-            "PATH=other python",
-            "agent > log",
-            r#""agent.exe"suffix"#,
-        ] {
-            assert_eq!(simple_program(command), None, "{command}");
-        }
     }
 
     #[cfg(unix)]

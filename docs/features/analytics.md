@@ -31,8 +31,9 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   packages have no install step that could ask.
 - **Identity.** Every device gets a person profile. Signed in to a Codync account: the Clerk
   user id. Otherwise a random install id (the host id on a computer, a UUID on the iPhone).
-  The first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events join
-  the account.
+  A device's first signed-in event sends `$identify` with `$anon_distinct_id` so earlier events
+  join the account. Only once per device: PostHog refuses to merge an id into a second account
+  (`cannot_merge_already_identified`), so a later account on that device starts its own profile.
 - **Sessions.** Every event carries a `$session_id` (a UUIDv7) that changes after 30 minutes
   without events or 24 hours in all, as in PostHog's own SDKs, and on each launch of an app or
   start of the host (host `analytics/session.rs`, `AnalyticsSession` on the iPhone and Android),
@@ -43,7 +44,10 @@ UI: *About usage analytics…*) shows the same promise in the app, in one text p
   approximate location (`$geoip_country_name`, `$geoip_city_name`, …), then the project's
   *Discard client IP data* drops the IP before storage.
 - `env` is `main` or `dev`; filter dev out in PostHog. Debug host builds (`cargo test`, `cargo run`)
-  send nothing: every e2e test starts a fresh host that would count as a new user.
+  send nothing: every e2e test starts a fresh host that would count as a new user. Test machines that run
+  release builds (Dev and end-to-end cloud computers) start with `CODYNC_ANALYTICS_ENV=dev`: their events say
+  `env: dev`, so no chart counts them, and the mark is stored, so a release the machine updates to keeps it
+  (releases from before the mark, such as 2.24.0, don't know it).
 
 ## Adding a feature
 
@@ -85,7 +89,17 @@ can be traced from the events around it:
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
-- **codync.dev** counts page views and clicks on download and outbound links without cookies.
+- **The Codync cloud** (Worker, `cloud/src/analytics.ts`) reports only what no device can see: asking
+  the provider to wake a sleeping Codync Cloud computer and how long until its host was back. It
+  follows that computer's own switch: the host tells the cloud as soon as it turns
+  (`POST /v1/host/analytics`, `remote::managed::share_analytics`) and again with every sleep
+  request (`POST /v1/host/sleep` `analytics`, which covers a change the cloud couldn't hear); the
+  cloud keeps it on the machine (`cloud_machines.analytics`) and sends nothing until a host has said
+  yes. Events are linked to the computer's account, carry no location (`$geoip_disable`) and the
+  same `computer` key as its host's; `env` is `dev` on the dev cloud (`ANALYTICS_ENV`), and nothing
+  is sent where `POSTHOG_HOST` is unset (local runs).
+- **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
+  and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 
 Every event, its sender and its properties: [analytics events](../reference/analytics-events.md).
 
@@ -155,6 +169,7 @@ join an iPhone's `computer_paired` to the computer's events on `computer` in SQL
 | New user | First event of any kind in the period. A new computer also sends `host_started` with `first_run`. |
 | Onboarded | Desktop: `onboarding_completed`. Phones: `computer_paired` (or `onboarding_completed` with `via = skipped`, which is not onboarded). Funnels: [analytics events](../reference/analytics-events.md#funnels). |
 | Star rate | `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`. |
+| Ko-fi rate | `kofi_invite_answered` with `opened` ÷ `kofi_invite_shown`, per `app` (the terminal UI sends only `kofi_invite_shown`: its link opens in the terminal). |
 | Activated | Sent ≥1 message from a phone (`message_sent`, `client = remote`) within 7 days of first seen. In the first week of data, 4 of 5 such users came back after 24 h and none of the 6 computer-only ones did. |
 | Successful turn rate | `turn_finished` with `outcome = done` ÷ all `turn_finished` with `source = user`, per agent and per `$os`. |
 | Frustration rate | (`turn_stopped` + `session_reset`) ÷ `message_sent`, per `$os`. |

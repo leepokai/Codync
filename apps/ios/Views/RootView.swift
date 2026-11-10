@@ -8,6 +8,8 @@ struct RootView: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(AccountSession.self) private var account
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
+    @AppStorage("withoutAccount") private var withoutAccount = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
@@ -24,9 +26,12 @@ struct RootView: View {
     var body: some View {
         Group {
             if mustSignIn {
-                // Computers paired before sign-in was required wait in the signed-out context.
-                WelcomeView(signedOutComputers: accounts.computers.count) {}
-                    .transition(.opacity)
+                // Computers paired signed out wait in the signed-out context.
+                WelcomeView(signedOutComputers: accounts.computers.count) {
+                    Analytics.shared.capture(.continuedWithoutAccount)
+                    animateSetup { withoutAccount = true }
+                }
+                .transition(.opacity)
             } else if !onboardingCompleted && accounts.computers.isEmpty {
                 setup
             } else {
@@ -35,6 +40,9 @@ struct RootView: View {
         }
         .background(Palette.background)
         .reviewInvitation()
+        .onChange(of: account.isSignedIn) { _, signedIn in
+            if signedIn { withoutAccount = false }
+        }
         .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
             // Reaching a computer (paired, or approved through the account) or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
@@ -65,7 +73,7 @@ struct RootView: View {
     /// First run, until a computer is reached or setup is skipped.
     @ViewBuilder
     private var setup: some View {
-        if !welcomed && !account.isSignedIn {
+        if !welcomed && !account.isSignedIn && !withoutAccount {
             WelcomeView { animateSetup { welcomed = true } }
                 .transition(.move(edge: .leading).combined(with: .opacity))
         } else if account.isSignedIn && !accounts.cloudListLoaded {
@@ -86,7 +94,12 @@ struct RootView: View {
                 } else if account.isSignedIn {
                     AccountSwitcherButton()
                 } else {
-                    BackButton { animateSetup { welcomed = false } }
+                    BackButton {
+                        animateSetup {
+                            welcomed = false
+                            withoutAccount = false
+                        }
+                    }
                 }
             }
             .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -121,6 +134,12 @@ struct RootView: View {
         .onChange(of: accounts.selection) { _, ref in
             if ref != nil { app.tab = .bots }
         }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        .codyncSheet(isPresented: Binding(get: { app.whatsNew.isPresented && !app.launching },
+                                          set: { app.whatsNew.isPresented = $0 })) {
+            WhatsNewSheet(announcements: app.whatsNew.due)
+                .onAppear { app.whatsNew.shown() }
+        }
     }
 
     private var screen: AnalyticsEvent.Screen {
@@ -131,10 +150,10 @@ struct RootView: View {
         }
     }
 
-    /// Every build with accounts requires sign-in. While Clerk restores, the last signed-in account's context
-    /// stays on screen, so an offline launch still reaches its computers.
+    /// Signed out, a build with accounts offers signing in or going on without one. While Clerk restores, the last
+    /// signed-in account's context stays on screen, so an offline launch still reaches its computers.
     private var mustSignIn: Bool {
-        account.isConfigured && !account.isSignedIn && (account.isReady || accounts.accountId == nil)
+        account.isConfigured && !account.isSignedIn && !withoutAccount && (account.isReady || accounts.accountId == nil)
     }
 
     /// What the choice page offers: an older copy of a computer doesn't count as one more.
@@ -298,6 +317,11 @@ private struct UsageSheet: View {
             }
         }
         .background(Palette.background)
+        // What failed here (a switch, a drag) shows over this sheet, not under it at the root,
+        // where the same error clears with this one.
+        .codyncDialog("Something went wrong", isPresented: Binding(
+            get: { store?.lastError != nil }, set: { if !$0 { store?.lastError = nil } }
+        ), message: store?.lastError, cancel: "OK", inPlace: true) { [] }
         .tracked(.screenViewed(.usage))
     }
 }
@@ -397,13 +421,19 @@ private struct AccessBanners: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(accounts.pendingAccess.values).sorted { $0.requestId < $1.requestId }) { ticket in
-                let name = accounts.cloudComputers.first { $0.computerId == ticket.computerId }?.name ?? "Your computer"
+                let computer = accounts.cloudComputers.first { $0.computerId == ticket.computerId }
+                let name = computer?.name ?? "Your computer"
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
-                            .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        if computer?.cloud != nil {
+                            // A cloud computer approves this iPhone by itself: no code to check.
+                            Text(L10n.tr("Connecting to \(name)…")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        } else {
+                            Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                            Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                                .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     IconButton("Cancel request", systemImage: "xmark") {

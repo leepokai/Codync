@@ -48,10 +48,15 @@ fn restore(enhanced: bool) {
     let _ = terminal::disable_raw_mode();
 }
 
-pub async fn run(url: String, token: Option<String>) -> Result<()> {
+/// `url`: the host to attach to, when not this computer's on `port`.
+pub async fn run(url: Option<String>, port: u16, token: Option<String>) -> Result<()> {
+    let on_this_computer = url.is_none();
+    let url = url.unwrap_or_else(|| format!("http://127.0.0.1:{port}"));
     let client = net::Client::new(&url, token.as_deref());
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = app::App::new(client.clone(), tx.clone(), url);
+    app.on_this_computer = on_this_computer;
+    app.open_whats_new();
     let mut drafts = match drafts::Drafts::load(&app.url).await {
         Ok(saved) => {
             app.drafts = saved.restore();
@@ -107,6 +112,8 @@ pub async fn run(url: String, token: Option<String>) -> Result<()> {
         if dirty && !in_shell {
             app.tick();
             app.report_screen();
+            app.kofi_seen();
+            app.whats_new_seen();
             term.draw(|f| view::draw(f, &mut app))?;
             dirty = false;
         }

@@ -24,6 +24,15 @@ impl Routines {
             || s.runs.iter().any(|r| r.status.active())
     }
 
+    /// A cloud computer may sleep only when no run is queued or going, and it wakes for the next one.
+    pub fn sleep_window(&self) -> (bool, Option<i64>) {
+        let s = self.state.locked();
+        let active = s.runs.iter().any(|r| r.status.active());
+        let next =
+            s.routines.iter().filter(|r| !r.deleted && r.enabled).flat_map(|r| r.next_runs.iter().flatten()).min();
+        (active, next.copied())
+    }
+
     pub async fn stop(&self) {
         self.stopping.store(true, Ordering::Release);
         let task = self.scheduler.locked().take();

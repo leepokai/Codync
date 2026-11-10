@@ -65,6 +65,11 @@ impl App {
             Some("screen") => self.screen = v["screen"].clone(),
             Some("network") => self.network_changed(&v["network"]),
             Some("cloud") => self.cloud = v["cloud"].clone(),
+            Some("name") => {
+                if let Some(name) = v["name"].as_str() {
+                    name.clone_into(&mut self.host);
+                }
+            }
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
@@ -78,6 +83,7 @@ impl App {
                     if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                     }
+                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -167,6 +173,10 @@ impl App {
             self.network_reply(n, r);
             return;
         }
+        if let After::UsageOrder(to) = after {
+            self.usage_order_answered(to, r);
+            return;
+        }
         if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
             self.pair_reply(&after, r);
             return;
@@ -214,6 +224,7 @@ impl App {
             | After::Answered(_)
             | After::Sheet(_)
             | After::Network(_)
+            | After::UsageOrder(_)
             | After::Sent(_)
             | After::Connection(_, _)
             | After::Pairing
@@ -360,6 +371,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
+                    self.kofi_sent(&bot, &e);
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");

@@ -21,7 +21,12 @@ def main():
     parser.add_argument("archive", type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--platform", required=True, choices=["macos-arm64", "macos-x86_64", "linux-arm64", "linux-x86_64"])
+    # The channel the archive is served from (the dev channel: docs/guides/development.md#dev-release-channel);
+    # hosts take only manifests that point into their own channel.
+    parser.add_argument("--base", default="https://github.com/leepokai/Codync/releases")
     args = parser.parse_args()
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._-]+)*", args.base):
+        parser.error("base must be an https URL without a trailing slash")
     version = args.version.removeprefix("v")
     if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
         parser.error("version must be a stable major.minor.patch release")
@@ -37,7 +42,7 @@ def main():
     manifest = {
         "version": version,
         "platform": args.platform,
-        "url": f"https://github.com/leepokai/Codync/releases/download/v{version}/{name}",
+        "url": f"{args.base}/download/v{version}/{name}",
         "sha256": hashlib.sha256(archive).hexdigest(),
         "size": len(archive),
     }

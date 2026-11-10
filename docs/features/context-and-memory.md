@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, a failed resume, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -160,13 +160,23 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   from `usage_update`, compactions, and when turns end. How long the provider keeps prompts cached is learned
   from turns that came after a pause (`cache.life.<bot>`); until then it is an hour for Claude on a subscription
   and five minutes otherwise. Each turn's cached read and write tokens are logged (`turn usage`).
-- **Compacting ahead of time**, in the bot's own chat only (never rooms, routines or bot requests):
+- **Compacting ahead of time**, when the user's threshold asks for it (Early's rules here), in the bot's own chat
+  only (never rooms, routines or bot requests):
   - at the end of a turn past three quarters of the window or 200k tokens, whichever is less;
   - while idle, with a one-hour cache and over 100k in use, five minutes before the cache expires.
 
   It runs as a hidden turn: dreaming first, then the opening rendered again (a Claude session reloads only when
   it changed), then `/compact <keep-list>` for Claude, or `/compact` for Codex, whose keep-list is its
   `CODEX_CONFIG` `compact_prompt`. Other harnesses compact on their own. The keep-list is also in the opening.
+  A compaction queued behind another turn runs only if it is still due when its turn comes.
+- **The user's threshold** (*Summarize long chats* in a Claude Code or Codex bot's settings, the bot's
+  `compaction`): Auto (`"off"`, the default: no compaction or rollover from the host, the harness compacts on its
+  own), Early (the rules above), Near the limit, or a size from 50k up to the window less 40k (the apps list 100k
+  steps and take any other size typed, rounded to 10k). A size or Near the limit also keeps idle compaction and
+  the cold rollover away until the context reaches it. The bot's JSON carries `compaction`
+  (`null` for other agents, or a custom command until it turns out to run Claude's or Codex's adapter) and
+  `compactionTokens` (`{min, max, step, presets}`, `null` until the agent has reported the window, kept in
+  `context.window.<bot>`). The rules and the table are in the [design](../design/bot-memory.md#compaction).
 - **Loop guard:** after three host compactions in a day, or one that left 60% of the trigger in use, or one
   fewer than five turns ago, the host rolls over instead of compacting again.
 - **Rollover:** also due when a conversation over 100k went cold (its cache expired) or after eight hours away
@@ -174,7 +184,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   the user's last four messages and the last reply (each cut at 2,000 characters, so a pasted document doesn't fill
   the new conversation), the open plan, and a bookmark for `search_history`. The user can
   edit it (`editHandoff`) or keep the conversation (`keepConversation`); otherwise their next message there starts
-  a new session that begins with it.
+  a new session that begins with it. A change of the threshold withdraws a card it no longer calls for (shown as
+  kept, not counted as the user turning it down).
 - **After every compaction** the host records a notice ("Earlier context was summarized to make room.", its
   `compaction` field carrying Claude's summary, which the next handoff starts from). The apps don't show it: the
   same conversation goes on.
@@ -210,9 +221,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   than system text.
 - The harness writes every summary. Codync chooses when the bot's own chat compacts and what it asks the summary
   to keep, and re-applies the instructions afterwards; it can't make a harness keep anything.
-- A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. A failed
-  resume preserves the saved session ID and returns an error. Retry if the failure is temporary; explicitly
-  start a fresh conversation when the old one is no longer available. Long-term memory remains.
+- A session a harness has deleted (for example, one cleaned up after a month) can't be resumed. The bot
+  starts fresh, but its memory remains.
 - Memory search is a substring scan, not semantic vectors. A voice call's transcript feeds dreaming from the call's
   line: what the user said counts as their own words (spoken, not typed), the voice's lines and what it relayed to
   the bot (`from: voice`) are context only ([voice call](voice-call.md#the-call-on-the-host)). Group rooms don't

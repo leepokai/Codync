@@ -105,6 +105,7 @@ pub fn install(port: u16) -> Result<()> {
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string><key>CODYNC_HOME</key><string>{data}</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>{exit}</integer>
   <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>{log}</string>
   <key>StandardErrorPath</key><string>{log}</string>
@@ -115,6 +116,7 @@ pub fn install(port: u16) -> Result<()> {
             path = xml_escape(&path),
             data = xml_escape(&data_dir().to_string_lossy()),
             log = xml_escape(&log.to_string_lossy()),
+            exit = super::HOST_EXIT.as_secs(),
         );
         let file = launchd_plist();
         create_parent(&file)?;

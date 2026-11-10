@@ -1,6 +1,7 @@
 import type { AppLanguage } from './l10n'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
+import type { KofiInvite } from './kofi-invite'
 
 /** A stored value, or the fallback when it's missing, unreadable or of another kind (a `null` where a string
  * belongs crashed the chat window). A `null` fallback takes any value. */
@@ -76,14 +77,19 @@ export const prefs = {
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
+  /** Chose to go on without signing in; signing in ends it. */
+  withoutAccount: pref('withoutAccount', false),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   /** Prompts this computer delivered, voice calls aside; they bring the second star ask. */
   promptsSent: pref('promptsSent', 0),
+  kofiInvite: pref<KofiInvite>('kofiInvite', { kind: 'never' }),
   appLanguage: pref<AppLanguage>('appLanguage', 'system'),
   /** The working pill unfolds the turn's thinking and steps; off keeps the chat to its messages. */
   thinkingDetails: pref('showThinkingDetails', false),
   extensionsMovedTipSeen: pref('extensionsMovedTipSeen', false),
+  /** The version this device last opened on, for What's new; `null` before it ever recorded one. */
+  whatsNewSeen: pref<string | null>('whatsNewSeen', null),
 }
 
 /** The Mac preference supplies one scale for conversation text and app chrome. */

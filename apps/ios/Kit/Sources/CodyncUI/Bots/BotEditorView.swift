@@ -108,6 +108,7 @@ struct BotSettingsForm: View {
                 fallbackBanner
                 modelPicker
                 fallbackList
+                compactionPicker
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
             if let error {
@@ -143,6 +144,14 @@ struct BotSettingsForm: View {
     /// Only from a host that has fallbacks (its bots say).
     @ViewBuilder private var fallbackList: some View {
         if draft.fallbacks != nil { FallbackList(draft: $draft, bot: bot) }
+    }
+
+    /// Only where the host summarizes this bot's chat (its bot says).
+    @ViewBuilder private var compactionPicker: some View {
+        if bot?.compaction != nil, draft.compaction != nil {
+            CompactionPicker(selection: Binding(get: { draft.compaction ?? .off }, set: { draft.compaction = $0 }),
+                             range: bot?.compactionTokens)
+        }
     }
 
     @ViewBuilder private var sections: some View {
@@ -189,8 +198,9 @@ struct BotSettingsForm: View {
                     Text(model.hostName).lineLimit(1)
                 }
                 if part == .all {
-                        modelPicker
+                    modelPicker
                     fallbackList
+                    compactionPicker
                 }
                 ValueRow("Workspace", detail: draft.cwd.isEmpty
                          ? "This bot has its own space for files. It can work in other folders when you ask."

@@ -10,8 +10,6 @@ import uuid
 MODELS = {"configOptions": [{"id": "model", "category": "model", "type": "select", "currentValue": "fixture",
                              "options": [{"value": "fixture", "name": "Fixture"}]}]}
 
-MODES = {"modes": {"currentModeId": "manual", "availableModes": [
-    {"id": "manual", "name": "Manual"}, {"id": "plan", "name": "Plan"}]}}
 holding = set()
 
 
@@ -33,23 +31,17 @@ for line in sys.stdin:
     elif method == "session/new":
         sid = str(uuid.uuid4())
         holding.add(sid)
-        modes = MODES if "--modes-only-resume" in sys.argv else {}
-        send({"id": rid, "result": {"sessionId": sid, **MODELS, **modes}})
+        send({"id": rid, "result": {"sessionId": sid, **MODELS}})
     elif method == "session/resume":
         if params["sessionId"] in holding:
             send({"id": rid, "error": {"code": -32602, "message": "session is already active"}})
         else:
             holding.add(params["sessionId"])
-            result = {} if "--empty-resume" in sys.argv else MODELS
-            if "--modes-only-resume" in sys.argv:
-                result = MODES
-            send({"id": rid, "result": result})
+            send({"id": rid, "result": MODELS})
     elif method == "session/set_config_option" and os.path.exists("model.refused"):
         send({"id": rid, "error": {"code": -32602, "message": "unknown model option"}})
     elif method == "session/set_config_option":
         send({"id": rid, "result": MODELS})
-    elif method == "session/set_mode":
-        send({"id": rid, "result": {}})
     elif method == "session/close":
         holding.discard(params["sessionId"])
         send({"id": rid, "result": {}})

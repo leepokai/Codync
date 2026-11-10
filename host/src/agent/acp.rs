@@ -177,15 +177,11 @@ pub struct Acp {
     pending: Pending,
     /// Owns the agent's whole process tree: dropping it kills what the agent started.
     child: Arc<tokio::sync::Mutex<Process>>,
-    /// The allocation's process leader, also its Unix session leader.
+    /// The process and process group leader.
+    #[cfg(unix)]
     pid: Option<u32>,
-    stopped: tokio::sync::watch::Sender<Option<std::result::Result<(), String>>>,
-    #[cfg(windows)]
-    startup_processes: std::sync::OnceLock<Vec<super::process::JobProcess>>,
-    #[cfg(windows)]
-    agent_program: Option<String>,
-    #[cfg(windows)]
-    startup_program: std::sync::OnceLock<Option<String>>,
+    /// A cloud computer's keeper grants this process started with: revoked once it is stopped, or gone.
+    grants: std::sync::Mutex<crate::keeper::client::Grants>,
 }
 
 impl Acp {
@@ -196,8 +192,6 @@ impl Acp {
         cwd: &str,
         env: &[(String, String)],
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
-        #[cfg(windows)]
-        let agent_program = crate::shell::agent_program(command, env);
         let mut process = crate::shell::exec(command).tokio();
         process
             .envs(env.iter().map(|(k, v)| (k, v)))
@@ -206,23 +200,13 @@ impl Acp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        // Own the Unix session, including MCP servers that create another process group.
-        #[cfg(unix)]
-        // SAFETY: setsid is async-signal-safe; the child has not exec'd or started threads.
-        unsafe {
-            process.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-        #[cfg(windows)]
-        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+        // So `kill` can stop everything it started.
+        super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
         let stdin = child.stdin.take().expect("stdin is piped");
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
+        #[cfg(unix)]
         let pid = child.id();
         let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
         Process::monitor(&child);
@@ -290,66 +274,33 @@ impl Acp {
             next_id: AtomicI64::new(1),
             pending,
             child,
+            #[cfg(unix)]
             pid,
-            stopped: tokio::sync::watch::channel(None).0,
-            #[cfg(windows)]
-            startup_processes: std::sync::OnceLock::new(),
-            #[cfg(windows)]
-            agent_program,
-            #[cfg(windows)]
-            startup_program: std::sync::OnceLock::new(),
+            grants: std::sync::Mutex::default(),
         });
         note_started(&acp);
         Ok((acp, rx))
     }
 
+    #[cfg(unix)]
     pub fn pid(&self) -> Option<u32> {
         self.pid
+    }
+
+    /// Keeps the grants in this process's environment for as long as it runs (`stop` or drop revokes them).
+    pub fn hold(&self, grants: crate::keeper::client::Grants) {
+        *self.grants.locked() = grants;
+    }
+
+    /// Whether it was started with keeper grants (which a restarted keeper no longer knows).
+    pub fn holds_grants(&self) -> bool {
+        !self.grants.locked().is_empty()
     }
 
     /// Everything still running in the agent's job.
     #[cfg(windows)]
     pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
-        let process = self.child.lock().await;
-        let members = process.job_members()?;
-        drop(process);
-        let listing = tokio::task::spawn_blocking(move || super::process_windows::named(&members));
-        listing.await?
-    }
-
-    /// Frozen before session creation, so later background work cannot become part of the agent.
-    #[cfg(windows)]
-    pub(crate) fn startup_processes(&self) -> &[super::process::JobProcess] {
-        self.startup_processes.get().map_or(&[], Vec::as_slice)
-    }
-
-    #[cfg(windows)]
-    pub(crate) fn agent_program(&self) -> Option<&str> {
-        self.startup_program.get().and_then(Option::as_deref)
-    }
-
-    #[cfg(windows)]
-    async fn record_startup(&self) {
-        let selected = self.agent_program.clone();
-        let lookup = tokio::task::spawn_blocking(move || crate::shell::resolve_agent_program(selected));
-        let processes = self.job_processes().await;
-        let resolved = match lookup.await {
-            Ok(program) => program,
-            Err(error) => {
-                tracing::warn!(%error, "couldn't resolve the agent's startup executable");
-                None
-            }
-        };
-        let _ = self.startup_program.set(resolved);
-        match processes {
-            Ok(processes) => {
-                let _ = self.startup_processes.set(processes);
-            }
-            Err(error) => {
-                tracing::warn!(%error, "couldn't identify the agent's startup processes");
-                let _ = self.startup_processes.set(Vec::new());
-            }
-        }
+        self.child.lock().await.processes().await
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -364,12 +315,7 @@ impl Acp {
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
         let answer = self.send(method, params).await?;
-        let response = answer.response().await?;
-        #[cfg(windows)]
-        if method == "initialize" && self.startup_processes.get().is_none() {
-            self.record_startup().await;
-        }
-        Ok(response)
+        answer.response().await
     }
 
     /// Writes a request and returns its pending answer: anything written after this
@@ -403,41 +349,21 @@ impl Acp {
         if !child.begin_stop() {
             return;
         }
-        self.stopped.send_replace(None);
-        let mut stdin = self.stdin.lock().await;
-        stdin.take();
-        drop(stdin);
+        let grants = std::mem::take(&mut *self.grants.locked());
+        drop(grants);
+        self.stdin.lock().await.take();
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();
         stopping.retain(|task| !task.is_finished());
-        let completed = self.stopped.clone();
-        stopping.push(tokio::spawn(async move {
-            let mut process = owned.lock().await;
-            let stopped = process.stop_within(EXIT_GRACE).await;
-            let result = stopped.map_err(|e| format!("{e:#}"));
-            if let Err(error) = &result {
-                process.retry_stop();
-                tracing::warn!(%error, "agent cleanup failed");
-            }
-            completed.send_replace(Some(result));
-        }));
-    }
-    /// Retires this allocation before a replacement can consume its resources.
-    pub async fn stop_and_wait(&self) -> Result<()> {
-        let mut completed = self.stopped.subscribe();
-        self.kill().await;
-        let observed = completed.wait_for(Option::is_some).await;
-        let result = observed.context("agent cleanup task exited")?;
-        result.clone().expect("wait_for observed completion").map_err(anyhow::Error::msg)
+        stopping.push(tokio::spawn(async move { owned.lock().await.stop_within(EXIT_GRACE).await }));
     }
 }
 
-/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;
-    #[cfg(unix)]
-    super::process_unix::stopped().await;
 }
 
 /// Stops every agent left and waits for them, before the host exits: `process::exit` drops no process, and Cursor's agent
@@ -445,8 +371,6 @@ pub async fn stopped() {
 pub async fn stop_all() {
     let started: Vec<_> = std::mem::take(&mut *STARTED.locked()).iter().filter_map(Weak::upgrade).collect();
     futures::future::join_all(started.iter().map(|acp| acp.kill())).await;
-    // A failed cleanup may need the last owner's Drop fallback before we join its worker.
-    drop(started);
     stopped().await;
 }
 

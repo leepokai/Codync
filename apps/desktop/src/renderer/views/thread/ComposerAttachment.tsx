@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { isImageName } from '@shared/models'
 import { Icon } from '../../components/Icon'
 import { Text } from '../../components/Text'
-import type { OutgoingFile } from '../../store/bot-store'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { attachmentSymbol } from './Attachments'
 import { useTr } from '../../lib/use-language'
 

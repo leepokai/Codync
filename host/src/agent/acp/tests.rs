@@ -32,30 +32,6 @@ async fn dropping_an_agent_releases_its_process_tree() {
     assert_descendant_pipes_close(rx).await;
 }
 
-#[cfg(unix)]
-#[test]
-fn fallback_cleanup_runs_even_when_the_runtime_blocking_pool_is_full() {
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap();
-    let (acp, rx) = runtime.block_on(descendant_agent());
-    let (entered, started) = std::sync::mpsc::channel();
-    let (release, gate) = std::sync::mpsc::channel::<()>();
-    let blocker = runtime.spawn_blocking(move || {
-        entered.send(()).unwrap();
-        let _ = gate.recv();
-    });
-    started.recv_timeout(Duration::from_secs(5)).unwrap();
-    runtime.block_on(async {
-        drop(acp);
-        assert_descendant_pipes_close(rx).await;
-    });
-    drop(release);
-    runtime.block_on(async {
-        let finished = blocker.await;
-        finished.unwrap();
-        stopped().await;
-    });
-}
-
 #[tokio::test]
 async fn actor_unwinding_releases_its_process_tree() {
     let (acp, rx) = descendant_agent().await;
@@ -66,6 +42,32 @@ async fn actor_unwinding_releases_its_process_tree() {
     let panicked = task.await;
     assert!(panicked.unwrap_err().is_panic());
     assert_descendant_pipes_close(rx).await;
+}
+
+/// #399: Antigravity's Windows server is a `PyInstaller` onefile launcher that removes its ~131 MB `_MEI*` folder only
+/// after its agent child ends, which takes it a moment. Stopping it must let the launcher clean up, not kill both at
+/// once, also with parents under the agent that outlive what they started.
+#[tokio::test]
+async fn a_stopped_onefile_agent_leaves_no_unpacked_folder() {
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/onefile_agent.py");
+    let unpacked = std::env::temp_dir().join(format!("codync-_MEI-{}", uuid::Uuid::new_v4()));
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let quote = |path: &std::path::Path| crate::shell::quote(&path.display().to_string());
+    let command = format!("{python} -u {} {}", quote(&script), quote(&unpacked));
+    let (acp, mut rx) = Acp::spawn(&command, env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
+    let ready = tokio::time::timeout(Duration::from_secs(15), rx.recv()).await.unwrap();
+    assert!(matches!(ready, Some(Incoming::Notification { method, .. }) if method == "ready"));
+    assert!(unpacked.is_dir());
+    acp.kill().await;
+    stopped().await;
+    // The launcher's cleanup is the last thing it does; give it a moment past the stop.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while unpacked.exists() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let left = unpacked.exists();
+    let _ = std::fs::remove_dir_all(&unpacked);
+    assert!(!left, "stopping the agent left its unpacked folder behind");
 }
 
 #[tokio::test]
@@ -145,7 +147,6 @@ async fn an_agents_job_lists_what_it_started() {
     loop {
         let listed = acp.job_processes().await.unwrap();
         if let Some(ping) = listed.iter().find(|p| p.name.eq_ignore_ascii_case("ping.exe")) {
-            assert!(ping.created > 0, "native creation time identifies this process allocation");
             let shell = listed.iter().find(|p| p.pid == ping.parent).expect("what started ping is in the job");
             assert!(shell.name.eq_ignore_ascii_case("cmd.exe"), "{}", shell.name);
             return;
@@ -181,22 +182,4 @@ async fn request_response_roundtrip() {
         _ => panic!("expected notification"),
     }
     assert!(matches!(rx.recv().await.unwrap(), Incoming::Closed { .. }));
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_transient_cleanup_failure_keeps_ownership_and_can_be_retried() {
-    let (acp, _) = Acp::spawn("sleep 60", "/tmp", &[]).unwrap();
-    let pid = i32::try_from(acp.pid().unwrap()).unwrap();
-    let mut process = acp.child.lock().await;
-    process.fail_next_stop();
-    drop(process);
-    let first = acp.stop_and_wait().await;
-    assert!(first.is_err());
-    // SAFETY: signal zero tests existence without signalling.
-    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the failed cleanup still owns a live allocation");
-    let second = acp.stop_and_wait().await;
-    second.unwrap();
-    // SAFETY: signal zero tests existence without signalling.
-    assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "retry actually stopped the allocation");
 }

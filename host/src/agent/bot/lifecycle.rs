@@ -3,19 +3,41 @@
 //! the agent stops with its process group.
 //! The next message starts the agent again and reopens the session, so the conversation carries on.
 //! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
+//! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
 
 use super::Actor;
 use super::background_work::background_work;
-use anyhow::Result;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-/// Coming back costs a relaunch plus `session/load` (seconds), so ordinary pauses in a chat
+/// Coming back costs a relaunch plus reopening the session (seconds), so ordinary pauses in a chat
 /// stay warm.
 const IDLE: Duration = Duration::from_mins(30);
 /// How often an idle bot looks for something to give back.
 const CHECK_EVERY: Duration = Duration::from_mins(1);
+
+/// What a keeper restart does to an agent, whose grants went with the keeper that gave them.
+#[derive(Debug, PartialEq)]
+enum AfterKeeper {
+    /// It holds none.
+    Nothing,
+    /// It starts again before its next turn, resuming its session.
+    BeforeNextTurn,
+    /// It can't resume a session, so it starts fresh (its keys would fail anyway) once its turn ends,
+    AfterTurn,
+    /// or now, between turns.
+    Now,
+}
+
+fn after_keeper(holds_grants: bool, can_reopen: bool, in_turn: bool) -> AfterKeeper {
+    match (holds_grants, can_reopen, in_turn) {
+        (false, ..) => AfterKeeper::Nothing,
+        (true, true, _) => AfterKeeper::BeforeNextTurn,
+        (true, false, true) => AfterKeeper::AfterTurn,
+        (true, false, false) => AfterKeeper::Now,
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Release {
@@ -64,19 +86,27 @@ impl Actor {
         match release {
             Release::Agent => {
                 tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
-                if let Err(error) = self.retire_agent("idle").await {
-                    tracing::warn!(%error, "couldn't retire idle agent");
+                if let Some(conn) = self.conn.take() {
+                    conn.acp.kill().await;
                 }
             }
             Release::Sessions(sessions) => {
                 for sid in sessions {
-                    let closed = self.close_session(&sid).await;
-                    if closed.is_err() {
-                        break;
-                    }
+                    self.close_session(&sid).await;
                 }
             }
             Release::Nothing => {}
+        }
+    }
+
+    /// A cloud computer's keeper started again (`Cmd::KeeperRestarted`), so the grants the agent started with are gone.
+    pub(super) async fn keeper_restarted(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
+            AfterKeeper::Nothing => {}
+            AfterKeeper::BeforeNextTurn => self.tools_changed = true,
+            AfterKeeper::AfterTurn => self.restart_after_turn = true,
+            AfterKeeper::Now => self.restart_agent().await,
         }
     }
 
@@ -96,48 +126,35 @@ impl Actor {
     /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
-        let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
-        let can_close = conn.sessions.close;
-        let can_reopen = conn.sessions.reopen.is_some();
-        if can_reopen && alone && !background_work(&conn.acp).await {
-            if let Err(error) = self.retire_agent("routine_finished").await {
-                tracing::warn!(%error, "couldn't retire routine agent");
-            }
-        } else {
-            let closed = if can_close {
-                self.close_session(sid).await
-            } else {
-                Err(anyhow::anyhow!("session close unsupported"))
-            };
-            if closed.is_ok() {
-                return;
-            }
-            if can_reopen && let Err(error) = self.recycle_agent("routine_finished").await {
-                tracing::warn!(bot = %self.cfg.id, %error, "routine resources retained until safe recycling");
-            }
-        }
-    }
-
-    /// A failed live session must be released before loading it again.
-    pub(super) async fn close_reopenable(&mut self, sid: &str) {
-        let Some(conn) = &self.conn else { return };
-        if conn.sessions.reopen.is_none() || !conn.loaded.contains_key(sid) {
+        if conn.sessions.reopen.is_none() {
             return;
         }
-        if conn.sessions.close {
-            let closed = self.close_session(sid).await;
-            if closed.is_ok() {
-                return;
+        let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
+        if alone && !background_work(&conn.acp).await {
+            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
+            if let Some(conn) = self.conn.take() {
+                conn.acp.kill().await;
             }
-        }
-        if let Err(error) = self.recycle_agent("session_failed").await {
-            tracing::warn!(%error, "couldn't retire failed session");
+        } else {
+            self.close_reopenable(sid).await;
         }
     }
 
-    pub(super) async fn close_session(&mut self, sid: &str) -> Result<()> {
+    /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
+    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead.
+    pub(super) async fn close_reopenable(&mut self, sid: &str) {
+        if self
+            .conn
+            .as_ref()
+            .is_some_and(|c| c.sessions.close && c.sessions.reopen.is_some() && c.loaded.contains_key(sid))
+        {
+            self.close_session(sid).await;
+        }
+    }
+
+    async fn close_session(&mut self, sid: &str) {
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
-        let Some(conn) = self.conn.as_mut() else { return closed.map(drop) };
+        let Some(conn) = self.conn.as_mut() else { return };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
@@ -147,15 +164,12 @@ impl Actor {
                 conn.mode_set.remove(sid);
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
-                conn.pending_models.remove(sid);
                 self.applied_system.remove(sid);
-                Ok(())
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
                 conn.loaded.insert(sid.to_owned(), Instant::now());
-                Err(error)
             }
         }
     }
@@ -182,5 +196,13 @@ mod tests {
         // A just-started agent isn't stopped before it had a chance to be used.
         assert_eq!(plan(&used(&[]), now, true, now), Release::Nothing);
         assert_eq!(plan(&used(&[("main", fresh)]), started, true, now), Release::Nothing);
+    }
+
+    #[test]
+    fn a_keeper_restart_restarts_only_agents_with_grants() {
+        assert_eq!(after_keeper(false, false, false), AfterKeeper::Nothing);
+        assert_eq!(after_keeper(true, true, true), AfterKeeper::BeforeNextTurn, "resumes its session");
+        assert_eq!(after_keeper(true, false, true), AfterKeeper::AfterTurn, "the running turn ends first");
+        assert_eq!(after_keeper(true, false, false), AfterKeeper::Now);
     }
 }

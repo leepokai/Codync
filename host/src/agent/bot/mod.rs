@@ -17,7 +17,6 @@
 //! from a session of its own (see `session`).
 
 mod background_work;
-mod capacity;
 mod cmd;
 mod codex_names;
 mod compaction;
@@ -37,7 +36,8 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::Queued;
-pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
+pub use compaction::{context_window, offers_threshold};
+pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::config::FastModeSupport;
@@ -89,8 +89,6 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         base,
         cfg,
         conn: None,
-        starting: None,
-        retiring: Vec::new(),
         session_id,
         run_sessions: HashMap::new(),
         lane,
@@ -188,12 +186,10 @@ pub(crate) struct Conn {
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
+    superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
-    /// Includes repeated loads and sessions whose adapter may retain hidden tool resources.
-    allocations: usize,
-    untracked_allocations: usize,
-    pending_models: HashMap<String, Value>,
     started: Instant,
     /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
     /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
@@ -255,8 +251,6 @@ struct Actor {
     /// The bot as the agent it runs on now sees it: `base`, or one of its fallbacks (`agent::fallback::effective`).
     cfg: BotConfig,
     conn: Option<Conn>,
-    starting: Option<Arc<Acp>>,
-    retiring: Vec<Arc<Acp>>,
     /// The main session: the bot's own chat and its group turns.
     session_id: Option<String>,
     /// Routine run slot -> the run's session (loaded from kv on first use).
@@ -413,12 +407,12 @@ impl Actor {
                     if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
                         self.stop_requested = true;
-                        self.stop_agent().await;
+                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
                     }
                     // The agent ignored the cancel: stop its process so the bot is free again.
                     if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                         self.cancel_deadline = None;
-                        self.stop_agent().await;
+                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
                     }
                     self.release_idle().await;
                     // The idle check may have queued a compaction.
@@ -432,7 +426,9 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
-        self.stop_agent().await;
+        if let Some(c) = self.conn.take() {
+            c.acp.kill().await;
+        }
     }
 
     fn id(&self) -> String {

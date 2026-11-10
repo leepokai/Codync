@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Reveal, Spinner, Switch } from '../../components/Controls'
+import { Button, CardSection, IconButton, Reveal, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { offlineCloudStatus, placementLine, type StatusLine } from '../../lib/cloud-computer'
 import { useModel } from '../../lib/observable'
 import { useAccount } from '../../store/account'
 import { analytics } from '../../store/analytics'
@@ -16,8 +17,11 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { devicesLoseAccess } from '../../lib/account-copy'
+import { leavingRemovesText, withJoinRemoves } from '../../lib/account-copy'
+import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
+import { CodyncCloudSection } from './CodyncCloudSection'
+import { CodyncVersionRow } from './CodyncVersionRow'
 import { useTr } from '../../lib/use-language'
 import { errorText, liveClient, relativeDay, SectionHeader, statusText, thisMac } from './parts'
 import { RelayAddressRow, RelayTokenRow } from './RelayFields'
@@ -40,8 +44,11 @@ export function ComputersView() {
   const [removing, setRemoving] = useState<CloudComputer | null>(null)
   const removingOlder = removing !== null && cloud.isOlderCopy(removing)
   const managed = app.managedStores
+  // A computer this app reaches (an SSH one) can name what goes; any other gets the general warning.
+  const removingNames = useLeaveRemoves(managed.find((store) => store.computer.id === removing?.computerId) ?? null, removing !== null)
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
-  const others = cloud.computers.filter((c) => c.computerId !== app.local?.computer.id)
+  // Account computers this app isn't using (iOS `accountOnly`): the ones it uses have their own card or section.
+  const others = cloud.computers.filter((c) => !app.store(c.computerId))
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
@@ -70,6 +77,8 @@ export function ComputersView() {
           <SSHConfigSuggestions add={addSSH} />
         </div>
 
+        <CodyncCloudSection />
+
         <div>
           <SectionHeader title="Other computers in your account">
             {account.isSignedIn ? <IconButton title="Refresh" icon="arrow.clockwise" onClick={() => void cloud.refresh()} /> : null}
@@ -94,7 +103,7 @@ export function ComputersView() {
         message={removingOlder
           ? tr("It's an earlier identity of {name} and can't be reached anymore. Removing it only cleans up your account.").replaceAll('{name}', removing.name)
           // Offline may only mean asleep: removal unclaims it, and its own app won't add it back by itself.
-          : `${devicesLoseAccess(tr, account.user?.email)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
+          : `${leavingRemovesText(tr, account.user?.email, removingNames)} ${tr('Access comes back only when you add {name} to the account again on {name} itself.').replaceAll('{name}', () => removing?.name ?? tr('a computer'))}`}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void cloud.removeFromAccount(removing.computerId) }] : []}
         onClose={() => setRemoving(null)}
       />
@@ -138,9 +147,11 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       }
     })
 
-  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out, the welcome
-  // covers Settings and a build without accounts has none to join; a saved session still restoring makes the switch wait.
+  // Turning it on asks to add a computer that would be in no account (`joinsAccountOnEnable`). Signed out there's no
+  // account to add it to, and it stays in none; a saved session still restoring makes the switch wait.
   const asksAccount = cloud?.joinsAccountOnEnable === true
+  const joinRemoves = useJoinRemoves(store, askAccount)
+  const leaveRemoves = useLeaveRemoves(store, confirmUnclaim)
   const setReach = (on: boolean) => {
     if (on && asksAccount && account.isSignedIn) setAskAccount(true)
     else void run(() => app.cloud.setCloud(store, on))
@@ -168,8 +179,8 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
           Remove from account
         </Button>
       ) : account.isSignedIn ? (
-        <Button kind="secondary" onClick={() => run(async () => void (await app.cloud.claim(store)))} disabled={busy || !manageable}>
-          {busy ? 'Adding…' : 'Add to account'}
+        <Button kind="secondary" onClick={() => app.cloud.requestJoin(store)} disabled={busy || !manageable}>
+          Add to account
         </Button>
       ) : null}
     </HStack>
@@ -282,9 +293,10 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={askAccount}
         title={tr('Add {name} to your account first').replaceAll('{name}', () => name)}
-        message={tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name)}
+        message={withJoinRemoves(tr, tr('Your phone reaches {name} from anywhere through your account. Adding it also turns this on.').replaceAll('{name}', () => name), joinRemoves)}
         actions={[
-          { title: 'Add to account', action: () => void run(() => app.cloud.addFromReach(store)) },
+          // Not before it says which phones this removes.
+          { title: 'Add to account', disabled: joinRemoves === undefined, action: () => void run(() => app.cloud.addFromReach(store)) },
           { title: 'Use your own relay', action: () => void run(() => app.cloud.useOwnRelay(store)) },
         ]}
         onCancel={() => analytics.track({ event: 'reach_account_answered', outcome: 'cancelled' })}
@@ -293,7 +305,7 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
       <Dialog
         open={confirmUnclaim}
         title={tr('Remove {name} from the account?').replaceAll('{name}', name)}
-        message={devicesLoseAccess(tr, owner?.email)}
+        message={leavingRemovesText(tr, owner?.email, leaveRemoves)}
         actions={[{ title: 'Remove from account', destructive: true, action: () => run(() => app.cloud.unclaim(store)) }]}
         onClose={() => setConfirmUnclaim(false)}
       />
@@ -301,41 +313,14 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
   )
 }
 
-/** The Codync a computer runs, and its update when one is due (iOS `CodyncVersionRow`). */
-function CodyncVersionRow({ store }: { store: BotStore }) {
-  const tr = useTr()
-  // Moved on when an update asked from here runs out of time, so one that never finished is offered again.
-  const [now, setNow] = useState(Date.now)
-  const ends = store.hostUpdateWaitEnds
-  useEffect(() => {
-    if (ends === null) return
-    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, ends - Date.now()))
-    return () => clearTimeout(timer)
-  }, [ends])
-  const line = store.hostVersionLine(Math.max(now, Date.now()))
-  if (!line) return null
-  return (
-    <div className="settings-row settings-appear">
-      <Icon name="arrow.down.circle" size={13} color="var(--secondary)" />
-      <VStack grow className="settings-stack">
-        <Text>Codync <Text tone="secondary" tabular>{line.version}</Text></Text>
-        {line.detail.length > 0 ? (
-          <Text size="caption" tone={line.warns ? 'attention' : 'secondary'}>{line.detail.map((sentence) => tr(sentence)).join(' ')}</Text>
-        ) : null}
-      </VStack>
-      {line.accessory?.kind === 'updating' ? <Spinner />
-        : line.accessory ? <Button onClick={() => store.requestHostUpdate()}>{line.accessory.title}</Button>
-        : null}
-    </div>
-  )
-}
-
 /**
  * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
- * offline one can be removed: a computer that was reset or given away never comes back under that identity.
+ * offline one can be removed: a computer that was reset or given away never comes back under that identity. A
+ * cloud computer says where it runs, sleeping isn't offline, and it is deleted in its own section instead.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const status = accountComputerStatus(computer, olderCopy)
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -344,19 +329,23 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
         </span>
         <div className="settings-stack">
           <Text size="callout" weight="medium" tone={olderCopy ? 'secondary' : undefined}>{computer.name}</Text>
-          <Text size="caption" tone={olderCopy ? 'tertiary' : 'secondary'}>{tr(accountComputerStatus(computer, olderCopy))}</Text>
+          {computer.cloud ? <Text size="caption" tone="secondary">{placementLine(computer.cloud, tr)}</Text> : null}
+          <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
-        {computer.online ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
+        {/* A cloud computer goes with Delete cloud computer, in its own section. */}
+        {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
     </div>
   )
 }
 
 /** "Older copy", not the phones' "Older copy of this computer": on the desktop "this computer" reads as this Mac. */
-function accountComputerStatus(computer: CloudComputer, olderCopy: boolean) {
-  if (!olderCopy) return computer.online ? 'Online' : 'Offline'
-  return computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy'
+function accountComputerStatus(computer: CloudComputer, olderCopy: boolean): StatusLine {
+  const line = (text: string) => ({ text, error: false })
+  if (computer.online) return line('Online')
+  if (!olderCopy) return offlineCloudStatus(computer.cloud) ?? line('Offline')
+  return line(computer.lastSeenAt ? `Older copy · last seen ${relativeDay(new Date(computer.lastSeenAt))}` : 'Older copy')
 }
 
 /** "Pair iPhone" for a computer this app manages, through its store. */

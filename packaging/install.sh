@@ -9,6 +9,8 @@
 #   --app         Linux: also install the desktop app without a display
 # Environment:
 #   CODYNC_VERSION  a release tag such as v2.2.1 (default: latest)
+#   CODYNC_RELEASES_URL  another release channel with GitHub's layout (dev cloud computers: the dev channel, which
+#                   has the host only: use it with --host-only)
 #   CODYNC_BIN_DIR  where binaries go (default: ~/.local/bin, /usr/local/bin as root)
 set -eu
 
@@ -25,7 +27,8 @@ done
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-RELEASES=https://github.com/leepokai/Codync/releases
+RELEASES=${CODYNC_RELEASES_URL:-https://github.com/leepokai/Codync/releases}
+RELEASES=${RELEASES%/}
 VERSION=${CODYNC_VERSION:-latest}
 if [ "$VERSION" = latest ]; then BASE=$RELEASES/latest/download; else BASE=$RELEASES/download/v${VERSION#v}; fi
 

@@ -19,6 +19,9 @@ import { registerSpeech } from './speech'
 import { VoiceShortcutKeys } from './voice-shortcut'
 import { registerScreenIPC } from './screen'
 import { registerCloud } from './cloud'
+import { registerCloudAccess } from './cloud-access'
+import { registerChannels } from './channel'
+import { watchAttention } from './attention'
 import { registerSSH } from './ssh'
 import { registerSSHConfig } from './ssh-config'
 import { QuitLifecycle } from './quit-lifecycle'
@@ -39,7 +42,12 @@ function computerName() {
 }
 
 // UI checks drive the renderer over the DevTools protocol (development builds only).
-if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+if (!app.isPackaged && process.env.CODYNC_REMOTE_DEBUG) {
+  app.commandLine.appendSwitch('remote-debugging-port', process.env.CODYNC_REMOTE_DEBUG)
+  // As Playwright does for the Chromium it launches. Reloading the dev server's unbundled modules holds about 750 MB of
+  // shared memory until a garbage collection; past a Linux VM's /dev/shm (half its memory) requests fail and the window stays blank.
+  app.commandLine.appendSwitch('disable-dev-shm-usage')
+}
 
 const host = new HostController()
 registerErrorReports(host)
@@ -89,6 +97,7 @@ function openChat() {
   // Closing hides: the window keeps the stores (and the menu bar's data) alive.
   chat.on('close', (e) => quitLifecycle.closeToBackground(e, () => chat?.hide()))
   chat.on('closed', () => (chat = null))
+  watchAttention(chat)
   keepArtifactsInFrame(chat.webContents)
   void chat.loadURL(rendererURL('chat'))
   return chat
@@ -258,6 +267,8 @@ if (yieldsToInstall()) {
     registerSpeech()
     registerScreenIPC()
     registerCloud(account)
+    registerCloudAccess(account)
+    registerChannels(account)
     registerSSH(() => BrowserWindow.getAllWindows())
     registerSSHConfig()
     // Calls use the microphone (realtime voice); nothing else asks for permissions.

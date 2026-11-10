@@ -69,10 +69,15 @@ public struct Pairing: Hashable, Sendable {
         self.code = code
     }
 
-    /// The 6 digits the computer shows if it asks whether to let `identity` in.
-    public func checkCode(for identity: DeviceIdentity) -> String {
-        RelayCrypto.pairCheck(deviceKey: identity.deviceKey, hostSignKey: Data(base64URL: computer.signKey) ?? Data())
+    /// As a phone with no account uses it: the Codync relay is for signed-in phones. A private relay is the user's own.
+    public var withoutRelay: Pairing {
+        var computer = computer
+        if RelayCopy.host(of: computer.cloud) == nil { computer.cloud = nil }
+        return Pairing(computer: computer, code: code)
     }
+
+    /// The 6 digits the computer shows if it asks whether to let `identity` in.
+    public func checkCode(for identity: DeviceIdentity) -> String { computer.checkCode(for: identity) }
 
     /// The relay's pairing socket parameter.
     var offerId: String? { Data(base64URL: code).map(RelayCrypto.offerId(code:)) }
@@ -100,5 +105,12 @@ public struct Pairing: Hashable, Sendable {
         #else
         return false
         #endif
+    }
+}
+
+extension Computer {
+    /// The 6 digits this computer shows if it asks about `identity`.
+    public func checkCode(for identity: DeviceIdentity) -> String {
+        RelayCrypto.pairCheck(deviceKey: identity.deviceKey, hostSignKey: Data(base64URL: signKey) ?? Data())
     }
 }

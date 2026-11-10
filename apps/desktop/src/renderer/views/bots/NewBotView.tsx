@@ -151,7 +151,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
       </VStack>
       <HStack gap={8} className="create-footer">
         {computer ? (
-          <HStack gap={8}>
+          <HStack gap={8} shrink>
             <Text tone="secondary">{tr(`On`)}</Text>
             <ChoicePicker selection={computer.selection} options={computer.options} onChange={computer.onChange} />
           </HStack>

@@ -10,6 +10,7 @@ mod fallbacks;
 mod forms;
 mod group_form;
 mod input;
+mod kofi;
 mod model;
 mod navigate;
 mod new_bot;
@@ -21,11 +22,14 @@ mod section_order;
 mod slash;
 mod steps;
 mod ui;
+mod usage_chooser;
+mod whats_new;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
+pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
@@ -35,6 +39,7 @@ pub use ui::{
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
     TraceMode, Width,
 };
+pub use whats_new::WhatsNew;
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};
@@ -59,6 +64,8 @@ pub struct App {
     pub client: Client,
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
+    /// Whether the host is this computer's. Attached with `--url` nothing tells: a tunnel's address looks local.
+    pub on_this_computer: bool,
     pub host: String,
     pub home: String,
     /// The host's version (`hello`): features newer than `MIN_HOST` check it.
@@ -154,6 +161,7 @@ pub struct App {
     pub analytics: Option<bool>,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
+    kofi: kofi::Invite,
 }
 
 impl App {
@@ -164,6 +172,7 @@ impl App {
             client,
             tx,
             url,
+            on_this_computer: true,
             host: String::new(),
             home: String::new(),
             host_version: String::new(),
@@ -224,6 +233,7 @@ impl App {
             hint: None,
             analytics: None,
             seen: analytics::Seen::default(),
+            kofi: kofi::Invite::load(),
         }
     }
 

@@ -123,8 +123,9 @@ private fun isImageName(name: String) = name.substringAfterLast('.', "").lowerca
 /** Unicode control and format characters, which a file name may not contain. */
 private val CONTROLS = setOf(Character.CONTROL, Character.FORMAT)
 
+/** [Waiting]: in the relay's mailbox. [Held]: on this phone, until the computer can be reached. */
 @Serializable
-enum class SendStatus { Sending, Waiting, Delivering, Failed }
+enum class SendStatus { Sending, Waiting, Delivering, Failed, Held }
 
 @Serializable
 data class PendingSend(
@@ -166,6 +167,8 @@ sealed interface MirrorEvent {
     data class Call(val cue: CallCue) : MirrorEvent
     /** The computer's network changed: live only, never a checkpoint. */
     data class Network(val view: NetworkView) : MirrorEvent
+    /** The computer took a new name (a cloud computer renamed from any device): live only, its `hello` says it from now on. */
+    data class Name(val name: String) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -185,6 +188,7 @@ sealed interface MirrorEvent {
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
+            "name" -> value.text("name")?.let(::Name) ?: Ignored
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

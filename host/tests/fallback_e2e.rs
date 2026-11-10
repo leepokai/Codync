@@ -121,7 +121,7 @@ async fn a_fallback_without_the_bots_mode_doesnt_take_the_turn() {
 }
 
 #[tokio::test]
-async fn a_failed_resume_keeps_the_conversation_until_retry_or_explicit_reset() {
+async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;
     let bot =
         json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
@@ -132,23 +132,14 @@ async fn a_failed_resume_keeps_the_conversation_until_retry_or_explicit_reset() 
     std::fs::write(folder.join("primary.limit"), "").unwrap();
     host.reply(&bot, "Fix the login tests").await;
 
-    // A failed automatic resume must not silently allocate a new conversation.
+    // Its own session won't load: the new one gets a recap, not a catch-up.
     std::fs::remove_file(folder.join("primary.limit")).unwrap();
     std::fs::write(folder.join("primary.noload"), "").unwrap();
     host.call("switchBack", json!({"botId": bot})).await;
-    host.call("send", json!({"botId": bot, "text": "Thanks"})).await;
-    wait_for(&host, &bot, "resume error", |e| {
-        e["data"]["text"].as_str().is_some_and(|t| t.contains("retry to resume"))
-    })
-    .await;
-    let requests = host.log(&bot, "primary.jsonl");
-    assert_eq!(requests.iter().filter(|r| r["method"] == "session/new").count(), 1);
-    std::fs::remove_file(folder.join("primary.noload")).unwrap();
-    host.reply(&bot, "Retry Thanks").await;
+    host.reply(&bot, "Thanks").await;
     let last = last_prompt(&host, &bot, "primary");
-    assert!(last.contains("<catch_up>") && last.contains("standin answered"), "{last}");
-    let requests = host.log(&bot, "primary.jsonl");
-    assert_eq!(requests.iter().filter(|r| r["method"] == "session/new").count(), 1);
+    assert!(last.contains("<handoff>") && !last.contains("<catch_up>"), "{last}");
+    assert!(last.contains("Fix the login tests") && last.contains("\"standin answered\""), "{last}");
 
     // After New session, no agent is told what came before it.
     std::fs::write(folder.join("primary.limit"), "").unwrap();

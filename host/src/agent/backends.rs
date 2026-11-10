@@ -11,7 +11,6 @@
 use crate::agent::{acp, node, registry};
 use crate::shell;
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::path::Path;
 
 mod catalog;
@@ -46,11 +45,18 @@ pub struct Harness {
     pub signed_in: Option<SignInCheck>,
 }
 
+impl Harness {
+    /// A backend id is this harness's: its own id or its registry entry's.
+    fn answers_to(&self, id: &str) -> bool {
+        self.id == id || self.registry == Some(id)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum Install {
     /// A vendor install script (`curl … | bash`), Unix only.
     Script(&'static str),
-    /// Vendor install scripts for Unix and for Windows (`PowerShell`).
+    /// Vendor install scripts for Unix and for Windows (PowerShell).
     Scripts { unix: &'static str, windows: &'static str },
     /// A global npm package, installed on the computer's Node or else Codync's (`codync-host npm`).
     Npm(&'static str),
@@ -72,6 +78,16 @@ impl Install {
 
 pub fn harness(id: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.id == id)
+}
+
+/// The harness a bot's `backend` is: by its own id or its registry entry's.
+pub fn harness_of(backend: &str) -> Option<&'static Harness> {
+    HARNESSES.iter().find(|h| h.answers_to(backend))
+}
+
+/// `id`'s CLI is on this computer.
+pub fn installed(id: &str) -> bool {
+    harness(id).is_some_and(|h| installed_cli(h).is_some())
 }
 
 // MARK: listing + launching
@@ -107,10 +123,9 @@ pub fn list() -> Vec<Value> {
         })
         .collect();
     // Registry agents we don't know by name: runnable, but you sign in yourself.
-    let known: HashSet<&str> = HARNESSES.iter().filter_map(|h| h.registry).collect();
     for a in &registry {
         let id = a["id"].as_str().unwrap_or_default();
-        if id.is_empty() || known.contains(id) || id == "github-copilot" {
+        if id.is_empty() || HARNESSES.iter().any(|h| h.answers_to(id)) || id == "github-copilot" {
             continue;
         }
         out.push(json!({
@@ -139,9 +154,14 @@ pub fn belongs_to_other(backend: &str, program: &str) -> bool {
         return backend != "workbuddy";
     }
     let name = Path::new(program).file_name().and_then(|n| n.to_str()).unwrap_or(program);
-    let own = |h: &Harness| h.id == backend || h.registry == Some(backend);
+    let own = |h: &Harness| h.answers_to(backend);
     HARNESSES.iter().any(|h| !own(h) && h.bins.contains(&name))
         && !HARNESSES.iter().any(|h| own(h) && h.bins.contains(&name))
+}
+
+/// The CLI names `backend`'s harness goes by.
+pub fn bins(backend: &str) -> &'static [&'static str] {
+    HARNESSES.iter().find(|h| h.answers_to(backend)).map_or(&[], |h| h.bins)
 }
 
 pub fn is_known(id: &str) -> bool {
@@ -167,6 +187,13 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
         ));
     }
     Ok(out)
+}
+
+/// Starting `id` would first install a new registry build, which removes the one before it.
+pub fn update_pending(id: &str) -> bool {
+    launch_candidates(id).is_ok_and(|candidates| {
+        matches!(candidates.first(), Some(registry::Candidate::Build(agent)) if registry::update_pending(agent))
+    })
 }
 
 /// The registry build that *is* the harness's CLI (same npm package), so it can

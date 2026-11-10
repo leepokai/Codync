@@ -1,0 +1,46 @@
+# Leaving the provider's sign-in page returns to the welcome screen with no error, as on the iPhone
+# (`AccountSession.isCancellation`). Needs the phone signed out and online for the page:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags sign-in apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - sign-in
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          clearState: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          clearState: true
+- tapOn: "Continue with Google"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      # The system asks before it opens the page.
+      - tapOn: "Cancel"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      # The page opens in a browser tab over the app (Back would only hide its keyboard).
+      - tapOn: "Close tab"
+- extendedWaitUntil:
+    visible: "Continue with Google"
+    timeout: 10000
+# The error used to come up right after the app returned: give it the time to. Android shows it in a dialog, the
+# iPhone as text under the buttons.
+- extendedWaitUntil:
+    visible: "Something went wrong"
+    timeout: 4000
+    optional: true
+- assertNotVisible: "Something went wrong"
+- assertNotVisible: "Couldn't sign in.*"
+- assertNotVisible: "Error occurred with unknown message.*"

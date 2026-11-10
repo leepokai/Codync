@@ -27,7 +27,7 @@ impl Actor {
                     Some(Incoming::Closed { stderr_tail }) => stderr_tail,
                     _ => String::new(),
                 };
-                self.stop_agent().await;
+                self.conn = None;
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
             }

@@ -134,35 +134,61 @@
   justify-content: flex-end;
 }
 
-/* Usage: a computer's label over its limits, then one row per limit. */
+/* Usage: a computer's name and button over its card. */
 .settings-usage-computer {
   font-size: var(--text-body);
-  font-weight: 700;
+  font-weight: 600;
+  min-height: 28px;
 }
-.settings-usage-row {
+/* One card a computer: its agents' limits, or which agents show and in what order. */
+.settings-usage-card {
+  background: var(--surface);
+  border-radius: var(--radius-l);
   font-size: var(--text-callout);
-  font-weight: 400;
-  white-space: nowrap;
 }
-.settings-usage-title {
-  width: 64px;
-  flex: none;
-}
-.settings-usage-percent {
-  /* Grows past this for longer translations (de, fr); the bar gives way. */
-  min-width: 76px;
-  flex: none;
-  text-align: right;
+/* Padding, not a gap: it folds away with an agent turned off, and leaves room for a mascot's alert. */
+.settings-usage-provider {
+  padding: 14px 16px;
 }
 .settings-usage-note {
-  flex: 1;
-  min-width: 0;
   text-align: right;
 }
-.settings-usage-reset {
-  width: 130px;
+.settings-usage-card .progress-track.usage-bar {
   flex: none;
-  text-align: right;
+  height: 5px;
+  background: rgba(var(--text-rgb), 0.08);
+}
+.settings-usage-chooser {
+  padding: 4px;
+}
+.settings-usage-choice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding-right: 10px;
+  border-radius: var(--radius-m);
+  transition: background-color var(--hover);
+}
+.settings-usage-choice.held {
+  position: relative;
+  z-index: 1;
+  background: var(--sheet);
+  box-shadow: var(--shadow-m);
+}
+.settings-usage-switch {
+  flex: 1;
+  min-width: 0;
+}
+.settings-usage-grip {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-xs);
+  cursor: grab;
+  touch-action: none;
 }
 
 /* Computers & devices. */
@@ -231,4 +257,67 @@
 /* A row that appears fades in. */
 .settings-appear {
   animation: fade-in var(--layout) both;
+}
+
+/* Codync Cloud: the commands that make a provider's key, selectable, with their copy button. */
+.settings-commands {
+  padding: 8px 6px 8px 12px;
+  border-radius: 12px;
+  background: var(--bubble-user);
+}
+.settings-commands-text {
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* One provider's key sheet. */
+.cloud-key-sheet {
+  width: 520px;
+}
+.cloud-key-body {
+  padding: 4px 20px 20px;
+}
+/* A cloud computer's `⋯` menu, and a provider's in New cloud computer. */
+.cloud-machine-menu, .cloud-provider-menu {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-s);
+}
+/* New cloud computer: a name, the providers on their logo tiles (rows like the agent picker's), then the buttons. */
+.cloud-new-sheet {
+  width: 440px;
+}
+.cloud-new-body {
+  padding: 4px 20px 4px;
+}
+/* One fill per provider row: picked or hovered, it holds the row's `⋯` too. */
+.cloud-provider-row {
+  border-radius: var(--radius-xs);
+  transition: background var(--hover);
+}
+.cloud-provider-row:hover, .cloud-provider-row:has(> [aria-pressed="true"]) {
+  background: var(--surface);
+}
+.cloud-provider-row > .agent-picker-item, .cloud-provider-row > .agent-picker-item:is(:hover, [aria-pressed="true"]) {
+  flex: 1;
+  background: transparent;
+}
+.cloud-provider-menu {
+  margin-right: 4px;
+}
+.cloud-provider-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--field);
+}
+.cloud-new-footer {
+  padding: 16px 20px 20px;
 }

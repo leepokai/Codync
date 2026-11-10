@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { artifactFrameURL, type Artifact } from '@shared/artifacts'
-import type { MenuItem } from '../../components/Overlay'
+import type { MenuItem } from '../../components/Menu'
 import type { BotStore } from '../../store/bot-store'
 import type { ArtifactHTML } from '../../store/artifacts'
 import { useTr } from '../../lib/use-language'

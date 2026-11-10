@@ -53,11 +53,24 @@ export type AnalyticsEvent =
   | { event: 'signed_out' }
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
+  | { event: 'dev_server_action'; action: 'open' | 'copy' }
   | { event: 'screen_viewed'; screen: Screen }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
   | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
+  | { event: 'continued_without_account' }
+  | { event: 'join_offer_answered'; outcome: 'added' | 'kept_out' | 'failed' }
+  | { event: 'cloud_key_saved'; outcome: 'saved' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_computer_created'; outcome: 'created' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_offer_opened'; provider: string }
+  | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
+  | { event: 'cloud_computer_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_snapshots_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_key_removed'; outcome: 'removed' | 'refused' | 'failed'; provider: string }
+  | { event: 'kofi_invite_shown' }
+  | { event: 'kofi_invite_answered'; opened: boolean }
+  | { event: 'whats_new_shown' }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

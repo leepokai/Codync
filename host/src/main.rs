@@ -8,11 +8,13 @@ mod background;
 mod chat;
 mod cloud_cli;
 mod compat;
+mod dev_servers;
 mod environment;
 mod hub;
 mod icons;
 mod import;
 mod import_cli;
+mod keeper;
 mod local_api;
 mod market;
 mod mcp;
@@ -147,6 +149,9 @@ enum Sub {
         /// Allow a manual update to interrupt active bots (their sessions resume).
         #[arg(long)]
         force: bool,
+        /// Install this release instead of the latest (never one older than the running host).
+        #[arg(long, conflicts_with_all = ["check", "status", "auto"])]
+        target: Option<String>,
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
         #[arg(long)]
@@ -198,6 +203,10 @@ enum Sub {
     /// Add Codync's own Node.js, for agents that run on it (an agent's setup step).
     #[command(hide = true)]
     Node,
+    /// Keep a Codync Cloud computer's secrets, so its agents can use them but never read them (its own system
+    /// service there).
+    #[command(hide = true)]
+    Keeper,
     /// Built-in MCP servers that bots are started with (stdio).
     #[command(hide = true)]
     Mcp {
@@ -403,7 +412,7 @@ async fn main() -> Result<()> {
             );
             Ok(())
         }
-        Sub::Update { check, status, auto, force, port, json, worker } => {
+        Sub::Update { check, status, auto, force, target, port, json, worker } => {
             let status = if let Some(auto) = auto {
                 update::set_automatic(auto == "on")?
             } else if status {
@@ -411,10 +420,10 @@ async fn main() -> Result<()> {
             } else if check {
                 update::check().await?
             } else if !worker && service::installed() {
-                tokio::task::spawn_blocking(move || update::spawn_worker(port, force)).await??;
+                tokio::task::spawn_blocking(move || update::spawn_worker(port, force, target.as_deref())).await??;
                 update::status()?
             } else {
-                update::apply(port, force, worker).await?
+                update::apply(port, force, worker, target.as_deref()).await?
             };
             if json {
                 println!("{}", serde_json::to_string_pretty(&status)?);
@@ -465,6 +474,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Sub::Node => agent::node::add().await,
+        Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
         Sub::Statusline { port, wrapped } => {
             statusline(port, wrapped.join(" ")).await;
@@ -489,9 +499,7 @@ async fn main() -> Result<()> {
         Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
         Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
         Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
-        Sub::Tui { url, token, port } => {
-            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
-        }
+        Sub::Tui { url, token, port } => tui::run(url, port, token).await,
     }
 }
 
@@ -543,7 +551,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.shutdown().await;
     background::stop_agent_checks(agent_checks).await;
     agent::acp::stop_all().await;
-    analytics::flush_before_exit(&hub).await;
+    analytics::flush_now(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
     std::process::exit(0)

@@ -18,6 +18,7 @@ import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice } from './SidebarFooter'
 import { AppRail } from './AppRail'
+import { OnboardingSheet } from './OnboardingSheet'
 import { SidebarUsage } from './SidebarUsage'
 import { RoutineFlowView } from './routines/flow/RoutineFlowView'
 import { UpdateBadge } from './UpdateButton'
@@ -254,6 +255,7 @@ function ChatSplitView() {
   const [confirmDelete, setConfirmDelete] = useState<BotTarget | null>(null)
   const [tasksBot, setTasksBot] = useState<BotTarget | null>(null)
   const [filesBot, setFilesBot] = useState<BotTarget | null>(null)
+  const [onboarding, setOnboarding] = useState(() => localStorage.getItem('codync.onboarding') !== 'done')
   const [marketplace, setMarketplace] = useState<string | null>(null)
   const [marketplaceLink, setMarketplaceLink] = useState<{ section: ExtensionSection; id?: string } | null>(null)
   const [canvasBot, setCanvasBot] = useState<string | null>(null)
@@ -566,6 +568,12 @@ function ChatSplitView() {
           </StoreContext.Provider>
         ) : null}
       </Sheet>
+      <OnboardingSheet
+        open={onboarding}
+        onClose={() => { localStorage.setItem('codync.onboarding', 'done'); setOnboarding(false) }}
+        onExtensions={() => { setOnboarding(false); openMarketplace() }}
+        onAccess={() => { setOnboarding(false); setSettings('access') }}
+      />
       <Sheet open={filesBot !== null} onClose={() => setFilesBot(null)} width={Math.min(620, windowSize.width - 80)} height={Math.min(680, sheetHeight)}>
         {filesBot ? <BotFilesSheet bot={filesBot.bot} store={filesBot.store} onClose={() => setFilesBot(null)} /> : null}
       </Sheet>

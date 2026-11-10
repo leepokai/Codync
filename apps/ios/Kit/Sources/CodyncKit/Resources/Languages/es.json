@@ -1983,5 +1983,19 @@
   "Remove photo": "Quitar foto",
   "The photo must be 300 KB or smaller.": "La foto debe pesar 300 KB o menos.",
   "The photo could not be read.": "No se pudo leer la foto.",
-  "Your coding agents,\\nas teammates.": "Tus agentes de programación,\ncomo compañeros de equipo."
+  "Your coding agents,\\nas teammates.": "Tus agentes de programación,\ncomo compañeros de equipo.",
+  "Step {n} of {total}": "Paso {n} de {total}",
+  "The host runs the bots on this computer. If it is not answering, restart Codync; it starts with the app.": "El host ejecuta los bots en este equipo. Si no responde, reinicia Codync; arranca con la app.",
+  "Install a coding agent and sign in, so the bots have a model to think with. Claude Code, Codex and others are in Extensions.": "Instala un agente de código e inicia sesión, para que los bots tengan un modelo con el que pensar. Claude Code, Codex y otros están en Extensiones.",
+  "A bot is one conversation with your work: its own agent, folder, permissions and memory. Create the first one now.": "Un bot es una conversación con tu trabajo: su propio agente, carpeta, permisos y memoria. Crea el primero ahora.",
+  "Grant computer access only if you want bots to open apps and use the screen. You can skip it and grant it later in Settings.": "Concede acceso al equipo solo si quieres que los bots abran apps y usen la pantalla. Puedes omitirlo y concederlo luego en Ajustes.",
+  "Done on this computer": "Hecho en este equipo",
+  "Not set up yet": "Aún sin configurar",
+  "Skip for now": "Omitir por ahora",
+  "Skip this step": "Omitir este paso",
+  "You can reopen this in Settings → Getting started.": "Puedes reabrirlo en Ajustes → Primeros pasos.",
+  "Routines that listen to this channel": "Rutinas que escuchan este canal",
+  "New routine for this channel": "Nueva rutina para este canal",
+  "Routine name": "Nombre de la rutina",
+  "What it should do when this channel mentions the bot": "Qué debe hacer cuando este canal mencione al bot"
 }

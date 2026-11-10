@@ -1983,5 +1983,19 @@
   "Always allow keeps this rule for the bot. Edit it to cover more: * stands for any text.": "Always allow keeps this rule for the bot. Edit it to cover more: * stands for any text.",
   "Keep rule and allow": "Keep rule and allow",
   "No rule can be kept for this request.": "No rule can be kept for this request.",
-  "Allow once": "Allow once"
+  "Allow once": "Allow once",
+  "Step {n} of {total}": "Step {n} of {total}",
+  "The host runs the bots on this computer. If it is not answering, restart Codync; it starts with the app.": "The host runs the bots on this computer. If it is not answering, restart Codync; it starts with the app.",
+  "Install a coding agent and sign in, so the bots have a model to think with. Claude Code, Codex and others are in Extensions.": "Install a coding agent and sign in, so the bots have a model to think with. Claude Code, Codex and others are in Extensions.",
+  "A bot is one conversation with your work: its own agent, folder, permissions and memory. Create the first one now.": "A bot is one conversation with your work: its own agent, folder, permissions and memory. Create the first one now.",
+  "Grant computer access only if you want bots to open apps and use the screen. You can skip it and grant it later in Settings.": "Grant computer access only if you want bots to open apps and use the screen. You can skip it and grant it later in Settings.",
+  "Done on this computer": "Done on this computer",
+  "Not set up yet": "Not set up yet",
+  "Skip for now": "Skip for now",
+  "Skip this step": "Skip this step",
+  "You can reopen this in Settings → Getting started.": "You can reopen this in Settings → Getting started.",
+  "Routines that listen to this channel": "Routines that listen to this channel",
+  "New routine for this channel": "New routine for this channel",
+  "Routine name": "Routine name",
+  "What it should do when this channel mentions the bot": "What it should do when this channel mentions the bot"
 }

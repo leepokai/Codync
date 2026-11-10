@@ -13,6 +13,7 @@ import { DiscordChannel } from '../settings/DiscordChannel'
 import { AddTelegram } from '../settings/ChannelsSection'
 import type { ChannelItem, ChannelProviderEntry } from './channel-catalog'
 import { ChannelNotes } from './ChannelNotes'
+import { ChannelRoutines } from './ChannelRoutines'
 
 const PROVIDER_DOMAIN = { whatsapp: 'whatsapp.com', telegram: 'telegram.org', slack: 'slack.com', discord: 'discord.com' } as const
 
@@ -57,6 +58,7 @@ function ItemCard({ entry, item, store, removing, onRemove }: {
           <ChannelIconPicker value={item.icon} save={(icon) => store.setIcon('telegram', item.channel, icon)} />
           <ChannelMemory value={item.memory} save={(memory) => store.setMemory('telegram', item.channel, memory)} />
           <ChannelNotes provider="telegram" channel={item.channel} store={store} />
+          {item.botId ? <ChannelRoutines provider="telegram" channel={item.channel} botId={item.botId} /> : null}
           <HStack gap={6}>
             <Button kind="secondary" disabled={store.busy} onClick={() => void store.pair(item.channel)}>{tr('Pair someone')}</Button>
             <Button kind="secondary" disabled={store.busy || removing} onClick={onRemove}>{tr('Remove bot')}</Button>
@@ -68,6 +70,7 @@ function ItemCard({ entry, item, store, removing, onRemove }: {
           <ChannelIconPicker value={item.icon} save={(icon) => store.setIcon(entry.id === 'discord' ? 'discord' : 'slack', item.channel, icon)} />
           <ChannelMemory value={item.memory} save={(memory) => store.setMemory(entry.id === 'discord' ? 'discord' : 'slack', item.channel, memory)} />
           <ChannelNotes provider={entry.id === 'discord' ? 'discord' : 'slack'} channel={item.channel} store={store} />
+          {item.botId ? <ChannelRoutines provider={entry.id === 'discord' ? 'discord' : 'slack'} channel={item.channel} botId={item.botId} /> : null}
         </>
       ) : null}
       {entry.id === 'whatsapp' ? (

@@ -48,6 +48,14 @@ const step = async (name, work) => {
   }
 }
 
+await step('the first-run guide can be dismissed', async () => {
+  await evaluate(`(() => {
+    const button = [...document.querySelectorAll('.modal-card button')].find((b) => /^(Not now|Ahora no)$/.test((b.textContent ?? '').trim()))
+    if (button) { button.click(); return true }
+    return false
+  })()`)
+})
+
 await step('the roster is on screen', async () => {
   await waitFor("document.querySelectorAll('.app-rail-button').length > 0", 'the rail')
 })

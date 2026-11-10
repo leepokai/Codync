@@ -64,6 +64,15 @@ impl Modes {
         self.list.iter().find(|m| m.id == id)
     }
 
+    /// The mode a fallback step runs in when it doesn't have the bot's mode: its Auto, else the mode it opened in.
+    /// `None` when it lists no mode to fall back to, which fails the turn rather than work in the agent's default.
+    pub fn fallback_mode(&self) -> Option<&Mode> {
+        self.auto
+            .as_deref()
+            .and_then(|id| self.by_id(id))
+            .or_else(|| self.opening.as_deref().and_then(|id| self.by_id(id)))
+    }
+
     /// What clients offer: `[{id, name, description}]`, the Auto mode first and listed as [`AUTO`], so a bot's choice
     /// carries over to another agent that has one.
     pub fn catalog(&self) -> Value {
@@ -209,6 +218,19 @@ mod tests {
         // Nor is Claude's, run as a custom command: Codync can't tell which agent it is.
         let custom = Modes::from_session(&claude(), "custom").unwrap();
         assert_eq!(to(&custom, Some(AUTO)), None);
+    }
+
+    #[test]
+    fn a_fallback_runs_in_auto_else_in_the_mode_it_opened_in() {
+        let claude = Modes::from_session(&claude(), "claude").unwrap();
+        assert_eq!(claude.fallback_mode().map(|m| m.id.as_str()), Some("auto"));
+        // No Auto of its own: the mode it opened in.
+        let manual = json!({"modes": {"currentModeId": "ask", "availableModes": [{"id": "ask", "name": "Ask"}, {"id": "code", "name": "Code"}]}});
+        let legacy = Modes::from_session(&manual, "kimi").unwrap();
+        assert_eq!(legacy.fallback_mode().map(|m| m.id.as_str()), Some("ask"));
+        // Goose's `auto` isn't an Auto mode, so its opening mode stands.
+        let goose = Modes::from_session(&goose(), "goose").unwrap();
+        assert_eq!(goose.fallback_mode().map(|m| m.id.as_str()), Some("smart_approve"));
     }
 
     #[test]

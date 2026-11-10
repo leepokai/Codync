@@ -2,12 +2,14 @@
 //! again after the user picks another (none: the mode the session opened in). The agent may leave it during the
 //! session (Plan, once the plan is approved; Auto, on a model without it), and that stands until the next session.
 //! Asked for Auto, an agent without it keeps its own mode and Codync asks about whatever it asks; a mode the agent
-//! lacks or refuses fails the turn instead.
+//! lacks or refuses fails the turn instead, except on a fallback step, which runs in its own Auto mode so the bot
+//! keeps working rather than stopping for a mode the user picked on another agent.
 
 use super::Actor;
 use super::fast_mode::Listing;
+use crate::agent::acp;
 use crate::agent::modes::{Modes, Switch, switch};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
 impl Actor {
@@ -30,26 +32,43 @@ impl Actor {
     }
 
     /// Switches a live session to the bot's mode before its turn, once per session. A mode the agent lacks or
-    /// refuses fails the turn: the bot never works in a mode the user didn't pick.
+    /// refuses fails the turn, except on a fallback step: there the agent runs in its own Auto mode (else the mode it
+    /// opened in), with a notice, so a fallback the bot can't run as set up still answers.
     pub(super) async fn sync_mode(&mut self, sid: &str) -> Result<()> {
-        let Some(conn) = self.conn.as_mut() else { return Ok(()) };
+        let Some(conn) = self.conn.as_ref() else { return Ok(()) };
         if conn.mode_set.contains(sid) {
             return Ok(());
         }
-        let modes = conn.modes.get(sid);
-        let (mode, config) = match switch(modes, self.cfg.mode.as_deref()) {
-            Switch::Stay => {
-                conn.mode_set.insert(sid.to_owned());
-                return Ok(());
+        let wanted = self.cfg.mode.clone();
+        let on_fallback = crate::agent::fallback::step_of(&self.base, &self.cfg.backend).is_some_and(|s| s > 0);
+        let switched = {
+            let modes = self.conn.as_ref().and_then(|c| c.modes.get(sid));
+            match switch(modes, wanted.as_deref()) {
+                Switch::Stay => None,
+                Switch::To(mode) => Some((mode.clone(), modes.and_then(|m| m.config_id.clone()), false)),
+                Switch::Missing => match (on_fallback, modes.and_then(Modes::fallback_mode)) {
+                    (true, Some(mode)) => Some((mode.clone(), modes.and_then(|m| m.config_id.clone()), true)),
+                    _ => return Err(mode_missing(&self.cfg.backend, wanted.as_deref().unwrap_or_default())),
+                },
             }
-            Switch::To(mode) => (mode.clone(), modes.and_then(|m| m.config_id.clone())),
-            Switch::Missing => bail!(
-                "{} doesn't have {}, the mode this bot works in, so this turn didn't start. Pick another under \
-                 Permissions (Auto carries over to every agent that has one).",
-                crate::agent::fallback::name(&self.cfg.backend),
-                self.cfg.mode.as_deref().unwrap_or_default()
-            ),
         };
+        let Some((mode, config, downgraded)) = switched else {
+            if let Some(conn) = self.conn.as_mut() {
+                conn.mode_set.insert(sid.to_owned());
+            }
+            return Ok(());
+        };
+        if downgraded {
+            self.notice(
+                &format!(
+                    "{} doesn't have {}, the mode this bot works in; it runs this bot as {} instead.",
+                    crate::agent::fallback::name(&self.cfg.backend),
+                    wanted.as_deref().unwrap_or_default(),
+                    mode.name
+                ),
+                super::NoticeStyle::Info,
+            );
+        }
         let (method, params) = match config {
             Some(config) => {
                 ("session/set_config_option", json!({"sessionId": sid, "configId": config, "value": mode.id}))
@@ -73,4 +92,18 @@ impl Actor {
             conn.mode_set.clear();
         }
     }
+}
+
+/// The agent doesn't have the mode the bot works in: a `Failure`, so the turn moves on to the bot's next agent
+/// instead of stopping (`agent::fallback::reason`).
+fn mode_missing(backend: &str, wanted: &str) -> anyhow::Error {
+    acp::Failure::error(
+        acp::FailureKind::ModeMissing,
+        format!(
+            "{} doesn't have {}, the mode this bot works in, so this turn didn't start. Pick another under \
+             Permissions (Auto carries over to every agent that has one).",
+            crate::agent::fallback::name(backend),
+            wanted
+        ),
+    )
 }

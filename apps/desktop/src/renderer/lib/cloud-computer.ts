@@ -149,6 +149,11 @@ export function suggestedName(machines: CloudMachine[], tr: (text: string) => st
 export const cloudCreateOutcome = (error: unknown): 'refused' | 'failed' =>
   error instanceof Error && (('status' in error && error.status === 409) || ('code' in error && error.code === 'keyRefused')) ? 'refused' : 'failed'
 
+/** The outcome of deleting a cloud computer or its snapshots, or removing a key, that threw: `refused` when the cloud
+ * said no (409: its snapshots while it sleeps, a key a computer still runs on), `failed` for anything else. */
+export const cloudDeleteOutcome = (error: unknown): 'refused' | 'failed' =>
+  error instanceof Error && 'status' in error && error.status === 409 ? 'refused' : 'failed'
+
 /** A key whose own fault it isn't when the provider says no: a computer can be made there (or tried again). */
 const usable = (p: CloudProvider) => p.credential !== null && !p.credential.blocking
 

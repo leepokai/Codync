@@ -94,12 +94,12 @@ describe("a cloud computer on InstaBox", () => {
     expect((sInit!.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
 
     const paused = instaboxApi("suspended");
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     expect(calls(paused)).toEqual([`GET ${API}/v1/machines/m_test`, `POST ${API}/v1/machines/m_test/start`]);
     expect((paused.mock.calls[1]![1]!.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
     // Running but not ready yet: already starting, nothing to send.
     const booting = instaboxApi("running", {}, false);
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     expect(calls(booting)).toEqual([`GET ${API}/v1/machines/m_test`]);
 
     const gone = instaboxApi("running");

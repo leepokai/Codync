@@ -22,8 +22,8 @@ mod session;
 mod turns;
 
 pub use lifecycle::{
-    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, Via, cloud_keeper_checked, device_paired, discovery_failed,
-    host_started, join_from_phone_answered, phone_connected,
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, SleepOutcome, Via, cloud_keeper_checked, cloud_sleep_asked,
+    device_paired, discovery_failed, host_started, join_from_phone_answered, phone_connected,
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
@@ -133,6 +133,12 @@ pub enum Event {
     CloudOfferOpened,
     /// The user renamed a Codync Cloud computer (desktop; phones send their own).
     CloudComputerRenamed,
+    /// The user deleted a Codync Cloud computer (desktop; phones send their own).
+    CloudComputerDeleted,
+    /// The user removed their key for a cloud provider from Codync Cloud (desktop; phones send their own).
+    CloudKeyRemoved,
+    /// The user deleted a Codync Cloud computer's snapshots (desktop; phones send their own).
+    CloudSnapshotsDeleted,
     /// The Ko-fi invitation under the first reply (desktop and terminal UI only) was shown; on the desktop, then opened
     /// or dismissed.
     KofiInviteShown,
@@ -142,6 +148,8 @@ pub enum Event {
     WhatsNewShown,
     /// A Codync Cloud computer's host started: how its keeper stood, and whether its agents could still use sudo.
     CloudKeeperChecked,
+    /// A Codync Cloud computer's host, idle long enough, asked the cloud to put it to sleep (`remote::managed`).
+    CloudSleepAsked,
     /// A paired phone asked to add this computer to its account, and the computer answered.
     JoinFromPhoneAnswered,
     /// Advertising on the local network failed, so a computer in no account can't be found at a new address.
@@ -230,10 +238,14 @@ impl Event {
             Self::CloudComputerCreated => "cloud_computer_created",
             Self::CloudOfferOpened => "cloud_offer_opened",
             Self::CloudComputerRenamed => "cloud_computer_renamed",
+            Self::CloudComputerDeleted => "cloud_computer_deleted",
+            Self::CloudKeyRemoved => "cloud_key_removed",
+            Self::CloudSnapshotsDeleted => "cloud_snapshots_deleted",
             Self::KofiInviteShown => "kofi_invite_shown",
             Self::KofiInviteAnswered => "kofi_invite_answered",
             Self::WhatsNewShown => "whats_new_shown",
             Self::CloudKeeperChecked => "cloud_keeper_checked",
+            Self::CloudSleepAsked => "cloud_sleep_asked",
             Self::JoinFromPhoneAnswered => "join_from_phone_answered",
             Self::DiscoveryFailed => "discovery_failed",
             Self::HostUpdateInstalled => "host_update_installed",
@@ -434,8 +446,9 @@ async fn flush(hub: &Hub, pending: &mut Vec<Value>) {
     }
 }
 
-/// Sends what's queued before the host exits, so a restart or update loses nothing.
-pub async fn flush_before_exit(hub: &Hub) {
+/// Sends what's queued now: before the host exits, so a restart or update loses nothing, and before a cloud computer's
+/// machine stops (`remote::managed`).
+pub async fn flush_now(hub: &Hub) {
     let (tx, rx) = oneshot::channel();
     if hub.analytics.tx.send(Msg::Flush(tx)).is_ok() {
         let _ = tokio::time::timeout(Duration::from_secs(3), rx).await;

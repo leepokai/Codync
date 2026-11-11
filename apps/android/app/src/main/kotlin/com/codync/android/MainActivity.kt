@@ -128,8 +128,14 @@ class MainActivity : FragmentActivity() {
         unregisterReceiver(screenOn)
         super.onDestroy()
     }
-    override fun onStart() { super.onStart(); store.setForeground(true); Analytics.becameActive(this) }
+    override fun onStart() {
+        super.onStart(); store.setForeground(true); Analytics.becameActive(this)
+        val choices = store.voiceChoices()
+        if (choices.provider == null && choices.wakePhrase) store.focusVoice(true)
+    }
     override fun onStop() {
+        val choices = store.voiceChoices()
+        if (!isChangingConfigurations && choices.provider == null && choices.wakePhrase) store.focusVoice(false)
         store.setForeground(false)
         if (!isChangingConfigurations) SensitiveAccess.revoke()
         // A rotation isn't a trip to the background.

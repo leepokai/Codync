@@ -199,11 +199,14 @@ impl Actor {
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
+        let session = self.turn_session.clone();
+        self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
+        if self.finish_expired_request() {
+            return Ok(());
+        }
         if !hidden {
             self.carry_in();
         }
-        let session = self.turn_session.clone();
-        self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
             self.sync_fast_mode(&sid).await;
         }
@@ -247,6 +250,9 @@ impl Actor {
                 }
             }
         }
+        if self.finish_expired_request() {
+            return Ok(());
+        }
         let raw = std::mem::take(&mut self.raw_prompt);
         let prompt = if raw { text.to_owned() } else { self.compose(&snapshot, text)? };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
@@ -279,6 +285,7 @@ impl Actor {
         if self.turn.is_none() {
             return;
         }
+        self.cancel_deadline = None;
         self.after_turn(done);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
         memory::turns::scan_after_turn(self.hub.clone(), self.cfg.clone());

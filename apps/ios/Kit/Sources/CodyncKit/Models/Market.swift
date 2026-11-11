@@ -233,6 +233,7 @@ public struct MarketApp: Codable, Hashable, Sendable, Identifiable {
     public var description: String
     public var category: String
     public var creator: String
+    public var origin: String?
     public var version: String
     public var icon: String?
     public var website: String?

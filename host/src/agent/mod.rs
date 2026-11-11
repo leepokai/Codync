@@ -15,6 +15,7 @@ pub mod coordinator;
 pub mod envelope;
 pub mod fallback;
 pub mod gear;
+pub(crate) mod hermes;
 pub mod loop_guard;
 pub(crate) mod modes;
 pub mod new_bot;

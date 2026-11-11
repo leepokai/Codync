@@ -48,5 +48,5 @@ data class CatalogPage<T>(val items: List<T> = emptyList()) {
     val category: String, val creator: String, val version: String, val updated: String = "", val icon: String? = null, val website: String? = null,
     val featured: Boolean = false, val setup: String, val server: MarketAppServer, val fields: List<MarketAppField> = emptyList(),
     val steps: List<String> = emptyList(), val docsUrl: String? = null, val docsLabel: String? = null,
-    val prompts: List<MarketAppPrompt> = emptyList(), val installed: Boolean = false)
+    val prompts: List<MarketAppPrompt> = emptyList(), val installed: Boolean = false, val origin: String? = null)
 @Serializable data class MarketAppPage(val items: List<MarketApp>)

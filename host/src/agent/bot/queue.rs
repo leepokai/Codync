@@ -1,7 +1,6 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
 use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion};
-use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
 use crate::market::agent_sign_in;
@@ -14,6 +13,15 @@ use tokio::sync::mpsc;
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
+            Cmd::NativeAuthorizationChanged { connection, generation, user } => {
+                self.revoke_native_inputs(&connection, generation.as_deref(), user.as_deref()).await;
+            }
+            Cmd::HermesRuntimeChanged => {
+                self.restart_after_turn = true;
+                if self.turn.is_none() {
+                    self.next_in_queue(done_tx).await;
+                }
+            }
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
@@ -21,9 +29,11 @@ impl Actor {
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
                 if self.hub.store.entry(&entry_id).is_some_and(|e| {
-                    e.data["source"] == "slack"
-                        && (e.data["status"] != "queued"
-                            || self.queue.iter().any(|q| matches!(q,Queued::User{entry_id:id,..} if id==&entry_id)))
+                    matches!(
+                        e.data["source"].as_str(),
+                        Some("slack" | "discord" | "whatsapp" | "telegram" | "native-channel")
+                    ) && (e.data["status"] != "queued"
+                        || self.queue.iter().any(|q| matches!(q,Queued::User{entry_id:id,..} if id==&entry_id)))
                 }) {
                     return true;
                 }
@@ -48,11 +58,9 @@ impl Actor {
                 );
                 if self.active_request.as_ref().is_some_and(|request| request.expects_reply() && request.id() == id) {
                     self.hub.team.cancel_from(&self.cfg.id);
-                    self.stop_requested = true;
-                    // An expired ask cannot keep the queue blocked even if its harness ignores cancellation.
-                    if let Some(connection) = self.conn.take() {
-                        connection.acp.kill().await;
-                    }
+                    // Hermes owns execution in its gateway: disconnecting the ACP viewer alone
+                    // does not interrupt it. Send session/cancel, then use the normal bounded grace.
+                    self.cancel_turn().await;
                 }
             }
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
@@ -87,51 +95,7 @@ impl Actor {
                 }
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);
             }
-            Cmd::Reconfigure(base) => {
-                let old = std::mem::replace(&mut self.base, *base);
-                // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
-                // moved) until `settle_chain` moves it off one it no longer uses.
-                let cfg = if crate::agent::fallback::step_of(&old, &self.cfg.backend) == Some(0) {
-                    crate::agent::fallback::effective(&self.base, 0)
-                } else {
-                    super::fallback::running(&self.base, &self.cfg)
-                };
-                // The harness reads its own memory's switch when it starts: an agent that can resume its session
-                // restarts into it, one that can't starts afresh.
-                let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
-                let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
-                let account_changed = cfg.account != self.cfg.account;
-                let restart = account_changed
-                    || cfg.backend != self.cfg.backend
-                    || cfg.command != self.cfg.command
-                    || cfg.cwd != self.cfg.cwd
-                    || cfg.model != self.cfg.model
-                    || cfg.model_options != self.cfg.model_options
-                    || (memory_changed && !resumes);
-                self.tools_changed |= cfg.connectors != self.cfg.connectors
-                    || cfg.computer != self.cfg.computer
-                    || cfg.manage_team != self.cfg.manage_team
-                    || memory_changed;
-                // Live sessions switch before their next turn (see `fast_mode`).
-                let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
-                // Name, description and skill changes reach the agent as a profile update
-                // on the next message (see `context`).
-                self.cfg = cfg;
-                if fast_changed {
-                    self.fast_mode_changed();
-                }
-                if memory_changed {
-                    // Claude Code's notes come or go on the memory screen.
-                    memory::screen_changed(&self.hub, &self.cfg.id);
-                }
-                // The running turn finishes first: it may be the bot changing its own model (`update_bot`).
-                if restart && self.turn.is_some() {
-                    self.restart_after_turn = true;
-                } else if restart {
-                    self.restart_agent().await;
-                }
-                self.settle_chain(&old).await;
-            }
+            Cmd::Reconfigure(base) => self.reconfigure(*base).await,
             Cmd::Shutdown => return false,
         }
         true
@@ -146,6 +110,7 @@ impl Actor {
     }
 
     pub(super) async fn stop(&mut self) {
+        self.stop_owner_after_turn = self.cfg.backend == "hermes";
         self.hub.team.end_turn(&self.cfg.id);
         if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
@@ -168,6 +133,17 @@ impl Actor {
             }
         }
         self.cancel_turn().await;
+        if self.turn.is_none() {
+            self.close_stopped_owner().await;
+        }
+    }
+
+    async fn close_stopped_owner(&mut self) {
+        if std::mem::take(&mut self.stop_owner_after_turn)
+            && let Some(conn) = self.conn.take()
+        {
+            conn.acp.kill_and_wait().await;
+        }
     }
 
     /// Stops the running turn only (queued ones stay).
@@ -188,7 +164,7 @@ impl Actor {
     }
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
-    async fn restart_agent(&mut self) {
+    pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
@@ -200,6 +176,9 @@ impl Actor {
     }
 
     pub(super) async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
+        if self.turn.is_none() {
+            self.close_stopped_owner().await;
+        }
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
         }
@@ -307,76 +286,8 @@ impl Actor {
                 }
                 _ => {}
             }
-            // Messages sent while the agent worked go out together as its next turn
-            // without crossing a bot request or reply or another lane: each gets its own reply.
-            let Some(Queued::User { lane, entry_id, .. }) = self.queue.front() else { continue };
-            let proactive = self.proactive_input(entry_id);
-            let lane = lane.clone();
-            let mut batch = Vec::new();
-            while let Some(Queued::User { lane: l, entry_id, .. }) = self.queue.front()
-                && *l == lane
-                && self.proactive_input(entry_id) == proactive
-                && (!proactive || batch.is_empty())
-            {
-                let ahead = self.queue.len().saturating_sub(1);
-                if let Some(Queued::User { entry_id, text, queued_at, .. }) = self.queue.pop_front() {
-                    crate::analytics::turn_queued(
-                        &self.hub,
-                        &self.cfg.id,
-                        i64::try_from(queued_at.elapsed().as_millis()).unwrap_or(i64::MAX),
-                        ahead,
-                    );
-                    if self.hub.store.entry(&entry_id).is_some_and(|e| e.data["source"] == "slack") {
-                        match crate::slack::claim_prompt(&self.hub, &entry_id) {
-                            Ok(true) => {}
-                            Ok(false) => {
-                                if let Some(mut entry) =
-                                    self.hub.store.entry(&entry_id).filter(|e| e.data["status"] == "queued")
-                                {
-                                    entry.data["status"] = "cancelled".into();
-                                    self.hub.set_entry(&entry_id, &entry.data);
-                                }
-                                continue;
-                            }
-                            Err(error) => {
-                                tracing::warn!(%error,"Slack prompt claim failed");
-                                continue;
-                            }
-                        }
-                    }
-                    if self.hub.store.entry(&entry_id).is_some_and(|e| e.data["source"] == "discord") {
-                        match crate::discord::claim_prompt(&self.hub, &entry_id) {
-                            Ok(true) => {}
-                            Ok(false) => {
-                                if let Some(mut entry) =
-                                    self.hub.store.entry(&entry_id).filter(|e| e.data["status"] == "queued")
-                                {
-                                    entry.data["status"] = "cancelled".into();
-                                    self.hub.set_entry(&entry_id, &entry.data);
-                                }
-                                continue;
-                            }
-                            Err(error) => {
-                                tracing::warn!(%error,"Discord prompt claim failed");
-                                continue;
-                            }
-                        }
-                    }
-                    batch.push((entry_id, text));
-                }
-            }
-            let ids: Vec<String> = batch.iter().map(|(id, _)| id.clone()).collect();
-            if batch.is_empty() {
-                continue;
-            }
-            let text = batch.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n\n");
-            // A handoff waiting in the chat starts a new conversation with this message, as does one already taken
-            // for a turn that couldn't start.
-            if lane == main {
-                self.handoff = self.take_handoff().or_else(|| self.handoff.take());
-            }
-            if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
-                self.start_error(e, done_tx).await;
+            if self.advance_user_input(&main, done_tx).await == super::user_input::Progress::Deferred {
+                return;
             }
         }
     }

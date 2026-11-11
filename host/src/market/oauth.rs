@@ -101,6 +101,10 @@ fn app_uri(store: &Store) -> Option<String> {
     })
 }
 
+pub(super) fn callback_urls(store: &Store, port: u16) -> Vec<String> {
+    std::iter::once(loopback_uri(port)).chain(app_uri(store)).collect()
+}
+
 fn text(v: &Value) -> Option<String> {
     v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
@@ -150,9 +154,12 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
 
     // Register once with every redirect URI we might use; again if they changed.
-    let wanted: Vec<String> = std::iter::once(loopback_uri(hub.port)).chain(app).collect();
+    let wanted = callback_urls(store, hub.port);
     let mut oauth = c.oauth.clone().unwrap_or_default();
-    if oauth.client_id.is_empty() || !wanted.iter().all(|u| oauth.redirect_uris.contains(u)) {
+    super::hermes_apps::prepare_client(&c, &mut oauth, &wanted)?;
+    // A pre-registered application only needs the selected callback, rather than every possible device callback.
+    let registered = !oauth.client_id.is_empty() && oauth.redirect_uris.contains(&redirect_uri);
+    if !registered {
         let register = text(&meta["registration_endpoint"]).ok_or_else(|| {
             anyhow!(
                 "{} doesn't let new apps sign in on their own. Add it as a custom connector with a token header.",

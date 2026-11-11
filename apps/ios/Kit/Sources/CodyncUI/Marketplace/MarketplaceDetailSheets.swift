@@ -173,6 +173,9 @@ struct AppSheet: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(app.tagline).font(.body).foregroundStyle(Palette.text)
                         Text(app.description).font(.body).foregroundStyle(Palette.secondary)
+                        if let origin = app.origin, let url = URL(string: origin) {
+                            Link("\(L10n.tr("Origin")): \(app.creator)", destination: url).font(.footnote)
+                        }
                         if let site = app.website, let url = URL(string: site) {
                             Link(site, destination: url).font(.footnote)
                         }

@@ -18,6 +18,10 @@ Extensions opens on one section at a time: **Apps**, **Agents**, or **Skills**. 
 - **Agents** lists ready-made agents and the ready-made bots and coordinator teams. An agent comes with its own instructions, skills and routines; open it to read them, then **Add agent** to create the bot. The agent CLIs sit at the end.
 - **Skills** lists the bundled skill catalog and the Anthropic skills, and opens with **Your own skill** to write one.
 
+The bundled catalog also includes Hermes skills with their original instructions and supporting files. They install from this computer's bundled catalog without downloading from GitHub. Hermes MCP entries use the existing connector sign-in flow; services already listed by OpenBot appear once. Installing a catalog entry preserves your existing custom servers.
+
+When a bot improves an enabled Hermes skill, it makes a copy for itself so other bots keep the original. The bot can show its saved versions with `skill_history` and, when you ask, restore one with `restore_skill`. A restore is refused if the skill changed since the bot read its history. New skills proposed after complex work still wait for your review.
+
 ## Add an app
 
 1. Pick an app and read its page: what it does, how it connects and a few example prompts.

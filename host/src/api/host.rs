@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     Ok(ControlFlow::Break(match method {
+        "openaiKeys" | "openaiCreateKey" | "openaiRevokeKey" => super::openai_keys::call(hub, method, &b).await?,
         "hostUpdateStatus" => crate::update::status()?,
         "hostHealth" => crate::health::value(hub),
         // The security decisions made on this computer.
@@ -64,24 +65,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "whatsappSetBot" => {
             let bot = str_arg(&b, "botId")?;
-            hub.store.kv_set("whatsapp.bot", bot)?;
+            crate::whatsapp::set_bot(hub, bot)?;
             json!({"ok": true})
         }
         "whatsappAllowed" => json!({"allowed": crate::whatsapp::allowed(hub)}),
         "whatsappSetAllowed" => {
             let jid = str_arg(&b, "jid")?;
-            if jid.is_empty() || jid.len() > 120 || jid.contains(char::is_whitespace) {
-                bail!("Use a WhatsApp id, such as 5215555555555@s.whatsapp.net.");
-            }
-            let mut list = crate::whatsapp::allowed(hub);
-            list.retain(|a| a != jid);
-            if b["allowed"].as_bool().unwrap_or(true) {
-                if list.len() >= 200 {
-                    bail!("That is as many chats as one number allows (200).");
-                }
-                list.push(jid.to_owned());
-            }
-            hub.store.kv_set("whatsapp.allowed", &serde_json::to_string(&list)?)?;
+            let list = crate::whatsapp::set_allowed(hub, jid, b["allowed"].as_bool().unwrap_or(true))?;
             json!({"allowed": list})
         }
         "whatsappSend" => {
@@ -128,6 +118,18 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::voice::transcribe(&hub.store, provider, str_arg(&b, "model")?, str_arg(&b, "audio")?).await?
         }
         "voiceSpeak" => {
+            if b["provider"] == "neutts" {
+                return Ok(ControlFlow::Break(
+                    crate::voice::synthesis::speak(
+                        &hub.store,
+                        caller.device_key(),
+                        str_arg(&b, "requestId")?,
+                        b["botId"].as_str(),
+                        str_arg(&b, "text")?,
+                    )
+                    .await?,
+                ));
+            }
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::speak(
                 &hub.store,
@@ -138,6 +140,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             )
             .await?
         }
+        "voiceCancelSpeech" => crate::voice::synthesis::cancel(caller.device_key(), str_arg(&b, "requestId")?)?,
+        "voiceLocalStatus" => crate::voice::synthesis::status(&hub.store, b["botId"].as_str()).await,
+        "voiceStartSpeech" => crate::voice::synthesis::start(
+            hub,
+            caller.device_key(),
+            str_arg(&b, "requestId")?,
+            b["botId"].as_str(),
+            str_arg(&b, "text")?,
+        )?,
+        "voiceSpeechChunk" => crate::voice::synthesis::next(caller.device_key(), str_arg(&b, "requestId")?).await?,
         "hello" => {
             let port = hub.port;
             let icons = crate::icons::snapshot(&hub.store)?;

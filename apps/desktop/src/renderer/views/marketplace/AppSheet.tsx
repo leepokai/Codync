@@ -58,7 +58,7 @@ export function AppSheet({ app, added, onAdded, onError }: { app: MarketApp; add
             {app.website ? <WebLink title={app.website} url={app.website} className="small truncate" /> : null}
             <dl className="market-facts">
               <dt>{tr('Creator')}</dt><dd>{app.creator}</dd>
-              <dt>{tr('Origin')}</dt><dd>{tr('Reviewed by OpenBot')}</dd>
+              <dt>{tr('Origin')}</dt><dd>{app.origin ? <WebLink title={app.creator} url={app.origin} className="small" /> : tr('Reviewed by OpenBot')}</dd>
               <dt>{tr('Category')}</dt><dd>{tr(app.category)}</dd>
               <dt>{tr('Version')}</dt><dd>{app.version}</dd>
               <dt>{tr('Updated')}</dt><dd>{app.updated}</dd>

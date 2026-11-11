@@ -185,12 +185,15 @@ impl Store {
              BEGIN DELETE FROM computer_activity_actors WHERE activity_id=old.id; END;",
         )?;
         migrate(&c)?;
+        super::session_search::open(&c)?;
+        super::routine_delivery::open(&c)?;
         super::runtime::create_tables(&c)?;
         super::documents::open(&c)?;
         super::mcp_policies::open(&c)?;
         super::discord::open(&c)?;
         super::whatsapp::open(&c)?;
         super::slack::open(&c)?;
+        super::native_channels::open(&c)?;
         super::research::open(&c)?;
         super::analytics::open(&c)?;
         super::apps::open(&c)?;

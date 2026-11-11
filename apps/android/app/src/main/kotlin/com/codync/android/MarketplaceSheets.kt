@@ -161,6 +161,7 @@ private val WEEKDAYS = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "T
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(app.tagline, style = Type.body, color = Palette.text)
                         Text(app.description, style = Type.body, color = Palette.secondary)
+                        app.origin?.let { WebLink("${tr("Origin")}: ${app.creator}", it, Type.footnote) }
                         app.website?.let { WebLink(it, it, Type.footnote) }
                     }
                 }

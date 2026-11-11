@@ -8,6 +8,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub enum Cmd {
+    /// Apply the whole native Hermes route together after the current turn.
+    HermesRuntimeChanged,
+    /// Revoke only input from the replaced connection generation or unpaired sender.
+    NativeAuthorizationChanged {
+        connection: String,
+        generation: Option<String>,
+        user: Option<String>,
+    },
     RefreshTools,
     /// The computer is short of memory: an idle agent gives its memory back now, without waiting out its idle time.
     FreeMemory,

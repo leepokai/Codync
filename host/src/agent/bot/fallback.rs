@@ -372,6 +372,9 @@ impl Actor {
 
     /// A turn that couldn't start: on the next agent if one can take it, otherwise the failure as usual.
     pub(super) async fn start_error(&mut self, error: anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) {
+        if self.finish_expired_request() {
+            return;
+        }
         if !self.fall_back(&error, done_tx).await {
             self.start_failed(&error);
         }

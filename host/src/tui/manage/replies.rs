@@ -15,6 +15,25 @@ impl App {
             }
         };
         match r {
+            Reply::HermesEnvironment { bot, revision } => {
+                if let Some(Overlay::Fields(f)) = self.overlays.last_mut()
+                    && matches!(&f.submit, super::Submit::HermesRuntime {bot: saved, revision: saved_revision, ..} if saved == &bot && saved_revision == &revision)
+                {
+                    f.saving = false;
+                    f.note = format!(
+                        "Saved environment: {} — {}. {}. Ctrl-P checks again (may start a sandbox).",
+                        s(&v, "backend"),
+                        s(&v, "status"),
+                        s(&v, "detail")
+                    );
+                    f.error = None;
+                }
+            }
+            Reply::HermesRuntime(bot) => {
+                if matches!(self.overlays.last(), Some(Overlay::Form(f)) if f.bot_id == bot && f.backend == "hermes") {
+                    self.overlays.push(Overlay::Fields(Box::new(super::hermes_runtime::fields(&bot, &v))));
+                }
+            }
             Reply::Computer(reply) => self.computer_reply(&reply, Ok(v)),
             Reply::McpTools(reply) => self.mcp_tools_reply(&reply, Ok(v)),
             Reply::Documents(reply) => self.on_document_reply(&reply, &v),
@@ -235,6 +254,19 @@ impl App {
     }
 
     fn sheet_error(&mut self, r: &Reply, e: String) {
+        if let Reply::HermesEnvironment { bot, revision } = r {
+            if let Some(Overlay::Fields(f)) = self.overlays.last_mut()
+                && matches!(&f.submit, super::Submit::HermesRuntime {bot:saved,revision:saved_revision,..} if saved == bot && saved_revision == revision)
+            {
+                f.saving = false;
+                f.error = Some(e);
+            }
+            return;
+        }
+        if matches!(r, Reply::HermesRuntime(_)) {
+            self.flash(&format!("{e}. Update the host if Hermes runtime settings are unavailable."));
+            return;
+        }
         if let Reply::Computer(reply) = r {
             self.computer_reply(reply, Err(e));
             return;

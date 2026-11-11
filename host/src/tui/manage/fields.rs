@@ -17,6 +17,20 @@ impl App {
         let multiline = f.current().is_some_and(|i| i.multiline);
         match k.code {
             KeyCode::Esc => return None,
+            KeyCode::Char('p') if ctrl(k) && matches!(f.submit, Submit::HermesRuntime { .. }) => {
+                if let Submit::HermesRuntime { bot, revision, config } = &f.submit {
+                    if config["enabled"] != true {
+                        f.error = Some("Apply an enabled runtime before checking its environment.".into());
+                    } else {
+                        self.sheet(
+                            "hermesEnvironmentHealth",
+                            json!({"botId":bot,"ifRevision":revision}),
+                            Reply::HermesEnvironment { bot: bot.clone(), revision: revision.clone() },
+                        );
+                        f.saving = true;
+                    }
+                }
+            }
             _ if newline(k) && multiline => {
                 if let Some(i) = f.current() {
                     i.ed.insert("\n");
@@ -57,6 +71,13 @@ impl App {
         f.saving = true;
         f.error = None;
         match &f.submit {
+            Submit::HermesRuntime { .. } => match super::hermes_runtime::request(f, &values) {
+                Ok(body) => self.sheet("setHermesRuntime", body, Reply::FieldsSaved),
+                Err(error) => {
+                    f.saving = false;
+                    f.error = Some(error.to_string());
+                }
+            },
             Submit::Connection(_) => self.submit_connection(f, &values),
             Submit::AgentEnv(backend) => {
                 if values.is_empty() {

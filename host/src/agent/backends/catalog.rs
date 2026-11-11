@@ -138,15 +138,12 @@ pub const HARNESSES: &[Harness] = &[
     },
     Harness {
         id: "hermes",
-        name: "Hermes Agent",
+        name: "Hermes (local)",
         bins: &["hermes"],
         local: Some("{bin} acp"),
         registry: None,
         setup: "Install Hermes Agent and run `hermes acp --setup` to choose a provider and model.",
-        install: Some(Install::Scripts {
-            unix: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
-            windows: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"iex (irm https://hermes-agent.nousresearch.com/install.ps1)\"",
-        }),
+        install: Some(Install::Scripts { unix: super::hermes::INSTALL_UNIX, windows: super::hermes::INSTALL_WINDOWS }),
         login: Some("{bin} acp --setup"),
         signed_in: None,
     },

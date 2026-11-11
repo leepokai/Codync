@@ -6,6 +6,13 @@ use serde::Serialize;
 
 pub(super) fn open(db: &rusqlite::Connection) -> Result<()> {
     db.execute_batch(include_str!("slack.sql"))?;
+    let audio: bool =
+        db.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('slack_inbox') WHERE name='audio')", [], |r| {
+            r.get(0)
+        })?;
+    if !audio {
+        db.execute("ALTER TABLE slack_inbox ADD COLUMN audio TEXT NOT NULL DEFAULT 'null'", [])?;
+    }
     Ok(())
 }
 
@@ -18,6 +25,7 @@ pub struct SlackIncoming {
     pub entry: String,
     pub text: String,
     pub user: String,
+    pub(crate) audio: Option<crate::channels::voice_notes::Audio>,
 }
 pub struct SlackOutgoing {
     pub entry: String,
@@ -31,6 +39,22 @@ pub struct SlackDelivery {
     pub id: String,
     pub state: String,
     pub timestamp: Option<String>,
+}
+
+#[cfg(test)]
+mod audio_migration_tests {
+    #[test]
+    fn old_pending_messages_survive_repeatable_audio_migration() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch(include_str!("slack.sql")).unwrap();
+        db.execute("INSERT INTO slack_inbox(event_id,generation,bot_id,channel_id,thread_ts,entry_id,text,user_id,created_at) VALUES('event','g','bot','channel','1.0','entry','original text','user',1)", []).unwrap();
+        super::open(&db).unwrap();
+        super::open(&db).unwrap();
+        let row: (String, String, String) = db
+            .query_row("SELECT text,state,audio FROM slack_inbox", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap();
+        assert_eq!(row, ("original text".into(), "queued".into(), "null".into()));
+    }
 }
 
 impl Store {
@@ -59,8 +83,8 @@ impl Store {
     }
     pub fn enqueue_slack(&self, event: &SlackIncoming) -> Result<()> {
         self.db.locked().execute(
-            "INSERT INTO slack_inbox(event_id,generation,bot_id,channel_id,thread_ts,entry_id,text,user_id,created_at)
-            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT DO NOTHING",
+            "INSERT INTO slack_inbox(event_id,generation,bot_id,channel_id,thread_ts,entry_id,text,user_id,created_at,audio)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT DO NOTHING",
             params![
                 event.event,
                 event.generation,
@@ -70,7 +94,8 @@ impl Store {
                 event.entry,
                 event.text,
                 event.user,
-                now_ms()
+                now_ms(),
+                serde_json::to_string(&event.audio)?
             ],
         )?;
         Ok(())
@@ -78,7 +103,7 @@ impl Store {
     pub fn pending_slack(&self) -> Result<Vec<SlackIncoming>> {
         let db = self.db.locked();
         let mut q = db.prepare(
-            "SELECT event_id,generation,bot_id,channel_id,thread_ts,entry_id,text,user_id
+            "SELECT event_id,generation,bot_id,channel_id,thread_ts,entry_id,text,user_id,audio
             FROM slack_inbox WHERE state='queued' ORDER BY created_at LIMIT 20",
         )?;
         Ok(q.query_map([], |r| {
@@ -91,6 +116,9 @@ impl Store {
                 entry: r.get(5)?,
                 text: r.get(6)?,
                 user: r.get(7)?,
+                audio: serde_json::from_str(&r.get::<_, String>(8)?).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(error))
+                })?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?)

@@ -67,6 +67,39 @@ fn envelope(id: &str, payload: &Value) -> Value {
     json!({"type": "events_api", "envelope_id": id, "payload": payload})
 }
 
+#[test]
+fn authorized_voice_only_messages_survive_the_durable_queue_without_bytes_or_credentials() {
+    let f = fixture("", SIGNING_SECRET);
+    let c = load(&f.hub.store).unwrap().unwrap();
+    let mut event = mention("voice", "U1", "", "123.001");
+    event["event"]["subtype"] = "file_share".into();
+    event["event"]["files"] = json!([{
+        "name":"voice.ogg", "mimetype":"audio/ogg", "size":42,
+        "url_private_download":"https://files.slack.com/files-pri/T1-F1/download/voice.ogg"
+    }]);
+    ingress::accept(&f.hub, &c, &event).unwrap();
+    ingress::accept(&f.hub, &c, &event).unwrap();
+    let pending = f.hub.store.pending_slack().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].audio.is_some());
+    assert!(pending[0].text.contains("voice.ogg"));
+    event["event_id"] = "not-allowed".into();
+    event["event"]["user"] = "U2".into();
+    ingress::accept(&f.hub, &c, &event).unwrap();
+    assert_eq!(f.hub.store.pending_slack().unwrap().len(), 1);
+    event["event_id"] = "too-large".into();
+    event["event"]["ts"] = "124.001".into();
+    event["event"]["user"] = "U1".into();
+    event["event"]["files"][0]["size"] = (21_u64 * 1024 * 1024).into();
+    ingress::accept(&f.hub, &c, &event).unwrap();
+    let pending = f.hub.store.pending_slack().unwrap();
+    let oversized = pending.iter().find(|message| message.event == "too-large").unwrap();
+    assert!(oversized.audio.is_none());
+    assert!(oversized.text.contains("could not be transcribed"));
+    f.hub.store.reject_stale_slack(Some("replacement-generation")).unwrap();
+    assert!(f.hub.store.pending_slack().unwrap().is_empty());
+}
+
 async fn until(what: &str, mut done: impl FnMut() -> bool) {
     for _ in 0..1000 {
         if done() {

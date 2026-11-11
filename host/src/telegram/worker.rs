@@ -14,7 +14,13 @@ use tokio::sync::{Mutex, broadcast::error::RecvError};
 use tokio::task::JoinHandle;
 
 /// Aborts its tasks when dropped, so a stopped host loop leaves nothing polling.
-struct Tasks(Vec<JoinHandle<()>>);
+struct Tasks(Vec<JoinHandle<()>>, super::inbox::Inbox);
+
+static CONFIGURATION: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+pub(super) fn configuration_changed() {
+    CONFIGURATION.notify_waiters();
+}
 
 impl Drop for Tasks {
     fn drop(&mut self) {
@@ -23,7 +29,7 @@ impl Drop for Tasks {
 }
 
 /// Where the reply to the last message of a Telegram chat goes.
-struct Route {
+pub(super) struct Route {
     chat: i64,
     /// Entries of this turn and later belong to it.
     turn: i64,
@@ -40,20 +46,28 @@ struct Live {
     at: Instant,
 }
 
-type Shared = Arc<Mutex<Option<Route>>>;
+pub(super) type Shared = Arc<Mutex<Option<Route>>>;
 
 pub(super) async fn run(hub: Arc<Hub>, ep: Endpoint) {
     let mut running: HashMap<String, (String, Tasks)> = HashMap::new();
     loop {
+        let refresh = CONFIGURATION.notified();
+        tokio::pin!(refresh);
+        refresh.as_mut().enable();
         if let Err(error) = reconcile(&hub, &ep, &mut running).await {
             tracing::warn!(error = format!("{error:#}"), "Telegram channels need attention");
         }
-        tokio::time::sleep(ep.reconcile).await;
+        tokio::select! {
+            () = refresh => {},
+            () = tokio::time::sleep(ep.reconcile) => {},
+        }
     }
 }
 
-fn fingerprint(bot: &TgBot) -> String {
-    format!("{}|{}|{}", bot.token, bot.bot_id, bot.username)
+pub(super) fn fingerprint(bot: &TgBot) -> String {
+    let mut allowed = bot.allowed.clone();
+    allowed.sort_unstable();
+    json!([bot.token, bot.bot_id, bot.username, allowed, bot.generation, bot.memory]).to_string()
 }
 
 async fn reconcile(
@@ -67,22 +81,33 @@ async fn reconcile(
         crate::market::vault::unlock(hub.clone()).await?;
         load(&hub.store)?.bots
     };
-    running.retain(|name, (print, _)| wanted.iter().any(|b| &b.name == name && &fingerprint(b) == print));
+    running.retain(|name, (print, tasks)| {
+        wanted.iter().any(|bot| &bot.name == name)
+            && (tasks.1.handling_control()
+                || (!tasks.0.iter().any(JoinHandle::is_finished)
+                    && wanted.iter().any(|bot| &bot.name == name && &fingerprint(bot) == print)))
+    });
     for bot in wanted {
         if running.contains_key(&bot.name) {
             continue;
         }
         let shared = Shared::default();
-        let tasks = Tasks(vec![
-            tokio::spawn(poll(hub.clone(), ep.clone(), bot.name.clone(), shared.clone())),
-            tokio::spawn(stream(hub.clone(), ep.clone(), bot.name.clone(), shared)),
-        ]);
+        let inbox = super::inbox::Inbox::open(hub, &bot.name, fingerprint(&bot))?;
+        let monitor = inbox.clone();
+        let tasks = Tasks(
+            vec![
+                tokio::spawn(poll(hub.clone(), ep.clone(), bot.name.clone(), shared.clone(), inbox.clone())),
+                tokio::spawn(inbox.run(hub.clone(), ep.clone(), bot.name.clone(), shared.clone())),
+                tokio::spawn(stream(hub.clone(), ep.clone(), bot.name.clone(), shared)),
+            ],
+            monitor,
+        );
         running.insert(bot.name.clone(), (fingerprint(&bot), tasks));
     }
     Ok(())
 }
 
-fn current(hub: &Hub, name: &str) -> Option<TgBot> {
+pub(super) fn current(hub: &Hub, name: &str) -> Option<TgBot> {
     load(&hub.store).ok()?.bots.into_iter().find(|b| b.name == name)
 }
 
@@ -92,9 +117,22 @@ fn set(hub: &Hub, key: &str, name: &str, value: &str) {
     }
 }
 
+pub(super) fn checkpoint(hub: &Hub, name: &str, token: &str, update: &Value) -> anyhow::Result<()> {
+    let _guard = crate::LockExt::locked(&hub.store.connector_lock);
+    let current = load(&hub.store)?.bots.into_iter().find(|bot| bot.name == name);
+    if current.is_none_or(|bot| bot.token != token) {
+        return Ok(());
+    }
+    let Some(id) = update["update_id"].as_i64() else { return Ok(()) };
+    let next = id.checked_add(1).ok_or_else(|| anyhow::anyhow!("Invalid Telegram update id"))?;
+    let key = format!("telegram.offset.{name}");
+    let previous = hub.store.kv_read(&key)?.as_deref().map(str::parse::<i64>).transpose()?.unwrap_or(0);
+    hub.store.kv_set(&key, &previous.max(next).to_string())
+}
+
 // MARK: receiving
 
-async fn poll(hub: Arc<Hub>, ep: Endpoint, name: String, shared: Shared) {
+async fn poll(hub: Arc<Hub>, ep: Endpoint, name: String, shared: Shared, inbox: super::inbox::Inbox) {
     loop {
         let Some(bot) = current(&hub, &name) else { return };
         let offset = hub
@@ -108,9 +146,13 @@ async fn poll(hub: Arc<Hub>, ep: Endpoint, name: String, shared: Shared) {
             Ok(list) => {
                 set(&hub, "state", &name, "ok");
                 for update in list {
-                    handle(&hub, &ep, &name, &shared, &update).await;
-                    if let Some(id) = update["update_id"].as_i64() {
-                        set(&hub, "offset", &name, &(id + 1).to_string());
+                    if let Err(error) = inbox.accept(&hub, &ep, &name, &shared, &update).await {
+                        tracing::warn!(telegram = name, %error, "Telegram input was not saved; polling will retry");
+                        break;
+                    }
+                    if let Err(error) = checkpoint(&hub, &name, &bot.token, &update) {
+                        tracing::warn!(telegram = name, %error, "Telegram acknowledgement will retry");
+                        break;
                     }
                 }
             }
@@ -124,14 +166,17 @@ async fn poll(hub: Arc<Hub>, ep: Endpoint, name: String, shared: Shared) {
     }
 }
 
-async fn say(ep: &Endpoint, bot: &TgBot, chat: i64, text: &str) {
+pub(super) async fn say(ep: &Endpoint, bot: &TgBot, chat: i64, text: &str) {
     if let Err(error) = client::message(ep, &bot.token, chat, text, None).await {
         tracing::warn!(error = format!("{error:#}"), telegram = bot.name, "Telegram message was not sent");
     }
 }
 
-async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, update: &Value) {
+pub(super) async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, update: &Value, expected: &str) {
     let Some(bot) = current(hub, name) else { return };
+    if fingerprint(&bot) != expected {
+        return;
+    }
     if let Some(query) = update.get("callback_query") {
         return answer_button(hub, ep, &bot, query).await;
     }
@@ -141,8 +186,9 @@ async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, upda
         return;
     }
     let (Some(chat), Some(user)) = (message["chat"]["id"].as_i64(), message["from"]["id"].as_i64()) else { return };
-    let text = message["text"].as_str().unwrap_or_default().trim();
-    if text.is_empty() {
+    let text = message["text"].as_str().or_else(|| message["caption"].as_str()).unwrap_or_default().trim();
+    let voice = message.get("voice").or_else(|| message.get("audio"));
+    if text.is_empty() && voice.is_none() {
         return;
     }
     set(hub, "seen", name, &crate::store::now_ms().to_string());
@@ -166,13 +212,45 @@ async fn handle(hub: &Arc<Hub>, ep: &Endpoint, name: &str, shared: &Shared, upda
         let help = "Write here to talk to your bot. /estado shows what it is doing, /rutinas lists its routines, /detener stops it.";
         return say(ep, &bot, chat, help).await;
     }
+    // Authorization and text commands precede audio I/O. A transcript never becomes a transport
+    // command such as /detener; it is ordinary message content for this bound bot.
+    let text = if let Some(voice) = voice {
+        let transcript = async {
+            let id = voice["file_id"].as_str().ok_or_else(|| anyhow::anyhow!("Telegram voice note has no file id"))?;
+            let bytes = client::voice_note(ep, &bot.token, id).await?;
+            crate::voice::transcription::note(&hub.store, &bytes).await
+        }
+        .await;
+        match transcript {
+            Ok(transcript) => format!("{text}\n\n[Voice note transcript]\n{transcript}").trim().to_owned(),
+            Err(error) => {
+                tracing::warn!(
+                    telegram = name,
+                    error = format!("{error:#}"),
+                    "Telegram voice note could not be transcribed"
+                );
+                return say(ep, &bot, chat, "Could not transcribe that voice note. Check the speech provider in Codync call settings, or send the message as text.").await;
+            }
+        }
+    } else {
+        text.to_owned()
+    };
+    if current(hub, name).is_none_or(|active| fingerprint(&active) != expected || !active.allowed.contains(&user)) {
+        return;
+    }
     // The route exists before the message is sent: a quick reply must not beat it. Entries of earlier turns are not ours.
-    let turn = hub.store.max_turn(&bot.bot_id) + 1;
-    *shared.lock().await = Some(Route { chat, turn, live: None, cards: HashMap::new() });
     let nonce = format!("tg-{name}-{}", update["update_id"]);
-    let body =
-        json!({"botId": bot.bot_id, "text": crate::channels::with_memory(&bot.memory, text), "clientNonce": nonce});
-    if let Err(error) = crate::api::dispatch(hub, &Caller::Local, "send", body).await {
+    let turn = hub
+        .store
+        .find_by_nonce(&bot.bot_id, &nonce)
+        .map_or_else(|| hub.store.max_turn(&bot.bot_id) + 1, |entry| entry.turn);
+    {
+        let mut route = shared.lock().await;
+        if route.as_ref().is_none_or(|route| route.chat != chat || route.turn != turn) {
+            *route = Some(Route { chat, turn, live: None, cards: HashMap::new() });
+        }
+    }
+    if let Err(error) = super::input::post(hub, name, user, expected, &text, &nonce) {
         *shared.lock().await = None;
         say(ep, &bot, chat, &format!("Could not reach the bot: {error:#}")).await;
     }
@@ -183,7 +261,7 @@ async fn pair(hub: &Arc<Hub>, ep: &Endpoint, bot: &TgBot, chat: i64, user: i64, 
     let Some(rest) = text.strip_prefix("/start").or_else(|| text.strip_prefix("/pair")) else { return };
     let Some(code) = rest.split_whitespace().last() else { return };
     match pairing::redeem(&hub.store, &bot.name, code, crate::store::now_ms()) {
-        Ok(true) => match allow(hub, &bot.name, user) {
+        Ok(true) => match allow(hub, bot, user) {
             Ok(()) => say(ep, bot, chat, &format!("Paired. You can talk to {} here.", hub.bot_name(&bot.bot_id))).await,
             Err(error) => tracing::warn!(error = format!("{error:#}"), "A paired person was not saved"),
         },
@@ -192,13 +270,18 @@ async fn pair(hub: &Arc<Hub>, ep: &Endpoint, bot: &TgBot, chat: i64, user: i64, 
     }
 }
 
-fn allow(hub: &Hub, name: &str, user: i64) -> anyhow::Result<()> {
+fn allow(hub: &Hub, expected: &TgBot, user: i64) -> anyhow::Result<()> {
     let _guard = crate::LockExt::locked(&hub.store.connector_lock);
     let mut config = load(&hub.store)?;
-    let bot =
-        config.bots.iter_mut().find(|b| b.name == name).ok_or_else(|| anyhow::anyhow!("The Telegram bot is gone."))?;
+    let bot = config
+        .bots
+        .iter_mut()
+        .find(|b| b.name == expected.name)
+        .ok_or_else(|| anyhow::anyhow!("The Telegram bot is gone."))?;
+    anyhow::ensure!(fingerprint(bot) == fingerprint(expected), "Telegram connection changed before pairing completed");
     if !bot.allowed.contains(&user) {
         bot.allowed.push(user);
+        bot.generation = uuid::Uuid::new_v4().to_string();
     }
     super::save(&hub.store, &config)
 }

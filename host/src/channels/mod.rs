@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+pub(crate) mod voice_notes;
+
 /// A file a person attached to a message. Only its name travels for now: the host does not download it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileRef {

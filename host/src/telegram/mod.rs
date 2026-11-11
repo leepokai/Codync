@@ -8,6 +8,9 @@
 
 mod client;
 mod commands;
+mod inbox;
+mod input;
+pub(crate) use input::claim_prompt;
 mod pairing;
 mod worker;
 
@@ -38,6 +41,9 @@ const MAX_ALLOWED: usize = 20;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TgBot {
+    /// Changes on access revocation, even when an old allowlist is restored immediately.
+    #[serde(default)]
+    generation: String,
     /// What the person calls it: `home`, `work`.
     name: String,
     token: String,
@@ -73,7 +79,9 @@ fn load(store: &Store) -> Result<Config> {
 }
 
 fn save(store: &Store, config: &Config) -> Result<()> {
-    crate::market::vault::write(store, SLOT, &serde_json::to_string(config)?)
+    crate::market::vault::write(store, SLOT, &serde_json::to_string(config)?)?;
+    worker::configuration_changed();
+    Ok(())
 }
 
 pub(crate) fn configuration_state(store: &Store) -> &'static str {
@@ -166,6 +174,7 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
                 bail!("That is as many Telegram bots as one host talks through ({MAX_BOTS}).");
             }
             config.bots.push(TgBot {
+                generation: uuid::Uuid::new_v4().to_string(),
                 name: add.name,
                 token: add.token,
                 username,
@@ -179,6 +188,7 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
         "removeTelegramBot" => {
             config.bots.retain(|b| b.name != name);
             save(&hub.store, &config)?;
+            inbox::forget(&hub.store, name)?;
             for key in ["pair", "offset", "seen", "state"] {
                 hub.store.kv_delete(&format!("telegram.{key}.{name}"))?;
             }
@@ -191,12 +201,18 @@ async fn call_with(hub: &Arc<Hub>, ep: &Endpoint, method: &str, body: Value) -> 
         "setTelegramAllowed" => {
             let user = body["userId"].as_i64().context("userId must be a Telegram user id.")?;
             let bot = config.bots.iter_mut().find(|b| b.name == name).context("Unknown Telegram bot.")?;
+            let mut previous = bot.allowed.clone();
+            previous.sort_unstable();
             bot.allowed.retain(|u| *u != user);
             if body["allowed"].as_bool().unwrap_or(true) {
                 if bot.allowed.len() >= MAX_ALLOWED {
                     bail!("That is as many people as one Telegram bot lets in ({MAX_ALLOWED}).");
                 }
                 bot.allowed.push(user);
+            }
+            bot.allowed.sort_unstable();
+            if previous != bot.allowed {
+                bot.generation = uuid::Uuid::new_v4().to_string();
             }
             save(&hub.store, &config)?;
         }

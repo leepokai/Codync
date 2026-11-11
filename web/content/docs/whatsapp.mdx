@@ -19,6 +19,10 @@ stops with the host; **Disconnect** logs it out.
   quiet for the rest.
 
 Put `@` and a bot's name in a message to send it to that bot instead of the chosen one.
+Each bot keeps a separate conversation for that WhatsApp chat.
+After logging out or linking another account, replies and approvals from the previous link
+stay in Codync and are not forwarded through the replacement account. Logging out from
+WhatsApp itself also revokes the old link.
 
 ### Restricting who writes
 
@@ -28,9 +32,11 @@ add the group id and the bot answers the allowed people there.
 
 ## Approval codes
 
-A run that needs a decision becomes one message with its two options. The person who wrote the
-request answers `1` or `2`; the first answer wins, from the phone or the app. A card that was
-already settled says so.
+A run that needs a decision becomes a numbered list of all its options. The person who wrote the
+request answers with the option number; the first answer wins, from WhatsApp or the Codync app.
+In a group, another participant cannot answer that person's decision. Decisions for a batch with
+several authors, or older decisions without an author receipt, remain available in the Codync app.
+A card that was already settled says so.
 
 ## Files
 
@@ -38,11 +44,19 @@ Photos, videos, voice notes and documents are saved under the host's data folder
 prompt, so the bot can open them. The bot's replies come back into the same chat, with any files it
 attaches (images arrive as photos). A very large attachment is named but not saved.
 
-## Approval codes
+### Voice notes
 
-A run that needs a decision becomes one message with its two options. The person who wrote the
-request answers `1` or `2`; the first answer wins, from the phone or the app. A card that was
-already settled says so.
+When the computer already has an OpenAI or Gemini key in **Settings → Voice chat**, the host
+transcribes incoming voice notes and includes the transcript with the attachment. OpenAI is used
+when both providers are configured. Audio is sent to that speech provider using the existing
+voice settings; no second connection is needed. Provider charges apply.
+With `CODYNC_OPENAI_BASE_URL`, the OpenAI engine uses that configured compatible speech
+endpoint instead of sending the recording to OpenAI.
+
+Transcription accepts recognized audio containers up to 20 MiB. If it fails, the original
+attachment remains in the message and the bot is told it could not be transcribed. An unlink,
+change of assigned bot, or removal from the allowed list cancels affected queued inputs.
+Temporary disconnection preserves the pending message metadata for reconnecting.
 
 ## Limits
 

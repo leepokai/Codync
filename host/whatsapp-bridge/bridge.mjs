@@ -84,16 +84,25 @@ async function start() {
                 if (message.key.fromMe && !self) continue
                 const context = message.message?.extendedTextMessage?.contextInfo ?? message.message?.imageMessage?.contextInfo
                     ?? message.message?.videoMessage?.contextInfo ?? message.message?.documentMessage?.contextInfo
+                    ?? message.message?.audioMessage?.contextInfo
                 const mentioned = (context?.mentionedJid ?? []).some((jid) => jidNormalizedUser(jid) === me)
                 // Answering the bot's own message, or quoting one, is how a group asks it something.
                 const quoted = context?.participant ? jidNormalizedUser(context.participant) === me : false
                 if (group && !mentioned && !quoted && !self) continue
                 const sender = message.key.participant ? jidNormalizedUser(message.key.participant) : (chat ? jidNormalizedUser(chat) : '')
-                let media = null
+                let media = mediaOf(message)
                 try {
-                    if (mediaOf(message)) {
-                        const buffer = await downloadMediaMessage(message, 'buffer', {})
-                        media = { ...mediaOf(message), data: buffer.toString('base64') }
+                    const limit = 32 * 1024 * 1024
+                    if (media && media.size <= limit) {
+                        const stream = await downloadMediaMessage(message, 'stream', {})
+                        const chunks = []
+                        let size = 0
+                        for await (const chunk of stream) {
+                            size += chunk.length
+                            if (size > limit) throw new Error('attachment exceeds 32 MiB')
+                            chunks.push(chunk)
+                        }
+                        media = { ...media, data: Buffer.concat(chunks, size).toString('base64') }
                     }
                 } catch {}
                 out({

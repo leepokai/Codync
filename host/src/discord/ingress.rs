@@ -51,9 +51,13 @@ pub(super) fn accept(hub: &Hub, c: &Config, message: &Value) -> Result<()> {
         return Ok(());
     }
     let text = strip_mentions(message["content"].as_str().unwrap_or_default(), &c.bot_user_id);
-    if text.is_empty() || text.len() > 32 * 1024 {
+    let audio = crate::channels::voice_notes::Platform::Discord.attachment(message);
+    let has_audio = crate::channels::voice_notes::Platform::Discord.has_audio(message);
+    if (text.is_empty() && !has_audio) || text.len() > 32 * 1024 {
         return Ok(());
     }
+    let prompt = prompt(message, &text);
+    let prompt = if has_audio && audio.is_none() { crate::channels::voice_notes::unavailable(&prompt) } else { prompt };
     let event = json!({
         "source": "discord", "event": if mention {"message.mention"} else {"message.created"},
         "channel": channel, "user": author, "text": text, "messageId": id,
@@ -67,9 +71,10 @@ pub(super) fn accept(hub: &Hub, c: &Config, message: &Value) -> Result<()> {
         bot: binding.bot_id.clone(),
         channel: channel.into(),
         entry: stable_id(&[&c.generation, channel, id]),
-        text: prompt(message, &text),
+        text: prompt,
         user: author.into(),
         message: id.into(),
+        audio,
     };
     hub.store.enqueue_discord(&incoming)?;
     let root = stable_id(&[&c.generation, channel, "root"]);

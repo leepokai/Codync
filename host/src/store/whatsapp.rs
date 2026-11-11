@@ -1,9 +1,28 @@
 use super::{Store, now_ms};
 use crate::LockExt;
 use anyhow::Result;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 pub(super) fn open(db: &rusqlite::Connection) -> Result<()> {
+    // Older hosts keyed all bots' conversations by chat alone. Keep their root and
+    // approval history, while letting a different bot have its own conversation.
+    let legacy = {
+        let mut columns = db.prepare("PRAGMA table_info(whatsapp_threads)")?;
+        let names = columns.query_map([], |row| row.get::<_, String>(1))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        !names.is_empty() && !names.iter().any(|name| name == "bot_id")
+    };
+    if legacy {
+        let tx = db.unchecked_transaction()?;
+        tx.execute_batch("ALTER TABLE whatsapp_threads RENAME TO whatsapp_threads_legacy;")?;
+        tx.execute_batch(include_str!("whatsapp.sql"))?;
+        tx.execute_batch(
+            "INSERT INTO whatsapp_threads(chat,bot_id,root_id,sender)
+             SELECT t.chat,e.bot_id,t.root_id,t.sender FROM whatsapp_threads_legacy t
+             JOIN entries e ON e.id=t.root_id;
+             DROP TABLE whatsapp_threads_legacy;",
+        )?;
+        tx.commit()?;
+    }
     db.execute_batch(include_str!("whatsapp.sql"))?;
     Ok(())
 }
@@ -16,29 +35,34 @@ pub struct WhatsAppOutgoing {
     pub files: Vec<serde_json::Value>,
 }
 
+#[cfg(test)]
+mod tests;
+
 impl Store {
     /// The root entry of a `WhatsApp` conversation, if it has one.
-    pub fn whatsapp_root(&self, chat: &str) -> Option<String> {
-        self.db.locked().query_row("SELECT root_id FROM whatsapp_threads WHERE chat=?1", [chat], |r| r.get(0)).ok()
+    pub fn whatsapp_root(&self, chat: &str, bot: &str) -> Result<Option<String>> {
+        Ok(self
+            .db
+            .locked()
+            .query_row("SELECT root_id FROM whatsapp_threads WHERE chat=?1 AND bot_id=?2", params![chat, bot], |r| {
+                r.get(0)
+            })
+            .optional()?)
     }
-    pub fn map_whatsapp_thread(&self, chat: &str, root: &str, sender: &str) -> Result<()> {
+    pub fn map_whatsapp_thread(&self, chat: &str, bot: &str, root: &str, sender: &str) -> Result<()> {
         self.db.locked().execute(
-            "INSERT INTO whatsapp_threads VALUES(?1,?2,?3)
-            ON CONFLICT(chat) DO UPDATE SET sender=excluded.sender",
-            params![chat, root, sender],
+            "INSERT INTO whatsapp_threads(chat,bot_id,root_id,sender) VALUES(?1,?2,?3,?4)
+            ON CONFLICT(chat,bot_id) DO UPDATE SET sender=excluded.sender",
+            params![chat, bot, root, sender],
         )?;
         Ok(())
-    }
-    /// Who wrote last in a chat, so only they can answer an approval.
-    pub fn whatsapp_sender(&self, chat: &str) -> Option<String> {
-        self.db.locked().query_row("SELECT sender FROM whatsapp_threads WHERE chat=?1", [chat], |r| r.get(0)).ok()
     }
     /// Agent replies that are final and not in the outbox yet, with their conversation.
     pub fn pending_whatsapp_replies(&self) -> Result<Vec<WhatsAppOutgoing>> {
         let db = self.db.locked();
         let mut q = db.prepare(
             "SELECT e.id,t.chat,COALESCE(json_extract(e.data,'$.text'),''),COALESCE(json_extract(e.data,'$.files'),'[]')
-            FROM entries e JOIN whatsapp_threads t ON t.root_id=e.thread_id
+            FROM entries e JOIN whatsapp_threads t ON t.root_id=e.thread_id AND t.bot_id=e.bot_id
             WHERE e.kind='agent' AND json_extract(e.data,'$.final')=1
             AND (COALESCE(json_extract(e.data,'$.text'),'')<>'' OR json_extract(e.data,'$.files') IS NOT NULL)
             AND NOT EXISTS(SELECT 1 FROM whatsapp_outbox o WHERE o.entry_id=e.id) ORDER BY e.seq LIMIT 20",
@@ -72,9 +96,10 @@ impl Store {
     pub fn pending_whatsapp_cards(&self) -> Result<Vec<(String, String)>> {
         let db = self.db.locked();
         let mut q = db.prepare(
-            "SELECT t.chat,e.id FROM entries e JOIN whatsapp_threads t ON t.root_id=e.thread_id
+            "SELECT t.chat,e.id FROM entries e JOIN whatsapp_threads t ON t.root_id=e.thread_id AND t.bot_id=e.bot_id
             WHERE e.kind='permission' AND json_extract(e.data,'$.status')='pending'
             AND NOT EXISTS(SELECT 1 FROM whatsapp_cards c WHERE c.chat=t.chat AND c.entry_id=e.id)
+            AND NOT EXISTS(SELECT 1 FROM whatsapp_card_exclusions x WHERE x.entry_id=e.id)
             ORDER BY e.seq LIMIT 10",
         )?;
         Ok(q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -84,6 +109,11 @@ impl Store {
             "INSERT INTO whatsapp_cards VALUES(?1,?2,?3,?4) ON CONFLICT DO NOTHING",
             params![chat, entry, sender, now_ms()],
         )?;
+        Ok(())
+    }
+    /// A legacy or mixed-author decision remains in the app, without blocking later cards.
+    pub fn exclude_whatsapp_card(&self, entry: &str) -> Result<()> {
+        self.db.locked().execute("INSERT INTO whatsapp_card_exclusions VALUES(?1) ON CONFLICT DO NOTHING", [entry])?;
         Ok(())
     }
     /// The newest approval card shown in a chat, for the person who may answer it.

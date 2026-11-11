@@ -11,6 +11,8 @@ signed events, retries, duplicates, Socket Mode envelopes and reconnection. Real
    `message.groups` if the bot should follow thread replies).
 4. **OAuth & Permissions** → bot scopes `app_mentions:read`, `chat:write`, `im:history` (`channels:history` /
    `groups:history` for thread replies). Install to the workspace and copy the bot token (`xoxb-…`).
+   For voice-note transcription, also grant `files:read` and reinstall the app's authorization
+   if that scope was added later. Codync reuses the saved bot token and speech connection.
 5. Note the workspace id (`T…`), the bot's user id (`U…`), a channel id (`C…`) and your own user id (`U…`).
 
 ## Connect Codync
@@ -35,5 +37,15 @@ signed events, retries, duplicates, Socket Mode envelopes and reconnection. Real
   opens; with the old token the log says "Slack refused the app token".
 - [ ] `disconnectSlack`: mentions stop being answered; queued prompts are cancelled.
 - [ ] A very long message (over 32 KB of text) and an empty mention are ignored.
+- [ ] With speech configured, send an audio-only note from an allowed person in a bound DM
+  or existing thread. Its transcript appears in the bot's incoming message; retrying the
+  event does not create another message. Other attachments remain named.
+- [ ] Send audio from a person outside `allowedUsers`: no prompt or download starts.
+- [ ] Remove the sender or disconnect while transcription is pending: that note never
+  starts a model turn, including after re-authorizing the sender.
+- [ ] Send audio above 20 MiB, deny file access or remove the speech connection: the bot
+  receives a failure notice asking for clarification, without invented transcript text.
+- [ ] Restart with a queued voice note: its metadata survives. An expired private file
+  link produces a failure notice rather than repeatedly executing the message.
 
 Write what you see (and what differs) in the PR or in `slack-report.md` when you do this.

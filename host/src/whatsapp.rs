@@ -4,18 +4,25 @@
 //! The number is not official `WhatsApp` Web: linking uses the phone's linked devices, and `WhatsApp`
 //! can block numbers it sees as automated. The child process dies with the host.
 
+mod approvals;
+pub(crate) mod delivery;
+mod incoming;
+mod outgoing;
+mod receipts;
+mod settings;
+mod transport;
+mod voice_notes;
+pub(crate) use settings::{set_allowed, set_bot};
+mod inbox;
+pub(crate) use inbox::claim_prompt;
+
 use crate::hub::Hub;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-    sync::Arc,
-};
+use std::{path::PathBuf, process::Stdio, sync::Arc};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
     sync::Mutex,
 };
@@ -46,6 +53,11 @@ struct Link {
 
 #[derive(Default)]
 pub struct WhatsApp {
+    receipts: receipts::Receipts,
+    lifecycle: Mutex<()>,
+    transport_epoch: std::sync::atomic::AtomicU64,
+    revocation_pending: std::sync::atomic::AtomicBool,
+    incoming_worker: std::sync::atomic::AtomicBool,
     state: Mutex<LinkState>,
     link: Mutex<Link>,
     sender: std::sync::atomic::AtomicBool,
@@ -59,6 +71,7 @@ impl WhatsApp {
     /// Starts the bridge and the link. A running link stays as it is.
     pub fn start(self: &Arc<Self>, hub: &Arc<Hub>) {
         self.ensure_sender(hub);
+        inbox::start(self, hub);
         let app = self.clone();
         let hub = hub.clone();
         tokio::spawn(async move {
@@ -91,100 +104,22 @@ impl WhatsApp {
         });
     }
 
-    /// Sends the bot replies of this chat back to it. A file that left the chat follows its text.
-    async fn replies(&self, hub: &Hub) -> Result<()> {
-        for reply in hub.store.pending_whatsapp_replies()? {
-            if !hub.store.claim_whatsapp_reply(&reply.entry)? {
-                continue;
-            }
-            let mut sent = Ok(());
-            if !reply.text.trim().is_empty() {
-                sent = self.send_message(&reply.chat, &reply.text, None, None, None).await;
-            }
-            if sent.is_ok() {
-                for file in &reply.files {
-                    let path = file["path"].as_str().unwrap_or_default();
-                    if path.is_empty() {
-                        continue;
-                    }
-                    sent = self
-                        .send_message(
-                            &reply.chat,
-                            "",
-                            Some(Path::new(path)),
-                            file["name"].as_str(),
-                            file["mimetype"].as_str(),
-                        )
-                        .await;
-                    if sent.is_err() {
-                        break;
-                    }
-                }
-            }
-            hub.store.finish_whatsapp_reply(&reply.entry, if sent.is_ok() { "sent" } else { "failed" })?;
-            if let Err(error) = sent {
-                tracing::warn!(%error,entry=%reply.entry,"WhatsApp reply was not sent");
-            }
-        }
-        self.cards(hub).await?;
-        Ok(())
-    }
-
-    /// Shows a pending approval as a numbered request, once, to the person who wrote.
-    async fn cards(&self, hub: &Hub) -> Result<()> {
-        for (chat, entry) in hub.store.pending_whatsapp_cards()? {
-            let Some(card) = hub.store.entry(&entry) else { continue };
-            let Some(options) = card.data["options"].as_array().filter(|o| o.len() >= 2) else { continue };
-            let sender = hub.store.whatsapp_sender(&chat).unwrap_or_default();
-            let mut lines = vec![format!("{}\n\nResponde 1 o 2:", card.data["title"].as_str().unwrap_or("Aprobación"))];
-            for (index, option) in options.iter().take(2).enumerate() {
-                lines.push(format!("{}) {}", index + 1, option["name"].as_str().unwrap_or_default()));
-            }
-            self.send_message(&chat, &lines.join("\n"), None, None, None).await?;
-            hub.store.mark_whatsapp_card(&chat, &entry, &sender)?;
-        }
-        Ok(())
-    }
-
-    /// `1` approves and `2` denies the last card of the chat; true when the text was one of them.
-    async fn answer_card(&self, hub: &Arc<Hub>, chat: &str, sender: &str, text: &str) -> bool {
-        let choice = match text.trim() {
-            "1" => 0,
-            "2" => 1,
-            _ => return false,
-        };
-        let Some(id) = hub.store.whatsapp_card(chat, sender) else { return false };
-        let card = hub.store.entry(&id).filter(|e| e.kind == "permission" && e.data["status"] == "pending");
-        let Some(card) = card else {
-            hub.store.forget_whatsapp_card(chat, &id).ok();
-            let _ = self.send_message(chat, "Esa aprobación ya no está pendiente.", None, None, None).await;
-            return true;
-        };
-        let Some(option) = card.data["options"].as_array().and_then(|o| o.get(choice)) else { return true };
-        let option_id = option["optionId"].as_str().unwrap_or_default().to_owned();
-        let answered = crate::api::dispatch(
-            hub,
-            &crate::api::devices::Caller::Local,
-            "respondPermission",
-            json!({"entryId": id, "optionId": option_id}),
-        )
-        .await;
-        hub.store.forget_whatsapp_card(chat, &id).ok();
-        let line = match answered {
-            Ok(_) => "Hecho.".to_owned(),
-            Err(error) => format!("{error:#}").chars().take(180).collect(),
-        };
-        let _ = self.send_message(chat, &line, None, None, None).await;
-        true
-    }
-
     async fn begin(&self, hub: &Arc<Hub>) -> Result<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        if self.revocation_pending.load(std::sync::atomic::Ordering::SeqCst) {
+            inbox::invalidate_link(hub)?;
+        }
         {
             let state = self.state.lock().await;
             if matches!(state.state.as_str(), "starting" | "qr" | "connected") {
                 return Ok(());
             }
         }
+        let epoch = {
+            let _configuration = crate::LockExt::locked(&hub.store.connector_lock);
+            self.transport_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+        };
+        self.receipts.disconnect();
         {
             let mut link = self.link.lock().await;
             link.child = None;
@@ -213,20 +148,18 @@ impl WhatsApp {
         }
         let hub = hub.clone();
         let app = hub.whatsapp.clone();
-        tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Ok(event) = serde_json::from_str::<Value>(&line) {
-                    app.on_event(&hub, event).await;
-                }
-            }
-            app.dropped(&hub).await;
-        });
+        tokio::spawn(app.read(hub, stdout, epoch));
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         self.send(&json!({"type": "start"})).await
     }
 
     pub async fn logout(&self, hub: &Arc<Hub>) -> Result<()> {
+        let _lifecycle = self.lifecycle.lock().await;
+        {
+            let _configuration = crate::LockExt::locked(&hub.store.connector_lock);
+            self.transport_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        let invalidated = inbox::invalidate_link(hub);
         self.send(&json!({"type": "logout"})).await.ok();
         {
             let mut link = self.link.lock().await;
@@ -237,44 +170,7 @@ impl WhatsApp {
             link.stdin = None;
         }
         self.set(hub, LinkState { state: "loggedOut".into(), ..LinkState::default() }).await;
-        Ok(())
-    }
-
-    /// Sends text, or a file path with its name and type, to a chat.
-    pub async fn send_message(
-        &self,
-        to: &str,
-        text: &str,
-        path: Option<&Path>,
-        name: Option<&str>,
-        mimetype: Option<&str>,
-    ) -> Result<()> {
-        let state = self.state.lock().await;
-        if state.state != "connected" {
-            bail!("WhatsApp is not connected");
-        }
-        let mut body = json!({"type": "send", "id": uuid::Uuid::new_v4().to_string(), "to": to, "text": text});
-        if let Some(path) = path {
-            body["path"] = json!(path);
-            body["name"] = json!(name.unwrap_or("file"));
-            body["mimetype"] = json!(mimetype.unwrap_or("application/octet-stream"));
-        }
-        drop(state);
-        self.send(&body).await
-    }
-
-    async fn send(&self, body: &Value) -> Result<()> {
-        let mut link = self.link.lock().await;
-        let stdin = link.stdin.as_mut().context("WhatsApp is not running")?;
-        stdin.write_all(format!("{body}\n").as_bytes()).await?;
-        stdin.flush().await?;
-        Ok(())
-    }
-
-    async fn set(&self, hub: &Hub, next: LinkState) {
-        let view = next.view();
-        *self.state.lock().await = next;
-        let _ = hub.events.send(json!({"type": "whatsapp", "whatsapp": view}));
+        invalidated
     }
 
     async fn on_event(&self, hub: &Arc<Hub>, event: Value) {
@@ -300,130 +196,38 @@ impl WhatsApp {
                     qr: None,
                 };
                 if next.state == "connected" {
+                    if let Err(error) = settings::record_account(hub, next.me.as_deref().unwrap_or_default()) {
+                        self.set(
+                            hub,
+                            LinkState {
+                                state: "error".into(),
+                                error: Some(format!("{error:#}")),
+                                ..LinkState::default()
+                            },
+                        )
+                        .await;
+                        return;
+                    }
                     self.set(hub, next).await;
                     return;
+                }
+                if next.state == "loggedOut"
+                    && let Err(error) = inbox::invalidate_link(hub)
+                {
+                    next.state = "error".into();
+                    next.error = Some(format!("Could not revoke the previous WhatsApp link: {error:#}"));
                 }
                 if next.state == "error" {
                     next.state = "error".into();
                 }
                 self.set(hub, next).await;
             }
-            "message" => self.on_message(hub, &event).await,
+            "message" => {
+                if let Err(error) = inbox::receive(self, hub, &event).await {
+                    tracing::warn!(%error, "WhatsApp message could not be queued");
+                }
+            }
             _ => {}
-        }
-    }
-
-    async fn on_message(&self, hub: &Arc<Hub>, event: &Value) {
-        let text = event["text"].as_str().unwrap_or_default().trim().to_owned();
-        if text.is_empty() && event["media"].is_null() {
-            return;
-        }
-        let Some(chat) = event["chat"].as_str().filter(|c| !c.is_empty()) else { return };
-        let sender = event["sender"].as_str().unwrap_or_default();
-        let group = event["group"].as_bool().unwrap_or(false);
-        if group && !event["mentioned"].as_bool().unwrap_or(false) && !event["quoted"].as_bool().unwrap_or(false) {
-            return;
-        }
-        // With a list, only the owner, allowed people and allowed groups get through.
-        let allowed = allowed(hub);
-        let me = self.state.lock().await.me.clone().unwrap_or_default();
-        let own = !me.is_empty() && (chat == me || sender == me);
-        if !allowed.is_empty() && !own {
-            let listed = if group { allowed.iter().any(|a| a == chat) } else { allowed.iter().any(|a| a == sender) };
-            if !listed {
-                return;
-            }
-        }
-        // `1` or `2` answers the request card, from the person who wrote it.
-        if self.answer_card(hub, chat, sender, &text).await {
-            return;
-        }
-        // The orchestrator: an `@name` in the message picks that bot, anything else the chosen one.
-        let roster: Vec<crate::store::BotRow> = hub
-            .store
-            .bots()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|bot| !bot.deleted && !bot.config.is_group() && !crate::external::is_external(&bot.config))
-            .collect();
-        let (chosen, text) = mentioned_bot(&roster, &text);
-        let bot = chosen
-            .map(|b| b.config.id.clone())
-            .or_else(|| hub.store.kv_get("whatsapp.bot"))
-            .filter(|id| roster.iter().any(|b| &b.config.id == id));
-        let Some(bot) = bot else {
-            let _ = self
-                .send_message(
-                    chat,
-                    "No hay ningún bot asignado a este WhatsApp. Elige uno en Ajustes.",
-                    None,
-                    None,
-                    None,
-                )
-                .await;
-            return;
-        };
-        let media = event["media"].as_object();
-        let mut attached = Vec::new();
-        let note = if let Some(m) = media {
-            if let Ok(Some(path)) = save_media(m).await {
-                attached.push(path.clone());
-                format!("[Attached: {path}]")
-            } else {
-                let kind = m.get("kind").and_then(Value::as_str).unwrap_or("file");
-                format!("[{kind}] {}", m.get("name").and_then(Value::as_str).unwrap_or(&text))
-            }
-        } else {
-            text.clone()
-        };
-        let routine_event = json!({
-            "source": "whatsapp",
-            "event": if group { "groupMention" } else { "message" },
-            "chat": event["chat"],
-            "from": event["sender"],
-            "name": event["name"],
-            "text": text,
-            "group": event["group"],
-            "media": media.cloned(),
-        });
-        hub.routines.receive_event(&hub.store, &routine_event, event["id"].as_str().map(str::to_owned));
-        let Some(bot_row) = hub.store.bot(&bot).ok().flatten() else { return };
-        let root = if let Some(root) = hub.store.whatsapp_root(chat) {
-            root
-        } else {
-            let root = entry_id(&["root", chat]);
-            hub.add_entry_once(
-                &root,
-                &crate::store::Lane::main(&bot),
-                crate::store::EntryKind::User,
-                hub.store.max_turn(&bot),
-                &json!({"text":format!("WhatsApp conversation · {chat}"), "source":"whatsapp", "status":"sent", "whatsappChat": chat}),
-            )
-            .ok();
-            hub.store.map_whatsapp_thread(chat, &root, sender).ok();
-            root
-        };
-        let id = entry_id(&["message", chat, event["id"].as_str().unwrap_or_default()]);
-        let prompt = format!(
-            "WhatsApp message from {}:\n\n{note}",
-            event["name"].as_str().unwrap_or_else(|| event["sender"].as_str().unwrap_or("someone"))
-        );
-        let lane = crate::store::Lane::in_thread(&bot, &root);
-        let Ok((entry, _)) = hub.add_entry_once(
-            &id,
-            &lane,
-            crate::store::EntryKind::User,
-            hub.store.max_turn(&bot) + 1,
-            &json!({"text":prompt, "status":"queued", "source":"whatsapp", "whatsappChat": chat,
-                "whatsappFiles": attached}),
-        ) else {
-            return;
-        };
-        if entry.data["status"] == "queued" {
-            let text = crate::chat::prompt::of_entry(hub, &bot_row.config, &entry.data);
-            if let Err(error) = hub.send_cmd(&bot, crate::agent::bot::Cmd::Send { lane, entry_id: entry.id, text }) {
-                tracing::warn!(%error, "Could not deliver a WhatsApp message to a bot");
-            }
         }
     }
 
@@ -482,7 +286,12 @@ fn mentioned_bot<'a>(roster: &'a [crate::store::BotRow], text: &str) -> (Option<
 
 /// Saves attached media under the data folder, so the bot can open it; `None` when it is too big or wrong.
 async fn save_media(media: &serde_json::Map<String, Value>) -> Result<Option<String>> {
-    let Some(data) = media.get("data").and_then(Value::as_str) else { return Ok(None) };
+    let Some(data) = media.get("data").and_then(Value::as_str) else {
+        return Ok(voice_notes::stored_path(media)?.map(|path| path.to_string_lossy().into_owned()));
+    };
+    if data.len() > (32_usize * 1024 * 1024).div_ceil(3) * 4 {
+        return Ok(None);
+    }
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)?;
     if bytes.len() > 32 * 1024 * 1024 {
         return Ok(None);

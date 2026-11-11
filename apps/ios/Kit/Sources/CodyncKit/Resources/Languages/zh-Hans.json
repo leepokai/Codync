@@ -1546,7 +1546,6 @@
   "tab switch · ↵ add · esc close": "tab 切换 · ↵ 添加 · esc 关闭",
   "tab switch · ↵ details · ^x remove · esc close": "Tab 切换 · ↵ 详情 · ^x 移除 · Esc 关闭",
   "tab switch · ↵ install / sign in · ^r refresh · esc close": "Tab 切换 · ↵ 安装 / 登录 · ^r 刷新 · Esc 关闭",
-  "the Codync cloud refused ({status} {code}): {message}": "Codync 云拒绝了（{status} {code}）：{message}",
   "the left ⌘": "左侧 ⌘",
   "the right ⌘": "右侧 ⌘",
   "this Mac": "这台 Mac",

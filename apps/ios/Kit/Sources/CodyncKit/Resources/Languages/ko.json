@@ -1546,7 +1546,6 @@
   "tab switch · ↵ add · esc close": "tab 전환 · ↵ 추가 · esc 닫기",
   "tab switch · ↵ details · ^x remove · esc close": "tab 전환 · ↵ 상세 정보 · ^x 제거 · esc 닫기",
   "tab switch · ↵ install / sign in · ^r refresh · esc close": "tab 전환 · ↵ 설치 / 로그인 · ^r 새로고침 · esc 닫기",
-  "the Codync cloud refused ({status} {code}): {message}": "Codync 클라우드가 거부했습니다({status} {code}): {message}",
   "the left ⌘": "왼쪽 ⌘",
   "the right ⌘": "오른쪽 ⌘",
   "this Mac": "이 Mac",

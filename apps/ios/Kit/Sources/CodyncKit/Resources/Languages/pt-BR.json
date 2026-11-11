@@ -1546,7 +1546,6 @@
   "tab switch · ↵ add · esc close": "tab alterna · ↵ adiciona · esc fecha",
   "tab switch · ↵ details · ^x remove · esc close": "tab alternar · ↵ detalhes · ^x remover · esc fechar",
   "tab switch · ↵ install / sign in · ^r refresh · esc close": "tab alternar · ↵ instalar / entrar · ^r atualizar · esc fechar",
-  "the Codync cloud refused ({status} {code}): {message}": "a nuvem do Codync recusou ({status} {code}): {message}",
   "the left ⌘": "o ⌘ esquerdo",
   "the right ⌘": "o ⌘ direito",
   "this Mac": "este Mac",

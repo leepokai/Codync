@@ -1546,7 +1546,6 @@
   "tab switch · ↵ add · esc close": "tab 切り替え · ↵ 追加 · esc 閉じる",
   "tab switch · ↵ details · ^x remove · esc close": "タブスイッチ · ↵ 詳細 · ^x 削除 · Esc 閉じる",
   "tab switch · ↵ install / sign in · ^r refresh · esc close": "タブスイッチ · ↵ インストール/サインイン · ^r 更新 · Esc 閉じる",
-  "the Codync cloud refused ({status} {code}): {message}": "Codync クラウドが拒否しました ({status} {code}): {message}",
   "the left ⌘": "左⌘",
   "the right ⌘": "右⌘",
   "this Mac": "このMac",

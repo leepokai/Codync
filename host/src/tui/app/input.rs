@@ -354,6 +354,11 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char('D') => self.unqueue_last(),
+            // Messages waiting behind the running turn: `S` sends the next now; with none waiting it starts a session.
+            KeyCode::Char('S') if self.selected.as_deref().is_some_and(|bot| !self.queued(bot).is_empty()) => {
+                self.steer_next();
+            }
             KeyCode::Char('S') => {
                 if self.bot().is_some_and(|b| b.group) {
                     self.flash("A group has no session of its own");

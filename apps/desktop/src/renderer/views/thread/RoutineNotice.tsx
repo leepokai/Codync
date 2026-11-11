@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
+import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 
 /**
@@ -11,6 +12,7 @@ import { useStore } from '../../store/context'
  * be tried again or ended there; the messages stay.
  */
 export function RoutineNotice({ entry, open }: { entry: Entry; open: () => void }) {
+  const tr = useTr()
   const store = useStore()
   const tr = useTr()
   const answering = store.answering.get(entry.id)
@@ -19,7 +21,7 @@ export function RoutineNotice({ entry, open }: { entry: Entry; open: () => void 
     <HStack gap={2} justify="center" align="center">
       <button className="chat-routine-notice" onClick={open}>
         <Icon name="clock.arrow.circlepath" size={10} />
-        {entry.data.text ?? 'Routine'}
+        {tr(entry.data.text ?? 'Routine')}
       </button>
       {entry.data.retry &&
         (answering ? (

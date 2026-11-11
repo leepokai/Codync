@@ -1,6 +1,7 @@
 //! Session search corresponding to Hermes' `runtime_session_store.py/session_persistence.py`.
 //! Adaptation: FTS5 candidates over Codync entries; existing visibility and substring rules stay authoritative.
 
+use super::entries::NOT_REMOVED;
 use super::entries::{ENTRY_COLS, row_entry};
 use super::visibility::PUBLIC;
 use super::{Entry, Store};
@@ -74,7 +75,7 @@ impl Store {
         window: std::ops::Range<i64>,
     ) -> Result<Vec<Entry>> {
         let mut sql = format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND seq <= ?3 AND created_at >= ?4 AND created_at < ?5 AND
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND {NOT_REMOVED} AND seq <= ?3 AND created_at >= ?4 AND created_at < ?5 AND
                (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))"
         );
         for i in 0..terms.len() {

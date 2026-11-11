@@ -7,7 +7,7 @@ mod common;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 struct Host {
@@ -90,17 +90,9 @@ impl Host {
     }
 }
 
-fn python_missing() -> bool {
-    let missing = Command::new(common::python()).arg("--version").output().is_err();
-    if missing {
-        eprintln!("skipping: Python not available");
-    }
-    missing
-}
-
 #[tokio::test]
 async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -116,7 +108,7 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
 
 #[tokio::test]
 async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -155,7 +147,7 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
 
 #[tokio::test]
 async fn a_reaction_can_be_the_whole_reply() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -220,7 +212,7 @@ const FAST_OFF: &str = r#""configId": "fast", "value": "off""#;
 
 #[tokio::test]
 async fn fast_mode_switches_live_sessions_without_a_restart() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -249,7 +241,7 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
 
 #[tokio::test]
 async fn an_agent_without_config_options_has_no_fast_mode() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -266,7 +258,7 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
 
 #[tokio::test]
 async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -298,7 +290,7 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
 
 #[tokio::test]
 async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -317,7 +309,7 @@ async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
 
 #[tokio::test]
 async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let mut host = Host::start().await;

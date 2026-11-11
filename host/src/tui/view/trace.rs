@@ -6,6 +6,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Entry, Focus, Kind, Status, TraceMode, tilde};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{hline, put, put_line, rput, u};
 use super::style::{spin, theme};
@@ -33,9 +34,16 @@ pub(super) fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
     // The keys hint only when the title leaves it room.
     let right = if r.width >= 64 { rput(buf, r.right() - 1, r.y, keys, t.dim) } else { r.right() };
     let title = if turns.is_empty() {
-        format!("· {} · chat", b.name)
+        format!("· {} · {}", b.name, tr("Chat"))
     } else {
-        format!("· {} · chat · turn {nth} of {}{}", b.name, turns.len(), if live { " · live" } else { "" })
+        format!(
+            "· {} · {} · {} / {}{}",
+            b.name,
+            tr("Chat"),
+            tr("Turn {turn}").replace("{turn}", &nth.to_string()),
+            turns.len(),
+            if live { format!(" · {}", tr("Working")) } else { String::new() }
+        )
     };
     let room = right.saturating_sub(x + 2);
     put(buf, x + 1, r.y, room, &truncate(&title, usize::from(room)), t.dim);
@@ -53,7 +61,7 @@ pub(super) fn trace(buf: &mut Buffer, r: Rect, app: &mut App) {
     }
     if lines.is_empty() {
         let empty = if turns.is_empty() { "Nothing yet." } else { "Nothing happened in this turn yet." };
-        put(buf, body.x + 2, body.y, body.width.saturating_sub(2), empty, t.dim);
+        put(buf, body.x + 2, body.y, body.width.saturating_sub(2), &tr(empty), t.dim);
     }
 }
 
@@ -122,7 +130,7 @@ pub(super) fn push_step(out: &mut Vec<Line<'static>>, app: &App, e: &Entry, widt
 
 /// A step's kind, padded to the text column.
 fn label(s: &str) -> Span<'static> {
-    Span::styled(format!("{s:<8} "), theme().secondary)
+    Span::styled(format!("{s}{} ", " ".repeat(8_usize.saturating_sub(w(s)))), theme().secondary)
 }
 
 /// The room a step's text has after its glyph and label.
@@ -164,10 +172,11 @@ fn push_tool(out: &mut Vec<Line<'static>>, app: &App, e: &Entry, width: usize, f
     };
     let kind = tool_label(e.data["toolKind"].as_str().unwrap_or("tool")).to_owned();
     let title = e.data["title"].as_str().unwrap_or("Tool");
+    let title = if title == "Tool" { tr("Tool") } else { title.into() };
     out.push(Line::from(vec![
         Span::styled(format!(" {g} "), gs),
         label(&kind),
-        Span::styled(truncate(title, text_rest(width)), t.text),
+        Span::styled(truncate(&title, text_rest(width)), t.text),
     ]));
     let (diff_max, out_max) = if full { (400, 400) } else { (14, 6) };
     for d in e.data["diffs"].as_array().into_iter().flatten() {
@@ -230,7 +239,7 @@ fn push_plan(out: &mut Vec<Line<'static>>, e: &Entry, width: usize) {
     let done = items.iter().filter(|i| i["status"] == "completed").count();
     out.push(Line::from(vec![
         Span::styled(" ☐ ", t.secondary),
-        label("plan"),
+        label(&tr("Plan")),
         Span::styled(format!("{done}/{}", items.len()), t.text),
     ]));
     for i in &items {

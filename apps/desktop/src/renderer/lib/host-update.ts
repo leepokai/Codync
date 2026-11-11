@@ -1,4 +1,5 @@
 import { isBelow, type VersionMismatch } from '../../shared/compat.ts'
+import { trNow } from './l10n.ts'
 
 /** An update this app asked of a computer that's behind it (`installHostUpdate`). */
 export type HostUpdate = { kind: 'requested'; at: number } | { kind: 'failed'; message: string }
@@ -22,7 +23,7 @@ export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, n
 /** The words every client uses for a version mismatch (iOS, the TUI and this app). */
 export const updateNeededText = {
   title(m: VersionMismatch, host: string) {
-    return m.kind === 'updateApp' ? 'Update this app' : `Update Codync on ${host}`
+    return m.kind === 'updateApp' ? trNow('Update this app') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
   },
   detail(m: VersionMismatch, host: string, hostVersion: string | null | undefined, os: string | null | undefined, instructions = true) {
     if (m.kind === 'updateApp') {

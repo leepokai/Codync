@@ -36,7 +36,7 @@ Keep only the latest build: in this checkout, Apple builds go to `build/dd` only
 
 ## End-to-end test every change
 
-After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Computer Use, and the iPhone app on an iOS Simulator through Device Hub (Xcode's `DeviceHub.app`). Report any check that could not run and why.
+After every change, test it end to end on the real apps, not just builds and unit tests: install the new build (old one stopped first) and walk through the changed flow. Drive the desktop app with Playwright (`npm run e2e` against the sandbox) and the iPhone app (iOS Simulator) and Android app (the one shared emulator, never a second: [test devices](docs/guides/dev-app.md#worktree-sandboxes)) with one Maestro run (`apps/maestro`); Computer Use only for the native steps they can't reach: [test stack](docs/guides/test-stack.md). Report any check that could not run and why.
 - **Minimal e2e** (default): only the platform of the computer you test on (on the Mac: macOS).
 - **Full e2e** (large changes: platform code, packaging, the desktop main process; or when asked): macOS, Linux (Lima `codync-linux`) and Windows (UTM, [Windows testing](docs/guides/windows-testing.md)). A platform whose VM isn't installed is skipped and reported, not set up.
 
@@ -59,6 +59,7 @@ Name Swift files after their main `UpperCamelCase` type; use `snake_case.rs` and
 ## Clean code
 
 - Keep code modular and clean on every change: reuse before writing (existing code first, then a mature, long-maintained external library over reinventing it, see [prefer ready-made](docs/guides/clean-code.md#modules)), one responsibility per file/type, no new code appended to files past ~500 lines (split first), views/components hold no I/O or logic, short single-purpose functions, enums over flags, no dead code, no swallowed errors. Full rules: [docs/guides/clean-code.md](docs/guides/clean-code.md).
+- Every new feature or module adds its PostHog events in the same change (use, outcome, failure category; feature use only, never content), so bugs can be traced later: [adding a feature](docs/features/analytics.md#adding-a-feature).
 - After every code change of our own (tests green, before commit): review → fix, refactor and cleanup → end-to-end test (issues and PRs from other people follow the issue and PR review below instead). In Codex, use the [after-change skill](.agents/skills/after-change/SKILL.md); in Claude Code, use the `after-change` workflow: [after every change](docs/guides/clean-code.md#after-every-change-review-e2e-cleanup).
 
 ## Cross-platform UI changes

@@ -2,6 +2,7 @@ import type { HostClient } from '../../client/host-client'
 import type { VoiceFailure } from '@shared/analytics'
 import type { CallCue } from '@shared/calls'
 import { Observable } from '../../lib/observable'
+import { trNow } from '../../lib/l10n.ts'
 import {
   addVoiceUsage,
   chosenModel,
@@ -35,7 +36,7 @@ export const audioType = (format: string) =>
 export const onDeviceAvailable = () => window.codync.speech.available
 export const onDeviceUnavailableReason = () =>
   window.codync.platform === 'darwin'
-    ? "On-device speech isn't available in this build."
+    ? trNow("On-device speech isn't available in this build.")
     : `On-device speech isn't available on ${window.codync.platform === 'win32' ? 'Windows' : 'Linux'}.`
 
 export const VoiceSettings = {

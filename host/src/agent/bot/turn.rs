@@ -143,8 +143,6 @@ impl Actor {
         self.turn_memory_revision.clear();
         self.announce = None;
         self.first_prompt = None;
-        self.steering = 0;
-        self.turn_done = None;
         self.stop_requested = false;
         self.cancel_deadline = None;
         let team_turn = if let Some(request) = &self.active_request {
@@ -166,6 +164,7 @@ impl Actor {
         self.last_text = None;
         self.sent.clear();
         self.reacted = Reacted::No;
+        self.joined = false;
         self.files.summary = None;
         self.files.cancel();
         if hidden {
@@ -285,7 +284,7 @@ impl Actor {
         let done_tx = done_tx.clone();
         tokio::spawn(async move {
             let value = answer.response().await.and_then(acp::codebuddy::prompt_result);
-            let _ = done_tx.send(Done { value, steer: false });
+            let _ = done_tx.send(value);
         });
         Ok(())
     }
@@ -312,11 +311,11 @@ impl Actor {
         let sent = std::mem::take(&mut self.sent);
         let reacted = std::mem::take(&mut self.reacted);
         if !sent.is_empty() {
-            // The bot talked through send_message: what it wrote as its reply stays in the trace.
-            self.last_text = None;
             final_text = Some(sent.join("\n\n"));
-        } else if !matches!(reacted, Reacted::No) {
-            // A reaction (or one it held back) was its whole reply: what it wrote stays in the trace too.
+        }
+        // The bot talked through send_message, or a reaction (or one it held back) was its whole reply: what it wrote
+        // stays in the trace. With a message that joined the turn, either may have answered only what came before it.
+        if !self.joined && (!sent.is_empty() || !matches!(reacted, Reacted::No)) {
             self.last_text = None;
         }
         if let Some(id) = self.last_text.take().filter(|_| !stopped)
@@ -549,7 +548,7 @@ impl Actor {
     }
 
     /// What started the turn that is starting or running.
-    fn source(&self) -> TurnSource {
+    pub(super) fn source(&self) -> TurnSource {
         if self.active_routine.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {

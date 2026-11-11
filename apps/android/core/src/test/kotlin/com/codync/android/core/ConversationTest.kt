@@ -14,6 +14,10 @@ class ConversationTest {
         assertTrue(bot.copy(workingChat = "group").isWorking("group"))
         assertFalse(bot.copy(workingChat = "group").isWorking("b"))
         assertFalse(bot.copy(status = "idle").isWorking("b"))
+        // Anywhere, for the messages waiting in its own chat.
+        assertTrue(bot.copy(workingChat = "group").isWorking)
+        assertTrue(bot.copy(status = "needsInput").isWorking)
+        assertFalse(bot.copy(status = "idle").isWorking)
     }
 
     @Test fun `users and final replies can be quoted, and the quote reads leniently`() {
@@ -63,6 +67,14 @@ class ConversationTest {
             val handoff = Entry("h", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("handoff", buildJsonObject { put("status", status) }) })
             assertEquals(status, shown, handoff.isChat)
         }
+    }
+
+    @Test fun `a queued message waits above the composer`() {
+        fun user(status: String) = Entry("u", 1, "b", rev = 1, kind = "user", data = buildJsonObject { put("text", "hi"); put("status", status) })
+        assertTrue(user("queued").isQueued)
+        assertTrue(user("queued").isChat)
+        assertFalse(user("sent").isQueued)
+        assertFalse(Entry("n", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("status", "queued") }).isQueued)
     }
 
     @Test fun `malformed known events fail before a checkpoint while unknown events are ignored`() {

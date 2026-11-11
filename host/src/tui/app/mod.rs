@@ -18,6 +18,7 @@ mod navigate;
 mod new_bot;
 mod overlay_keys;
 pub mod proposals;
+mod queue;
 mod roster_preferences;
 pub mod roster_tools;
 mod rules;
@@ -67,6 +68,8 @@ pub struct App {
     pub(super) tx: UnboundedSender<Msg>,
     pub url: String,
     pub host: String,
+    /// The host's version (`hello`): features newer than `MIN_HOST` check it.
+    pub host_version: String,
     pub home: String,
     pub online: bool,
     pub error: Option<String>,
@@ -176,6 +179,7 @@ impl App {
             tx,
             url,
             host: String::new(),
+            host_version: String::new(),
             home: String::new(),
             demo: false,
             demo_toggle: false,
@@ -308,6 +312,8 @@ impl App {
         let mut v: Vec<&Entry> = self.entries.get(bot).map(|m| m.values().collect()).unwrap_or_default();
         let opens = |e: &Entry| e.artifact().is_some() || e.data["files"].as_array().is_some_and(|f| !f.is_empty());
         v.retain(|e| !e.is_internal() && (e.kind == Kind::Notice || e.call().is_none() || opens(e)));
+        // A queued message the user took back (`unqueue`).
+        v.retain(|e| e.data["removed"] != true);
         v.sort_by_key(|e| (e.turn, e.seq));
         v
     }

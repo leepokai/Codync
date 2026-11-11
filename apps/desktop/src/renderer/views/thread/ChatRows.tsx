@@ -1,7 +1,7 @@
 import { FileDownloadCard } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, isWorking, type Bot, type BotApp, type Entry, type ReplyQuote } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, type Bot, type BotApp, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { ComputerCard } from '../../components/ComputerCard'
 import { Button, IconButton } from '../../components/Controls'
@@ -16,7 +16,7 @@ import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
-import { relativeTime } from './chat-items'
+import { callLength, relativeTime } from './chat-items'
 import { MarkdownText } from './Markdown'
 import { quoteText } from './composer-edits'
 import { PermissionCard } from './PermissionCard'
@@ -77,7 +77,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
     case 'user':
       return (
         <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
-          <UserBubble entry={entry} botWorking={!!chat && isWorking(chat)} reply={reply} forward={forward} branch={branch} />
+          <UserBubble entry={entry} reply={reply} forward={forward} branch={branch} />
           {entry.data.routineThread && openThread ? (
             <button className="thread-link press" onClick={() => openThread(entry.id)}>
               {entry.threadUnread ? <span className="thread-dot" aria-hidden /> : null}
@@ -386,7 +386,7 @@ export function TimeSeparator({ date }: { date: number }) {
 
 const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
-export function UserBubble({ entry, botWorking, reply, forward, branch }: { entry: Entry; botWorking: boolean; reply?: () => void; forward?: () => void; branch?: () => void }) {
+export function UserBubble({ entry, reply, forward, branch }: { entry: Entry; reply?: () => void; forward?: () => void; branch?: () => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
@@ -414,7 +414,7 @@ export function UserBubble({ entry, botWorking, reply, forward, branch }: { entr
             {entry.data.text}
           </Bubble>
         ) : null}
-        {status && status !== 'sent' ? <UserStatus entry={entry} botWorking={botWorking} hovering={hovering} /> : null}
+        {status && status !== 'sent' ? <UserStatus entry={entry} hovering={hovering} /> : null}
         {/* Beside the bubble, inside its hover region: showing them never changes the height. */}
         <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={copy} />
       </div>
@@ -422,14 +422,12 @@ export function UserBubble({ entry, botWorking, reply, forward, branch }: { entr
   )
 }
 
-function UserStatus({ entry, botWorking, hovering }: { entry: Entry; botWorking: boolean; hovering: boolean }) {
+function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   const tr = useTr()
   const store = useStore()
   switch (entry.data.status) {
     case 'sending':
       return <Text size="caption2" tone="tertiary">{tr(`Sending…`)}</Text>
-    case 'queued':
-      return <Text size="caption2" tone="tertiary">{botWorking ? tr(`Queued until this response finishes`) : tr(`Queued`)}</Text>
     case 'failed':
       return (
         <HStack as="span" gap={2}>
@@ -482,13 +480,13 @@ export function AgentBubble({ entry, openTrace, reply, forward, openFile, openAr
 
 export function NoticeRow({ entry, addFallback, undo }: { entry: Entry; addFallback?: () => void; undo?: () => void }) {
   if (window.codync.platform === 'win32' && entry.data.source === 'voice_receipt') return <VoiceReceipt entry={entry} />
-  const text = entry.data.text ?? ''
+  const tr = useTr()
+  const text = tr(entry.data.text ?? '')
   if (entry.data.callSeconds !== undefined) {
-    const s = entry.data.callSeconds
     return (
       <HStack justify="center" gap={6}>
         <Icon name="waveform" size={10} color="var(--secondary)" />
-        <Text size="footnote" tone="secondary" tabular>{`${text} · ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`}</Text>
+        <Text size="footnote" tone="secondary" tabular>{text + callLength(entry.data.callSeconds)}</Text>
       </HStack>
     )
   }
@@ -499,7 +497,7 @@ export function NoticeRow({ entry, addFallback, undo }: { entry: Entry; addFallb
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
-            {addFallback ? <Button kind="secondary" onClick={addFallback}>Add a fallback</Button> : null}
+            {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
             {undo ? <Button kind="secondary" onClick={undo}>Undo</Button> : null}
           </VStack>
         </HStack>

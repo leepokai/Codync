@@ -1,6 +1,6 @@
 //! The queue above the composer: steering a waiting message into the running turn, editing and dropping one.
 
-use crate::hub::{BotStatus, Hub};
+use crate::hub::Hub;
 use crate::store::{BotConfig, Entry, Store};
 use serde_json::json;
 use std::path::PathBuf;
@@ -96,12 +96,6 @@ impl Fixture {
         .expect("the fixture did not reach the expected state");
     }
 
-    async fn steer(&self, entry_id: &str) -> anyhow::Result<()> {
-        let (reply, answer) = tokio::sync::oneshot::channel();
-        self.hub.send_cmd("queue", super::Cmd::Steer { entry_id: entry_id.into(), reply }).unwrap();
-        answer.await.unwrap()
-    }
-
     async fn edit(&self, entry_id: &str, text: &str) -> anyhow::Result<()> {
         let (reply, answer) = tokio::sync::oneshot::channel();
         let cmd = super::Cmd::EditQueued { entry_id: entry_id.into(), text: text.into(), reply };
@@ -109,46 +103,14 @@ impl Fixture {
         answer.await.unwrap()
     }
 
-    async fn delete(&self, entry_id: &str) -> anyhow::Result<()> {
-        let (reply, answer) = tokio::sync::oneshot::channel();
-        self.hub.send_cmd("queue", super::Cmd::DeleteQueued { entry_id: entry_id.into(), reply }).unwrap();
-        answer.await.unwrap()
+    async fn delete(&self, entry_id: &str) {
+        self.hub.send_cmd("queue", super::Cmd::Unqueue { entry_id: entry_id.into() }).unwrap();
+        self.until(|| self.entry(entry_id).data["status"] == "cancelled").await;
     }
 
     async fn shutdown(self) {
         self.hub.shutdown().await;
     }
-}
-
-#[tokio::test]
-async fn a_steered_message_joins_the_running_turn_and_takes_no_turn_of_its_own() {
-    let fixture = Fixture::new();
-    fixture.post("first");
-    fixture.until(|| fixture.prompts().len() == 1).await;
-    let second = fixture.post("second");
-
-    fixture.steer(&second.id).await.unwrap();
-    assert_eq!(fixture.entry(&second.id).data["status"], "sent");
-    fixture.until(|| fixture.prompts().len() == 2).await;
-    assert_eq!(fixture.prompts()[1], "second");
-
-    std::fs::write(fixture.dir.join("release"), "").unwrap();
-    // One turn, not two: the steered prompt extends it and the queue stays empty.
-    fixture.until(|| fixture.hub.runtime("queue").status == BotStatus::Idle).await;
-    assert_eq!(fixture.prompts().len(), 2);
-    assert!(fixture.hub.store.max_turn("queue") > 0);
-    fixture.shutdown().await;
-}
-
-#[tokio::test]
-async fn a_message_already_sent_cannot_be_steered() {
-    let fixture = Fixture::new();
-    let first = fixture.post("first");
-    fixture.until(|| fixture.prompts().len() == 1).await;
-    let error = fixture.steer(&first.id).await.unwrap_err().to_string();
-    assert!(error.contains("already went out"), "{error}");
-    std::fs::write(fixture.dir.join("release"), "").unwrap();
-    fixture.shutdown().await;
 }
 
 #[tokio::test]
@@ -161,7 +123,7 @@ async fn a_waiting_message_can_be_rewritten_or_dropped_before_it_goes_out() {
 
     fixture.edit(&edited.id, "rewritten").await.unwrap();
     assert_eq!(fixture.entry(&edited.id).data["text"], "rewritten");
-    fixture.delete(&dropped.id).await.unwrap();
+    fixture.delete(&dropped.id).await;
     assert_eq!(fixture.entry(&dropped.id).data["status"], "cancelled");
 
     std::fs::write(fixture.dir.join("release"), "").unwrap();

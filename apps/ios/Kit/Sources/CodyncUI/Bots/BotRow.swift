@@ -3,9 +3,14 @@ import SwiftUI
 
 public struct BotRow: View {
     let bot: Bot
+    /// The agent whose logo marks the avatar, if any.
+    let agent: String?
     @Environment(BotStore.self) private var model
 
-    public init(bot: Bot) { self.bot = bot }
+    public init(bot: Bot, agent: String? = nil) {
+        self.bot = bot
+        self.agent = agent
+    }
 
     private let avatar: CGFloat = 46
     private let rowPadding: CGFloat = 10
@@ -14,6 +19,11 @@ public struct BotRow: View {
     public var body: some View {
         HStack(spacing: 12) {
             AvatarWithStatus(bot: bot, members: model.members(of: bot), size: avatar)
+                .overlay(alignment: .bottomLeading) {
+                    if let agent {
+                        AgentBadge(registry: model.agentRegistry(agent), size: avatar * 0.4)
+                    }
+                }
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
                     if bot.pinned {

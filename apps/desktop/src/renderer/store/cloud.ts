@@ -1,3 +1,4 @@
+import type { ClaimFailure } from '@shared/analytics'
 import type { CloudStatus, ClaimSignature } from '@shared/models'
 import { accountMismatch, mayAutoClaim, mayJoinAfterInstall, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/auto-claim'
 import { Observable } from '../lib/observable'
@@ -5,8 +6,10 @@ import { isOlderCopy } from '../lib/older-copy'
 import { relayAddressToSave } from '../lib/relay-address'
 import { pref, type Pref } from '../lib/prefs'
 import { account } from './account'
+import { analytics } from './analytics'
 import type { AppModel } from './app-model'
 import type { BotStore } from './bot-store'
+import { trNow } from '../lib/l10n.ts'
 
 // Wire types of the Codync cloud (`/v1`, cloud/src/api.ts); times are epoch milliseconds.
 
@@ -33,13 +36,17 @@ export class CloudError extends Error {
     message: string | null,
   ) {
     super(
-      code === 'requestExpired' ? 'The request expired. Ask again.'
-      : code === 'accountDeleted' ? 'This account was deleted.'
-      : code === 'rateLimited' ? 'Too many requests. Try again in a little while.'
+      code === 'requestExpired' ? trNow('The request expired. Ask again.')
+      : code === 'accountDeleted' ? trNow('This account was deleted.')
+      : code === 'rateLimited' ? trNow('Too many requests. Try again in a little while.')
       : (message ?? `Codync cloud error (${code})`),
     )
   }
 }
+
+/** `reach_account_answered`'s `error`: the category of a failed claim, never its message. */
+const claimFailure = (error: unknown): ClaimFailure =>
+  !(error instanceof CloudError) ? 'host' : error.code === 'unreachable' ? 'unreachable' : 'refused'
 
 async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
   const res = await window.codync.cloud.request(method, path, body, signed)
@@ -283,26 +290,49 @@ export class CloudModel extends Observable {
 
   /** §4.2 A: makes a computer this app manages part of the account; its cloud is turned on first. */
   async claim(store: BotStore, quiet = false): Promise<boolean> {
-    const user = this.userId
-    if (!user || !store.client) {
-      if (!quiet) this.app.setError('Sign in first.')
-      return false
-    }
-    const out = keptOut(user)
-    out.set(out.get().filter((x) => x !== store.computer.id))
     try {
-      const client = await store.ready()
-      if (!store.cloud?.enabled) await this.enableCloud(store)
-      const challenge = await request<{ claimId: string; nonce: string }>('POST', 'v1/claims', {})
-      const signed = await client.call<ClaimSignature>('claimSign', { claimId: challenge.claimId, nonce: challenge.nonce, userId: user })
-      await request('POST', `v1/claims/${challenge.claimId}/complete`, signed)
-      // Only against a list that came back: one that didn't can't tell which earlier identities are gone.
-      if ((await this.refresh(true)) && store === this.app.local) await this.forgetEarlierIdentities(user, store.computer.id)
+      await this.join(store)
       return true
     } catch (error) {
       this.fail(error, quiet)
       return false
     }
+  }
+
+  private async join(store: BotStore) {
+    const user = this.userId
+    if (!user || !store.client) throw new Error(trNow('Sign in first.'))
+    const out = keptOut(user)
+    out.set(out.get().filter((x) => x !== store.computer.id))
+    const client = await store.ready()
+    if (!store.cloud?.enabled) await this.enableCloud(store)
+    const challenge = await request<{ claimId: string; nonce: string }>('POST', 'v1/claims', {})
+    const signed = await client.call<ClaimSignature>('claimSign', { claimId: challenge.claimId, nonce: challenge.nonce, userId: user })
+    await request('POST', `v1/claims/${challenge.claimId}/complete`, signed)
+    // Only against a list that came back: one that didn't can't tell which earlier identities are gone.
+    if ((await this.refresh(true)) && store === this.app.local) await this.forgetEarlierIdentities(user, store.computer.id)
+  }
+
+  /** Asked before Reach from anywhere turns on (`joinsAccountOnEnable`): Add to account, which turns it on too. */
+  async addFromReach(store: BotStore) {
+    try {
+      await this.join(store)
+      analytics.track({ event: 'reach_account_answered', outcome: 'added' })
+    } catch (error) {
+      this.fail(error)
+      analytics.track({ event: 'reach_account_answered', outcome: 'failed', error: claimFailure(error) })
+    }
+  }
+
+  /**
+   * Asked before Reach from anywhere turns on: Use your own relay. It's on the Codync relay until its address is saved,
+   * so it's kept out of auto-claim meanwhile (`keptOut`; Add to account still adds it).
+   */
+  async useOwnRelay(store: BotStore) {
+    const user = this.userId
+    if (user) include(keptOut(user), store.computer.id)
+    analytics.track({ event: 'reach_account_answered', outcome: 'own_relay' })
+    await this.setCloud(store, true)
   }
 
   /**

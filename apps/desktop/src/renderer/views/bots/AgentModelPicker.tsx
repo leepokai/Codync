@@ -51,7 +51,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const value = selection === agentDefault?.id ? '' : (selection ?? '')
   const selected = catalog?.models.find((m) => m.id === (value || agentDefault?.id || catalog.currentModelId))
   const modelOptions = value || catalog?.defaultModelOptions ? selected?.options ?? [] : []
-  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? `Default · ${current.name}` : 'Default') }, ...available.map((m) => ({ id: m.id, label: m.name }))]
+  const options: Choice[] = [{ id: '', label: agentDefault?.name ?? (current ? tr('Default · {name}').replaceAll('{name}', () => current.name) : tr('Default')) }, ...available.map((m) => ({ id: m.id, label: m.name }))]
   if (value && !available.some((m) => m.id === value)) options.push({ id: value, label: value })
   const agent = agents.find((a) => a.id === backend)
   const modelName = value ? options.find((o) => o.id === value)?.label ?? value : tr('Default')
@@ -101,7 +101,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
           <HStack gap={6} className="agent-picker-search">
             {stage === 'models' && onAgentChange ? <IconButton title="Back" icon="chevron.left" onClick={() => open('agents')} /> : <Icon name="magnifyingglass" size={14} />}
             <input aria-label={tr(stage === 'agents' ? 'Search agents' : 'Search models')} placeholder={tr(stage === 'agents' ? 'Search agents' : 'Search models')} value={query} onChange={(e) => setQuery(e.target.value)} />
-            {loading ? <Spinner size={12} /> : <IconButton title={failure ? 'Retry model list' : 'Refresh model list'} icon="arrow.clockwise" onClick={models.reload} />}
+            {loading ? <Spinner size={12} /> : <IconButton title={tr(failure ? 'Retry model list' : 'Refresh model list')} icon="arrow.clockwise" onClick={models.reload} />}
             {stage === 'models' && hidden.size > 0 ? <IconButton title={showHidden ? 'Hide hidden models' : 'Show hidden models'} icon={showHidden ? 'eye.slash' : 'eye'} onClick={() => setShowHidden((s) => !s)} /> : null}
           </HStack>
           <div className="agent-picker-list">

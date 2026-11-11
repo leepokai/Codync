@@ -5,6 +5,7 @@ import { Text } from '../../components/Text'
 import type { OutgoingFile } from '../../store/bot-store'
 import { useStore } from '../../store/context'
 import { attachmentSymbol } from './Attachments'
+import { useTr } from '../../lib/use-language'
 
 /**
  * A local attachment, shown before it is sent: images as a whole-image thumbnail with the
@@ -14,6 +15,7 @@ import { attachmentSymbol } from './Attachments'
 export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remove: () => void }) {
   const store = useStore()
   const percent = store.uploadPercents.get(file.id)
+  const tr = useTr()
   const [url, setUrl] = useState<string | null>(null)
   const [broken, setBroken] = useState(false)
 
@@ -26,7 +28,7 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
 
   if (url && !broken) {
     return (
-      <span className="attachment-tile" aria-label={`Image attachment: ${file.name}`} title={file.name}>
+      <span className="attachment-tile" aria-label={tr('Image attachment: {name}').replaceAll('{name}', () => file.name)} title={file.name}>
         <img src={url} alt="" onError={() => setBroken(true)} />
         {percent !== undefined ? <span className="attachment-progress" style={{ width: `${percent}%` }} /> : null}
         <button className="press attachment-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>

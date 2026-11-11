@@ -92,7 +92,7 @@ Codync/
 | CLI and background service | `host/src/main.rs`, `service/`; subcommands `cloud_cli.rs`, `network_cli.rs`, `send_cli.rs` (+ `send_cli/events.rs`, `wait.rs`) |
 | API, caller permissions, event ordering | `host/src/api/`, `hub.rs` |
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
-| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |
+| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `steer.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |
 | Compaction timing and rollover | `host/src/agent/bot/compaction.rs`, the handoff card in `host/src/chat/handoff.rs`; the rules in `codync-mem`'s `compaction.rs` |
 | Group room turns / bot-to-bot requests | `host/src/chat/group.rs` / `team.rs` |
 | A bot's own name and instructions, their versions, its scratchpad, skills it writes | `host/src/chat/profile.rs`, `instruction_history.rs`, `scratchpad.rs`, `skills.rs` (`save_skill`), `teach.rs` (`recorded_steps`) |
@@ -117,7 +117,7 @@ Codync/
 | Account aggregation / one host mirror | `apps/ios/Kit/Sources/CodyncUI/Store/AccountStore.swift` / `BotStore.swift` (+ `BotStore+Connection`, `+Sync`, `+Sending`, `+Actions`, `+Plugins`, `+Cache`, `+Shortcuts`) |
 | iPhone chat, replies, composer and trace | `apps/ios/Kit/Sources/CodyncUI/Thread/` |
 | Reusable iPhone UI chrome | `apps/ios/Kit/Sources/CodyncUI/Chrome.swift`, `Controls.swift`, `MenuItem.swift` (system menus: `MenuItem`, `.contextActions`, `DropdownMenu`), `Platform.swift` |
-| iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift` |
+| iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `ChooseComputerView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift` |
 | Apple account sessions / public environment config | `apps/ios/App/AccountSession.swift`, `apps/shared/Config/` |
 | Desktop local host / SSH lifecycle | `apps/desktop/src/main/host-controller.ts`, `ssh.ts` |
 | Desktop store, chat and controls | `apps/desktop/src/renderer/store/bot-store.ts` (actions; state in `bot-mirror.ts`, events stream in `bot-sync.ts`), `views/thread/`, `components/` |
@@ -126,7 +126,7 @@ Codync/
 | Cloud assistants (the MCP connector at mcp.codync.dev) | `cloud/src/routes/assistant.ts` (MCP, OAuth metadata, routing to computers), `host-calls.ts` (the relay DO's calls to its host); `host/src/chat/team/assistant.rs` (the setting, the tools, the replies); the switch in desktop `apps/desktop/src/renderer/views/settings/ComputersView.tsx` (+ `store/cloud.ts`) and terminal `host/src/tui/manage/network.rs`; shown read-only in the iPhone and Android network sheets |
 | Push encryption / APNs delivery / decryption | `host/src/remote/push.rs`, `relay/src/`, `apps/ios/NotificationService/` |
 | Widget and activity rendering | `apps/ios/Kit/Sources/CodyncKit/Design/`, `apps/ios/Widgets/` |
-| Android screens (one file per iOS view: `BotListView.kt`, `ChatScreen.kt`, `BotDetailsView.kt` (+ `BotSettingsForm.kt`, `BotTemplateView.kt`), `PairingView.kt`, `SettingsView.kt`, `ComputersView.kt`, …) | `apps/android/app/src/main/kotlin/com/codync/android/` |
+| Android screens (one file per iOS view: `BotListView.kt`, `ChatScreen.kt`, `BotDetailsView.kt` (+ `BotSettingsForm.kt`, `BotTemplateView.kt`), `ChooseComputerView.kt`, `PairingView.kt`, `SettingsView.kt`, `ComputersView.kt`, …) | `apps/android/app/src/main/kotlin/com/codync/android/` |
 | Android components and glass | `apps/android/design/` (`Controls.kt`, `Chrome.kt`, `Sheet.kt`, `Menus.kt`, `Dialog.kt`, `Glass.kt`) |
 | Android transport, pairing and wire models | `apps/android/core/` (`EncryptedChannel.kt`, `HostConnector.kt`, `Pairing.kt`, `Compatibility.kt`) |
 | Android widgets, Live updates, push | `apps/android/app/` (`CodyncWidgets.kt`, `WidgetCards.kt`, `LiveUpdateGallery.kt`, `PushService.kt`) |

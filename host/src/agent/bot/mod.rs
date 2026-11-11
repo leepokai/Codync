@@ -43,6 +43,7 @@ mod session;
 mod skill_use;
 mod spend;
 mod stall;
+mod steer;
 mod tool_entry;
 mod turn;
 mod updates;
@@ -145,6 +146,8 @@ fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
         first_prompt: None,
         turn: None,
         queue: VecDeque::new(),
+        steers_in_flight: HashMap::new(),
+        held_done: None,
         active_request: None,
         turn_model: None,
         reply_hops: None,
@@ -158,6 +161,7 @@ fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
         last_text: None,
         sent: Vec::new(),
         reacted: Reacted::No,
+        joined: false,
         files: files::FileShares::default(),
         perms: HashMap::new(),
         waiting: approval_age::Waiting::default(),
@@ -167,8 +171,6 @@ fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
         exit_tail: None,
         tools_changed: false,
         restart_after_turn: false,
-        steering: 0,
-        turn_done: None,
         stop_owner_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
@@ -192,6 +194,8 @@ struct SessionCaps {
     system_prompt: bool,
     /// ACP `additionalDirectories`: folders outside `cwd` the agent may work in, here the memory folders.
     additional_directories: bool,
+    /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
+    steering: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -327,11 +331,11 @@ struct Actor {
     /// The snapshot of a new session's first prompt, marked delivered once the agent answered it.
     first_prompt: Option<Snapshot>,
     turn: Option<i64>,
-    /// Steered prompts still waiting on the agent: the turn outlives its own prompt answer until they are done.
-    steering: usize,
-    /// The turn's own prompt answer while a steered one is still out.
-    turn_done: Option<Done>,
     queue: VecDeque<Queued>,
+    /// Queued messages handed to the agent to join the running turn, by entry id, until it answers (`steer`).
+    steers_in_flight: HashMap<String, steer::InFlight>,
+    /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
+    held_done: Option<Done>,
     active_request: Option<crate::chat::team::BotRequest>,
     /// The session the last flow step switched to its link's model, to put the bot's own back first.
     turn_model: Option<String>,
@@ -348,11 +352,16 @@ struct Actor {
     /// Watches the running turn for tool loops and silence.
     watchdog: watchdog::Watchdog,
     plan_entry: Option<String>,
+    /// What it wrote last this turn, since its last `send_message` or `react`.
     last_text: Option<String>,
     /// Messages the bot sent the user this turn (`send_message`); none: its last text is the reply.
     sent: Vec<String>,
     /// The bot's `react` this turn; with no message sent, it is the reply.
     reacted: Reacted,
+    /// A steered message joined this turn: its last text is a reply even after a `send_message` or `react`.
+    // ponytail: the host can't tell which message a send answered, so a closing note after one shows too; a bubble too
+    // many beats a reply lost.
+    joined: bool,
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
@@ -391,39 +400,16 @@ struct RoutineCompletion {
     timed_out: bool,
 }
 
-/// How one `session/prompt` of a turn ended.
-pub(super) struct Done {
-    value: Result<Value>,
-    /// The answer to a steered prompt that went out while the turn was running: the turn goes on until it's back.
-    steer: bool,
-}
+type Done = Result<Value>;
 
 impl Actor {
-    /// One `session/prompt` of the turn answered. A steered prompt keeps the turn open: the turn's own answer
-    /// waits in `turn_done` until the last steered one is back.
-    async fn on_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
-        if done.steer {
-            self.steering = self.steering.saturating_sub(1);
-            // The turn goes on from where its own prompt left off; the next message retries a failing agent.
-            if let Err(error) = self.verified(done.value).await {
-                tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "a steered prompt failed");
-            } else if self.steering == 0
-                && let Some(held) = self.turn_done.take()
-            {
-                self.end_turn(held, done_tx).await;
-            }
-            return;
+    /// The running turn is over, with every steer answered (`turn_ended`): it finishes or goes on with the next agent.
+    async fn on_turn_done(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
+        let done = self.verified(done).await;
+        // Updates sent before the prompt response are already queued; apply them first.
+        while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
+            self.on_incoming(Some(inc)).await;
         }
-        if self.steering > 0 {
-            self.turn_done = Some(done);
-            return;
-        }
-        self.end_turn(done, done_tx).await;
-    }
-
-    /// Wraps the turn up: the answer decides whether it failed, and the queue moves on.
-    async fn end_turn(&mut self, done: Done, done_tx: &mpsc::UnboundedSender<Done>) {
-        let done = self.verified(done.value).await;
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -459,13 +445,7 @@ impl Actor {
                 }
                 Some(file) = self.files.rx.recv() => self.finish_file(file),
                 inc = recv_incoming(&mut self.conn) => self.on_incoming(inc).await,
-                Some(done) = done_rx.recv() => {
-                    // Updates sent before the prompt response are already queued; apply them first.
-                    while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
-                        self.on_incoming(Some(inc)).await;
-                    }
-                    self.on_done(done, &done_tx).await;
-                }
+                Some(done) = done_rx.recv() => self.turn_ended(done, &done_tx).await,
                 _ = flush_tick.tick() => {
                     self.flush(false);
                     self.expire_abandoned().await;

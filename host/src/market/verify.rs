@@ -3,7 +3,7 @@
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
-use std::{process::Stdio, time::Duration};
+use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
@@ -77,19 +77,30 @@ async fn verify_inner(store: &Store, id: &str, port: u16) -> Result<Value> {
     if crate::native_channels::is_native(&c) {
         return crate::native_channels::apps::verify(store, &c);
     }
+    check_connector(store, &c, port).await
+}
+
+/// The same check for a definition that doesn't have to be saved yet.
+pub(super) async fn check_connector(store: &Store, c: &super::Connector, port: u16) -> Result<Value> {
     if c.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
         bail!("Sign in before checking this connection.");
     }
     let mut command = if let Some(exe) = &c.command {
-        let mut command = Command::new(exe);
+        // Found and started as `mcp::serve_local` does for a bot, so what passes here is what runs:
+        // the agent starts it in its bot's folder, which a relative path in the command line means.
+        let mut command = Command::new(crate::shell::program(exe));
         command.args(&c.args);
         for (name, value) in &c.env {
             command.env(name, super::passwords::resolve(store, value).await?);
         }
+        let mut folders = super::bots_using(store, &c.id)?.into_iter().map(|row| row.config.cwd);
+        if let Some(folder) = folders.find(|cwd| Path::new(cwd).is_dir()) {
+            command.current_dir(folder);
+        }
         command
     } else {
         let mut command = Command::new(std::env::current_exe()?);
-        command.args(["mcp", "remote", "--connector", id, "--port", &port.to_string()]);
+        command.args(["mcp", "remote", "--connector", &c.id, "--port", &port.to_string()]);
         command
     };
     let mut child = command

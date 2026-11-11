@@ -91,9 +91,13 @@ export class BotStore extends BotSync {
   /** How much of a file the computer has, by the file's own id (shown in the composer while it uploads). */
   readonly uploadPercents = new Map<string, number>()
 
+  /** The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`). */
+  lastSentNonce: string | null = null
+
   send(text: string, botId: string, { files = [], nonce = crypto.randomUUID(), pasted = [], replyTo = null, thread = null, call = null }: SendOptions = {}) {
     const trimmed = text.trim()
     if ((!trimmed && !files.length) || this.retired) return
+    this.lastSentNonce = nonce
     const data: Entry['data'] = { text: trimmed, status: 'sending', clientNonce: nonce }
     if (call) data.call = call
     if (replyTo) data.replyTo = replyTo
@@ -154,14 +158,20 @@ export class BotStore extends BotSync {
     const text = entry.data.text ?? ''
     if (!text && !files.length) return
     this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.send(text, entry.botId, { files, nonce: entry.data.clientNonce, replyTo: entry.data.replyTo })
   }
 
   discard(entry: Entry) {
     if (entry.data.clientNonce) this.outgoingFiles.delete(entry.data.clientNonce)
     this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
+    this.dropEntry(entry)
     this.changed()
     this.scheduleSave()
+  }
+
+  private dropEntry(entry: Entry) {
+    this.entries.set(entry.botId, (this.entries.get(entry.botId) ?? []).filter((e) => e.id !== entry.id))
   }
 
   private markLocal(nonce: string, botId: string, status: string) {
@@ -395,6 +405,21 @@ export class BotStore extends BotSync {
     } catch (error) {
       return error instanceof Error ? error.message : String(error)
     }
+  }
+
+  /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
+  steer(entry: Entry) {
+    this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))
+  }
+
+  /** Takes back a queued message (`unqueue`): gone at once, back if the computer refuses. */
+  unqueue(entry: Entry) {
+    const show = (e: Entry) => {
+      this.upsert(e)
+      this.changed()
+    }
+    show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
+    this.perform((c) => c.call('unqueue', { botId: entry.botId, entryId: entry.id }), true, () => show(entry))
   }
 
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */

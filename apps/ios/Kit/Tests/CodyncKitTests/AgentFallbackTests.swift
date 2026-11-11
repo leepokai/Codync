@@ -80,3 +80,12 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     draft.setAgent("claude")
     #expect(draft.model == nil && draft.modelOptions.isEmpty)
 }
+
+@Test func botsMixAgentsWhenTheyRunMoreThanOneCountingFallbacksNotGroups() throws {
+    let claude = try bot(#"{"id":"a","backend":"claude"}"#)
+    let onCodex = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}}"#)
+    let group = try bot(#"{"id":"g","kind":"group","backend":"codex"}"#)
+    #expect(onCodex.runningAgent == "codex")
+    #expect(try ![claude, bot(#"{"id":"c","backend":"claude"}"#), group].mixesAgents)
+    #expect([claude, onCodex].mixesAgents)
+}

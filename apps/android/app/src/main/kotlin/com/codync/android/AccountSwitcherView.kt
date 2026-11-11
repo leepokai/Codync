@@ -45,7 +45,7 @@ import com.kyant.shapes.RoundedRectangle
 /** Who you're signed in as, and the other accounts on this phone (iOS `AccountSwitcherView`). */
 @Composable internal fun AccountSwitcherView(state: AppState, store: AppStore, pair: () -> Unit) {
     val account = state.account
-    val current = account.accounts.firstOrNull { it.userId == account.userId }
+    val current = account.current
     val busy = "session" in state.busy
     var confirmSignOut by remember { mutableStateOf(false) }
     var addingAccount by remember { mutableStateOf(false) }
@@ -126,4 +126,9 @@ import com.kyant.shapes.RoundedRectangle
 @Composable internal fun AccountAvatar(state: AppState, size: Dp) {
     val current = state.account.accounts.firstOrNull { it.userId == state.account.userId }
     AccountAvatar(current?.avatar, current?.email, size)
+@Composable internal fun AccountAvatar(state: AccountContext, size: Dp) {
+    val current = state.account.current
+    if (!state.account.ready || "session" in state.busy) {
+        Box(Modifier.size(size), contentAlignment = Alignment.Center) { ThinkingOrb(size = size * 0.6f) }
+    } else AccountAvatar(current?.avatar, current?.email, size)
 }

@@ -231,3 +231,31 @@ internal suspend fun AppStore.receiveEntries(response: JsonElement) {
     withContext(Dispatchers.IO) { requireNotNull(database).receive(entries) }
     refresh()
 }
+/** A queued message goes now: into the running turn when the agent can take it, else as the next turn (the host decides). */
+internal fun AppStore.steer(entry: Entry) = command("steer", body("botId" to entry.botId, "entryId" to entry.id), "steer:" + entry.id)
+
+/** A queued message never goes out: gone at once, back if the computer refuses (its error shows). */
+internal fun AppStore.unqueue(entry: Entry) {
+    pendingRemovals[entry.id] = entry.rev
+    mutableState.update { it.copy(entries = withRemovals(it.entries, pendingRemovals)) }
+    command("unqueue", body("botId" to entry.botId, "entryId" to entry.id), "unqueue:" + entry.id, onFailure = {
+        pendingRemovals.remove(entry.id)
+        contextScope.launch { refresh() }
+    })
+}
+
+/** [entries] as the screens read them, without the messages taken back: for good once the computer says so (the mirror keeps
+ *  its copy, for its rev guard), and those [pending] (with the `rev` each had) until its newer copy says what became of them
+ *  (removed, or sent because the agent had taken it first). */
+internal fun withRemovals(entries: List<Entry>, pending: Map<String, Long>): List<Entry> =
+    entries.filterNot { it.isRemoved || pending[it.id] == it.rev }
+
+/** Carries on with the bot's current conversation instead of the handoff. */
+internal fun AppStore.keepConversation(entry: Entry) = command("keepConversation", body("entryId" to entry.id), "handoff:" + entry.id)
+
+/** Saves the user's version of a handoff that hasn't been sent; whether it did (its error shows). */
+internal suspend fun AppStore.editHandoff(entry: Entry, text: String): Boolean = try {
+    hostCall("editHandoff", body("entryId" to entry.id, "text" to text), 30_000)
+    true
+} catch (cancelled: CancellationException) { throw cancelled }
+catch (error: Exception) { showError(error); false }

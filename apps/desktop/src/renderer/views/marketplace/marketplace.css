@@ -477,14 +477,31 @@ textarea.market-field {
 .market-installed {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex: none;
+  max-width: 100%;
+}
+.market-installed-logos {
+  display: flex;
+  align-items: center;
   flex: none;
 }
 .market-installed-logos > * + * {
   margin-left: -8px;
 }
+.market-installed-skill {
+  width: 26px;
+  height: 26px;
+  border-radius: 6.76px;
+}
+.market-installed-skill .market-tile {
+  width: 100%;
+  height: 100%;
+}
 .market-installed-text {
   white-space: nowrap;
+  min-width: 0;
+  text-align: start;
 }
 .market-remove {
   display: grid;

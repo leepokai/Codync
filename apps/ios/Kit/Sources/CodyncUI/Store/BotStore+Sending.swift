@@ -76,6 +76,7 @@ extension BotStore {
               pasted: [String] = [], call: String? = nil, threadId: String? = nil) -> Task<SendProgress, Never>? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !files.isEmpty, !retired else { return nil }
+        lastSentNonce = nonce
         if call == nil { ReviewInvitation.shared.sent(nonce) }
         var data = EntryData(text: trimmed, status: "sending", clientNonce: nonce)
         data.call = call

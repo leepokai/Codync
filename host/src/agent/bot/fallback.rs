@@ -111,6 +111,14 @@ impl Actor {
         }
     }
 
+    /// A message that joined the running turn (`steer`) goes with it to the next agent.
+    pub(super) fn relay_joined(&mut self, entry_id: &str, text: &str) {
+        if let Some(attempt) = &mut self.relay.attempt {
+            attempt.entries.push(entry_id.to_owned());
+            attempt.text = format!("{}\n\n{text}", attempt.text);
+        }
+    }
+
     /// A turn (or its retry) starting on step `target`: the agents before it that rest because a bot found them
     /// signed out ask to be signed in here too.
     fn left_signed_out_before(&mut self, target: usize, now: i64) {

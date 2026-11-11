@@ -7,6 +7,7 @@ import type { BotStore } from '../store/bot-store'
 import { healthAlert } from '@shared/health'
 import { botDetail } from './tray-summary'
 import { optionLabel, permissionHeadline, sortedOptions } from './thread/PermissionCard'
+import { trNow } from '../lib/l10n.ts'
 
 /** Tool calls in the island's ticker. */
 const STEPS = 3
@@ -64,7 +65,7 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     folder: folderName(bot),
     detail: botDetail(bot),
     steps: isWorking(bot)
-      ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || 'Use a tool', kind: e.data.toolKind ?? 'other' }))
+      ? entries.filter((e) => e.kind === 'tool').slice(-STEPS).map((e) => ({ title: e.data.title || trNow('Use a tool'), kind: e.data.toolKind ?? 'other' }))
       : [],
     error: bot.status === 'error' ? (lastError(entries) ?? null) : null,
   }

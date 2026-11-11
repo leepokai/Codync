@@ -191,7 +191,7 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="codync-connectors-check-") as temp:
         home = Path(temp)
-        env = {**os.environ, "CODYNC_HOME": str(home), "CODYNC_CLOUD": "off"}
+        env = {**os.environ, "CODYNC_HOME": str(home), "CODYNC_CLOUD": "off", "CODYNC_AGENT_CHECKS": "off"}
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
@@ -231,6 +231,18 @@ def main():
             local = install({"name": "Credential fixture", "command": "python3", "args": [str(ROOT / "host/tests/fixtures/credential_mcp.py")], "env": {"API_KEY": "wrong"}})
             check("wrong local credential is rejected", lambda: api("connectorVerify", {"id": local}, ok=False))
             check("credential correction verifies without reinstall", lambda: api("credentialUpdateConnector", {"id": local, "fields": {"API_KEY": "test-private-key"}}))
+            def edit_in_place():
+                edited = api("updateConnector", {"id": local, "args": ["-u", str(ROOT / "host/tests/fixtures/credential_mcp.py")]})
+                assert edited["connector"]["id"] == local, "an update keeps the id bots point at"
+                assert edited["verify"]["status"] == "ready", edited
+                assert api("connectorRuntime", {"id": local})["args"][0] == "-u", "the new command line is what runs"
+                assert [c["id"] for c in api("connectors")["items"]] == [local], "an update adds nothing"
+            check("updateConnector edits the command line in place and verifies it", edit_in_place)
+            def failed_edit():
+                before = api("connectorRuntime", {"id": local})
+                api("updateConnector", {"id": local, "command": "/nonexistent/codync-connector-check"}, ok=False)
+                assert api("connectorRuntime", {"id": local}) == before, "a connector that won't start isn't saved"
+            check("a failed updateConnector leaves the connector as it was", failed_edit)
             def local_proxy():
                 with proxy(env, port, local, "local") as rpc:
                     assert rpc("tools/list")["tools"] == []

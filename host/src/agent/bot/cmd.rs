@@ -26,21 +26,24 @@ pub enum Cmd {
         entry_id: String,
         text: String,
     },
-    /// The user moved a waiting message into the running turn instead of waiting for it.
-    Steer {
-        entry_id: String,
-        reply: tokio::sync::oneshot::Sender<Result<()>>,
-    },
     /// The user rewrote a waiting message before it went out.
     EditQueued {
         entry_id: String,
         text: String,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },
-    /// The user dropped a waiting message.
-    DeleteQueued {
+    /// The user wants a queued message of theirs handled now (`steer`).
+    Steer {
         entry_id: String,
-        reply: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    /// What the agent made of a steered message (`_session/steering`).
+    Steered {
+        entry_id: String,
+        outcome: Result<Value>,
+    },
+    /// The user took back a queued message of theirs (`unqueue`).
+    Unqueue {
+        entry_id: String,
     },
     BotRequest(crate::chat::team::BotRequest),
     /// Cancel only the synchronous request owned by the caller that stopped waiting.

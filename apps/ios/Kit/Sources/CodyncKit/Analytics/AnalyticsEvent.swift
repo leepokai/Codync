@@ -35,7 +35,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum ReviewCancellation: String, Sendable { case background, interaction, unavailable }
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
-    public enum OnboardingStep: String, Sendable { case welcome, install, scan }
+    public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
     public enum OnboardingVia: String, Sendable { case paired, account, skipped }
     public enum SignInProvider: String, Sendable { case apple, google, github }
     public enum SignInFailure: String, Sendable { case cancelled, verification, error }
@@ -46,6 +46,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
     public enum Link: String, Sendable {
         case github, issues, discord, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command"
+        case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }

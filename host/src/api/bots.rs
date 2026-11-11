@@ -429,13 +429,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({"entry": crate::chat::messages::post_in_lane(hub, &row.config, lane, data)?})
         }
-        // A waiting message goes into the running turn now, instead of after it.
-        "steer" => {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            hub.send_cmd(str_arg(&b, "botId")?, Cmd::Steer { entry_id: str_arg(&b, "entryId")?.to_owned(), reply })?;
-            answer.await??;
-            json!({})
-        }
         // A waiting message rewritten before it goes out.
         "editQueued" => {
             let (reply, answer) = tokio::sync::oneshot::channel();
@@ -444,14 +437,6 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 text: b["text"].as_str().unwrap_or_default().to_owned(),
                 reply,
             };
-            hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
-            answer.await??;
-            json!({})
-        }
-        // A waiting message dropped: the agent never hears it.
-        "deleteQueued" => {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            let cmd = Cmd::DeleteQueued { entry_id: str_arg(&b, "entryId")?.to_owned(), reply };
             hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
             answer.await??;
             json!({})
@@ -519,6 +504,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "doctor" => crate::doctor::report(hub)?,
         "stopAll" => json!({"stopped": hub.stop_all()?}),
+        // A message of the user's waiting for its turn: handled now (`steer`) or taken back (`unqueue`).
+        "steer" | "unqueue" | "deleteQueued" => {
+            let (bot, entry_id) = (str_arg(&b, "botId")?, str_arg(&b, "entryId")?.to_owned());
+            let queued = hub
+                .store
+                .entry(&entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "queued");
+            if queued.is_none() {
+                bail!("that message isn't waiting any more");
+            }
+            let cmd = if method == "steer" { Cmd::Steer { entry_id } } else { Cmd::Unqueue { entry_id } };
+            hub.send_cmd(bot, cmd)?;
+            json!({})
+        }
         "switchBack" => {
             hub.send_cmd(str_arg(&b, "botId")?, Cmd::SwitchBack)?;
             json!({})

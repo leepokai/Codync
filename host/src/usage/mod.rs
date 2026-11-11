@@ -185,6 +185,9 @@ pub async fn refresh(hub: &Hub) {
     }
     // Antigravity's adapters report per account; the language server below fills a base reading when they can't.
     antigravity::refresh(hub).await;
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
     let (
         codex,
         claude,

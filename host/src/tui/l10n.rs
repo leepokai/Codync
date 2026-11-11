@@ -23,6 +23,7 @@ enum AppLanguage {
     Fr,
     De,
     Es,
+    It,
 }
 
 impl AppLanguage {
@@ -36,6 +37,7 @@ impl AppLanguage {
             "fr" => Self::Fr,
             "de" => Self::De,
             "es" => Self::Es,
+            "it" => Self::It,
             _ => Self::System,
         }
     }
@@ -51,6 +53,7 @@ impl AppLanguage {
             Self::Fr => "fr",
             Self::De => "de",
             Self::Es => "es",
+            Self::It => "it",
         }
     }
 
@@ -64,7 +67,8 @@ impl AppLanguage {
             Self::Ko => Self::Fr,
             Self::Fr => Self::De,
             Self::De => Self::Es,
-            Self::Es => Self::System,
+            Self::Es => Self::It,
+            Self::It => Self::System,
         }
     }
 }
@@ -102,6 +106,11 @@ static DE: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
 static ES: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/es.json"))
         .expect("es.json is a string map")
+});
+
+static IT: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../apps/ios/Kit/Sources/CodyncKit/Resources/Languages/it.json"))
+        .expect("it.json is a string map")
 });
 
 static PREFERENCE: LazyLock<Mutex<AppLanguage>> = LazyLock::new(|| Mutex::new(read_preference()));
@@ -153,6 +162,7 @@ fn active_phrases() -> Option<&'static HashMap<String, String>> {
         AppLanguage::Fr => Some(&FR),
         AppLanguage::De => Some(&DE),
         AppLanguage::Es => Some(&ES),
+        AppLanguage::It => Some(&IT),
         AppLanguage::En | AppLanguage::System => None,
     }
 }
@@ -209,6 +219,12 @@ fn compact_time_in(time: &str, table: &HashMap<String, String>) -> Option<String
         spoken = format!("0{}", translate_with("minute unit", table));
     }
     Some(spoken)
+}
+
+/// Fills a template's `{key}`s in one pass: a device named "{code}" stays as written.
+pub(in crate::tui) fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let values = values.iter().map(|(key, value)| (format!("{{{key}}}"), (*value).to_owned())).collect();
+    substitute(template, &values)
 }
 
 /// An exact chrome phrase. Chat text that is not one of those phrases stays as written.
@@ -286,20 +302,50 @@ fn templated_at(text: &str, table: &HashMap<String, String>, depth: u8) -> Optio
     for template in TEMPLATES.iter() {
         let Some(caps) = captures(text, &template.pieces) else { continue };
         let Some(phrase) = phrase_of(table, &template.key) else { continue };
-        let mut result = phrase.clone();
+        let mut values = HashMap::new();
         for (token, value) in caps {
-            let shown = if let Some(hit) = phrase_of(table, &value) {
+            // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+            let localizable = matches!(
+                token.as_str(),
+                "{hint}"
+                    | "{error}"
+                    | "{setup}"
+                    | "{kind}"
+                    | "{when}"
+                    | "{status}"
+                    | "{reason}"
+                    | "{shortcut}"
+                    | "{changes}"
+            );
+            let shown = if !localizable {
+                value
+            } else if let Some(hit) = phrase_of(table, &value) {
                 hit.clone()
             } else if depth == 0 {
                 templated_at(&value, table, 1).unwrap_or(value)
             } else {
                 value
             };
-            result = result.replace(&token, &shown);
+            values.insert(token, shown);
         }
-        return Some(result);
+        return Some(substitute(phrase, &values));
     }
     None
+}
+
+/// Substitute once, so a name containing another slot's spelling stays literal.
+fn substitute(phrase: &str, values: &HashMap<String, String>) -> String {
+    let mut result = String::new();
+    for piece in phrase.split_inclusive('}') {
+        let Some(open) = piece.rfind('{') else {
+            result.push_str(piece);
+            continue;
+        };
+        result.push_str(&piece[..open]);
+        let token = &piece[open..];
+        result.push_str(values.get(token).map_or(token, String::as_str));
+    }
+    result
 }
 
 fn captures(text: &str, pieces: &[Piece]) -> Option<Vec<(String, String)>> {
@@ -361,6 +407,7 @@ pub(in crate::tui) fn language_title() -> Cow<'static, str> {
         AppLanguage::Fr => Cow::Borrowed("Français"),
         AppLanguage::De => Cow::Borrowed("Deutsch"),
         AppLanguage::Es => Cow::Borrowed("Español"),
+        AppLanguage::It => Cow::Borrowed("Italiano"),
         AppLanguage::System => tr("Follow system"),
     }
 }
@@ -420,7 +467,7 @@ mod tests {
         assert_eq!(translate("No setup needed.", true).as_ref(), "无需设置。");
         assert_eq!(
             translate("Runs the official installer on this Mac.", true).as_ref(),
-            "在 这台 Mac 上运行官方安装程序。"
+            "在 this Mac 上运行官方安装程序。"
         );
         assert_eq!(
             translate(
@@ -452,7 +499,7 @@ mod tests {
         assert_eq!(AppLanguage::Zh.next(), AppLanguage::ZhHant);
         assert_eq!(AppLanguage::ZhHant.next(), AppLanguage::En);
         assert_eq!(AppLanguage::En.next(), AppLanguage::Ja);
-        assert_eq!(AppLanguage::Es.next(), AppLanguage::System);
+        assert_eq!(AppLanguage::Es.next(), AppLanguage::It);
         assert_eq!(super::system_script_of("zh_TW.UTF-8"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh-HK"), Some(super::ChineseScript::Hant));
         assert_eq!(super::system_script_of("zh_CN.UTF-8"), Some(super::ChineseScript::Hans));

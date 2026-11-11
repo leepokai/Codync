@@ -18,6 +18,9 @@ enum class AppLanguage(val stored: String, val title: String) {
     System("system", "Follow system"), En("en", "English"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"),
     Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"),
     Ar("ar", "العربية");
+    // The menu's order, as on the iPhone: Chinese first, then English and the rest.
+    System("system", "Follow system"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"), En("en", "English"),
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"), PtBr("pt-BR", "Português (Brasil)"), Ru("ru", "Русский"), It("it", "Italiano");
 
     fun resolved(systemTag: String): AppLanguage {
         if (this != System) return this
@@ -50,7 +53,7 @@ private data class Piece(val literal: String?, val token: String?)
 
 /**
  * A sentence the host or a view already filled in, matched back to its `{token}` phrase.
- * A slot that is itself a known phrase (a setup hint) is translated too.
+ * Only app-owned hints recurse; names and free text stay as written.
  */
 private val templateLock = Any()
 private var cachedKey: Map<String, String>? = null
@@ -100,6 +103,9 @@ private fun parseTemplate(template: String): List<Piece>? {
     return if (pieces.any { it.token != null }) pieces else null
 }
 
+private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}")
+private val placeholder = Regex("\\{[A-Za-z0-9]+\\}")
+
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {
     var pos = 0
     val caps = linkedMapOf<String, String>()
@@ -118,12 +124,15 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
         pos = end
     }
     if (pos != text.length) return null
-    var result = phrase
-    for ((token, value) in caps) {
-        val inner = phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
-        result = result.replace(token, inner ?: value)
+    val values = caps.mapValues { (token, value) ->
+        // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+        val localizable = token in localizableSlots
+        val inner = if (localizable) {
+            phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
+        } else null
+        inner ?: value
     }
-    return result
+    return placeholder.replace(phrase) { match -> values[match.value] ?: match.value }
 }
 
 fun translate(text: String, preference: AppLanguage, systemIsChinese: Boolean, phrases: Map<String, String>): String {

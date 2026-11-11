@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store/context'
 import type { AgentMode } from '@shared/approvals'
 import { errorText } from './drafts'
+import { trNow } from '../../lib/l10n.ts'
 
 /** A model's own setting (effort, fast…) and the values the agent accepts. */
 export interface ModelOption {
@@ -56,7 +57,7 @@ export function useAgentModels(backend: string, account: string | null = null): 
     if (custom) return
     const client = store.client
     if (!online || !client) {
-      setFailure('Connect to this computer to load its models. You can still enter a model ID.')
+      setFailure(trNow('Connect to this computer to load its models. You can still enter a model ID.'))
       return
     }
     let cancelled = false

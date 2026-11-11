@@ -151,6 +151,11 @@ import com.kyant.shapes.RoundedRectangle
             else if (viewing == null) MessageComposer(bot, null, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
                 replyingTo = replyingTo, cancelReply = { replyingTo = null },
                 onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null)
+            // An artifact's viewer has its own box for the same draft; two would overwrite each other.
+            else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
+                onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
+                replyTo = replyTo, cancelReply = { replyId = null },
+                queued = queuedMessages(state.chatEntries(bot), bot.isWorking))
         }
     }) {
         Transcript(bot, chatState, store, connect, scroll, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
@@ -201,6 +206,70 @@ import com.kyant.shapes.RoundedRectangle
     val unreadMark = remember(bot.id) { bot.readRev.takeIf { bot.unread > 0 } }
     val rows = remember(items, unreadMark) { withUnreadLine(items, unreadMark) }
     val newLineColor = bot.chatColor?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+/** The glass back button, the title (tapping it opens the bot's details) and the connection under it. */
+@Composable private fun ThreadHeader(bot: Bot, state: AppState, store: AppStore, openDetails: () -> Unit) {
+    Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).padding(horizontal = 16.dp).height(44.dp)) {
+        val (source, pressed) = rememberPress()
+        Box(Modifier.align(Alignment.CenterStart).size(44.dp).glass(Capsule(), pressed = pressed)
+            .then(Modifier.plainButton { store.openBot(null) }).semantics { contentDescription = "Back" }, contentAlignment = Alignment.Center) {
+            Symbol("chevron.left", size = 32.dp, tint = Palette.text)
+        }
+        val label = tr("{name}, view details").replace("{name}", bot.name)
+        Box(Modifier.align(Alignment.Center).plainButton(action = openDetails).semantics { contentDescription = label }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    BotAvatar(bot, state.bots, 22.dp)
+                    Text(bot.name, style = Type.system(13f).semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                ConnectionSubtitle(state)
+            }
+        }
+        // The corner is the computer: it pulses while this bot is operating it (watch, then take over).
+        val screen = state.screen
+        if (screen != null) {
+            val operating = screen.agentBot == bot.id
+            ComputerButton(operating, Modifier.align(Alignment.CenterEnd)) { store.openScreen(bot.id.takeIf { operating }) }
+        }
+    }
+}
+
+@Composable private fun ComputerButton(operating: Boolean, modifier: Modifier, action: () -> Unit) {
+    val (source, pressed) = rememberPress()
+    val pulse by rememberInfiniteTransition(label = "Operating").animateFloat(1f, 0.35f,
+        infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "Pulse")
+    Box(modifier.size(44.dp).glass(Capsule(), pressed = pressed)
+        .clickable(source, null, role = Role.Button, onClick = action).semantics { contentDescription = "Computer" },
+        contentAlignment = Alignment.Center) {
+        Symbol("desktopcomputer", Modifier.graphicsLayer { alpha = if (operating) pulse else 1f }, size = 22.dp, tint = Palette.text)
+    }
+}
+
+/** The link to the computer: route icon (or a spinner) and a word. */
+@Composable private fun ConnectionSubtitle(state: AppState) {
+    Row(Modifier.clearAndSetSemantics { contentDescription = "${state.hostName}, ${connectionDescription(state)}" }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.width(12.dp), contentAlignment = Alignment.Center) {
+            when (val link = state.connection) {
+                LinkState.Connecting -> Spinner(8.dp)
+                is LinkState.Ready -> Symbol(if (link.route == HostRoute.Relay) "cloud" else "wifi", size = 11.dp, tint = Palette.secondary)
+                else -> Symbol("wifi.slash", size = 11.dp, tint = Palette.secondary)
+            }
+        }
+        Text(connectionLabel(state), style = Type.system(10f).medium, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** [bot]'s chat. What voice calls carried shows in each call's conversation instead. */
+private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id && it.isChat }.hidingCalls()
+
+/** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
+@Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
+    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
+    openCall: (String) -> Unit, openPeer: (String) -> Unit) {
+    val entries = state.chatEntries(bot)
+    // A call's message that failed to send stays here, to be sent again.
+    val pending = state.pending.filter { it.botId == bot.id && (it.call == null || it.status == SendStatus.Failed) }
+    // Messages waiting behind the bot's work show above the composer instead.
+    val items = chatItems(entries, pending, busy = bot.isWorking)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
     val more = bot.id !in state.historyComplete
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()

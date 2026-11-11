@@ -25,7 +25,7 @@ test('Additional languages persist their identifiers and reach the tray language
     },
   })
   const { pref, prefs } = await import('./prefs.ts')
-  const languages: TraySummary['language'][] = ['pt-BR', 'ru', 'ar']
+  const languages: TraySummary['language'][] = ['pt-BR', 'ru', 'ar', 'it']
   assert.equal(prefs.appLanguage.get(), 'system')
   for (const language of languages) {
     prefs.appLanguage.set(language)

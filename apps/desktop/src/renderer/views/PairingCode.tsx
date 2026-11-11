@@ -50,7 +50,7 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
       {code ? (
         <>
           <div className="pairing-qr fade-in">
-            <img src={code.qr} alt={`Pairing code for ${name}`} width={200} height={200} />
+            <img src={code.qr} alt={tr('Pairing code for {name}').replaceAll('{name}', () => name)} width={200} height={200} />
           </div>
           <Text as="div" size="caption" tone="secondary" className="pairing-note">
             {tr(`On Android or iPhone, open Codync and scan this code from Add computer. Use Codync on both devices, or Codync Dev on both. Your phone connects on the same Wi-Fi, or through the encrypted relay from anywhere.`)}
@@ -64,13 +64,13 @@ export function PairingCode({ name, cloud, requestCode, renew = 0 }: { name: str
             <Text as="div" size="caption" tone="attention" className="pairing-note">
               {code.info.urls.length === 0
                 ? tr(`No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.`)
-                : `“Reach from anywhere” is off, so your phone only reaches ${name} on the same network.`}
+                : tr('“Reach from anywhere” is off, so your phone only reaches {name} on the same network.').replaceAll('{name}', () => name)}
             </Text>
           ) : null}
           <HStack gap={4}>
             {expiresAt ? (
               <Text size="caption2" tone="tertiary">
-                Works once, until {new Date(expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                {tr('Works once, until {time}').replaceAll('{time}', () => new Date(expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }))}
               </Text>
             ) : null}
             <IconButton title="New code" icon="arrow.clockwise" onClick={() => void load()} />

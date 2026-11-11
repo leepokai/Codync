@@ -15,6 +15,7 @@ struct AppearanceSettings: View {
             ValueRow("Bot avatars") {
                 ChoicePicker(selection: $avatarStyle, options: AvatarStyle.allCases.map { (id: $0, label: $0.label) })
             }
+            AgentLogosToggle()
         }
     }
 }

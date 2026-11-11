@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.codync.android.core.BotDraft
@@ -29,13 +30,15 @@ import com.codync.android.core.CloudComputer
 import com.codync.android.core.GroupDraft
 import com.codync.android.design.*
 
-private enum class Root { Loading, Welcome, Pairing, Tabs }
+private enum class Root { Loading, AwaitingAccount, Welcome, Choose, Pairing, Tabs }
 
 /** The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet on top. */
 @Composable fun CodyncApp(state: AppState, store: AppStore) {
     val context = LocalContext.current
     LaunchedEffect(context) { NavigationPreferences.ensureLoaded(context) }
     var welcomed by rememberSaveable { mutableStateOf(false) }
+    // In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
+    var pairingNew by rememberSaveable { mutableStateOf(false) }
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showComputers by rememberSaveable { mutableStateOf(false) }
     var showPairing by rememberSaveable { mutableStateOf(false) }
@@ -57,6 +60,12 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     // A notification, widget or link: close everything, then maybe show usage, the computers or extensions.
     LaunchedEffect(state.navigationRequest) {
         if (handledNavigation != state.navigationRequest) {
+    LaunchedEffect(app.generation) { if (handledGeneration != app.generation) { closeAll(); showUsage = false; pairingNew = false; handledGeneration = app.generation } }
+    // A notification, widget or link: close everything, then pick the tab as the iPhone does (usage on State, the rest over Bots)
+    // and maybe show usage, the computers or extensions.
+    LaunchedEffect(app.navigationRequest) {
+        val handled = handledNavigation.second.takeIf { handledNavigation.first == accounts.activityOwnerId } ?: 0
+        if (handled != app.navigationRequest) {
             closeAll()
             showUsage = state.navigationPage == LinkPage.Usage
             when (state.navigationPage) {
@@ -91,9 +100,18 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
     LaunchedEffect(state.cloudComputers.isNotEmpty(), state.loading) {
         if (!state.loading && !state.setupComplete && state.cloudComputers.isNotEmpty()) store.skipSetup()
     }
+    val signedIn = app.account.userId != null
+    // Every build with accounts requires sign-in (iOS `mustSignIn`); only builds without them pair signed out.
+    val required = app.account.configured
+    val onboarding = !app.setupComplete && app.computers.isEmpty()
+    // What the choice page offers: an older copy of a computer doesn't count as one more.
+    val askable = app.cloudComputers.filterNot(app::isOlderCopy)
     val root = when {
         state.loading -> Root.Loading
         onboarding && !welcomed && !signedIn -> Root.Welcome
+        // Whether the account has computers decides the first page: none flashes by before that's known.
+        onboarding && signedIn && !app.cloudLoaded -> Root.AwaitingAccount
+        onboarding && !pairingNew && askable.isNotEmpty() -> Root.Choose
         onboarding -> Root.Pairing
         else -> Root.Tabs
     }
@@ -121,6 +139,47 @@ private enum class Root { Loading, Welcome, Pairing, Tabs }
                 Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                     PairingView(state, store, onSkip = store::skipSetup) {
                         if (signedIn) AccountSwitcherButton(state) { showAccount = true } else BackButton { welcomed = false }
+    BackHandler(root == Root.Pairing && askable.isNotEmpty()) { pairingNew = false }
+    val states = app.computers.mapNotNull { computers[it.id] }
+    val edit = { computerId: String, bot: Bot ->
+        if (bot.kind == "group") groupEditor = Editing(computerId, GroupDraft.from(bot)) else editor = Editing(computerId, BotDraft.from(bot))
+    }
+    val openMarketplace = { id: String -> showAccount = false; showComputers = false; marketplace = id }
+    // The sheets too: a bot's editor sets custom icons, which need sign-in.
+    CompositionLocalProvider(LocalAccounts provides accounts) {
+        Box(Modifier.fillMaxSize().background(Palette.background)) {
+            AnimatedContent(root, transitionSpec = {
+                if ((initialState == Root.Welcome || initialState == Root.Choose) && targetState == Root.Pairing)
+                    (slideInHorizontally(Motion.layoutOffset) { it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { -it } + fadeOut(Motion.fade()))
+                else if (initialState == Root.Pairing && (targetState == Root.Welcome || targetState == Root.Choose))
+                    (slideInHorizontally(Motion.layoutOffset) { -it } + fadeIn(Motion.fade())) togetherWith (slideOutHorizontally(Motion.layoutOffset) { it } + fadeOut(Motion.fade()))
+                else fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade())
+            }, label = "Root") { shown ->
+                when (shown) {
+                    Root.Loading -> Box(Modifier.fillMaxSize())
+                    Root.AwaitingAccount -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Spinner(28.dp) }
+                    // Computers paired before sign-in was required wait in the signed-out context; signing in moves them.
+                    Root.Welcome -> WelcomeView(app, accounts, signedOutComputers = if (required) app.computers.size else 0) { welcomed = true }
+                    Root.Choose -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        ChooseComputerView(app, askable, { access = it }, { pairingNew = true }, accounts::skipSetup) {
+                            AccountSwitcherButton(app) { showAccount = true }
+                        }
+                    }
+                    Root.Pairing -> Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        PairingView(app, accounts, onSkip = accounts::skipSetup, onContinue = { pairingNew = true }) {
+                            when {
+                                askable.isNotEmpty() -> BackButton { pairingNew = false }
+                                signedIn -> AccountSwitcherButton(app) { showAccount = true }
+                                else -> BackButton { welcomed = false }
+                            }
+                        }
+                    }
+                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
+                        newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
+                        edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
+                            marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
+                        // A conversation, talking to the computer the bot lives on.
+                        accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
                     }
                 }
                 Root.Tabs -> MainTabs(

@@ -26,6 +26,7 @@ mod overlay;
 mod pair;
 mod permission;
 mod proposals;
+mod queue;
 mod roster;
 mod roster_tools;
 mod rules;

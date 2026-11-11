@@ -30,6 +30,7 @@ struct ChatRow: View {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
                 UserBubble(entry: entry, botWorking: chat?.isWorking == true, reply: reply, branch: branch)
+                UserBubble(entry: entry, reply: reply)
                 ReactionsRow(entry: entry)
                 if let summary = entry.data.thread, let openThread {
                     ThreadChip(summary: summary, open: openThread)
@@ -127,7 +128,6 @@ struct QuoteLine: View {
 
 struct UserBubble: View {
     let entry: Entry
-    let botWorking: Bool
     var reply: (() -> Void)?
     /// Starts a thread branched from this message; nil in a thread.
     var branch: (() -> Void)?
@@ -171,10 +171,6 @@ struct UserBubble: View {
         switch entry.data.status {
         case "sending":
             Text(L10n.tr("Sending…")).font(.caption2).foregroundStyle(Palette.tertiary)
-        case "queued":
-            Text(botWorking ? "Queued until this response finishes" : "Queued")
-                .font(.caption2)
-                .foregroundStyle(Palette.tertiary)
         case "failed":
             HStack(spacing: 10) {
                 Text(L10n.tr("Failed to send")).foregroundStyle(Palette.danger)
@@ -250,7 +246,7 @@ struct NoticeRow: View {
         let text = entry.data.text ?? ""
         // A call an older app logged, with no conversation to open.
         if let seconds = entry.data.callSeconds {
-            Label("\(L10n.tr(text)) · \(String(format: "%02d:%02d", seconds / 60, seconds % 60))", systemImage: "waveform")
+            Label(L10n.tr(text) + callLength(seconds), systemImage: "waveform")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(Palette.secondary)
                 .frame(maxWidth: .infinity)

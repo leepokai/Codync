@@ -40,15 +40,12 @@ impl Actor {
                 }
                 self.enqueue(Queued::User { lane, entry_id, text, queued_at: Instant::now() }, done_tx).await;
             }
-            Cmd::Steer { entry_id, reply } => {
-                let _ = reply.send(self.steer(&entry_id, done_tx).await);
-            }
             Cmd::EditQueued { entry_id, text, reply } => {
                 let _ = reply.send(self.edit_queued(&entry_id, &text));
             }
-            Cmd::DeleteQueued { entry_id, reply } => {
-                let _ = reply.send(self.delete_queued(&entry_id));
-            }
+            Cmd::Steer { entry_id } => self.steer(entry_id).await,
+            Cmd::Steered { entry_id, outcome } => self.steer_answered(&entry_id, &outcome, done_tx).await,
+            Cmd::Unqueue { entry_id } => self.unqueue(&entry_id),
             Cmd::Group(turn) => {
                 // The room asks again: this turn answers for any still waiting there.
                 self.queue.retain(|q| !matches!(q, Queued::Group(g) if g.lane == turn.lane));
@@ -124,58 +121,6 @@ impl Actor {
         self.queue.iter().position(|q| matches!(q, Queued::User { entry_id: id, .. } if id == entry_id))
     }
 
-    /// `entry_id` stops waiting and goes into the running turn as a second prompt on its live session: the agent
-    /// hears it without the turn ending first.
-    async fn steer(&mut self, entry_id: &str, done_tx: &mpsc::UnboundedSender<Done>) -> Result<()> {
-        if self.cfg.is_group() {
-            bail!("a group sends its messages at once: nothing waits to steer");
-        }
-        let Some(position) = self.queued_position(entry_id) else {
-            bail!("that message already went out");
-        };
-        // A routine, a request and a room turn each hold their own conversation: a steered prompt would answer a
-        // different question.
-        if self.active_routine.is_some()
-            || self.active_request.is_some()
-            || self.active_group.is_some()
-            || self.active_prompt
-        {
-            bail!("the bot is on a routine, request or room turn");
-        }
-        let Some(Queued::User { lane, .. }) = self.queue.get(position) else { unreachable!("a message was found") };
-        if self.turn.is_none() || &self.lane != lane {
-            bail!("the bot isn't answering that conversation right now");
-        }
-        let (Some(sid), Some(acp)) = (self.turn_session.clone(), self.conn.as_ref().map(|c| c.acp.clone())) else {
-            bail!("the agent isn't running");
-        };
-        // Built from the saved message, so a skill command still expands (the queue held the same text).
-        let Some(data) = self.hub.store.entry(entry_id).map(|e| e.data) else {
-            bail!("that message is gone");
-        };
-        let text = crate::chat::prompt::of_entry(&self.hub, &self.cfg, &data);
-        let answer =
-            acp.send("session/prompt", json!({"sessionId": sid, "prompt": [{"type": "text", "text": text}]})).await?;
-        self.queue.remove(position);
-        if let Some(mut entry) = self.hub.store.entry(entry_id) {
-            entry.data["status"] = json!(crate::chat::team::RequestStatus::Sent);
-            self.hub.set_entry(entry_id, &entry.data);
-        }
-        // Its words are the user's this turn too (memory, and what the turn answers).
-        self.turn_entries.push(entry_id.to_owned());
-        if let Some(turn_text) = self.turn_text.as_mut() {
-            turn_text.push_str("\n\n");
-            turn_text.push_str(&text);
-        }
-        self.steering += 1;
-        let done_tx = done_tx.clone();
-        tokio::spawn(async move {
-            let value = answer.response().await.and_then(acp::codebuddy::prompt_result);
-            let _ = done_tx.send(Done { value, steer: true });
-        });
-        Ok(())
-    }
-
     /// Rewrites the waiting message's text; the agent reads it when its turn comes.
     fn edit_queued(&mut self, entry_id: &str, text: &str) -> Result<()> {
         let text = text.trim();
@@ -191,19 +136,6 @@ impl Actor {
         let prompt = crate::chat::prompt::of_entry(&self.hub, &self.cfg, &entry.data);
         if let Some(Queued::User { text, .. }) = self.queue.get_mut(position) {
             *text = prompt;
-        }
-        Ok(())
-    }
-
-    /// Drops the waiting message: the agent never hears it.
-    fn delete_queued(&mut self, entry_id: &str) -> Result<()> {
-        let Some(position) = self.queued_position(entry_id) else {
-            bail!("that message already went out");
-        };
-        self.queue.remove(position);
-        if let Some(mut entry) = self.hub.store.entry(entry_id) {
-            entry.data["status"] = "cancelled".into();
-            self.hub.set_entry(entry_id, &entry.data);
         }
         Ok(())
     }

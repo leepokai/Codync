@@ -1,5 +1,6 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
+use super::entries::NOT_REMOVED;
 use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
 use super::visibility::PUBLIC;
 use super::{Store, logged, next_rev};
@@ -206,9 +207,9 @@ impl Store {
         let row = c.query_row(
             &format!(
                 "SELECT kind, data, updated_at FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND thread_id IS NULL AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
-               json_extract(data, '$.call') IS NULL
-             ORDER BY seq DESC LIMIT 1"
+                   (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1)) AND
+                   json_extract(data, '$.call') IS NULL AND {NOT_REMOVED}
+                 ORDER BY seq DESC LIMIT 1"
             ),
             [id],
             |r| {

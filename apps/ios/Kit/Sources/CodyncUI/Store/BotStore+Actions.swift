@@ -107,6 +107,22 @@ extension BotStore {
         }
     }
 
+    /// Sends a queued message now: into the bot's running turn when its agent can take it, else as its next turn. It
+    /// leaves the queue once the computer says so.
+    public func steer(_ entry: Entry) {
+        answer(entry, "steer") { try await $0.steer(botId: entry.botId, entryId: entry.id) }
+    }
+
+    /// Takes back a queued message, which never goes out: gone at once, back if the computer refuses.
+    public func unqueue(_ entry: Entry) {
+        let mark = { (removed: Bool?) in
+            guard let i = self.entries[entry.botId]?.firstIndex(where: { $0.id == entry.id }) else { return }
+            Motion.animate { self.entries[entry.botId]?[i].data.removed = removed }
+        }
+        mark(true)
+        Task { await attempt(undo: { mark(nil) }) { try await $0.unqueue(botId: entry.botId, entryId: entry.id) } }
+    }
+
     /// A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs.
     private func answer(_ entry: Entry, _ choice: String, _ op: @escaping @MainActor (HostClient) async throws -> Void) {
         guard answering[entry.id] == nil else { return }

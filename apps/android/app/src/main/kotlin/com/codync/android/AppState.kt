@@ -15,6 +15,11 @@ data class AppState(
     val account: AccountState = AccountState(),
     val cloudComputers: List<CloudComputer> = emptyList(),
     val access: AccessTicket? = null,
+    /** The account answered (or failed to) at least once, so an empty [cloudComputers] means what it says. */
+    val cloudLoaded: Boolean = false,
+    /** Access requests waiting for approval on the computer, with the code to check, by computer ID. */
+    val access: Map<String, AccessTicket> = emptyMap(),
+    /** The request each computer was approved through most recently. */
     val approvedAccess: Map<String, String> = emptyMap(),
     /** The account computer an access request is running for: one at a time. */
     val askingAccess: String? = null,

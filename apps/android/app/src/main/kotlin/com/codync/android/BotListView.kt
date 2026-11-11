@@ -48,8 +48,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.codync.android.core.Bot
 import com.codync.android.core.LinkState
+import com.codync.android.core.mixesAgents
+import com.codync.android.core.runningAgent
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import kotlin.math.abs
@@ -136,6 +140,8 @@ import kotlinx.serialization.json.putJsonArray
         activeFilter = RosterFilter.All
     }
 
+    val toggleSection = { name: String -> folded = if (name in folded) folded - name else folded + name; FoldedSections.save(context, folded) }
+    val agentLogos by AppearancePreferences.agentLogos.collectAsStateWithLifecycle()
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val contentBottom = bottomInset + 64.dp
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
@@ -237,6 +243,12 @@ import kotlinx.serialization.json.putJsonArray
                         )
                     }
                 }
+                if (grouped && (movingComputer || id in collapsed)) continue
+                botLines(state, store, roster, folded, grouped, agentLogos, RosterActions(toggleSection,
+                    rename = { name -> naming = SectionNaming("Rename section", name) { renameSection(roster, store, name, it) } },
+                    remove = { name -> renameSection(roster, store, name, null) },
+                    newSection = { bot -> naming = SectionNaming("New section", "") { store.setSection(bot.id, it) } },
+                    edit = { bot -> edit(id, bot) }, delete = { bot -> confirmDelete = id to bot }))
             }
         }
     }
@@ -374,6 +386,62 @@ import kotlinx.serialization.json.putJsonArray
                         delete = { onDelete(bot) },
                         selected = highlightSelection && state.selectedBot == bot.id,
                     )
+    }
+    val deleting = confirmDelete?.second
+    CodyncDialog("Delete ${deleting?.name ?: "bot"}?", deleting != null, { confirmDelete = null },
+        message = if (deleting?.kind == "group") "Its bots and their own chats stay." else "Files it changed on your computer stay as they are.") {
+        listOf(DialogAction(if (deleting?.kind == "group") "Delete group chat" else "Delete bot and its conversation", destructive = true) {
+            confirmDelete?.let { (id, bot) -> accounts.store(id)?.deleteBot(bot) {} }
+        })
+    }
+    SectionNameDialog(naming) { naming = null }
+}
+
+/** A computer's heading (and, while it needs one, its update notice) that drags to reorder the computers. */
+@Composable private fun LazyItemScope.ComputerHeading(state: AppState, store: AppStore, reorder: SectionReorder, folded: Boolean, stale: Boolean,
+    toggle: () -> Unit, extensions: () -> Unit) {
+    val id = state.computer.id
+    Column(reorderable(reorder, id)) {
+        // Not synced while it needs an update: "No bots yet" wouldn't be true.
+        ComputerSection(state, empty = state.mismatch == null && roster(state.bots).isEmpty(), folded = folded, stale = stale, toggle = toggle,
+            move = { reorder.move(id, it) }, extensions = extensions.takeIf { state.connection is LinkState.Ready && state.mismatch == null },
+            drag = reorder.handle(id))
+        state.mismatch?.let { UpdateNeededCard(state, it, store::requestHostUpdate, Modifier.padding(vertical = 8.dp)) }
+    }
+}
+
+/** What a computer's rows and section headings ask of the roster. */
+private class RosterActions(val toggleSection: (String) -> Unit, val rename: (String) -> Unit, val remove: (String) -> Unit,
+    val newSection: (Bot) -> Unit, val edit: (Bot) -> Unit, val delete: (Bot) -> Unit)
+
+/** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
+private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
+    agentLogos: Boolean, actions: RosterActions) {
+    val id = state.computer.id
+    val sectionReorder = roster.sections
+    val reorder = roster.reorder
+    val sections = menuSections(state.bots)
+    // The agent's logo marks each avatar only while the computer's bots mix agents. Not before hello: it names
+    // the logos, and without it every badge would be the same generic one.
+    val logos = agentLogos && state.hello != null && roster(state.bots).mixesAgents()
+    items(rosterLines(reorder.shown(roster(state.bots)), folded, sectionReorder.shown, sectionReorder.dragged != null), key = { "$id:${it.key}" }) { line ->
+        when (line) {
+            // Folding drops the section's rows from the list; animateItem fades them out and slides the rest up.
+            is RosterLine.Header -> SectionHeader(line, toggle = { actions.toggleSection(line.name) },
+                actions = if (state.supportsSections) sectionActions(rename = { actions.rename(line.name) }, remove = { actions.remove(line.name) }) else emptyList(),
+                modifier = reorderable(sectionReorder, line.name),
+                drag = sectionReorder.handle(line.name),
+                move = { sectionReorder.move(line.name, it) })
+            RosterLine.Label -> SectionLabel(reorderable(sectionReorder, ""), sectionReorder.handle("")) { sectionReorder.move("", it) }
+            is RosterLine.Row -> {
+                val bot = line.bot
+                val lifted = reorder.dragged == bot.id
+                val agent = bot.runningAgent.takeIf { logos && bot.kind != "group" }?.let { AgentMark(agentRegistry(state, it), backendName(state, it)) }
+                Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
+                    .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
+                        else Modifier.animateItem())) {
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, edit = { actions.edit(bot) },
+                        delete = { actions.delete(bot) }, newSection = { actions.newSection(bot) })
                 }
             }
         }
@@ -442,6 +510,108 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
     val neighbor = roster.getOrNull(at + offset)
     if (at < 0 || neighbor == null || neighbor.band != roster[at].band) return null
     return roster.map(Bot::id).toMutableList().apply { this[at] = neighbor.id; this[at + offset] = id }
+    if (at < 0) return null
+    val next = generateSequence(at + offset) { it + offset }.takeWhile { it in roster.indices }
+        .firstOrNull { roster[it].movesWith(roster[at]) } ?: return null
+    return roster.map(Bot::id).toMutableList().apply { this[at] = roster[next].id; this[next] = id }
+}
+
+private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section == other.section)
+
+@Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, grouped: Boolean,
+    agent: AgentMark?, edit: () -> Unit, delete: () -> Unit, newSection: () -> Unit) {
+    Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
+        Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state, agent) }
+    }) {
+        listOfNotNull(
+            MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
+                store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
+            },
+            if (state.supportsSections) sectionMenu(bot, sections, { store.setSection(bot.id, it) }, newSection) else null,
+            if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
+            else MenuItem("Edit profile", icon = "pencil", action = edit),
+            MenuItem("Mark as read", icon = "checkmark.message") {
+                store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
+            },
+            MenuItem("Make lead agent", icon = "star") {
+                store.command("setLead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
+            }.takeIf { !bot.lead && bot.kind != "group" && state.supportsLeadChoice },
+            // The lead stays in the list.
+            MenuItem("Hide from list", icon = "eye.slash") {
+                store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
+            }.takeUnless { bot.lead },
+            // An older computer keeps its lead.
+            MenuItem("Delete", icon = "trash", destructive = true, action = delete).takeIf { !bot.lead || state.supportsLeadChoice },
+        )
+    }.semantics {
+        // With several computers, which one it's on.
+        contentDescription = if (grouped) "${bot.name}, on ${state.hostName}" else bot.name
+        // TalkBack's way to reorder (the drag needs a touch and hold, then a move).
+        customActions = listOf(-1 to "Move up", 1 to "Move down").map { (offset, title) ->
+            CustomAccessibilityAction(title) { moved(roster(state.bots), bot.id, offset)?.let(store::reorder) != null }
+        }
+    }) {
+        BotRow(bot, state, agent)
+    }
+}
+
+/** One bot: avatar with its status dot (and [agent]'s logo, if any), name and day, then the live activity or last message. */
+@Composable internal fun BotRow(bot: Bot, state: AppState, agent: AgentMark? = null) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AvatarWithStatus(bot, state.bots, 46.dp, agent)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (bot.pinned) Symbol("pin.fill", size = 13.dp, tint = Palette.tertiary)
+                    Text(bot.name, Modifier.weight(1f, fill = false), style = Type.body.semibold, color = Palette.text, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    if (state.screen?.agentBot == bot.id) Symbol("cursorarrow.motionlines", size = 14.dp, tint = Palette.accent,
+                        contentDescription = tr("Using the computer"))
+                }
+                Spacer(Modifier.width(8.dp))
+                if (bot.lastAt > 0) Text(RelativeTime.day(bot.lastAt, yesterday = tr("Yesterday")), style = Type.subheadline,
+                    color = if (bot.unread > 0) Palette.text else Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) { Preview(bot, state) }
+                if (bot.unread > 0) UnreadBadge(bot.unread)
+            }
+        }
+    }
+}
+
+/** A count of unread messages in the accent capsule (a row, a folded section). */
+@Composable internal fun UnreadBadge(count: Int) {
+    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
+        .padding(horizontal = 6.dp).semantics { contentDescription = "$count unread" }, contentAlignment = Alignment.Center) {
+        Text("$count", style = Type.caption2.bold, color = Palette.onAccent)
+    }
+}
+
+/** Live activity while working, otherwise the last message (Grok Bot row behavior). */
+@Composable private fun Preview(bot: Bot, state: AppState) {
+    when {
+        bot.status == "needsInput" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ThinkingOrb(ThinkingOrbState.Listening, 16.dp, Palette.warning)
+            Text(tr(bot.activity.ifEmpty { "Needs your approval" }), style = Type.subheadline, color = Palette.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        bot.status == "working" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ThinkingOrb(size = 13.dp, color = Palette.secondary)
+            Text(tr(bot.activity.ifEmpty { "Working…" }), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"
+            else "${backendName(state, bot.backend)} · ${if (bot.managedWorkspace) tr("Personal workspace") else bot.cwd.trimEnd('/').substringAfterLast('/')}"),
+            style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The first non-empty line, without Markdown markers (CodyncKit `MessagePreview`). */
+internal fun messagePreview(text: String): String {
+    val first = text.lines().map(String::trim).firstOrNull(String::isNotEmpty).orEmpty()
+    return first.dropWhile { it in "#>-* " }.replace("**", "").replace("`", "")
 }
 
 @Composable private fun EmptyRoster(canCreate: Boolean, hasComputer: Boolean, create: () -> Unit, showComputers: () -> Unit) {
@@ -460,7 +630,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 /** The account capsule: who's signed in, opening the account sheet. */
 @Composable internal fun AccountSwitcherButton(state: AppState, open: () -> Unit) {
     val (source, pressed) = rememberPress()
-    val email = state.account.accounts.firstOrNull { it.userId == state.account.userId }?.email
+    val email = state.account.current?.email
     Row(Modifier.height(44.dp).glass(Capsule(), pressed = pressed)
         .clickable(source, null, role = Role.Button, onClick = open)
         .semantics { contentDescription = "Switch account"; stateDescription = email ?: "Local pairing" }

@@ -7,6 +7,7 @@ import { N8nWindow } from './views/n8n/N8nWindow'
 import { BrowserWindow } from './views/browser/BrowserWindow'
 import { ToolWindow } from './views/tools/ToolWindow'
 import { PairingWindow } from './views/PairingWindow'
+import { RenderBoundary } from './views/RenderBoundary'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
 import { AppModel } from './store/app-model'
@@ -21,7 +22,7 @@ import { resolvedLanguage } from './lib/l10n'
 import { useAppLanguage } from './lib/use-language'
 import { applyThemePalette } from './lib/theme-palette'
 
-// Error tracking: this window's uncaught errors go to the host (shared/error-report.ts).
+// Error tracking: this window's uncaught errors, and those RenderBoundary caught, go to the host (shared/error-report.ts).
 const report = (error: unknown, mechanism: string) => window.codync.app.reportError(errorReport(error, 'desktop-renderer', mechanism))
 // An error event without an error (the ResizeObserver loop notice) has nothing to report.
 window.addEventListener('error', (e) => { if (e.error != null) report(e.error, 'onerror') })
@@ -66,7 +67,13 @@ document.title = window.codync.appName
 document.documentElement.dataset.platform = window.codync.platform
 document.documentElement.dataset.window = page
 applyTextSize(prefs.textSize.get())
-const root = createRoot(document.getElementById('root')!)
+const root = createRoot(document.getElementById('root')!, {
+  // Setting this replaces React's own logging of the error.
+  onCaughtError: (error) => {
+    console.error(error)
+    report(error, 'react')
+  },
+})
 
 if (page === 'screen') {
   root.render(<ScreenWindow />)
@@ -91,4 +98,9 @@ if (page === 'screen') {
   void app.start()
   if (page !== 'pairing') void account.start()
   root.render(page === 'pairing' ? <AppContext.Provider value={app}><PairingWindow /></AppContext.Provider> : <ChatRoot app={app} />)
+  root.render(
+    <RenderBoundary>
+      <AppContext.Provider value={app}>{page === 'pairing' ? <PairingWindow /> : <ChatWindow />}</AppContext.Provider>
+    </RenderBoundary>,
+  )
 }

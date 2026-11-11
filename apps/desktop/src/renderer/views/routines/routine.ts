@@ -1,3 +1,5 @@
+import { trNow } from '../../lib/l10n.ts'
+
 // Routines (kit Routine.swift, RoutineScheduleDraft.swift). The host hydrates, compiles,
 // validates and describes schedules; the app only keeps form values.
 
@@ -100,21 +102,24 @@ export function runLabel(run: RoutineRun, now = Date.now()) {
   const missed = run.missed && run.missed.count > 0 ? ` · ${run.missed.count} missed` : ''
   switch (run.status) {
     case 'pending':
-      if (run.notBefore && run.notBefore > now) return `Retrying at ${new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })}`
-      return run.notBefore ? 'Retrying' : 'Queued'
+      if (run.notBefore && run.notBefore > now) {
+        const at = new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        return trNow('Retrying at {time}').replaceAll('{time}', () => at)
+      }
+      return run.notBefore ? trNow('Retrying') : trNow('Queued')
     case 'starting':
-      return 'Starting'
+      return trNow('Starting')
     case 'running':
-      return run.needsAttention ? 'Waiting on you' : 'Running'
+      return run.needsAttention ? trNow('Waiting on you') : trNow('Running')
     case 'recovering':
-      return 'Resuming after restart'
+      return trNow('Resuming after restart')
     case 'failed':
-      return `Failed${missed}`
+      return `${trNow('Failed')}${missed}`
     case 'interrupted':
-      return `Interrupted${missed}`
+      return `${trNow('Interrupted')}${missed}`
     case 'cancelled':
       // A cancelled run that stands for a due occurrence is a skipped one; the rest just stopped.
-      return run.scheduledFor || run.missed ? `Skipped${missed}` : 'Cancelled'
+      return run.scheduledFor || run.missed ? `${trNow('Skipped')}${missed}` : trNow('Cancelled')
     default:
       return run.status.charAt(0).toUpperCase() + run.status.slice(1)
   }

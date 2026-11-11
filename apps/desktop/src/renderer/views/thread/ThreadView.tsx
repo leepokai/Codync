@@ -3,7 +3,7 @@ import { RepliesView } from './RepliesView'
 import { ForwardSheet } from './ForwardSheet'
 import { FileView, type OpenFile } from './FileView'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, folderName, isGroup, isWorkingIn, sharedWorkspacePeers, type Bot, type BotApp, type BotDraft, type Entry, type SharedFile } from '@shared/models'
+import { draftOf, folderName, isGroup, isWorking, isWorkingIn, sharedWorkspacePeers, type Bot, type BotApp, type BotDraft, type Entry, type SharedFile } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { BotAppPanel } from '../../components/BotAppPanel'
 import { Spinner } from '../../components/Controls'
@@ -26,6 +26,9 @@ import { ChatRow, TimeSeparator } from './ChatRows'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { QueuedMessages } from './QueuedMessages'
+import { fill } from '../../lib/fill.ts'
+import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
 import { useNewMessageCount } from './new-message-counter'
@@ -51,6 +54,7 @@ const WIDE = 740
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
  */
 export const ThreadView = memo(function ThreadView({ botId }: { botId: string }) {
+  const tr = useTr()
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -212,7 +216,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             ) : null}
           </div>
           {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
-          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={toggleDetails} aria-label={`${bot?.name ?? 'Conversation'}, view details`} title="View conversation details">
+          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={toggleDetails} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
               <Text size="body" weight="medium" tone="text" truncate>{bot?.name ?? ''}</Text>
@@ -234,13 +238,16 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             </div>
           ) : activeArtifact ? null : (
             // The artifact over the chat has its own box (two would both take the voice shortcut).
-            <Composer
-              botId={botId}
-              reply={replyTo}
-              cancelReply={cancelReply}
-              onCall={!calling && bot ? () => setCalling(true) : null}
-              onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
-            />
+            <>
+              <QueuedMessages botId={botId} />
+              <Composer
+                botId={botId}
+                reply={replyTo}
+                cancelReply={cancelReply}
+                onCall={!calling && bot ? () => setCalling(true) : null}
+                onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
+              />
+            </>
           )}
         </div>
         {calling ? (
@@ -363,7 +370,7 @@ function ConnectionSubtitle() {
         return 'Not paired'
     }
     if (store.mismatch) return 'Needs update'
-    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? 'Connected over Wi-Fi or Tailscale' : store.hostRoute === 'loopback' ? 'Connected locally' : 'Connected'
+    return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? tr('Connected over Wi-Fi or Tailscale') : store.hostRoute === 'loopback' ? tr('Connected locally') : 'Connected'
   })()
   const spoken = tr(description)
   return (
@@ -386,6 +393,10 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
   const entries = store.chatEntries(botId)
   // What voice calls carried shows in each call's conversation, not in the chat.
   const all = useMemo(() => buildChat(hidingCalls(newestHealthNotices(entries))), [entries])
+  // What voice calls carried shows in each call's conversation, not in the chat; what waits for the bot, in the queue.
+  const working = !!bot && isWorking(bot)
+  const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
+  const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
@@ -426,7 +437,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
     if (at === 0) {
       const anchor = list[0]?.id
       await store.loadOlder(botId)
-      list = buildChat(hidingCalls(newestHealthNotices(store.chatEntries(botId))))
+      list = chatOf(newestHealthNotices(store.chatEntries(botId)))
       at = anchor ? Math.max(0, list.findIndex((i) => i.id === anchor)) : 0
     }
     if (at > 0) setFirstShown(list[Math.max(0, at - PAGE)]!.id)
@@ -468,7 +479,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
         style={bot?.chatColor ? { background: `color-mix(in srgb, ${bot.chatColor} 10%, var(--background))` } : undefined}
         ref={scroller}
         role="log"
-        aria-label="Messages"
+        aria-label={tr('Messages')}
         onScroll={(e) => {
           const el = e.currentTarget
           const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 8
@@ -563,7 +574,7 @@ function IntroCard({ bot }: { bot: Bot }) {
   const tr = useTr()
   const where = bot.managedWorkspace
     ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
-    : tr('{agent} in {path}').replace('{agent}', store.backendName(bot.backend)).replace('{path}', bot.cwd)
+    : fill(tr('{agent} in {path}'), { agent: store.backendName(bot.backend), path: bot.cwd })
   return (
     <div className="intro-card">
       <BotAvatar bot={bot} size={72} />

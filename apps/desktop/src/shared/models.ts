@@ -439,6 +439,8 @@ export interface EntryData {
   final?: boolean
   /** user: queued | sent | cancelled | failed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· tool: pending | in_progress | completed | failed ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· permission: pending | answered | cancelled | expired */
   status?: string
+  /** user: taken back from the queue before it went out (`unqueue`); no view reads it (`withoutRemoved`). */
+  removed?: boolean
   clientNonce?: string
   title?: string
   toolKind?: string
@@ -524,6 +526,21 @@ export interface ThreadInfo {
 /** What the list calls a thread: its title, the line it branched from, or "Thread". */
 export function threadName(thread: ThreadInfo): string {
   return thread.title.trim() || thread.branchText?.slice(0, 60).replaceAll('\n', ' ') || 'Thread'
+}
+
+const shownOf = new WeakMap<Entry[], Entry[]>()
+
+/**
+ * `list` as the views read it, without the messages taken back (`unqueue`): the store keeps those for its rev guard
+ * against a late response. One array per list, because the chat's memos depend on its identity.
+ */
+export function withoutRemoved(list: Entry[]): Entry[] {
+  let shown = shownOf.get(list)
+  if (!shown) {
+    shown = list.filter((e) => !e.data.removed)
+    shownOf.set(list, shown)
+  }
+  return shown
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
@@ -784,6 +801,8 @@ export interface CloudStatus {
   relay?: 'codync' | 'private' | null
   /** The user's cloud assistant may message this computer's bots (`setAssistants`). */
   assistants?: boolean | null
+  /** Turned on, the cloud would leave it in no account on a Codync cloud; known with the cloud off too. Absent from older hosts, which just turn on. */
+  joinsAccountOnEnable?: boolean | null
 }
 
 export interface ClaimSignature {

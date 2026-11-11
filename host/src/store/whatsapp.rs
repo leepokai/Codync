@@ -6,21 +6,23 @@ use rusqlite::{OptionalExtension, params};
 pub(super) fn open(db: &rusqlite::Connection) -> Result<()> {
     // Older hosts keyed all bots' conversations by chat alone. Keep their root and
     // approval history, while letting a different bot have its own conversation.
-    let legacy = {
+    let (legacy, has_sender) = {
         let mut columns = db.prepare("PRAGMA table_info(whatsapp_threads)")?;
         let names = columns.query_map([], |row| row.get::<_, String>(1))?.collect::<rusqlite::Result<Vec<_>>>()?;
-        !names.is_empty() && !names.iter().any(|name| name == "bot_id")
+        (!names.is_empty() && !names.iter().any(|name| name == "bot_id"), names.iter().any(|name| name == "sender"))
     };
     if legacy {
+        // The oldest tables kept only the chat and its root: there is no sender to carry over.
+        let sender = if has_sender { "t.sender" } else { "''" };
         let tx = db.unchecked_transaction()?;
         tx.execute_batch("ALTER TABLE whatsapp_threads RENAME TO whatsapp_threads_legacy;")?;
         tx.execute_batch(include_str!("whatsapp.sql"))?;
-        tx.execute_batch(
+        tx.execute_batch(&format!(
             "INSERT INTO whatsapp_threads(chat,bot_id,root_id,sender)
-             SELECT t.chat,e.bot_id,t.root_id,t.sender FROM whatsapp_threads_legacy t
+             SELECT t.chat,e.bot_id,t.root_id,{sender} FROM whatsapp_threads_legacy t
              JOIN entries e ON e.id=t.root_id;
-             DROP TABLE whatsapp_threads_legacy;",
-        )?;
+             DROP TABLE whatsapp_threads_legacy;"
+        ))?;
         tx.commit()?;
     }
     db.execute_batch(include_str!("whatsapp.sql"))?;

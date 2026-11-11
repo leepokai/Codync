@@ -58,3 +58,22 @@ fn app_only_decisions_do_not_starve_later_whatsapp_cards_or_grant_reply_rights()
     assert_eq!(store.pending_whatsapp_cards().unwrap().len(), 1);
     assert!(store.whatsapp_card("chat", "alice").is_none());
 }
+
+#[test]
+fn whatsapp_migration_reads_the_oldest_table_that_had_no_sender() {
+    let db = rusqlite::Connection::open_in_memory().unwrap();
+    db.execute_batch(
+        "CREATE TABLE entries(id TEXT PRIMARY KEY,bot_id TEXT);
+        INSERT INTO entries VALUES('old-root','a');
+        CREATE TABLE whatsapp_threads(chat TEXT PRIMARY KEY,root_id TEXT UNIQUE NOT NULL);
+        INSERT INTO whatsapp_threads VALUES('chat','old-root');",
+    )
+    .unwrap();
+    open(&db).unwrap();
+    let (root, sender): (String, String) = db
+        .query_row("SELECT root_id,sender FROM whatsapp_threads WHERE chat='chat' AND bot_id='a'", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!((root.as_str(), sender.as_str()), ("old-root", ""));
+}

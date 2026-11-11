@@ -4,7 +4,6 @@ import { Icon } from '../../components/Icon'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
-import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 
 /**
@@ -14,7 +13,6 @@ import { useStore } from '../../store/context'
 export function RoutineNotice({ entry, open }: { entry: Entry; open: () => void }) {
   const tr = useTr()
   const store = useStore()
-  const tr = useTr()
   const answering = store.answering.get(entry.id)
   const failed = entry.data.source === 'scheduled_task' && entry.data.style !== undefined
   return (

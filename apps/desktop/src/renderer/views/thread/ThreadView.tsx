@@ -56,7 +56,6 @@ const WIDE = 740
 export const ThreadView = memo(function ThreadView({ botId }: { botId: string }) {
   const tr = useTr()
   const store = useStore()
-  const tr = useTr()
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
   const [replyTo, setReplyTo] = useState<Entry | null>(null)
@@ -391,8 +390,6 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
   const live = !!bot && isWorkingIn(bot, botId) && !store.isOffline
   // Rebuilt only when this chat changes: the store replaces a chat's list on every change.
   const entries = store.chatEntries(botId)
-  // What voice calls carried shows in each call's conversation, not in the chat.
-  const all = useMemo(() => buildChat(hidingCalls(newestHealthNotices(entries))), [entries])
   // What voice calls carried shows in each call's conversation, not in the chat; what waits for the bot, in the queue.
   const working = !!bot && isWorking(bot)
   const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])

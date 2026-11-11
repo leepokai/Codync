@@ -50,7 +50,7 @@ function QueuedRow({ entry, leaving, actions }: { entry: Entry; leaving: boolean
           <Text size="callout" tone="secondary" truncate grow>{messagePreview(quoteOf(entry).text)}</Text>
           {actions ? (
             <>
-              <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steer(entry)} />
+              <IconButton title="Send now" icon="arrow.turn.down.right" size={26} disabled={answering} onClick={() => store.steerQueued(entry)} />
               <IconButton title="Remove" icon="trash" size={26} disabled={answering} onClick={() => store.unqueue(entry)} />
             </>
           ) : null}

@@ -19,7 +19,6 @@ import { RosterControls, RosterPreview } from './RosterControls'
 import { RosterSection } from './RosterSection'
 import { RosterStops } from '../store/roster-query'
 import { rosterProject, rosterProjectLabel } from '../lib/roster-query'
-import { prefs, usePref } from '../lib/prefs'
 import { useModel } from '../lib/observable'
 
 /** A bot being dragged among its computer's bots, and the order it has made so far. */

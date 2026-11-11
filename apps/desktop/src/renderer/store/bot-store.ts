@@ -408,7 +408,7 @@ export class BotStore extends BotSync {
   }
 
   /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
-  steer(entry: Entry) {
+  steerQueued(entry: Entry) {
     this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))
   }
 

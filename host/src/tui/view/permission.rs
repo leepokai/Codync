@@ -4,11 +4,24 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Click, Entry, tilde};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::style::{spin, theme};
 use super::time::clock;
 use super::transcript::Built;
+
+/// An answer's label: Codync's own words for the usual kinds, in the app's language; the agent's name otherwise.
+fn option_label(name: &str, kind: &str) -> String {
+    let label = match kind {
+        "allow_once" => "Allow once",
+        "allow_always" => "Always allow",
+        "reject_once" => "Deny",
+        "reject_always" => "Never",
+        _ => name,
+    };
+    tr(label).into_owned()
+}
 
 /// Keys printed on approval buttons: y / a / n for the usual kinds, digits otherwise.
 fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
@@ -121,7 +134,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         };
     for (i, (id, name, kind)) in opts.iter().enumerate() {
         let key = format!(" {} ", if answering == Some(id) { spin(app) } else { keys[i].as_str() });
-        let label = format!("{name} ");
+        let label = format!("{} ", option_label(name, kind));
         let bw_ = w(&key) + w(&label);
         if used > 0 && used + bw_ + 1 > inner {
             flush(out, &mut line, &mut used, &mut pending);
@@ -164,10 +177,12 @@ pub(super) fn decided_line(out: &mut Built, e: &Entry) {
     let sel = e.data["selected"].as_str();
     let chosen = sel.and_then(|s| e.options().into_iter().find(|o| o.0 == s));
     let (g, gs, what) = match (e.data["status"].as_str(), chosen) {
-        (Some("answered"), Some((_, name, kind))) if kind.starts_with("allow") => ("✓", t.green, name),
-        (Some("answered"), Some((_, name, _))) => ("×", t.red, name),
+        (Some("answered"), Some((_, name, kind))) if kind.starts_with("allow") => {
+            ("✓", t.green, option_label(&name, &kind))
+        }
+        (Some("answered"), Some((_, name, kind))) => ("×", t.red, option_label(&name, &kind)),
         (Some("expired"), _) => ("·", t.dim, "Expired".to_owned()),
-        _ => ("·", t.dim, "Cancelled".to_owned()),
+        _ => ("·", t.dim, tr("Cancelled").into_owned()),
     };
     out.lines.push(Line::from(vec![
         Span::styled(format!(" {g} "), gs),

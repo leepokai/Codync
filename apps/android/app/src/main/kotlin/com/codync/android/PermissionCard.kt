@@ -58,17 +58,18 @@ import kotlinx.serialization.json.jsonPrimitive
     Column(Modifier.padding(end = 40.dp).widthIn(max = 420.dp).clip(RoundedRectangle(22.dp)).background(Palette.bubbleAgent).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(headline, style = Type.headline, color = Palette.text)
+            Text(tr(headline), style = Type.headline, color = Palette.text)
             if (pending) Box(Modifier.size(7.dp).clip(Capsule()).background(Palette.warning))
         }
         Text(d.text("title").orEmpty(), style = Type.subheadline.monospaced, color = Palette.secondary, maxLines = if (expanded) Int.MAX_VALUE else 3)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("desktopcomputer", size = 14.dp, tint = Palette.tertiary)
-            Text("Runs on $hostName" + (d.text("cwd")?.let { " · " + it.trimEnd('/').substringAfterLast('/') } ?: ""),
+            val path = d.text("cwd")?.let { " · " + it.trimEnd('/').substringAfterLast('/') } ?: ""
+            Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path),
                 style = Type.caption, color = Palette.tertiary)
         }
         if (hasDetail) Disclosure(expanded, { expanded = !expanded }, label = {
-            Text("Details", style = Type.caption.medium, color = Palette.secondary)
+            Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
         }) {
             Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 d.text("command")?.takeIf(String::isNotEmpty)?.let { CodeBox(it) }
@@ -90,16 +91,16 @@ import kotlinx.serialization.json.jsonPrimitive
                         .clickable(enabled = !answering, role = Role.Button) { chosen = id; respond(id) }
                         .graphicsLayer { alpha = if (!waiting || chosen == id) 1f else 0.4f }
                         .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(when (kind) {
+                        Text(tr(when (kind) {
                             "allow_once" -> "Allow once"; "allow_always" -> "Always allow"; "reject_once" -> "Deny"; "reject_always" -> "Never"
                             else -> option.text("name").orEmpty()
-                        }, Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
+                        }), Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
                             color = if (kind.startsWith("allow")) Palette.text else Palette.danger)
                         if (answering && chosen == id) Spinner(14.dp)
                     }
                 }
             }
-        } else Text(outcome(d), style = Type.caption.medium, color = Palette.secondary)
+        } else Text(tr(outcome(d)), style = Type.caption.medium, color = Palette.secondary)
     }
 }
 

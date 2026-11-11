@@ -98,7 +98,7 @@ struct ConnectionRequestCard: View {
         } else {
             HStack(spacing: 6) {
                 if request.status == "ready" { Image(systemName: "checkmark").fontWeight(.semibold) }
-                Text(request.status == "ready" ? doneTitle : "Cancelled")
+                Text(request.status == "ready" ? doneTitle : L10n.tr("Cancelled"))
             }
             .font(.subheadline)
             .foregroundStyle(Palette.secondary)

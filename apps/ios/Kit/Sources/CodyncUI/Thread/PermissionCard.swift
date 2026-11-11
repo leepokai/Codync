@@ -27,7 +27,7 @@ struct PermissionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(headline).font(.headline).foregroundStyle(Palette.text)
+                Text(L10n.tr(headline)).font(.headline).foregroundStyle(Palette.text)
                 if pending {
                     Circle().fill(Palette.warning).frame(width: 7, height: 7)
                 }
@@ -36,7 +36,7 @@ struct PermissionCard: View {
                 .font(.subheadline.monospaced())
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(expanded ? nil : 3)
-            Label("Runs on \(hostName)\(d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? "")", systemImage: "desktopcomputer")
+            Label(L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""]), systemImage: "desktopcomputer")
                 .font(.caption)
                 .foregroundStyle(Palette.tertiary)
 
@@ -60,7 +60,7 @@ struct PermissionCard: View {
             if pending {
                 buttons
             } else {
-                Text(outcome)
+                Text(L10n.tr(outcome))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Palette.secondary)
             }
@@ -98,7 +98,7 @@ struct PermissionCard: View {
                 if i > 0 { Rectangle().fill(Palette.border).frame(height: 0.5) }
                 Button { respond(o.optionId) } label: {
                     HStack(spacing: 8) {
-                        Text(label(o))
+                        Text(L10n.tr(label(o)))
                             .font(.body.weight(o.kind == "allow_once" ? .semibold : .regular))
                             .foregroundStyle(o.kind.hasPrefix("allow") ? Palette.text : Palette.danger)
                         Spacer(minLength: 0)

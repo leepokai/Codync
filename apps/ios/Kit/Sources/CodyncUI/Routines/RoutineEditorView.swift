@@ -281,7 +281,9 @@ struct RoutineEditorView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    let when = Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened).locale(locale)
+                    let when = Date(milliseconds: next).formatted(
+                        Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)
+                    )
                     Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }

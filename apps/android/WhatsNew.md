@@ -17,9 +17,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.44.1
 ### zh-Hant
 - 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。
+- 修正 Codync 在 bot 很多或聊天紀錄很長時一開啟就自動關閉的問題：現在每個聊天只會先載入最新的訊息，較舊的訊息往回捲動時再載入。
 
 ### en-US
 - After an important update, Codync shows a What's new window the first time you open it, listing what changed. Most updates don't show one.
+- Fixed Codync closing by itself right after opening with many bots or very long chats. Each chat now loads its newest messages first, and older ones load as you scroll back.
 
 ## 2.43.2
 ### zh-Hant

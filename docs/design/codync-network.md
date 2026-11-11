@@ -49,6 +49,18 @@ the bill (the 2026-10-17 incident).
 3. **Later**: a letter for a computer that's off waits in the sender's outbox for up to 24 hours, retried every
    30 seconds; a computer that comes back says hello and gets it. Rosters are compared every 6 hours.
 
+Two computers keep one connection open (iroh's 5 s keep-alive) and use it both ways, whichever opened it
+(`node/conns.rs`). A computer keeps a connection another one opened once that one is a member, checked when it
+connects and again at each request on it. A call that gets no answer drops the connection and dials again; so does
+a refused hello (the other computer doesn't count this one in yet, so it didn't keep the connection); and a
+computer with no open connection to another dials it every 30 seconds. Windows Defender Firewall lets in only what
+the computer started (no rule for `codync-hostw.exe`, and a dismissed first-run prompt adds Block rules), so before
+this a Mac couldn't dial a Windows computer without a relay: with `private`, letters to it waited until it happened
+to call (found 2026-11-10). Now the Windows computer's own connection carries them. Each computer also binds the
+IPv4 UDP port it had last time (the `port` file in its state folder, another one only when that is taken): after
+a Mac restarted on a new port, a firewalled Windows computer with the `private` connector kept dialing the old
+address it had, and nothing told it the new one.
+
 The connector picks the relay (`codync-host network create|join --connector …`):
 
 | Connector | Paths | Relay |
@@ -69,6 +81,12 @@ The host builds iroh on aws-lc-rs, the TLS library reqwest and tokio-tungstenite
 rustls has no default provider and the relay connection panicked (found in end-to-end testing, 2026-10-26). `main`
 also installs the aws-lc-rs provider, so a `--workspace` build (where the crate's default `tls-ring` comes back)
 works too. The crate keeps ring as its own default (`tls-ring`, `tls-aws-lc-rs` features).
+
+The host builds a patched `noq-udp` (iroh's UDP layer, `host/vendor/noq-udp`, through `[patch.crates-io]`): macOS
+ignored the IPv4 source address noq-udp 1.4 set, so a Mac reachable on two IPv4 addresses (Wi-Fi and Ethernet on
+one network, a VM's gateway) answered a handshake from the wrong one, noq dropped the dialer's next packets and no
+connection to the Mac ever opened (found 2026-11-10 with a Windows VM). The patch is quinn-udp's fix
+(quinn-rs/quinn@a2c55b3681); the folder goes once a noq-udp release has it.
 
 ## Relays for production (planned)
 

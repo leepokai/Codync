@@ -1,0 +1,42 @@
+# Scrolling back through a long chat on the phones loads its earlier messages up to the first one. The chat holds 320
+# messages, more than Android keeps in memory at once, and the first turn's 120 tool calls fill whole history pages with
+# rows the chat doesn't show, which must still move it on. The phone must already be signed in and paired with the host
+# (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState
+# undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags conversation \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e HISTORY_AGENT="$PWD/host/tests/fixtures/history_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - conversation
+onFlowComplete:
+  - runScript:
+      file: history.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: history.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "Reply 160"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "Message 1 opens with 120 tool calls"
+    direction: UP
+    visibilityPercentage: 50
+    timeout: 180000
+- takeScreenshot: history-first-message

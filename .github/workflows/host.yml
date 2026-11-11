@@ -38,6 +38,13 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      # Cargo only warns when a patch stops applying (vendor/noq-udp/CODYNC.md).
+      - name: The noq-udp patch applies
+        if: runner.os == 'Linux'
+        run: |
+          if grep -q '^\[\[patch.unused\]\]' Cargo.lock || grep -A2 '^name = "noq-udp"' Cargo.lock | grep -q '^source'; then
+            echo 'noq-udp no longer comes from vendor/noq-udp: see vendor/noq-udp/CODYNC.md'; exit 1
+          fi
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # Each test in its own process (`host/.config/nextest.toml`): fixture hosts share no

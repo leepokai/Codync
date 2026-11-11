@@ -203,9 +203,20 @@ async fn state(hub: &Hub) -> Result<Option<String>> {
 /// update to install instead when a newer release suits every device of the account.
 async fn request(hub: &Hub, wake_at: Option<i64>) -> Result<Option<UpdateOrder>> {
     let base = cloud::codync_url(hub)?;
-    let body = sleep_body(wake_at, hub.analytics.state());
+    let (_turn, analytics) = switch_turn(hub).await;
+    let body = sleep_body(wake_at, analytics);
     let v = cloud::call(hub, &base, Method::POST, "/v1/host/sleep", Some(&body)).await?;
     Ok(serde_json::from_value(v["update"].clone()).ok())
+}
+
+/// Every write of the analytics switch to the cloud (`share_analytics`, the sleep request) waits its turn here, reads
+/// the switch only once it has it and keeps it until the cloud answers: a quick on → off can't end with an earlier "on"
+/// landing last. A switch turned during a sleep request goes out once the cloud has answered, racing the machine's stop;
+/// on a resume without memory it waits for the next sleep request.
+async fn switch_turn(hub: &Hub) -> (tokio::sync::MutexGuard<'static, ()>, bool) {
+    static SWITCH_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let turn = SWITCH_WRITES.lock().await;
+    (turn, hub.analytics.state())
 }
 
 /// A sleep request also says the owner's analytics switch, `analytics`: the cloud reports this computer's wakes only
@@ -224,7 +235,8 @@ pub fn share_analytics(hub: &Arc<Hub>) {
     let hub = Arc::clone(hub);
     tokio::spawn(async move {
         let sent = async {
-            let body = json!({ "analytics": hub.analytics.state() });
+            let (_turn, analytics) = switch_turn(&hub).await;
+            let body = json!({ "analytics": analytics });
             cloud::call(&hub, &cloud::codync_url(&hub)?, Method::POST, "/v1/host/analytics", Some(&body)).await
         };
         if let Err(e) = sent.await {
@@ -280,13 +292,77 @@ mod tests {
         assert!(routine_soon(Some(ROUTINE_LEAD_MS - 1), 0));
     }
 
+    /// A fake cloud that takes 100 ms over each switch write and notes whether two were ever open at once.
+    #[derive(Default)]
+    struct SwitchCloud {
+        open: std::sync::atomic::AtomicUsize,
+        overlapped: std::sync::atomic::AtomicBool,
+        heard: std::sync::Mutex<Vec<bool>>,
+    }
+
+    async fn hear_switch(
+        axum::extract::State(cloud): axum::extract::State<Arc<SwitchCloud>>,
+        axum::Json(body): axum::Json<Value>,
+    ) -> axum::Json<Value> {
+        if cloud.open.fetch_add(1, Ordering::SeqCst) > 0 {
+            cloud.overlapped.store(true, Ordering::SeqCst);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        cloud.heard.locked().push(body["analytics"] == true);
+        cloud.open.fetch_sub(1, Ordering::SeqCst);
+        axum::Json(json!({}))
+    }
+
     #[tokio::test]
-    async fn a_cloud_computer_is_codync_cloud_until_named_with_a_cloud_in_every_app() {
+    async fn the_cloud_hears_the_switch_one_write_at_a_time_so_a_quick_off_lands_last() {
+        let cloud = Arc::new(SwitchCloud::default());
+        let router = axum::Router::new()
+            .route("/v1/host/analytics", axum::routing::post(hear_switch))
+            .route("/v1/host/sleep", axum::routing::post(hear_switch))
+            .with_state(Arc::clone(&cloud));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let url = format!("http://{}", listener.local_addr().expect("its address"));
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        let (hub, dir) = temp_hub();
+        hub.store.kv_set("test_cloud_url", &url).expect("cloud url");
+        set_managed(&hub.store).expect("set");
+        // An "on" from either writer, `share_analytics` or the sleep request, then a quick "off".
+        for sleep_first in [false, true] {
+            let writes = cloud.heard.locked().len() + 2;
+            hub.analytics.set_enabled(&hub.store, true).expect("on");
+            if sleep_first {
+                let hub = Arc::clone(&hub);
+                tokio::spawn(async move { request(&hub, None).await });
+            } else {
+                share_analytics(&hub);
+            }
+            // The "on" write reads its value and is on its way before the switch turns off.
+            tokio::task::yield_now().await;
+            hub.analytics.set_enabled(&hub.store, false).expect("off");
+            share_analytics(&hub);
+            for _ in 0..50 {
+                if cloud.heard.locked().len() == writes {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+        assert!(!cloud.overlapped.load(Ordering::SeqCst), "a write waits for the one before it");
+        assert_eq!(*cloud.heard.locked(), [true, false, true, false], "the newest value lands last");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn temp_hub() -> (Arc<Hub>, std::path::PathBuf) {
         let dir = std::env::temp_dir().join(format!("codync-managed-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let store = Store::open(&dir.join("t.db")).expect("store");
         let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
-        let hub = Hub::new(store, "test".into(), identity, "test".into(), 0);
+        (Hub::new(store, "test".into(), identity, "test".into(), 0), dir)
+    }
+
+    #[tokio::test]
+    async fn a_cloud_computer_is_codync_cloud_until_named_with_a_cloud_in_every_app() {
+        let (hub, dir) = temp_hub();
         let mut events = hub.events.subscribe();
         set_name(&hub, "Lab").expect("name");
         assert_eq!(

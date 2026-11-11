@@ -80,6 +80,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Run an n8n instance on your computer: set up the install folder and port in the n8n settings, then build flows in its editor.",
       },
       {
+        slug: "comfyui",
+        title: "ComfyUI",
+        description:
+          "Make images with ComfyUI on your computer: it downloads the first time you start it, opens as a Codync window, and your bots can use it when you turn it on.",
+      },
+      {
         slug: "whatsapp",
         title: "WhatsApp",
         description:

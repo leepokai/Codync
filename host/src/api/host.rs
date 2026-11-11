@@ -212,6 +212,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "setAnalytics" => {
             hub.analytics.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false))?;
+            crate::remote::managed::share_analytics(hub);
             json!({"enabled": hub.analytics.state()})
         }
         "track" => {

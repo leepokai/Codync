@@ -1,6 +1,6 @@
 [package]
 name = "codync-host"
-version = "2.43.2"
+version = "2.44.1"
 edition = "2024"
 # iroh (codync-network) needs 1.91.
 rust-version = "1.91"
@@ -12,6 +12,8 @@ repository = "https://github.com/leepokai/Codync"
 # The memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
 [workspace]
 members = ["crates/memory", "crates/network"]
+# Patched dependencies (`[patch.crates-io]` below) build as they are, outside the workspace rules.
+exclude = ["vendor"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -127,3 +129,7 @@ incremental = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[patch.crates-io]
+# macOS answered QUIC handshakes from the wrong IPv4 address; see vendor/noq-udp/CODYNC.md.
+noq-udp = { path = "vendor/noq-udp" }

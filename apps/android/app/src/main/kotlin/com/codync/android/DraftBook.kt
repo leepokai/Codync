@@ -2,7 +2,6 @@ package com.codync.android
 
 import android.util.AtomicFile
 import com.codync.android.core.MAX_FILE_BYTES
-import com.codync.android.core.MirrorSnapshot
 import com.codync.android.core.OutgoingFile
 import com.codync.android.core.WireJson
 import java.io.File
@@ -37,9 +36,8 @@ class DraftBook(private val directory: File, computerId: String) {
             .map { WireJson.decodeFromJsonElement<ComposerDraft>(it) }
     }
 
-    /** A crash between pending-send commit and draft removal cannot offer the same draft twice. */
-    @Synchronized fun recover(snapshot: MirrorSnapshot): List<ComposerDraft> {
-        val queued = snapshot.pending.map { it.nonce }.toSet() + snapshot.entries.mapNotNull { it.clientNonce }
+    /** A crash between pending-send commit and draft removal cannot offer the same draft twice: [queued] are the nonces already sent or queued. */
+    @Synchronized fun recover(queued: Set<String>): List<ComposerDraft> {
         val drafts = read().filter { it.nonce !in queued }
         save(drafts)
         return drafts

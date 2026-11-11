@@ -73,8 +73,9 @@ can be traced from the events around it:
 
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to
   events (`analytics::observe_call`), so every client is covered once; a resent message (same
-  `clientNonce`) is not counted again. Bot actors report `turn_finished` and `agent_fell_back` (a turn moved on to the bot's next
-  agent: the agent and why, see [agent fallbacks](agent-fallback.md)), the phone channel
+  `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
+  agent: the agent and why, see [agent fallbacks](agent-fallback.md)) and `agent_retired` (an agent stopped between
+  turns to give back its processes, and why), the phone channel
   reports pairing and daily phone connections, and the host reports its own start. Each event
   carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key
   (`computer`, a hash of its id); batches go to `/batch/` every 30 s and once more when the
@@ -89,6 +90,15 @@ can be traced from the events around it:
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
   never send.
+- **The Codync cloud** (Worker, `cloud/src/analytics.ts`) reports only what no device can see: asking
+  the provider to wake a sleeping Codync Cloud computer and how long until its host was back. It
+  follows that computer's own switch: the host tells the cloud as soon as it turns
+  (`POST /v1/host/analytics`, `remote::managed::share_analytics`) and again with every sleep
+  request (`POST /v1/host/sleep` `analytics`, which covers a change the cloud couldn't hear); the
+  cloud keeps it on the machine (`cloud_machines.analytics`) and sends nothing until a host has said
+  yes. Events are linked to the computer's account, carry no location (`$geoip_disable`) and the
+  same `computer` key as its host's; `env` is `dev` on the dev cloud (`ANALYTICS_ENV`), and nothing
+  is sent where `POSTHOG_HOST` is unset (local runs).
 - **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
   and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 

@@ -28,6 +28,8 @@ export interface CloudMachineRow {
   vault_key_id: string | null;
   /** Its keeper's Ed25519 key (base64url), named by its claim; the only key the vault key goes to. */
   keeper_key: string | null;
+  /** 1 while its host last said its owner shares usage analytics (`analytics.ts`); 0 or null: nothing is sent. */
+  analytics: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -74,6 +76,11 @@ export const machineDeleted = (env: Env, id: string, now: number) => markDeleted
 /** The cloud machine behind a claimed computer, if Codync runs it. */
 export const machineFor = (env: Env, computerId: string) =>
   env.DB.prepare("SELECT * FROM cloud_machines WHERE computer_id = ? AND state != 'deleted'").bind(computerId).first<CloudMachineRow>();
+
+/** Records whether the host of `computerId` shares usage analytics, as it says when its owner turns the switch and with
+ * each sleep request. */
+export const setAnalytics = (env: Env, computerId: string, on: boolean) =>
+  env.DB.prepare("UPDATE cloud_machines SET analytics = ? WHERE computer_id = ? AND state != 'deleted'").bind(on ? 1 : 0, computerId).run();
 
 /** How many cloud computers one account may have at once. */
 export const CLOUD_COMPUTER_LIMIT = 3;
@@ -134,46 +141,64 @@ export async function refresh(env: Env, m: CloudMachineRow, now: number): Promis
  * key was refused, or it failed): only its owner can change that, so nothing retries. */
 export type WakeResult = "none" | "started" | "running" | "retry";
 
+/** What a wake asked of the provider came to (`cloud_computer_woken`): `started` (resumed), `restored` (started from
+ * its backup), `refused` (only its owner can fix what the provider turned down), `failed` (anything else). */
+export type WokenOutcome = "started" | "restored" | "refused" | "failed";
+
+/** What made the relay wake it (`cloud_computer_woken`'s `cause`): a device connected, a mailbox message or routine
+ * webhook arrived, an access request came in, the time its host asked for (its next routine), or a wake retried. */
+export type WakeCause = "device" | "message" | "access" | "routine" | "retry";
+
+/** A wake: `result` for the relay, and `woken` when it asked the provider to start the machine (what that came to). */
+export interface Wake {
+  result: WakeResult;
+  woken?: { outcome: WokenOutcome; machine: CloudMachineRow };
+}
+
+/** Asked the provider to start `machine`, which came to `outcome`. */
+const asked = (result: WakeResult, outcome: WokenOutcome, machine: CloudMachineRow): Wake => ({ result, woken: { outcome, machine } });
+const failure = (o: { needsOwner: boolean }): WokenOutcome => (o.needsOwner ? "refused" : "failed");
+
 /** Starts the sleeping cloud machine behind `computerId`. */
-export async function wake(env: Env, computerId: string, now: number): Promise<WakeResult> {
+export async function wake(env: Env, computerId: string, now: number): Promise<Wake> {
   const m = await machineFor(env, computerId);
-  if (!m) return "none";
+  if (!m) return { result: "none" };
   const d = drivers[m.provider];
   const live = await refresh(env, m, now);
-  if (!live.ok) return live.needsOwner ? "none" : "retry";
+  if (!live.ok) return { result: live.needsOwner ? "none" : "retry" };
   // Still stopping, or still awake while its stop takes effect (`refresh`).
-  if (m.state === "stopping") return "retry";
+  if (m.state === "stopping") return { result: "retry" };
   const state = live.value.state;
-  if (state === "running") return "running";
-  if (state === "starting") return "started";
+  if (state === "running") return { result: "running" };
+  if (state === "starting") return { result: "started" };
   if (state !== "stopped") {
     console.error(JSON.stringify({ msg: "cloud computer can't wake", computerId, state }));
-    return "none";
+    return { result: "none" };
   }
   const resumed = d.machine(await providerSend(env, m.user_id, m.provider, d.wake(m.provider_id, crypto.randomUUID()), now));
   if (resumed.ok) {
     await setState(env, m.id, resumed.value.state, now);
-    return "started";
+    return asked("started", "started", m);
   }
   if (resumed.code === "backupNeeded" && m.backup) return fromBackup(env, m, now);
   console.log(JSON.stringify({ msg: "cloud computer resume refused", computerId, code: resumed.detail }));
-  return resumed.needsOwner ? "none" : "retry";
+  return asked(resumed.needsOwner ? "none" : "retry", failure(resumed), m);
 }
 
 /** The machine's own snapshot expired: a new one from its backup takes its place (same disk, new provider id). */
-async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<WakeResult> {
+async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<Wake> {
   const backup = drivers[m.provider].backup;
-  if (!backup) return "none";
+  if (!backup) return { result: "none" };
   const spec = { name: machineName(env, m.user_id, m.id), size: SIZE, group: GROUP, autoStopSeconds: autoStop(env) };
   const made = drivers[m.provider].machine(await providerSend(env, m.user_id, m.provider, backup.restore(spec, m.backup!, `${m.id}-${m.backup_at}`), now));
   if (!made.ok) {
     console.error(JSON.stringify({ msg: "cloud computer restore from backup failed", machine: m.id, code: made.detail }));
-    return made.retryable ? "retry" : "none";
+    return asked(made.retryable ? "retry" : "none", failure(made), m);
   }
   await env.DB.prepare("UPDATE cloud_machines SET provider_id = ?, state = ?, updated_at = ? WHERE id = ?")
     .bind(made.value.id, made.value.state, now, m.id)
     .run();
-  return "started";
+  return asked("started", "restored", m);
 }
 
 /** Cron: a machine asleep for its provider's `backup.beforeDays` gets a backup (again, if it woke since the last one);

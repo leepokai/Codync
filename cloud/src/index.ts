@@ -66,6 +66,10 @@ export interface Env {
   APP_FLOOR_ANDROID?: string;
   APP_FLOOR_DESKTOP?: string;
   APP_FLOOR_REASON?: string;
+  /** PostHog's ingestion host for Codync Cloud's own events (`analytics.ts`); unset = nothing is sent. `ANALYTICS_ENV`
+   * "dev" marks them `env: dev` (main otherwise). */
+  POSTHOG_HOST?: string;
+  ANALYTICS_ENV?: string;
 }
 
 type Handler = (c: Ctx, params: string[]) => Promise<unknown>;
@@ -114,6 +118,7 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/host\/claim$/, api.hostClaim],
   ["POST", /^\/v1\/host\/sleep$/, api.hostSleep],
   ["GET", /^\/v1\/host\/sleep$/, api.hostSleepState],
+  ["POST", /^\/v1\/host\/analytics$/, api.hostAnalytics],
   ["GET", /^\/v1\/host\/state$/, api.hostState],
   ["POST", /^\/v1\/host\/screen-ice$/, api.hostScreenIce],
   ["POST", new RegExp(`^/v1/host/access-requests/${ID}/nonce$`), api.hostNonce],

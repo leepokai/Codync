@@ -38,9 +38,10 @@ DRY_RUN = os.environ.get("DRY_RUN") == "1"
 LOCALES = {"en-US": "en-US", "zh-Hant": "zh-TW"}  # WhatsNew.md locale → Play language
 NOTES = Path(__file__).resolve().parent.parent / "apps/android/WhatsNew.md"
 # What the Android app is built from: its sources, the shared account configuration, and the
-# strings and push relay it takes from the iPhone kit. Tests, the emulator-only release acceptance
-# build and the Play notes never reach the bundle.
+# strings, What's new announcements and push relay it takes from the iPhone kit. Tests, the
+# emulator-only release acceptance build and the Play notes never reach the bundle.
 ANDROID_PATHS = ["apps/android", "apps/shared", "apps/ios/Kit/Sources/CodyncKit/Resources/Languages",
+                 "apps/ios/Kit/Sources/CodyncKit/Resources/Announcements",
                  "apps/ios/Kit/Sources/CodyncKit/Client/SharedStore.swift",
                  ":(exclude)apps/android/*/src/test/*", ":(exclude)apps/android/*/src/androidTest/*",
                  ":(exclude)apps/android/app/src/releaseAcceptance", ":(exclude)apps/android/README.md",

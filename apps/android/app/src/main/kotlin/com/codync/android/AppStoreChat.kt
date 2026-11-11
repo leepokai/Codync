@@ -15,8 +15,16 @@ fun AppStore.openBot(id: String?) {
     // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
     val leaving = id != state.value.selectedBot
     if (leaving) callWait?.cancel()
+    if (id != null) residents.touch(id)
+    // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.
+    if (leaving) state.value.selectedBot?.let { left ->
+        windows.remove(left)
+        mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
+    }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
+    // The open chat swaps its preview for its window.
+    if (leaving) contextScope.launch { refresh() }
 }
 fun AppStore.showTrace(show: Boolean) { mutableState.update { it.copy(trace = show) } }
 
@@ -68,26 +76,89 @@ internal fun entriesOf(response: JsonElement): List<Entry> =
 internal suspend fun AppStore.callEntries(botId: String, call: String): List<Entry> =
     entriesOf(hostCall("callEntries", buildJsonObject { put("botId", botId); put("callId", call) }, 20_000))
 
-fun AppStore.loadHistory() {
+/** Pages the open chat's earlier rows. [failed] hears when that page didn't load (its error shows as usual). */
+fun AppStore.loadHistory(failed: () -> Unit = {}) {
     val id = state.value.selectedBot ?: return
-    action("history") {
-        val mirror = requireNotNull(database)
-        if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
-            mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
-            return@action
-        }
-        val before = state.value.entries.filter { it.botId == id }.minOfOrNull(Entry::seq) ?: Long.MAX_VALUE
-        val active = ready()
-        val response = active.call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
-        val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
-        withContext(Dispatchers.IO) {
-            mirror.receive(entries)
-            if (entries.size < 100) mirror.finishHistory(id)
-        }
-        if (entries.size < 100) mutableState.update { it.copy(historyComplete = it.historyComplete + id) }
+    val started = action(historyKey(id)) {
+        try { pageHistory(id) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { failed(); throw error }
+    }
+    if (!started) failed()
+}
+
+private suspend fun AppStore.pageHistory(id: String) {
+    // beforeSeq is the open window's oldest row, not the preview from before this chat was resident. When that
+    // read already reached further back, stop; the screen asks again only while its earlier row is still showing.
+    val last = published
+    if (last == null || id !in last.full || last.limit(id) != residency().limit(id)) {
+        val loadedFrom = floors[id]
         refresh()
+        if (floors[id] != loadedFrom) return
+    }
+    // The oldest row SQLite handed the window, counting rows a queued removal hides from the screen.
+    val before = floors[id] ?: Long.MAX_VALUE
+    // Older rows the phone already stored come from SQLite before the computer is asked for a page of them.
+    if (!withContext(Dispatchers.IO) { requireNotNull(database).hasOlder(id, before) } && !fetchHistoryPage(id, before)) return
+    // The older rows are on the phone now. The window grows over them whatever they hold, so a page of only tool or
+    // thought rows moves the chat too.
+    if (state.value.selectedBot == id) windows[id] = residency().widened(id)
+    refresh()
+    // The window grew and the same rows came back: this chat's memory budget is spent.
+    if (floors[id] == before && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.MemoryFull)) }
+}
+
+/** Stores the computer's page of [id]'s rows older than [before]. Whether it held any. */
+private suspend fun AppStore.fetchHistoryPage(id: String, before: Long): Boolean {
+    val mirror = requireNotNull(database)
+    if (withContext(Dispatchers.IO) { mirror.historyComplete(id) }) {
+        mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+        return false
+    }
+    val response = ready().call("history", buildJsonObject { put("botId", id); put("beforeSeq", before); put("limit", 100) })
+    val entries = response.jsonObject.getValue("entries").jsonArray.map { Entry.decode(it.jsonObject) }
+    withContext(Dispatchers.IO) {
+        mirror.receive(entries)
+        if (entries.size < 100) mirror.finishHistory(id)
+    }
+    // The reader may have gone to another chat while the computer answered: its rows are kept, but nothing here is theirs now.
+    if (entries.size < 100 && state.value.selectedBot == id) mutableState.update { it.copy(historyEnd = it.historyEnd + (id to HistoryEnd.Complete)) }
+    return entries.isNotEmpty()
+}
+
+/** The earlier row pages only once it is actually on screen, and only when that page would move the chat. */
+internal fun pageEarlier(
+    settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long, askedShown: Int, askedFloor: Long,
+): Boolean = settled && visible && !loading && (shown > askedShown || floor < askedFloor)
+
+/**
+ * When the open chat's earlier-messages row asks for a page, during one visit ([pageEarlier]). A page that failed is
+ * asked for again once the row comes back on screen (the iPhone's `onAppear`), never in a loop while the computer is out of reach.
+ */
+internal class EarlierPaging {
+    private var askedShown = -1
+    private var askedFloor = Long.MAX_VALUE
+    private var lastFailed = false
+
+    /** Whether to page now. Asking remembers [shown] and [floor], so the next page waits until this one moved them. */
+    fun ask(settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long): Boolean {
+        if (!visible) left()
+        if (!pageEarlier(settled, visible, loading, shown, floor, askedShown, askedFloor)) return false
+        askedShown = shown; askedFloor = floor; lastFailed = false
+        return true
+    }
+
+    /** The page asked for last didn't load. */
+    fun failed() { lastFailed = true }
+
+    /** The row is off screen, or the list dropped it before it could see that: after a failure, it may ask again when it shows anew. */
+    fun left() {
+        if (lastFailed) { lastFailed = false; askedShown = -1; askedFloor = Long.MAX_VALUE }
     }
 }
+
+/** One history load per chat at a time, so a chat still loading doesn't make the one opened next wait. */
+internal fun historyKey(botId: String) = "history:$botId"
 
 fun AppStore.retry(send: PendingSend) = action("send:" + send.nonce) { deliver(send.copy(status = SendStatus.Sending, error = null)) }
 fun AppStore.discard(send: PendingSend) = action("discard:" + send.nonce) {
@@ -113,6 +184,8 @@ internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {
         if (state.value.entries.any { it.botId == send.botId && it.clientNonce == send.nonce }) return
+        // The sent message may sit in older rows this phone holds on disk but not in memory.
+        if (withContext(Dispatchers.IO) { requireNotNull(database).hasNonce(send.botId, send.nonce) }) return
         savePending(send)
         val active = channel
         if (active?.state?.value is LinkState.ComputerOffline && send.files.isEmpty()) {

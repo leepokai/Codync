@@ -149,7 +149,7 @@ describe("snapshots", () => {
       if (u.endsWith("/resume")) return Response.json({ code: "snapshot_data_expired", message: "gone" }, { status: 409 });
       return Response.json({ sandbox: { id: "bx_restored", state: "provisioning" } }, { status: 201 });
     });
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     const after = await env.DB.prepare("SELECT provider_id FROM cloud_machines WHERE id = ?").bind(id).first();
     expect(after).toEqual({ provider_id: "bx_restored" });
   });

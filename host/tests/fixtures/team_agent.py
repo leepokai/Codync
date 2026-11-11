@@ -37,7 +37,9 @@ def mcp_call(server_name, tool, arguments):
         tools = rpc(2, "tools/list", {})
         assert any(t["name"] == tool for t in tools["result"]["tools"])
         if server_name == "team":
-            assert {t["name"] for t in tools["result"]["tools"]} == {"list_bots", "message_bot"}
+            assert {t["name"] for t in tools["result"]["tools"]} == {
+                "list_bots", "message_bot", "ask_bot", "ask_member", "delegate_batch", "run_pipeline",
+            }
             roster = rpc(3, "tools/call", {"name": "list_bots", "arguments": {}})
             assert any(b["id"] == arguments["botId"] for b in json.loads(roster["result"]["content"][0]["text"])["bots"])
         response = rpc(4, "tools/call", {"name": tool, "arguments": arguments})
@@ -193,12 +195,15 @@ for line in sys.stdin:
         with open("sessions.jsonl", "a") as log:
             log.write(json.dumps(request) + "\n")
         pathlib.Path("servers.json").write_text(json.dumps(request["params"]["mcpServers"]))
+        if pathlib.Path("delay-session").exists():
+            time.sleep(2)
         send({"id": request["id"], "result": {"sessionId": "session"}})
     elif method == "session/prompt":
         cancel = threading.Event()
         permission = threading.Event()
         threading.Thread(target=prompt, args=(request,), daemon=True).start()
     elif method == "session/cancel":
+        pathlib.Path("cancel-received").write_text(request["params"]["sessionId"])
         cancel.set()
     elif request.get("id") == "permission":
         permission_reply = request.get("result")

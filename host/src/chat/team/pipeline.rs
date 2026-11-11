@@ -21,7 +21,7 @@ const PREVIOUS_BYTES: usize = 6_000;
 /// What the pipeline's first stage may be given as `{{previous}}`.
 const MAX_INPUT_BYTES: usize = 8_000;
 /// The whole pipeline's time: each stage still gets at most `ASK_TIMEOUT`.
-const TOTAL_TIME: Duration = Duration::from_mins(30);
+pub(super) const TOTAL_TIME: Duration = Duration::from_mins(30);
 /// Replies kept per stage in the digest, and for the last one.
 const STAGE_REPLY_BYTES: usize = 600;
 const FINAL_REPLY_BYTES: usize = 4_000;
@@ -42,6 +42,7 @@ pub(super) fn tool() -> Value {
                         "properties": {
                             "botId": {"type": "string", "description": "Recipient ID from list_bots."},
                             "goal": {"type": "string", "description": format!("What this stage does, in at most {MAX_GOAL_BYTES} bytes; self-contained, since the bot doesn't see your conversation.")},
+                            "timeoutSeconds": {"type":"integer","minimum":1,"maximum":600,"description":"Stage deadline including queue time (default 600), also bounded by the pipeline's remaining time."},
                             "acceptance": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -83,12 +84,17 @@ pub(super) fn stage_prompt(task: &TaskSpec, previous: Option<&str>) -> String {
         Some(result) => format!("{}\n\nResult of the previous stage:\n{result}", task.goal),
         None => task.goal.replace(PLACEHOLDER, ""),
     };
-    render_prompt(&TaskSpec { bot_id: task.bot_id.clone(), goal, acceptance: task.acceptance.clone() })
+    render_prompt(&TaskSpec {
+        bot_id: task.bot_id.clone(),
+        goal,
+        acceptance: task.acceptance.clone(),
+        timeout: task.timeout,
+    })
 }
 
 /// The time the next stage may take after `elapsed`, or none when the pipeline's time is used up.
-pub(super) fn stage_budget(elapsed: Duration) -> Option<Duration> {
-    TOTAL_TIME.checked_sub(elapsed).filter(|left| !left.is_zero()).map(|left| left.min(ASK_TIMEOUT))
+pub(super) fn stage_budget(elapsed: Duration, timeout: Duration) -> Option<Duration> {
+    TOTAL_TIME.checked_sub(elapsed).filter(|left| !left.is_zero()).map(|left| left.min(timeout).min(ASK_TIMEOUT))
 }
 
 /// The last stage's reply, when every stage replied: the pipeline's result.
@@ -145,7 +151,7 @@ pub(super) async fn run(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Res
     let mut stopped = false;
     let mut results = Vec::with_capacity(stages.len());
     for (stage, target) in stages.iter().zip(&targets) {
-        let outcome = match stage_budget(started.elapsed()).filter(|_| !stopped) {
+        let outcome = match stage_budget(started.elapsed(), stage.timeout).filter(|_| !stopped) {
             None if stopped => StageOutcome::Skipped,
             None => {
                 stopped = true;
@@ -194,7 +200,7 @@ mod tests {
     use super::*;
 
     fn stage(goal: &str) -> TaskSpec {
-        TaskSpec { bot_id: "b".into(), goal: goal.into(), acceptance: vec![] }
+        TaskSpec { bot_id: "b".into(), goal: goal.into(), acceptance: vec![], timeout: ASK_TIMEOUT }
     }
 
     fn result(name: &str, outcome: StageOutcome) -> StageResult {
@@ -229,13 +235,18 @@ mod tests {
 
     #[test]
     fn a_stage_gets_what_is_left_of_the_pipelines_time() {
-        assert_eq!(stage_budget(Duration::ZERO), Some(ASK_TIMEOUT));
+        assert_eq!(stage_budget(Duration::ZERO, ASK_TIMEOUT), Some(ASK_TIMEOUT));
         assert_eq!(
-            stage_budget(TOTAL_TIME.checked_sub(Duration::from_secs(60)).unwrap()),
+            stage_budget(TOTAL_TIME.checked_sub(Duration::from_secs(60)).unwrap(), ASK_TIMEOUT),
             Some(Duration::from_secs(60))
         );
-        assert_eq!(stage_budget(TOTAL_TIME), None);
-        assert_eq!(stage_budget(TOTAL_TIME + Duration::from_secs(1)), None);
+        assert_eq!(stage_budget(TOTAL_TIME, ASK_TIMEOUT), None);
+        assert_eq!(stage_budget(TOTAL_TIME + Duration::from_secs(1), ASK_TIMEOUT), None);
+        assert_eq!(stage_budget(Duration::ZERO, Duration::from_secs(12)), Some(Duration::from_secs(12)));
+        assert_eq!(
+            stage_budget(TOTAL_TIME - Duration::from_secs(5), Duration::from_secs(12)),
+            Some(Duration::from_secs(5))
+        );
     }
 
     #[test]

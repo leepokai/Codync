@@ -4,7 +4,7 @@
 //!
 //! Idea from mercury-agent's `tasks.ts` and batch fan-in (MIT); no code copied.
 
-use super::{ASK_TIMEOUT, ask, visible_bot};
+use super::{ask, visible_bot};
 use crate::agent::acp::truncate;
 use crate::hub::Hub;
 use crate::store::BotConfig;
@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::fmt::Write;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Tasks in one batch: more than a coordinator can read back is a job for a routine, not a call.
 pub(super) const MAX_TASKS: usize = 8;
@@ -38,6 +39,7 @@ pub(super) fn tool() -> Value {
                         "properties": {
                             "botId": {"type": "string", "description": "Recipient ID from list_bots. Each bot at most once."},
                             "goal": {"type": "string", "description": "What to do, with the context, file paths and result you expect."},
+                            "timeoutSeconds": {"type":"integer","minimum":1,"maximum":600,"description":"Task deadline including queue time (default 600). Expiry cancels this task only; partial work may remain."},
                             "acceptance": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -60,6 +62,7 @@ pub(super) struct TaskSpec {
     pub bot_id: String,
     pub goal: String,
     pub acceptance: Vec<String>,
+    pub timeout: Duration,
 }
 
 /// How one task ended: the bot's reply, or why there is none.
@@ -114,7 +117,8 @@ pub(super) fn parse_list(list: &Value, own_id: &str, unique: bool) -> Result<Vec
             if acceptance.len() > MAX_CRITERIA || acceptance.iter().any(|c| c.len() > MAX_CRITERION_BYTES) {
                 bail!("task {n}: at most {MAX_CRITERIA} criteria of {MAX_CRITERION_BYTES} bytes each");
             }
-            Ok(TaskSpec { bot_id: bot_id.to_owned(), goal: goal.to_owned(), acceptance })
+            let timeout = super::blocking::task_timeout(task).map_err(|error| anyhow!("task {n}: {error}"))?;
+            Ok(TaskSpec { bot_id: bot_id.to_owned(), goal: goal.to_owned(), acceptance, timeout })
         })
         .collect()
 }
@@ -157,7 +161,7 @@ pub(super) async fn run(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Res
     let targets = tasks.iter().map(|t| visible_bot(hub, &t.bot_id)).collect::<Result<Vec<_>>>()?;
     let prompts: Vec<String> = tasks.iter().map(render_prompt).collect();
     let replies = futures::future::join_all(
-        tasks.iter().zip(&prompts).map(|(task, prompt)| ask(hub, source, &task.bot_id, prompt, ASK_TIMEOUT)),
+        tasks.iter().zip(&prompts).map(|(task, prompt)| ask(hub, source, &task.bot_id, prompt, task.timeout)),
     )
     .await;
     let results: Vec<TaskResult> = tasks
@@ -187,9 +191,35 @@ pub(super) async fn run(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::team::ASK_TIMEOUT;
+
+    #[test]
+    fn task_deadlines_are_preserved_and_invalid_later_tasks_reject_the_whole_batch() {
+        let tasks = parse(
+            &json!({"tasks":[
+                {"botId":"b","goal":"review","timeoutSeconds":7},
+                {"botId":"c","goal":"summarize"}
+            ]}),
+            "a",
+        )
+        .unwrap();
+        assert_eq!(tasks[0].timeout, Duration::from_secs(7));
+        assert_eq!(tasks[1].timeout, ASK_TIMEOUT);
+        for value in [json!(0), json!(-1), json!(601), json!(1.5), json!("30"), Value::Null] {
+            let error = parse(
+                &json!({"tasks":[
+                    {"botId":"b","goal":"valid"},
+                    {"botId":"c","goal":"invalid","timeoutSeconds":value}
+                ]}),
+                "a",
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("task 2: timeoutSeconds"));
+        }
+    }
 
     fn spec(bot: &str, goal: &str) -> TaskSpec {
-        TaskSpec { bot_id: bot.into(), goal: goal.into(), acceptance: vec![] }
+        TaskSpec { bot_id: bot.into(), goal: goal.into(), acceptance: vec![], timeout: ASK_TIMEOUT }
     }
 
     #[test]
@@ -205,7 +235,8 @@ mod tests {
             TaskSpec {
                 bot_id: "b".into(),
                 goal: "Review the diff".into(),
-                acceptance: vec!["no TODOs".into(), "tests pass".into()]
+                acceptance: vec!["no TODOs".into(), "tests pass".into()],
+                timeout: ASK_TIMEOUT,
             }
         );
         assert_eq!(tasks[1].acceptance, Vec::<String>::new());

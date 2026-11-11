@@ -95,7 +95,8 @@ extension HostClient {
 
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
                             schedule: RoutineScheduleDraft, timeoutSeconds: String,
-                            missedPolicy: String? = nil, limitPolicy: String? = nil) async throws -> Routine {
+                            missedPolicy: String? = nil, limitPolicy: String? = nil,
+                            outputs: [RoutineOutput]? = nil, ifOutputs: [RoutineOutput]? = nil) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -105,11 +106,13 @@ extension HostClient {
             let timeoutSeconds: String
             let missedPolicy: String?
             let limitPolicy: String?
+            let outputs: [RoutineOutput]?
+            let ifOutputs: [RoutineOutput]?
         }
         struct Response: Decodable { let routine: Routine }
-        let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
+        let response: Response = try await call(outputs == nil ? "saveRoutine" : "saveRoutineWithOutputs", Body(botId: botId, id: id, name: name,
             instruction: instruction, schedule: schedule, timeoutSeconds: timeoutSeconds,
-            missedPolicy: missedPolicy, limitPolicy: limitPolicy))
+            missedPolicy: missedPolicy, limitPolicy: limitPolicy, outputs: outputs, ifOutputs: ifOutputs))
         return response.routine
     }
 }

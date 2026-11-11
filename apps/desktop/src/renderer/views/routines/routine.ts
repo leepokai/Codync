@@ -266,6 +266,7 @@ export const errorText = (e: unknown) => (e instanceof Error ? e.message : Strin
 export const outputKinds = [
   { id: 'slack', label: 'Slack' },
   { id: 'telegram', label: 'Telegram' },
+  { id: 'whatsapp', label: 'WhatsApp' },
   { id: 'discord', label: 'Discord' },
   { id: 'discordReact', label: 'Discord reaction' },
   { id: 'githubComment', label: 'GitHub comment' },
@@ -279,6 +280,7 @@ export const outputKinds = [
 export function outputProblem(output: RoutineOutput): string | null {
   const target = output.target.trim()
   if (!target) return 'An output needs a destination.'
+  if (output.kind === 'whatsapp' && !output.account?.trim()) return 'Use the linked WhatsApp account id as account.'
   if (output.kind === 'telegram' && !/^-?\d+$/.test(target)) return 'Use a Telegram chat id.'
   if (output.kind === 'githubComment' && !/^[^/\s]+\/[^/\s]+$/.test(target)) return 'Use owner/name.'
   if ((output.kind === 'slack' || output.kind === 'discord') && /\s/.test(target)) return 'Use a channel id.'

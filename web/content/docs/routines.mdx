@@ -144,5 +144,44 @@ Add **Workflow Builder** from **Extensions → Agents** and describe the job, it
 
 A workflow can have **outputs** under **Outputs** in its editor: it delivers the last step's reply once, after that step, to a Slack channel, a Telegram chat, a Discord channel, as a Discord reaction on the message that started the run, as a comment, a label, an assignment or a review request on the issue or pull request that started it, or as a new issue. GitHub outputs need a connected GitHub account (Settings → GitHub).
 
+The host queues each output separately. If its connection is missing or a failure occurs before sending, the report waits and retries without running the task again. If the host stops during a send or cannot tell whether the service accepted it, the outcome stays unknown and it is not resent automatically. This prevents a possibly received report or issue from being duplicated. Stopping the bot, pausing or deleting the routine, or disconnecting a workflow link cancels its pending outputs.
+
+### WhatsApp reports
+
+After [linking WhatsApp](/docs/whatsapp), ask your bot to deliver a routine's report there.
+It can save a WhatsApp output with the recipient's person or group id as its destination and
+the linked number's own id as the sending account. Person ids look like
+`5215555555555@s.whatsapp.net`; group ids end in `@g.us`. The linked account must already be
+configured when the run starts. Choose **WhatsApp** under **Outputs** in the routine editor,
+enter the recipient as **Destination**, and enter your own linked number as **Linked WhatsApp
+account**. The same destination can be set through the bot's routine tools.
+
+Reports wait through temporary disconnection. Each run retains its original link authorization
+through the workflow and delivery queue. Logging out or linking a different account revokes
+that authorization; an old report cannot adopt the replacement link, even when the same number
+is linked again. The host waits for WhatsApp's send acknowledgement. A missing acknowledgement
+leaves an uncertain outcome for review in Codync instead of risking a duplicate report.
+
+In the terminal editor, **Outputs** accepts `whatsapp 5215555555555@s.whatsapp.net from
+5215555555556@s.whatsapp.net` (replace both example ids with your recipient and linked number).
+Use `;` between destinations, for example `slack C0123 ; telegram
+-100123 from personal-bot`. Quoted text preserves spaces in account names or issue titles;
+`githubIssue owner/repo value 'Daily report'` adds a GitHub issue destination. Empty text or
+`none` clears the outputs. Parsing and validation run in the host; this text is never executed
+as a shell command. An unchanged field keeps the saved destinations. On a small terminal,
+Tab moves between fields in the compact editor.
+
+Editing destinations requires a host that supports them. Older hosts reject the destination
+save request instead of reporting success while ignoring the changes; update Codync on the
+computer before retrying. Edits that leave the destinations unchanged retain the existing
+save path.
+Changing a routine's name or schedule keeps destination changes made elsewhere while the
+editor was open. If you edit the destinations and another client changes them first, reopen
+the editor before saving; Codync keeps the newer destinations rather than overwriting them.
+
 A workflow is still a routine at heart: it belongs to the first bot, it runs on your computer, and its results stay in the chats. A one-off task needs no workflow.
+
+## Hermes routine templates
+
+Your bot can list the bundled Hermes templates with `list_routine_templates`, fill one with `routine_template_draft`, and save it as an ordinary Codync routine. The templates include morning briefings, weekly reviews, reminders and price watches. A draft starts paused; its time zone and any delivery destination must be resolved before it is saved and enabled.
 

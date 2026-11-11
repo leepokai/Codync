@@ -14,6 +14,8 @@ struct RoutineEditorView: View {
     @State private var timeout = "3600"
     @State private var missedPolicy = "skip"
     @State private var limitPolicy = "wait"
+    @State private var outputs: [RoutineOutput] = []
+    @State private var originalOutputs: [RoutineOutput] = []
     @State private var busy = false
     @State private var error: String?
     @State private var advanced = false
@@ -45,7 +47,7 @@ struct RoutineEditorView: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isOffline && !busy &&
-        loaded && checkedSchedule == schedule && previewError == nil
+        loaded && checkedSchedule == schedule && previewError == nil && outputs.allSatisfy { $0.missingField == nil }
     }
 
     var body: some View {
@@ -84,6 +86,8 @@ struct RoutineEditorView: View {
                 timeout = String(routine.timeoutSeconds ?? 3600)
                 missedPolicy = routine.missedPolicy ?? "skip"
                 limitPolicy = routine.limitPolicy ?? "wait"
+                outputs = routine.outputs ?? []
+                originalOutputs = outputs
             }
             await loadSchedule()
         }
@@ -149,6 +153,7 @@ struct RoutineEditorView: View {
                             .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     }
                 }
+                RoutineOutputsFields(outputs: $outputs)
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -454,7 +459,11 @@ struct RoutineEditorView: View {
             do {
                 let result = try await client.saveRoutine(botId: botId, id: routine?.id, name: name,
                     instruction: instruction, schedule: schedule, timeoutSeconds: timeout,
-                    missedPolicy: missedPolicy, limitPolicy: limitPolicy)
+                    missedPolicy: missedPolicy, limitPolicy: limitPolicy,
+                    outputs: outputs == originalOutputs ? nil : outputs,
+                    ifOutputs: outputs == originalOutputs ? nil : originalOutputs)
+                outputs = result.outputs ?? outputs
+                originalOutputs = outputs
                 saved(result)
             } catch { self.error = error.localizedDescription }
         }

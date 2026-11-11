@@ -160,7 +160,7 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 /** The output kinds the editor offers, and their destination rules (host `routines::outputs`). */
 object RoutineOutputs {
     val kinds = listOf(
-        "slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "discordReact" to "Discord reaction",
+        "slack" to "Slack", "telegram" to "Telegram", "whatsapp" to "WhatsApp", "discord" to "Discord", "discordReact" to "Discord reaction",
         "githubComment" to "GitHub comment", "githubIssue" to "GitHub issue", "githubLabel" to "GitHub label",
         "githubAssign" to "GitHub assign", "githubReview" to "Request review",
     )
@@ -168,6 +168,7 @@ object RoutineOutputs {
     fun problem(output: RoutineOutput): String? {
         val target = output.target.trim()
         if (target.isEmpty()) return "An output needs a destination."
+        if (output.kind == "whatsapp" && output.account.isNullOrBlank()) return "Use the linked WhatsApp account id as account."
         if (output.kind == "telegram" && target.toLongOrNull() == null) return "Use a Telegram chat id."
         if (output.kind in listOf("githubComment", "githubIssue", "githubLabel", "githubAssign", "githubReview")
             && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
@@ -193,11 +194,11 @@ data class RoutineDraft(val id: String? = null, val name: String = "", val instr
         return "$amount $unit${if (amount == 1L) "" else "s"}"
     }
 
-    fun body(botId: String): JsonObject = buildJsonObject {
+    fun body(botId: String, includeOutputs: Boolean = true): JsonObject = buildJsonObject {
         put("botId", botId); id?.let { put("id", it) }; put("name", name); put("instruction", instruction)
         put("schedule", WireJson.encodeToJsonElement(schedule)); put("timeoutSeconds", timeoutSeconds)
         missedPolicy?.let { put("missedPolicy", it) }; limitPolicy?.let { put("limitPolicy", it) }
-        put("outputs", WireJson.encodeToJsonElement(outputs))
+        if (includeOutputs) put("outputs", WireJson.encodeToJsonElement(outputs))
         put("thread", thread)
     }
 }

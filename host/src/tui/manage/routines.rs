@@ -56,6 +56,9 @@ impl App {
                     name: Editor::default(),
                     instruction: Editor::default(),
                     when: Editor::default(),
+                    outputs: Editor::default(),
+                    original_outputs: Some(String::new()),
+                    original_output_values: json!([]),
                     original: Value::Null,
                     original_text: String::new(),
                     field: RoutineField::Name,
@@ -89,10 +92,15 @@ impl App {
                     name: Editor::with(&s(&r, "name")),
                     instruction: Editor::with(&s(&r, "instruction")),
                     when: Editor::with(text.as_deref().unwrap_or_default()),
+                    outputs: Editor::with(r["outputText"].as_str().unwrap_or_default()),
+                    original_outputs: r["outputText"].as_str().map(str::to_owned),
+                    original_output_values: r["outputs"].as_array().map_or_else(|| json!([]), |outputs| json!(outputs)),
                     original: if text.is_some() { Value::Null } else { triggers },
                     original_text,
                     field: RoutineField::Name,
-                    error: None,
+                    error: r["outputTextError"]
+                        .as_str()
+                        .map(|error| format!("{error}. Saved outputs stay unless replaced.")),
                     saving: false,
                 })));
                 return None;
@@ -152,7 +160,7 @@ impl App {
     }
 
     pub(in crate::tui) fn routine_key(&mut self, mut f: Box<RoutineForm>, k: KeyEvent) -> Option<Overlay> {
-        use RoutineField::{Instruction, Name, When};
+        use RoutineField::{Instruction, Name, Outputs, When};
         // Tab finishes a time zone being typed after the schedule before it moves on.
         if k.code == KeyCode::Tab
             && f.field == When
@@ -163,21 +171,29 @@ impl App {
         }
         match k.code {
             KeyCode::Esc => return None,
-            _ if newline(k) && f.field == Instruction => f.instruction.insert("\n"),
+            _ if newline(k) && matches!(f.field, Instruction | Outputs) => {
+                if f.field == Outputs {
+                    f.outputs.insert("\n");
+                } else {
+                    f.instruction.insert("\n");
+                }
+            }
             KeyCode::Enter => self.save_routine(&mut f),
             KeyCode::Char('s') if ctrl(k) => self.save_routine(&mut f),
             KeyCode::Tab | KeyCode::Down => {
                 f.field = match f.field {
                     Name => Instruction,
                     Instruction => When,
-                    When => Name,
+                    When => Outputs,
+                    Outputs => Name,
                 };
             }
             KeyCode::BackTab | KeyCode::Up => {
                 f.field = match f.field {
-                    Name => When,
+                    Name => Outputs,
                     Instruction => Name,
                     When => Instruction,
+                    Outputs => When,
                 };
             }
             _ => {
@@ -185,6 +201,7 @@ impl App {
                     Name => &mut f.name,
                     Instruction => &mut f.instruction,
                     When => &mut f.when,
+                    Outputs => &mut f.outputs,
                 };
                 ed.key(k);
             }
@@ -214,12 +231,19 @@ impl App {
             }
         };
         let mut body = json!({"botId": f.bot, "name": name, "instruction": instruction, "triggers": triggers});
+        if (f.original_outputs.is_some() || !f.outputs.text.trim().is_empty())
+            && f.original_outputs.as_deref() != Some(f.outputs.text.as_str())
+        {
+            body["outputText"] = f.outputs.text.clone().into();
+            body["ifOutputs"] = f.original_output_values.clone();
+        }
         if let Some(id) = &f.id {
             body["id"] = id.clone().into();
         }
         f.saving = true;
         f.error = None;
-        self.sheet("saveRoutine", body, Reply::RoutineSaved);
+        let method = if body.get("outputText").is_some() { "saveRoutineWithOutputs" } else { "saveRoutine" };
+        self.sheet(method, body, Reply::RoutineSaved);
     }
 
     /// `F`: runs a failed routine run's work again: the picked notice's, else the newest in this chat.

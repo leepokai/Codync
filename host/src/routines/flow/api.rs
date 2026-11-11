@@ -115,6 +115,7 @@ pub(super) fn connect(hub: &Hub, routine: &Routine, from: &str, to: &str, instru
 pub(super) fn disconnect(hub: &Hub, link_id: &str) -> Result<bool> {
     let Some(link) = hub.store.flow_link(link_id)? else { return Ok(false) };
     hub.routines.flows.cancel_routine(&link.routine_id);
+    hub.routines.cancel_flow_deliveries(&hub.store, &link.routine_id)?;
     hub.emit_flow_change(|| Ok(((), hub.store.flow_remove_link(link_id)?)))?;
     Ok(true)
 }
@@ -122,6 +123,9 @@ pub(super) fn disconnect(hub: &Hub, link_id: &str) -> Result<bool> {
 /// A deleted routine leaves its flow, and a running one stops.
 pub fn forget_routine(hub: &Hub, routine_id: &str, owner: &str) {
     hub.routines.flows.cancel_routine(routine_id);
+    if let Err(error) = hub.routines.cancel_flow_deliveries(&hub.store, routine_id) {
+        tracing::error!(routine = routine_id, %error, "could not cancel a deleted routine's deliveries");
+    }
     if let Err(error) = hub.emit_flow_change(|| Ok(((), hub.store.flow_forget_routine(routine_id, owner)?))) {
         tracing::error!(routine = routine_id, error = format!("{error:#}"), "couldn't clear a deleted routine's flow");
     }
@@ -156,9 +160,14 @@ fn test(hub: &Arc<Hub>, routine: &Routine, reply: String) -> Result<String> {
         max_depth: super::max_depth(),
         instruction: routine.instruction.clone(),
         outputs: routine.outputs.clone(),
-        event: Value::Null,
+        event: if routine.outputs.iter().any(|output| output.kind == "whatsapp") {
+            hub.store.snapshot_whatsapp_output(&json!({"source":"test"}))?
+        } else {
+            json!({"source":"test"})
+        },
         root: engine::Root::Replied(reply),
     };
+    hub.routines.stage_flow(&hub.store, start.clone())?;
     tokio::spawn(engine::execute(hub.clone(), start));
     Ok(run_id)
 }

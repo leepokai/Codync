@@ -135,6 +135,54 @@ async fn a_reply_travels_the_chain_and_every_bot_leaves_a_step() {
 }
 
 #[tokio::test]
+async fn hermes_recovery_delivers_a_saved_step_even_when_its_bot_is_now_hidden() {
+    let f = Fixture::new();
+    let routine = f.routine("a");
+    f.link(&routine, "a", "b", "Summarize");
+    let mut start = f.start(&routine, "saved-before-outbox", Root::Replied("seed".into()));
+    start.outputs.push(crate::routines::Output {
+        kind: "telegram".into(),
+        target: "123".into(),
+        account: None,
+        value: None,
+    });
+    f.hub.routines.stage_flow(&f.hub.store, start.clone()).unwrap();
+    super::engine::record(
+        &f.hub,
+        &NewStep {
+            run_id: &start.run_id,
+            routine_id: &routine,
+            owner_bot_id: "a",
+            bot_id: "b",
+            run_at: start.run_at,
+            input: "Already executed",
+            status: StepStatus::Succeeded,
+            output: Some("Saved report"),
+            error: None,
+        },
+    )
+    .unwrap();
+    let mut bot = f.hub.store.bot("b").unwrap().unwrap().config;
+    bot.hidden = true;
+    f.hub.store.save_bot(&bot).unwrap();
+    execute(f.hub.clone(), start).await;
+    f.hub
+        .store
+        .with_connection(|c| {
+            let content: String = c.query_row(
+                "SELECT content FROM routine_deliveries WHERE run_id='saved-before-outbox' AND position=0",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(content, "Saved report");
+            Ok(())
+        })
+        .unwrap();
+    assert!(f.prompts_of("b").is_empty(), "recovery must not rerun a saved step");
+    f.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_failure_in_the_middle_skips_what_hangs_below_it() {
     let f = Fixture::new();
     let r = f.routine("a");

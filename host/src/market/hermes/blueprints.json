@@ -1,0 +1,881 @@
+{
+  "commit": "10d25f8ad65fdf71304e9272959421a0c22e5d23",
+  "blueprints": [
+    {
+      "key": "morning-brief",
+      "title": "Morning briefing",
+      "description": "A short daily briefing: today's calendar, weather, and anything urgent waiting on you.",
+      "category": "daily",
+      "schedule_template": "{minute} {hour} * * *",
+      "prompt_template": "Produce a concise morning briefing for the user: today's calendar events, the local weather, and any urgent items. When Gmail/Google Calendar are connected, follow the google-workspace skill's references/daily-brief.md procedure (exact day window, conflict detection, meeting prep, mail-to-meeting links). Keep it short and scannable. If no data sources are connected, give a brief good-morning with the date and offer to connect calendar/email.",
+      "slots": [
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "08:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "skills": [
+        "google-workspace"
+      ],
+      "tags": [
+        "daily",
+        "briefing"
+      ]
+    },
+    {
+      "key": "important-mail",
+      "title": "Important-mail monitor",
+      "description": "Check your inbox periodically and ping you ONLY about mail that actually needs attention.",
+      "category": "email",
+      "schedule_template": "*/{interval_min} * * * *",
+      "prompt_template": "Check the user's inbox for new messages since the last run. Surface ONLY mail matching: {criteria}. Score candidates with the urgency classifier and deliver only what clears the bar; if nothing does, respond with [SILENT]. Requires a connected mail source; if none is configured, explain how to connect one and stop.",
+      "slots": [
+        {
+          "name": "interval_min",
+          "type": "enum",
+          "label": "How often?",
+          "default": "30",
+          "options": [
+            "15",
+            "30",
+            "60"
+          ],
+          "help": "minutes between checks"
+        },
+        {
+          "name": "criteria",
+          "type": "text",
+          "label": "Only notify me if the mail…",
+          "default": "needs a reply today, is from my manager or family, or mentions a deadline"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "skills": [
+        "email-inbox-triage"
+      ],
+      "tags": [
+        "email",
+        "monitor"
+      ]
+    },
+    {
+      "key": "weekly-review",
+      "title": "Weekly review",
+      "description": "A weekly recap: what got done, what's still open, and what's coming up.",
+      "category": "weekly",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Run the weekly-review-planning skill's procedure for the user: review the completed week and coming 1-2 weeks across connected calendar, tasks, notes, and email; surface commitments, stalled projects, and waiting items; build a capacity-aware plan for next week. Recommendations and drafts only — no mutations without approval. Keep the output in the skill's seven-section shape.",
+      "slots": [
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "18:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "day",
+          "type": "enum",
+          "label": "Which day?",
+          "default": "sunday",
+          "options": [
+            "sunday",
+            "monday",
+            "friday",
+            "saturday"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "skills": [
+        "weekly-review-planning"
+      ],
+      "tags": [
+        "weekly",
+        "review"
+      ]
+    },
+    {
+      "key": "workday-start",
+      "title": "Workday start reminder",
+      "description": "A weekday nudge with your agenda and top priorities.",
+      "category": "daily",
+      "schedule_template": "{minute} {hour} * * 1-5",
+      "prompt_template": "Give the user a brief weekday start-of-day nudge: today's calendar and the 1-3 highest-priority things to focus on, inferred from recent context and any task tools. Encouraging, short, one message.",
+      "slots": [
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "09:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "daily",
+        "focus"
+      ]
+    },
+    {
+      "key": "custom-reminder",
+      "title": "Custom reminder",
+      "description": "A recurring reminder in your own words, on your schedule.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Remind the user: {what}",
+      "slots": [
+        {
+          "name": "what",
+          "type": "text",
+          "label": "Remind me to…",
+          "default": "take a break and stretch"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "14:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "everyday",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "reminder"
+      ]
+    },
+    {
+      "key": "evening-winddown",
+      "title": "Evening wind-down",
+      "description": "An end-of-day check-in: tomorrow's calendar at a glance and anything you should prep tonight.",
+      "category": "daily",
+      "schedule_template": "{minute} {hour} * * *",
+      "prompt_template": "Give the user a short evening wind-down: tomorrow's calendar, any early commitments to prep for, and one gentle nudge to wrap up loose ends from today. Keep it calm and brief — one message. If no calendar is connected, just offer a friendly sign-off and the weather for tomorrow.",
+      "slots": [
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "21:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "daily",
+        "evening"
+      ]
+    },
+    {
+      "key": "news-digest",
+      "title": "Topic news digest",
+      "description": "A recurring digest on a topic you care about — deduped against what was already sent, so only genuinely new items land.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Search the web for new and noteworthy items about: {topic}. Dedupe against what you sent in previous runs — only include genuinely new developments. Deliver a tight digest of at most {count} bullets, each one line with a link. If nothing new since last run, respond with [SILENT].",
+      "slots": [
+        {
+          "name": "topic",
+          "type": "text",
+          "label": "What topic?",
+          "default": "AI and technology",
+          "help": "a subject, product, person, or search phrase"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "18:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "weekdays",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "count",
+          "type": "enum",
+          "label": "How many bullets?",
+          "default": "5",
+          "options": [
+            "3",
+            "5",
+            "8"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "digest",
+        "research"
+      ]
+    },
+    {
+      "key": "bill-renewal-watch",
+      "title": "Bills & renewals reminder",
+      "description": "A heads-up before a recurring payment, subscription renewal, or due date — so nothing auto-charges by surprise.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Remind the user about an upcoming payment or renewal: {what}. Phrase it as an actionable heads-up (e.g. 'review or cancel before it renews'), not just a notification. One short message.",
+      "slots": [
+        {
+          "name": "what",
+          "type": "text",
+          "label": "What's due?",
+          "default": "my streaming subscription renews soon"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "10:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "everyday",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "reminder",
+        "finance"
+      ]
+    },
+    {
+      "key": "price-watch",
+      "title": "Price & availability watch",
+      "description": "Watch an exact product, flight, hotel, or listing and alert when your price or availability condition is met.",
+      "category": "general",
+      "schedule_template": "0 */{interval_h} * * *",
+      "prompt_template": "Load the product-price-monitor skill and run the tick for this watch: {item}. Alert condition: {condition}. Compare the normalized all-in price/availability against stored state, suppress duplicate alerts, and never overwrite last-known-good state with a failed fetch. If no condition is met, respond with [SILENT]. On the first run, execute the skill's setup phase first: pin the exact item, verify one live fetch, and write the watch contract state file.",
+      "slots": [
+        {
+          "name": "item",
+          "type": "text",
+          "label": "What exactly to watch?",
+          "default": "a product URL or exact flight/hotel/listing description",
+          "help": "URL or precise description — variant, dates, seller"
+        },
+        {
+          "name": "condition",
+          "type": "text",
+          "label": "Alert me when…",
+          "default": "the all-in price drops below my target",
+          "help": "threshold price (state the currency), availability, or terms change"
+        },
+        {
+          "name": "interval_h",
+          "type": "enum",
+          "label": "How often?",
+          "default": "6",
+          "options": [
+            "1",
+            "3",
+            "6",
+            "12",
+            "24"
+          ],
+          "help": "hours between checks — be gentle with rate limits"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "skills": [
+        "product-price-monitor"
+      ],
+      "tags": [
+        "prices",
+        "shopping",
+        "travel",
+        "monitor"
+      ]
+    },
+    {
+      "key": "competitor-watch",
+      "title": "Competitor news watch",
+      "description": "Track named companies for material news — launches, pricing, funding, filings — with a cited digest.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Load the competitor-news-monitor skill and run the tick for this watch: companies {companies}; event categories {categories}. Collect incrementally from the last cutoff, deduplicate by underlying event, score materiality against the watch contract, and deliver a cited digest of material events only. If there are no material events, respond with [SILENT]. On the first run, execute the skill's setup phase first: freeze the watchlist, build source coverage, and write the watch contract state file.",
+      "slots": [
+        {
+          "name": "companies",
+          "type": "text",
+          "label": "Which companies?",
+          "default": "two or three competitors, by canonical name",
+          "help": "canonical names and domains; aliases help dedup"
+        },
+        {
+          "name": "categories",
+          "type": "text",
+          "label": "Which events matter?",
+          "default": "product launches, pricing changes, funding, partnerships, executive moves, incidents"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "09:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "monday",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "skills": [
+        "competitor-news-monitor"
+      ],
+      "tags": [
+        "competitors",
+        "news",
+        "monitor",
+        "research"
+      ]
+    },
+    {
+      "key": "habit-checkin",
+      "title": "Habit check-in",
+      "description": "A recurring nudge to keep a habit on track and reflect on whether you did it.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Nudge the user about their habit: {habit}. Ask whether they did it today, keep it warm and non-judgmental, and offer a one-line word of encouragement. One short message.",
+      "slots": [
+        {
+          "name": "habit",
+          "type": "text",
+          "label": "Which habit?",
+          "default": "20 minutes of reading"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "20:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "everyday",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "habit",
+        "wellbeing"
+      ]
+    },
+    {
+      "key": "hydration-move",
+      "title": "Hydration & movement nudge",
+      "description": "A periodic nudge during the day to drink water, stand up, and stretch.",
+      "category": "general",
+      "schedule_template": "0 {start_hour}-{end_hour}/{interval_hours} * * 1-5",
+      "prompt_template": "Send the user a brief, friendly nudge to drink some water, stand up, and stretch for a moment. Vary the wording each time so it doesn't feel robotic. One short line.",
+      "slots": [
+        {
+          "name": "interval_hours",
+          "type": "enum",
+          "label": "How often?",
+          "default": "1",
+          "options": [
+            "1",
+            "2",
+            "3"
+          ],
+          "help": "hours between nudges"
+        },
+        {
+          "name": "start_hour",
+          "type": "enum",
+          "label": "Start hour",
+          "default": "9",
+          "options": [
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "help": "first hour of the active window (24h)"
+        },
+        {
+          "name": "end_hour",
+          "type": "enum",
+          "label": "End hour",
+          "default": "17",
+          "options": [
+            "16",
+            "17",
+            "18",
+            "19"
+          ],
+          "help": "last hour of the active window (24h)"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "wellbeing",
+        "focus"
+      ]
+    },
+    {
+      "key": "meal-plan",
+      "title": "Weekly meal plan",
+      "description": "A weekly meal plan plus a consolidated grocery list, tuned to your diet and how much time you have to cook.",
+      "category": "weekly",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Build the user a meal plan for the coming week: {meals} per day, suited to a {diet} diet and roughly {effort} cooking effort. Include a consolidated grocery list grouped by aisle. Keep blueprints simple and skimmable.",
+      "slots": [
+        {
+          "name": "diet",
+          "type": "enum",
+          "label": "Diet?",
+          "default": "no restrictions",
+          "options": [
+            "no restrictions",
+            "vegetarian",
+            "vegan",
+            "high-protein",
+            "low-carb"
+          ]
+        },
+        {
+          "name": "meals",
+          "type": "enum",
+          "label": "Meals per day?",
+          "default": "dinner only",
+          "options": [
+            "dinner only",
+            "lunch and dinner",
+            "all three"
+          ]
+        },
+        {
+          "name": "effort",
+          "type": "enum",
+          "label": "Cooking effort?",
+          "default": "quick",
+          "options": [
+            "quick",
+            "medium",
+            "ambitious"
+          ]
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "17:00",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "day",
+          "type": "enum",
+          "label": "Which day?",
+          "default": "sunday",
+          "options": [
+            "sunday",
+            "monday",
+            "friday",
+            "saturday"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "weekly",
+        "food"
+      ]
+    },
+    {
+      "key": "learn-daily",
+      "title": "Daily learning drip",
+      "description": "One bite-sized lesson a day on a topic you want to learn, building progressively over time.",
+      "category": "daily",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Teach the user one bite-sized lesson about: {topic}. Build on earlier lessons so it progresses rather than repeating. Keep it to a couple of short paragraphs with one concrete example, and end with a single question to check understanding.",
+      "slots": [
+        {
+          "name": "topic",
+          "type": "text",
+          "label": "Learn about…",
+          "default": "Spanish vocabulary"
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "08:30",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "weekdays",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "learning",
+        "daily"
+      ]
+    },
+    {
+      "key": "gratitude-journal",
+      "title": "Gratitude & reflection prompt",
+      "description": "A gentle evening prompt to reflect on the day and note what went well.",
+      "category": "general",
+      "schedule_template": "{minute} {hour} * * {dow}",
+      "prompt_template": "Send the user a short, warm reflection prompt for the end of the day — invite them to note one thing that went well, one thing they are grateful for, and one small win. If they reply, acknowledge it kindly. One message.",
+      "slots": [
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "21:30",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "recurrence",
+          "type": "weekdays",
+          "label": "Repeat on",
+          "default": "everyday",
+          "options": [
+            "everyday",
+            "weekdays",
+            "weekends"
+          ]
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "wellbeing",
+        "reflection"
+      ]
+    },
+    {
+      "key": "on-this-day",
+      "title": "On-this-day discovery",
+      "description": "A daily dose of curiosity: a notable historical event, fact, or word for the day.",
+      "category": "daily",
+      "schedule_template": "{minute} {hour} * * *",
+      "prompt_template": "Give the user one interesting '{flavor}' item for today — keep it short, surprising, and genuinely interesting. One or two sentences, no filler.",
+      "slots": [
+        {
+          "name": "flavor",
+          "type": "enum",
+          "label": "What kind?",
+          "default": "on this day in history",
+          "options": [
+            "on this day in history",
+            "word of the day",
+            "science fact",
+            "quote of the day"
+          ]
+        },
+        {
+          "name": "time",
+          "type": "time",
+          "label": "What time?",
+          "default": "07:30",
+          "help": "24h local time, e.g. 08:00"
+        },
+        {
+          "name": "deliver",
+          "type": "enum",
+          "label": "Where to deliver?",
+          "default": "origin",
+          "options": [
+            "origin",
+            "local",
+            "telegram",
+            "discord",
+            "email"
+          ],
+          "optional": false,
+          "strict": false,
+          "help": "origin = the chat you set this up from (or your configured home channel when created from the dashboard); local = save only, no message; or any connected platform name"
+        }
+      ],
+      "tags": [
+        "daily",
+        "curiosity"
+      ]
+    }
+  ]
+}

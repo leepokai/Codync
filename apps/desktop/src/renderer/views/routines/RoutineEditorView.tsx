@@ -43,6 +43,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const [checkedSchedule, setCheckedSchedule] = useState<RoutineScheduleDraft | null>(null)
   const [sources, setSources] = useState<RoutineEventSource[]>([])
   const [outputs, setOutputs] = useState<RoutineOutput[]>(routine?.outputs ?? [])
+  const [originalOutputs, setOriginalOutputs] = useState(() => (routine?.outputs ?? []).map((output) => ({ ...output })))
   const [thread, setThread] = useState(routine?.thread ?? false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [started, setStarted] = useState(false)
@@ -118,7 +119,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
     setError(null)
     try {
       const client = await store.ready()
-      const result = await client.call<{ routine: Routine }>('saveRoutine', {
+      const outputsChanged = JSON.stringify(outputs) !== JSON.stringify(originalOutputs)
+      const result = await client.call<{ routine: Routine }>(outputsChanged ? 'saveRoutineWithOutputs' : 'saveRoutine', {
         botId,
         id: routine?.id ?? null,
         name,
@@ -127,9 +129,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
         timeoutSeconds: timeout,
         missedPolicy,
         limitPolicy,
-        outputs,
+        ...(outputsChanged ? { outputs, ifOutputs: originalOutputs } : {}),
         thread,
       })
+      const savedOutputs = result.routine.outputs ?? outputs
+      setOutputs(savedOutputs)
+      setOriginalOutputs(savedOutputs.map((output) => ({ ...output })))
       saved(result.routine)
     } catch (e) {
       setError(errorText(e))

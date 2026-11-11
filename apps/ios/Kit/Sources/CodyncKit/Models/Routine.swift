@@ -17,6 +17,8 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var missedPolicy: String?
     /// What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing).
     public var limitPolicy: String?
+    /// Optional on hosts predating workflow destinations.
+    public var outputs: [RoutineOutput]?
 
     /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
     public static func timeoutText(_ text: String) -> String {
@@ -144,7 +146,8 @@ extension HostClient {
 extension HostClient {
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
                             triggers: [RoutineTrigger], timeoutSeconds: Int,
-                            missedPolicy: String? = nil, limitPolicy: String? = nil) async throws -> Routine {
+                            missedPolicy: String? = nil, limitPolicy: String? = nil,
+                            outputs: [RoutineOutput]? = nil, ifOutputs: [RoutineOutput]? = nil) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -154,11 +157,13 @@ extension HostClient {
             let timeoutSeconds: Int
             let missedPolicy: String?
             let limitPolicy: String?
+            let outputs: [RoutineOutput]?
+            let ifOutputs: [RoutineOutput]?
         }
         struct Response: Decodable { let routine: Routine }
-        let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
+        let response: Response = try await call(outputs == nil ? "saveRoutine" : "saveRoutineWithOutputs", Body(botId: botId, id: id, name: name,
             instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds,
-            missedPolicy: missedPolicy, limitPolicy: limitPolicy))
+            missedPolicy: missedPolicy, limitPolicy: limitPolicy, outputs: outputs, ifOutputs: ifOutputs))
         return response.routine
     }
 }

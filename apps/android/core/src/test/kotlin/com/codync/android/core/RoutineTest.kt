@@ -5,6 +5,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RoutineTest {
+    @Test fun `WhatsApp reports require the sending account as well as the recipient`() {
+        val output = RoutineOutput(kind = "whatsapp", target = "5215555555555@s.whatsapp.net")
+        assertNotNull(RoutineOutputs.problem(output))
+        assertNull(RoutineOutputs.problem(output.copy(account = "5215555555556@s.whatsapp.net")))
+        assertTrue(RoutineOutputs.kinds.any { it.first == "whatsapp" })
+    }
     @Test fun `a waiting retry reads as retrying, not queued`() {
         val run = RoutineRun("run", "routine", "bot", "pending")
         assertEquals("Queued", run.label)

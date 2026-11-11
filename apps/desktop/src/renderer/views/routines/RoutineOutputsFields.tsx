@@ -6,7 +6,7 @@ import { outputKinds, outputProblem, type RoutineOutput } from './routine'
 import './routines.css'
 
 const placeholder = (kind: string) =>
-  kind === 'githubComment' ? 'owner/name' : kind === 'telegram' ? '-1001234567890' : kind === 'discordReact' ? '👍' : '1234567890'
+  kind.startsWith('github') ? 'owner/name' : kind === 'whatsapp' ? '5215555555555@s.whatsapp.net' : kind === 'telegram' ? '-1001234567890' : kind === 'discordReact' ? '👍' : '1234567890'
 
 const valuePlaceholder = (kind: string) =>
   kind === 'githubIssue' ? 'Issue title (optional)' : kind === 'githubLabel' ? 'Labels, separated by commas' : 'People, separated by commas'
@@ -39,12 +39,12 @@ export function RoutineOutputsFields({ outputs, update }: { outputs: RoutineOutp
             spellCheck={false}
             onChange={(event) => change(index, { target: event.target.value })}
           />
-          {output.kind === 'telegram' ? (
+          {output.kind === 'telegram' || output.kind === 'whatsapp' ? (
             <input
               className="schedule-input"
-              aria-label={tr('Telegram bot')}
+              aria-label={tr(output.kind === 'whatsapp' ? 'Linked WhatsApp account' : 'Telegram bot')}
               value={output.account ?? ''}
-              placeholder={tr('The bot it sends as, if there are several')}
+              placeholder={tr(output.kind === 'whatsapp' ? 'Your linked number, e.g. 5215555555556@s.whatsapp.net' : 'The bot it sends as, if there are several')}
               spellCheck={false}
               onChange={(event) => change(index, { account: event.target.value })}
             />

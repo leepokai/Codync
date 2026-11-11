@@ -1,6 +1,10 @@
 //! Own a program's descendants (an agent's, a dev server's) even after its leader exits or its owner unwinds.
 
-use anyhow::{Context, Result};
+#[cfg(unix)]
+use super::process_unix::{Tree, end_groups, in_session};
+#[cfg(unix)]
+pub(crate) use super::process_unix::{list_processes, session};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,26 +30,6 @@ pub(crate) struct JobProcess {
     pub(crate) pid: u32,
     pub(crate) parent: u32,
     pub(crate) name: String,
-}
-
-/// Lists every process on this computer, for [`listed`].
-#[cfg(unix)]
-fn ps() -> std::process::Command {
-    let mut ps = std::process::Command::new("ps");
-    ps.args(["-A", "-o", "pid=,ppid=,comm="]);
-    ps
-}
-
-/// Every process on this computer.
-#[cfg(unix)]
-pub(crate) async fn list_processes() -> Result<Vec<JobProcess>> {
-    listed(&tokio::process::Command::from(ps()).output().await?)
-}
-
-#[cfg(unix)]
-fn listed(output: &std::process::Output) -> Result<Vec<JobProcess>> {
-    anyhow::ensure!(output.status.success(), "ps failed");
-    Ok(parse_ps(&String::from_utf8_lossy(&output.stdout)))
 }
 
 /// Rows of `ps -o pid=,ppid=,comm=`; a name may hold spaces.
@@ -319,12 +303,30 @@ impl Process {
         self.unwind().await;
         #[cfg(unix)]
         if self.exited().unwrap_or(false) {
-            // Reaped, the leader no longer pins its PID: only a live group member does, and
+            // Reaped, the leader no longer pins its PID: only a live member of its session does, and
             // that is what `drained` waits out. A group of zombies alone isn't signalled (macOS refuses it).
             let _ = self.child.wait().await;
-            self.tree.drained(deadline).await;
+            self.drained(deadline).await;
         }
         self.kill().await;
+    }
+
+    /// Waits until nothing is left in the program's session, or `deadline`, so everything it started has the leader's
+    /// grace to end by itself, an MCP server in a process group of its own too. An empty session is forgotten with its
+    /// group, so their (reusable) id is never signalled.
+    #[cfg(unix)]
+    async fn drained(&mut self, deadline: Instant) {
+        loop {
+            if self.processes().await.is_ok_and(|left| left.is_empty()) {
+                self.tree.group = None;
+                self.tree.session = None;
+                return;
+            }
+            if Instant::now() >= deadline {
+                return;
+            }
+            tokio::time::sleep(POLL).await;
+        }
     }
 
     pub(crate) async fn kill(&mut self) {
@@ -348,102 +350,6 @@ impl Process {
     }
 }
 
-/// Whether `pid` is in `session`. A session's id can't go to another process while anything is left in it.
-#[cfg(unix)]
-fn in_session(session: libc::pid_t, pid: u32) -> bool {
-    // SAFETY: getsid only reads the process table.
-    libc::pid_t::try_from(pid).is_ok_and(|pid| unsafe { libc::getsid(pid) } == session)
-}
-
-/// Kills every process group `listed` has in `session`, like the one an MCP server starts for itself (Codex does). Each
-/// group is read from a process then checked to be in the session: a group never spans two, so one that ended since the
-/// listing isn't signalled under an id another process took.
-#[cfg(unix)]
-fn end_groups(session: libc::pid_t, listed: &[JobProcess]) {
-    let mut ended = Vec::new();
-    for process in listed {
-        let Ok(pid) = libc::pid_t::try_from(process.pid) else { continue };
-        // SAFETY: getpgid only reads the process table.
-        let group = unsafe { libc::getpgid(pid) };
-        if group <= 0 || ended.contains(&group) || !in_session(session, process.pid) {
-            continue;
-        }
-        // SAFETY: kill only sends a signal, to a group of the owned session.
-        if unsafe { libc::kill(-group, libc::SIGKILL) } == -1 {
-            tracing::debug!(group, error = %std::io::Error::last_os_error(), "couldn't end a program's process group");
-        }
-        ended.push(group);
-    }
-}
-
-/// The program leads its process group and its session (`own_tree`), under the same id.
-#[cfg(unix)]
-struct Tree {
-    group: Option<libc::pid_t>,
-    /// What it started in groups of their own is still to be ended through this ([`end_groups`]).
-    session: Option<libc::pid_t>,
-}
-
-#[cfg(unix)]
-impl Tree {
-    fn new(child: &Child) -> Result<Self> {
-        let pid = child.id().context("the program exited before process ownership was established")?;
-        let leader = libc::pid_t::try_from(pid)?;
-        Ok(Self { group: Some(leader), session: Some(leader) })
-    }
-
-    /// Waits until the group has no process left, or `deadline`; an empty group is forgotten so
-    /// its (reusable) ID is never signalled.
-    async fn drained(&mut self, deadline: Instant) {
-        let Some(group) = self.group else { return };
-        // SAFETY: signal 0 sends nothing; it only checks that the group still has a process.
-        let running = || unsafe { libc::killpg(group, 0) } == 0;
-        while running() && Instant::now() < deadline {
-            tokio::time::sleep(POLL).await;
-        }
-        if !running() {
-            self.group = None;
-        }
-    }
-
-    fn interrupt(&self) {
-        let Some(group) = self.group else { return };
-        // SAFETY: as in `terminate`; the group is still owned and only receives a signal.
-        unsafe { libc::kill(-group, libc::SIGTERM) };
-    }
-
-    fn terminate(&mut self) -> std::io::Result<()> {
-        let Some(group) = self.group.take() else { return Ok(()) };
-        // SAFETY: spawn put this still-owned, unreaped child in its own process group.
-        // A negative PID signals that group. No pointer or shared memory is involved.
-        if unsafe { libc::kill(-group, libc::SIGKILL) } == -1 {
-            let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                return Err(error);
-            }
-        }
-        Ok(())
-    }
-}
-
-#[cfg(unix)]
-impl Drop for Tree {
-    fn drop(&mut self) {
-        if let Err(error) = self.terminate() {
-            tracing::warn!(%error, "couldn't release a program's process group");
-        }
-        // Dropped without `Process::kill`: the rest of its session takes a listing, off this (maybe the runtime's) thread.
-        if let Some(session) = self.session.take() {
-            std::thread::spawn(move || {
-                match ps().output().map_err(anyhow::Error::from).and_then(|output| listed(&output)) {
-                    Ok(listed) => end_groups(session, &listed),
-                    Err(error) => tracing::warn!(error = format!("{error:#}"), "couldn't list a program's processes"),
-                }
-            });
-        }
-    }
-}
-
 #[cfg(windows)]
 struct Tree {
     handle: std::os::windows::io::OwnedHandle,
@@ -452,6 +358,7 @@ struct Tree {
 #[cfg(windows)]
 impl Tree {
     fn new(child: &Child) -> Result<Self> {
+        use anyhow::Context;
         use std::os::windows::io::{AsRawHandle, FromRawHandle};
         use windows_sys::Win32::System::JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -528,5 +435,20 @@ mod tests {
 
         // A pid listed as its own parent is still a leaf.
         assert_eq!(due(&[process(7, 7, "x")], &mut HashMap::new(), Instant::now()), [7]);
+    }
+
+    /// The leader exits at once; what it started in a process group of its own still gets the grace to finish.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_stop_gives_a_server_in_a_group_of_its_own_the_leaders_grace() {
+        let done = std::env::temp_dir().join(format!("codync-process-{}", uuid::Uuid::new_v4()));
+        let mut command = tokio::process::Command::new("perl");
+        let server = r#"if (!fork) { setpgrp; select undef, undef, undef, 0.5; open my $f, ">", $ARGV[0]; exit }"#;
+        command.args(["-e", server]).arg(&done).stdin(std::process::Stdio::null());
+        own_tree(&mut command);
+        let mut process = Process::new(command.spawn().expect("perl runs")).expect("owns its tree");
+        process.stop_within(Duration::from_secs(5)).await;
+        assert!(done.exists(), "the server was killed before its grace ran out");
+        let _ = std::fs::remove_file(done);
     }
 }

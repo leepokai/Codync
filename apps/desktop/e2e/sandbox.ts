@@ -11,17 +11,18 @@ const root = resolve(__dirname, '../../..')
 // A scripted agent whose turn waits until a steered message joins it (host/tests/fixtures/steer_agent.py).
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 
-/** This worktree's sandbox: its name, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
+/** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
 export function sandbox() {
   const name = sandboxName(basename(root))
-  const record = join(homedir(), SANDBOX_PREFIX + name, 'sandbox.json')
+  const home = join(homedir(), SANDBOX_PREFIX + name)
+  const record = join(home, 'sandbox.json')
   let port: number
   try {
     port = (JSON.parse(readFileSync(record, 'utf8')) as { port: number }).port
   } catch {
     throw new Error(`No sandbox for ${root}: run \`npm run dev -- --cdp\` in apps/desktop first.`)
   }
-  return { name, port, cdp: port + 10000 }
+  return { name, home, port, cdp: port + 10000 }
 }
 
 /** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */

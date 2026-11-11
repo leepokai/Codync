@@ -181,6 +181,7 @@ pub(crate) enum Adapter {
     Other,
 }
 
+#[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
@@ -190,8 +191,8 @@ pub(crate) struct Conn {
     superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
-    /// Finished routine runs' sessions it couldn't close, still open with their MCP servers (`release_spent`).
-    spent: Vec<String>,
+    /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
+    spent: bool,
     started: Instant,
     /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
     /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
@@ -373,9 +374,7 @@ impl Actor {
         self.finish_turn(&done);
         match session {
             Some(sid) if routine => self.release_spent(&sid).await,
-            Some(sid) if failed => {
-                self.close_reopenable(&sid).await;
-            }
+            Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
         self.stop_spent().await;

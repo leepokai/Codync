@@ -45,17 +45,21 @@ enum Release {
     Nothing,
     /// These sessions; the agent keeps running the rest.
     Sessions(Vec<String>),
-    /// The agent process, with everything in its process group.
-    Agent,
+    /// The agent process, with everything it started (every process group in its session), and why.
+    Agent(Retired),
 }
 
 /// `used`: each live session's last use. Only an agent that can close sessions releases them one
-/// by one; any agent that can reopen them is stopped once all are idle.
-fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, now: Instant) -> Release {
+/// by one; any agent that can reopen them is stopped once all are idle, or while it holds a `spent`
+/// session ([`Actor::stop_spent`] stops it at a turn's end unless something runs detached, then this tries again).
+fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, spent: bool, now: Instant) -> Release {
+    if spent {
+        return Release::Agent(Retired::SessionNotClosed);
+    }
     let mut idle: Vec<String> =
         used.iter().filter(|(_, at)| now.duration_since(**at) >= IDLE).map(|(sid, _)| sid.clone()).collect();
     if idle.len() == used.len() && now.duration_since(started) >= IDLE {
-        Release::Agent
+        Release::Agent(Retired::Idle)
     } else if can_close && !idle.is_empty() {
         idle.sort();
         Release::Sessions(idle)
@@ -80,20 +84,12 @@ impl Actor {
         if conn.sessions.reopen.is_none() {
             return;
         }
-        // A spent session waits for the agent to stop (`stop_spent`), which it did not while something ran detached.
-        let release = if conn.spent.is_empty() {
-            plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now())
-        } else {
-            Release::Agent
-        };
+        let release = plan(&conn.loaded, conn.started, conn.sessions.close, conn.spent, Instant::now());
         if release == Release::Nothing || background_work(&conn.acp).await {
             return;
         }
         match release {
-            Release::Agent => {
-                let reason = if conn.spent.is_empty() { Retired::Idle } else { Retired::SessionNotClosed };
-                self.retire(reason).await;
-            }
+            Release::Agent(reason) => self.retire(reason).await,
             Release::Sessions(sessions) => {
                 for sid in sessions {
                     self.close_session(&sid).await;
@@ -138,10 +134,13 @@ impl Actor {
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
         if alone && !background_work(&conn.acp).await {
             self.retire(Retired::RoutineFinished).await;
-        } else if !self.close_reopenable(sid).await
-            && let Some(conn) = self.conn.as_mut()
+            return;
+        }
+        self.close_reopenable(sid).await;
+        if let Some(conn) = self.conn.as_mut()
+            && conn.loaded.contains_key(sid)
         {
-            conn.spent.push(sid.to_owned());
+            conn.spent = true;
         }
     }
 
@@ -149,7 +148,7 @@ impl Actor {
     /// detached under it: then the idle check tries again.
     pub(super) async fn stop_spent(&mut self) {
         let Some(conn) = &self.conn else { return };
-        if !conn.spent.is_empty() && self.turn.is_none() && self.queue.is_empty() && !background_work(&conn.acp).await {
+        if conn.spent && self.turn.is_none() && self.queue.is_empty() && !background_work(&conn.acp).await {
             self.retire(Retired::SessionNotClosed).await;
         }
     }
@@ -164,19 +163,20 @@ impl Actor {
     }
 
     /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
-    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead. Whether it's no longer open.
-    pub(super) async fn close_reopenable(&mut self, sid: &str) -> bool {
-        let Some(conn) = &self.conn else { return true };
-        if !conn.loaded.contains_key(sid) {
-            return true;
+    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead.
+    pub(super) async fn close_reopenable(&mut self, sid: &str) {
+        if self
+            .conn
+            .as_ref()
+            .is_some_and(|c| c.sessions.close && c.sessions.reopen.is_some() && c.loaded.contains_key(sid))
+        {
+            self.close_session(sid).await;
         }
-        conn.sessions.close && conn.sessions.reopen.is_some() && self.close_session(sid).await
     }
 
-    /// Whether the agent closed it.
-    async fn close_session(&mut self, sid: &str) -> bool {
+    async fn close_session(&mut self, sid: &str) {
         let closed = self.session_request("session/close", json!({ "sessionId": sid })).await;
-        let Some(conn) = self.conn.as_mut() else { return false };
+        let Some(conn) = self.conn.as_mut() else { return };
         match closed {
             Ok(_) => {
                 tracing::info!(bot = %self.cfg.id, session = sid, "closed a session");
@@ -187,13 +187,11 @@ impl Actor {
                 conn.usage.remove(sid);
                 conn.renamed.remove(sid);
                 self.applied_system.remove(sid);
-                true
             }
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, session = sid, error = format!("{error:#}"), "couldn't close a session");
                 // Try again after another idle period rather than every check.
                 conn.loaded.insert(sid.to_owned(), Instant::now());
-                false
             }
         }
     }
@@ -211,15 +209,23 @@ mod tests {
         let used =
             |rows: &[(&str, Instant)]| rows.iter().map(|(s, at)| ((*s).to_owned(), *at)).collect::<HashMap<_, _>>();
         assert_eq!(
-            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, now),
+            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, false, now),
             Release::Sessions(vec!["t1".into()])
         );
-        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, now), Release::Agent);
-        assert_eq!(plan(&used(&[]), started, true, now), Release::Agent);
+        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, false, now), Release::Nothing);
+        let idle = Release::Agent(Retired::Idle);
+        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, false, now), idle);
+        assert_eq!(plan(&used(&[]), started, true, false, now), idle);
         // A just-started agent isn't stopped before it had a chance to be used.
-        assert_eq!(plan(&used(&[]), now, true, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", fresh)]), started, true, now), Release::Nothing);
+        assert_eq!(plan(&used(&[]), now, true, false, now), Release::Nothing);
+        assert_eq!(plan(&used(&[("main", fresh)]), started, true, false, now), Release::Nothing);
+    }
+
+    #[test]
+    fn a_spent_session_stops_the_agent_however_fresh_its_chat() {
+        let now = Instant::now();
+        let used = HashMap::from([("main".to_owned(), now), ("run".to_owned(), now)]);
+        assert_eq!(plan(&used, now, false, true, now), Release::Agent(Retired::SessionNotClosed));
     }
 
     #[test]

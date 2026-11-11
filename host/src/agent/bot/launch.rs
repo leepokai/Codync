@@ -218,7 +218,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         adapter: adapter(&init),
         superseded: superseded(&init),
         loaded: HashMap::new(),
-        spent: Vec::new(),
+        spent: false,
         started: Instant::now(),
         opening: false,
         fast_options: HashMap::new(),

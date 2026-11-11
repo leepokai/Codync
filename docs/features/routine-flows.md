@@ -14,7 +14,7 @@ from the graphical canvas of the desktop and phone apps, or in the terminal UI (
 
 | Thing | Fields |
 |---|---|
-| **Link** | `id`, `routineId`, `fromBotId`, `toBotId`, `instruction` (≤ 8000 bytes, may be empty), `createdAt` (ms) |
+| **Link** | `id`, `routineId`, `fromBotId`, `toBotId`, `instruction` (≤ 8000 bytes, may be empty), `model` (`null` = the target bot's own), `modelOptions` (its settings, e.g. `effort`), `createdAt` (ms) |
 | **Step** | `id`, `runId`, `botId`, `deliveryId` (the bot request that carried the input; `null` for the routine's own bot), `input`, `output` (`null` until it replies), `status`, `error`, `createdAt`, `updatedAt` |
 | **Step status** | `running`, `succeeded`, `failed`, `skipped`, `cancelled` |
 | **Position** | `nodeKey` (`routine:<id>` or `bot:<id>`), `x`, `y` (numbers, at most ±1 000 000) |

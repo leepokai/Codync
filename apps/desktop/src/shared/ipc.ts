@@ -81,7 +81,7 @@ export interface TraySummary {
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
-  /** The menu bar is a system menu, so the main process translates its labels from this. */
+  /** The tray and the application menu are system menus, so the main process translates their labels from this. */
   language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 

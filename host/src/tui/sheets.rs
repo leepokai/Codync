@@ -159,8 +159,13 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                     &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
                     t.dim.patch(base),
                 );
-                let when: Vec<&str> =
-                    it["triggerDescriptions"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let when: Vec<String> = it["triggerDescriptions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|text| tr(text).into_owned())
+                    .collect();
                 let (line, style) = match it["lastError"].as_str() {
                     Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
                     None => (when.join(" · "), t.secondary),

@@ -54,8 +54,12 @@ import com.codync.android.core.canEdit
 import com.codync.android.core.routineRepeats
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -85,7 +89,7 @@ import kotlinx.coroutines.launch
                 Row(Modifier.outlinedCard(vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f).plainButton { editing = routine.id }.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(routine.name, style = Type.system(13f), color = Palette.text)
-                        Text(listing?.summary(routine).orEmpty(), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
+                        Text(scheduleLine(routine, listing?.summary(routine).orEmpty()), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
                     }
                     CodyncSwitch(routine.enabled, { store.routineAction(bot.id, routine.id, "setRoutineEnabled", it) },
                         Modifier.width(34.dp).semantics { contentDescription = routine.name }, enabled = online && !busy) {}
@@ -143,8 +147,9 @@ import kotlinx.coroutines.launch
         catch (failure: Exception) { if (draft.schedule == requested) previewError = failure.message ?: "Couldn't check this schedule." }
     }
     val canSave = draft.name.isNotBlank() && draft.instruction.isNotBlank() && online && !busy && loaded && checked == draft.schedule && previewError == null
+    val translate = translator()
     val options = buildList {
-        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · "))
+        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · ") { translate(it) })
         add("cron" to "Schedule"); add("webhook" to "Webhook")
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -193,10 +198,10 @@ import kotlinx.coroutines.launch
                 val turn by animateFloatAsState(if (advanced) 180f else 0f, Motion.layout(), label = "Chevron")
                 Row(Modifier.fillMaxWidth().plainButton { advanced = !advanced }.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Run settings", style = Type.subheadline, color = Palette.secondary)
+                    Text(tr("Run settings"), style = Type.subheadline, color = Palette.secondary)
                     Symbol("chevron.down", Modifier.rotate(turn), size = 11.dp, tint = Palette.secondary)
                     Spacer(Modifier.weight(1f))
-                    if (!advanced) Text("Timeout ${draft.timeoutText}", style = Type.subheadline, color = Palette.tertiary)
+                    if (!advanced) Text(tr("Timeout {time}").replace("{time}", timeoutWords(draft.timeoutSeconds, appLocale())), style = Type.subheadline, color = Palette.tertiary)
                 }
                 AnimatedVisibility(advanced, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
@@ -240,6 +245,30 @@ import kotlinx.coroutines.launch
     }
 }
 
+@Composable private fun appLocale(): Locale {
+    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
+    val tag = if (language == AppLanguage.Zh) "zh-Hans" else language.stored
+    return Locale.forLanguageTag(tag)
+}
+
+/** The schedule line in the app language; a status line ("Last run failed") stays as `summary` wrote it. */
+@Composable private fun scheduleLine(routine: Routine, summary: String): String {
+    val translate = translator()
+    val schedule = routine.triggerDescriptions.joinToString(" · ")
+    return if (summary == schedule) routine.triggerDescriptions.joinToString(" · ") { translate(it) } else summary
+}
+
+/** Whole hours, else whole minutes, else seconds, in `locale`. Anything else stays as typed plus "s". */
+private fun timeoutWords(secondsText: String, locale: Locale): String {
+    val seconds = secondsText.toLongOrNull() ?: return "${secondsText}s"
+    val (amount, unit) = when {
+        seconds > 0L && seconds % 3600L == 0L -> seconds / 3600L to MeasureUnit.HOUR
+        seconds > 0L && seconds % 60L == 0L -> seconds / 60L to MeasureUnit.MINUTE
+        else -> seconds to MeasureUnit.SECOND
+    }
+    return MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE).format(Measure(java.lang.Long.valueOf(amount), unit))
+}
+
 private fun Int.twoDigits() = toString().padStart(2, '0')
 private val HOURS = (0..23).map { it to it.twoDigits() }
 private val MINUTES = (0..59).map { it to it.twoDigits() }
@@ -257,11 +286,11 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
 
 /** One quiet line under the schedule fields: what the host read, or why it can't (with the cron fields' order while it checks a Custom one). */
 @Composable private fun SchedulePreview(preview: RoutineSchedulePreview?, error: String?, cronHint: Boolean) {
-    Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             error != null -> Text(tr(error), style = Type.caption, color = Palette.danger)
             preview != null -> {
-                Text(preview.summary, style = Type.caption.medium, color = Palette.text)
+                Text(tr(preview.summary), style = Type.caption.medium, color = Palette.text)
                 preview.nextRunAt?.let {
                     val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
                     Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)

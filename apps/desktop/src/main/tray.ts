@@ -18,6 +18,8 @@ interface Deps {
   host: HostController
   updates: Updates
   island: Island
+  /** The application menu is a system menu too, so it follows the same language as this one. */
+  onLanguage: (language: NonNullable<TraySummary['language']>) => void
 }
 
 const resources = () => (app.isPackaged ? process.resourcesPath : join(__dirname, '../../resources'))
@@ -28,6 +30,7 @@ export class Tray {
   private tray: ElectronTray
   private summary: TraySummary | null = null
   private launchAtLogin = launchAtLogin()
+  private toldLanguage: TraySummary['language'] | null = null
 
   constructor(private deps: Deps) {
     this.tray = new ElectronTray(this.icon(false))
@@ -83,6 +86,11 @@ export class Tray {
   }
 
   private rebuild() {
+    const language = this.summary?.language ?? resolvedLanguage('system', app.getLocale())
+    if (language !== this.toldLanguage) {
+      this.toldLanguage = language
+      this.deps.onLanguage(language)
+    }
     const { host, send } = this.deps
     const s = this.summary
     const state = host.state

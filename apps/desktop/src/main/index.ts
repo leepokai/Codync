@@ -30,6 +30,7 @@ import { registerErrorReports } from './error-reports'
 import { registerRendererRecovery } from './renderer-recovery'
 import { reportHostSetupFailure } from './analytics'
 import { launchAtLogin, openedAtLogin, setLaunchAtLogin, updateLoginItem } from './login-item'
+import { translate, type AppLanguage } from '../renderer/lib/l10n'
 
 /** macOS's user-facing computer name, else the host name. */
 function computerName() {
@@ -129,30 +130,90 @@ export function send(command: WindowCommand, show = true) {
   window?.webContents.send('app:command', command)
 }
 
-function menu() {
+/** The stock roles stay English on Windows and Linux. A label keeps the role's action and shortcut. */
+let shownMenu: Exclude<AppLanguage, 'system'> | null = null
+function applyMenu(language: Exclude<AppLanguage, 'system'>) {
+  if (language === shownMenu) return
+  shownMenu = language
+  const tr = (text: string) => translate(text, language, 'en')
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
     {
-      label: 'View',
+      label: tr('File'),
+      submenu: [isMac ? { role: 'close', label: tr('Close') } : { role: 'quit', label: tr('Quit {name}').replaceAll('{name}', app.getName()) }],
+    },
+    {
+      label: tr('Edit'),
       submenu: [
-        { label: 'Bigger', accelerator: 'CmdOrCtrl+=', click: () => send({ kind: 'stepTextSize', up: true }, false) },
-        { label: 'Smaller', accelerator: 'CmdOrCtrl+-', click: () => send({ kind: 'stepTextSize', up: false }, false) },
-        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => send({ kind: 'stepTextSize', up: null }, false) },
+        { role: 'undo', label: tr('Undo') },
+        { role: 'redo', label: tr('Redo') },
         { type: 'separator' },
-        { label: 'New Bot', accelerator: 'CmdOrCtrl+N', click: () => send({ kind: 'newBot' }) },
-        { label: 'Search Bots', accelerator: 'CmdOrCtrl+F', click: () => send({ kind: 'search' }) },
-        { label: 'Toggle Sidebar', accelerator: 'Ctrl+CmdOrCtrl+S', click: () => send({ kind: 'toggleSidebar' }, false) },
-        { label: 'Conversation Details', accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
-        { label: 'Refresh', accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
-        { type: 'separator' },
-        // The dev page reload sits on ⇧⌘R, leaving ⌘R to Refresh.
-        ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }, { role: 'forceReload' as const }]),
-        { role: 'togglefullscreen' },
+        { role: 'cut', label: tr('Cut') },
+        { role: 'copy', label: tr('Copy') },
+        { role: 'paste', label: tr('Paste') },
+        ...(isMac ? [
+          { role: 'pasteAndMatchStyle' as const, label: tr('Paste and Match Style') },
+          { role: 'delete' as const, label: tr('Delete') },
+          { role: 'selectAll' as const, label: tr('Select All') },
+          { type: 'separator' as const },
+          {
+            label: tr('Substitutions'),
+            submenu: [
+              { role: 'showSubstitutions' as const, label: tr('Show Substitutions') },
+              { type: 'separator' as const },
+              { role: 'toggleSmartQuotes' as const, label: tr('Smart Quotes') },
+              { role: 'toggleSmartDashes' as const, label: tr('Smart Dashes') },
+              { role: 'toggleTextReplacement' as const, label: tr('Text Replacement') },
+            ],
+          },
+          {
+            label: tr('Speech'),
+            submenu: [
+              { role: 'startSpeaking' as const, label: tr('Start Speaking') },
+              { role: 'stopSpeaking' as const, label: tr('Stop Speaking') },
+            ],
+          },
+        ] : [
+          { role: 'delete' as const, label: tr('Delete') },
+          { type: 'separator' as const },
+          { role: 'selectAll' as const, label: tr('Select All') },
+        ]),
       ],
     },
-    { role: 'windowMenu' },
+    {
+      label: tr('View'),
+      submenu: [
+        { label: tr('Bigger'), accelerator: 'CmdOrCtrl+=', click: () => send({ kind: 'stepTextSize', up: true }, false) },
+        { label: tr('Smaller'), accelerator: 'CmdOrCtrl+-', click: () => send({ kind: 'stepTextSize', up: false }, false) },
+        { label: tr('Actual Size'), accelerator: 'CmdOrCtrl+0', click: () => send({ kind: 'stepTextSize', up: null }, false) },
+        { type: 'separator' },
+        { label: tr('New bot'), accelerator: 'CmdOrCtrl+N', click: () => send({ kind: 'newBot' }) },
+        { label: tr('Search Bots'), accelerator: 'CmdOrCtrl+F', click: () => send({ kind: 'search' }) },
+        { label: tr('Toggle Sidebar'), accelerator: 'Ctrl+CmdOrCtrl+S', click: () => send({ kind: 'toggleSidebar' }, false) },
+        { label: tr('Conversation details'), accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
+        { label: tr('Refresh'), accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
+        { type: 'separator' },
+        // The dev page reload sits on ⇧⌘R, leaving ⌘R to Refresh.
+        ...(app.isPackaged ? [] : [
+          { role: 'toggleDevTools' as const, label: tr('Toggle Developer Tools') },
+          { role: 'forceReload' as const, label: tr('Force Reload') },
+        ]),
+        { role: 'togglefullscreen', label: tr('Toggle Full Screen') },
+      ],
+    },
+    {
+      // The role marks this submenu as the window list on macOS. A custom submenu is kept.
+      label: tr('Window'),
+      role: 'windowMenu',
+      submenu: [
+        { role: 'minimize', label: tr('Minimize') },
+        { role: 'zoom', label: tr('Zoom') },
+        ...(isMac ? [
+          { type: 'separator' as const },
+          { role: 'front' as const, label: tr('Bring All to Front') },
+        ] : [{ role: 'close' as const, label: tr('Close') }]),
+      ],
+    },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -256,7 +317,7 @@ if (yieldsToInstall()) {
     applyDockVisibility()
     updateLoginItem()
     const island = new Island({ url: rendererURL('island'), preload: join(__dirname, '../preload/index.js'), send, openApp: openChat, changed: () => tray.hostChanged() })
-    const tray = new Tray({ openChat, openPairing, send, host, updates, island })
+    const tray = new Tray({ openChat, openPairing, send, host, updates, island, onLanguage: applyMenu })
     updates.on('change', () => tray.hostChanged())
     updates.on('upToDate', () => send({ kind: 'upToDate' }))
     registerIPC(tray)
@@ -275,7 +336,6 @@ if (yieldsToInstall()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media' || permission === 'clipboard-sanitized-write'))
     account.register(() => BrowserWindow.getAllWindows())
     updates.register(() => BrowserWindow.getAllWindows())
-    menu()
     host.on('change', () => {
       const s = snapshot()
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('host:change', s)

@@ -30,7 +30,7 @@ struct RoutineEditorView: View {
     private var options: [(String, String)] {
         var values = [("cron", "Schedule"), ("webhook", "Webhook")]
         if let routine, keepsOriginal {
-            values.insert(("keep", routine.triggerDescriptions.joined(separator: " · ")), at: 0)
+            values.insert(("keep", routine.triggerDescriptions.map { L10n.tr($0) }.joined(separator: " · ")), at: 0)
         }
         return values
     }
@@ -267,17 +267,18 @@ struct RoutineEditorView: View {
         }
     }
 
-    /// One quiet line under the fields: what the host read, or why it can't.
+    /// The sentence, then the next run, under the fields — or why the host can't read it.
     @ViewBuilder private var schedulePreview: some View {
         let preview = checkedSchedule == schedule ? preview : nil
         if let previewError {
             Text(previewError).font(.caption).foregroundStyle(Palette.danger)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let preview {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(preview.summary).font(.caption.weight(.medium))
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    Text(L10n.tr("Next \(Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened))"))
+                    let when = Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened)
+                    Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 if let warning = preview.warning {

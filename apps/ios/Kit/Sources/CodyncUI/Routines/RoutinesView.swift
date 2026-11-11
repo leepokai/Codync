@@ -109,7 +109,7 @@ struct RoutinesView: View {
         if let last = runs.first(where: { $0.routineId == routine.id }), ["failed", "interrupted"].contains(last.status) {
             return "Last run \(runLabel(last).lowercased())"
         }
-        return routine.triggerDescriptions.joined(separator: " · ")
+        return routine.triggerDescriptions.map { L10n.tr($0) }.joined(separator: " · ")
     }
 
     private func runLabel(_ run: RoutineRun) -> String {

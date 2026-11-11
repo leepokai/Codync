@@ -1,4 +1,4 @@
-import { Children, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Children, Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from './Icon'
 import { IconButtonBase, usePresence } from './Overlay'
 import { AnchoredMenu, type MenuItem } from './Menu'
@@ -119,15 +119,39 @@ export function ChoicePicker<T extends string | number>({ selection, options, on
   )
 }
 
-/** Picks one of a few values side by side: the replacement for `.segmented`. */
+/** Picks one of a few values side by side: the replacement for `.segmented`. The capsule follows the chosen button: the labels are not the same width, so a slice of the track would miss the word. */
 export function SegmentedChoice<T extends string>({ selection, options, onChange }: { selection: T; options: { id: T; label: string }[]; onChange: (id: T) => void }) {
   const tr = useTr()
-  const index = options.findIndex((o) => o.id === selection)
+  const root = useRef<HTMLDivElement>(null)
+  const [thumb, setThumb] = useState<{ x: number; width: number } | null>(null)
+  const shown = options.map((o) => `${o.id}\0${tr(o.label)}`).join('\n')
+
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    const place = () => {
+      const chosen = el.querySelector<HTMLElement>(':scope > .segmented-option.on')
+      if (!chosen) {
+        setThumb((prev) => (prev === null ? prev : null))
+        return
+      }
+      // The thumb's `left` is the track's padding, so the slide starts from the button's own edge.
+      const pad = Number.parseFloat(getComputedStyle(el).paddingLeft) || 0
+      const x = chosen.offsetLeft - pad
+      const width = chosen.offsetWidth
+      setThumb((prev) => (prev && prev.x === x && prev.width === width ? prev : { x, width }))
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [shown, selection])
+
   return (
-    <div className="segmented">
-      {index >= 0 && <div className="segmented-thumb" style={{ width: `calc((100% - 6px - ${(options.length - 1) * 2}px) / ${options.length})`, transform: `translateX(calc(${index} * (100% + 2px)))` }} />}
+    <div className="segmented" ref={root}>
+      {thumb ? <div className="segmented-thumb" style={{ width: thumb.width, transform: `translateX(${thumb.x}px)` }} /> : null}
       {options.map((o) => (
-        <button key={o.id} className={`segmented-option ${o.id === selection ? 'on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
+        <button key={o.id} className={`segmented-option${o.id === selection ? ' on' : ''}`} onClick={() => onChange(o.id)} aria-pressed={o.id === selection}>
           {tr(o.label)}
         </button>
       ))}

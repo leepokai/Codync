@@ -113,11 +113,13 @@ impl Trigger {
             Self::Interval { seconds } => format!("Every {seconds} seconds"),
             Self::Once { at } => DateTime::from_timestamp_millis(*at)
                 .map_or_else(|| "Once".into(), |d| format!("Once at {}", d.to_rfc3339())),
-            Self::Cron { expression, time_zone } => format!(
-                "{} · {time_zone}",
-                Cron::from_str(expression)
-                    .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
-            ),
+            Self::Cron { expression, time_zone } => {
+                let phrase = every_day_at(expression).unwrap_or_else(|| {
+                    Cron::from_str(expression)
+                        .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
+                });
+                format!("{phrase} · {time_zone}")
+            }
             Self::Webhook => "When a webhook fires".into(),
             Self::Event { source, event, .. } => format!("{source} · {event}"),
         }
@@ -135,6 +137,36 @@ impl Trigger {
                 }
             })
     }
+}
+
+/// `M H * * *` with one minute and one hour or a comma list of hours: `Every day at HH:MM, HH:MM`.
+/// Anything else stays on croner's sentence.
+fn every_day_at(expression: &str) -> Option<String> {
+    let mut fields = expression.split_whitespace();
+    let minute = fields.next()?;
+    let hour = fields.next()?;
+    let day = fields.next()?;
+    let month = fields.next()?;
+    let weekday = fields.next()?;
+    if fields.next().is_some() || day != "*" || month != "*" || weekday != "*" {
+        return None;
+    }
+    let minute: u8 = minute.parse().ok()?;
+    if minute > 59 {
+        return None;
+    }
+    let mut times = Vec::new();
+    for part in hour.split(',') {
+        if part.is_empty() {
+            return None;
+        }
+        let hour: u8 = part.parse().ok()?;
+        if hour > 23 {
+            return None;
+        }
+        times.push(format!("{hour:02}:{minute:02}"));
+    }
+    Some(format!("Every day at {}", times.join(", ")))
 }
 
 #[cfg(test)]
@@ -163,6 +195,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_day_hours_read_as_clock_times() {
+        let zone = "Europe/Rome";
+        let described = |expression: &str| {
+            Trigger::Cron { expression: expression.into(), time_zone: zone.into() }.description()
+        };
+        assert_eq!(described("0 9 * * *"), "Every day at 09:00 · Europe/Rome");
+        assert_eq!(described("0 9,18 * * *"), "Every day at 09:00, 18:00 · Europe/Rome");
+        assert_eq!(described("0 09 * * *"), "Every day at 09:00 · Europe/Rome");
+        let weekday = described("0 9 * * 1");
+        assert!(weekday.ends_with(" · Europe/Rome"), "{weekday}");
+        assert!(!weekday.starts_with("Every day at"), "{weekday}");
+        let hourly = Trigger::Cron { expression: "47 * * * *".into(), time_zone: "Asia/Taipei".into() }.description();
+        assert!(hourly.ends_with(" · Asia/Taipei"), "{hourly}");
+        assert!(!hourly.starts_with("Every day at"), "{hourly}");
+    }
     #[test]
     fn event_filters_require_all_fields() {
         let t = Trigger::Event {

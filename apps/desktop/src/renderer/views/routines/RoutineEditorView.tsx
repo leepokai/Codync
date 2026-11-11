@@ -11,7 +11,8 @@ import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
-import { useTr } from '../../lib/use-language'
+import { resolvedLanguage } from '../../lib/l10n'
+import { useAppLanguage, useTr } from '../../lib/use-language'
 
 
 const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
@@ -23,6 +24,9 @@ export function RoutineEditorView({ botId, routine, saved }: {
   saved: (routine: Routine | null) => void
 }) {
   const tr = useTr()
+  const appLanguage = useAppLanguage()
+  const timeLocale = resolvedLanguage(appLanguage, typeof navigator === 'undefined' ? 'en' : navigator.language)
+  const durationLocale = timeLocale === 'zh' ? 'zh-Hans' : timeLocale
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
@@ -147,7 +151,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
           <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
-        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
+        return <Note icon="sparkles" title={routine?.triggerDescriptions.map((line) => tr(line)).join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
     }
   }
 
@@ -181,12 +185,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
           </VStack>
           <VStack gap={10}>
             <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
-              Run settings
+              {tr('Run settings')}
               <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
               <Spacer />
-              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout))}</Text> : null}
+              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout, durationLocale))}</Text> : null}
             </button>
             {advanced ? (
               <div className="routine-fade">

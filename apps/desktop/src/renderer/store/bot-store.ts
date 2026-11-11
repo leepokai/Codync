@@ -414,6 +414,17 @@ export class BotStore extends BotSync {
     this.answer(entry, 'handoff', (c) => c.call('keepConversation', { entryId: entry.id }))
   }
 
+  undoBeliefObservation(entry: Entry) {
+    const learning = entry.data.beliefLearning
+    if (learning?.status === 'active') this.answer(entry, 'undo-learning', (c) => c.call('undoBeliefObservation', {
+      botId: entry.botId, entryId: entry.id, revision: learning.revision, shared: learning.shared,
+    }))
+  }
+
+  changeBelief(entry: Entry, method: 'confirmBelief' | 'forgetBelief' | 'restoreBelief') {
+    this.answer(entry, method, (c) => c.call(method, { botId: entry.botId, entryId: entry.id }))
+  }
+
   /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
   retryRoutineRun(entry: Entry) {
     const runId = entry.data.runId
@@ -550,8 +561,14 @@ export class BotStore extends BotSync {
   }
 
   /** Creates a catalog team on the host (its coordinator, its teammates and their group) and opens the group. */
-  async installTeam(id: string) {
-    const res = await (await this.ready()).call<{ bot: Bot }>('installTeam', { id }, 60_000)
+  async installTeam(id: string, roleModels?: Record<string, string>) {
+    const client = await this.ready()
+    if (roleModels && Object.keys(roleModels).length) {
+      const catalog = await client.call<BotCatalog>('botCatalog', {})
+      if (!catalog.capabilities?.roleModels) throw new Error('This computer does not support models by role. Reconnect or remove those choices.')
+    }
+    const custom = !!roleModels && Object.keys(roleModels).length > 0
+    const res = await client.call<{ bot: Bot }>(custom ? 'installTeamWithRoleModels' : 'installTeam', { id, ...(custom && { roleModels }) }, 60_000)
     const group = normalizeBot(res.bot)
     this.bots.set(group.id, group)
     this.selection = group.id

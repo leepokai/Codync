@@ -26,6 +26,7 @@ export interface TeamProfile {
 export interface BotCatalog {
   bots: BotProfile[]
   teams: TeamProfile[]
+  capabilities?: { roleModels?: boolean }
 }
 
 /** A draft that starts from `profile`: its name, look and instructions; the agent and model stay the draft's. */

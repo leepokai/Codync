@@ -10,7 +10,7 @@ import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
 import { errorText, fillDefaults, newDraft } from '../bots/drafts'
 import { useCatalog } from '../bots/use-catalog'
-import { FormSheet, ItemGrid, MarketRow, SkeletonGrid } from './pieces'
+import { Field, FormSheet, ItemGrid, MarketRow, SkeletonGrid } from './pieces'
 
 /** Which ready-made catalog an Extensions section lists. */
 export type CatalogKind = 'bots' | 'teams'
@@ -26,10 +26,22 @@ const summaryOf = (item: Item) => (item.kind === 'bot' ? item.profile.summary : 
  * the window's search: adding a bot creates it on the computer's defaults; adding a team creates
  * its coordinator, its teammates and their group (`installTeam`).
  */
-export function CatalogPanel({ kind, query, added, onAdded, onError }: {
+export function CatalogPanel(props: {
   kind: CatalogKind
   query: string
   /** Entries added this session, so their row and preview show it. */
+  added: string[]
+  onAdded: (id: string) => void
+  onError: (message: string) => void
+}) {
+  const store = useStore()
+  // A different computer or account starts its own list: nothing of the previous one lingers.
+  return <CatalogForComputer key={JSON.stringify([store.contextId, store.computer.id])} {...props} />
+}
+
+function CatalogForComputer({ kind, query, added, onAdded, onError }: {
+  kind: CatalogKind
+  query: string
   added: string[]
   onAdded: (id: string) => void
   onError: (message: string) => void
@@ -52,12 +64,12 @@ export function CatalogPanel({ kind, query, added, onAdded, onError }: {
     ? catalog.bots.filter((p) => matches(p.name, p.summary)).map((profile): Item => ({ kind: 'bot', profile }))
     : catalog.teams.filter((t) => matches(t.name, t.summary)).map((team): Item => ({ kind: 'team', team }))
 
-  const add = async (item: Item) => {
+  const add = async (item: Item, roleModels?: Record<string, string>) => {
     const id = entryKey(item)
     setBusy(id)
     try {
       if (item.kind === 'bot') await store.save(fillDefaults(store, fromProfile(newDraft(), item.profile)))
-      else await store.installTeam(item.team.id)
+      else await store.installTeam(item.team.id, roleModels)
       onAdded(id)
     } catch (e) {
       onError(errorText(e))
@@ -94,7 +106,7 @@ export function CatalogPanel({ kind, query, added, onAdded, onError }: {
             catalog={catalog}
             added={added.includes(entryKey(open))}
             busy={busy === entryKey(open)}
-            onAdd={() => void add(open)}
+            onAdd={(models) => void add(open, models)}
           />
         ) : null}
       </FormSheet>
@@ -118,13 +130,14 @@ function TeamFace({ catalog, team }: { catalog: BotCatalog; team: TeamProfile })
 }
 
 /** A ready-made bot's or team's details: its instructions, or who leads and who is on the team, with Add. */
-function CatalogSheet({ item, catalog, added, busy, onAdd }: { item: Item; catalog: BotCatalog; added: boolean; busy: boolean; onAdd: () => void }) {
+function CatalogSheet({ item, catalog, added, busy, onAdd }: { item: Item; catalog: BotCatalog; added: boolean; busy: boolean; onAdd: (models?: Record<string, string>) => void }) {
   const tr = useTr()
+  const [models, setModels] = useState<Record<string, string>>({})
   const trailing = added ? (
     <span title={tr('Added')} aria-label={tr('Added')} className="skill-added">
       <Icon name="checkmark" size={13} weight="semibold" />
     </span>
-  ) : busy ? <Spinner /> : <IconButton title="Add" icon="plus" onClick={onAdd} />
+  ) : busy ? <Spinner /> : <IconButton title="Add" icon="plus" onClick={() => onAdd(Object.fromEntries(Object.entries(models).filter(([, value]) => value.trim())))} />
 
   return (
     <SheetPage>
@@ -150,6 +163,15 @@ function CatalogSheet({ item, catalog, added, busy, onAdd }: { item: Item; catal
             ))}
           </CardSection>
         )}
+        {item.kind === 'team' && catalog.capabilities?.roleModels ? (
+          <CardSection title="Models by role" footer="Optional model IDs for the host's selected agent. Leave blank for its default; availability and cost depend on that agent.">
+            {teamProfiles(catalog, item.team).map((profile) => <VStack key={profile.id} gap={4}>
+              <Text size="footnote">{profile.name}</Text>
+              <Field label={`${profile.name} model ID`} placeholder="Default" value={models[profile.id] ?? ''}
+                onChange={(value) => setModels((current) => ({ ...current, [profile.id]: value }))} />
+            </VStack>)}
+          </CardSection>
+        ) : null}
       </CardForm>
     </SheetPage>
   )

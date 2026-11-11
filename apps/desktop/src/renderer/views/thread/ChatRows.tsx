@@ -109,6 +109,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
     default:
       if (entry.data.memberQuestion) return <div className="chat-row group-start"><MemberQuestionCard entry={entry} reply={reply} /></div>
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
+      if (entry.data.beliefLearning) return <div className="chat-row notice"><BeliefLearningNotice entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
       if (entry.data.takeoverRequest) return <div className="chat-row group-start"><TakeoverRequestNotice entry={entry} /></div>
       if (entry.data.pausedTurn) return <div className="chat-row group-start"><PausedTurnNotice entry={entry} /></div>
@@ -119,6 +120,27 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
       return <div className="chat-row notice"><NoticeRow entry={entry} addFallback={entry.data.addFallback && openAgent ? () => openAgent(entry.data.author ?? entry.botId) : undefined} undo={entry.data.memoryUndo && !entry.data.memoryUndo.undone ? () => void host.undoMemoryChange(entry) : undefined} /></div>
   }
 })
+
+function BeliefLearningNotice({ entry }: { entry: Entry }) {
+  const store = useLiveStore()
+  const learning = entry.data.beliefLearning
+  if (!learning) return null
+  return <div className="handoff-card">
+    <Text size="footnote">{entry.data.text}</Text>
+    <div key={learning.status} className="fade-in">
+      {learning.status === 'active'
+        ? <HStack gap={8}>{learning.beliefState === 'confirmed'
+          ? <Button kind="secondary" disabled={store.answering.has(entry.id)} onClick={() => store.changeBelief(entry, 'forgetBelief')}>Forget</Button>
+          : <Button kind="secondary" disabled={store.answering.has(entry.id)} onClick={() => store.changeBelief(entry, 'confirmBelief')}>Confirm</Button>}
+          <Button kind="secondary" disabled={store.answering.has(entry.id)} onClick={() => store.undoBeliefObservation(entry)}>Undo learning</Button></HStack>
+        : learning.status === 'confirmed'
+          ? <HStack gap={8}><Text size="footnote" tone="secondary">Confirmed</Text><Button kind="secondary" disabled={store.answering.has(entry.id)} onClick={() => store.changeBelief(entry, 'forgetBelief')}>Forget</Button></HStack>
+          : learning.status === 'forgotten'
+            ? <HStack gap={8}><Text size="footnote" tone="secondary">Forgotten</Text><Button kind="secondary" disabled={store.answering.has(entry.id)} onClick={() => store.changeBelief(entry, 'restoreBelief')}>Restore</Button></HStack>
+            : <Text size="footnote" tone="secondary">Undone</Text>}
+    </div>
+  </div>
+}
 
 /** Sandboxed mini-app card published by the bot (Ideas 1–7). */
 function BotAppNotice({ entry, openApp }: { entry: Entry; openApp?: (app: BotApp) => void }) {

@@ -142,12 +142,26 @@ public extension HostClient {
     }
 
     /// Text to speech for a stretch of a reply: audio data and its format (`aac` or `wav`).
-    func voiceSpeak(_ provider: VoiceProvider, model: String, voice: String, text: String) async throws -> (Data, String) {
+    func voiceSpeak(_ provider: VoiceProvider, model: String, voice: String, text: String,
+                    localOutput: Bool = false, botId: String? = nil) async throws -> (Data, String) {
         struct Clip: Decodable { var audio: String; var format: String }
-        let c: Clip = try await call("voiceSpeak", ["provider": provider.rawValue, "model": model, "voice": voice,
-                                                     "text": text], timeout: 90)
-        guard let data = Data(base64Encoded: c.audio) else { throw HostError.http(0, "Unreadable audio.") }
-        return (data, c.format)
+        struct Cancelled: Decodable { var cancelled: Bool }
+        let requestId = UUID().uuidString
+        var body = ["provider": localOutput ? "neutts" : provider.rawValue, "model": model, "voice": voice,
+                    "text": text, "requestId": requestId]
+        if let botId { body["botId"] = botId }
+        let request = body
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let c: Clip = try await call("voiceSpeak", request, timeout: 90)
+            try Task.checkCancellation()
+            guard let data = Data(base64Encoded: c.audio) else { throw HostError.http(0, "Unreadable audio.") }
+            return (data, c.format)
+        } onCancel: {
+            if localOutput {
+                Task { let _: Cancelled? = try? await call("voiceCancelSpeech", ["requestId":requestId], timeout: 10) }
+            }
+        }
     }
 }
 

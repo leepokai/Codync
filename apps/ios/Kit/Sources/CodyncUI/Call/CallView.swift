@@ -11,6 +11,7 @@ struct CallView: View {
     @Binding var interrupt: (() -> Void)?
     let close: () -> Void
     @Environment(BotStore.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var session: (any VoiceEngine)?
     @State private var callID = UUID()
@@ -73,6 +74,17 @@ struct CallView: View {
             quality.report()
             activity?.end()
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard VoiceSettings.provider == nil, VoiceSettings.wakePhrase else { return }
+            if phase != .active {
+                session?.end()
+                session = nil
+                notice = L10n.tr("Hey Hermes is paused while the app is not visible.")
+            } else if session == nil {
+                notice = nil
+                begin(cloud: nil)
+            }
+        }
         .onChange(of: session?.phase) { _, phase in
             if let phase {
                 quality.phase(phase)
@@ -117,9 +129,15 @@ struct CallView: View {
             }
             engine = CloudSpeechEngine(provider: provider, speech: .init(
                 transcribe: { try await VoiceSettings.inReadersScript(client().voiceTranscribe(provider, model: transcribe, wav: $0)) },
-                speak: { try await client().voiceSpeak(provider, model: speechModel, voice: voice, text: $0) },
-                send: { [model, botId, call] in model.send($0, to: botId, call: call) }
-            ))
+                speak: { try await client().voiceSpeak(provider, model: speechModel, voice: voice, text: $0,
+                                                     localOutput: VoiceSettings.localSpeech, botId: botId) },
+                send: { [model, botId, call] in model.send($0, to: botId, call: call) },
+                stream: VoiceSettings.localSpeech ? { text in
+                    let source = VoiceSpeechStream(client: try client())
+                    try await source.start(text:text,botId:botId)
+                    return source
+                } : nil
+            ), localOutput: VoiceSettings.localSpeech)
             // The computer keeps the call, though it carries no voice model.
             Task { _ = try? await link.start("speech", provider: provider) }
             cloudStartedAt = .now

@@ -43,7 +43,7 @@ class VoiceTest {
     }
     @Test fun unchangedPartialResultsDoNotDelaySubmissionAndLateFinalsCannotResend() = runTest {
         val audio = Audio(); val sent = mutableListOf<String>()
-        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), sent::add)
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), send = sent::add)
         runCurrent(); val original = audio.generation
         audio.text("  first utterance  "); runCurrent(); advanceTimeBy(1_000)
         audio.text("  first utterance  "); runCurrent(); advanceTimeBy(500); runCurrent()
@@ -57,7 +57,7 @@ class VoiceTest {
     }
     @Test fun muteAndAudioInterruptionDiscardPartialSpeechAndRespectMuteOnReturn() = runTest {
         val audio = Audio(); val sent = mutableListOf<String>()
-        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), sent::add)
+        val session = VoiceSession(backgroundScope, audio, VoiceSettings(), send = sent::add)
         runCurrent(); val original = audio.generation
         audio.text("Never send this"); runCurrent(); session.mute(true); runCurrent()
         audio.text("Never send this", true, original); advanceTimeBy(3_000); runCurrent()

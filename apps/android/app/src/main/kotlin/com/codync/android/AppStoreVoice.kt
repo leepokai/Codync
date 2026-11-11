@@ -89,7 +89,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
         val audio = LocalVoiceAudio(getApplication(), VoicePreferences.language(getApplication()))
         call.recording = { audio.recordingSessionId }
         startCallOnHost(call, "device", null)
-        VoiceSession(contextScope, audio, settings) { sendFromCall(call, it) }
+        VoiceSession(contextScope, audio, settings, wakePhrase = choices.wakePhrase) { sendFromCall(call, it) }
     } else {
         val voice = choices.voice(provider)
         val model = choices.model(provider, VoiceChoices.Model.Realtime)
@@ -101,8 +101,9 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
                 val speech = choices.model(provider, VoiceChoices.Model.Speech)
                 CloudSpeechEngine(contextScope, provider, settings, mic(), AndroidClipPlayer, CloudSpeechEngine.Speech(
                     transcribe = { inReadersScript(voiceTranscribe(provider, transcribe, it)) },
-                    synthesize = { voiceSpeak(provider, speech, voice, it) },
-                    send = { sendFromCall(call, it) }))
+                    synthesize = { voiceSpeak(provider, speech, voice, it, choices.localSpeech, call.botId) },
+                    send = { sendFromCall(call, it) },
+                    stream = if (choices.localSpeech) ({ text -> voiceSpeechStream(text,call.botId) }) else null), clipCharacters = if (choices.localSpeech) 120 else provider.speechChunk)
             }
             // WebRTC records the microphone itself.
             provider == VoiceProvider.OpenAI -> OpenAIRealtimeEngine(contextScope, settings, model, voice,
@@ -287,9 +288,40 @@ internal suspend fun AppStore.voiceTranscribe(provider: VoiceProvider, model: St
         .jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
 /** Text to speech for a stretch of a reply: the audio and its format (`aac` or `wav`). */
-internal suspend fun AppStore.voiceSpeak(provider: VoiceProvider, model: String, voice: String, text: String): Pair<ByteArray, String> {
-    val clip = hostCall("voiceSpeak", body("provider" to provider.id, "model" to model, "voice" to voice, "text" to text), 90_000).jsonObject
+internal suspend fun AppStore.voiceSpeak(provider: VoiceProvider, model: String, voice: String, text: String,
+    localOutput: Boolean = false, botId: String? = null): Pair<ByteArray, String> {
+    val requestId = UUID.randomUUID().toString()
+    val clip = try {
+        hostCall("voiceSpeak", body("provider" to if (localOutput) "neutts" else provider.id, "model" to model,
+            "voice" to voice, "text" to text, "requestId" to requestId, "botId" to botId), 90_000).jsonObject
+    } catch (cancelled: CancellationException) {
+        if (localOutput) withContext(NonCancellable) {
+            withTimeoutOrNull(2_000) { runCatching { hostCall("voiceCancelSpeech", body("requestId" to requestId), 2_000) } }
+        }
+        throw cancelled
+    }
     val audio = clip["audio"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }
         ?: throw IOException("Unreadable audio.")
     return audio to (clip["format"]?.jsonPrimitive?.contentOrNull ?: "aac")
+}
+
+/** Host-owned inference; only one bounded frame is pulled ahead by the audio engine. */
+internal suspend fun AppStore.voiceSpeechStream(text: String, botId: String): CloudSpeechEngine.Stream {
+    val id = UUID.randomUUID().toString()
+    suspend fun cancel() { withContext(NonCancellable) {
+        withTimeoutOrNull(2_000) { runCatching { hostCall("voiceCancelSpeech",body("requestId" to id),2_000) } }
+    } }
+    try { hostCall("voiceStartSpeech",body("requestId" to id,"text" to text,"botId" to botId),90_000) }
+    catch (cancelled: CancellationException) { cancel(); throw cancelled }
+    return object : CloudSpeechEngine.Stream {
+        override suspend fun next(): Pair<ByteArray,String>? {
+            val frame = try { hostCall("voiceSpeechChunk",body("requestId" to id),90_000).jsonObject }
+            catch (cancelled: CancellationException) { cancel(); throw cancelled }
+            if (frame["done"]?.jsonPrimitive?.contentOrNull == "true") return null
+            val audio = frame["audio"]?.jsonPrimitive?.contentOrNull ?: throw IOException("Unreadable local speech frame.")
+            if (frame["format"]?.jsonPrimitive?.contentOrNull != "wav") throw IOException("Unsupported speech frame.")
+            return Base64.getDecoder().decode(audio) to "wav"
+        }
+        override suspend fun close() = cancel()
+    }
 }

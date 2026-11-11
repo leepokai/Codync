@@ -27,7 +27,7 @@ final class OnDeviceEngine: VoiceEngine {
     var muted = false {
         didSet {
             guard muted != oldValue, phase == .listening else { return }
-            if muted { stopListening() } else { listen() }
+            if muted { wake.reset(); stopListening() } else { listen() }
         }
     }
 
@@ -50,6 +50,7 @@ final class OnDeviceEngine: VoiceEngine {
     private var events: AudioSessionEvents?
     /// Replies and notices that came while another app had the audio, said once it's back.
     private var unsaid: [String] = []
+    private var wake = WakePhrase(enabled: VoiceSettings.wakePhrase)
 
     /// Call settings (the gear), kept across calls.
     static let pauseKey = "callPause"
@@ -86,6 +87,9 @@ final class OnDeviceEngine: VoiceEngine {
         guard let recognizer, recognizer.isAvailable else {
             return fail("Speech recognition isn't available for this language right now.", .provider)
         }
+        if VoiceSettings.wakePhrase, !recognizer.supportsOnDeviceRecognition {
+            return fail("Hey Hermes needs on-device recognition for this language. Turn off the wake phrase or choose an installed on-device language.", .provider)
+        }
         guard !ended else { return }
         do {
             try CallAudioSession.activate()
@@ -118,6 +122,7 @@ final class OnDeviceEngine: VoiceEngine {
         switch change {
         case .began:
             guard phase.isActive else { return }
+            wake.reset()
             stopListening()
             synthesizer.stopSpeaking(at: .immediate)
             phase = .interrupted
@@ -127,6 +132,7 @@ final class OnDeviceEngine: VoiceEngine {
     }
 
     func end() {
+        wake.reset()
         ended = true
         onActivityChanged?(false)
         events?.stop()
@@ -219,9 +225,9 @@ final class OnDeviceEngine: VoiceEngine {
     }
 
     private func submit() {
-        let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = wake.accept(heard)
         stopListening()
-        if !text.isEmpty { send(text) }
+        if let text, !text.isEmpty { send(text) }
         // Keep listening while the bot works: more messages fold into its next turn.
         listen()
     }

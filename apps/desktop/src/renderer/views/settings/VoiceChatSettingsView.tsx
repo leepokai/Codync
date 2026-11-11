@@ -32,6 +32,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
   /** Dictation on another provider than calls still needs that provider's key and speech-to-text model. */
   const dictationProvider = voice.isVoiceProvider(dictationEngine) && dictationEngine !== provider ? dictationEngine : null
   const [mode, setMode] = usePref(voice.mode(provider ?? 'openai'))
+  const [speechOutput, setSpeechOutput] = usePref(voice.speechOutput)
   // Closing hands a running call to a different engine picked here.
   useEffect(() => () => voiceSettingsClosed.ring(), [])
   const footer = provider
@@ -58,7 +59,12 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
                     <ValueRow key="mode" label="Mode" detail={mode === 'speech' ? 'Sent when you pause, replies read aloud.' : 'A live conversation. Talk over replies.'}>
                       <ChoicePicker selection={mode} options={[{ id: 'realtime', label: 'Realtime' }, { id: 'speech', label: 'Speech' }]} onChange={setMode} />
                     </ValueRow>,
-                    ...(mode === 'speech' ? [<PauseRow key="pause" />] : []),
+                    ...(mode === 'speech' ? [
+                      <ValueRow key="speech-output" label="Speech output" detail="NeuTTS runs on your computer with its prepared Hermes model. Recognition still uses your selected speech provider.">
+                        <ChoicePicker selection={speechOutput} options={[{ id: 'provider', label: 'Provider voice' }, { id: 'neutts', label: 'NeuTTS local · Jo' }]} onChange={setSpeechOutput} />
+                      </ValueRow>,
+                      <PauseRow key="pause" />,
+                    ] : []),
                   ]
                 : [
                     <ValueRow key="language" label="Language" detail="The language you speak in calls.">

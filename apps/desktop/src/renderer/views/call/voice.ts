@@ -11,6 +11,7 @@ import {
   isVoiceProvider,
   language,
   mode,
+  speechOutput,
   pause,
   rate,
   voiceInfo,
@@ -51,6 +52,7 @@ export const VoiceSettings = {
   speechModel: (p: VoiceProvider) => chosenModel(p, 'speech'),
   voice: chosenVoice,
   isSpeechMode: (p: VoiceProvider) => mode(p).get() === 'speech',
+  localSpeech: () => speechOutput.get() === 'neutts',
   /** A pause this long (seconds) ends what you're saying and sends it. */
   pause: () => (pause.get() > 0 ? pause.get() : 1.5),
   /** AVSpeechUtterance's rate (0…1, 0.5 normal), as the Mac stores it. */
@@ -62,7 +64,7 @@ export const VoiceSettings = {
     !p
       ? `device ${VoiceSettings.language()}`
       : VoiceSettings.isSpeechMode(p)
-        ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)}`
+        ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)} ${speechOutput.get()}`
         : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)}`,
 }
 

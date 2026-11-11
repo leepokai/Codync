@@ -29,6 +29,7 @@ final class CloudSpeechEngine: VoiceEngine {
         let transcribe: @MainActor (Data) async throws -> String
         let speak: @MainActor (String) async throws -> (Data, String)
         let send: @MainActor (String) -> Void
+        var stream: (@MainActor (String) async throws -> VoiceSpeechStream)? = nil
     }
 
     private let speech: Speech
@@ -57,6 +58,11 @@ final class CloudSpeechEngine: VoiceEngine {
     private var playDone: PlayDone?
     private var next: Task<(Data, String)?, Never>?
     private var speakGeneration = 0
+    private var currentFetch: Task<(Data, String)?, Never>?
+    private var barge = Data()
+    private var streamingTask: Task<Void,Never>?
+    private var streamingSource: VoiceSpeechStream?
+    private var frameDone: CheckedContinuation<Void,Never>?
 
     private static let threshold: Float = 0.3
     private static let prerollBytes = MicTap.bytesPerSecond * 3 / 10
@@ -71,10 +77,10 @@ final class CloudSpeechEngine: VoiceEngine {
         return seconds > 0 ? seconds : 1.5
     }
 
-    init(provider: VoiceProvider, speech: Speech) {
+    init(provider: VoiceProvider, speech: Speech, localOutput: Bool = false) {
         self.provider = provider
         self.speech = speech
-        chunk = provider.speechChunk
+        chunk = localOutput ? 120 : provider.speechChunk
     }
 
     func start() async {
@@ -100,6 +106,7 @@ final class CloudSpeechEngine: VoiceEngine {
     /// Taps the microphone in its current format and starts the engine.
     private func runMic() throws {
         let input = engine.inputNode
+        if !input.isVoiceProcessingEnabled { try input.setVoiceProcessingEnabled(true) }
         input.removeTap(onBus: 0)
         let format = try MicTap.format(of: input)
         input.installTap(onBus: 0, bufferSize: 2048, format: format, block: MicTap.pcm16k(from: format) { [weak self] pcm, level in
@@ -151,7 +158,7 @@ final class CloudSpeechEngine: VoiceEngine {
     }
 
     func interrupt() {
-        guard phase == .speaking else { return }
+        guard phase == .speaking || currentFetch != nil || next != nil || streamingTask != nil || !queue.isEmpty else { return }
         stopSpeaking()
         phase = .listening
     }
@@ -168,7 +175,21 @@ final class CloudSpeechEngine: VoiceEngine {
             phase = .listening
             if !queue.isEmpty, player == nil, next == nil { playNext() }
         }
-        guard !ended, !muted, phase == .listening, Date.now >= deafUntil else { return }
+        guard !ended, !muted else { return }
+        if phase == .speaking {
+            self.level = level
+            if level > Self.threshold + 0.1 { barge.append(pcm) } else { barge.removeAll() }
+            guard barge.count >= MicTap.bytesPerSecond / 5 else { return }
+            let start = barge
+            interrupt()
+            dropUtterance()
+            preroll = start
+            voiced = start.count
+            speaking = true
+            deafUntil = .distantPast
+            return
+        }
+        guard phase == .listening, Date.now >= deafUntil else { return }
         self.level = level
         if level > Self.threshold {
             speaking = true
@@ -192,6 +213,7 @@ final class CloudSpeechEngine: VoiceEngine {
         let enough = voiced >= Self.minVoicedBytes
         dropUtterance()
         guard enough else { return }
+        stopSpeaking()
         let previous = transcribing
         let speech = speech
         transcribing = Task { [weak self] in
@@ -214,6 +236,7 @@ final class CloudSpeechEngine: VoiceEngine {
         quietSince = nil
         voiced = 0
         level = 0
+        barge.removeAll()
     }
 
     // MARK: speaking
@@ -228,29 +251,69 @@ final class CloudSpeechEngine: VoiceEngine {
 
     private func playNext() {
         guard !ended else { return }
+        if let stream = speech.stream { playStream(stream); return }
         let generation = speakGeneration
         let pending = next ?? fetch(queue.isEmpty ? nil : queue.removeFirst())
+        currentFetch = pending
         next = nil
         Task { [weak self] in
             guard let clip = await pending.value else {
                 guard let self, generation == self.speakGeneration else { return }
+                self.currentFetch = nil
                 self.finishedSpeaking()
                 return
             }
             guard let self, generation == self.speakGeneration, !self.ended else { return }
+            self.currentFetch = nil
             self.play(clip)
             if !self.queue.isEmpty { self.next = self.fetch(self.queue.removeFirst()) }
         }
     }
 
+    private func playStream(_ open: @escaping @MainActor (String) async throws -> VoiceSpeechStream) {
+        guard streamingTask == nil else { return }
+        let generation = speakGeneration
+        streamingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                while !queue.isEmpty {
+                    try Task.checkCancellation()
+                    let source = try await open(queue.removeFirst())
+                    streamingSource = source
+                    do {
+                        var frame = try await source.next()
+                        while let clip = frame {
+                            try Task.checkCancellation()
+                            // Exactly one frame is prefetched while the current WAV plays.
+                            let pending = Task { try await source.next() }
+                            await withCheckedContinuation { continuation in
+                                frameDone = continuation
+                                play(clip)
+                            }
+                            do { frame = try await pending.value }
+                            catch { pending.cancel(); throw error }
+                        }
+                    } catch { await source.cancel(); throw error }
+                    await source.cancel()
+                    streamingSource = nil
+                }
+            } catch {
+                if !Task.isCancelled, !ended { fail(error.localizedDescription,.provider) }
+            }
+            guard generation == speakGeneration else { return }
+            streamingTask = nil
+            finishedSpeaking()
+        }
+    }
+
     private func fetch(_ text: String?) -> Task<(Data, String)?, Never> {
         let speech = speech
-        return Task { @MainActor in
+        return Task { @MainActor [weak self] in
             guard let text else { return nil }
             do {
                 return try await speech.speak(text)
             } catch {
-                log.error("speak: \(error.localizedDescription, privacy: .public)")
+                if !Task.isCancelled, let self, !self.ended { self.fail(error.localizedDescription, .provider) }
                 return nil
             }
         }
@@ -270,17 +333,18 @@ final class CloudSpeechEngine: VoiceEngine {
             self.player = player
             dropUtterance()
             phase = .speaking
-            player.play()
+            if !player.play() { played(generation) }
         } catch {
             try? FileManager.default.removeItem(at: url)
             log.error("play: \(error.localizedDescription, privacy: .public)")
-            playNext()
+            if let done = frameDone { frameDone = nil; done.resume() } else { playNext() }
         }
     }
 
     private func played(_ generation: Int) {
         guard generation == speakGeneration else { return }
         player = nil
+        if let done = frameDone { frameDone = nil; done.resume(); return }
         if queue.isEmpty, next == nil { finishedSpeaking() } else { playNext() }
     }
 
@@ -292,6 +356,14 @@ final class CloudSpeechEngine: VoiceEngine {
 
     private func stopSpeaking() {
         speakGeneration += 1
+        streamingTask?.cancel()
+        streamingTask = nil
+        if let source = streamingSource { Task { await source.cancel() } }
+        streamingSource = nil
+        frameDone?.resume()
+        frameDone = nil
+        currentFetch?.cancel()
+        currentFetch = nil
         queue.removeAll()
         next?.cancel()
         next = nil

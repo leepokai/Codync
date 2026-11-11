@@ -3,11 +3,10 @@ import { errorMessage, micPCM16k, onDevicesChanged, SPEECH_CHUNK, spokenText, Vo
 export interface CloudSpeech {
   transcribe: (wav: Uint8Array) => Promise<string>
   /** Audio and its format (`aac` or `wav`). */
-  speak: (text: string) => Promise<{ audio: Uint8Array; format: string }>
+  speak: (text: string, signal: AbortSignal) => Promise<{ audio: Uint8Array; format: string }>
+  stream?: (text: string, signal: AbortSignal) => AsyncIterable<{ audio: Uint8Array; format: string }>
   send: (text: string) => void
 }
-
-type Clip = { audio: Uint8Array; format: string } | null
 
 const THRESHOLD = 0.3
 const PREROLL_SAMPLES = (16000 * 3) / 10
@@ -73,15 +72,19 @@ export class CloudSpeechEngine extends VoiceEngine {
   // Speaking: the reply's clips, fetched one ahead of the one playing.
   private queue: string[] = []
   private player: HTMLAudioElement | null = null
-  private next: Promise<Clip> | null = null
+  private draining = false
+  private playbackDone: (() => void) | null = null
   private speakGeneration = 0
+  private inFlight = new Set<AbortController>()
+  private barge: Int16Array[] = []
+  private bargeSamples = 0
 
   constructor(
     readonly provider: VoiceProvider,
     private speech: CloudSpeech,
   ) {
     super()
-    this.chunk = SPEECH_CHUNK[provider]
+    this.chunk = VoiceSettings.localSpeech() ? 120 : SPEECH_CHUNK[provider]
   }
 
   async start() {
@@ -124,7 +127,7 @@ export class CloudSpeechEngine extends VoiceEngine {
   }
 
   interrupt() {
-    if (this.phase !== 'speaking') return
+    if (this.phase !== 'speaking' && !this.inFlight.size && !this.queue.length) return
     this.transcript?.interrupted()
     this.stopSpeaking()
     this.setPhase('listening')
@@ -143,7 +146,24 @@ export class CloudSpeechEngine extends VoiceEngine {
   private heard(pcm: Int16Array, level: number) {
     // Listening once the microphone actually delivers.
     if (!this.ended && this.isConnecting) this.setPhase('listening')
-    if (this.ended || this.muted || this.phase !== 'listening' || Date.now() < this.deafUntil) return
+    if (this.ended || this.muted) return
+    if (this.phase === 'speaking') {
+      this.level = level
+      if (level > THRESHOLD + 0.1) { this.barge.push(pcm); this.bargeSamples += pcm.length }
+      else { this.barge = []; this.bargeSamples = 0 }
+      if (this.bargeSamples < 16000 / 5) return
+      const audio = this.barge
+      const count = this.bargeSamples
+      this.interrupt()
+      this.dropUtterance()
+      this.preroll = audio
+      this.prerollSamples = count
+      this.voiced = count
+      this.speaking = true
+      this.deafUntil = 0
+      return
+    }
+    if (this.phase !== 'listening' || Date.now() < this.deafUntil) return
     this.level = level
     if (level > THRESHOLD) {
       this.speaking = true
@@ -171,6 +191,7 @@ export class CloudSpeechEngine extends VoiceEngine {
     const enough = this.voiced >= MIN_VOICED_SAMPLES
     this.dropUtterance()
     if (!enough) return
+    this.stopSpeaking()
     this.transcribing = this.transcribing.then(async () => {
       try {
         const text = (await this.speech.transcribe(audio)).trim()
@@ -194,6 +215,8 @@ export class CloudSpeechEngine extends VoiceEngine {
     this.quietSince = null
     this.voiced = 0
     this.level = 0
+    this.barge = []
+    this.bargeSamples = 0
   }
 
   // MARK: speaking
@@ -203,60 +226,63 @@ export class CloudSpeechEngine extends VoiceEngine {
     if (this.ended || this.phase === 'failed' || this.phase === 'starting' || !text) return
     this.transcript?.add('assistant', 'queued', text)
     this.queue.push(...clips(text, this.chunk))
-    if (!this.player && !this.next) this.playNext()
+    if (!this.draining) this.playNext()
   }
 
   private playNext() {
-    if (this.ended) return
+    if (this.ended || this.draining) return
+    this.draining = true
     const generation = this.speakGeneration
-    const pending = this.next ?? this.fetch(this.queue.shift() ?? null)
-    this.next = null
-    void pending.then((clip) => {
-      if (generation !== this.speakGeneration || this.ended) return
-      if (!clip) return this.finishedSpeaking()
-      this.play(clip)
-      if (this.queue.length) this.next = this.fetch(this.queue.shift()!)
+    const controller = new AbortController()
+    this.inFlight.add(controller)
+    const run = async () => {
+      while (this.queue.length && !controller.signal.aborted) {
+        const text = this.queue.shift()!
+        const fallback = async function* (speech: CloudSpeech) { yield await speech.speak(text, controller.signal) }
+        const iterator = (this.speech.stream?.(text, controller.signal) ?? fallback(this.speech))[Symbol.asyncIterator]()
+        try {
+          let current = await iterator.next()
+          while (!current.done && !controller.signal.aborted) {
+            const pending = iterator.next().then(value => ({ value }), error => ({ error }))
+            await this.play(current.value)
+            const result = await pending
+            if ('error' in result) throw result.error
+            current = result.value
+          }
+        } finally { await iterator.return?.() }
+      }
+    }
+    void run().catch(e => {
+      if (!controller.signal.aborted && !this.ended) this.fail(errorMessage(e), 'provider')
+    }).finally(() => {
+      this.inFlight.delete(controller)
+      if (generation !== this.speakGeneration) return
+      this.draining = false
+      this.finishedSpeaking()
     })
   }
 
-  private async fetch(text: string | null): Promise<Clip> {
-    if (text === null) return null
-    try {
-      return await this.speech.speak(text)
-    } catch (e) {
-      console.error('speak:', errorMessage(e))
-      return null
-    }
-  }
-
-  private play(clip: { audio: Uint8Array; format: string }) {
-    const type = clip.format === 'aac' ? 'audio/aac' : clip.format === 'wav' ? 'audio/wav' : `audio/${clip.format}`
-    const url = URL.createObjectURL(new Blob([clip.audio as BlobPart], { type }))
-    const player = new Audio(url)
-    const generation = this.speakGeneration
-    let finished = false
-    const done = () => {
-      if (finished) return
-      finished = true
-      URL.revokeObjectURL(url)
-      this.played(generation)
-    }
-    player.onended = done
-    player.onerror = () => {
-      console.error('play: unreadable clip')
-      done()
-    }
-    this.player = player
-    this.dropUtterance()
-    this.setPhase('speaking')
-    void player.play().catch(() => player.onerror?.(new Event('error')))
-  }
-
-  private played(generation: number) {
-    if (generation !== this.speakGeneration) return
-    this.player = null
-    if (!this.queue.length && !this.next) this.finishedSpeaking()
-    else this.playNext()
+  private play(clip: { audio: Uint8Array; format: string }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([clip.audio as BlobPart], { type: `audio/${clip.format}` }))
+      const player = new Audio(url)
+      let finished = false
+      const done = (error?: Error) => {
+        if (finished) return
+        finished = true
+        URL.revokeObjectURL(url)
+        this.playbackDone = null
+        this.player = null
+        if (error) reject(error); else resolve()
+      }
+      player.onended = () => done()
+      player.onerror = () => done(new Error('Unreadable speech frame'))
+      this.playbackDone = () => done()
+      this.player = player
+      this.dropUtterance()
+      this.setPhase('speaking')
+      void player.play().catch(e => done(e instanceof Error ? e : new Error(String(e))))
+    })
   }
 
   private finishedSpeaking() {
@@ -266,15 +292,19 @@ export class CloudSpeechEngine extends VoiceEngine {
   }
 
   private stopSpeaking() {
+    for (const controller of this.inFlight) controller.abort()
+    this.inFlight.clear()
     this.speakGeneration++
     this.queue = []
-    this.next = null
+    this.draining = false
     if (this.player) {
       this.player.onended = null
       this.player.onerror = null
       this.player.pause()
       URL.revokeObjectURL(this.player.src)
     }
+    this.playbackDone?.()
+    this.playbackDone = null
     this.player = null
   }
 }

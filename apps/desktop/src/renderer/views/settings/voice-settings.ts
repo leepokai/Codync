@@ -101,6 +101,8 @@ function keyed<T>(key: string, fallback: T): Pref<T> {
 
 /** `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud). */
 export const mode = (p: VoiceProvider) => keyed<string>(`callMode.${p}`, 'realtime')
+/** Speech output only: recognition/realtime keep the user's existing provider connection. */
+export const speechOutput = keyed<string>('callSpeechOutput', 'provider')
 const voicePref = (p: VoiceProvider) => keyed<string | null>(`callVoice.${p}`, null)
 const defaultsPref = (p: VoiceProvider) => keyed<VoiceDefaults | null>(`callDefaults.${p}`, null)
 /** The provider's model list as last fetched with the user's key. */
@@ -165,5 +167,34 @@ export const voiceSession = async (c: HostClient, p: VoiceProvider, model: strin
 export const voiceModels = (c: HostClient, p: VoiceProvider) => c.call<VoiceModels>('voiceModels', { provider: p }, 30_000)
 
 /** Text to speech for a stretch of a reply: base64 audio and its format (`aac` or `wav`). */
-export const voiceSpeak = (c: HostClient, p: VoiceProvider, model: string, voice: string, text: string) =>
-  c.call<{ audio: string; format: string }>('voiceSpeak', { provider: p, model, voice, text }, 90_000)
+export async function voiceSpeak(c: HostClient, p: VoiceProvider, model: string, voice: string, text: string,
+  options: { botId?: string; signal?: AbortSignal; local?: boolean } = {}) {
+  const local = options.local ?? speechOutput.get() === 'neutts'
+  const requestId = crypto.randomUUID()
+  const cancel = () => { if (local) void c.call('voiceCancelSpeech', { requestId }, 10_000).catch(() => {}) }
+  if (options.signal?.aborted) throw new DOMException('Speech cancelled', 'AbortError')
+  options.signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    return await c.call<{ audio: string; format: string }>('voiceSpeak', {
+      provider: local ? 'neutts' : p, model, voice, text, requestId, ...(options.botId ? { botId: options.botId } : {}),
+    }, 90_000)
+  } finally { options.signal?.removeEventListener('abort', cancel) }
+}
+
+/** Pulls bounded WAV frames while the host owns the local synthesis worker. */
+export async function* voiceSpeechStream(c: HostClient, text: string, botId: string, signal: AbortSignal) {
+  const requestId = crypto.randomUUID()
+  const cancel = () => { void c.call('voiceCancelSpeech', { requestId }, 10_000).catch(() => {}) }
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    if (signal.aborted) throw new DOMException('Speech cancelled', 'AbortError')
+    await c.call('voiceStartSpeech', { requestId, text, botId }, 90_000)
+    while (!signal.aborted) {
+      const frame = await c.call<{ done: boolean; audio?: string; format?: string }>('voiceSpeechChunk', { requestId }, 90_000)
+      if (signal.aborted) throw new DOMException('Speech cancelled', 'AbortError')
+      if (frame.done) return
+      if (!frame.audio || frame.format !== 'wav') throw new Error('Unreadable local speech frame')
+      yield { audio: Uint8Array.from(atob(frame.audio), c => c.charCodeAt(0)), format: frame.format }
+    }
+  } finally { signal.removeEventListener('abort', cancel); cancel() }
+}

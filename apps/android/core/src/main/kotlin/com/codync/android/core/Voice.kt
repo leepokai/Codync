@@ -79,6 +79,7 @@ interface VoiceAudio {
 
 /** Serial audio ownership: no late recognizer/TTS callback can submit or restart a retired call. */
 class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settings: VoiceSettings,
+    wakePhrase: Boolean = false,
     private val send: (String) -> Unit) : VoiceEngine {
     override var transcript: CallReceiptTranscript? = null
     private sealed interface Event {
@@ -99,6 +100,7 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
     private var generation = 0L; private var revision = 0L; private var utterance = 0L
     private var silence: Job? = null
     private val replies = ArrayDeque<String>()
+    private val wake = WakePhrase(wakePhrase)
     init { scope.launch {
         try {
             val engine = audio.initialize()
@@ -157,9 +159,9 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
         }
     }
     private suspend fun submit() {
-        val text = state.value.heard.trim()
+        val text = wake.accept(state.value.heard)
         stopListening()
-        if (text.isNotEmpty()) {
+        if (!text.isNullOrEmpty()) {
             transcript?.add("user", "recognized", text)
             send(text)
         }
@@ -204,11 +206,13 @@ class VoiceSession(parent: CoroutineScope, private val audio: VoiceAudio, settin
                 if (event.error != null) fail(event.error) else speakNext()
             }
             is Event.Mute -> {
+                if (event.value) wake.reset()
                 mutableState.update { it.copy(muted = event.value) }
                 if (state.value.phase == VoicePhase.Listening) { stopListening(); listen() }
             }
             is Event.Settings -> mutableState.update { it.copy(settings = event.value) }
             is Event.Focus -> if (!event.active) {
+                wake.reset()
                 stopListening(); utterance++; replies.clear(); audio.stopSpeaking()
                 mutableState.update { it.copy(phase = VoicePhase.Interrupted, heard = "", said = "") }
             } else if (state.value.phase == VoicePhase.Interrupted) {

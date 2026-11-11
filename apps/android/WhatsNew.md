@@ -10,26 +10,22 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ## 2.39.0
 
 ### zh-Hant
-- 擴充功能現在是市集：應用程式、代理程式與技能三個分頁，附精選項目與分類。
-- 代理程式會以自己的指令、外觀、技能與例行工作建立 Bot；先讀它的頁面再新增。
-- 技能隨 App 內建、可離線安裝；目錄中的應用程式一步就能加入對應的連接器。
-- 新的 Workflow Builder 會把觸發條件、步驟與結果建成流程，步驟會依次出現在畫布上。
-- 每個 Bot 可以在設定中命名瀏覽器設定檔，讓登入與 Cookie 保留在該設定檔裡。
-- 可以從訊息選單刪除任何訊息；它會在所有裝置上消失。
-- 每個 Bot 的聊天可以選擇顏色，方便一眼分辨。
-- Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
-- 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
+- Hermes 環境、記憶與子代理路由可一次套用。
+- 通話可選 NeuTTS 本機串流語音，說話可中斷回覆；手機新增自選 Hey Hermes 前景喚醒。
+- 擴充功能加入 Hermes 技能與 MCP 應用程式，標示來源；技能可離線安裝。
+- Bot 可保留自己的技能改進，並依要求查看、還原版本。
+- Telegram、WhatsApp、Slack、Discord 語音訊息沿用語音金鑰；例行工作可透過已連結的 WhatsApp 傳送報告。
+- 市集的代理附技能與例行工作；Workflow Builder 可建立連動步驟。
+- Bot 可使用獨立瀏覽器設定檔與聊天顏色；訊息刪除會同步。
+- Slack、Telegram、Discord 與 GitHub 事件可啟動流程；新增 TickTick 等應用程式及代理資訊。
 
 ### en-US
-- Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
-- Adding an agent creates a bot with its instructions, look, skills and routines; read its page first.
-- Bundled skills install offline, and catalogued apps add their connector in one step.
-- The new Workflow Builder turns a trigger, steps and a result into a workflow that draws itself on the canvas.
-- Each bot can name a browser profile, keeping sign-ins and cookies inside that profile.
-- Any message can be deleted from its menu and disappears on every device.
-- Each bot's chat can have its own color, so it is easy to tell apart.
-- Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
-- New apps such as TickTick, and each agent page now names its creator, review, category and update date.
+- Apply Hermes environment, memory and delegation routes together.
+- Local NeuTTS streams replies; talk to interrupt. Optional foreground Hey Hermes.
+- Extensions adds offline Hermes skills, MCP apps and restorable skill improvements.
+- Voice notes reuse speech keys; WhatsApp delivers routine reports.
+- Marketplace agents include skills and routines; Workflow Builder links steps.
+- Browser profiles, chat colors and synced deletion. Event workflows and TickTick.
 
 ## 2.32.0
 

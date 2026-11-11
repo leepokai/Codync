@@ -12,7 +12,7 @@ import { avatarColor } from '../../lib/theme'
 import { analytics } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
-import { engine as preferredEngine, voiceStatus } from '../settings/voice-settings'
+import { engine as preferredEngine, voiceStatus, voiceSpeak, voiceSpeechStream } from '../settings/voice-settings'
 import { stopDictation } from '../thread/dictation'
 import { CallLink } from './call-link'
 import { CallQuality } from './call-quality'
@@ -111,8 +111,9 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       next = new CloudSpeechEngine(provider, {
         // ponytail: kit turns Simplified Chinese transcripts into Traditional (ICU Hans-Hant); Chromium has no such transform.
         transcribe: async (audio) => transcribeOnHost(await store.ready(), provider, transcribe, audio),
-        speak: async (text) => {
-          const clip = await (await store.ready()).call<{ audio: string; format: string }>('voiceSpeak', { provider, model: speechModel, voice, text }, 90_000)
+        stream: VoiceSettings.localSpeech() ? async function* (text, signal) { yield* voiceSpeechStream(await store.ready(), text, botId, signal) } : undefined,
+        speak: async (text, signal) => {
+          const clip = await voiceSpeak(await store.ready(), provider, speechModel, voice, text, { botId, signal, local: VoiceSettings.localSpeech() })
           return { audio: fromBase64(clip.audio), format: clip.format }
         },
         send,

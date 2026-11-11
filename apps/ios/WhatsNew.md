@@ -6,6 +6,22 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.39.0
+
+### zh-Hant
+- Hermes 環境、記憶與子代理路由可一次套用。
+- 通話可選 NeuTTS 本機串流語音，說話可中斷回覆；手機新增自選 Hey Hermes 前景喚醒。
+- 擴充功能加入 Hermes 技能與 MCP 應用程式，標示來源；技能可離線安裝。
+- Bot 可保留自己的技能改進，並依要求查看、還原版本。
+- Telegram、WhatsApp、Slack、Discord 語音訊息沿用語音金鑰；例行工作可透過已連結的 WhatsApp 傳送報告。
+
+### en-US
+- Apply Hermes environment, memory and delegation routes together.
+- Local NeuTTS streams replies; talk to interrupt. Optional foreground Hey Hermes on phones.
+- Extensions adds offline Hermes skills and MCP apps with clear origins.
+- Bots keep personal skill improvements; ask to view or restore versions.
+- Voice notes reuse speech keys; choose WhatsApp for routine reports.
+
 ## 2.30.0
 
 ### zh-Hant

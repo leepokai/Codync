@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
         CardForm {
             val provider = engine
             var speech by remember(provider) { mutableStateOf(provider?.let(choices::speechMode) == true) }
+            var localSpeech by remember { mutableStateOf(choices.localSpeech) }
+            var wakePhrase by remember { mutableStateOf(choices.wakePhrase) }
             CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. During a call, applies when you close settings." }
                 ?: "Android speech, on this device. During a call, applies when you close settings.", Modifier.animateContentSize(Motion.layoutSize)) {
                 row {
@@ -54,8 +56,16 @@ import kotlinx.coroutines.launch
                             ChoicePicker(speech, listOf(false to "Realtime", true to "Speech"), { speech = it; choices.speechMode(provider, it) }, label = "Mode")
                         }
                     }
-                    if (speech) row { PauseRow(settings, ::change) }
+                    if (speech) {
+                        row { ValueRow("Speech output", detail = "NeuTTS runs on your computer with its prepared Hermes model. Recognition still uses your selected speech provider.") {
+                            ChoicePicker(localSpeech, listOf(false to "Provider voice", true to "NeuTTS local · Jo"), { localSpeech = it; choices.localSpeech = it }, label = "Speech output")
+                        } }
+                        row { PauseRow(settings, ::change) }
+                    }
                 } else {
+                    row { ValueRow("Wake phrase", detail = "Say Hey Hermes before an on-device turn. Audio stays on this phone. Available only while the call is open and the app is visible.") {
+                        ChoicePicker(wakePhrase, listOf(false to "Off", true to "Hey Hermes"), { wakePhrase = it; choices.wakePhrase = it }, label = "Wake phrase")
+                    } }
                     row { LanguageRow(store) }
                     row {
                         ValueRow("Reading speed") {
@@ -137,7 +147,7 @@ import kotlinx.coroutines.launch
         busy = true; result = null
         scope.launch {
             try {
-                if (speech) store.voiceSpeak(provider, speechModel, voice, "OK") else store.voiceSession(provider, model, voice)
+                if (speech) store.voiceSpeak(provider, speechModel, voice, "OK",localOutput = choices.localSpeech) else store.voiceSession(provider, model, voice)
                 result = true to "Key works"
                 loadModels()
             } catch (cancelled: CancellationException) { throw cancelled }

@@ -97,35 +97,18 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         }
         return crate::research::call(hub, method, &b).await;
     }
+    // The secrets cross the E2E channel and stay in the host vault, so a paired phone runs the
+    // channels exactly like the computer does (`permit` keeps the pairing channel out).
     if crate::github::METHODS.contains(&method) {
-        if !matches!(caller, Caller::Local) && method != "githubStatus" {
-            return Err(Forbidden.into());
-        }
         return crate::github::call(hub, method, b).await;
     }
     if crate::discord::METHODS.contains(&method) {
-        if !matches!(caller, Caller::Local) && method != "discordStatus" {
-            return Err(Forbidden.into());
-        }
         return crate::discord::call(hub, method, b).await;
     }
     if crate::slack::METHODS.contains(&method) {
-        if !matches!(caller, Caller::Local) && method != "slackStatus" {
-            return Err(Forbidden.into());
-        }
         return crate::slack::call(hub, method, b).await;
     }
     if crate::telegram::METHODS.contains(&method) {
-        // A paired phone may see the channels, let someone in or out and write a channel's memory; a token is only
-        // ever given on the computer.
-        if !matches!(caller, Caller::Local)
-            && !matches!(
-                method,
-                "telegramStatus" | "pairTelegram" | "setTelegramAllowed" | "setChannelMemory" | "setChannelIcon"
-            )
-        {
-            return Err(Forbidden.into());
-        }
         return crate::telegram::call(hub, method, b).await;
     }
     if matches!(method, "beginProtectedEntry" | "finishProtectedEntry") {

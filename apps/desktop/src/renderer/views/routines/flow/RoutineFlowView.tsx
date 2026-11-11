@@ -99,7 +99,8 @@ export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?:
     const spot = freeSpot(canvas)
     void flow.place(bot.id, spot.x, spot.y)
   }
-  const saveInstruction = (link: FlowLink, text: string) => void flow.updateLink(link.id, text)
+  const saveLink = (link: FlowLink, text: string, model: string | null, modelOptions: Record<string, string>) =>
+    void flow.updateLink(link.id, text, model, modelOptions)
   const disconnect = async (link: FlowLink) => {
     setSelection(null)
     await flow.disconnect(link.id)
@@ -154,7 +155,7 @@ export function RoutineFlowView({ botId, onExpand }: { botId: string; onExpand?:
             busy={model.busy}
             offline={offline}
             targets={targets}
-            onSaveInstruction={saveInstruction}
+            onSaveInstruction={saveLink}
             onDisconnect={(link) => void disconnect(link)}
             onTest={(id) => void flow.test(id)}
             onSetEnabled={(id, on) => void flow.setEnabled(id, on)}

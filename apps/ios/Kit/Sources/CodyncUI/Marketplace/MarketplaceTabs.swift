@@ -56,6 +56,11 @@ extension MarketplaceView {
         } add: {
             addingConnector = true
         }
+        MarketRow(title: "WhatsApp", subtitle: "Link a WhatsApp number and let your bots work from it.", added: false, addLabel: "Link") {
+            TileIcon(systemName: "bubble.left.and.bubble.right")
+        } add: {
+            showWhatsApp = true
+        }
         if !shownApps.isEmpty {
             ForEach(groups(shownApps, category: \.category, featured: \.featured), id: \.0) { title, group in
                 MarketSection(title: title) {
@@ -75,6 +80,7 @@ extension MarketplaceView {
             Text(L10n.tr("No apps match “{query}”.").replacingOccurrences(of: "{query}", with: query))
                 .foregroundStyle(Palette.secondary)
         }
+        ComposioSection(query: query)
         MarketSection(title: "MCP Registry") {
             if connectors.loading {
                 SkeletonGrid()
@@ -176,7 +182,7 @@ extension MarketplaceView {
 /// The end of a list the registry continues. In view, it asks for the page at `cursor`, and again each
 /// time the cursor moves on while it stays in view. After a failure it shows Try again, and asks again
 /// once it scrolls back into view.
-private struct LoadMoreRow: View {
+struct LoadMoreRow: View {
     let cursor: String
     let failed: Bool
     let load: () async -> Void

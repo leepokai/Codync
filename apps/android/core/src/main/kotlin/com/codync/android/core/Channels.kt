@@ -32,13 +32,27 @@ import kotlinx.serialization.json.jsonObject
     val configured: Boolean = false,
     val guildId: String? = null,
     val botUserId: String? = null,
-    val bindings: List<DiscordBinding> = emptyList(),
+    /** Null while Discord isn't connected at all; the host sends no list then. */
+    val bindings: List<DiscordBinding>? = null,
     /** `ok`, `starting`, or `error: …`. */
     val state: String = "starting",
 )
 
 /** What the Channels screen shows, and the words it uses; the host owns the meaning. */
 object Channels {
+    /** A short name the host accepts for a Telegram bot. */
+    fun nameOk(name: String): Boolean = name.length in 1..32 && name.all { it in 'a'..'z' || it in '0'..'9' || it == '-' }
+
+    /** `123456:ABC…`, the shape BotFather gives. */
+    fun tokenOk(token: String): Boolean = token.length <= 128 && Regex("^\\d+:[A-Za-z0-9_-]{30,}$").matches(token)
+
+    /** A Discord snowflake. */
+    fun idOk(id: String): Boolean = id.length in 1..32 && id.all { it in '0'..'9' }
+
+    /** The three dot-separated parts of a bot token. */
+    fun discordTokenOk(token: String): Boolean =
+        token.length <= 200 && Regex("^[A-Za-z0-9_-]{20,}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{20,}$").matches(token)
+
     fun decodeTelegram(response: JsonElement): List<TelegramBot> =
         WireJson.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(TelegramBot.serializer()), response.jsonObject.getValue("bots"))
 

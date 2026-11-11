@@ -83,6 +83,8 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
+    /** The revision the chat was read up to: entries after it are unread (the NEW line). */
+    val readRev: Long = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
     /** Uses the memory all the user's bots share ("About you"). Null from an older host. */

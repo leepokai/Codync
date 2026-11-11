@@ -299,7 +299,7 @@ export class FakeHost {
       case 'credentialLogins':
       case 'credentialBotSecrets':
       case 'composioToolkits':
-        return { items: [] }
+        return { items: [], nextCursor: null }
       case 'devices':
         return { devices: [] }
       case 'voiceStatus':

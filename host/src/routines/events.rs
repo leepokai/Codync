@@ -91,6 +91,20 @@ pub const SOURCES: &[Source] = &[
             MESSAGE_CONTAINS,
         ],
     },
+    Source {
+        id: "whatsapp",
+        label: "WhatsApp",
+        events: &[
+            ANY,
+            Event { id: "message", label: "Message" },
+            Event { id: "groupMention", label: "Mention in a group" },
+        ],
+        filters: &[
+            Filter { key: "chat", label: "Chat", hint: "A chat id, such as 5215555555555@s.whatsapp.net" },
+            Filter { key: "from", label: "Sender", hint: "A WhatsApp id" },
+            MESSAGE_CONTAINS,
+        ],
+    },
 ];
 
 pub fn source(id: &str) -> Option<&'static Source> {
@@ -188,6 +202,10 @@ mod tests {
         assert!(validate("github", "issues.opened", &BTreeMap::from([("channel".into(), "C1".into())])).is_err());
         assert!(validate("github", "issues.opened", &BTreeMap::from([("repo".into(), " ".into())])).is_err());
         assert!(validate("slack", "*", &BTreeMap::from([("channel".into(), "C1".into())])).is_ok());
+        assert!(
+            validate("whatsapp", "message", &BTreeMap::from([("chat".into(), "5215555555555@s.whatsapp.net".into())]))
+                .is_ok()
+        );
         // A source outside the catalog keeps its event and filters as they are.
         assert!(validate("origin", "pull_request.opened", &BTreeMap::from([("repo".into(), "o/r".into())])).is_ok());
         assert!(validate("origin", "", &empty).is_err());

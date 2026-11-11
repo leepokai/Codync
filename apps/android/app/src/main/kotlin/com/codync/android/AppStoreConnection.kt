@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
+import kotlin.random.Random
 
 // Pairing, the encrypted link to the computer and the mirror's event stream.
 
@@ -43,7 +44,8 @@ fun AppStore.setForeground(active: Boolean) {
     foregroundState.value = active
     PushDelivery.foreground = transportRequired
     if (active && !state.value.loading) {
-        connect()
+        // Coming back dials again at once: a link that died in the background may still be waiting its backoff.
+        reconnect()
         acknowledgeVisible()
         refreshCloud()
     }
@@ -57,7 +59,11 @@ fun AppStore.setForeground(active: Boolean) {
     }
 }
 
-/** Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside ([PairedVia.Link]). */
+/**
+ * Pairs with the computer in a `codync://pair` link: scanned or pasted ([PairedVia.Qr]) or opened from outside
+ * ([PairedVia.Link]). The account's certificate proves who this phone is; a computer in no account asks its
+ * user, then joins this account.
+ */
 internal fun AppStore.pair(text: String, via: PairedVia = PairedVia.Qr) {
     if (pairingJob?.isActive == true) return
     pairingJob = contextScope.launch {
@@ -69,18 +75,90 @@ internal fun AppStore.pair(text: String, via: PairedVia = PairedVia.Qr) {
             val old = state.value.computers.firstOrNull { it.id == pairing.computer.id }
             require(old == null || old.signKey == pairing.computer.signKey) { "This computer's identity changed. Remove it in Computer management, then pair it again." }
             val identity = withContext(Dispatchers.IO) { local.identity() }
-            val computer = HostConnector.pair(pairing, identity, Build.MODEL.take(100)).keepingDevicePicks(old)
+            val client = cloud ?: throw noCertificate
+            val deviceName = Build.MODEL.take(100)
+            val certificate = pairingCertificate(client, deviceName)
+            // Without a claim the computer still pairs; it joins the account on a later connection (`joinAccount`).
+            val claim = try { client.createClaim() } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+            val result = HostConnector.pair(pairing, identity, deviceName, certificate, claim)
+            val computer = result.computer.keepingDevicePicks(old)
             // Tagged here: the page that asked only learns that pairing ended, maybe before the switch to this computer.
             Analytics.capture(AnalyticsEvent.ComputerPaired(via, computer.id))
             withContext(Dispatchers.IO) { local.completeSetup() }
-            if (state.value.computer?.id != computer.id) { addComputer(computer); return@launch }
+            if (state.value.computer?.id != computer.id) {
+                addComputer(computer)
+                if (claim != null) result.claim?.let { joinAccount(computer.id, claim, it) }
+                return@launch
+            }
             saveComputer(computer)
             mutableState.update { it.copy(setupComplete = true) }
             if (database == null) openMirror()
             connect()
+            if (claim != null) result.claim?.let { joinAccount(computer.id, claim, it) }
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) { showError(error) }
         finally { mutableState.update { it.copy(pairing = false) } }
+    }
+}
+
+/** What pairing says when there is no account: the certificate can only come from the cloud. */
+internal val noCertificate = CloudError(0, "noCertificate", "Connect to the internet to pair, so Codync can confirm your account.")
+
+/**
+ * This device's certificate: the one held while more than a day is left, else a new one, registering the
+ * device again if the cloud doesn't know it. Offline, one that is still valid will do.
+ */
+private suspend fun AppStore.pairingCertificate(cloud: CloudClient, deviceName: String): DeviceCertificate {
+    deviceCertificate?.takeIf { it.isFresh() }?.let { return it }
+    return try {
+        val fresh = try { cloud.deviceCertificate() }
+        catch (error: CloudError) {
+            if (error.status != 403) throw error
+            cloud.registerDevice(deviceName)
+            cloud.deviceCertificate()
+        }
+        deviceCertificate = fresh
+        fresh
+    } catch (error: CloudError) {
+        if (!error.isTransient) throw error
+        deviceCertificate?.takeIf { it.isValid() } ?: throw noCertificate
+    } catch (_: IOException) {
+        deviceCertificate?.takeIf { it.isValid() } ?: throw noCertificate
+    }
+}
+
+/**
+ * The computer signs this account's claim (while letting this phone in, or later through `joinAccount` when
+ * its `hello` asks), and this phone, which holds the account's session, completes it. One at a time per computer.
+ */
+internal fun AppStore.joinAccount(computerId: String, claim: CloudClaim, signed: JsonObject) {
+    if (!joining.add(computerId)) return
+    contextScope.launch {
+        try {
+            val client = cloud ?: return@launch
+            client.completeClaim(claim.claimId, signed)
+            refreshCloud()
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) {
+            if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Computer $computerId didn't join the account: ${error.message}")
+        } finally { joining.remove(computerId) }
+    }
+}
+
+/** `hello` asked this phone to finish joining its computer to the account: open a claim and have the computer sign it. */
+private fun AppStore.laterJoin(computerId: String, channel: EncryptedChannel) {
+    if (!joining.add(computerId)) return
+    contextScope.launch {
+        try {
+            val client = cloud ?: return@launch
+            val claim = client.createClaim()
+            val signed = channel.call("joinAccount", buildJsonObject { put("claimId", claim.claimId); put("nonce", claim.nonce) },
+                timeoutMillis = 20_000).jsonObject
+            joining.remove(computerId)
+            joinAccount(computerId, claim, signed)
+        } catch (error: CancellationException) { throw error }
+        catch (_: Exception) { /* A later connection asks again. */ }
+        finally { joining.remove(computerId) }
     }
 }
 
@@ -100,6 +178,10 @@ fun AppStore.connect() {
                 val active = HostConnector.connect(target, identity)
                 connected = active
                 channel = active
+                active.onCall = { method, millis, error ->
+                    SupportLog.add(if (error == null) SupportLevel.Info else SupportLevel.Warn, SupportSource.Network,
+                        "$method ${millis}ms" + (error?.let { " · ${it.message ?: it::class.simpleName}" } ?: ""))
+                }
                 coroutineScope {
                     launch {
                         active.mailbox.collect { event ->
@@ -116,7 +198,7 @@ fun AppStore.connect() {
                                 reconcileMailbox(active)
                             }
                             if (link is LinkState.Ready) {
-                                val fromHost = HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target)
+                                val fromHost = withTimeout(15_000) { HostClient.hello(active, state.value.computers.firstOrNull { it.id == target.id } ?: target) }
                                 val hello = active.call("hello").jsonObject
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
@@ -127,11 +209,13 @@ fun AppStore.connect() {
                                 // Dropped chats page their earlier messages again.
                                 mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
                                 noteHello(hello)
+                                // This phone paired without the computer joining the account: finish it now.
+                                if (hello["joinAccount"]?.jsonPrimitive?.booleanOrNull == true) laterJoin(fromHost.id, active)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
                                 // without moving the event cursor before consuming that stream.
                                 if (state.value.bots.isEmpty()) {
-                                    val roster = HostClient.bots(active)
+                                    val roster = withTimeout(15_000) { HostClient.bots(active) }
                                     if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Initial roster: ${roster.size} bots")
                                     withContext(Dispatchers.IO) { requireNotNull(database).receive(roster) }
                                 }
@@ -165,7 +249,8 @@ fun AppStore.connect() {
                 connected?.close()
                 if (channel === connected) channel = null
             }
-            delay(backoff)
+            // A random fifth added to each wait so phones paired with one computer don't retry in step.
+            delay(backoff + Random.nextLong(0, backoff / 5 + 1))
             backoff = minOf(backoff * 2, 20_000)
         }
     }
@@ -244,6 +329,16 @@ private fun AppStore.noteHello(hello: JsonObject) = mutableState.update {
 }
 
 private fun AppStore.showConnection(link: LinkState) {
+    SupportLog.add(
+        if (link is LinkState.Connecting || link is LinkState.Ready) SupportLevel.Info else SupportLevel.Warn,
+        SupportSource.Connection,
+        when (link) {
+            is LinkState.Connecting -> "Connecting to ${state.value.computer?.name ?: "the computer"}"
+            is LinkState.Ready -> "Connected over ${link.route.name.lowercase()}"
+            is LinkState.ComputerOffline -> "The computer is offline"
+            is LinkState.Failed -> "Connection failed" + (link.status?.let { " ($it)" } ?: "") + ": ${link.message}"
+        },
+    )
     mutableState.update { it.copy(actualConnection = link) }
     val immediate = link is LinkState.Ready || link is LinkState.Failed && link.status in listOf(403, 426)
     if (immediate) {

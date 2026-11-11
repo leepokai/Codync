@@ -15,6 +15,10 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var runId: String?
     /// notice: a failed routine run the user can run again (`retryRoutineRun`).
     public var retry: Bool?
+    /// notice: the failed run was ended from its line (`cancelTask`); no retry is left.
+    public var cancelled: Bool?
+    /// notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it or ends it.
+    public var pausedTurn: PausedTurn?
     /// notice: the bot moved to another agent of its chain, or back to its own.
     public var agentSwitch: AgentSwitch?
     /// notice (error): the bot has no fallbacks and its agent ran out of usage or was rate limited: offer to add one.
@@ -69,6 +73,9 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var transcript: [CallLine]?
     /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
     public var artifact: ArtifactRef?
+    /// On a thread's root line: how many replies it has, how many are unread, when the last one landed and who
+    /// wrote the recent ones. Absent until the thread has a reply.
+    public var thread: ThreadSummary?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text
@@ -120,6 +127,15 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
 
 /// A memory line from an older host, known only to keep it out of the chat.
 public struct MemoryLine: Codable, Hashable, Sendable {}
+
+/// A root line's thread, as the chat's chip shows it: how many replied, how many are new, when the last one
+/// landed and who wrote the recent ones.
+public struct ThreadSummary: Codable, Hashable, Sendable {
+    public var count: Int
+    public var unread: Int
+    public var lastAt: Int64?
+    public var authors: [String]?
+}
 
 /// One bot's emoji on a message.
 public struct BotReaction: Codable, Hashable, Sendable {

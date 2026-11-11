@@ -2,6 +2,7 @@
 //! bot with the replies of the bots linked to it.
 
 use super::graph;
+use crate::chat::team::ModelOverride;
 use crate::chat::team::flow::{FlowCancelled, Handoff, handoff, recipient};
 use crate::hub::Hub;
 use crate::routines::{Routine, Run, Status};
@@ -43,7 +44,7 @@ pub struct Start {
 
 /// What a bot's step left for the bots after it.
 #[derive(Clone)]
-enum Outcome {
+pub(super) enum Outcome {
     Replied(String),
     /// Nothing to pass on: the bot had nothing to report, or the step didn't run or finish.
     Nothing,
@@ -55,6 +56,8 @@ struct Pending {
     from: crate::store::BotConfig,
     bot: String,
     body: String,
+    /// The first incoming link's own model and options, when they name any.
+    model: Option<ModelOverride>,
     hops: u8,
 }
 
@@ -235,10 +238,12 @@ fn begin(
     let names: Vec<(String, &str, &str)> =
         inputs.iter().map(|(link, text)| (hub.bot_name(&link.from_bot_id), *text, link.instruction.as_str())).collect();
     let body = handoff_text(&start.routine_name, &names);
+    // A fan-in is one step: the first incoming link's model and options win, as its instruction leads the task.
+    let model = inputs.iter().find_map(|(link, _)| override_of(link));
     match record(hub, &new_step(start, bot, &body, StepStatus::Running))? {
         Some(step) => {
             let hops = u8::try_from(depth).unwrap_or(u8::MAX);
-            Ok(Begin::Send(Box::new(Pending { step, from: from.config, bot: bot.to_owned(), body, hops })))
+            Ok(Begin::Send(Box::new(Pending { step, from: from.config, bot: bot.to_owned(), body, model, hops })))
         }
         // A retry of the run finds the step the first attempt made, and doesn't send it twice.
         None => Ok(Begin::Done(earlier_outcome(hub, &start.run_id, bot)?)),
@@ -260,6 +265,7 @@ async fn send(hub: &Arc<Hub>, start: &Start, pending: Pending, cancel: watch::Re
         from: &pending.from,
         to: &pending.bot,
         body: &pending.body,
+        model: pending.model.clone(),
         hops: pending.hops,
         timeout: start.timeout,
         cancel,
@@ -287,6 +293,12 @@ async fn send(hub: &Arc<Hub>, start: &Start, pending: Pending, cancel: watch::Re
             Outcome::Nothing
         }
     }
+}
+
+/// The model and options a step takes from a link; none when it names neither.
+pub(super) fn override_of(link: &FlowLink) -> Option<ModelOverride> {
+    (link.model.is_some() || !link.model_options.is_empty())
+        .then(|| ModelOverride { model: link.model.clone(), options: link.model_options.clone() })
 }
 
 /// What a bot is asked: the replies before it and what the links say to do with them.

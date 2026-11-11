@@ -119,6 +119,20 @@ impl App {
                 if files.is_empty() && self.built_in_command(&text) {
                     return;
                 }
+                // A waiting message the box took over (`/edit`): this send saves it, it doesn't post another.
+                if files.is_empty()
+                    && let Some((bot, entry)) = self.pending_edit.clone()
+                    && bot == key
+                {
+                    self.pending_edit = None;
+                    self.call(
+                        "editQueued",
+                        json!({"botId": key, "entryId": entry}),
+                        After::QueuedEdited(key, entry, text),
+                    );
+                    self.flash("Saving the change…");
+                    return;
+                }
                 if let Some(m) = &self.mismatch {
                     // The draft stays; it sends once the update is done.
                     let why = mismatch_text(m, &self.host);
@@ -164,6 +178,7 @@ impl App {
                     self.flash("esc then s stops the bot");
                 } else {
                     draft.clear();
+                    self.pending_edit = None;
                 }
             }
             KeyCode::Up if draft.text.is_empty() => self.scroll_chat(1),
@@ -202,6 +217,7 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('C') => self.open_connection(),
             KeyCode::Char('F') => self.retry_failed_run(),
+            KeyCode::Char('E') => self.cancel_task(),
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
             KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
@@ -290,10 +306,11 @@ impl App {
                     self.trace = if self.trace == TraceMode::Off { TraceMode::Off } else { TraceMode::Full };
                 }
             }
-            KeyCode::Char('T') => {
+            KeyCode::Char('V') => {
                 self.trace = if self.trace == TraceMode::Full { TraceMode::Off } else { TraceMode::Full };
                 self.focus = if self.trace == TraceMode::Full { Focus::Trace } else { Focus::Chat };
             }
+            KeyCode::Char('T') => self.open_threads(),
             KeyCode::Char('o') => {
                 let Some(id) = self.selected.clone() else { return };
                 // The newest turn in this lane that did something.
@@ -426,6 +443,11 @@ impl App {
                     Some(Click::Composer) => self.start_typing(),
                     Some(Click::Steps) => self.toggle_steps(),
                     Some(Click::BotChat(entry)) => self.open_bot_chat(&entry),
+                    Some(Click::Thread(root)) => {
+                        if let Some(bot) = self.selected.clone() {
+                            self.open_thread(&bot, &root);
+                        }
+                    }
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {

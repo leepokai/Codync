@@ -1,6 +1,7 @@
 package com.codync.android
 
 import android.content.Context
+import android.content.Intent
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -33,7 +34,11 @@ internal object LauncherShortcuts {
                 val members = bot.members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
                 ShortcutInfoCompat.Builder(context, plan.id).setShortLabel(plan.label).setLongLabel(bot.name)
                     .setIcon(IconCompat.createWithBitmap(notificationFace(context, bot, members)))
-                    .setIntent(NotificationDisplay.open(context, scope, computerId, bot.id)).build()
+                    // Long-lived, with a share intent last: the Sharesheet offers the bot beside the app icon, as
+                    // iOS's share sheet does, and a tap sends the content straight to that bot.
+                    .setLongLived(true)
+                    .setIntents(arrayOf(NotificationDisplay.open(context, scope, computerId, bot.id), BotShares.intent(context, plan.id)))
+                    .build()
             }
             if (shortcuts.isNotEmpty()) ShortcutManagerCompat.addDynamicShortcuts(context, shortcuts)
             shown = signature

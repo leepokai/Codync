@@ -123,6 +123,9 @@ pub struct Server {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// A command run with the connector's env before each start, to sign a local server in.
+    #[serde(default)]
+    pub login: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

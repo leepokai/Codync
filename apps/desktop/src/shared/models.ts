@@ -402,8 +402,13 @@ export interface EntryData {
   botApp?: BotApp
   /** notice: human takeover request card (Idea 13). */
   takeoverRequest?: { reason: string; url?: string | null; status: string }
-  /** notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it. */
-  pausedTurn?: { verdict: 'paused' | 'truncated'; status: 'waiting' | 'continued'; round: number; canContinue: boolean }
+  /** notice: a turn that stopped half done (out of steps, or its answer cut); one tap continues it or ends it. */
+  pausedTurn?: {
+    verdict: 'paused' | 'truncated'
+    status: 'waiting' | 'continued' | 'closed'
+    round: number
+    canContinue: boolean
+  }
   /** Interactive Passkey / 2FA assistance card from CDP browser detector (INIC-02). */
   passkeyWall?: PasskeyWallCard
   /** Chief of Staff incident intervention card (INIC-04). */
@@ -423,6 +428,8 @@ export interface EntryData {
   runId?: string
   /** notice: a failed routine run the user can run again (`retryRoutineRun`). */
   retry?: boolean
+  /** notice: the run was ended from its failure line (`cancelTask`); no retry is left. */
+  cancelled?: boolean
   /** notice: the computer's current health banner; the host updates it in place. */
   health?: boolean
   /** notice: `warning`, `critical` or `normal`, with `health`. */
@@ -458,6 +465,9 @@ export interface EntryData {
   files?: SharedFile[]
   /** agent: an artifact the bot published (or updated) in this turn. */
   artifact?: ArtifactCard
+  /** On a thread's root line: how many replies it has, how many are unread, when the last one landed and who wrote
+   * the recent ones. Absent until the thread has a reply. */
+  thread?: ThreadSummary
   callSeconds?: number
   voiceTranscriptText?: string
   /** The voice call it was said in (user), answered during (agent), or that it ends (notice): the chat shows those
@@ -484,6 +494,35 @@ export interface Entry {
   threadId?: string | null
   /** On a thread's root line: how many of its replies are unread. */
   threadUnread?: number | null
+}
+
+/** A root line's thread, as the chat's chip shows it. */
+export interface ThreadSummary {
+  count: number
+  unread: number
+  lastAt: number
+  authors: string[]
+}
+
+/** A chat's thread, as a list shows it: never the lines, only its last one (`OpenBot` Mobile's thread). */
+export interface ThreadInfo {
+  id: string
+  title: string
+  /** The message the thread was branched from. */
+  fromEntry: string | null
+  /** That message's text, for "Branched from …". */
+  branchText: string | null
+  archived: boolean
+  createdAt: number
+  updatedAt: number
+  unread: number
+  lastText: string | null
+  lastAuthor: string | null
+}
+
+/** What the list calls a thread: its title, the line it branched from, or "Thread". */
+export function threadName(thread: ThreadInfo): string {
+  return thread.title.trim() || thread.branchText?.slice(0, 60).replaceAll('\n', ' ') || 'Thread'
 }
 
 /** Chat-visible (Grok Bot model): user messages, final replies, approval cards, notices. */
@@ -715,9 +754,11 @@ export type AccountApproval = 'code' | 'auto'
 
 /** A linked WhatsApp number on this computer. */
 export interface WhatsAppState {
-  /** disconnected, starting, qr, connected, loggedOut or error. */
+  /** disconnected, starting, qr, pairing, connected, loggedOut or error. */
   state: string
   qr?: string | null
+  /** The code to type in WhatsApp → Linked devices instead of scanning a QR code. */
+  pairCode?: string | null
   me?: string | null
   name?: string | null
   error?: string | null

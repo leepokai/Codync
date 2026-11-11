@@ -153,7 +153,7 @@ extension AppLanguageTests {
         #expect(AppLanguage.preference(in: suite) == .ptBR)
         #expect(AppLanguage(rawValue: "pt-BR") == .ptBR)
         #expect(AppLanguage.ptBR.catalogName == "pt-BR")
-        #expect(Array(AppLanguage.allCases.suffix(3)) == [.es, .ptBR, .ru])
+        #expect(Array(AppLanguage.allCases.suffix(4)) == [.es, .ptBR, .ru, .ar])
         #expect(AppLanguage.menuTitle(.ptBR, preference: .en, systemIsChinese: true) == "Português (Brasil)")
         #expect(!AppLanguage.usesChinese(preference: .ptBR, systemIsChinese: true))
         let locale = AppLanguage.locale(preference: .ptBR, systemIsChinese: true)
@@ -184,5 +184,18 @@ extension AppLanguageTests {
         #expect(changed.withLock { $0 })
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
+    }
+
+    @Test func arabicResolvesMirrorsAndLoadsItsBundledCatalog() {
+        #expect(AppLanguage.resolved(preference: .system, languages: ["ar-SA"]) == .ar)
+        #expect(AppLanguage.resolved(preference: .ar, languages: ["zh-TW"]) == .ar)
+        #expect(AppLanguage.menuTitle(.ar, preference: .en, systemIsChinese: true) == "العربية")
+        #expect(!AppLanguage.usesChinese(preference: .ar, systemIsChinese: true))
+        #expect(AppLanguage.readsRightToLeft(preference: .ar, languages: ["en-US"]))
+        #expect(AppLanguage.readsRightToLeft(preference: .system, languages: ["ar-EG"]))
+        #expect(!AppLanguage.readsRightToLeft(preference: .es, languages: ["ar-EG"]))
+        #expect(AppLanguage.locale(preference: .ar, systemIsChinese: true).language.languageCode?.identifier == "ar")
+        #expect(L10n.tr("Settings", preference: .ar, systemIsChinese: false) != "Settings")
+        #expect(L10n.tr("An unknown phrase", preference: .ar) == "An unknown phrase")
     }
 }

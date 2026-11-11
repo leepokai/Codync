@@ -85,6 +85,9 @@ internal suspend fun AppStore.botTasks(botId: String): kotlinx.serialization.jso
 /** One folder of a bot's workspace: its files and folders, confined by the host. */
 suspend fun AppStore.listFiles(botId: String, path: String): kotlinx.serialization.json.JsonArray =
     hostQuery("listFiles", buildJsonObject { put("botId", botId); put("path", path) }).jsonObject["entries"]!!.jsonArray
+/** Makes this message and the ones after it unread; opening the chat clears them. */
+internal fun AppStore.markUnread(entry: Entry) =
+    command("markUnread", body("botId" to entry.botId, "entryId" to entry.id), "unread:" + entry.id)
 
 internal suspend fun AppStore.hostCall(method: String, body: JsonObject, timeoutMillis: Long = 240_000): JsonElement = ready().call(method, body, timeoutMillis)
 internal suspend fun AppStore.hostFiles(): HostFiles = HostFiles(ready())
@@ -114,6 +117,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
 fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
     val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }
     ready().call("retryRoutineRun", body("botId" to entry.botId, "runId" to runId))
+}
+
+/** Ends a stopped turn or a failed routine run from its card; the messages stay. */
+fun AppStore.cancelTask(entry: Entry) = action("cancel:" + entry.id) {
+    ready().call("cancelTask", body("entryId" to entry.id))
 }
 /** Queries belong to the account runtime as well as their screen; retiring either cancels them. */
 internal suspend fun AppStore.hostQuery(method: String, payload: JsonObject, timeoutMillis: Long = 20_000,

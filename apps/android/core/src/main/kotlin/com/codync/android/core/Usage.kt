@@ -10,6 +10,17 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Serializable data class UsageReport(val providers: List<UsageProvider> = emptyList()) {
+    /**
+     * The spent window that stops `backend`'s models, until its reset comes (models of the agent
+     * the provider reports for: an account's provider id before its colon, or its source).
+     */
+    fun spentWindow(backend: String, now: Long = System.currentTimeMillis()): UsageWindow? =
+        providers.filter { it.id.substringBefore(':') == backend || it.source == backend }
+            .flatMap { it.limits }
+            .filter { (it.reportedPercent ?: 0.0) >= 100.0 }
+            .filter { it.resetDate(now)?.let { at -> at > now } != false }
+            .maxByOrNull { it.reportedPercent ?: 0.0 }
+
     companion object { fun decode(value: JsonElement): UsageReport = WireJson.decodeFromJsonElement(value) }
 }
 

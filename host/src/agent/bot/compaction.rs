@@ -5,6 +5,7 @@
 use super::{Actor, Adapter, Done, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{EntryKind, Lane, now_ms};
+use anyhow::Result;
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision};
 use serde_json::{Value, json};
 
@@ -145,7 +146,7 @@ impl Actor {
 
     /// After a turn in the main chat: record it, learn the cache's life from it, and compact or prepare a rollover
     /// when that's due.
-    pub(super) fn after_turn(&mut self, done: &Done) {
+    pub(super) fn after_turn(&mut self, done: &Result<Value>) {
         let compacting = self.compacting.take();
         if let Ok(answer) = done
             && answer["usage"].is_object()

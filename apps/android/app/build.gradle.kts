@@ -170,6 +170,7 @@ dependencies {
     implementation(libs.commonmark.strikethrough)
     implementation(libs.coil.compose)
     implementation(libs.coil.network)
+    implementation(libs.coil.svg)
     implementation(libs.clerk)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

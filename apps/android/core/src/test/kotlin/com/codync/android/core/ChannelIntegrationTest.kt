@@ -95,7 +95,10 @@ class ChannelIntegrationTest {
                     }) })
                 } else if (request.text("m") == "pair") {
                     pairBody.set(request.getValue("b").jsonObject)
-                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject { put("computerId", cid); put("name", "Paired computer") }) })
+                    send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject {
+                        put("computerId", cid); put("name", "Paired computer")
+                        put("claim", buildJsonObject { put("claimId", "clm_1"); put("nonce", "n1"); put("sig", "signed") })
+                    }) })
                     webSocket.close(4100, "paired")
                 } else {
                     send(webSocket, buildJsonObject { put("id", id); put("ok", buildJsonObject { put("computerId", cid); put("signKey", hostKey.base64Url()) }) })
@@ -124,13 +127,29 @@ class ChannelIntegrationTest {
         } finally { channel.close() }
     }
 
-    @Test fun `pairing sends the Android platform and returns the pinned computer`() = runBlocking {
+    @Test fun `pairing sends the Android platform and the account certificate`() = runBlocking {
         enqueueHost()
         val pinned = computer()
-        val result = withTimeout(5_000) { HostConnector.pair(Pairing(pinned, ByteArray(16) { 8 }.base64Url()), identity(), "Android phone") }
-        assertEquals(cid, result.id)
-        assertEquals("Paired computer", result.name)
+        val certificate = DeviceCertificate("""{"v":1,"exp":${System.currentTimeMillis() + 3_600_000}}""", "sig")
+        val result = withTimeout(5_000) {
+            HostConnector.pair(Pairing(pinned, ByteArray(16) { 8 }.base64Url()), identity(), "Android phone", certificate, CloudClaim("clm_1", "n1"))
+        }
+        assertEquals(cid, result.computer.id)
+        assertEquals("Paired computer", result.computer.name)
         assertEquals("android", pairBody.get().text("platform"))
+        assertEquals("sig", pairBody.get().getValue("certificate").jsonObject.text("sig"))
+        assertEquals("clm_1", pairBody.get().getValue("claim").jsonObject.text("claimId"))
+        assertEquals("signed", result.claim?.text("sig"))
+    }
+
+    @Test fun `a pairing without a claim sends none and still pairs`() = runBlocking {
+        enqueueHost()
+        val pinned = computer()
+        val result = withTimeout(5_000) {
+            HostConnector.pair(Pairing(pinned, ByteArray(16) { 8 }.base64Url()), identity(), "Android phone", DeviceCertificate("{}", "sig"))
+        }
+        assertEquals(cid, result.computer.id)
+        assertEquals(null, pairBody.get()["claim"])
     }
 
     @Test fun `encrypted RPC and event subscriptions preserve host payloads`() = runBlocking {

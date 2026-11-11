@@ -8,6 +8,7 @@ import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import './agent-picker.css'
 import { isReasoningOption, ReasoningSlider } from './ReasoningSlider'
+import { spentNote } from '../usage/usage-model'
 
 type Stage = 'closed' | 'settings' | 'agents' | 'models'
 type Choice = { id: string; label: string; leading?: ReactNode; status?: ReactNode }
@@ -57,6 +58,8 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
   const summary = modelOptions.map((o) => o.values.find((v) => v.id === (chosen[o.id] ?? o.default))?.name).filter(Boolean).join(' · ')
   const browse = stage === 'agents' || stage === 'models'
   const choices = (stage === 'agents' ? agents : options).filter((o) => o.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  // A spent plan window stops this agent's models: say so, and when it comes back (Usage screen).
+  const note = spentNote(store.usage, backend, tr)
   // A fresh list of agents asks the host about their sign-ins.
   const open = (next: Stage) => { setQuery(''); if (next === 'agents') void store.refreshBackends(); setStage(next) }
   const pick = (id: string) => {
@@ -87,6 +90,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
         {fast && <Icon name="bolt" size={12} title={tr('Fast mode')} />}
         <Icon name={stage === 'closed' ? 'chevron.down' : 'chevron.up'} size={10} />
       </button>
+      {note && <Text size="caption" tone="secondary" className="agent-picker-note">{note}</Text>}
       {stage !== 'closed' && <VStack gap={10} className="agent-picker-panel fade-in">
         <div className="agent-picker-selectors">
           {onAgentChange && <button className="agent-picker-choice" title={agent?.label ?? backend} aria-expanded={stage === 'agents'} onClick={() => open(stage === 'agents' ? 'settings' : 'agents')}>{agent?.leading}<Text truncate>{agent?.label ?? backend}</Text><Icon name={stage === 'agents' ? 'chevron.up' : 'chevron.down'} size={10} /></button>}

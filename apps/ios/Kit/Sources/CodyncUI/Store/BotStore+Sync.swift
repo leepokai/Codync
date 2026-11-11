@@ -137,6 +137,8 @@ extension BotStore {
             screen = s
         case let .network(view):
             network = view
+        case let .thread(threadId, botId, _, summary):
+            applyThreadSummary(threadId, botId: botId, summary: summary)
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:
@@ -215,9 +217,21 @@ extension BotStore {
     }
 
     func upsert(_ e: Entry) {
-        // ponytail: the iPhone has no side-conversation view yet (documents, Slack); keep them out of the chat.
-        guard e.threadId == nil else { return }
+        // A thread line stays out of the chat (documents, Slack, and the chat's own threads): it joins its
+        // thread instead, which is where the side conversation reads it from.
+        if let thread = e.threadId {
+            var list = threadEntries[thread] ?? []
+            place(e, in: &list)
+            threadEntries[thread] = list
+            return
+        }
         var list = entries[e.botId] ?? []
+        place(e, in: &list)
+        entries[e.botId] = list
+    }
+
+    /// Puts an entry at its place in a list, replacing the copy of the same id when this one is newer.
+    private func place(_ e: Entry, in list: inout [Entry]) {
         if let i = list.firstIndex(where: { $0.id == e.id }) {
             // A late API response mustn't undo a newer SSE update.
             guard e.rev >= list[i].rev else { return }
@@ -234,7 +248,6 @@ extension BotStore {
                 list.append(e)
             }
         }
-        entries[e.botId] = list
     }
 
     func setUsage(_ u: Usage) {

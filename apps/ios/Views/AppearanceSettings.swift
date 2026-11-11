@@ -5,11 +5,15 @@ import UIKit
 
 struct AppearanceSettings: View {
     @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
+    @AppStorage(AvatarStyle.storageKey, store: UserDefaults(suiteName: SharedStore.appGroup)) private var avatarStyle = AvatarStyle.plush
 
     var body: some View {
         CardSection("Appearance", footer: "Only changes appearance on this device.") {
             ValueRow("Theme") {
                 ChoicePicker(selection: $appearance, options: Appearance.allCases.map { (id: $0, label: $0.label) })
+            }
+            ValueRow("Bot avatars") {
+                ChoicePicker(selection: $avatarStyle, options: AvatarStyle.allCases.map { (id: $0, label: $0.label) })
             }
         }
     }

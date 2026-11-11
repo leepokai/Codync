@@ -58,3 +58,32 @@ import Testing
         seen.append(choice)
     }
 }
+
+/// A provider a newer computer adds must not break the list for this app.
+@Test @MainActor func voiceStatusKeepsAProviderThisAppDoesNotKnow() throws {
+    let status = try JSONDecoder().decode(VoiceStatus.self, from: Data("""
+    {"providers":[{"provider":"openai","configured":true},
+      {"provider":"some-future-provider","configured":false},
+      {"provider":"elevenlabs","configured":true}]}
+    """.utf8))
+    VoiceSettings.remember(status)
+    #expect(status.providers.count == 3)
+    #expect(status.configured(.openAI))
+    #expect(status.configured(.elevenLabs))
+    #expect(!status.configured(.gemini))
+}
+
+/// ElevenLabs holds no live conversation, and its account voices stay listed until the list arrives.
+@Test func elevenLabsIsAlwaysSpeechAndKeepsASavedVoice() {
+    let p = VoiceProvider.elevenLabs
+    let keys = [VoiceSettings.modeKey(p), VoiceSettings.voiceKey(p)]
+    defer { keys.forEach(UserDefaults.standard.removeObject(forKey:)) }
+    keys.forEach(UserDefaults.standard.removeObject(forKey:))
+
+    UserDefaults.standard.set("realtime", forKey: VoiceSettings.modeKey(p))
+    #expect(!p.live)
+    #expect(VoiceSettings.isSpeechMode(p))
+
+    UserDefaults.standard.set("not-in-the-account-list-yet", forKey: VoiceSettings.voiceKey(p))
+    #expect(VoiceSettings.voice(p) == "not-in-the-account-list-yet")
+}

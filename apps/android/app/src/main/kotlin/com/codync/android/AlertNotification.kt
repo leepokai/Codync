@@ -74,9 +74,11 @@ internal fun notificationFace(context: Context, bot: Bot, members: List<Bot>): B
     }
     val start = (FACE_CANVAS - FACE) / 2f
     val end = start + FACE
+    val flat = com.codync.android.design.AppearancePreferences.get(context).settings.avatarStyle ==
+        com.codync.android.design.AvatarStyle.Flat
     fun place(member: Bot, fraction: Float, x: Float, y: Float) {
         val pixels = (FACE * fraction).toInt()
-        canvas.drawBitmap(characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK, cells = 13), x, y, null)
+        canvas.drawBitmap(characterAvatarBitmap(member.avatarShape, member.avatarColor, pixels, DARK_INK, cells = 13, flat = flat), x, y, null)
     }
     if (bot.kind != "group") { place(bot, 1f, start, start); return bitmap }
     // An alert carries at most three members' faces: the first two and the speaker.

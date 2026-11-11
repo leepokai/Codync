@@ -29,4 +29,13 @@ class ReadingTest {
         assertEquals(scopes, readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 2))), scopes))
         assertEquals(emptyList<ReadingScope>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 0))), scopes))
     }
+
+    @Test fun `the new line sits above the first message past the read mark`() {
+        fun item(rev: Long) = ChatItem.Message("e$rev", Entry("e$rev", rev, "bot", rev, "agent", data = buildJsonObject { put("text", "hi") }), false)
+        val items: List<ChatItem> = listOf(item(1), item(2), item(3))
+        assertEquals(listOf("e1", "new-e2", "e2", "e3"), withUnreadLine(items, 1).map { it.id })
+        assertEquals("nothing newer than the mark", items, withUnreadLine(items, 3))
+        assertEquals(items, withUnreadLine(items, null))
+        assertEquals(listOf("new-e1", "e1", "e2", "e3"), withUnreadLine(items, 0).map { it.id })
+    }
 }

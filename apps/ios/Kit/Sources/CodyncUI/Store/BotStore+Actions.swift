@@ -241,6 +241,39 @@ extension BotStore {
         answer(entry, "retry") { try await $0.retryRoutineRun(botId: entry.botId, runId: runId) }
     }
 
+    /// Ends a failed routine run from its notice; no retry is left.
+    public func cancelRoutineRun(_ entry: Entry) {
+        answer(entry, "cancel") { try await $0.cancelTask(entryId: entry.id) }
+    }
+
+    /// Goes on with a turn that stopped half done, from its card.
+    public func continueTurn(_ entry: Entry) {
+        answer(entry, "continue") { try await $0.continueTurn(entryId: entry.id) }
+    }
+
+    /// Ends a stopped turn from its card; the messages stay and it can't be continued after.
+    public func cancelTask(_ entry: Entry) {
+        answer(entry, "cancel") { try await $0.cancelTask(entryId: entry.id) }
+    }
+
+    /// Moves a message waiting at the computer into the running turn instead of after it.
+    public func steerQueued(_ entry: Entry) {
+        perform { try await $0.steer(entryId: entry.id) }
+    }
+
+    /// Rewrites a waiting message; the agent reads it when its turn comes. Whether the computer took it.
+    @discardableResult
+    public func editQueued(_ entry: Entry, text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return await attempt { try await $0.editQueued(entryId: entry.id, text: trimmed) }
+    }
+
+    /// Drops a waiting message: the agent never hears it.
+    public func deleteQueued(_ entry: Entry) {
+        perform { try await $0.deleteQueued(entryId: entry.id) }
+    }
+
     public func setFastMode(_ bot: Bot, _ fastMode: Bool) {
         var d = BotDraft(bot)
         d.fastMode = fastMode

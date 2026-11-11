@@ -19,6 +19,27 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 每個 Bot 的聊天可以選擇顏色，方便一眼分辨。
 - Slack、Telegram 與 Discord 的提及可以啟動流程；GitHub 的 issue、PR 與失敗檢查也一樣。
 - 新增 TickTick 等應用程式，以及每個代理程式的建立者、審核狀態、分類與更新日期。
+- WhatsApp 號碼可以用配對代碼連結，不必掃描 QR 碼。
+- 中斷的任務與失敗的例行工作可以用「取消任務」結束，訊息會保留。
+- 語音通話的停頓改成滑桿（0.6–3 秒），朗讀速度可選 0.5 倍到 2 倍。
+- Bot 頭像可選絨感或扁平，靜止時的表情更放鬆，群組頭像會輕輕浮動。
+- Proton Pass 加入目錄：填入個人存取權杖後，Bot 即可讀取它開啟的保險庫。
+- Composio 的應用程式在擴充功能中列出並顯示連線狀態，捲動時會繼續載入。
+- 被用完的方案額度擋住的模型會說明原因，以及額度恢復的時間。
+- 長按對話可以標為未讀；重新開啟後會出現「新訊息」分隔線，對話的媒體與檔案也會列出。
+- 連線不穩或系統清掉 App 之後會自行重新連上，省電模式也不再中斷串流中的回覆。
+- 設定新增「支援」：Discord、GitHub 與可翻頁的支援記錄，記錄可以清除。
+- 例行工作可以由 WhatsApp 訊息或群組提及啟動，也可以把 WhatsApp 對話當作結果。
+- 流程可以接手 Slack 觸發條件與結果。
+- 等待中的訊息會列在意見欄上方，可以改寫、直接插進目前的回覆，或刪除。
+- 每段文字依自己的方向閱讀，程式碼一律由左至右；介面可以選阿拉伯文並由右至左排列。
+- 可以用 PIN 或手機的指紋、臉部、螢幕鎖定鎖住 App，離開後依設定重新鎖上。
+- 從其他 App 分享時，分享面板會直接列出釘選的代理程式。
+- 頻道畫面會顯示這台電腦的 Telegram 機器人、Discord、Slack 與 GitHub；可以替機器人配對對象或把人移除。
+- WhatsApp 現在有自己的一列，從擴充功能市集也能開啟連結畫面。
+- 工作流程的連線可以指定目標機器人那一輪要用的模型與選項。
+- 每個聊天都可以有討論串：從任何訊息或列表開啟，回覆留在討論串裡，聊天只顯示回覆數。
+- 語音通話新增 ElevenLabs：使用你自己的金鑰，由 Scribe 聽你說話、帳號中的聲音讀出回覆；測試會唸出「OK」。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -30,6 +51,27 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Each bot's chat can have its own color, so it is easy to tell apart.
 - Slack, Telegram and Discord mentions can start a workflow, as can GitHub issues, pull requests and failed checks.
 - New apps such as TickTick, and each agent page now names its creator, review, category and update date.
+- A WhatsApp number can be linked by typing a pairing code instead of scanning a QR code.
+- A task that stopped halfway, or a routine run that failed, can be ended with Cancel task; its messages stay.
+- The voice call pause is a slider from 0.6 to 3 seconds, and read-aloud speed goes from 0.5× to 2×.
+- Bot avatars can be plush or flat, resting faces look calmer, and group avatars drift gently.
+- Proton Pass joins the catalog: add its personal access token and your bots can read the vault it opens.
+- Composio's apps are listed in Extensions with their connection status and load as you scroll.
+- A model stopped by a spent plan limit says so, and when the limit comes back.
+- Long-press a chat to mark it unread; opening it again shows a New messages line, and the chat lists its media and files.
+- Codync reconnects on its own after a flaky connection or the system stopping it, and battery saver no longer cuts a streaming reply.
+- Settings has Support: Discord, GitHub and a paged support log you can clear.
+- A routine can start from a WhatsApp message or group mention, and a WhatsApp chat can be a routine output.
+- Workflows accept Slack triggers and outputs.
+- Waiting messages show above the composer to rewrite, steer into the running reply, or delete.
+- Each paragraph reads in its own direction and code always reads left to right; the interface comes in Arabic, right to left.
+- Lock Codync behind a PIN or the phone's fingerprint, face or screen lock, and it locks again after the chosen time away.
+- Sharing from another app offers your pinned agents in the share sheet.
+- Channels shows the computer's Telegram bots, Discord, Slack and GitHub from this phone; pair someone to a bot or take them out.
+- WhatsApp has its own row in Extensions, and the linked number stays reachable from computer management.
+- A workflow link can name the model and its options for the target bot's turn.
+- Every chat can have threads: open one from any message or the list; replies stay in the thread and the chat shows a "3 replies" chip.
+- Voice calls add ElevenLabs: on your own key, Scribe hears you and the account's own voices read replies; Test says "OK".
 
 ## 2.32.0
 

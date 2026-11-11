@@ -9,7 +9,7 @@ import org.junit.Test
 
 class AppLanguageTest {
     @Test fun additionalLanguagesResolveRegionsAndKeepExplicitChoices() {
-        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es)) {
+        for (language in listOf(AppLanguage.Ja, AppLanguage.Ko, AppLanguage.Fr, AppLanguage.De, AppLanguage.Es, AppLanguage.Ar)) {
             assertEquals(language, AppLanguage.System.resolved(language.stored + "-XX"))
             assertEquals(language, language.resolved("zh-TW"))
             assertEquals(language, AppLanguage.fromStored(language.stored))
@@ -21,6 +21,20 @@ class AppLanguageTest {
     }
 
     private val phrases = mapOf("Pair a computer" to "配对一台电脑", "Follow system" to "跟随系统")
+
+    @Test fun arabicResolvesMirrorsAndUsesItsOwnTable() {
+        val arabic = mapOf("Settings" to "الإعدادات")
+        assertEquals(AppLanguage.Ar, AppLanguage.System.resolved("ar-SA"))
+        assertEquals(AppLanguage.Ar, AppLanguage.fromStored("ar"))
+        assertTrue(AppLanguage.System.resolved("ar-EG").readsRightToLeft("ar-EG"))
+        assertFalse(AppLanguage.En.readsRightToLeft("ar-EG"))
+        assertFalse(AppLanguage.Es.readsRightToLeft("ar-EG"))
+        assertEquals("الإعدادات", translate("Settings", AppLanguage.Ar, systemIsChinese = false, arabic))
+        // A resolved choice translates even when the system language is neither Chinese nor the choice.
+        assertEquals("الإعدادات", translate("Settings", AppLanguage.System, systemIsChinese = false, arabic))
+        assertEquals("Settings", translate("Settings", AppLanguage.En, systemIsChinese = true, arabic))
+        assertEquals("Not a phrase", translate("Not a phrase", AppLanguage.Ar, systemIsChinese = false, arabic))
+    }
 
     @Test fun chineseFollowsTheChoiceNotTheOtherLanguage() {
         assertTrue(AppLanguage.Zh.usesChinese(systemIsChinese = false))

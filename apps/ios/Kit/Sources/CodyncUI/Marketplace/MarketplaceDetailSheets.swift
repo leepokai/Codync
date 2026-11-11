@@ -191,6 +191,9 @@ struct AppSheet: View {
                 }
                 if app.setup == "key" {
                     CardSection(title: "Setup") {
+                        ForEach(Array(app.steps.enumerated()), id: \.offset) { index, step in
+                            Text("\(index + 1). \(L10n.tr(step))").font(.body).foregroundStyle(Palette.secondary)
+                        }
                         ForEach(app.fields) { field in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(L10n.tr(field.label)).font(.caption).foregroundStyle(Palette.secondary)

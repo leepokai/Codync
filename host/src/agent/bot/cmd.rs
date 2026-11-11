@@ -18,6 +18,22 @@ pub enum Cmd {
         entry_id: String,
         text: String,
     },
+    /// The user moved a waiting message into the running turn instead of waiting for it.
+    Steer {
+        entry_id: String,
+        reply: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    /// The user rewrote a waiting message before it went out.
+    EditQueued {
+        entry_id: String,
+        text: String,
+        reply: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    /// The user dropped a waiting message.
+    DeleteQueued {
+        entry_id: String,
+        reply: tokio::sync::oneshot::Sender<Result<()>>,
+    },
     BotRequest(crate::chat::team::BotRequest),
     /// Cancel only the synchronous request owned by the caller that stopped waiting.
     CancelAsk {

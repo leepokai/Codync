@@ -124,8 +124,9 @@ fun CodyncTheme(
         LocalSurfaceStyle provides settings.surfaceStyle,
         LocalUiDensity provides settings.density,
         LocalChatTextScale provides settings.chatTextScale,
+        LocalAvatarStyle provides settings.avatarStyle,
         LocalCodyncHaptics provides haptics,
-        LocalLayoutDirection provides if (LocalAppLanguage.current.resolved(LocalSystemTag.current).rightToLeft) {
+        LocalLayoutDirection provides if (LocalAppLanguage.current.readsRightToLeft(LocalSystemTag.current)) {
             LayoutDirection.Rtl
         } else {
             LayoutDirection.Ltr

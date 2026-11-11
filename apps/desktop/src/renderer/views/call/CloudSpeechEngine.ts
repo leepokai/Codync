@@ -1,4 +1,4 @@
-import { errorMessage, micPCM16k, onDevicesChanged, SPEECH_CHUNK, spokenText, VoiceEngine, VoiceSettings, wav, type VoiceProvider } from './voice'
+import { audioType, errorMessage, micPCM16k, onDevicesChanged, SPEECH_CHUNK, spokenText, VoiceEngine, VoiceSettings, wav, type VoiceProvider } from './voice'
 
 export interface CloudSpeech {
   transcribe: (wav: Uint8Array) => Promise<string>
@@ -230,8 +230,7 @@ export class CloudSpeechEngine extends VoiceEngine {
   }
 
   private play(clip: { audio: Uint8Array; format: string }) {
-    const type = clip.format === 'aac' ? 'audio/aac' : clip.format === 'wav' ? 'audio/wav' : `audio/${clip.format}`
-    const url = URL.createObjectURL(new Blob([clip.audio as BlobPart], { type }))
+    const url = URL.createObjectURL(new Blob([clip.audio as BlobPart], { type: audioType(clip.format) }))
     const player = new Audio(url)
     const generation = this.speakGeneration
     let finished = false

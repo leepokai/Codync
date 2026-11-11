@@ -15,6 +15,9 @@ public enum HostEvent: Sendable {
     case call(CallCue)
     /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
     case network(NetworkView)
+    /// A thread's unread count and summary reached its root line: the chip under the message stays current
+    /// (`summary` is nil once the thread is gone).
+    case thread(threadId: String, botId: String, unread: Int, summary: ThreadSummary?)
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
@@ -140,6 +143,11 @@ public struct HostClient: Sendable {
         case "network":
             // Not worth a rewind: the next stream's hello carries the view again.
             return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
+        case "thread":
+            struct ThreadWrap: Decodable { var threadId: String; var botId: String; var unread: Int; var thread: ThreadSummary? }
+            return (try? d.decode(ThreadWrap.self, from: data)).map {
+                .thread(threadId: $0.threadId, botId: $0.botId, unread: $0.unread, summary: $0.thread)
+            }
         case "resync":
             return .resync
         default:
@@ -172,6 +180,42 @@ public extension HostClient {
         struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await call("history", Body(botId: botId, beforeSeq: beforeSeq, limit: limit))
         return res.entries
+    }
+
+    /// One thread's lines and info; the chat itself has none.
+    func thread(botId: String, rootId: String) async throws -> ThreadRead {
+        struct Body: Encodable { var botId: String; var rootId: String }
+        return try await call("thread", Body(botId: botId, rootId: rootId))
+    }
+
+    /// A chat's threads, live ones or its archive, newest first; never their lines.
+    func threads(botId: String, archived: Bool = false) async throws -> [ThreadInfo] {
+        struct Body: Encodable { var botId: String; var archived: Bool }
+        struct Res: Decodable { var threads: [ThreadInfo] }
+        let res: Res = try await call("threads", Body(botId: botId, archived: archived))
+        return res.threads
+    }
+
+    /// Opens a thread, optionally branched from one of the chat's messages, and answers its root.
+    func createThread(botId: String, fromEntryId: String? = nil, title: String = "") async throws -> String {
+        struct Body: Encodable { var botId: String; var fromEntryId: String?; var title: String }
+        struct Res: Decodable { var threadId: String }
+        let res: Res = try await call("createThread", Body(botId: botId, fromEntryId: fromEntryId, title: title))
+        return res.threadId
+    }
+
+    func renameThread(_ threadId: String, title: String) async throws {
+        let _: Empty = try await call("renameThread", ["threadId": threadId, "title": title])
+    }
+
+    func archiveThread(_ threadId: String, archived: Bool = true) async throws {
+        struct Body: Encodable { var threadId: String; var archived: Bool }
+        let _: Empty = try await call("archiveThread", Body(threadId: threadId, archived: archived))
+    }
+
+    /// Takes the thread with its replies; the chat keeps everything else.
+    func deleteThread(_ threadId: String) async throws {
+        let _: Empty = try await call("deleteThread", ["threadId": threadId])
     }
 
     /// What a voice call carried, from the computer: the chat this device holds may not reach back to it.
@@ -240,6 +284,31 @@ public extension HostClient {
         let _: Empty = try await call("markRead", ["botId": id])
     }
 
+    /// Goes on with a turn that stopped half done, from its card; the host refuses a card already used.
+    func continueTurn(entryId: String) async throws {
+        let _: Empty = try await call("continueTurn", ["entryId": entryId])
+    }
+
+    /// Ends a stopped turn or a failed routine run from its card; the messages stay.
+    func cancelTask(entryId: String) async throws {
+        let _: Empty = try await call("cancelTask", ["entryId": entryId])
+    }
+
+    /// Hands a waiting message to the running turn instead of after it.
+    func steer(entryId: String) async throws {
+        let _: Empty = try await call("steer", ["entryId": entryId])
+    }
+
+    /// Rewrites a waiting message; the agent reads it when its turn comes.
+    func editQueued(entryId: String, text: String) async throws {
+        let _: Empty = try await call("editQueued", ["entryId": entryId, "text": text])
+    }
+
+    /// Drops a waiting message: the agent never hears it.
+    func deleteQueued(entryId: String) async throws {
+        let _: Empty = try await call("deleteQueued", ["entryId": entryId])
+    }
+
     /// Toggles the user's `emoji` reaction on a chat message.
     func react(entryId: String, emoji: String) async throws -> Entry {
         struct Res: Decodable { var entry: Entry }
@@ -250,15 +319,16 @@ public extension HostClient {
     /// `replyTo`: the chat message this one quotes.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
+    /// `threadId`: the side conversation it belongs to; the chat itself has none.
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
-              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+              pasted: [String]? = nil, call: String? = nil, threadId: String? = nil) async throws -> Entry {
         struct Body: Encodable {
             var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
-            var pasted: [String]?; var call: String?
+            var pasted: [String]?; var call: String?; var threadId: String?
         }
         struct Res: Decodable { var entry: Entry }
         let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
-                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call, threadId: threadId)
         let res: Res = try await self.call("send", body)
         return res.entry
     }

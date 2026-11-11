@@ -14,7 +14,7 @@ from the graphical canvas of the desktop and phone apps, or in the terminal UI (
 
 | Thing | Fields |
 |---|---|
-| **Link** | `id`, `routineId`, `fromBotId`, `toBotId`, `instruction` (≤ 8000 bytes, may be empty), `createdAt` (ms) |
+| **Link** | `id`, `routineId`, `fromBotId`, `toBotId`, `instruction` (≤ 8000 bytes, may be empty), `model` (`null` = the target bot's own), `modelOptions` (that model's settings, e.g. `effort`), `createdAt` (ms) |
 | **Step** | `id`, `runId`, `botId`, `deliveryId` (the bot request that carried the input; `null` for the routine's own bot), `input`, `output` (`null` until it replies), `status`, `error`, `createdAt`, `updatedAt` |
 | **Step status** | `running`, `succeeded`, `failed`, `skipped`, `cancelled` |
 | **Position** | `nodeKey` (`routine:<id>` or `bot:<id>`), `x`, `y` (numbers, at most ±1 000 000) |
@@ -73,7 +73,7 @@ Request bodies are JSON objects; ids are 1 to 200 characters; unknown or invalid
 | `placeRoutineFlowBot` | `botId`, `placedBotId`, `x`, `y` | `{"ok": true}` |
 | `connectRoutineFlow` | `routineId`, `fromBotId`, `toBotId`, optional `instruction` | `{"link": Link}` |
 | `disconnectRoutineFlow` | `linkId` | `{"ok": true}` |
-| `updateRoutineFlowLink` | `linkId`, `instruction` | `{"link": Link}` |
+| `updateRoutineFlowLink` | `linkId`, `instruction`, optional `model` and `modelOptions` (absent keeps, `null`/`{}` clears) | `{"link": Link}` |
 | `testRoutineFlow` | `botId` (the routine's owner), `routineId`, optional `input` | `{"runId": "flow-test-…"}` |
 
 `testRoutineFlow` doesn't run the routine: it starts the flow as if the routine's bot had just replied with `input`
@@ -93,7 +93,7 @@ Request bodies are JSON objects; ids are 1 to 200 characters; unknown or invalid
     "upcomingRuns": [1730000000000],
     "steps": [ /* the steps of the routine's newest run that has any, oldest first */ ]
   }],
-  "links": [ { "id": "…", "routineId": "…", "fromBotId": "…", "toBotId": "…", "instruction": "", "createdAt": 0 } ],
+  "links": [ { "id": "…", "routineId": "…", "fromBotId": "…", "toBotId": "…", "instruction": "", "model": null, "modelOptions": {}, "createdAt": 0 } ],
   "positions": [ { "nodeKey": "routine:…", "x": 0.0, "y": 0.0 } ],
   "placedBotIds": ["…"]
 }
@@ -130,7 +130,7 @@ ignore the new method names and `routineFlow` events (the TUI and apps skip unkn
 
 ## Screens
 
-In each client, a bot's routines screen has a **List | Flow** selector. Flow shows the canvas of that bot: routine and bot nodes, a fixed dashed edge from each routine to its own bot, link edges, saved positions (nodes never moved sit in automatic columns by depth), and each bot's latest step status (icon and words, never colour alone). A **list** of the same flow is the keyboard and screen-reader equivalent (and the phone's default with TalkBack on or on narrow screens). Both open the same inspector: a routine (pause/resume, test, latest steps, run history), a bot (hand its reply on to…, remove if placed by hand) or a link (instruction, disconnect). States: loading, no routines, not connected, no runs yet, error with retry, offline (read-only) and a host without the methods (the canvas says to update Codync there). The desktop rail's **Bot canvas** button opens the selected bot's flow in the same large sheet.
+In each client, a bot's routines screen has a **List | Flow** selector. Flow shows the canvas of that bot: routine and bot nodes, a fixed dashed edge from each routine to its own bot, link edges, saved positions (nodes never moved sit in automatic columns by depth), and each bot's latest step status (icon and words, never colour alone). A **list** of the same flow is the keyboard and screen-reader equivalent (and the phone's default with TalkBack on or on narrow screens). Both open the same inspector: a routine (pause/resume, test, latest steps, run history), a bot (hand its reply on to…, remove if placed by hand) or a link (instruction, model and its options, disconnect). States: loading, no routines, not connected, no runs yet, error with retry, offline (read-only) and a host without the methods (the canvas says to update Codync there). The desktop rail's **Bot canvas** button opens the selected bot's flow in the same large sheet.
 
 - **Desktop** (`apps/desktop/src/renderer/views/routines/flow/`, model `lib/routine-flow.ts`, state `store/routine-flow-store.ts`): hand-written pan/zoom/drag; connect by dragging from a bot's dot onto another bot, or from the inspector. Choosing **Flow** opens the canvas in a large sheet (the details column is too narrow for a graph); the same canvas can be reopened from its expand button. A routine card shows the next seven days as seven tick columns and its newest runs as status dots, with a play button that tests the flow (disabled until a bot is linked).
 - **Android** (`RoutineFlow*.kt`, model `core/RoutineFlow.kt`): pan, pinch and node dragging; connect from the bot's detail sheet; the same week strip, run dots and play button on a routine card.

@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import coil3.ImageLoader
 import com.codync.android.core.MarkdownBlocks
@@ -70,23 +71,26 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
     val code = Palette.text.copy(alpha = 0.08f)
     val linkTint = Palette.accent
     when (block) {
-        is Block.Paragraph -> Text(rememberInline(block.text, code, linkTint), style = Type.chatBody, color = ink)
+        is Block.Paragraph -> Text(rememberInline(block.text, code, linkTint), style = Type.chatBody.byText(), color = ink)
         is Block.Heading -> Text(rememberInline(block.text, code, linkTint), style = when (block.level) {
             1 -> Type.chatTitle3.bold; 2 -> Type.chatHeadline; else -> Type.chatSubheadline.bold
-        }, color = ink)
+        }.byText(), color = ink)
         is Block.Bullet -> Row(Modifier.padding(start = 16.dp * block.depth), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(block.marker, style = Type.chatBody.monospacedDigit, color = Palette.secondary)
-            Text(rememberInline(block.text, code, linkTint), style = Type.chatBody, color = ink)
+            Text(rememberInline(block.text, code, linkTint), style = Type.chatBody.byText(), color = ink)
         }
         Block.Rule -> Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(Palette.border))
         is Block.Table -> MarkdownTable(block, code, linkTint, ink)
         is Block.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(Palette.border))
-            Text(rememberInline(block.text, code, linkTint), Modifier.padding(start = 10.dp), style = Type.chatBody, color = Palette.secondary)
+            Text(rememberInline(block.text, code, linkTint), Modifier.padding(start = 10.dp), style = Type.chatBody.byText(), color = Palette.secondary)
         }
         is Block.Code -> CodeBlock(block.text, block.language)
     }
 }
+
+/** A paragraph reads in the direction of its own text (Arabic and Hebrew right to left); code stays left to right. */
+private fun TextStyle.byText() = copy(textDirection = TextDirection.Content)
 
 /** A table: a bold header and hairlines between rows, scrolling sideways when wide. */
 @Composable private fun MarkdownTable(table: Block.Table, code: Color, linkTint: Color, ink: Color) {
@@ -98,7 +102,7 @@ val LocalNetworkImages = staticCompositionLocalOf<ImageLoader> { error("Missing 
                 for ((index, row) in rows.withIndex()) {
                     if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.border))
                     Text(rememberInline(row.getOrElse(column) { "" }, code, linkTint), Modifier.heightIn(min = 22.dp),
-                        style = if (index == 0) Type.chatBody.semibold else Type.chatBody, color = ink, softWrap = false)
+                        style = if (index == 0) Type.chatBody.semibold.byText() else Type.chatBody.byText(), color = ink, softWrap = false)
                 }
             }
         }

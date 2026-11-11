@@ -11,7 +11,7 @@ use super::{Store, next_rev};
 use anyhow::{Result, bail};
 use rusqlite::{Connection, Transaction, params};
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The coordinate limit of a node; far beyond any canvas a person would build.
 pub const MAX_COORDINATE: f64 = 1_000_000.0;
@@ -26,6 +26,10 @@ pub struct FlowLink {
     pub from_bot_id: String,
     pub to_bot_id: String,
     pub instruction: String,
+    /// The model this step runs on, when the link says one instead of the target bot's own.
+    pub model: Option<String>,
+    /// The model's options (effort…) that go with `model`, or on their own.
+    pub model_options: BTreeMap<String, String>,
     pub created_at: i64,
     /// The bot that owns the routine, whose run starts the flow.
     #[serde(skip)]
@@ -52,6 +56,7 @@ pub(super) fn open(c: &Connection) -> Result<()> {
         "CREATE TABLE IF NOT EXISTS routine_flow_links(
             id TEXT PRIMARY KEY, routine_id TEXT NOT NULL, owner_bot_id TEXT NOT NULL,
             from_bot_id TEXT NOT NULL, to_bot_id TEXT NOT NULL, instruction TEXT NOT NULL DEFAULT '',
+            model TEXT, model_options TEXT NOT NULL DEFAULT '{}',
             created_at INTEGER NOT NULL, UNIQUE(routine_id, from_bot_id, to_bot_id));
          CREATE INDEX IF NOT EXISTS routine_flow_links_routine ON routine_flow_links(routine_id);
          CREATE INDEX IF NOT EXISTS routine_flow_links_owner ON routine_flow_links(owner_bot_id);
@@ -84,11 +89,18 @@ fn row_link(r: &rusqlite::Row) -> rusqlite::Result<FlowLink> {
         from_bot_id: r.get(3)?,
         to_bot_id: r.get(4)?,
         instruction: r.get(5)?,
-        created_at: r.get(6)?,
+        model: r.get(6)?,
+        model_options: serde_json::from_str(r.get::<_, String>(7)?.as_str()).unwrap_or_default(),
+        created_at: r.get(8)?,
     })
 }
 
-const LINK_COLUMNS: &str = "id, routine_id, owner_bot_id, from_bot_id, to_bot_id, instruction, created_at";
+const LINK_COLUMNS: &str =
+    "id, routine_id, owner_bot_id, from_bot_id, to_bot_id, instruction, model, model_options, created_at";
+
+fn options_json(options: &BTreeMap<String, String>) -> String {
+    serde_json::to_string(options).unwrap_or_else(|_| "{}".into())
+}
 
 fn links_of(c: &Connection, routine_id: &str) -> Result<Vec<FlowLink>> {
     let mut st = c.prepare(&format!(
@@ -181,7 +193,7 @@ impl Store {
             let tx = c.unchecked_transaction()?;
             validate(&links_of(&tx, &link.routine_id)?)?;
             tx.execute(
-                &format!("INSERT INTO routine_flow_links({LINK_COLUMNS}) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
+                &format!("INSERT INTO routine_flow_links({LINK_COLUMNS}) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
                 params![
                     link.id,
                     link.routine_id,
@@ -189,6 +201,8 @@ impl Store {
                     link.from_bot_id,
                     link.to_bot_id,
                     link.instruction,
+                    link.model,
+                    options_json(&link.model_options),
                     link.created_at
                 ],
             )?;
@@ -199,12 +213,21 @@ impl Store {
         })
     }
 
-    pub fn flow_update_link(&self, id: &str, instruction: &str) -> Result<Option<(FlowLink, FlowChange)>> {
+    /// Rewrites a link's instruction, model and model options (an empty `model` clears it).
+    pub fn flow_update_link(
+        &self,
+        id: &str,
+        instruction: &str,
+        model: Option<&str>,
+        model_options: &BTreeMap<String, String>,
+    ) -> Result<Option<(FlowLink, FlowChange)>> {
         self.with_connection(|c| {
             let tx = c.unchecked_transaction()?;
-            if tx.execute("UPDATE routine_flow_links SET instruction = ?2 WHERE id = ?1", params![id, instruction])?
-                == 0
-            {
+            let gone = tx.execute(
+                "UPDATE routine_flow_links SET instruction = ?2, model = ?3, model_options = ?4 WHERE id = ?1",
+                params![id, instruction, model, options_json(model_options)],
+            )?;
+            if gone == 0 {
                 return Ok(None);
             }
             let mut st = tx.prepare(&format!("SELECT {LINK_COLUMNS} FROM routine_flow_links WHERE id = ?1"))?;

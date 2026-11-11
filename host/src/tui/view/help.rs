@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 69] = [
+const HELP: [(&str, &str, &str); 71] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -32,6 +32,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("CHAT", "c", "copy the last reply"),
     ("CHAT", "C", "open connection / login request"),
     ("CHAT", "F", "try a failed routine run again"),
+    ("CHAT", "E", "end a stopped or failed task"),
     ("CHAT", "r", "reply to a message"),
     ("CHAT", "v", "pick a message"),
     ("CHAT", "j k  ↵", "picking: move / reply"),
@@ -51,7 +52,7 @@ const HELP: [(&str, &str, &str); 69] = [
     ("TYPE", "alt b / f", "word left / right"),
     ("TYPE", "^w ^u", "delete word / line"),
     ("TYPE", "@name", "group: ask just that bot"),
-    ("TYPE", "/", "commands: /fast, skills"),
+    ("TYPE", "/", "commands: /fast, /steer, /unqueue, /edit, skills"),
     ("BOTS", "n", "new bot"),
     ("BOTS", "m", "new group chat"),
     ("BOTS", "e", "settings, or edit a group"),
@@ -66,8 +67,9 @@ const HELP: [(&str, &str, &str); 69] = [
     ("BOTS", "⇧← ⇧→", "between details, library, memory, settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
-    ("VIEW", "t", "trace pane"),
-    ("VIEW", "T", "trace full screen"),
+    ("VIEW", "t", "pick a message, t: its thread; otherwise trace pane"),
+    ("VIEW", "T", "threads of this chat"),
+    ("VIEW", "V", "trace full screen"),
     ("VIEW", "{ }", "previous / next turn"),
     ("VIEW", "b", "compact roster"),
     ("VIEW", "U", "usage"),

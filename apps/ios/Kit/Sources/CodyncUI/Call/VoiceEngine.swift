@@ -80,6 +80,7 @@ extension VoiceEngine {
         return switch provider {
         case .openAI: .openai
         case .gemini: .gemini
+        case .elevenLabs: .cloud
         case nil: .onDevice
         }
     }
@@ -128,14 +129,18 @@ enum VoiceSettings {
     }
 
     static func remember(_ status: VoiceStatus) {
-        for entry in status.providers { remember(entry.defaults, for: entry.provider) }
+        for entry in status.providers {
+            // A provider this app version doesn't know stays out of its defaults.
+            guard let provider = VoiceProvider(rawValue: entry.provider) else { continue }
+            remember(entry.defaults, for: provider)
+        }
     }
 
     /// `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud).
     static func modeKey(_ provider: VoiceProvider) -> String { "callMode.\(provider.rawValue)" }
 
     static func isSpeechMode(_ provider: VoiceProvider) -> Bool {
-        UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
+        !provider.live || UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
     }
 
     static func transcribeKey(_ provider: VoiceProvider) -> String { "callSpeechToText.\(provider.rawValue)" }
@@ -180,8 +185,10 @@ enum VoiceSettings {
     static func voiceKey(_ provider: VoiceProvider) -> String { "callVoice.\(provider.rawValue)" }
 
     static func voice(_ provider: VoiceProvider) -> String {
-        UserDefaults.standard.string(forKey: voiceKey(provider)).flatMap { provider.voices.contains($0) ? $0 : nil }
-            ?? provider.voices[0]
+        let stored = UserDefaults.standard.string(forKey: voiceKey(provider)).flatMap { $0.isEmpty ? nil : $0 }
+        // The account's own voices (ElevenLabs) are not in the fixed list.
+        if provider == .elevenLabs { return stored ?? provider.voices[0] }
+        return stored.flatMap { provider.voices.contains($0) ? $0 : nil } ?? provider.voices[0]
     }
 }
 

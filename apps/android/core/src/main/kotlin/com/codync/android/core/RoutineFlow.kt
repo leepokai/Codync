@@ -11,9 +11,11 @@ import kotlin.math.roundToLong
 // that mirrors the canvas — and pre-checks the connect rules so a drop the host would refuse never leaves the phone.
 // The desktop app has the same model in `lib/routine-flow.ts`.
 
+/** [model] and [modelOptions] are what this step runs on instead of the target bot's own model; null is the bot's own. */
 @Serializable data class FlowLink(
     val id: String, val routineId: String, val fromBotId: String, val toBotId: String,
-    val instruction: String = "", val createdAt: Long = 0,
+    val instruction: String = "", val model: String? = null, val modelOptions: Map<String, String> = emptyMap(),
+    val createdAt: Long = 0,
 )
 
 /** `status`: running, succeeded, failed, skipped or cancelled. */

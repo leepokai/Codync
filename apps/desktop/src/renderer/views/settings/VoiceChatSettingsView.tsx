@@ -1,6 +1,6 @@
-import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
+import { audioType, onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LoopbackTransport, type HostClient } from '../../client/host-client'
+import { fromBase64, LoopbackTransport, type HostClient } from '../../client/host-client'
 import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
@@ -16,9 +16,10 @@ import { useTr } from '../../lib/use-language'
 
 
 /**
- * Voice chat settings: which voice carries calls (on-device speech, or OpenAI / Gemini on the
- * user's own key kept by the computer), the mode, models and voice. The computer is the store
- * in `StoreContext`. `showsHeader` is false inside Settings, which titles the page itself.
+ * Voice chat settings: which voice carries calls (on-device speech, or OpenAI / Gemini /
+ * ElevenLabs on the user's own key kept by the computer), the mode, models and voice. The
+ * computer is the store in `StoreContext`. `showsHeader` is false inside Settings, which titles
+ * the page itself.
  */
 export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: boolean }) {
   const tr = useTr()
@@ -55,10 +56,14 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
               </ValueRow>,
               ...(provider
                 ? [
-                    <ValueRow key="mode" label="Mode" detail={mode === 'speech' ? 'Sent when you pause, replies read aloud.' : 'A live conversation. Talk over replies.'}>
-                      <ChoicePicker selection={mode} options={[{ id: 'realtime', label: 'Realtime' }, { id: 'speech', label: 'Speech' }]} onChange={setMode} />
-                    </ValueRow>,
-                    ...(mode === 'speech' ? [<PauseRow key="pause" />] : []),
+                    ...(voice.supportsRealtime(provider)
+                      ? [
+                          <ValueRow key="mode" label="Mode" detail={mode === 'speech' ? 'Sent when you pause, replies read aloud.' : 'A live conversation. Talk over replies.'}>
+                            <ChoicePicker selection={mode} options={[{ id: 'realtime', label: 'Realtime' }, { id: 'speech', label: 'Speech' }]} onChange={setMode} />
+                          </ValueRow>,
+                        ]
+                      : []),
+                    ...(voice.isSpeechMode(provider) ? [<PauseRow key="pause" />] : []),
                   ]
                 : [
                     <ValueRow key="language" label="Language" detail="The language you speak in calls.">
@@ -95,12 +100,32 @@ function PauseRow() {
   )
 }
 
+/** One sample at a time: Test reads it aloud, stops the one before and frees its blob URL. */
+let sample: { audio: HTMLAudioElement; url: string } | null = null
+
+function playSample(clip: { audio: string; format: string }) {
+  if (sample) {
+    sample.audio.pause()
+    URL.revokeObjectURL(sample.url)
+    sample = null
+  }
+  const url = URL.createObjectURL(new Blob([fromBase64(clip.audio) as BlobPart], { type: audioType(clip.format) }))
+  const audio = new Audio(url)
+  sample = { audio, url }
+  const done = () => {
+    URL.revokeObjectURL(url)
+    if (sample?.audio === audio) sample = null
+  }
+  audio.onended = done
+  audio.onerror = done
+  void audio.play().catch(done)
+}
+
 /** One provider: the key the computer keeps, models, voice and this month's minutes. `dictationOnly` keeps the key and speech-to-text model. */
 function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: VoiceProvider; dictationOnly?: boolean }) {
   const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
-  const [mode] = usePref(voice.mode(provider))
   const [dictationEngine] = usePref(voice.dictationEngine)
   /** null while the computer hasn't answered yet. */
   const [saved, setSaved] = useState<boolean | null>(null)
@@ -109,12 +134,14 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [chosenVoice, setChosenVoice] = useState(() => voice.chosenVoice(provider))
+  /** The provider's voices: its own list (ElevenLabs), or the fixed ids until it answers. */
+  const [voices, setVoices] = useState<{ id: string; name: string }[]>(() => info.voices.map((v) => ({ id: v, name: v })))
   const [model, setModel] = useState(() => voice.chosenModel(provider, 'realtime'))
   const [transcribeModel, setTranscribeModel] = useState(() => voice.chosenModel(provider, 'transcribe'))
   const [speechModel, setSpeechModel] = useState(() => voice.chosenModel(provider, 'speech'))
   const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? { models: [], transcribe: [], speech: [] })
   const busyRef = useRef(false)
-  const speechMode = mode === 'speech'
+  const speechMode = voice.isSpeechMode(provider)
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
   const transcribes = dictationOnly || speechMode || dictationEngine === provider
   const hasKey = saved === true
@@ -123,6 +150,15 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
 
   const loadModels = async (client: HostClient) => {
     let list: VoiceModels
+    if (!voice.supportsRealtime(provider)) {
+      // ElevenLabs' voices belong to the account: premade, cloned and saved.
+      try {
+        const own = (await voice.voiceVoices(client, provider)).voices
+        if (own.length > 0) setVoices(own)
+      } catch {
+        // The models below report the key's own trouble.
+      }
+    }
     try {
       list = await voice.voiceModels(client, provider)
     } catch {
@@ -190,7 +226,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
     run(async (client) => {
       if (!typed || (!replacing && hasKey)) {
         if (dictationOnly) await voice.voiceModels(client, provider)
-        else if (speechMode) await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK')
+        else if (speechMode) playSample(await voice.voiceSpeak(client, provider, speechModel, chosenVoice, 'OK'))
         else await voice.voiceSession(client, provider, model, chosenVoice)
         setResult({ ok: true, text: 'Key works' })
       } else {
@@ -312,7 +348,8 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
                 <ValueRow label="Voice">
                   <ChoicePicker
                     selection={chosenVoice}
-                    options={info.voices.map((v) => ({ id: v, label: v }))}
+                    options={(voices.some((v) => v.id === chosenVoice) ? voices : [{ id: chosenVoice, name: chosenVoice }, ...voices])
+                      .map((v) => ({ id: v.id, label: v.name }))}
                     onChange={(v) => {
                       setChosenVoice(v)
                       voice.saveVoice(provider, v)

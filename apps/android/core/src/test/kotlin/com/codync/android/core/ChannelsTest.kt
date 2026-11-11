@@ -2,7 +2,9 @@ package com.codync.android.core
 
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChannelsTest {
@@ -20,9 +22,33 @@ class ChannelsTest {
         assertEquals(SlackStatus(true, true, "T1"), Channels.decodeSlack(parse("""{"configured":true,"socketMode":true,"workspaceId":"T1"}""")))
     }
 
+    @Test fun `a Discord status decodes without a connection or a bound channel`() {
+        assertEquals(DiscordStatus(), Channels.decodeDiscord(parse("""{"configured":false,"guildId":null,"botUserId":null,"bindings":null,"state":"starting","deliveries":[]}""")))
+        assertEquals(
+            DiscordStatus(true, "g1", "u1", listOf(DiscordBinding("c1", "b1", listOf("u2"))), "ok"),
+            Channels.decodeDiscord(parse("""{"configured":true,"guildId":"g1","botUserId":"u1","bindings":[{"channelId":"c1","botId":"b1","allowedUsers":["u2"]}],"state":"ok"}""")),
+        )
+    }
+
     @Test fun `a pairing answer carries the code once`() {
         assertEquals("ABCD2345", Channels.pairingCode(parse("""{"bots":[],"result":{"code":"ABCD2345","expiresAt":5}}""")))
         assertNull(Channels.pairingCode(parse("""{"bots":[],"result":{}}""")))
+    }
+
+    @Test fun `shape rules match the host's`() {
+        assertTrue(Channels.nameOk("home-2"))
+        assertFalse(Channels.nameOk(""))
+        assertFalse(Channels.nameOk("Home"))
+        assertFalse(Channels.nameOk("home_2"))
+        assertTrue(Channels.tokenOk("123456:" + "a".repeat(35)))
+        assertFalse(Channels.tokenOk("123456:short"))
+        assertFalse(Channels.tokenOk("abc:" + "a".repeat(35)))
+        assertTrue(Channels.idOk("123456789012345678"))
+        assertFalse(Channels.idOk("12a4"))
+        assertTrue(Channels.discordTokenOk("a".repeat(24) + ".bbb." + "c".repeat(30)))
+        assertFalse(Channels.discordTokenOk("nodots" + "c".repeat(30)))
+        assertTrue(GitHub.tokenOk("github_pat_" + "A".repeat(30)))
+        assertFalse(GitHub.tokenOk("short token"))
     }
 
     @Test fun `words follow the other clients`() {

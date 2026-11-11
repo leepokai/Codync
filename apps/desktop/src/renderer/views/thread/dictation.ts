@@ -104,7 +104,7 @@ export class Dictation extends Observable {
       this.recording = { provider, pcm: [], stopMic: null }
       return void this.record(this.recording, ++this.generation)
     }
-    if (!speech) return this.fail(`${this.platform.noSpeech} Pick OpenAI or Gemini beside the mic.`)
+    if (!speech) return this.fail(`${this.platform.noSpeech} Pick OpenAI, Gemini or ElevenLabs beside the mic.`)
     this.off = speech.onEvent((e) => this.event(e))
     speech.start(this.platform.language())
     this.listen()

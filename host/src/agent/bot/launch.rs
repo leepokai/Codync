@@ -172,6 +172,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         pending_models: HashMap::new(),
         opening: false,
         fast_options: HashMap::new(),
+        config_options: HashMap::new(),
         reports_compaction: false,
         usage: HashMap::new(),
     })

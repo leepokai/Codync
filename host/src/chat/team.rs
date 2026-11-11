@@ -90,11 +90,27 @@ pub fn tools() -> Value {
     ])
 }
 
+/// A flow link's own model and options (effort…), or options alone on the bot's model.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ModelOverride {
+    pub model: Option<String>,
+    pub options: std::collections::BTreeMap<String, String>,
+}
+
+impl ModelOverride {
+    pub fn is_empty(&self) -> bool {
+        self.model.is_none() && self.options.is_empty()
+    }
+}
+
 /// Sent through the recipient's normal actor queue, but never merged with user messages or
 /// another request. It owns the exchange notices and the reply that goes back to the sender.
 pub struct BotRequest {
     pub entry_id: String,
     pub prompt: String,
+    /// The flow link's own model and options, when it names them: the step runs on those and the
+    /// bot's own are restored afterwards. Boxed so the bot's command stays small.
+    pub model: Option<Box<ModelOverride>>,
     /// The chain's handoffs so far; the reply carries them into the sender's turn, so the chain stays bounded.
     hops: u8,
     lifetime: MessageLifetime,
@@ -273,7 +289,10 @@ impl MessageLifetime {
     fn deliver(self, target: &str, hops: u8, prompt: String) -> Result<()> {
         let hub = self.hub.clone();
         let entry_id = self.entries.last().cloned().unwrap_or_default();
-        hub.send_cmd(target, Cmd::BotRequest(BotRequest { entry_id, prompt, hops, lifetime: self, reply: None }))
+        hub.send_cmd(
+            target,
+            Cmd::BotRequest(BotRequest { entry_id, prompt, model: None, hops, lifetime: self, reply: None }),
+        )
     }
 
     fn start(&mut self) {

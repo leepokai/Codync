@@ -124,6 +124,74 @@
   background: var(--border);
   flex: none;
 }
+/* The scrolling body of a thread sheet. */
+.replies-content {
+  container-type: inline-size;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 8px 16px 12px;
+}
+/* The message a thread branched from: a jump back to it in the chat. */
+.thread-branch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.thread-branch:hover { background: var(--bubble-agent); }
+.thread-branch-icon { display: flex; color: var(--tertiary); flex: none; }
+.thread-branch-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* How many replies a thread has, above them. */
+.thread-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+}
+.thread-count-rule { flex: 1; height: 1px; background: var(--border); }
+/* Where the unread replies begin. */
+.thread-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.thread-new-rule { flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 40%, transparent); }
+/* The inspector's threads card. */
+.threads-panel { display: flex; flex-direction: column; gap: 10px; }
+.threads-title { font-size: var(--text-title3); font-weight: 600; flex: 1; }
+.threads-row { display: flex; align-items: center; gap: 6px; }
+.threads-open {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.threads-open:hover { color: var(--text); }
+.threads-menu {
+  border: none;
+  background: none;
+  color: var(--secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.threads-menu:hover { background: var(--surface); color: var(--text); }
+.threads-menu-ellipsis { font-size: var(--text-body); color: inherit; line-height: 1; }
 .transcript-content {
   container-type: inline-size;
   max-width: var(--column);

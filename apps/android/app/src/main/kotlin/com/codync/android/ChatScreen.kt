@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -102,19 +103,23 @@ import com.kyant.shapes.RoundedRectangle
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
     // The chat message the next one answers (`replyTo`).
     var replyingTo by remember(bot.id) { mutableStateOf<Entry?>(null) }
+    // The chat's threads, open ones or the archive.
+    var threadsOpen by remember(bot.id) { mutableStateOf(false) }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val scroll = rememberConversationScroll()
     val density = LocalDensity.current
     // The main chat ignores an open thread: it stays put underneath.
     val chatState = state.copy(thread = null, trace = false)
+    DisposableEffect(Unit) { onDispose { store.stopReading() } }
     GlassStage(Modifier.fillMaxSize().background(bot.chatColor?.let { Color(android.graphics.Color.parseColor(it)).copy(alpha = 0.1f).compositeOver(Palette.background) } ?: Palette.background), chrome = {
         // Down to just above the header's bottom; the bottom one stops under Jump to latest.
         ScrollEdge(Edge.Top, top + 84.dp)
         ScrollEdge(Edge.Bottom, with(density) { composerHeight.toDp() } + 4.dp, Modifier.align(Alignment.BottomCenter))
         // 10 above the composer, as on iOS: the list already keeps 8 under its last row.
         JumpToLatest(scroll, Modifier.align(Alignment.BottomCenter).padding(bottom = with(density) { composerHeight.toDp() } + 10.dp))
-        ThreadHeader(bot, state, store, { shown -> if (shown.kind == "group") edit(shown) else details = DetailsRequest() }, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true }, { searching = true })
+        ThreadHeader(bot, state, store, { shown -> if (shown.kind == "group") edit(shown) else details = DetailsRequest() }, { store.showTrace(true) }, { openRoutine(null) }, { confirmNewSession = true }, { confirmDelete = true }, { searching = true },
+            threads = { threadsOpen = true }, newThread = { store.startThread(bot.id) })
         // The call floats over the chat under the header, as on iOS; the chat stays readable and usable.
         AnimatedVisibility(state.voice != null, Modifier.padding(top = top + 54.dp),
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { -it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { -it }) {
@@ -169,6 +174,7 @@ import com.kyant.shapes.RoundedRectangle
     CodyncSheet(state.thread, { store.openBot(bot.id) }) { root -> RepliesView(bot, root, state, store, connect) }
     CodyncSheet(state.trace, { store.showTrace(false) }) { TraceView(bot, state.thread, state) }
     CodyncSheet(searching, { searching = false }) { ConversationSearch(bot, store) { searching = false } }
+    CodyncSheet(threadsOpen, { threadsOpen = false }) { ThreadsSheet(bot, state, store) { threadsOpen = false } }
     CodyncSheet(routines, { routines = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded), initialDetent = SheetDetent.Expanded) {
         RoutinesScreen(bot, state, store, routineId)
     }
@@ -191,6 +197,10 @@ import com.kyant.shapes.RoundedRectangle
     val entries = state.entries.filter { it.botId == bot.id && it.threadId == null && it.isChat }.hidingCalls()
     val pending = state.pending.filter { it.botId == bot.id && it.threadId == null && (it.call == null || it.status == SendStatus.Failed) }
     val items = chatItems(entries, pending)
+    // The first unread message when the chat opened; opening marks it read, so keep the mark for this visit.
+    val unreadMark = remember(bot.id) { bot.readRev.takeIf { bot.unread > 0 } }
+    val rows = remember(items, unreadMark) { withUnreadLine(items, unreadMark) }
+    val newLineColor = bot.chatColor?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
     val more = bot.id !in state.historyComplete
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
@@ -203,12 +213,13 @@ import com.kyant.shapes.RoundedRectangle
             LaunchedEffect(Unit) { if ("history" !in state.busy) store.loadHistory() }
         }
         if (items.isEmpty() && !more) item("intro") { IntroCard(bot, state) }
-        items(items, key = { it.id }) { item ->
+        items(rows, key = { it.id }) { item ->
             when (item) {
                 is ChatItem.Separator -> TimeSeparator(item.at)
+                is ChatItem.NewLine -> NewLineRow(newLineColor)
                 is ChatItem.Message -> {
                     val routine = item.entry.data.text("routineId").takeIf { item.entry.kind == "notice" }
-                    if (routine != null) RoutineNotice(item.entry) { openRoutine(routine) }
+                    if (routine != null) RoutineNotice(item.entry, state, store) { openRoutine(routine) }
                     else if (item.entry.kind == "notice" && item.entry.call != null) Box(Modifier.padding(top = 6.dp)) {
                         Column {
                             CallLineRow(item.entry) { openCall(item.entry.id) }

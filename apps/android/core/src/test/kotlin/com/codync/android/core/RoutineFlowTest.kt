@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RoutineFlowTest {
-    private fun link(from: String, to: String) = FlowLink("$from-$to", "r", from, to, "", 1)
+    private fun link(from: String, to: String) = FlowLink("$from-$to", "r", from, to, "", createdAt = 1)
     private fun step(bot: String, status: String, at: Long = 1) = FlowStep("s-$bot", "run", bot, status = status, updatedAt = at)
 
     private fun canvas(links: List<FlowLink>, steps: List<FlowStep> = emptyList(), positions: List<FlowPosition> = emptyList(), placed: List<String> = emptyList()): FlowCanvas {

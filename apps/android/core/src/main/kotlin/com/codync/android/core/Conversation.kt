@@ -105,14 +105,22 @@ private data class EntryFields(
 
 @Serializable data class Attachment(val id: String, val name: String, val size: Long) {
     val isImage: Boolean get() = isImageName(name)
+    val isVideo: Boolean get() = isVideoName(name)
 }
 
-private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp", "svg")
+private val IMAGE_NAMES = listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp", "svg")
+private val VIDEO_NAMES = listOf("mp4", "m4v", "mov", "webm")
+
+private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in IMAGE_NAMES
+private fun isVideoName(name: String) = name.substringAfterLast('.', "").lowercase() in VIDEO_NAMES
 
 /** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
 @Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {
+    val isImage: Boolean get() = isImageName(name)
+    val isVideo: Boolean get() = isVideoName(name)
     /** An image small enough to show in the chat (the phone fetches all of it). */
-    val showsAsImage: Boolean get() = isImageName(name) && size <= 20L * 1024 * 1024
+    val showsAsImage: Boolean get() = isImage && isImageName(name) && !isSvg && size <= 20L * 1024 * 1024
+    val isSvg: Boolean get() = name.substringAfterLast('.', "").equals("svg", ignoreCase = true)
 
     /** Before any of it is read: a name that can't leave its folder and a hash to check. */
     fun validate() {
@@ -176,8 +184,8 @@ etwork` is null from hosts before the network view (or one this app can't read).
     data class Network(val view: NetworkView) : MirrorEvent
     /** These bots' routine-flow canvases changed: load them again. Live only, never a checkpoint. */
     data class RoutineFlow(val rev: Long, val botIds: List<String>) : MirrorEvent
-    /** A thread root's unread count. */
-    data class ThreadUnread(val threadId: String, val botId: String, val unread: Int) : MirrorEvent
+    /** A thread root's unread count, and its summary for the chip under it (`summary` is null once it's gone). */
+    data class ThreadUnread(val threadId: String, val botId: String, val unread: Int, val summary: JsonObject? = null) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -206,6 +214,7 @@ etwork` is null from hosts before the network view (or one this app can't read).
                     value.getValue("threadId").jsonPrimitive.content,
                     value.getValue("botId").jsonPrimitive.content,
                     value.getValue("unread").jsonPrimitive.int,
+                    value["thread"]?.takeUnless { it == JsonNull }?.jsonObject,
                 )
             }.getOrDefault(Ignored)
             "call" -> CallCue.decode(value)?.let(::Call) ?: Ignored

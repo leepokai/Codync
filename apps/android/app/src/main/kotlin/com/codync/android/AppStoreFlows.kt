@@ -61,8 +61,12 @@ fun AppStore.connectFlow(botId: String, routineId: String, from: String, to: Str
         put("routineId", routineId); put("fromBotId", from); put("toBotId", to); put("instruction", instruction)
     }) { answer -> linked(WireJson.decodeFromJsonElement(answer.getValue("link"))) }
 
-fun AppStore.updateFlowLink(botId: String, linkId: String, instruction: String) =
-    flowChange(botId, "updateRoutineFlowLink", buildJsonObject { put("linkId", linkId); put("instruction", instruction) })
+/** Saves the instruction and the model the step runs on; a null model is the next bot's own. */
+fun AppStore.updateFlowLink(botId: String, linkId: String, instruction: String, model: String?, modelOptions: Map<String, String>) =
+    flowChange(botId, "updateRoutineFlowLink", buildJsonObject {
+        put("linkId", linkId); put("instruction", instruction); put("model", model)
+        put("modelOptions", buildJsonObject { for ((id, value) in modelOptions) put(id, value) })
+    })
 
 fun AppStore.disconnectFlow(botId: String, linkId: String) =
     flowChange(botId, "disconnectRoutineFlow", buildJsonObject { put("linkId", linkId) })

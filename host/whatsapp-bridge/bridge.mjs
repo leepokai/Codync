@@ -21,8 +21,24 @@ mkdirSync(root, { recursive: true })
 
 let socket = null
 let starting = false
+/** The number waiting for a pairing code; the phone types the code in WhatsApp. */
+let pendingPhone = null
+/** True once the code was asked for this attempt, so each QR asks once. */
+let pairRequested = false
 
 const out = (event) => process.stdout.write(`${JSON.stringify(event)}\n`)
+
+async function requestPairing() {
+    if (!pendingPhone || !socket) return
+    pairRequested = true
+    try {
+        const code = await socket.requestPairingCode(pendingPhone)
+        out({ type: 'pairCode', code })
+    } catch (error) {
+        pairRequested = false
+        out({ type: 'state', state: 'error', error: String(error?.message ?? error) })
+    }
+}
 
 function textOf(message) {
     const m = message?.message
@@ -58,15 +74,24 @@ async function start() {
         socket.ev.on('creds.update', saveCreds)
         socket.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update
-            if (qr) out({ type: 'qr', qr })
+            if (qr) {
+                out({ type: 'qr', qr })
+                // A number given up front is linked with a code instead of a scanned code.
+                if (pendingPhone && !pairRequested) void requestPairing()
+            }
             if (connection === 'open') {
+                pendingPhone = null
+                pairRequested = false
                 out({ type: 'state', state: 'connected', me: socket.user?.id ? jidNormalizedUser(socket.user.id) : null, name: socket.user?.name ?? null })
             }
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode
                 socket = null
-                if (code === DisconnectReason.loggedOut) out({ type: 'state', state: 'loggedOut' })
-                else {
+                pairRequested = false
+                if (code === DisconnectReason.loggedOut) {
+                    pendingPhone = null
+                    out({ type: 'state', state: 'loggedOut' })
+                } else {
                     out({ type: 'state', state: 'reconnecting' })
                     setTimeout(() => void start(), 2000)
                 }
@@ -125,6 +150,8 @@ async function stop() {
         socket?.end(undefined)
     } catch {}
     socket = null
+    pendingPhone = null
+    pairRequested = false
     out({ type: 'state', state: 'stopped' })
 }
 
@@ -133,7 +160,20 @@ async function logout() {
         await socket?.logout()
     } catch {}
     socket = null
+    pendingPhone = null
+    pairRequested = false
     out({ type: 'state', state: 'loggedOut' })
+}
+
+/** Links a number with a pairing code: the phone types the code instead of scanning a QR code. */
+async function pair(command) {
+    const phone = String(command.phone ?? '').replace(/[\s()+-]/gu, '')
+    if (!phone) return out({ type: 'state', state: 'error', error: 'WhatsApp needs the number to link' })
+    pendingPhone = phone
+    pairRequested = false
+    // The code needs a socket; a running one that already showed a QR asks again.
+    if (!socket) return start()
+    await requestPairing()
 }
 
 async function send(command) {
@@ -158,6 +198,7 @@ for await (const line of createInterface({ input: process.stdin })) {
         continue
     }
     if (command.type === 'start') await start()
+    else if (command.type === 'pair') await pair(command)
     else if (command.type === 'stop') await stop()
     else if (command.type === 'logout') await logout()
     else if (command.type === 'send') await send(command)

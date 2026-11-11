@@ -18,6 +18,8 @@ import com.codync.android.design.SecondaryButton
 import com.codync.android.design.Type
 import com.kyant.shapes.RoundedRectangle
 import com.codync.android.design.AccentStyle
+import com.codync.android.design.AvatarStyle
+import com.codync.android.design.tr
 import com.codync.android.design.CardSection
 import com.codync.android.design.ChatTextScale
 import com.codync.android.design.ChoicePicker
@@ -98,6 +100,16 @@ import com.codync.android.design.semibold
             }
         }
         row {
+            ValueRow(tr("Bot avatars"), detail = tr("Plush is shaded and rounded; Flat is even dots.")) {
+                ChoicePicker(
+                    selection = settings.avatarStyle,
+                    options = AvatarStyle.entries.map { it to tr(it.label) },
+                    select = prefs::setAvatarStyle,
+                    label = tr("Bot avatars"),
+                )
+            }
+        }
+        row {
             SwitchRow(
                 title = "Haptic feedback",
                 isOn = settings.hapticsEnabled,
@@ -128,6 +140,7 @@ import com.codync.android.design.semibold
                         prefs.setChatTextScale(def.chatTextScale)
                         prefs.setDensity(def.density)
                         prefs.setHapticsEnabled(def.hapticsEnabled)
+                        prefs.setAvatarStyle(def.avatarStyle)
                     }
                 }
             }

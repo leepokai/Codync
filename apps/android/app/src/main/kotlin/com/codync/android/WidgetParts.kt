@@ -25,6 +25,8 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider as Ink
 import com.codync.android.core.WidgetBot
+import com.codync.android.design.AppearancePreferences
+import com.codync.android.design.AvatarStyle
 import com.codync.android.design.characterAvatarBitmap
 import com.codync.android.design.translate
 import kotlin.math.roundToInt
@@ -82,7 +84,8 @@ internal fun ticks(percent: Double, tint: Int, red: Int): Bitmap {
 @Composable internal fun Face(context: Context, shape: String, color: String, size: Dp, highlight: Int? = null) {
     val pixels = (size.value * context.resources.displayMetrics.density).toInt().coerceIn(1, 256)
     val inkColor = ink.getColor(context).toArgb()
-    val bitmap = remember(shape, color, pixels, inkColor, highlight) { characterAvatarBitmap(shape, color, pixels, inkColor, highlight) }
+    val flat = remember(context) { AppearancePreferences.get(context).settings.avatarStyle == AvatarStyle.Flat }
+    val bitmap = remember(shape, color, pixels, inkColor, highlight, flat) { characterAvatarBitmap(shape, color, pixels, inkColor, highlight, flat = flat) }
     Image(ImageProvider(bitmap), null, GlanceModifier.size(size))
 }
 

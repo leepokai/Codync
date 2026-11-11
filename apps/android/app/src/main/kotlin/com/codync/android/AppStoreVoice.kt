@@ -275,6 +275,9 @@ fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(getA
 internal suspend fun AppStore.voiceStatus(): VoiceStatus = WireJson.decodeFromJsonElement(hostCall("voiceStatus", JsonObject(emptyMap()), 30_000))
 internal suspend fun AppStore.voiceModels(provider: VoiceProvider): VoiceModels =
     WireJson.decodeFromJsonElement(hostCall("voiceModels", body("provider" to provider.id), 30_000))
+/** The provider's own voices (ElevenLabs): premade, cloned and saved. */
+internal suspend fun AppStore.voiceVoices(provider: VoiceProvider): VoiceVoices =
+    WireJson.decodeFromJsonElement(hostCall("voiceVoices", body("provider" to provider.id), 30_000))
 
 /** A short-lived credential, which checks a key in the call settings. */
 internal suspend fun AppStore.voiceSession(provider: VoiceProvider, model: String, voice: String): String =
@@ -286,7 +289,7 @@ internal suspend fun AppStore.voiceTranscribe(provider: VoiceProvider, model: St
     hostCall("voiceTranscribe", body("provider" to provider.id, "model" to model, "audio" to Base64.getEncoder().encodeToString(wav)), 60_000)
         .jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
-/** Text to speech for a stretch of a reply: the audio and its format (`aac` or `wav`). */
+/** Text to speech for a stretch of a reply: the audio and its format (`aac`, `wav` or `mp3`). */
 internal suspend fun AppStore.voiceSpeak(provider: VoiceProvider, model: String, voice: String, text: String): Pair<ByteArray, String> {
     val clip = hostCall("voiceSpeak", body("provider" to provider.id, "model" to model, "voice" to voice, "text" to text), 90_000).jsonObject
     val audio = clip["audio"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Base64.getDecoder().decode(it) }.getOrNull() }

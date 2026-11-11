@@ -26,6 +26,7 @@ mod pages;
 mod replies;
 mod routines;
 mod skill;
+mod threads;
 mod when;
 
 pub use analytics::AnalyticsSheet;
@@ -75,6 +76,20 @@ pub enum Reply {
         bot: String,
         peer: String,
     },
+    /// A thread's own lines (`thread {botId, threadId}`).
+    Thread {
+        bot: String,
+        root: String,
+    },
+    /// A chat's threads, archived or not.
+    Threads {
+        bot: String,
+        archived: bool,
+    },
+    /// A thread changed (renamed, archived) in the sheet with root `.1`.
+    ThreadChanged(String),
+    /// A thread was deleted: its sheet closes.
+    ThreadDeleted(String),
     /// A voice call's own messages, by call id.
     CallEntries(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
@@ -113,6 +128,70 @@ pub struct BotChatSheet {
     /// Set by the last draw, for clamping the scroll and paging.
     pub max_scroll: Cell<usize>,
     pub page: Cell<usize>,
+}
+
+/// A thread: its lines, a composer, and its title. Opened from a message (branched) or the thread list.
+pub struct ThreadSheet {
+    pub bot: String,
+    /// The entry the thread hangs off; its lines carry it as `threadId`.
+    pub root: String,
+    pub title: String,
+    /// The message it branched from, shown above its lines.
+    pub branch: Option<String>,
+    /// The thread's lines; `None` while they load.
+    pub entries: Option<Vec<Entry>>,
+    /// Lines up from the bottom.
+    pub scroll: usize,
+    /// Set by the last draw, for clamping the scroll.
+    pub max_scroll: Cell<usize>,
+    /// Set by the last draw, for paging.
+    pub page: Cell<usize>,
+    pub composer: Editor,
+    /// The title being typed while renaming.
+    pub renaming: Option<Editor>,
+    pub archived: bool,
+    pub sending: bool,
+    pub error: Option<String>,
+}
+
+impl ThreadSheet {
+    pub fn new(bot: &str, root: &str) -> Self {
+        Self {
+            bot: bot.to_owned(),
+            root: root.to_owned(),
+            title: String::new(),
+            branch: None,
+            entries: None,
+            scroll: 0,
+            max_scroll: Cell::new(0),
+            page: Cell::new(0),
+            composer: Editor::default(),
+            renaming: None,
+            archived: false,
+            sending: false,
+            error: None,
+        }
+    }
+}
+
+/// A chat's threads: its branches, newest first.
+pub struct ThreadsSheet {
+    pub bot: String,
+    /// The list; `None` while it loads.
+    pub items: Option<Vec<Value>>,
+    /// Showing the archived ones.
+    pub archived: bool,
+    pub cursor: usize,
+}
+
+impl ThreadsSheet {
+    pub fn new(bot: &str) -> Self {
+        Self { bot: bot.to_owned(), items: None, archived: false, cursor: 0 }
+    }
+
+    pub fn current(&self) -> Option<&Value> {
+        self.items.as_ref()?.get(self.cursor)
+    }
 }
 
 /// A bot's Library tab: its artifacts and the files shared in its chat, newest first.
@@ -298,7 +377,7 @@ fn newline(k: KeyEvent) -> bool {
 }
 
 impl App {
-    fn sheet(&self, method: &'static str, body: Value, r: Reply) {
+    pub(in crate::tui) fn sheet(&self, method: &'static str, body: Value, r: Reply) {
         self.call(method, body, After::Sheet(r));
     }
 

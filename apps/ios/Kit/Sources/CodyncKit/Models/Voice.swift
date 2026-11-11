@@ -6,11 +6,14 @@ import Foundation
 public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
     case openAI = "openai"
     case gemini
+    /// Speech only: ElevenLabs holds no live conversation here.
+    case elevenLabs = "elevenlabs"
 
     public var name: String {
         switch self {
         case .openAI: "OpenAI"
         case .gemini: "Gemini"
+        case .elevenLabs: "ElevenLabs"
         }
     }
 
@@ -18,6 +21,7 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: URL(string: "https://platform.openai.com/api-keys")!
         case .gemini: URL(string: "https://aistudio.google.com/apikey")!
+        case .elevenLabs: URL(string: "https://elevenlabs.io/app/settings/api-keys")!
         }
     }
 
@@ -25,8 +29,12 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: "sk-…"
         case .gemini: "AIza…"
+        case .elevenLabs: "sk_…"
         }
     }
+
+    /// A live conversation is only possible with a provider that holds one.
+    public var live: Bool { self != .elevenLabs }
 
     /// Used until the user picks one, and until the computer has said what's newest
     /// (`VoiceDefaults`, worked out daily from the provider's list).
@@ -34,6 +42,7 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: "gpt-realtime-2.1"
         case .gemini: "gemini-3.8-live"
+        case .elevenLabs: ""
         }
     }
 
@@ -42,6 +51,7 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: "gpt-transcribe"
         case .gemini: "gemini-3.8-flash"
+        case .elevenLabs: "scribe_v1"
         }
     }
 
@@ -49,15 +59,17 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: "gpt-4o-mini-tts"
         case .gemini: "gemini-3.8-flash-tts"
+        case .elevenLabs: "eleven_flash_v2_5"
         }
     }
 
     /// Longest stretch of a reply turned into audio at once: each clip has to fit one channel
-    /// message (1 MiB). Gemini returns uncompressed PCM, OpenAI AAC.
+    /// message (1 MiB). Gemini returns uncompressed PCM, OpenAI AAC, ElevenLabs MP3.
     public var speechChunk: Int {
         switch self {
         case .openAI: 600
         case .gemini: 150
+        case .elevenLabs: 600
         }
     }
 
@@ -65,6 +77,8 @@ public enum VoiceProvider: String, CaseIterable, Codable, Sendable {
         switch self {
         case .openAI: ["marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
         case .gemini: ["Kore", "Puck", "Charon", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"]
+        // Rachel, until the account's own voices arrive.
+        case .elevenLabs: ["21m00Tcm4TlvDq8ikWAM"]
         }
     }
 }
@@ -84,7 +98,9 @@ public struct VoiceDefaults: Codable, Sendable, Equatable {
 
 public struct VoiceStatus: Decodable, Sendable {
     public struct Provider: Decodable, Sendable {
-        public var provider: VoiceProvider
+        /// A raw id, not the enum: a provider a newer computer adds must not break the whole
+        /// list on this app.
+        public var provider: String
         public var configured: Bool
         /// Missing from hosts before 2.6.3.
         public var defaults: VoiceDefaults?
@@ -93,7 +109,7 @@ public struct VoiceStatus: Decodable, Sendable {
     public var providers: [Provider]
 
     public func configured(_ provider: VoiceProvider) -> Bool {
-        providers.first { $0.provider == provider }?.configured == true
+        providers.first { $0.provider == provider.rawValue }?.configured == true
     }
 }
 
@@ -110,6 +126,20 @@ public struct VoiceModels: Codable, Sendable {
         self.transcribe = transcribe
         self.speech = speech
         self.defaults = defaults
+    }
+}
+
+/// The voices the computer's key can read with (ElevenLabs): premade, cloned and saved.
+public struct VoiceVoices: Decodable, Sendable {
+    public struct Voice: Decodable, Sendable {
+        public var id: String
+        public var name: String
+    }
+
+    public var voices: [Voice]
+
+    public init(voices: [Voice] = []) {
+        self.voices = voices
     }
 }
 
@@ -133,6 +163,11 @@ public extension HostClient {
         try await call("voiceModels", ["provider": provider.rawValue], timeout: 30)
     }
 
+    /// The provider's own voices (ElevenLabs).
+    func voiceVoices(_ provider: VoiceProvider) async throws -> VoiceVoices {
+        try await call("voiceVoices", ["provider": provider.rawValue], timeout: 30)
+    }
+
     /// Speech to text for one utterance (a WAV file), with the computer's key.
     func voiceTranscribe(_ provider: VoiceProvider, model: String, wav: Data) async throws -> String {
         struct Text: Decodable { var text: String }
@@ -141,7 +176,7 @@ public extension HostClient {
         return t.text
     }
 
-    /// Text to speech for a stretch of a reply: audio data and its format (`aac` or `wav`).
+    /// Text to speech for a stretch of a reply: audio data and its format (`aac`, `wav` or `mp3`).
     func voiceSpeak(_ provider: VoiceProvider, model: String, voice: String, text: String) async throws -> (Data, String) {
         struct Clip: Decodable { var audio: String; var format: String }
         let c: Clip = try await call("voiceSpeak", ["provider": provider.rawValue, "model": model, "voice": voice,

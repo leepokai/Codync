@@ -4,5 +4,5 @@ export function voiceEngine(value: string, platform: string): string {
 }
 
 export function voiceEngineIds(platform: string): string[] {
-  return [...(platform === 'darwin' ? ['device'] : []), 'openai', 'gemini']
+  return [...(platform === 'darwin' ? ['device'] : []), 'openai', 'gemini', 'elevenlabs']
 }

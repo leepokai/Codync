@@ -30,6 +30,10 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     /** Every change to the saved computers goes through `changeComputers`, one at a time. */
     internal val computerWrites = Mutex()
     internal var cloud: CloudClient? = null
+    /** The account's word for this device's key, kept in memory for this context. */
+    internal var deviceCertificate: DeviceCertificate? = null
+    /** Computers joining this account (`joinAccount`), one request each. */
+    internal val joining = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var sessionJob: Job? = null
     internal var linkJob: Job? = null
     internal val asked = mutableSetOf<String>()
@@ -62,6 +66,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     internal val sends = mutableSetOf<String>()
     internal val actions = mutableMapOf<String, Job>()
     internal var pluginsRefreshAgain = false
+    internal var messageSpeech: MessageSpeech? = null
     internal var widgetOwner: WidgetOwner? = null
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
@@ -155,7 +160,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
         AccountImages.retire()
         channel?.close(); channel = null
         connectionJob = null; pairingJob = null; graceJob = null
-        actions.clear(); sends.clear(); downloadLocks.clear(); asked.clear(); cloud = null
+        actions.clear(); sends.clear(); downloadLocks.clear(); asked.clear(); cloud = null; deviceCertificate = null
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
@@ -273,6 +278,7 @@ class AppStore(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         state.value.voice?.id?.let { VoiceService.stop(getApplication(), it) }
         voiceBinding?.engine?.end()
+        messageSpeech?.shutdown()
         channel?.close()
         val old = database
         val retiring = contextJob

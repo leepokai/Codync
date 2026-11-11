@@ -7,6 +7,17 @@
 .avatar-slot {
   position: absolute;
 }
+.avatar-drift {
+  animation: avatar-drift 2.4s ease-in-out infinite alternate;
+  animation-delay: var(--phase);
+}
+@keyframes avatar-drift {
+  from { transform: translateY(calc(var(--drift) * -1)); }
+  to { transform: translateY(var(--drift)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-drift { animation: none; }
+}
 .avatar-empty {
   display: grid;
   place-items: center;

@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
 @Composable internal fun ComposioSection(query: String, searchToken: Int, state: AppState, store: AppStore) {
     var status by remember { mutableStateOf<ComposioStatus?>(null) }
     var apps by remember { mutableStateOf(CatalogPage<ComposioApp>()) }
+    var cursor by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var settingUp by remember { mutableStateOf(false) }
@@ -49,13 +50,29 @@ import kotlinx.coroutines.launch
     var reload by remember { mutableIntStateOf(0) }
     LaunchedEffect(searchToken, reload) {
         loading = true
+        cursor = null
         try {
             val answer = store.composioStatus()
-            val page = if (answer.configured) store.composioApps(query, null).items else emptyList()
-            status = answer; apps = CatalogPage<ComposioApp>().append(page) { it.slug }; error = null
+            if (answer.configured) {
+                val page = store.composioApps(query, null)
+                status = answer; apps = CatalogPage<ComposioApp>().append(page.items) { it.slug }
+                cursor = page.nextCursor; error = null
+            } else {
+                status = answer; apps = CatalogPage(); error = null
+            }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't load apps." }
         finally { loading = false }
+    }
+    // The next page Composio lists, asked for when its row comes into view.
+    suspend fun loadMore() {
+        val at = cursor ?: return
+        try {
+            val page = store.composioApps(query, at)
+            apps = apps.append(page.items) { it.slug }
+            cursor = page.nextCursor; error = null
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) { error = failure.message ?: "Couldn't load more apps." }
     }
     MarketSection("Apps") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -67,6 +84,7 @@ import kotlinx.coroutines.launch
                 else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     for (app in apps.items) MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
                         icon = { AppLogo(app.logo, app.name) }) { connecting = app }
+                    cursor?.let { at -> LoadMoreRow(at, error != null) { loadMore() } }
                 }
             }
             error?.let { Text(it, style = Type.footnote, color = Palette.danger) }

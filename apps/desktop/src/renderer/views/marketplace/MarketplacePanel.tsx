@@ -5,6 +5,7 @@ import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { AgentTile, NodeNotice } from './AgentSheet'
+import { ComposioSection } from './ComposioSection'
 import type { ConnectorCatalog } from './connector-catalog'
 import { CATEGORIES, CATEGORY_LABELS, EXTENSION_SECTIONS, type ExtensionSection, type MarketAgent, type MarketApp, type MarketConnector, type MarketSkill } from './market-models'
 import { ItemGrid, LoadMoreRow, MarketRow, MarketSection, ServiceLogo, SkeletonGrid, SkillGlyph, TileIcon } from './pieces'
@@ -65,6 +66,7 @@ export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, on
       ) : query ? (
         <Text tone="secondary">{tr('No apps match “{query}”.').replaceAll('{query}', query)}</Text>
       ) : null}
+      <ComposioSection query={query} />
       <MarketSection title={tr('Custom connector')}>
         <MarketRow
           title={tr('Any MCP server')}

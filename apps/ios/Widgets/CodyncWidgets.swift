@@ -24,6 +24,7 @@ private extension View {
         environment(\.locale, AppLanguage.locale(
             preference: AppLanguage.preference(),
             systemIsChinese: AppLanguage.systemIsChinese()))
+            .environment(\.layoutDirection, AppLanguage.readsRightToLeft(preference: AppLanguage.preference()) ? .rightToLeft : .leftToRight)
     }
 }
 

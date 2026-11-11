@@ -48,6 +48,9 @@ struct CodyncApp: App {
                 .environment(\.locale, AppLanguage.locale(
                     preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
                     systemIsChinese: AppLanguage.systemIsChinese()))
+                // Arabic: the window mirrors; each paragraph still follows its own text.
+                .environment(\.layoutDirection, AppLanguage.readsRightToLeft(preference: AppLanguage(rawValue: appLanguageRaw) ?? .system)
+                    ? .rightToLeft : .leftToRight)
                 .onChange(of: appLanguageRaw) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
                 // No scroll indicators anywhere in the app.
                 .scrollIndicators(.never)
@@ -72,6 +75,8 @@ struct CodyncApp: App {
                     }
                 }
                 .onOpenURL { url in app.open(url) }
+                // The Support page's log: read back at launch, written while the app runs.
+                .task { await SupportLog.shared.start() }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     ReviewInvitation.shared.setActive(phase == .active)
                     switch phase {

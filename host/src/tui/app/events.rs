@@ -70,6 +70,13 @@ impl App {
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("routineFlow") => self.flow_changed(&v["botIds"]),
+            Some("thread") => {
+                self.thread_summary_changed(
+                    v["botId"].as_str().unwrap_or_default(),
+                    v["threadId"].as_str().unwrap_or_default(),
+                    &v["thread"],
+                );
+            }
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
@@ -81,6 +88,19 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// A thread's chip under its root line: the host says how many replied and how many are new. A gone thread
+    /// clears it (its root line stays).
+    fn thread_summary_changed(&mut self, bot: &str, thread: &str, summary: &Value) {
+        let Some(entries) = self.entries.get_mut(bot) else { return };
+        let Some(e) = entries.values_mut().find(|e| e.id == thread) else { return };
+        let Some(data) = e.data.as_object_mut() else { return };
+        if summary.is_null() {
+            data.remove("thread");
+        } else {
+            data.insert("thread".into(), summary.clone());
         }
     }
 
@@ -162,6 +182,18 @@ impl App {
             self.sent(&key, r);
             return;
         }
+        if let After::ThreadSent(nonce) = after {
+            self.thread_sent(&nonce, r);
+            return;
+        }
+        if let After::ThreadOpened(bot, from) = after {
+            self.thread_opened(&bot, from.as_deref(), r);
+            return;
+        }
+        if let After::QueuedEdited(key, entry, text) = after {
+            self.queued_edited(&key, &entry, &text, r);
+            return;
+        }
         if let After::Answered(entry) = after {
             self.answering.remove(&entry);
             if let Err(e) = r {
@@ -230,6 +262,9 @@ impl App {
             | After::Sheet(_)
             | After::Network(_)
             | After::Sent(_)
+            | After::ThreadSent(_)
+            | After::ThreadOpened(_, _)
+            | After::QueuedEdited(_, _, _)
             | After::Connection(_, _)
             | After::Roster(_, _)
             | After::RosterStopped(_) => {}
@@ -355,6 +390,22 @@ impl App {
         }
     }
 
+    /// A waiting message the box rewrote: the draft goes when it saved, and stays (with the target) when it didn't.
+    fn queued_edited(&mut self, key: &str, entry: &str, text: &str, result: Result<Value, String>) {
+        match result {
+            Ok(_) => {
+                if self.drafts.get(key).is_some_and(|d| d.text.trim() == text) {
+                    self.drafts.remove(key);
+                }
+                self.flash("Message changed");
+            }
+            Err(error) => {
+                self.pending_edit = Some((key.to_owned(), entry.to_owned()));
+                self.flash(&format!("{error} Draft kept; Enter retries, ^c clears it."));
+            }
+        }
+    }
+
     fn sent(&mut self, key: &str, result: Result<Value, String>) {
         let Some(sent) = self.sends.get_mut(key) else { return };
         sent.busy = false;
@@ -378,6 +429,37 @@ impl App {
                 self.flash("Sent");
             }
             Err(error) => self.flash(&format!("{error} Draft kept; Enter retries, Ctrl+C clears text.")),
+        }
+    }
+
+    /// A message sent into the open thread: its composer clears when it lands, and stays with the reason when it
+    /// doesn't.
+    fn thread_sent(&mut self, _nonce: &str, result: Result<Value, String>) {
+        let Some(t) = self.top_thread_mut() else { return };
+        t.sending = false;
+        match result {
+            Ok(_) => {
+                t.composer.clear();
+                t.error = None;
+            }
+            Err(error) => t.error = Some(format!("{error} Draft kept; Enter retries.")),
+        }
+    }
+
+    /// A thread just branched: opened on its root, under the line it came from.
+    fn thread_opened(&mut self, bot: &str, from: Option<&str>, result: Result<Value, String>) {
+        let root = match result {
+            Ok(v) => v["threadId"].as_str().map(str::to_owned),
+            Err(e) => {
+                self.flash(&e);
+                None
+            }
+        };
+        let Some(root) = root else { return };
+        let branch = from.map(|f| self.thread_title(bot, f));
+        self.open_thread(bot, &root);
+        if let (Some(t), Some(text)) = (self.top_thread_mut(), branch) {
+            t.branch = Some(text);
         }
     }
 }
@@ -464,6 +546,18 @@ mod tests {
         app.on_reply(After::Sent(key.into()), Ok(json!({})));
         assert!(!app.drafts.contains_key(key));
         assert!(!app.files.contains_key(key));
+    }
+
+    #[test]
+    fn an_edit_failure_keeps_the_draft_and_its_target_for_retry() {
+        let mut app = test_app();
+        app.drafts.insert("bot".into(), Editor::with("rewritten"));
+        app.on_reply(After::QueuedEdited("bot".into(), "e1".into(), "rewritten".into()), Err("Disconnected".into()));
+        assert_eq!(app.drafts["bot"].text, "rewritten");
+        assert_eq!(app.pending_edit, Some(("bot".into(), "e1".into())));
+        app.on_reply(After::QueuedEdited("bot".into(), "e1".into(), "rewritten".into()), Ok(json!({})));
+        assert!(!app.drafts.contains_key("bot"), "saved, so the box clears");
+        assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Message changed"));
     }
 
     #[test]

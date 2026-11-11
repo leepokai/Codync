@@ -130,6 +130,11 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
+                        ConfirmAct::DeleteThread(bot, root) => self.call(
+                            "deleteThread",
+                            json!({"botId": bot, "threadId": root}),
+                            After::Sheet(Reply::ThreadDeleted(root.clone())),
+                        ),
                     }
                     None
                 }
@@ -143,6 +148,8 @@ impl App {
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::Documents(sheet) => self.documents_key(sheet, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
+            Overlay::Thread(sheet) => self.thread_key(*sheet, k),
+            Overlay::Threads(list) => self.threads_key(*list, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
             Overlay::Flow(f) => self.flow_key(f, k),

@@ -132,19 +132,60 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let bot = str_arg(&b, "botId")?;
             let before = b["beforeSeq"].as_i64().unwrap_or(i64::MAX);
             let limit = b["limit"].as_i64().unwrap_or(100).clamp(1, 500);
-            json!({"entries": hub.store.history(bot, before, limit)?})
+            let mut entries = vec![];
+            for e in hub.store.history(bot, before, limit)? {
+                let mut entry = serde_json::to_value(&e)?;
+                hub.store.decorate_thread(&mut entry)?;
+                entries.push(entry);
+            }
+            json!({"entries": entries})
         }
-        // A side conversation (a document's `doc:<id>`, a routine's thread, a Slack thread's `slack-…`);
-        // the chat itself has none.
+        // A side conversation (one opened from the chat, a document's `doc:<id>`, a routine's thread, a Slack
+        // thread's `slack-…`); the chat itself has none.
         "thread" => {
             let root = str_arg(&b, "rootId")?;
             let bot = str_arg(&b, "botId")?;
-            if !(root.starts_with("doc:") || root.starts_with("slack-") || root.starts_with("routine-thread-")) {
-                bail!("threads are gone: replies are in the chat");
-            }
             let entries = hub.store.thread(bot, root, 500)?;
+            let thread = hub.store.thread_by_id(root)?;
+            if entries.is_empty() && thread.is_none() {
+                bail!("unknown thread");
+            }
+            // What the client hasn't seen yet, read before opening the thread clears it.
+            let unread = hub.store.thread_unread(root);
             hub.mark_thread_read(bot, root)?;
-            json!({"entries": entries, "unread": 0})
+            json!({"entries": entries, "thread": thread, "unread": unread})
+        }
+        // A chat's threads, the last one written first: never the lines, only where each ends.
+        "threads" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            json!({"threads": hub.store.threads(bot, b["archived"].as_bool().unwrap_or(false))?})
+        }
+        // A thread opened from the chat, optionally branched from one of its messages.
+        "createThread" => {
+            let bot = str_arg(&b, "botId")?;
+            hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let from = b["fromEntryId"]
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .filter(|id| hub.store.entry(id).is_some_and(|e| e.bot_id == bot && e.thread_id.is_none()));
+            json!({"threadId": hub.store.create_thread(bot, b["title"].as_str().unwrap_or(""), from)?})
+        }
+        "renameThread" => {
+            hub.store.rename_thread(str_arg(&b, "threadId")?, str_arg(&b, "title")?)?;
+            json!({})
+        }
+        "archiveThread" => {
+            hub.store.archive_thread(str_arg(&b, "threadId")?, b["archived"].as_bool().unwrap_or(true))?;
+            json!({})
+        }
+        "deleteThread" => {
+            let id = str_arg(&b, "threadId")?;
+            let bot = hub.store.thread_by_id(id)?.map(|t| t.bot_id).unwrap_or_default();
+            if hub.store.delete_thread(id)?.is_some() && !bot.is_empty() {
+                hub.thread_deleted(id, &bot);
+            }
+            json!({})
         }
         // Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet.
         "botConversation" => {
@@ -276,6 +317,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.mark_read(str_arg(&b, "botId")?)?;
             json!({})
         }
+        // A message and everything after it read unread again; the chat stays unread until opened.
+        "markUnread" => json!({"unread": hub.mark_unread(str_arg(&b, "botId")?, str_arg(&b, "entryId")?)?}),
         // One chunk of a file for a later `send` (`attachments`); base64 `data` at `offset`.
         "upload" => {
             use base64::Engine as _;
@@ -375,6 +418,33 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             json!({"entry": crate::chat::messages::post_in_lane(hub, &row.config, lane, data)?})
         }
+        // A waiting message goes into the running turn now, instead of after it.
+        "steer" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            hub.send_cmd(str_arg(&b, "botId")?, Cmd::Steer { entry_id: str_arg(&b, "entryId")?.to_owned(), reply })?;
+            answer.await??;
+            json!({})
+        }
+        // A waiting message rewritten before it goes out.
+        "editQueued" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            let cmd = Cmd::EditQueued {
+                entry_id: str_arg(&b, "entryId")?.to_owned(),
+                text: b["text"].as_str().unwrap_or_default().to_owned(),
+                reply,
+            };
+            hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
+            answer.await??;
+            json!({})
+        }
+        // A waiting message dropped: the agent never hears it.
+        "deleteQueued" => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            let cmd = Cmd::DeleteQueued { entry_id: str_arg(&b, "entryId")?.to_owned(), reply };
+            hub.send_cmd(str_arg(&b, "botId")?, cmd)?;
+            answer.await??;
+            json!({})
+        }
         // A message sent on to another chat (the message menu's "Send to a channel").
         "forward" => {
             json!({"entry": crate::chat::forward::forward(hub, str_arg(&b, "entryId")?, str_arg(&b, "botId")?).await?})
@@ -450,6 +520,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "memory" | "memoryFile" => crate::chat::memory::call(hub, method, &b).await?,
+        // The security profiles to choose among: their sentence and what each sets, for a client to show.
+        "securityProfiles" => json!({"profiles": crate::agent::security_profile::describe_all()}),
         "importAgentMemory" => {
             crate::chat::memory::import_agent_memory(hub, str_arg(&b, "botId")?, &b["facts"]).await?
         }
@@ -459,6 +531,84 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "react" => {
             let e = hub.react(str_arg(&b, "entryId")?, str_arg(&b, "emoji")?)?;
             json!({"entry": e})
+        }
+        // A paused turn's card: one tap sends the continuation (bounded, once per card).
+        "continueTurn" => {
+            let entry_id = str_arg(&b, "entryId")?;
+            let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
+            let used = crate::agent::bot::pause::begin(&e.data)?;
+            if hub.runtime(&e.bot_id).status != crate::hub::BotStatus::Idle {
+                bail!("The bot is busy; continue when it is idle");
+            }
+            hub.set_entry(entry_id, &used);
+            crate::api::apps_runtime::dispatch_bot_turn(
+                hub,
+                &e.bot_id,
+                crate::agent::bot::pause::CONTINUE_TEXT,
+                "continue",
+            )?;
+            json!({})
+        }
+        // Cancel task: ends a stopped turn (its card) or a failed routine run (its notice); the
+        // messages they answered stay.
+        "cancelTask" => {
+            let entry_id = str_arg(&b, "entryId")?;
+            let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
+            if e.data["pausedTurn"].is_object() {
+                let closed = crate::agent::bot::pause::close(&e.data)?;
+                hub.set_entry(entry_id, &closed);
+            } else if e.data["runId"].is_string() && e.data["source"] == "scheduled_task" {
+                let run_id = str_arg(&e.data, "runId")?;
+                hub.routines.cancel(hub, &e.bot_id, run_id)?;
+            } else {
+                bail!("That isn't a stopped or failed task");
+            }
+            json!({})
+        }
+        // What the bot would do with a command: the same decision a real request gets, so a rule editor tests rules
+        // without copying their logic. `rules` tests an unsaved list; without it the bot's saved rules.
+        "testApprovalRule" => {
+            let row =
+                hub.store.bot(str_arg(&b, "botId")?)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            let rules: Vec<crate::agent::approval_rules::ApprovalRule> = match b.get("rules") {
+                Some(list) if !list.is_null() => serde_json::from_value(list.clone())?,
+                _ => row.config.approval_rules.clone(),
+            };
+            crate::agent::approval_rules::validate(&rules)?;
+            let command = str_arg(&b, "command")?;
+            let kind = b["kind"].as_str().unwrap_or("execute");
+            // The quick rules as the editor has them (unsaved), else the bot's saved ones.
+            let policies = match b.get("actionRules") {
+                Some(map) if map.is_object() => serde_json::from_value(map.clone())?,
+                _ => row.config.action_rules.clone(),
+            };
+            let quick_on = b["actionRulesOn"].as_bool().unwrap_or(row.config.action_rules_on);
+            let quick = if quick_on { crate::agent::approval_rules::quick_rules(&policies) } else { Vec::new() };
+            let evaluation = crate::agent::approval_rules::evaluate(
+                &rules,
+                &quick,
+                row.config.permission,
+                kind,
+                Some(command),
+                command,
+            );
+            // The quick-rule classes approvals cannot enforce, and why, so an editor can say so.
+            let not_enforced: Vec<Value> = crate::agent::approval_rules::QUICK_UNENFORCED
+                .iter()
+                .map(|(class, why)| json!({"class": class, "reason": why}))
+                .collect();
+            json!({"evaluation": evaluation, "quickNotEnforced": not_enforced})
+        }
+        // The rule an "always allow" answer to this card means, to show (and let the person edit) before it is saved.
+        "proposeRule" => {
+            let e = hub.store.entry(str_arg(&b, "entryId")?).ok_or_else(|| anyhow!("unknown card"))?;
+            if e.kind != EntryKind::Permission.as_str() {
+                bail!("That isn't an approval card");
+            }
+            match crate::agent::always_rule::propose(&e.data) {
+                Ok(rule) => json!({"rule": rule}),
+                Err(refusal) => json!({"rule": null, "refusal": refusal, "reason": refusal.reason()}),
+            }
         }
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;
@@ -477,6 +627,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 Some("answered") => bail!("This approval was already answered with another choice"),
                 _ => bail!("This approval is closed: its turn ended or was stopped"),
             }
+            // "Always allow" with a rule: check it, and keep it for the bot before the answer goes out.
+            if let Some(rule) = b.get("rule").filter(|r| r.is_object()) {
+                save_always_rule(hub, &e, option_id.as_deref(), rule)?;
+            }
             if e.data["mcpToolCallId"].is_string() {
                 crate::market::vault::unlock(hub.clone()).await?;
             }
@@ -494,4 +648,23 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+/// Adds the rule that goes with an "always allow" answer to the card's bot. Only `allow_always` carries one, and a rule
+/// that chains commands or allows what no bot may run is refused (`agent::always_rule`).
+fn save_always_rule(hub: &Hub, card: &crate::store::Entry, option_id: Option<&str>, rule: &Value) -> Result<()> {
+    let chosen_always = card.data["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|o| o["optionId"].as_str() == option_id && o["kind"] == "allow_always");
+    if !chosen_always {
+        bail!("A rule is saved only with \"always allow\"");
+    }
+    let rule: crate::agent::approval_rules::ApprovalRule = serde_json::from_value(rule.clone())?;
+    crate::agent::always_rule::check(&rule).map_err(|refusal| anyhow!(refusal.reason()))?;
+    let row = hub.store.bot(&card.bot_id)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+    let rules = crate::agent::always_rule::added(&row.config.approval_rules, rule);
+    hub.update_bot(&json!({"id": card.bot_id, "approvalRules": rules}))?;
+    Ok(())
 }

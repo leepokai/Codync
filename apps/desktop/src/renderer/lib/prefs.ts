@@ -1,4 +1,5 @@
-import type { AppLanguage } from './l10n'
+import type { AppLanguage } from './l10n.ts'
+import { resolvedLanguage } from './l10n.ts'
 import { useSyncExternalStore } from 'react'
 import type { StarAsk } from './star-ask'
 
@@ -66,6 +67,8 @@ export const prefs = {
   collapsedRosterSections: pref<string[]>('collapsedRosterSections', []),
   collapsedProjects: pref<string[]>('collapsedProjects', []),
   usageIconStyle: pref<'character' | 'original'>('usageIconStyle', 'character'),
+  /** Bot characters are shaded (plush) or even dots (flat), as the phones draw them. */
+  avatarStyle: pref<'plush' | 'flat'>('avatarStyle', 'plush'),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
   /** "Continue without an account" on the welcome: it stops covering the window until sign-out. */
   welcomeSkipped: pref('accountWelcomeSkipped', false),
@@ -88,3 +91,12 @@ export function applyTextSize(size: number) {
 }
 
 prefs.textSize.subscribe(() => applyTextSize(prefs.textSize.get()))
+
+/** The window mirrors for Arabic; paragraphs still follow their own text. */
+export function applyDirection(language: AppLanguage) {
+  if (typeof document === 'undefined') return
+  document.documentElement.dir = resolvedLanguage(language, typeof navigator === 'undefined' ? 'en' : navigator.language) === 'ar' ? 'rtl' : 'ltr'
+}
+
+prefs.appLanguage.subscribe(() => applyDirection(prefs.appLanguage.get()))
+applyDirection(prefs.appLanguage.get())

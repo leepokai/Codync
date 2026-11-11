@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -28,25 +29,55 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import coil3.compose.AsyncImage
 import com.codync.android.core.*
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Files sent with a message, on the sender's side (iOS `AttachmentList`): images as pictures (tap for full size), other files as cards. */
+/**
+ * Files sent with a message, on the sender's side (iOS `AttachmentPreview`): pictures and clips as a
+ * stack with a full-size viewer, other files as cards.
+ */
 @Composable internal fun AttachmentList(attachments: List<Attachment>, botId: String, state: AppState, store: AppStore) {
-    var viewing by remember { mutableStateOf<Attachment?>(null) }
+    val media = attachments.filter { it.isImage || it.isVideo }
+    val files = attachments.filterNot { it.isImage || it.isVideo }
+    var viewing by remember { mutableStateOf<Int?>(null) }
     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (file in attachments) {
-            if (file.isImage) AttachmentImage(file, botId, 720, state, store, Modifier.sizeIn(maxWidth = 220.dp, maxHeight = 280.dp)
-                .clip(RoundedRectangle(16.dp)).plainButton { viewing = file }.semantics { contentDescription = file.name })
-            else AttachmentCard(file)
+        if (media.isNotEmpty()) MediaMosaic(media.map { MediaItem(it.id, it.name, it.isVideo) }, { viewing = it }) { item, modifier ->
+            val file = media.first { it.id == item.key }
+            if (file.isVideo) VideoTile(file.name, modifier)
+            else AttachmentImage(file, botId, 720, state, store, modifier, ContentScale.Crop)
         }
+        for (file in files) AttachmentCard(file)
     }
-    AttachmentImageSheet(viewing, botId, state, store) { viewing = null }
+    MediaViewerSheet(media.takeIf { viewing != null }, viewing ?: 0, { it.name }, { viewing = null }) { file, modifier, playing ->
+        if (file.isVideo) VideoPlayer({ store.attachment(botId, file) }, playing, modifier)
+        else AttachmentImage(file, botId, 4096, state, store, modifier)
+    }
+}
+
+/** Files a bot shared: pictures and clips as a stack with a full-size viewer (save included), other files as cards. */
+@Composable internal fun SharedFilesList(entry: Entry, files: List<SharedFile>, state: AppState, store: AppStore) {
+    val media = files.filter { (it.isImage || it.isVideo) && it.size <= 20L * 1024 * 1024 }
+    val rest = files.filterNot { it in media }
+    var viewing by remember { mutableStateOf<Int?>(null) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (media.isNotEmpty()) MediaMosaic(media.map { MediaItem(it.id, it.name, it.isVideo) }, { viewing = it }) { item, modifier ->
+            val file = media.first { it.id == item.key }
+            if (file.isVideo) VideoTile(file.name, modifier)
+            else SharedImage(file, entry.id, 720, state, store, modifier, ContentScale.Crop)
+        }
+        for (file in rest) FileDownloadCard(entry, file, state, store)
+    }
+    MediaViewerSheet(media.takeIf { viewing != null }, viewing ?: 0, { it.name }, { viewing = null },
+        trailing = { file -> IconButton("Save " + file.name, "arrow.down.to.line") { store.saveFile(entry.id, entry.botId, file) } }) { file, modifier, playing ->
+        if (file.isVideo) VideoPlayer({ store.sharedImage(entry.id, file) }, playing, modifier)
+        else SharedImage(file, entry.id, 4096, state, store, modifier)
+    }
 }
 
 /** A sent image full size, in a sheet while `file` is set. */
@@ -82,55 +113,41 @@ import kotlinx.coroutines.withContext
 
 /** A sent image, fetched from the computer once and then read from the cache; a placeholder until then. */
 @Composable internal fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
-    scale: ContentScale = ContentScale.Fit) = RemoteImage(file.id, maxPixels, state, modifier, scale) { store.attachment(botId, file) }
+    scale: ContentScale = ContentScale.Fit) =
+    RemoteImage(file.id, file.name.isSvgName, maxPixels, state, modifier, scale) { store.attachment(botId, file) }
 
 /** An image a bot shared, like `AttachmentImage`. */
-@Composable internal fun SharedImage(file: SharedFile, entryId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier) =
-    if (file.name.lowercase().endsWith(".svg")) RemoteSvg(file.id, state, modifier) { store.sharedImage(entryId, file) }
-    else RemoteImage(file.id, maxPixels, state, modifier, ContentScale.Fit) { store.sharedImage(entryId, file) }
+@Composable internal fun SharedImage(file: SharedFile, entryId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
+    scale: ContentScale = ContentScale.Fit) =
+    RemoteImage(file.id, file.isSvg, maxPixels, state, modifier, scale) { store.sharedImage(entryId, file) }
 
-/** An SVG shown by a WebView: the decoder behind bitmaps cannot read vector files. */
-@Composable private fun RemoteSvg(id: String, state: AppState, modifier: Modifier, load: suspend () -> java.io.File) {
-    var file by remember(id) { mutableStateOf<java.io.File?>(null) }
-    LaunchedEffect(id, state.actualConnection) {
-        if (file != null) return@LaunchedEffect
-        try { file = load() }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }
-    }
-    val shown = file
-    if (shown == null) {
-        Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
-            Symbol("photo", size = 20.dp, tint = Palette.tertiary)
-        }
-        return
-    }
-    AndroidView(factory = { context ->
-        WebView(context).apply {
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
-            loadUrl(shown.toURI().toString())
-        }
-    }, modifier = modifier)
-}
+internal val String.isSvgName: Boolean get() = substringAfterLast('.', "").equals("svg", ignoreCase = true)
 
-/** A picture `load` fetches from the computer into the cache (iOS `AttachmentImage`); a placeholder until then. */
-@Composable private fun RemoteImage(id: String, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale, load: suspend () -> java.io.File) {
+/**
+ * A picture `load` fetches from the computer into the cache (iOS `AttachmentImage`); a placeholder
+ * until then. Raster pictures are decoded at no more than `maxPixels`; an SVG is drawn by its text.
+ */
+@Composable private fun RemoteImage(id: String, svg: Boolean, maxPixels: Int, state: AppState, modifier: Modifier, scale: ContentScale, load: suspend () -> File) {
     var image by remember(id, maxPixels) { mutableStateOf<ImageBitmap?>(null) }
+    var vector by remember(id) { mutableStateOf<File?>(null) }
     // Retried whenever the link changes: an image the computer couldn't send stays a placeholder, as on iOS.
     LaunchedEffect(id, maxPixels, state.actualConnection) {
-        if (image != null) return@LaunchedEffect
+        if (image != null || vector != null) return@LaunchedEffect
         try {
             val source = load()
-            image = withContext(Dispatchers.IO) { AttachmentFiles.thumbnail(source, maxPixels).asImageBitmap() }
+            if (svg) vector = source else image = withContext(Dispatchers.IO) { AttachmentFiles.thumbnail(source, maxPixels).asImageBitmap() }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* The placeholder stays; the next link change tries again. */ }
     }
     val bitmap = image
-    if (bitmap != null) Image(bitmap, contentDescription = null, modifier = modifier, contentScale = scale)
-    else Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
-        Symbol("photo", size = 20.dp, tint = Palette.tertiary)
+    val svgFile = vector
+    when {
+        bitmap != null -> Image(bitmap, contentDescription = null, modifier = modifier, contentScale = scale)
+        svgFile != null -> AsyncImage(svgFile, contentDescription = null, imageLoader = LocalNetworkImages.current,
+            modifier = modifier, contentScale = scale)
+        else -> Box(modifier.size(160.dp, 120.dp).clip(RoundedRectangle(16.dp)).background(Palette.bubbleUser), contentAlignment = Alignment.Center) {
+            Symbol("photo", size = 20.dp, tint = Palette.tertiary)
+        }
     }
 }
 
@@ -140,7 +157,7 @@ internal object AttachmentIcon {
         "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp", "svg" -> "photo"
         "pdf" -> "doc.richtext"
         "zip", "gz", "tar", "7z" -> "doc.zipper"
-        "mov", "mp4", "m4v" -> "film"
+        "mov", "mp4", "m4v", "webm" -> "film"
         "mp3", "m4a", "wav", "aac" -> "waveform"
         else -> "doc"
     }

@@ -44,6 +44,18 @@ class VoiceEnginesTest {
         assertEquals("61", prefs.values["callUsage.openai.2026-10"])
     }
 
+    @Test fun elevenlabsIsAlwaysSpeechAndKeepsItsOwnVoices() {
+        val choices = Prefs().choices
+        val eleven = VoiceProvider.ElevenLabs
+        assertTrue(choices.speechMode(eleven))
+        choices.speechMode(eleven, false)
+        assertTrue(choices.speechMode(eleven))
+        assertTrue(choices.engineChoice(eleven, "").startsWith("elevenlabs speech"))
+        choices.voice(eleven, "21m00Tcm4TlvDq8ikWAM")
+        assertEquals("21m00Tcm4TlvDq8ikWAM", choices.voice(eleven))
+        assertFalse(eleven.live)
+    }
+
     @Test fun aCallTakesAnotherEngineOnlyWhenWhatItsEngineIsBuiltFromChanges() {
         val choices = Prefs().choices; val gemini = VoiceProvider.Gemini
         assertEquals(choices.engineChoice(null, ""), choices.engineChoice(null, ""))

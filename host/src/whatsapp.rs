@@ -24,9 +24,11 @@ use tokio::{
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkState {
-    /// `disconnected`, `starting`, `qr`, `connected`, `loggedOut` or `error`.
+    /// `disconnected`, `starting`, `qr`, `pairing`, `connected`, `loggedOut` or `error`.
     pub state: String,
     pub qr: Option<String>,
+    /// The code to type in `WhatsApp` → Linked devices instead of scanning a QR code.
+    pub pair_code: Option<String>,
     pub me: Option<String>,
     pub name: Option<String>,
     pub error: Option<String>,
@@ -42,12 +44,16 @@ impl LinkState {
 struct Link {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
+    /// Which link a read loop belongs to, so a replaced link's ending is not reported.
+    generation: u64,
 }
 
 #[derive(Default)]
 pub struct WhatsApp {
     state: Mutex<LinkState>,
     link: Mutex<Link>,
+    /// The number a pairing code was asked for, until the link ends.
+    pairing: std::sync::Mutex<Option<String>>,
     sender: std::sync::atomic::AtomicBool,
 }
 
@@ -56,13 +62,24 @@ impl WhatsApp {
         self.state.lock().await.clone()
     }
 
+    /// The number a pairing code was asked for, while the link waits for it.
+    fn pairing(&self) -> Option<String> {
+        self.pairing.lock().map(|pairing| pairing.clone()).unwrap_or_default()
+    }
+
+    fn set_pairing(&self, phone: Option<String>) {
+        if let Ok(mut pairing) = self.pairing.lock() {
+            *pairing = phone;
+        }
+    }
+
     /// Starts the bridge and the link. A running link stays as it is.
     pub fn start(self: &Arc<Self>, hub: &Arc<Hub>) {
         self.ensure_sender(hub);
         let app = self.clone();
         let hub = hub.clone();
         tokio::spawn(async move {
-            if let Err(error) = app.begin(&hub).await {
+            if let Err(error) = app.begin(&hub, None).await {
                 app.set(
                     &hub,
                     LinkState { state: "error".into(), error: Some(format!("{error:#}")), ..LinkState::default() },
@@ -70,6 +87,35 @@ impl WhatsApp {
                 .await;
             }
         });
+    }
+
+    /// Links `phone` with a pairing code instead of a QR code scanned by that same phone. A running
+    /// link stops first so the code is asked again for the number given.
+    pub fn pair(self: &Arc<Self>, hub: &Arc<Hub>, phone: &str) -> Result<()> {
+        let phone = normalize_phone(phone)?;
+        self.ensure_sender(hub);
+        let app = self.clone();
+        let hub = hub.clone();
+        tokio::spawn(async move {
+            app.set_pairing(Some(phone.clone()));
+            // The child kills itself when dropped; the new generation makes the old read loop's
+            // ending leave the new link's state alone.
+            let child = {
+                let mut link = app.link.lock().await;
+                link.generation += 1;
+                link.stdin = None;
+                link.child.take()
+            };
+            drop(child);
+            if let Err(error) = app.begin(&hub, Some(&phone)).await {
+                app.set(
+                    &hub,
+                    LinkState { state: "error".into(), error: Some(format!("{error:#}")), ..LinkState::default() },
+                )
+                .await;
+            }
+        });
+        Ok(())
     }
 
     /// Runs the reply sender once for the life of the host.
@@ -178,10 +224,10 @@ impl WhatsApp {
         true
     }
 
-    async fn begin(&self, hub: &Arc<Hub>) -> Result<()> {
+    async fn begin(&self, hub: &Arc<Hub>, phone: Option<&str>) -> Result<()> {
         {
             let state = self.state.lock().await;
-            if matches!(state.state.as_str(), "starting" | "qr" | "connected") {
+            if phone.is_none() && matches!(state.state.as_str(), "starting" | "qr" | "pairing" | "connected") {
                 return Ok(());
             }
         }
@@ -206,11 +252,13 @@ impl WhatsApp {
             .context("Could not start the WhatsApp link")?;
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().context("the WhatsApp link has no output")?;
-        {
+        let generation = {
             let mut link = self.link.lock().await;
+            link.generation += 1;
             link.child = Some(child);
             link.stdin = stdin;
-        }
+            link.generation
+        };
         let hub = hub.clone();
         let app = hub.whatsapp.clone();
         tokio::spawn(async move {
@@ -220,10 +268,13 @@ impl WhatsApp {
                     app.on_event(&hub, event).await;
                 }
             }
-            app.dropped(&hub).await;
+            app.dropped(&hub, generation).await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        self.send(&json!({"type": "start"})).await
+        match phone {
+            Some(phone) => self.send(&json!({"type": "pair", "phone": phone})).await,
+            None => self.send(&json!({"type": "start"})).await,
+        }
     }
 
     pub async fn logout(&self, hub: &Arc<Hub>) -> Result<()> {
@@ -237,6 +288,7 @@ impl WhatsApp {
             link.stdin = None;
         }
         self.set(hub, LinkState { state: "loggedOut".into(), ..LinkState::default() }).await;
+        self.set_pairing(None);
         Ok(())
     }
 
@@ -292,19 +344,16 @@ impl WhatsApp {
                 .await;
             }
             "state" => {
-                let mut next = LinkState {
+                let next = LinkState {
                     state: event["state"].as_str().unwrap_or("disconnected").into(),
                     me: event["me"].as_str().map(str::to_owned),
                     name: event["name"].as_str().map(str::to_owned),
                     error: event["error"].as_str().map(str::to_owned),
                     qr: None,
+                    pair_code: None,
                 };
-                if next.state == "connected" {
-                    self.set(hub, next).await;
-                    return;
-                }
-                if next.state == "error" {
-                    next.state = "error".into();
+                if next.state == "connected" || next.state == "loggedOut" {
+                    self.set_pairing(None);
                 }
                 self.set(hub, next).await;
             }
@@ -427,7 +476,10 @@ impl WhatsApp {
         }
     }
 
-    async fn dropped(&self, hub: &Hub) {
+    async fn dropped(&self, hub: &Hub, generation: u64) {
+        if self.link.lock().await.generation != generation {
+            return;
+        }
         let state = self.state.lock().await.state.clone();
         if state != "loggedOut" && state != "stopped" {
             self.set(
@@ -547,6 +599,15 @@ async fn node_path() -> Result<PathBuf> {
     crate::agent::backends::which("node").ok_or_else(|| anyhow!("Node.js is needed for WhatsApp"))
 }
 
+/// A phone number in digits, with its country code, as `WhatsApp`'s pairing code takes it.
+fn normalize_phone(value: &str) -> Result<String> {
+    let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+    if !(8..=15).contains(&digits.len()) {
+        bail!("Use a phone number with its country code.");
+    }
+    Ok(digits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,6 +617,16 @@ mod tests {
         let state = LinkState::default();
         assert_eq!(state.state, "");
         assert!(state.qr.is_none());
+        assert!(state.pair_code.is_none());
+    }
+
+    #[test]
+    fn a_pairing_number_keeps_its_digits_and_needs_its_country_code() {
+        assert_eq!(normalize_phone("+52 (555) 555-5555").unwrap(), "525555555555");
+        assert_eq!(normalize_phone("525555555555").unwrap(), "525555555555");
+        assert!(normalize_phone("55555555").is_ok());
+        assert!(normalize_phone("5555 555").is_err());
+        assert!(normalize_phone("1234567890123456").is_err());
     }
 
     #[test]

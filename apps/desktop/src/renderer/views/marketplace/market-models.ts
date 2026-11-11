@@ -296,7 +296,8 @@ export const market = {
   composioStatus: (c: HostClient) => c.call<ComposioStatus>('composioStatus'),
   /** Checks the key with Composio before keeping it; an empty key forgets Composio. */
   setComposioKey: (c: HostClient, key: string) => c.call<ComposioStatus>('setComposioKey', { key }, s(60)),
-  composioApps: async (c: HostClient, search: string) => (await c.call<{ items: ComposioApp[] }>('composioToolkits', { search }, s(60))).items,
+  composioApps: (c: HostClient, search: string, cursor = '') =>
+    c.call<{ items: ComposioApp[]; nextCursor: string | null }>('composioToolkits', { search, cursor }, s(60)),
   composioConnect: (c: HostClient, app: string) => c.call<ComposioConnect>('composioConnect', { toolkit: app }, s(60)),
   composioConnectFields: (c: HostClient, app: string, mode: string, fields: Record<string, string>) =>
     c.call<ComposioConnectionState>('composioConnectFields', { toolkit: app, mode, fields }, s(60)),

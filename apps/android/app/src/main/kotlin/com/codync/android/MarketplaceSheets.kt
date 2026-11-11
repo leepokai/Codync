@@ -170,6 +170,7 @@ private val WEEKDAYS = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "T
                 app.docsUrl?.let { url -> row { WebLink(app.docsLabel ?: tr("Open the guide"), url, Type.footnote) } }
             }
             if (app.setup == "key") CardSection("Setup") {
+                for ((index, step) in app.steps.withIndex()) row { Text("${index + 1}. $step", style = Type.body, color = Palette.secondary) }
                 for (field in app.fields) row {
                     NotedInput(values[field.id].orEmpty(), { values = values + (field.id to it) },
                         field.placeholder ?: field.label, field.hint, secret = !field.url)

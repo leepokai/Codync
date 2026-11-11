@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
-use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Focus, Overlay};
+use super::super::app::{After, App, Confirm, ConfirmAct, Editor, Entry, FIELDS, Field, Focus, Overlay};
 use super::when::{complete_zone, parse_when, when_text};
 use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, ctrl, newline, s};
 use crate::routines::local_zone;
@@ -237,6 +237,30 @@ impl App {
                 self.flash("Trying it again");
             }
             None => self.flash("No failed routine run to try again here"),
+        }
+    }
+
+    /// `E`: ends a stopped turn (its card) or a failed routine run (its notice), the picked one
+    /// else the newest; the messages stay.
+    pub(in crate::tui) fn cancel_task(&mut self) {
+        let Some(bot) = self.selected.clone() else { return };
+        let endable = |e: &Entry| {
+            e.data["pausedTurn"]["status"] == "waiting"
+                || (e.data["source"] == "scheduled_task"
+                    && e.data["cancelled"] != true
+                    && matches!(e.data["style"].as_str(), Some("error" | "info")))
+        };
+        let entry = self
+            .lane(&bot)
+            .into_iter()
+            .filter(|e| endable(e) && self.pick.as_ref().is_none_or(|id| *id == e.id))
+            .max_by_key(|e| e.seq);
+        match entry {
+            Some(e) => {
+                self.call("cancelTask", json!({"entryId": e.id}), After::Nothing);
+                self.flash("Task cancelled");
+            }
+            None => self.flash("No stopped or failed task to end here"),
         }
     }
 }

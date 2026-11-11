@@ -74,6 +74,40 @@ impl App {
                     }
                 }
             }
+            Reply::Thread { bot, root } => {
+                let entries = entries_of(&v);
+                let thread = v["thread"].clone();
+                for o in &mut self.overlays {
+                    if let Overlay::Thread(t) = o
+                        && t.bot == bot
+                        && t.root == root
+                    {
+                        t.entries = Some(entries.clone());
+                        if let Some(title) = thread["title"].as_str().filter(|s| !s.is_empty()) {
+                            title.clone_into(&mut t.title);
+                        }
+                        if let Some(text) = thread["branchText"].as_str().filter(|s| !s.is_empty()) {
+                            t.branch = Some(text.to_owned());
+                        }
+                        t.archived = thread["archived"].as_bool().unwrap_or_default();
+                    }
+                }
+            }
+            Reply::Threads { bot, archived } => {
+                if let Some(items) = v["threads"].as_array() {
+                    for o in &mut self.overlays {
+                        if let Overlay::Threads(l) = o
+                            && l.bot == bot
+                            && l.archived == archived
+                        {
+                            l.items = Some(items.clone());
+                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
+                        }
+                    }
+                }
+            }
+            Reply::ThreadChanged(root) => self.thread_changed(&root),
+            Reply::ThreadDeleted(root) => self.thread_deleted(&root),
             Reply::Routines(bot) => {
                 if v["routines"].is_array() {
                     for o in &mut self.overlays {
@@ -341,6 +375,28 @@ impl App {
                 }
                 self.flash(&e);
             }
+            Reply::Thread { bot, root } => {
+                for o in &mut self.overlays {
+                    if let Overlay::Thread(t) = o
+                        && t.bot == *bot
+                        && t.root == *root
+                    {
+                        t.entries.get_or_insert_with(Vec::new);
+                        t.error = Some(e.clone());
+                    }
+                }
+            }
+            Reply::Threads { bot, archived } => {
+                for o in &mut self.overlays {
+                    if let Overlay::Threads(l) = o
+                        && l.bot == *bot
+                        && l.archived == *archived
+                    {
+                        l.items.get_or_insert_with(Vec::new);
+                    }
+                }
+                self.flash(&e);
+            }
             Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
@@ -371,6 +427,37 @@ impl App {
             other => other,
         };
         self.overlays.insert(i, overlay);
+    }
+
+    /// A thread changed (renamed or archived): its sheet and every open list load again.
+    fn thread_changed(&mut self, root: &str) {
+        let mut calls: Vec<(&'static str, Value, After)> = vec![];
+        for o in &self.overlays {
+            match o {
+                Overlay::Thread(t) if t.root == root => calls.push((
+                    "thread",
+                    json!({"botId": t.bot, "rootId": t.root}),
+                    After::Sheet(Reply::Thread { bot: t.bot.clone(), root: t.root.clone() }),
+                )),
+                Overlay::Threads(l) => calls.push((
+                    "threads",
+                    json!({"botId": l.bot, "archived": l.archived}),
+                    After::Sheet(Reply::Threads { bot: l.bot.clone(), archived: l.archived }),
+                )),
+                _ => {}
+            }
+        }
+        calls.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        for (m, body, after) in calls {
+            self.call(m, body, after);
+        }
+    }
+
+    /// A thread was deleted: its sheet closes and the lists load again.
+    fn thread_deleted(&mut self, root: &str) {
+        self.overlays.retain(|o| !matches!(o, Overlay::Thread(t) if t.root == root));
+        self.thread_changed(root);
+        self.flash("Thread deleted");
     }
 
     /// Loads what every open sheet shows again, after a change.

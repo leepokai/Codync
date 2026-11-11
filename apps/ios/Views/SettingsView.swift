@@ -13,6 +13,8 @@ struct SettingsView: View {
     @AppStorage(Analytics.enabledKey) private var analyticsEnabled = true
     @State private var confirmStartOver = false
     @State private var aboutAnalytics = false
+    @State private var support = false
+    @State private var channels = false
 
     var body: some View {
         CardForm {
@@ -29,6 +31,15 @@ struct SettingsView: View {
 
             ShortcutLeadSettings()
 
+            if app.currentStore != nil {
+                CardSection {
+                    Button { channels = true } label: {
+                        RowLabel("Channels", systemImage: "paperplane", chevron: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             CardSection("Notifications", footer: "Get a result summary, a request for input, or a failure notice. Notification previews follow your iOS settings.") {
                 notificationsRow
             }
@@ -44,6 +55,10 @@ struct SettingsView: View {
             }
 
             CardSection {
+                Button { support = true } label: {
+                    RowLabel("Support", systemImage: "lifepreserver", chevron: true)
+                }
+                .buttonStyle(.plain)
                 Button {
                     Analytics.shared.capture(.reviewLinkOpened)
                     openURL(AppStoreRelease.reviewPage)
@@ -91,6 +106,12 @@ struct SettingsView: View {
             if phase == .active { Task { notificationsAllowed = await PushRegistrar.shared.isAllowed() } }
         }
         .codyncSheet(isPresented: $aboutAnalytics) { AnalyticsSheet() }
+        .codyncSheet(isPresented: $support) { SupportView() }
+        .codyncSheet(isPresented: $channels) {
+            if let store = app.currentStore {
+                ChannelsSheet().environment(store)
+            }
+        }
     }
 
     private var notificationsRow: some View {

@@ -1,60 +1,54 @@
 package com.codync.android
 
 import android.content.Context
-import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Assume.assumeFalse
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Assume.assumeFalse
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
+/**
+ * The app's own notification switch, in Settings: permission first, and the row that follows once
+ * Android has been asked.
+ */
 class ComputerNotificationsTest {
     @get:Rule val compose = createComposeRule()
+    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val prefs = context.getSharedPreferences("codync-push", Context.MODE_PRIVATE)
+    private val previous = PushPreferences.asked(context)
 
-    @Test fun missingPermissionOpensPermissionWithoutChangingComputerPreference() {
-        var opened = false
-        var saved = true
-        compose.setContent { Hosted {
-            ComputerNotificationsControl(saved, false, { saved = it }, { opened = true })
-        } }
+    @Before fun neverAsked() {
+        prefs.edit().putBoolean("asked", false).commit()
+    }
+
+    @After fun restore() {
+        prefs.edit().putBoolean("asked", previous).commit()
+    }
+
+    @Test fun withoutPermissionTheRowAsksAndShowsNoSwitch() {
+        assumeFalse(notificationsAllowed(context))
+        compose.setContent { Hosted { NotificationsSection() } }
         compose.onAllNodes(isToggleable()).assertCountEquals(0)
-        compose.onNodeWithText("Turn on notifications in Settings").performClick()
-        assertTrue(opened)
-        assertTrue(saved)
+        compose.onNodeWithText("Turn on").assertIsDisplayed()
     }
 
     @Test fun settingsRemembersPermissionDeniedFromAnotherEntryPoint() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         assumeFalse(notificationsAllowed(context))
-        val prefs = context.getSharedPreferences("codync-push", Context.MODE_PRIVATE)
-        val previous = PushPreferences.asked(context)
-        try {
-            // The computer row and onboarding persist the same denial marker.
-            PushPreferences.markAsked(context)
-            compose.setContent { Hosted { NotificationsSection() } }
-            compose.onNodeWithText("Off in Settings").assertIsDisplayed()
-            compose.onNodeWithText("Turn on").assertDoesNotExist()
-        } finally {
-            prefs.edit().putBoolean("asked", previous).commit()
-        }
+        // The computer row and onboarding persist the same denial marker.
+        PushPreferences.markAsked(context)
+        compose.setContent { Hosted { NotificationsSection() } }
+        compose.onNodeWithText("Off in Settings").assertIsDisplayed()
+        compose.onNodeWithText("Turn on").assertDoesNotExist()
     }
 
-    @Test fun permissionChangesRestoreTheSavedPreferenceAndKeepTheSwitchEditable() {
-        var allowed by mutableStateOf(false)
-        var saved by mutableStateOf(false)
-        compose.setContent { Hosted {
-            ComputerNotificationsControl(saved, allowed, { saved = it }, {})
-        } }
-        compose.runOnIdle { allowed = true }
-        compose.onNode(isToggleable()).assertIsOff().performClick().assertIsOn()
-        compose.runOnIdle { allowed = false }
-        compose.onAllNodes(isToggleable()).assertCountEquals(0)
-        assertTrue(saved)
-        compose.runOnIdle { allowed = true }
-        compose.onNode(isToggleable()).assertIsOn()
+    @Test fun allowedPermissionReadsOn() {
+        assumeTrue(notificationsAllowed(context))
+        compose.setContent { Hosted { NotificationsSection() } }
+        compose.onNodeWithText("On").assertIsDisplayed()
     }
 }

@@ -152,7 +152,8 @@ internal enum class PhoneSetting(override val wire: String) : CatalogValue { Pus
 
 /** What an outbound link leads to (`install_command`: an install command copied). */
 internal enum class OutboundLink(override val wire: String) : CatalogValue {
-    Github("github"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
+    Github("github"), Issues("issues"), Discord("discord"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"),
+    InstallCommand("install_command"),
 }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {

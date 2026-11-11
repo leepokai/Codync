@@ -5,6 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RoutineTest {
+    @Test fun `an output checks its own destination`() {
+        assertEquals(null, RoutineOutputs.problem(RoutineOutput("whatsapp", "5215555555555@s.whatsapp.net")))
+        assertEquals(null, RoutineOutputs.problem(RoutineOutput("whatsapp", "1203630@g.us")))
+        assertEquals("Use a WhatsApp chat id.", RoutineOutputs.problem(RoutineOutput("whatsapp", "5215555555555")))
+        assertTrue(RoutineOutputs.kinds.any { it.first == "whatsapp" })
+    }
+
     @Test fun `a waiting retry reads as retrying, not queued`() {
         val run = RoutineRun("run", "routine", "bot", "pending")
         assertEquals("Queued", run.label)

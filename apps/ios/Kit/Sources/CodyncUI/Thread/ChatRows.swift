@@ -12,6 +12,10 @@ struct ChatRow: View {
     let openTrace: () -> Void
     /// Quotes this message in the composer; nil where it can't be.
     var reply: (() -> Void)?
+    /// Starts a thread branched from this message; nil in a thread.
+    var branch: (() -> Void)?
+    /// Opens this message's thread, from its chip; nil where there's nothing to open.
+    var openThread: (() -> Void)?
     /// A failure notice's "Add a fallback": the bot's details.
     var addFallback: (() -> Void)?
     /// An artifact card's artifact, full size.
@@ -25,8 +29,11 @@ struct ChatRow: View {
         switch entry.kind {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
-                UserBubble(entry: entry, botWorking: chat?.isWorking == true, reply: reply)
+                UserBubble(entry: entry, botWorking: chat?.isWorking == true, reply: reply, branch: branch)
                 ReactionsRow(entry: entry)
+                if let summary = entry.data.thread, let openThread {
+                    ThreadChip(summary: summary, open: openThread)
+                }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
@@ -34,9 +41,13 @@ struct ChatRow: View {
         case "agent":
             VStack(alignment: .leading, spacing: 4) {
                 if chat?.isGroup == true, groupStart { AuthorLabel(botId: entry.data.author) }
-                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, openArtifact: openArtifact)
+                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, openArtifact: openArtifact, branch: branch)
                 ReactionsRow(entry: entry)
                     .padding(.leading, chat?.isGroup == true ? 34 : 0)
+                if let summary = entry.data.thread, let openThread {
+                    ThreadChip(summary: summary, open: openThread)
+                        .padding(.leading, chat?.isGroup == true ? 34 : 0)
+                }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
@@ -118,6 +129,8 @@ struct UserBubble: View {
     let entry: Entry
     let botWorking: Bool
     var reply: (() -> Void)?
+    /// Starts a thread branched from this message; nil in a thread.
+    var branch: (() -> Void)?
     @Environment(BotStore.self) private var model
 
     var body: some View {
@@ -140,6 +153,7 @@ struct UserBubble: View {
                         .font(.body)
                         .foregroundStyle(Palette.text)
                         .textSelection(.enabled)
+                        .paragraphDirection(of: text)
                 }
             }
                 .padding(.horizontal, 16)
@@ -148,6 +162,7 @@ struct UserBubble: View {
                 .contextActions(reactions: model.reactionPick(entry)) {
                     var items = [MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) }]
                     if let reply { items.append(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply)) }
+                    if let branch { items.append(MenuItem("Branch from here", icon: "arrow.triangle.branch", action: branch)) }
                     return items
                 }
     }
@@ -193,6 +208,8 @@ struct AgentBubble: View {
     let openTrace: () -> Void
     var reply: (() -> Void)?
     var openArtifact: ((ArtifactRef) -> Void)?
+    /// Starts a thread branched from this message; nil in a thread.
+    var branch: (() -> Void)?
     @Environment(BotStore.self) private var model
 
     var body: some View {
@@ -215,6 +232,7 @@ struct AgentBubble: View {
                         MenuItem("Show what it did", icon: "list.bullet", action: openTrace),
                     ]
                     if let reply { items.insert(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply), at: 1) }
+                    if let branch { items.insert(MenuItem("Branch from here", icon: "arrow.triangle.branch", action: branch), at: items.count) }
                     return items
                 }
         }
@@ -357,6 +375,52 @@ extension BotStore {
     /// The quick-reaction row for a message.
     func reactionPick(_ entry: Entry) -> ReactionPick {
         ReactionPick(emoji: Self.quickReactions, chosen: entry.data.reactions ?? []) { self.react(entry, $0) }
+    }
+}
+
+/// A message's thread, under it: who replied, how many, and how recently (or how many are new). Slack's chip.
+struct ThreadChip: View {
+    let summary: ThreadSummary
+    let open: () -> Void
+    @Environment(BotStore.self) private var model
+
+    var body: some View {
+        if summary.count > 0 {
+            Button(action: open) {
+                HStack(spacing: 6) {
+                    let authors = (summary.authors ?? []).compactMap { model.bots[$0] }
+                    if !authors.isEmpty {
+                        HStack(spacing: -6) {
+                            ForEach(authors.prefix(3)) { bot in CharacterAvatar(bot: bot, size: 18, animated: false) }
+                        }
+                    }
+                    Text(summary.count == 1 ? "1 reply" : "\(summary.count) replies")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Palette.accent)
+                    if summary.unread > 0 {
+                        Text("\(summary.unread) new")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Palette.text)
+                    } else if let at = summary.lastAt, at > 0 {
+                        Text(RelativeTime.day(Date(milliseconds: at)))
+                            .font(.footnote)
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.tertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Palette.surface, in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(PressScale())
+            .accessibilityLabel(
+                "View thread, \(summary.count) \(summary.count == 1 ? "reply" : "replies")"
+                    + (summary.unread > 0 ? ", \(summary.unread) new" : "")
+            )
+        }
     }
 }
 

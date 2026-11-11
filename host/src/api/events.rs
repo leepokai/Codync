@@ -65,13 +65,8 @@ pub fn events_stream(
     }
     for e in hub.store.entries_since(since, CATCH_UP_PER_BOT)? {
         let mut entry = serde_json::to_value(&e)?;
-        // A root line says how many of its thread's replies are unread.
-        if e.thread_id.is_none() {
-            let unread = hub.store.thread_unread(&e.id);
-            if unread > 0 {
-                entry["threadUnread"] = unread.into();
-            }
-        }
+        // A root line carries its thread's unread count and chip summary.
+        hub.store.decorate_thread(&mut entry)?;
         catch_up.push(json!({"type": "entry", "rev": e.rev, "entry": entry}));
     }
     catch_up.extend(crate::chat::artifacts::since(&hub.store, since));

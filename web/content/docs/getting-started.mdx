@@ -135,6 +135,11 @@ languages use English. Arabic mirrors the whole interface from right to left; it
 parts stay in English. This changes the interface, not your conversations,
 bot names or commands.
 
+
+Arabic mirrors the layout from right to left. A message, heading or table cell
+still reads in the direction of its own text, so English inside an Arabic
+interface stays left to right, and code always reads left to right.
+
 ## Theme palette
 
 The desktop app can wear a palette from a theme file, such as the one a terminal color scheme writes. Put JSON files with `background`, `foreground`, `accent` and `color0`…`color15` in the theme folder and choose one under **Settings → General → Theme palette**; **Use the app colors** goes back. The folder is `~/.config/Codync/themes` on Linux, `%APPDATA%\Codync\themes` on Windows and `~/Library/Application Support/Codync/themes` on macOS. The window follows each change while it is open.
@@ -145,6 +150,17 @@ The desktop app can wear a palette from a theme file, such as the one a terminal
 - [Agents](/docs/agents): install and sign in to more coding agents.
 - [Conversations](/docs/conversations): files, approvals, replies and notifications.
 - [Group chats](/docs/groups): put several bots in one room.
+
+## When something goes wrong
+
+**Settings → Support** on the phone keeps the app's own recent events: each connection step,
+each request with how long it took and why it failed, all with passwords and tokens masked. The
+log stays on the phone and records no messages or files, and Codync never sends it on its own.
+
+Open **Show log** to read it — newest first, with **Show older events** for more; it holds the
+newest 5,000 events. To ask for help, use **Save log file** and attach the file; **Clear log**
+starts it again. The same page links to [Discord](https://discord.gg/KBAX3Qznxh) and the
+[GitHub issue tracker](https://github.com/leepokai/Codync/issues).
 
 ## Community and help
 

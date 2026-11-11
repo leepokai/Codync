@@ -160,7 +160,8 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 /** The output kinds the editor offers, and their destination rules (host `routines::outputs`). */
 object RoutineOutputs {
     val kinds = listOf(
-        "slack" to "Slack", "telegram" to "Telegram", "discord" to "Discord", "discordReact" to "Discord reaction",
+        "slack" to "Slack", "telegram" to "Telegram", "whatsapp" to "WhatsApp", "discord" to "Discord",
+        "discordReact" to "Discord reaction",
         "githubComment" to "GitHub comment", "githubIssue" to "GitHub issue", "githubLabel" to "GitHub label",
         "githubAssign" to "GitHub assign", "githubReview" to "Request review",
     )
@@ -169,6 +170,7 @@ object RoutineOutputs {
         val target = output.target.trim()
         if (target.isEmpty()) return "An output needs a destination."
         if (output.kind == "telegram" && target.toLongOrNull() == null) return "Use a Telegram chat id."
+        if (output.kind == "whatsapp" && !Regex("^[\\d-]+@(s\\.whatsapp\\.net|g\\.us)$").matches(target)) return "Use a WhatsApp chat id."
         if (output.kind in listOf("githubComment", "githubIssue", "githubLabel", "githubAssign", "githubReview")
             && !Regex("^[^/\\s]+/[^/\\s]+$").matches(target)) return "Use owner/name."
         if (output.kind in listOf("githubLabel", "githubAssign", "githubReview") && output.value.isNullOrBlank()) return "This output needs a value."

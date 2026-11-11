@@ -1,0 +1,69 @@
+/* The messages waiting behind the running turn, over the box. */
+.queued-reveal {
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+}
+.queued-strip {
+  padding: 4px 14px 0;
+}
+.queued-card {
+  padding: 9px 10px 6px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+.queued-next {
+  padding: 0 4px;
+}
+.queued-actions {
+  flex-wrap: wrap;
+}
+/* Edit, Steer and Delete on one waiting message. */
+.queued-action {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.queued-action:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.queued-action.accent {
+  color: var(--accent);
+}
+/* The rest of the queue, behind an unbroken line. */
+.queued-more {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 7px 4px;
+  border-top: 1px solid var(--outline);
+  text-align: left;
+}
+.queued-more:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+/* One message in the queue sheet. */
+.queued-row {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--outline);
+}
+.queued-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+.queued-editor-field {
+  resize: none;
+  padding: 10px 12px;
+  border-radius: var(--radius-l);
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+}

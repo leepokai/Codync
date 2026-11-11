@@ -13,6 +13,9 @@ public struct ThreadView: View {
     @State var showTrace = false
     /// The message the composer's next send quotes.
     @State var replyingTo: Entry?
+    /// An open thread, and whether the thread list is showing.
+    @State var openThread: ThreadTarget?
+    @State var showingThreads = false
     @State var botChat: BotChatTarget?
     @State var openArtifact: ArtifactTarget?
     @State var openCall: Entry?
@@ -80,6 +83,10 @@ public struct ThreadView: View {
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
             }
+            .codyncSheet(item: $openThread) { ThreadSheet(botId: botId, root: $0.root) }
+            .codyncSheet(isPresented: $showingThreads) {
+                ThreadsView(botId: botId) { root in openThread = ThreadTarget(botId: botId, root: root) }
+            }
             .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $openArtifact) { ArtifactView(target: $0) }
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
@@ -114,12 +121,18 @@ public struct ThreadView: View {
         case .exchanges(let group):
             BotMessageRow(group: group) { botChat = BotChatTarget(id: group.peerId) }
         case .entry(let e, let groupStart):
-            if e.kind == "notice", let id = e.data.routineId {
+            if e.kind == "notice", let paused = e.data.pausedTurn {
+                PausedTurnRow(entry: e, paused: paused)
+            } else if e.kind == "notice", let id = e.data.routineId {
                 RoutineNoticeRow(entry: e) { openRoutine(id) }
             } else {
                 ChatRow(entry: e, groupStart: groupStart, chat: bot, openTrace: { showTrace = true },
                         // An update card takes the composer's place, so there's nothing to reply with.
                         reply: e.isReplyable && model.mismatch == nil ? { reply(to: e) } : nil,
+                        // A reply can be followed apart from the chat, as a thread of its own.
+                        branch: e.isReplyable ? { startThread(from: e) } : nil,
+                        // Its thread, opened from the chip under the message.
+                        openThread: e.data.thread == nil ? nil : { openThread = ThreadTarget(botId: botId, root: e.id) },
                         // In a group, the bot whose agent failed.
                         addFallback: { details = DetailsRequest(botId: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
@@ -131,6 +144,22 @@ public struct ThreadView: View {
 
     private func reply(to entry: Entry) {
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { replyingTo = entry }
+    }
+
+    /// Opens a thread branched from one of the chat's messages.
+    private func startThread(from entry: Entry) {
+        Task {
+            guard let root = await model.startThread(botId, from: entry) else { return }
+            openThread = ThreadTarget(botId: botId, root: root)
+        }
+    }
+
+    /// Opens a new, empty thread.
+    private func newThread() {
+        Task {
+            guard let root = await model.startThread(botId) else { return }
+            openThread = ThreadTarget(botId: botId, root: root)
+        }
     }
 
     // MARK: chrome

@@ -150,6 +150,8 @@ mod tests {
             from_bot_id: from.into(),
             to_bot_id: to.into(),
             instruction: String::new(),
+            model: None,
+            model_options: BTreeMap::new(),
             created_at: 0,
         }
     }

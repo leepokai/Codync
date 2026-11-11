@@ -7,21 +7,34 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
+/** A paired computer, and the account claim the host signed when it was in no account. */
+data class PairingResult(val computer: Computer, val claim: JsonObject?)
+
 object HostConnector {
-    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String): Computer {
+    /**
+     * Proves the QR's one-time code inside a channel to the QR's host key, with the account's [certificate];
+     * the host then authorizes this device and closes with `4100 paired`. A computer in no account asks its
+     * user first (so the call may take a while), then signs [claim] and returns it for the phone to complete
+     * with the cloud.
+     */
+    suspend fun pair(pairing: Pairing, identity: DeviceIdentity, deviceName: String,
+        certificate: DeviceCertificate, claim: CloudClaim? = null): PairingResult {
         require(deviceName.isNotBlank() && deviceName.codePointCount(0, deviceName.length) <= 100)
         val channel = connect(pairing.computer, identity, pairing)
         try {
             val response = try {
                 channel.call("pair", buildJsonObject {
                     put("code", pairing.code); put("name", deviceName); put("platform", "android")
-                }, timeoutMillis = 30_000)
+                    put("certificate", buildJsonObject { put("payload", certificate.payload); put("sig", certificate.sig) })
+                    if (claim != null) put("claim", buildJsonObject { put("claimId", claim.claimId); put("nonce", claim.nonce) })
+                }, timeoutMillis = 150_000)
             } catch (error: HostError) {
                 // Hosts from before Android support turn the platform down: say what to do, not the wire error.
                 if (error.status == 400 && "platform" in error.message) throw HostError(400, "Update Codync on this computer to pair an Android phone.")
@@ -29,7 +42,8 @@ object HostConnector {
             }
             val result = response.jsonObject
             require(result.text("computerId") == pairing.computer.id) { "This computer's identity changed. Pair it again." }
-            return pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name)
+            val computer = pairing.computer.copy(name = result.text("name")?.takeIf(String::isNotBlank) ?: pairing.computer.name)
+            return PairingResult(computer, result["claim"] as? JsonObject)
         } finally {
             channel.close()
         }

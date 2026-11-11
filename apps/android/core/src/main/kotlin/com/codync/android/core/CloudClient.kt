@@ -63,6 +63,20 @@ class CloudClient private constructor(base: String, private val identity: Device
     suspend fun registerDevice(name: String) { request("POST", listOf("v1", "devices"),
         buildJsonObject { put("name", name); put("platform", "android") }, signed = true) }
 
+    /** What pairing shows a computer to prove this device's account. 403: the key isn't registered (or was revoked). */
+    suspend fun deviceCertificate(): DeviceCertificate {
+        val result = request("POST", listOf("v1", "devices", "certificate"), signed = true)
+        return json.decodeFromJsonElement(result.getValue("certificate"))
+    }
+
+    /** A claim for a computer in no account to sign while pairing. */
+    suspend fun createClaim(): CloudClaim = json.decodeFromJsonElement(request("POST", listOf("v1", "claims"), signed = true))
+
+    /** `claim`: the JSON the computer signed while pairing, sent as it came. */
+    suspend fun completeClaim(claimId: String, claim: JsonObject) {
+        request("POST", listOf("v1", "claims", claimId, "complete"), claim, signed = false)
+    }
+
     suspend fun computers(): List<CloudComputer> {
         val result = request("GET", listOf("v1", "computers"), signed = true)
         return json.decodeFromJsonElement(result.getValue("computers"))
@@ -121,8 +135,9 @@ class CloudClient private constructor(base: String, private val identity: Device
         val url = baseUrl.newBuilder().apply { path.forEach(::addPathSegment) }.build()
         val bytes = body?.toString()?.toByteArray() ?: byteArrayOf()
         val jwt = token()
-        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt")
-            .method(method, if (body != null) bytes.toRequestBody("application/json".toMediaType()) else null)
+        // OkHttp refuses a POST without one; the cloud's empty POSTs (`certificate`, `claims`) still send an empty body.
+        val payload = if (body != null || method == "POST") bytes.toRequestBody("application/json".toMediaType()) else null
+        val builder = Request.Builder().url(url).header("Authorization", "Bearer $jwt").method(method, payload)
         if (signed) builder.header("Codync-Sig", RequestSigner.header(identity, method, url, bytes))
         val call = http.newCall(builder.build())
         val value = suspendCancellableCoroutine<JsonObject> { continuation ->

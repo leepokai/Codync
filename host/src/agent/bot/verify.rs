@@ -6,7 +6,9 @@
 //! Idea from Mercury Code's "done means the build passed"; no code copied.
 
 use super::verdict::TurnVerdict;
-use super::{Actor, Done, NoticeStyle};
+use super::{Actor, NoticeStyle};
+use anyhow::Result;
+use serde_json::Value;
 use std::path::Path;
 use std::time::Duration;
 
@@ -44,7 +46,7 @@ async fn run_within(command: &str, cwd: &str, limit: Duration) -> Option<String>
 
 impl Actor {
     /// Runs the bot's check on a turn that ended normally; a failure turns its stop reason into `FAILED`.
-    pub(super) async fn verified(&mut self, done: Done) -> Done {
+    pub(super) async fn verified(&mut self, done: Result<Value>) -> Result<Value> {
         let Some(command) = self.cfg.verify_command.clone().filter(|c| !c.trim().is_empty()) else { return done };
         let completed = matches!(&done, Ok(v) if TurnVerdict::of(v["stopReason"].as_str().unwrap_or("end_turn")) == TurnVerdict::Completed);
         if self.stop_requested || !completed {

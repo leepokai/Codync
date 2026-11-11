@@ -27,7 +27,14 @@ class HostInteropTest {
         val cleanup = System.getenv("CODYNC_ANDROID_CLEANUP_KEY_FILE")
         requireNotNull(cleanup) { "Live acceptance requires a cleanup key file" }
         File(cleanup).writeText(identity.publicKey)
-        val paired = withTimeout(30_000) { HostConnector.pair(pairing, identity, "Android protocol acceptance") }
+        // The account certificate, as the cloud hands it out: {"payload": "...", "sig": "..."}.
+        val certificateFile = requireNotNull(System.getenv("CODYNC_ANDROID_CERT_FILE")) {
+            "Live acceptance requires a device certificate file"
+        }
+        val certificate = Json.decodeFromJsonElement<DeviceCertificate>(Json.parseToJsonElement(File(certificateFile).readText()))
+        val paired = withTimeout(150_000) {
+            HostConnector.pair(pairing, identity, "Android protocol acceptance", certificate).computer
+        }
         val target = paired.copy(route = if (relay) ConnectionRoute.CloudflareFirst else ConnectionRoute.DirectOnly,
             urls = if (relay) emptyList() else paired.urls)
         val channel = withTimeout(30_000) { HostConnector.connect(target, identity) }

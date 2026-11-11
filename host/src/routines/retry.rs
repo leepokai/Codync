@@ -4,8 +4,8 @@
 //! its work (sent the mail, then failed), and one that hit its time limit could hold the bot that
 //! long again: only the user retries those, from the failure notice.
 use super::{
-    Context, Hub, Refused, Result, Routines, Run, State, Status, Value, bail, busy, json, may_run, new_run, notice_id,
-    result_notice_id,
+    Context, Hub, Refused, Result, Routines, Run, State, Status, Value, bail, busy, cancel_run, json, may_run, new_run,
+    notice_id, result_notice_id,
 };
 
 /// Seconds before each automatic retry; a run that fails after the last one waits for the user.
@@ -87,6 +87,22 @@ pub fn withdraw(hub: &Hub, runs: &[String]) {
     }
 }
 
+/// Ends a failed run's failure notice: no retry, no automatic try queued, and the text no longer
+/// promises one. The run's messages stay.
+pub fn end(hub: &Hub, run_id: &str, retry_at: Option<i64>, finished_at: Option<i64>) {
+    let notice = result_notice_id(run_id);
+    let Some(mut e) = hub.store.entry(&notice) else { return };
+    if let (Some(at), Some(done)) = (retry_at, finished_at) {
+        let promise = format!(". {}", retry_note(at - done));
+        if let Some(base) = e.data["text"].as_str().and_then(|text| text.strip_suffix(&promise)).map(str::to_owned) {
+            e.data["text"] = base.into();
+        }
+    }
+    e.data["retry"] = false.into();
+    e.data["cancelled"] = true.into();
+    hub.set_entry(&notice, &e.data);
+}
+
 impl Routines {
     /// `retryRoutineRun`: does a failed run's work again, with the event it had.
     pub fn retry(&self, hub: &Hub, bot: &str, run_id: &str) -> Result<Value> {
@@ -115,6 +131,36 @@ impl Routines {
         withdraw(hub, &[run_id.to_owned()]);
         Ok(json!({"run": run}))
     }
+
+    /// `cancelTask` on a failure notice: ends the run there. A retry already queued for later is
+    /// cancelled with it, and the event the run kept goes.
+    pub fn cancel(&self, hub: &Hub, bot: &str, run_id: &str) -> Result<Value> {
+        let (retry_at, finished_at) = self.change(&hub.store, |s| {
+            let i = s.runs.iter().position(|r| r.id == run_id && r.bot_id == bot).context("unknown routine run")?;
+            if !matches!(s.runs[i].status, Status::Failed | Status::Interrupted) {
+                bail!("This run is still going; stop it instead");
+            }
+            if s.runs[i].retry_at.is_none() && !s.runs[i].retryable {
+                bail!("This run already ended");
+            }
+            let (attempt, routine, retry_at, finished_at) =
+                (s.runs[i].attempt, s.runs[i].routine_id.clone(), s.runs[i].retry_at.take(), s.runs[i].finished_at);
+            if let Some(at) = retry_at
+                && let Some(next) = s.runs.iter_mut().find(|r| {
+                    r.routine_id == routine
+                        && r.status == Status::Pending
+                        && r.attempt == attempt + 1
+                        && r.not_before == Some(at)
+                })
+            {
+                cancel_run(next);
+            }
+            forget(s, |r| r.id == run_id);
+            Ok((retry_at, finished_at))
+        })?;
+        end(hub, run_id, retry_at, finished_at);
+        Ok(json!({}))
+    }
 }
 
 #[cfg(test)]
@@ -127,6 +173,7 @@ mod tests {
         let r = routine();
         let mut run: Run = new_run(&r, json!({"source":"schedule"}), None);
         run.status = Status::Failed;
+        run.finished_at = Some(0);
         run.attempt = attempt;
         (State { routines: vec![r], runs: vec![run] }, 0)
     }
@@ -224,5 +271,60 @@ mod tests {
         let state = hub.routines.state.locked();
         assert!(!state.runs[i].retryable && state.runs[i].event.is_null(), "the payload goes with the routine");
         assert_eq!(hub.store.entry(&notice).unwrap().data["retry"], false, "and so does the retry button");
+    }
+
+    fn with_state(runs: State) -> (std::sync::Arc<Hub>, String) {
+        let dir = std::env::temp_dir().join(format!("codync-cancel-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let hub = Hub::new(store, "cancel-test".into(), Identity::load_or_create(&dir).unwrap(), "test".into(), 0);
+        let id = runs.runs.iter().find(|r| r.status == Status::Failed).unwrap().id.clone();
+        hub.routines
+            .change(&hub.store, |state| {
+                *state = runs;
+                Ok(())
+            })
+            .unwrap();
+        (hub, id)
+    }
+
+    fn notice(hub: &Hub, id: &str, text: &str, retry: bool) {
+        let data = json!({"text": text, "retry": retry, "runId": id, "source": "scheduled_task"});
+        hub.add_entry_once(&result_notice_id(id), &Lane::main("bot"), EntryKind::Notice, 0, &data).unwrap();
+    }
+
+    #[test]
+    fn a_user_cancel_ends_a_failed_run_and_the_retry_queued_for_later() {
+        let (mut s, i) = failed(0);
+        after_failure(&mut s, i, true, 0);
+        let (hub, id) = with_state(s);
+        notice(&hub, &id, "Routine could not finish: boom. Trying again in 1 minute.", false);
+        hub.routines.cancel(&hub, "bot", &id).unwrap();
+        let state = hub.routines.state.locked();
+        assert_eq!(state.runs[0].retry_at, None);
+        assert_eq!(state.runs[1].status, Status::Cancelled, "the queued try stops too");
+        assert!(state.runs[1].event.is_null(), "and its copy of the event goes");
+        drop(state);
+        let entry = hub.store.entry(&result_notice_id(&id)).unwrap();
+        assert_eq!(entry.data["cancelled"], true);
+        assert_eq!(entry.data["retry"], false);
+        assert_eq!(entry.data["text"], "Routine could not finish: boom", "the promise of a retry goes");
+        assert!(hub.routines.cancel(&hub, "bot", &id).is_err(), "an ended run can't be ended twice");
+    }
+
+    #[test]
+    fn a_user_cancel_ends_a_run_that_waited_for_the_user() {
+        let (mut s, i) = failed(3);
+        after_failure(&mut s, i, false, 0);
+        let (hub, id) = with_state(s);
+        notice(&hub, &id, "Routine could not finish: boom.", true);
+        hub.routines.cancel(&hub, "other", &id).unwrap_err();
+        hub.routines.cancel(&hub, "bot", &id).unwrap();
+        let state = hub.routines.state.locked();
+        assert!(!state.runs[0].retryable);
+        assert_eq!(state.runs[0].event, Value::Null);
+        drop(state);
+        assert_eq!(hub.store.entry(&result_notice_id(&id)).unwrap().data["cancelled"], true);
+        assert!(hub.routines.retry(&hub, "bot", &id).is_err(), "a cancelled run is not retried");
     }
 }

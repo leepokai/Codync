@@ -4,7 +4,9 @@ A native Kotlin/Compose phone client using the existing host's encrypted channel
 and account APIs. It follows the iPhone app screen for screen (layout, wording,
 motion and the Liquid Glass look), built from the iOS sources in
 `apps/ios/Views` and `apps/ios/Kit/Sources/CodyncUI`. What's still missing is in the
-[parity and acceptance checklist](../../docs/plans/android-app.md).
+[parity and acceptance checklist](../../docs/plans/android-app.md). OpenBot Mobile's own
+inventory and its porting order are in
+[openbot-mobile-parity](../../docs/plans/openbot-mobile-parity.md).
 
 ## Build
 
@@ -110,7 +112,9 @@ uses a temporary copy rather than exposing the private cache.
 
 Ed25519/X25519 seeds use Android Keystore AES-GCM wrapping; no global crypto
 provider is replaced. Local data is excluded from backup and device transfer.
-The mirror commits updates, send reconciliation and the event cursor together.
+The mirror commits updates, send reconciliation and the event cursor together, and seals every
+payload with AES-GCM under the account's Keystore key (`MirrorSealer`), so the database file
+holds no readable text.
 Context retirement joins writers before changing identity or closing databases.
 A changed host identity produces an error rather than silently trusting new keys.
 

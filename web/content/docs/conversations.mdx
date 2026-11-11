@@ -34,6 +34,10 @@ If a message fails to send, it shows **Failed to send** with buttons to resend o
 
 Any message can be deleted from its menu (right-click on the desktop, touch and hold on a phone). It disappears from the chat on every device; a reply that quoted it keeps the quote.
 
+On Android, touch and hold a bot message and pick **Mark unread**: it and everything after it count as unread again, and a **NEW** line stays above it until you open the chat.
+
+**Read aloud (Android):** a bot message's menu reads it out, with a speed from 0.75× to 2×. The menu row turns into **Stop reading** while it plays, and the speed is the same one voice calls use.
+
 A bot's settings can give its chat a color, under **Profile → Chat color**, so a busy roster is easier to read.
 
 On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
@@ -52,10 +56,11 @@ Use the **+** button left of the message box.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools. While a file uploads, its card shows how much the computer has; a failed send keeps the files for **Resend**.
 
-Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; SVG files preview too, and tap or click any image to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window, and a click on a file's name opens it in its own tab over the chat: several files stay open side by side and close one by one. This also applies to images you send. To save a file:
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; SVG files preview too, and tap or click any image to see it full size. On Android, several pictures in one message show as a small stack you can swipe and open full size, and an MP4 plays in the full-size viewer. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window, and a click on a file's name opens it in its own tab over the chat: several files stay open side by side and close one by one. This also applies to images you send. To save a file:
 
 - **Desktop:** saves through the system Save dialog.
 - **iPhone:** opens the share sheet, including Save to Files.
+- **Android:** opens the share sheet, including Save to Photos or Files.
 - **Terminal UI:** pick the message (`v`), then `f` saves it to Downloads.
 
 Codync keeps its own copy of each shared file, so it stays downloadable even if the bot later changes or deletes the original. Bots share files only in their own chat, not in group chats or routine runs.
@@ -92,6 +97,8 @@ Some agents keep working after their reply, for example a background helper that
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
 Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent.
+
+A turn that stops short instead (it used all its steps, or its answer was cut at the output limit) leaves a card saying so, with **Continue** to go on and **Cancel task** to end it there. Cancelling keeps the messages and leaves the card read **Cancelled**; it can't be continued after that. In the terminal UI, `/continue` goes on and `E` (or `/cancel`) ends it.
 
 ## Replying to a message
 

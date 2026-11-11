@@ -94,7 +94,7 @@ test('a speech error ends it and reports it; a send already asked for goes with 
 test('without on-device speech or a provider, the mic says what to pick', () => {
   const s = setup({ speech: null })
   s.dictation.start(s.box())
-  assert.equal(s.dictation.error, 'No speech here. Pick OpenAI or Gemini beside the mic.')
+  assert.equal(s.dictation.error, 'No speech here. Pick OpenAI, Gemini or ElevenLabs beside the mic.')
   assert.equal(s.dictation.listening, false)
 })
 

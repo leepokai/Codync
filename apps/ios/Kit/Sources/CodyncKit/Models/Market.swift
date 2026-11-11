@@ -379,9 +379,10 @@ public extension HostClient {
         try await call("setComposioKey", ["key": key], timeout: 60)
     }
 
-    func composioApps(search: String) async throws -> [ComposioApp] {
-        let res: Items<ComposioApp> = try await call("composioToolkits", ["search": search], timeout: 60)
-        return res.items
+    func composioApps(search: String, cursor: String? = nil) async throws -> (items: [ComposioApp], next: String?) {
+        struct Page: Decodable { var items: [ComposioApp]; var nextCursor: String? }
+        let res: Page = try await call("composioToolkits", ["search": search, "cursor": cursor ?? ""], timeout: 60)
+        return (res.items, res.nextCursor)
     }
 
     func composioConnect(_ app: String) async throws -> ComposioConnect {

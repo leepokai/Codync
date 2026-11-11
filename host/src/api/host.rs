@@ -64,6 +64,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.whatsapp.start(hub);
             json!({"ok": true})
         }
+        "whatsappPair" => {
+            let phone = str_arg(&b, "phone")?;
+            hub.whatsapp.pair(hub, phone)?;
+            let mut view = serde_json::to_value(hub.whatsapp.state().await)?;
+            if let Some(bot) = hub.store.kv_get("whatsapp.bot") {
+                view["bot"] = Value::String(bot);
+            }
+            view["allowed"] = serde_json::to_value(crate::whatsapp::allowed(hub))?;
+            view
+        }
         "whatsappLogout" => {
             hub.whatsapp.logout(hub).await?;
             json!({"ok": true})
@@ -128,6 +138,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "voiceModels" => {
             crate::voice::models(&hub.store, crate::voice::Provider::parse(str_arg(&b, "provider")?)?).await?
+        }
+        "voiceVoices" => {
+            crate::voice::voices(&hub.store, crate::voice::Provider::parse(str_arg(&b, "provider")?)?).await?
         }
         "voiceTranscribe" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;

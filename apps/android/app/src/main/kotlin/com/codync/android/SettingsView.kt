@@ -56,22 +56,23 @@ import com.codync.android.design.*
     var confirmStartOver by remember { mutableStateOf(false) }
     var aboutAnalytics by remember { mutableStateOf(false) }
     var channels by remember { mutableStateOf(false) }
+    var support by remember { mutableStateOf(false) }
     LaunchedEffect(reselectToken) { if (reselectToken > 0) scroll.animateScrollTo(0) }
     LaunchedEffect(active) { if (active) store.refreshCloud() }
     CardForm(Modifier.background(Palette.background).statusBarsPadding(), PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = bottomInset), scroll) {
         Text(tr("Settings"), Modifier.semantics { heading() }, style = Type.largeTitle.bold, color = Palette.text)
         if (computers != null) CardSection {
-            row { RowLabel("Computer management", "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
-            row { RowLabel("Channels", "paperplane", chevron = true, modifier = Modifier.plainButton { channels = true }) }
+            row { RowLabel(tr("Computer management"), "desktopcomputer", chevron = true, modifier = Modifier.plainButton(action = computers)) }
+            row { RowLabel(tr("Channels"), "paperplane", chevron = true, modifier = Modifier.plainButton { channels = true }) }
         }
         AppearanceSection()
         val appLanguage = LocalAppLanguage.current
         val setAppLanguage = LocalSetAppLanguage.current
         val systemChinese = LocalSystemChinese.current
         val phrases = LocalPhrases.current
-        CardSection("Language", footer = "Choose the language for this device. Unsupported system languages use English.") {
+        CardSection(tr("Language"), footer = tr("Choose the language for this device. Unsupported system languages use English.")) {
             row {
-                ValueRow("App language") {
+                ValueRow(tr("App language")) {
                     ChoicePicker(appLanguage, AppLanguage.entries.map {
                         it to AppLanguage.menuTitle(it, appLanguage, systemChinese, phrases)
                     }, setAppLanguage)
@@ -79,22 +80,23 @@ import com.codync.android.design.*
             }
         }
         ThinkingDetailsSettings()
-        CardSection("Navigation", "Pick how the tab bar sits at the bottom of the screen on phones.") {
+        CardSection(tr("Navigation"), tr("Pick how the tab bar sits at the bottom of the screen on phones.")) {
             row {
-                ValueRow("Bar style") {
+                ValueRow(tr("Bar style")) {
                     ChoicePicker(
                         navStyle,
                         NavBarStyle.entries.map { it to it.title },
                         { NavigationPreferences.setStyle(context, it) },
-                        label = "Bar style",
+                        label = tr("Bar style"),
                     )
                 }
             }
             row {
-                SwitchRow("Hide bar on scroll", isOn = navAutoHide, onChange = { NavigationPreferences.setAutoHide(context, it) })
+                SwitchRow(tr("Hide bar on scroll"), isOn = navAutoHide, onChange = { NavigationPreferences.setAutoHide(context, it) })
             }
         }
         SecuritySection()
+        AppLockSection()
         NotificationsSection()
         GettingStartedSection(state)
         EnterpriseSection(state, store)
@@ -121,6 +123,9 @@ import com.codync.android.design.*
             }
         }
         CardSection {
+            row { RowLabel("Support", "lifepreserver", chevron = true, modifier = Modifier.plainButton { support = true }) }
+        }
+        CardSection {
             row { ValueRow("App version", BuildConfig.VERSION_NAME) }
             row { LinkButton("Source code") { uri.open("https://github.com/leepokai/Codync", OutboundLink.Github) } }
         }
@@ -136,6 +141,7 @@ import com.codync.android.design.*
     }
     CodyncSheet(aboutAnalytics, { aboutAnalytics = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { AnalyticsSheet() }
     CodyncSheet(channels, { channels = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { ChannelsSheet(state, store) }
+    CodyncSheet(support, { support = false }, detents = setOf(SheetDetent.Medium, SheetDetent.Expanded)) { SupportView(store) { support = false } }
     CodyncDialog("Start over?", confirmStartOver, { confirmStartOver = false },
         "Signs out of every account and forgets every computer on this phone, then shows the welcome again. Your computers keep their bots and chats; pair again to use them.") {
         listOf(DialogAction("Start over", destructive = true, action = store::startOver))
@@ -143,7 +149,7 @@ import com.codync.android.design.*
 }
 
 /** Whether Android lets Codync show notifications at all; each computer's push switch is on its card. */
-@Composable private fun NotificationsSection() {
+@Composable internal fun NotificationsSection() {
     val context = LocalContext.current
     var asked by remember { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

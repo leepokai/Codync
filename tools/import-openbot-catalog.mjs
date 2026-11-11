@@ -140,6 +140,8 @@ agents.push({
 })
 
 // MARK: apps
+// A local server signed in before each start; OpenBot's plugin schema has no field for this.
+const LOGINS = { 'proton-pass': ['pass-cli', 'login'] }
 const apps = []
 for (const slug of readdirSync(plugins)) {
     const plugin = JSON.parse(readFileSync(join(plugins, slug, 'plugin.json'), 'utf8'))
@@ -167,6 +169,7 @@ for (const slug of readdirSync(plugins)) {
             url: app.server.url,
             command: app.server.command,
             args: app.server.args,
+            login: LOGINS[plugin.slug],
         },
         fields: (auth?.fields ?? []).map((field) => ({
             id: field.id,

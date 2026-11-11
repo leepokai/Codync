@@ -73,7 +73,7 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 
 ### How a run works
 
-- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
+- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own. When the run ends, its session closes and, on most agents, the connectors it started stop; Codex keeps them until the agent next stops. An agent that can't close a session, like Cursor, restarts instead once the bot has nothing else running; your next message picks the conversation up where it was, after a few seconds' start.
 - **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.

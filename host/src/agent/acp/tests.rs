@@ -32,6 +32,27 @@ async fn dropping_an_agent_releases_its_process_tree() {
     assert_descendant_pipes_close(rx).await;
 }
 
+/// The cleanup of a dropped agent doesn't wait for the runtime's blocking threads, which may all be busy.
+#[cfg(unix)]
+#[test]
+fn a_dropped_agent_is_released_even_when_the_blocking_pool_is_full() {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().max_blocking_threads(1).build().unwrap();
+    let (acp, rx) = runtime.block_on(descendant_agent());
+    let (entered, started) = std::sync::mpsc::channel();
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let blocker = runtime.spawn_blocking(move || {
+        entered.send(()).unwrap();
+        let _ = gate.recv();
+    });
+    started.recv_timeout(Duration::from_secs(5)).unwrap();
+    runtime.block_on(async {
+        drop(acp);
+        assert_descendant_pipes_close(rx).await;
+    });
+    drop(release);
+    runtime.block_on(blocker).unwrap();
+}
+
 #[tokio::test]
 async fn actor_unwinding_releases_its_process_tree() {
     let (acp, rx) = descendant_agent().await;

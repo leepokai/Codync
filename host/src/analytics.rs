@@ -27,7 +27,10 @@ pub use lifecycle::{
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
-pub use turns::{Steer, TurnOutcome, TurnSource, agent_fell_back, context_compacted, message_steered, turn_finished};
+pub use turns::{
+    Retired, Steer, TurnOutcome, TurnSource, agent_fell_back, agent_retired, context_compacted, message_steered,
+    turn_finished,
+};
 
 const KV_ENABLED: &str = "analytics_enabled";
 /// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
@@ -77,6 +80,8 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
+    AgentRetired,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
     ContextCompacted,
     UsageReadFailed,
@@ -194,6 +199,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::AgentRetired => "agent_retired",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",

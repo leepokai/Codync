@@ -33,6 +33,8 @@ Every change is checked first. Memory can't take in hidden characters, links tha
 
 A bot can also search its memory and its chat history. History search covers only the bot's own chat; group chats it took part in aren't included.
 
+For questions such as “What did we do this week?”, the bot can narrow history search to a date range and summarize the matching messages. The host keeps its search index up to date when messages are edited or deleted; internal background messages stay out of the results.
+
 ### Forgetting
 
 When a bot removes a fact because you asked it to in its own chat, Codync remembers that you had it forgotten. No bot outside your own chat, and no dreaming, writes it back or learns it again from the same message. If you tell a bot again in its own chat, it can come back.
@@ -87,12 +89,14 @@ Changing the switch restarts the agent, which resumes its session where it can. 
 
 ### Agents with a memory of their own
 
-Hermes Agent and Gemini CLI keep one memory for all their sessions, and Codync can't turn it off for one bot. For a bot on either, the **This bot** section shows **Hermes Agent's own memory** (or Gemini CLI's) marked **Shared** in place of the switch, and its info button explains what that means:
+Hermes Agent shares its native memory within the selected Hermes profile; Gemini CLI shares its own memory across its sessions. The **This bot** section shows **Hermes Agent's own memory** (or Gemini CLI's) marked **Shared** in place of a per-bot switch. This is separate from Codync's persistent memory for each bot.
 
-- **Every bot that runs the agent shares it**, and so does the agent when you use it outside Codync. What one Hermes bot saves there, every other Hermes bot can read.
+- **Bots using the same native profile share it**, including use outside Codync. Different Hermes profiles can have different file memories or a configured external provider such as Honcho.
 - **Remembered twice:** a bot may save the same thing in both memories, and the two can disagree.
 - **Forgetting** in Codync doesn't remove anything from the agent's memory, and Codync can't show it to you.
-- **Turning it off** is only possible in the agent's own settings, where it has one, and then for every session at once. Codync doesn't read those settings, so the row says **Shared** either way.
+- **Turning it off** uses the agent's native settings and affects that native profile's sessions. The Shared row does not represent whether native memory is enabled. The Hermes runtime installation check can read local profile metadata; it does not authenticate Honcho or test its connection.
+
+For an owned Hermes runtime, choose **From Hermes profile**, **Built-in**, or **Honcho** in [Hermes runtime settings](/docs/agents#configure-a-hermes-execution-owner). Honcho requires the existing native plugin and credentials. Failure to initialize it is reported instead of silently switching memory providers.
 
 Where each keeps it:
 

@@ -491,5 +491,3 @@ class ProjectWorkspace:
                 raise RuntimeError("SSH project symlink destinations are not synchronized")
             if current != path and current.exists() and not current.is_dir():
                 raise RuntimeError("SSH project parent is not a directory")
-
-

@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -249,6 +250,8 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
             LaunchedEffect(shown, floor, loading, settled, visible) {
                 if (paging.ask(settled, visible, loading, shown, floor)) store.loadHistory(paging::failed)
             }
+            // Scrolled far away, the list drops the row before it recomposes as hidden.
+            DisposableEffect(paging) { onDispose(paging::left) }
         }
         // Shown while earlier messages may still load, as on the iPhone.
         if (items.isEmpty()) item("intro") { IntroCard(bot, state) }

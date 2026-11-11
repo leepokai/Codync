@@ -142,7 +142,7 @@ internal class EarlierPaging {
 
     /** Whether to page now. Asking remembers [shown] and [floor], so the next page waits until this one moved them. */
     fun ask(settled: Boolean, visible: Boolean, loading: Boolean, shown: Int, floor: Long): Boolean {
-        if (lastFailed && !visible) { lastFailed = false; askedShown = -1; askedFloor = Long.MAX_VALUE }
+        if (!visible) left()
         if (!pageEarlier(settled, visible, loading, shown, floor, askedShown, askedFloor)) return false
         askedShown = shown; askedFloor = floor; lastFailed = false
         return true
@@ -150,6 +150,11 @@ internal class EarlierPaging {
 
     /** The page asked for last didn't load. */
     fun failed() { lastFailed = true }
+
+    /** The row is off screen, or the list dropped it before it could see that: after a failure, it may ask again when it shows anew. */
+    fun left() {
+        if (lastFailed) { lastFailed = false; askedShown = -1; askedFloor = Long.MAX_VALUE }
+    }
 }
 
 /** One history load per chat at a time, so a chat still loading doesn't make the one opened next wait. */

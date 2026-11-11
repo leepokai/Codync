@@ -52,5 +52,17 @@ class HistoryPagingTest {
         assertFalse(paging.ask(settled = true, visible = true, loading = false, shown = 10, floor = 40))
     }
 
+    @Test fun `a failed page is asked for again after the list dropped its row unseen`() {
+        val paging = EarlierPaging()
+        assertTrue(paging.ask(settled = true, visible = true, loading = false, shown = 10, floor = 40))
+        paging.failed()
+        // Scrolled far away: the row leaves composition without ever asking while hidden.
+        paging.left()
+        assertTrue(paging.ask(settled = true, visible = true, loading = false, shown = 10, floor = 40))
+        // Leaving after a page that loaded asks nothing more.
+        paging.left()
+        assertFalse(paging.ask(settled = true, visible = true, loading = false, shown = 10, floor = 40))
+    }
+
     private fun row(seq: Long, kind: String) = Entry("e-$seq", seq, "a", rev = seq, kind = kind)
 }

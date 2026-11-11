@@ -129,6 +129,8 @@ pub struct Hub {
     pub screen: Arc<Screen>,
     /// The n8n instance this computer runs.
     pub n8n: Arc<crate::n8n::N8n>,
+    /// The bundled tools (ComfyUI) run through the shared runner.
+    pub tools: crate::tools::Tools,
     pub computer: crate::computer::Access,
     /// Setup terminals (installs, sign-ins).
     pub terms: Arc<crate::agent::term::Terms>,
@@ -168,7 +170,7 @@ impl Hub {
             identity,
             token,
             port,
-            events,
+            events: events.clone(),
             emit_lock: Mutex::new(()),
             bots: Mutex::default(),
             side: Mutex::default(),
@@ -184,6 +186,7 @@ impl Hub {
             cloud: crate::remote::cloud::Cloud::default(),
             screen,
             n8n,
+            tools: crate::tools::Tools::load(&events),
             terms: Arc::default(),
             external: crate::external::External::default(),
         })
@@ -213,6 +216,7 @@ impl Hub {
         crate::analytics::start(self);
         // The n8n instance starts with the host when its service is on.
         self.n8n.start(self);
+        self.tools.start_enabled(self);
         // A number linked in an earlier run comes back without anyone opening WhatsApp.
         if service::data_dir().join("whatsapp").join("auth").join("creds.json").is_file() {
             self.whatsapp.start(self);
@@ -243,6 +247,7 @@ impl Hub {
             tracing::warn!("some bots didn't stop within 5 s");
         }
         self.n8n.stop(&self.store).await;
+        self.tools.stop_all().await;
         self.keep_awake.locked().set(false);
     }
 

@@ -327,14 +327,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
             hub.screen.state()
         }
-        "n8nStatus" => hub.n8n.state(),
+        "n8nStatus" => crate::n8n_remote::view(caller, hub.n8n.state()),
         "n8nStart" => {
             hub.n8n.enable(hub)?;
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
         "n8nStop" => {
             hub.n8n.stop(&hub.store).await;
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
         "setN8nEnabled" => {
             if b["enabled"].as_bool().context("`enabled` must be a boolean")? {
@@ -342,8 +342,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 hub.n8n.disable(&hub.store).await?;
             }
-            hub.n8n.state()
+            crate::n8n_remote::view(caller, hub.n8n.state())
         }
+        // A phone's view of the workflows n8n runs here: list them, publish or unpublish one, read its runs.
+        "n8nWorkflows" => crate::n8n_remote::workflows(hub).await?,
+        "n8nSetWorkflowActive" => {
+            let active = b["active"].as_bool().context("`active` must be a boolean")?;
+            crate::n8n_remote::set_workflow_active(hub, str_arg(&b, "id")?, active).await?
+        }
+        "n8nExecutions" => crate::n8n_remote::executions(hub, b["workflowId"].as_str(), b["limit"].as_u64()).await?,
         "setN8nPath" => {
             hub.n8n.set_path(&hub.store, str_arg(&b, "path")?).await?;
             hub.n8n.state()
@@ -353,6 +360,21 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             hub.n8n.set_port(&hub.store, u16::try_from(port).context("`port` must be 1024 or higher")?).await?;
             hub.n8n.state()
         }
+        "toolStatus" => hub.tools.status(&hub.store, str_arg(&b, "id")?).await?,
+        "toolStart" => {
+            hub.tools.start(hub, str_arg(&b, "id")?)?;
+            hub.tools.status(&hub.store, str_arg(&b, "id")?).await?
+        }
+        "toolStop" => {
+            hub.tools.stop(&hub.store, str_arg(&b, "id")?).await?;
+            hub.tools.status(&hub.store, str_arg(&b, "id")?).await?
+        }
+        "comfyCall" => {
+            let args = b.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));
+            crate::tools::comfy_mcp::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &args).await?
+        }
+        "comfyCancel" => hub.tools.comfy_jobs().cancel(hub).await?,
+        "comfyJobImage" => crate::tools::comfy_mcp::job_image(hub).await?,
         "computerTools" => crate::screen::computer_tools(hub).await,
         "computerCall" => {
             let args = b.get("arguments").filter(|a| a.is_object()).cloned().unwrap_or_else(|| json!({}));

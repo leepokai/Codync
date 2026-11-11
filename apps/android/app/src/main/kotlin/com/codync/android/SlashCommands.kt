@@ -31,9 +31,18 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 
-/** A command in the composer's `/` list (iOS `SlashCommand`): Fast mode, or one of the bot's skills. */
+/** A command in the composer's `/` list (iOS `SlashCommand`): Fast mode, one of the bot's skills, or a tool command. */
 internal data class SlashCommand(val name: String, val icon: String, val title: String, val detail: String, val warning: Boolean,
     val skill: String? = null)
+
+/**
+ * The tools every bot can be asked to work with, `/n8n …` and `/comfy …`: the host adds a note and the bot uses the tool's own
+ * tools (host/src/chat/tool_commands.rs). Name, icon, title, what it does.
+ */
+private val TOOL_COMMANDS = listOf(
+    SlashCommand("n8n", "point.3.connected.trianglepath.dotted", "n8n", "Do it with the computer's n8n workflows", false, "n8n"),
+    SlashCommand("comfy", "photo", "ComfyUI", "Make an image with ComfyUI", false, "comfy"),
+)
 
 /**
  * The composer's `/` commands, listed while the draft is just `/partial`, the same in a group (iOS `SlashCommands`): Fast mode
@@ -48,7 +57,9 @@ internal object SlashCommands {
     fun list(bot: Bot, query: String, skills: List<InstalledSkill>, members: List<Bot> = emptyList()): List<SlashCommand> {
         val owners = if (bot.kind == "group") members else listOf(bot)
         val own = skills.filter { skill -> owners.any { skill.id in it.skills } }.map { SlashCommand(it.id, "book.pages", it.name, it.description, false, it.id) }
-        return (builtIn(bot, members) + own).filter { query.isEmpty() || it.name.contains(query, true) || it.title.contains(query, true) }
+        // A skill with the same id keeps the name: the host expands the skill first.
+        val tools = TOOL_COMMANDS.filter { tool -> own.none { it.name == tool.name } }
+        return (builtIn(bot, members) + own + tools).filter { query.isEmpty() || it.name.contains(query, true) || it.title.contains(query, true) }
     }
 
     /** A draft that is just a built-in command (`/fast`): sending it runs the command. */
@@ -77,8 +88,8 @@ internal object SlashCommands {
             .semantics(mergeDescendants = true) { contentDescription = command.title }.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) { Symbol(command.icon, size = 17.dp, tint = Palette.secondary) }
-            Text(command.title, style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(command.detail, Modifier.weight(1f), style = Type.subheadline, color = if (command.warning) Palette.warning else Palette.secondary,
+            Text(tr(command.title), style = Type.subheadline, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tr(command.detail), Modifier.weight(1f), style = Type.subheadline, color = if (command.warning) Palette.warning else Palette.secondary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }

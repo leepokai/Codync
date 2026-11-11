@@ -19,6 +19,8 @@ import { CatalogPanel } from './CatalogPanel'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
 import { MarketAgentSheet } from './MarketAgentSheet'
+import { TOOLS } from '@shared/tools'
+import { ComfySheet } from './ComfySheet'
 import { WhatsAppSheet } from './WhatsAppSheet'
 import { SetupTerminalView } from './SetupTerminal'
 import { McpToolsSheet } from './McpToolsSheet'
@@ -60,6 +62,7 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
   const [viewingApp, setViewingApp] = useState<MarketApp | null>(null)
   const [viewingAgent, setViewingAgent] = useState<MarketAgent | null>(null)
   const [whatsapp, setWhatsApp] = useState(false)
+  const [comfy, setComfy] = useState(false)
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
@@ -236,6 +239,13 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
                 onOpen={() => setWhatsApp(true)}
                 trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
               />
+              <ItemRow
+                title="ComfyUI"
+                subtitle={tr('Make images on this computer, and let your bots make them too.')}
+                icon={<div className="market-tile"><Icon name={TOOLS.comfy.icon} size={14} /></div>}
+                onOpen={() => setComfy(true)}
+                trailing={<Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
+              />
             </MarketSection>
             <MarketSection title={tr('Messaging channels')}>
               <ChannelCards entries={channelEntries} onOpen={setViewingChannel} />
@@ -353,6 +363,9 @@ export function MarketplaceView({ initialSection = 'apps', initialAgent }: { ini
           onClose={() => setViewingChannel(null)}
         />
       ) : null}
+      <FormSheet open={comfy} onClose={() => setComfy(false)}>
+        <ComfySheet />
+      </FormSheet>
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />
       </FormSheet>

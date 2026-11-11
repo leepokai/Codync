@@ -41,6 +41,8 @@ pub enum Server {
     Team,
     Manage,
     Memory,
+    /// The local ComfyUI, for a bot whose owner turned the ComfyUI connector on.
+    Comfy,
     Composio,
     /// For agents on this computer that aren't Codync bots; `bot` is the agent's name.
     Network,
@@ -99,6 +101,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS, crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS, crate::chat::manage::tools()),
         Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS, crate::chat::memory::tools()),
+        Server::Comfy => ("codync-comfyui", crate::tools::comfy_mcp::INSTRUCTIONS, crate::tools::comfy_mcp::tools()),
         Server::Composio => {
             ("codync-composio", crate::market::composio::INSTRUCTIONS, crate::market::composio::tools())
         }
@@ -203,6 +206,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
+        Server::Comfy => ("comfyCall", crate::tools::comfy_mcp::CALL_TIMEOUT),
         Server::Composio => ("composioCall", Duration::from_mins(2)),
         // The first listing may wait for the other computers.
         Server::Network => ("agentCall", Duration::from_secs(30)),
@@ -226,6 +230,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                         | Server::Team
                         | Server::Manage
                         | Server::Memory
+                        | Server::Comfy
                         | Server::Routines
                         | Server::Network
                         | Server::Connectors => {

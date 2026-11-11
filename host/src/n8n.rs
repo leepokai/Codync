@@ -36,8 +36,8 @@ const KV_ENABLED: &str = "n8n.enabled";
 const LEGACY_KV: [(&str, &str); 3] =
     [("automan.path", KV_PATH), ("automan.port", KV_PORT), ("automan.enabled", KV_ENABLED)];
 /// The instance's owner and MCP API key, which the host creates on a first start and keeps.
-const KV_OWNER_EMAIL: &str = "n8n.owner.email";
-const KV_OWNER_PASSWORD: &str = "n8n.owner.password";
+pub(crate) const KV_OWNER_EMAIL: &str = "n8n.owner.email";
+pub(crate) const KV_OWNER_PASSWORD: &str = "n8n.owner.password";
 const KV_MCP_KEY: &str = "n8n.mcpApiKey";
 /// The owner the host creates for an instance that doesn't have one yet.
 const OWNER_EMAIL: &str = "owner@codync.local";
@@ -133,6 +133,16 @@ impl N8n {
 
     pub fn enabled(&self) -> bool {
         self.settings.locked().enabled
+    }
+
+    /// Whether the instance answers right now.
+    pub fn running(&self) -> bool {
+        *self.state.locked() == State::Running
+    }
+
+    /// The port the editor and the API listen on.
+    pub fn port(&self) -> u16 {
+        self.settings.locked().port
     }
 
     fn set_state(&self, state: State) {

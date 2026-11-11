@@ -20,5 +20,10 @@
 !macro customUnInstall
   ${ifNot} ${isUpdated}
     ExecWait '"$INSTDIR\resources\codync-host.exe" uninstall'
+    ; ComfyUI's models, custom nodes and images are the user's own files and stay unless they say so.
+    ; A silent uninstall keeps them. The host knows which data folder belongs to this app.
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "Also delete your ComfyUI models, custom nodes and images? They stay on this computer if you choose No." /SD IDNO IDNO codyncKeepComfy
+    ExecWait '"$INSTDIR\resources\codync-host.exe" uninstall --remove-comfy'
+    codyncKeepComfy:
   ${endIf}
 !macroend

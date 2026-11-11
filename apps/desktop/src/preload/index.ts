@@ -173,6 +173,12 @@ const bridge: CodyncBridge = {
     gotoEditor: () => ipcRenderer.invoke('n8n:gotoEditor'),
     openSettings: () => ipcRenderer.send('n8n:openSettings'),
   },
+  tools: {
+    open: (id) => ipcRenderer.invoke('tools:open', id),
+    gotoEditor: (id) => ipcRenderer.invoke('tools:gotoEditor', id),
+    openLog: (id) => ipcRenderer.invoke('tools:openLog', id),
+    openModels: (id) => ipcRenderer.invoke('tools:openModels', id),
+  },
 }
 
 contextBridge.exposeInMainWorld('codync', bridge)

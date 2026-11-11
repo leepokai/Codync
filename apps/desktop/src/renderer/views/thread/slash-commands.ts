@@ -5,6 +5,12 @@
 import { fastModeDetail, fastModeShown, fastModeState, groupFastMode, type FastModeState } from '../../../shared/fast-mode.ts'
 import type { Bot } from '../../../shared/models.ts'
 
+/** The tools every bot can be asked to work with: `/n8n …` and `/comfy …`. The host adds a note and the bot uses the tool's own tools (host/src/chat/tool_commands.rs). */
+const TOOL_COMMANDS = [
+  { name: 'n8n', icon: 'point.3.connected.trianglepath.dotted', title: 'n8n', detail: "Do it with the computer's n8n workflows" },
+  { name: 'comfy', icon: 'photo', title: 'ComfyUI', detail: 'Make an image with ComfyUI' },
+]
+
 export type SlashAction = { kind: 'fast' } | { kind: 'skill'; id: string }
 
 export interface SlashCommand {
@@ -34,8 +40,8 @@ function ownFastMode(bot: Bot): { state: FastModeState; detail: string } | null 
 }
 
 /**
- * Built-in commands, then the bot's skills (ids in `bot.skills`; a group's `members` have them),
- * whose name or title holds `query`.
+ * Built-in commands, then the bot's skills (ids in `bot.skills`; a group's `members` have them), then the tool
+ * commands, whose name or title holds `query`.
  */
 export function slashCommands(bot: Bot | null, query: string, installedSkills: { id: string; name: string; description: string }[], members: Bot[] = []): SlashCommand[] {
   if (!bot) return []
@@ -43,8 +49,10 @@ export function slashCommands(bot: Bot | null, query: string, installedSkills: {
   const skills = installedSkills
     .filter((s) => enabled.includes(s.id))
     .map((s): SlashCommand => ({ name: s.id, icon: 'book.pages', title: s.name, detail: s.description, warning: false, action: { kind: 'skill', id: s.id } }))
+  // A skill with the same id keeps the name: the host expands the skill first.
+  const tools = TOOL_COMMANDS.filter((t) => !skills.some((s) => s.name === t.name)).map((t): SlashCommand => ({ ...t, warning: false, action: { kind: 'skill', id: t.name } }))
   const q = query.toLowerCase()
-  return [...builtIn(bot, members), ...skills].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
+  return [...builtIn(bot, members), ...skills, ...tools].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
 }
 
 /** A draft that is just a built-in command (`/fast`): sending it runs the command. */

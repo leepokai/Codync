@@ -40,8 +40,22 @@ The editor ships with a **Codync Bot** node (under **Custom Nodes**): it talks t
 
 The node finds the host on its own, so it needs no credentials. You can still configure a **Codync API** credential — the host's URL and token — if you point the node at another computer's host.
 
+## Tell a bot to use n8n
+
+In any chat, start a message with `/n8n` and say what to do, for example `/n8n run the daily report and tell me how it went`: the bot works the instance through its workflows and runs. If n8n is not running, the bot says so. A workflow can send the same kind of message with the Codync Bot node, so one flow can ask a bot to make an image with `/comfy …` or to run another workflow with `/n8n …`.
+
 ## Give your bots the instance
 
 While the instance runs, the host registers its MCP server as a connector named **n8n** on every bot, so a bot can work n8n the way it works any other connector: look at its workflows, start an execution, follow the result. While the instance runs, the settings page shows the connection under the **Instance** section.
 
 When the instance stops, the connector goes away with it; the next start brings it back.
+
+## On the desktop and in the terminal
+
+While the instance runs, **Settings → n8n** in the desktop app lists its workflows, each with a switch that publishes or unpublishes it, and its latest runs with their result. In the terminal app, open the command palette and choose **n8n: workflows and runs…**: use the arrow keys to pick a workflow, Enter to publish or unpublish it, `s` to start or stop n8n and `r` to refresh.
+
+## From your phone
+
+On Android, **Settings → n8n** shows whether n8n runs on the computer and starts or stops it. While it runs, the card lists its workflows, each with a switch that publishes or unpublishes it on the computer, and its latest runs with their result. The editor itself opens on the computer.
+
+The phone only asks the host, and the host asks n8n. For that it makes one API key for itself the first time the card needs it (named **Codync host**, allowed to list and switch workflows and read runs, nothing more) and keeps it with its own data; the phone never sees that key. The phone is not given the editor's session either, and the folder n8n runs from and its port can only be changed at the computer.

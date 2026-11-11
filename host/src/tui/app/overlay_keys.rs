@@ -52,6 +52,7 @@ impl App {
             Action::Details => self.open_routines(),
             Action::Documents => self.open_documents(),
             Action::Computer => self.open_computer_panel(),
+            Action::N8n => self.open_n8n(),
             Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
@@ -97,6 +98,7 @@ impl App {
         let keep = match top {
             Overlay::Computer(sheet) => self.computer_key(sheet, k),
             Overlay::McpTools(sheet) => self.mcp_tools_key(sheet, k),
+            Overlay::N8n(sheet) => self.n8n_key(sheet, k),
             Overlay::RosterTools => self.roster_tools_key(k),
             Overlay::Goto(g) => self.goto_key(g, k),
             Overlay::Help(mut e) => {

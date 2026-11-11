@@ -7,6 +7,7 @@
 // nothing to do there.
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -39,6 +40,9 @@ if (process.platform === 'win32') {
   for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(built(target, exe), join(out, env === 'dev' && exe === 'codync-hostw.exe' ? 'codync-dev-hostw.exe' : exe))
   // The pinned driver has no Windows ARM64 build; Windows 11 runs these x64 helpers through Prism.
   run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
+  // 7-Zip beside the host: it unpacks ComfyUI's portable, which the host downloads on its first start
+  // (too big for the installer). 7zip-bin picks the build for this machine's architecture.
+  copyFileSync(createRequire(import.meta.url)('7zip-bin').path7za, join(out, '7za.exe'))
   copyBridge()
 } else {
   const native = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'

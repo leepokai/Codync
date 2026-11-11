@@ -5,6 +5,7 @@ import { ChatWindow } from './views/ChatWindow'
 import { ScreenWindow } from './views/screen/ScreenWindow'
 import { N8nWindow } from './views/n8n/N8nWindow'
 import { BrowserWindow } from './views/browser/BrowserWindow'
+import { ToolWindow } from './views/tools/ToolWindow'
 import { PairingWindow } from './views/PairingWindow'
 import { IslandWindow } from './views/island/IslandWindow'
 import { IslandModel } from './views/island/island-model'
@@ -77,6 +78,8 @@ if (page === 'screen') {
   const app = new AppModel(true)
   void app.start()
   root.render(<AppContext.Provider value={app}><BrowserWindow /></AppContext.Provider>)
+} else if (page === 'comfy') {
+  root.render(<ToolWindow id="comfy" />)
 } else if (page === 'island') {
   // The island only draws what the chat window sends it: no host connection of its own.
   const island = new IslandModel()

@@ -114,6 +114,9 @@ win:
     # extraResources skips node_modules by default: name it, so the bridge's packages ship.
     - from: build/native/whatsapp/node_modules
       to: whatsapp/node_modules
+    # 7-Zip, for the ComfyUI portable the host downloads on its first start (NSIS can't hold 2.5 GB).
+    - from: build/native/7za.exe
+      to: 7za.exe
     # The tray icon (template glyphs are for macOS).
     - from: resources/icon.png
       to: icon.png

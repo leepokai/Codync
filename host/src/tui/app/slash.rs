@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::json;
 
 use super::{After, App, Bot, Editor};
+use crate::tui::l10n::tr;
 
 /// What picking a command does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,11 +101,18 @@ impl App {
                 action: SlashAction::Skill,
             })
         });
-        self.built_in()
-            .into_iter()
-            .chain(skills)
-            .filter(|c| c.name.contains(&query) || c.title.to_lowercase().contains(&query))
-            .collect()
+        // A skill with the same id keeps the name: the host expands the skill first.
+        let tools = crate::chat::tool_commands::LISTED.into_iter().map(|(name, title, detail)| SlashCommand {
+            name: name.to_owned(),
+            title: title.to_owned(),
+            detail: tr(detail).into_owned(),
+            action: SlashAction::Skill,
+        });
+        let mut commands: Vec<SlashCommand> = self.built_in().into_iter().chain(skills).collect();
+        let taken: Vec<String> = commands.iter().map(|c| c.name.clone()).collect();
+        commands.extend(tools.filter(|t| !taken.contains(&t.name)));
+        commands.retain(|c| c.name.contains(&query) || c.title.to_lowercase().contains(&query));
+        commands
     }
 
     /// The highlighted row of `count`: kept while the draft stays the same, else the first.
@@ -210,8 +218,10 @@ mod tests {
         app
     }
 
+    /// The commands by name, without the tool commands (`/n8n`, `/comfy`) every bot offers.
     fn names(app: &super::App) -> Vec<String> {
-        app.slash_commands().into_iter().map(|c| c.name).collect()
+        let tools = crate::chat::tool_commands::LISTED.map(|(name, ..)| name);
+        app.slash_commands().into_iter().map(|c| c.name).filter(|n| !tools.contains(&n.as_str())).collect()
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -231,6 +241,24 @@ mod tests {
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");
         app.bots.get_mut("b").expect("the bot").fast_support = "unsupported".into();
         assert_eq!(names(&app), ["pdf", "docx"], "no Fast mode on offer");
+    }
+
+    #[tokio::test]
+    async fn the_tool_commands_come_last_and_a_skill_with_their_name_keeps_it() {
+        let mut app = app_with(&json!({"id": "b", "name": "Bot", "skills": ["pdf"], "fastModeSupport": "unsupported"}));
+        app.drafts.insert("b".into(), super::Editor::with("/"));
+        let all: Vec<String> = app.slash_commands().into_iter().map(|c| c.name).collect();
+        assert_eq!(all, ["pdf", "n8n", "comfy"]);
+        app.drafts.insert("b".into(), super::Editor::with("/com"));
+        assert_eq!(app.slash_commands().remove(0).title, "ComfyUI");
+        assert!(app.slash_key(key(KeyCode::Tab)), "Tab fills it in");
+        assert_eq!(app.draft().text, "/comfy ");
+        app.plugins.1.push(json!({"id": "n8n", "name": "My n8n skill"}));
+        app.bots.get_mut("b").expect("the bot").skills.push("n8n".into());
+        app.drafts.insert("b".into(), super::Editor::with("/n8n"));
+        let commands = app.slash_commands();
+        assert_eq!(commands.len(), 1, "one /n8n: the skill");
+        assert_eq!(commands[0].title, "My n8n skill");
     }
 
     #[tokio::test]
@@ -259,8 +287,8 @@ mod tests {
     async fn arrows_pick_a_row_and_return_runs_it() {
         let mut app = app_with(&json!({"id": "b", "name": "Bot", "skills": ["pdf"], "fastModeSupport": "offered"}));
         app.drafts.insert("b".into(), super::Editor::with("/"));
-        assert!(app.slash_key(key(KeyCode::Up)), "up wraps to the last row");
-        assert_eq!(app.slash_selected(2), 1);
+        assert!(app.slash_key(key(KeyCode::Down)), "down moves to the next row");
+        assert_eq!(app.slash_selected(4), 1);
         assert!(app.slash_key(key(KeyCode::Enter)), "Return on a skill fills it in");
         assert_eq!(app.draft().text, "/pdf ");
         assert!(names(&app).is_empty(), "the list closes once the name is done");

@@ -95,6 +95,7 @@ const bridge: CodyncBridge = {
   },
   browser: { open: unavailable },
   n8n: { open: unavailable, gotoEditor: unavailable, openSettings() {} },
+  tools: { open: unavailable, gotoEditor: unavailable, openLog: unavailable, openModels: unavailable },
   cloud: { request: async () => ({ ok: false, error: { status: 503, code: 'demo', message: DEMO_UNAVAILABLE } }) },
   updates: { state: async () => updates, onChange: none, check() {}, install() {}, setAutoCheck() {}, setAutoDownload() {} },
   artifacts: { show: async () => {}, openInBrowser: unavailable },

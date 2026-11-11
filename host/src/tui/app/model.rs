@@ -41,6 +41,8 @@ pub enum After {
     Profiles,
     /// `hostHealth`: the header's memory word; a host without it says nothing.
     Health,
+    /// `toolStatus` of ComfyUI: the header's phrase; a host without it says nothing.
+    Comfy,
     /// `telegramStatus` and the Telegram calls that answer with it.
     Channels,
     /// `slackStatus`.

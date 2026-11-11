@@ -5,6 +5,7 @@ mod analytics;
 pub mod beliefs;
 mod bot;
 pub mod channels;
+pub mod comfy;
 mod editor;
 mod events;
 mod exchange;
@@ -79,6 +80,9 @@ pub struct App {
     /// `hostHealth`, for the header; null from an older host.
     pub health: Value,
     health_asked: Option<Instant>,
+    /// `toolStatus` of the computer's ComfyUI, for the header; null from an older host.
+    pub comfy: Value,
+    comfy_asked: Option<Instant>,
     /// The security profiles the host offers (`securityProfiles`), read when they are first needed.
     pub profiles: Vec<Value>,
     pub screen: Value,
@@ -182,6 +186,8 @@ impl App {
             week: Value::Null,
             health: Value::Null,
             health_asked: None,
+            comfy: Value::Null,
+            comfy_asked: None,
             profiles: Vec::new(),
             screen: Value::Null,
             network: Value::Null,
@@ -425,6 +431,10 @@ impl App {
         if self.online && self.health_asked.is_none_or(|at| at.elapsed() >= health::REFRESH) {
             self.health_asked = Some(now);
             self.call("hostHealth", json!({}), After::Health);
+        }
+        if self.online && self.comfy_asked.is_none_or(|at| at.elapsed() >= comfy::REFRESH) {
+            self.comfy_asked = Some(now);
+            self.call("toolStatus", json!({"id": "comfy"}), After::Comfy);
         }
         self.toasts.retain(|t| t.until > now);
         if self.hint.as_ref().is_some_and(|(_, until)| *until <= now) {

@@ -17,6 +17,7 @@ impl App {
         match r {
             Reply::Computer(reply) => self.computer_reply(&reply, Ok(v)),
             Reply::McpTools(reply) => self.mcp_tools_reply(&reply, Ok(v)),
+            Reply::N8n(reply) => self.n8n_reply(&reply, Ok(v)),
             Reply::Documents(reply) => self.on_document_reply(&reply, &v),
             Reply::Memory(bot) => {
                 for o in &mut self.overlays {
@@ -241,6 +242,10 @@ impl App {
         }
         if let Reply::McpTools(reply) = r {
             self.mcp_tools_reply(reply, Err(e));
+            return;
+        }
+        if let Reply::N8n(reply) = r {
+            self.n8n_reply(reply, Err(e));
             return;
         }
         if let Reply::Documents(reply) = r {

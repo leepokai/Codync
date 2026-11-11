@@ -1,0 +1,35 @@
+ComfyUI makes images on your computer. It runs as a window of Codync: the host starts and stops it for you, and your bots can use it when you turn it on for them.
+
+It is the official [ComfyUI](https://github.com/Comfy-Org/ComfyUI) portable for Windows. It is too big for the installer, so Codync downloads it (about 2 GB) the first time you start it, checks that it is exactly the pinned release, and keeps it with your ComfyUI files. You don't install Python or Git, and nothing leaves your computer while it runs: it listens only on `127.0.0.1`.
+
+## Open it
+
+In **Extensions → Apps → ComfyUI** (or the **ComfyUI** button in the sidebar), choose **Start** and then **Open**. The very first time the button says **Download and start**: the window and the card show the download and the unpacking as they go, and a failed download says why, with **Try again**. The first start can take a few minutes; the window shows the last lines of the log while it waits and opens the editor by itself once ComfyUI answers. There is no sign-in.
+
+The card shows the state, the ComfyUI version that ships with your Codync, the space your ComfyUI data uses, and the job a bot is running. **Stop** stops it, **Log** opens its log, and **Models** opens the folder where models go.
+
+If port 8188 is taken, ComfyUI uses the next free one; the card and the log say which.
+
+The sidebar's **ComfyUI** button carries ComfyUI's mark, in the sidebar's own color like its other icons, with a dot under it: lit while ComfyUI runs, pulsing while it starts, red after an error. On a Codync that doesn't include ComfyUI, its window says so.
+
+## From your phone and the terminal
+
+On Android, **Settings → ComfyUI** shows whether ComfyUI runs on the computer, starts and stops it, and shows the image a bot is making, with **Cancel**. The editor itself opens on the computer.
+
+In the terminal app (`codync-host tui`), the header says what ComfyUI is doing while it starts, runs or makes an image, and says nothing while it is off.
+
+## Your models and files
+
+Everything you add lives in `~/.codync/comfy` and survives updates: `models/` (checkpoints, LoRAs, VAEs…), `custom_nodes/`, `input/`, `output/` and the editor's settings in `user/`. Uninstalling Codync asks whether to delete them too; the default is to keep them. Codync ships no models: put a checkpoint in `models/checkpoints` (the **Models** button opens it) and it appears in the editor.
+
+A workflow that names a checkpoint you don't have fails with a message that says where to put the file and where to download one; the rest of Codync keeps working.
+
+## Graphics card
+
+With an NVIDIA card, ComfyUI uses it. With AMD, Intel or no graphics card, it runs on the processor and says so on the card: it works, but an image takes minutes instead of seconds. The first start needs about 10 GB of free disk space.
+
+## Let a bot make images
+
+In any chat, start a message with `/comfy` and say what you want, for example `/comfy a red fox in the snow`: the bot makes it with ComfyUI. Typing `/` lists the command with the others, on the desktop, the phone and the terminal.
+
+Turn on the **ComfyUI** connector for a bot in its setup (it appears once ComfyUI runs). Nothing is generated unless the bot asks. The bot can list your models and nodes, run a workflow, send an input picture, check the job and cancel it. One job runs at a time; when it finishes, the images arrive in the bot's chat as attachments. A long job keeps going after the bot's reply, and the bot sends its images when it checks again. To cancel, use the card, ask the bot, or stop the bot's turn from your phone or the desktop while it waits.

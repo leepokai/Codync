@@ -119,7 +119,7 @@ impl Actor {
         let mut servers: Vec<Value> =
             (if self.cfg.connectors.is_empty() { Vec::new() } else { crate::market::connectors(&self.hub.store)? })
                 .iter()
-                .filter(|c| self.cfg.connectors.contains(&c.id))
+                .filter(|c| self.cfg.connectors.contains(&c.id) && c.id != crate::tools::comfy::CONNECTOR_ID)
                 .filter_map(|c| c.acp(&exe, port))
                 .map(|mut server| {
                     server["env"] = json!([{"name":"CODYNC_BOT_ID","value":self.cfg.id}]);
@@ -135,6 +135,7 @@ impl Actor {
             Some("memory"),
             Some("routines"),
             self.cfg.computer.then_some("computer"),
+            self.cfg.connectors.iter().any(|c| c == crate::tools::comfy::CONNECTOR_ID).then_some("comfy"),
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {

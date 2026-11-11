@@ -21,6 +21,7 @@ export class FakeHost {
   private nextReply = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
+  private n8nWorkflows = [{ id: '1', name: 'Daily report', active: true }, { id: '2', name: 'New leads to the sheet', active: false }]
   private n8n: N8nState = { enabled: false, state: 'stopped', error: null, url: null, port: 5679, path: null, mcp: false, auth: null }
 
   constructor(
@@ -314,6 +315,16 @@ export class FakeHost {
         return {}
       case 'n8nStatus':
         return this.n8n
+      case 'n8nWorkflows':
+        return { workflows: this.n8nWorkflows, more: false }
+      case 'n8nSetWorkflowActive': {
+        const workflow = this.n8nWorkflows.find((w) => w.id === str('id'))
+        if (!workflow) throw fail('That workflow isn\x27t in n8n')
+        workflow.active = b.active === true
+        return { id: workflow.id, active: workflow.active }
+      }
+      case 'n8nExecutions':
+        return { executions: [{ id: '1001', workflowId: '1', status: 'success', startedAt: new Date(Date.now() - 3_600_000).toISOString() }] }
       case 'n8nStart': {
         if (this.n8n.state !== 'stopped') return this.n8n
         this.n8n = { ...this.n8n, enabled: true, state: 'starting', error: null, url: this.n8n.path ? `http://127.0.0.1:${this.n8n.port}` : null }

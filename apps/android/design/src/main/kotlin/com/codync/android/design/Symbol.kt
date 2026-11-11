@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
         "bubble.left.and.bubble.right.fill" -> Bubbles
         "rectangle.stack.fill" -> CardStack
         "apple.logo" -> painterResource(R.drawable.apple_logo)
+        "comfyui.logo" -> painterResource(R.drawable.comfyui_logo)
         "computer.linux" -> painterResource(R.drawable.computer_linux)
         else -> painterResource(symbolRes(name) ?: R.drawable.sf_circle_dotted)
     }

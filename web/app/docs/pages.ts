@@ -68,6 +68,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Run an n8n instance on your computer: set up the install folder and port in the n8n settings, then build flows in its editor.",
       },
       {
+        slug: "whatsapp",
+        title: "WhatsApp",
+        description:
+          "Reach a bot from WhatsApp: link a number on your computer with a pairing code, pick the bot that answers, and start routines from a chat.",
+      },
+      {
         slug: "artifacts",
         title: "Artifacts and the Library",
         description:

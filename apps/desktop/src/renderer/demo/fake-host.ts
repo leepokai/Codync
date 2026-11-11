@@ -207,7 +207,10 @@ export class FakeHost {
         const bot = this.bots.get(str('botId'))
         if (!bot) throw fail('That bot was deleted.')
         const before = this.unreadBeforeRead.get(bot.id) ?? 0
-        if (bot.unread === 0 && (before > 0 || this.entries.some((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e)))) {
+        if (bot.unread > 0 && !bot.keptUnread) {
+          bot.keptUnread = true
+          this.emitBot(bot)
+        } else if (bot.unread === 0 && (before > 0 || this.entries.some((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e)))) {
           bot.unread = before || 1
           bot.keptUnread = true
           this.emitBot(bot)

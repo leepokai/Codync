@@ -11,14 +11,15 @@ use super::style::{spin, theme};
 use super::time::clock;
 use super::transcript::Built;
 
-/// An answer's label: Codync's own words for the usual kinds, in the app's language; the agent's name otherwise.
+/// An answer's label: Codync's own words for the usual kinds, in the app's language; an agent's own option keeps
+/// its name, as on the other apps.
 fn option_label(name: &str, kind: &str) -> String {
     let label = match kind {
         "allow_once" => "Allow once",
         "allow_always" => "Always allow",
         "reject_once" => "Deny",
         "reject_always" => "Never",
-        _ => name,
+        _ => return name.to_owned(),
     };
     tr(label).into_owned()
 }

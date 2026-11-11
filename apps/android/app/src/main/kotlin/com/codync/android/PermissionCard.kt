@@ -91,29 +91,30 @@ import kotlinx.serialization.json.jsonPrimitive
                         .clickable(enabled = !answering, role = Role.Button) { chosen = id; respond(id) }
                         .graphicsLayer { alpha = if (!waiting || chosen == id) 1f else 0.4f }
                         .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(tr(when (kind) {
-                            "allow_once" -> "Allow once"; "allow_always" -> "Always allow"; "reject_once" -> "Deny"; "reject_always" -> "Never"
+                        Text(when (kind) {
+                            "allow_once" -> tr("Allow once"); "allow_always" -> tr("Always allow"); "reject_once" -> tr("Deny"); "reject_always" -> tr("Never")
                             else -> option.text("name").orEmpty()
-                        }), Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
+                        }, Modifier.weight(1f), style = if (kind == "allow_once") Type.body.semibold else Type.body,
                             color = if (kind.startsWith("allow")) Palette.text else Palette.danger)
                         if (answering && chosen == id) Spinner(14.dp)
                     }
                 }
             }
-        } else Text(tr(outcome(d)), style = Type.caption.medium, color = Palette.secondary)
+        } else Text(outcome(d), style = Type.caption.medium, color = Palette.secondary)
     }
 }
 
-private fun outcome(d: JsonObject): String = when (d.text("status")) {
+/** The answer given, in Codync's words for the usual kinds; an agent's own option keeps its name. */
+@Composable private fun outcome(d: JsonObject): String = when (d.text("status")) {
     "answered" -> {
         val chosen = (d["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == d.text("selected") }
         when (chosen?.text("kind")) {
-            "allow_once" -> "Allowed once"; "allow_always" -> "Always allowed"; "reject_once" -> "Denied"; "reject_always" -> "Never allowed"
-            else -> chosen?.text("name") ?: "Answered"
+            "allow_once" -> tr("Allowed once"); "allow_always" -> tr("Always allowed"); "reject_once" -> tr("Denied"); "reject_always" -> tr("Never allowed")
+            else -> chosen?.text("name") ?: tr("Answered")
         }
     }
-    "cancelled" -> "Cancelled"
-    else -> "Expired — the agent moved on"
+    "cancelled" -> tr("Cancelled")
+    else -> tr("Expired — the agent moved on")
 }
 
 /** One file's change: its name and line counts over the colored patch. */

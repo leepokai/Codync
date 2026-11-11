@@ -60,7 +60,7 @@ struct PermissionCard: View {
             if pending {
                 buttons
             } else {
-                Text(L10n.tr(outcome))
+                Text(outcome)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Palette.secondary)
             }
@@ -83,10 +83,10 @@ struct PermissionCard: View {
 
     private func label(_ o: PermissionOption) -> String {
         switch o.kind {
-        case "allow_once": "Allow once"
-        case "allow_always": "Always allow"
-        case "reject_once": "Deny"
-        case "reject_always": "Never"
+        case "allow_once": L10n.tr("Allow once")
+        case "allow_always": L10n.tr("Always allow")
+        case "reject_once": L10n.tr("Deny")
+        case "reject_always": L10n.tr("Never")
         default: o.name
         }
     }
@@ -98,7 +98,7 @@ struct PermissionCard: View {
                 if i > 0 { Rectangle().fill(Palette.border).frame(height: 0.5) }
                 Button { respond(o.optionId) } label: {
                     HStack(spacing: 8) {
-                        Text(L10n.tr(label(o)))
+                        Text(label(o))
                             .font(.body.weight(o.kind == "allow_once" ? .semibold : .regular))
                             .foregroundStyle(o.kind.hasPrefix("allow") ? Palette.text : Palette.danger)
                         Spacer(minLength: 0)
@@ -122,14 +122,14 @@ struct PermissionCard: View {
         case "answered":
             let chosen = d.options?.first { $0.optionId == d.selected }
             return switch chosen?.kind {
-            case "allow_once": "Allowed once"
-            case "allow_always": "Always allowed"
-            case "reject_once": "Denied"
-            case "reject_always": "Never allowed"
-            default: chosen?.name ?? "Answered"
+            case "allow_once": L10n.tr("Allowed once")
+            case "allow_always": L10n.tr("Always allowed")
+            case "reject_once": L10n.tr("Denied")
+            case "reject_always": L10n.tr("Never allowed")
+            default: chosen?.name ?? L10n.tr("Answered")
             }
-        case "cancelled": return "Cancelled"
-        default: return "Expired — the agent moved on"
+        case "cancelled": return L10n.tr("Cancelled")
+        default: return L10n.tr("Expired — the agent moved on")
         }
     }
 }

@@ -179,7 +179,7 @@ private struct ProviderVoiceSettings: View {
     }
 
     private var footer: String? {
-        guard hasKey else { return "Add a key to choose from \(provider.name)'s models." }
+        guard hasKey else { return L10n.fill(L10n.tr("Add a key to choose from {name}'s models."), ["name": provider.name]) }
         return dictationOnly ? "For dictation in the message box." : nil
     }
 

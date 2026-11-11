@@ -8,7 +8,7 @@ use crate::agent::acp::truncate;
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
 use crate::network::Recipient;
-use crate::store::{BotConfig, BotRow, EntryKind, Lane, Store};
+use crate::store::{BotConfig, BotRow, EntryKind, Lane, Permission, Store};
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 pub mod assistant;
 mod directory;
+mod inspect;
 pub mod remote;
 mod requests;
 pub use requests::{Requests, Turn};
@@ -40,9 +41,25 @@ room's members instead, and while answering another bot's request, say in your r
 others. Provide a self-contained request: the recipient has its own \
 conversation, working directory, tools and permissions, not your context. Coordinate file ownership before \
 asking for edits in a shared project. Native subagents are managed by your own harness; these tools are for \
-collaborating with the user's existing bots.";
+collaborating with the user's existing bots. {inspect}";
 
+/// What a bot under `permission` is told: what looking at another bot adds, and what approving automatically changes
+/// of answering another bot's approval.
+pub fn instructions(permission: Permission) -> String {
+    let inspect = if permission == Permission::Auto { inspect::AUTO_INSTRUCTIONS } else { inspect::INSTRUCTIONS };
+    INSTRUCTIONS.replace("{inspect}", inspect)
+}
+
+/// The team server's tools, as its `tools/list` reply lists them: discovering bots and messaging one, then looking at
+/// one.
 pub fn tools() -> Value {
+    let mut all = message_tools().as_array().cloned().unwrap_or_default();
+    all.extend(inspect::declarations().as_array().into_iter().flatten().cloned());
+    Value::Array(all)
+}
+
+/// The tools every bot has had: `list_bots` and `message_bot`.
+fn message_tools() -> Value {
     json!([
         {
             "name": "list_bots",
@@ -348,9 +365,10 @@ pub(crate) fn visible_bots(store: &Store) -> Result<Vec<BotConfig>> {
 pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
         "list_bots" => {
-            visible_bot(hub, from)?;
+            let source = visible_bot(hub, from)?;
             let remote = hub.network.directory().await;
-            directory::list(hub, from, args, &remote, |_| true)
+            let listing = directory::list(hub, from, args, &remote, |_| true)?;
+            Ok(with_reading(&source, listing))
         }
         "message_bot" => {
             let (to, message) = message_args(args)?;
@@ -359,8 +377,26 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) ->
                 Recipient::Here(_) => call(hub, from, name, args),
             }
         }
+        _ if INSPECTING.contains(&name) => Ok(inspect::call(hub, &visible_bot(hub, from)?, name, args).await?),
         _ => call(hub, from, name, args),
     }
+}
+
+/// The team tools about another bot, which [`inspect`] answers.
+pub(crate) const INSPECTING: [&str; 4] = ["bot_status", "recent_messages", "answer_approval", "stop_bot"];
+/// Of those, the ones the user answers: their outcome is reported as the user decides (`inspect::asked`).
+pub(crate) const ASKING: [&str; 2] = ["answer_approval", "stop_bot"];
+
+/// A listing says what the other computers' bots don't have here: their status, their chat and their approvals are
+/// that computer's to read.
+fn with_reading(source: &BotConfig, mut listing: Value) -> Value {
+    listing["reading"] = if source.permission == Permission::Auto {
+        "bot_status, recent_messages, answer_approval and stop_bot read this computer's bots; their own answers and stops go ahead at once for this bot, as its settings approve what it asks."
+    } else {
+        "bot_status, recent_messages, answer_approval and stop_bot read this computer's bots; the last two wait for the user on a card."
+    }
+    .into();
+    listing
 }
 
 /// A team tool call among this computer's bots.

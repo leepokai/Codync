@@ -9,6 +9,7 @@ pub mod fallbacks;
 pub mod files;
 pub mod group;
 pub mod handoff;
+pub mod insight;
 pub mod lead;
 pub mod library;
 pub mod manage;

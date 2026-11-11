@@ -108,7 +108,7 @@ impl Connector {
             }
             "remote"
         };
-        Some(crate::mcp::acp_server(&self.id, exe, &[kind, "--connector", &self.id], port))
+        Some(crate::mcp::acp_server(&self.id, exe, &[kind, "--connector", &self.id], port, &[]))
     }
 
     /// What clients see: everything but the secret values.

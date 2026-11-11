@@ -1,6 +1,7 @@
 """Deterministic ACP agent for delegation tests; no provider or network access."""
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -30,8 +31,9 @@ def update(value):
 
 def mcp_call(server_name, tool, arguments):
     server = next(s for s in servers if s["name"] == server_name)
+    env = {**os.environ, **{v["name"]: v["value"] for v in server.get("env", [])}}
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
-                          stdout=subprocess.PIPE, encoding="utf-8") as mcp:
+                          stdout=subprocess.PIPE, encoding="utf-8", env=env) as mcp:
         def rpc(identifier, method, params):
             mcp.stdin.write(json.dumps({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params}) + "\n")
             mcp.stdin.flush()

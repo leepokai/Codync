@@ -178,6 +178,13 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
         // Choices are counted by the actor after publication/delivery, including legacy text replies.
+        // Actions are recorded only after the target accepts them, not again at API dispatch.
+        "teamCall" if crate::chat::team::ASKING.contains(&b["name"].as_str()?) => return None,
+        // A bot looking at another one, by the tool it used; never anything it read there.
+        "teamCall" if crate::chat::team::INSPECTING.contains(&b["name"].as_str()?) => {
+            p.insert("tool".into(), b["name"].clone());
+            Event::BotInspected
+        }
         "installHostUpdate" => Event::HostUpdateInstalled,
         // Never the computer's name, the connector's address or the invite.
         "networkCreate" | "networkJoin" => {

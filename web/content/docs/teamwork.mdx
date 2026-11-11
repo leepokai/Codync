@@ -12,6 +12,23 @@ The bot finds Reviewer among your bots and sends it the request. When Reviewer's
 
 ## What you see in the chats
 
+You can also ask a bot to check another bot on the same computer without sending it a task:
+
+> Check Reviewer's status and summarize its last three messages with me. Don't answer its approvals or stop it.
+
+The bot uses `bot_status` for current work and pending approvals, and `recent_messages` for recent chat messages.
+These reads leave the other bot's chat and running work unchanged. Messages are returned oldest first, up to 20,
+with long messages shortened; this is not the other bot's full conversation or tool trace. Hidden bots, groups and
+bots on other computers are outside these tools' scope.
+
+Answering another bot's approval or stopping it is a separate action. Under **Ask**, a card in the requesting bot's
+chat names the target and action and waits up to four and a half minutes for you. Under **Approve automatically**,
+the action follows that bot's existing approval setting. Neither read changes that setting. If the original
+approval stopped waiting meanwhile, the answer reports that it is stale and leaves any new approval alone.
+A stop card also applies only to the turn it originally named. If another task starts while you decide, the old
+card leaves that task alone. An accepted stop requests cancellation of the current turn and keeps queued messages;
+the status tool tells you when cancellation finishes.
+
 Each exchange shows as one small row that names the other bot. The request text itself stays out of the chat:
 
 - In the sender's chat: **Messaged** with the other bot's avatar and name, for example "Messaged Owen".

@@ -13,15 +13,20 @@ pub use remote::serve_remote;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
+/// What the team server's instructions are, when the host words them by the bot's approvals (`acp_server`).
+pub const INSTRUCTIONS_ENV: &str = "CODYNC_TEAM_INSTRUCTIONS";
+
 /// ACP `McpServer` for `codync-host mcp <args…> --port <port>`. Its env names the data directory, where the token
 /// is: some agents start MCP servers with a filtered environment (Hermes keeps only PATH, HOME and a few more), so a
 /// custom `CODYNC_HOME` wouldn't reach the server otherwise.
-pub fn acp_server(name: &str, exe: &std::path::Path, args: &[&str], port: u16) -> Value {
+pub fn acp_server(name: &str, exe: &std::path::Path, args: &[&str], port: u16, env: &[(&str, String)]) -> Value {
     let port = port.to_string();
     let args: Vec<&str> = ["mcp"].into_iter().chain(args.iter().copied()).chain(["--port", &port]).collect();
+    let mut vars = vec![json!({"name": "CODYNC_HOME", "value": crate::service::data_dir()})];
+    vars.extend(env.iter().map(|(name, value)| json!({"name": name, "value": value})));
     json!({
         "name": name, "command": exe, "args": args,
-        "env": [{"name": "CODYNC_HOME", "value": crate::service::data_dir()}],
+        "env": vars,
     })
 }
 
@@ -45,8 +50,56 @@ act on a control by its element_token, then look again. Use pixel coordinates on
 Never type a password yourself: use type_login with a saved login (request_login asks the user for one). \
 Don't approve payments: ask the user to do that from their phone.";
 
+/// What each server tells the agent before its tools; `chat` and `team` word their own by the bot's settings.
+fn plain_instructions(server: Server) -> String {
+    let plain = match server {
+        Server::Connectors => crate::market::requests::INSTRUCTIONS,
+        Server::Computer => INSTRUCTIONS,
+        Server::Routines => crate::routines::INSTRUCTIONS,
+        Server::Chat => crate::chat::outbox::INSTRUCTIONS,
+        // The host's answer, or the bot's own setting when it can't be read for long.
+        Server::Team => return crate::chat::team::instructions(crate::store::Permission::Ask),
+        Server::Manage => crate::chat::manage::INSTRUCTIONS,
+        Server::Memory => crate::chat::memory::INSTRUCTIONS,
+        Server::Composio => crate::market::composio::INSTRUCTIONS,
+        Server::Network => crate::chat::team::assistant::INSTRUCTIONS,
+    };
+    plain.to_owned()
+}
+
+/// The team server's instructions for `bot`, worded by its approvals; `None` (the plain ones) when the host can't say,
+/// so starting a bot never waits on the host for long.
+async fn team_instructions(bot: &str, port: u16) -> Option<String> {
+    let token = std::fs::read_to_string(crate::service::data_dir().join("token")).ok()?;
+    let reply = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/api/teamInstructions"))
+        .bearer_auth(token.trim())
+        .json(&json!({"botId": bot}))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .ok()?;
+    let body: Value = reply.json().await.ok()?;
+    body["instructions"].as_str().map(str::to_owned)
+}
+
 /// Serves MCP on stdio until the agent closes it.
 pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
+    // What the bot's own settings make of the team's instructions travel in the environment its host started it with
+    // (`acp_server`); the host is asked when they're missing (a server started by hand, an older host).
+    let instructions = if matches!(server, Server::Team) {
+        match std::env::var(INSTRUCTIONS_ENV).ok().filter(|text| !text.trim().is_empty()) {
+            Some(text) => Some(text),
+            None => team_instructions(&bot, port).await,
+        }
+    } else {
+        None
+    };
+    serve_with(bot, port, server, instructions).await
+}
+
+/// [`serve`] with `instructions` read already (what the host words by the bot's approvals); `None`: read them here.
+pub async fn serve_with(bot: String, port: u16, server: Server, instructions: Option<String>) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
     let token: Arc<str> = token.trim().into();
     let bot: Arc<str> = bot.into();
@@ -63,13 +116,11 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         }
         anyhow::Ok(())
     });
-    let (name, instructions, available_tools) = match server {
-        Server::Connectors => {
-            ("codync-connectors", crate::market::requests::INSTRUCTIONS.to_owned(), crate::market::requests::tools())
-        }
+    let (name, available_tools) = match server {
+        Server::Connectors => ("codync-connectors", crate::market::requests::tools()),
         // Listed by the host: they depend on this computer's driver.
-        Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
-        Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
+        Server::Computer => ("codync-computer", Value::Null),
+        Server::Routines => ("codync-routines", crate::routines::tools()),
         Server::Chat => {
             let mut tools = crate::chat::outbox::tools();
             if let Some(list) = tools.as_array_mut() {
@@ -80,19 +131,17 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
                 list.push(crate::chat::skills::tool());
                 list.extend(crate::dev_servers::tools());
             }
-            ("codync-chat", crate::chat::outbox::instructions(), tools)
+            ("codync-chat", tools)
         }
-        Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
-        Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
-        Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS.to_owned(), crate::chat::memory::tools()),
-        Server::Composio => {
-            ("codync-composio", crate::market::composio::INSTRUCTIONS.to_owned(), crate::market::composio::tools())
-        }
+        Server::Team => ("codync-team", crate::chat::team::tools()),
+        Server::Manage => ("codync-manage", crate::chat::manage::tools()),
+        Server::Memory => ("codync-memory", crate::chat::memory::tools()),
+        Server::Composio => ("codync-composio", crate::market::composio::tools()),
         // The one server agents that aren't bots add as `codync` (the cloud connector's name too); more tools join it.
-        Server::Network => {
-            ("codync", crate::chat::team::assistant::INSTRUCTIONS.to_owned(), crate::chat::team::assistant::tools())
-        }
+        Server::Network => ("codync", crate::chat::team::assistant::tools()),
     };
+    // Read from the host when `initialize` comes, so a bot started by an older host build still gets something.
+    let words = instructions.unwrap_or_else(|| plain_instructions(server));
     // Requests still running, by id: a cancelled one stops, and its host call with it (a team change's card expires).
     let mut running = std::collections::HashMap::<String, tokio::task::AbortHandle>::new();
     while let Some(line) = lines.next_line().await? {
@@ -109,7 +158,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         let key = id.to_string();
         let (replies, token, bot, available_tools) =
             (replies.clone(), token.clone(), bot.clone(), available_tools.clone());
-        let instructions = instructions.clone();
+        let instructions = words.clone();
         let request = tokio::spawn(async move {
             let params = &msg["params"];
             let reply = match msg["method"].as_str().unwrap_or_default() {
@@ -173,6 +222,10 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
             ("chatCall", crate::chat::decision::WAIT + Duration::from_secs(20))
         }
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
+        Server::Team if crate::chat::team::ASKING.contains(&params["name"].as_str().unwrap_or_default()) => {
+            // The user's card can wait 270 s, then the target must acknowledge the answer.
+            ("teamCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(20))
+        }
         Server::Team => ("teamCall", Duration::from_secs(30)),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),

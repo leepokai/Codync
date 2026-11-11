@@ -60,7 +60,28 @@ impl Actor {
                 let _ = reply.send(self.post_artifact(data));
             }
             Cmd::Stop => self.stop().await,
-            Cmd::Permission { entry_id, option_id } => self.answer_permission(&entry_id, option_id).await,
+            Cmd::StopTurn { key, reply } => {
+                if !reply.is_closed() {
+                    let current = self.turn.is_some()
+                        && !self.stop_requested
+                        && self.hub.runtime(&self.cfg.id).turn_key == Some(key);
+                    if current {
+                        self.cancel_turn().await;
+                    }
+                    // This acknowledges a cancellation request, not that the process has already exited.
+                    let _ = reply.send(current);
+                }
+            }
+            Cmd::Permission { entry_id, option_id } => {
+                self.answer_permission(&entry_id, option_id).await;
+            }
+            Cmd::AnswerPermission { entry_id, option_id, reply } => {
+                if !reply.is_closed() {
+                    let applied = self.answer_permission(&entry_id, Some(option_id)).await;
+                    // The caller may have been cancelled while the agent's response was being written.
+                    let _ = reply.send(applied);
+                }
+            }
             Cmd::Approve { title, detail, reply } => self.ask_approval(&title, &detail, reply),
             Cmd::NewSession => {
                 if self.turn.is_some() {
@@ -350,6 +371,7 @@ impl Actor {
             r.status = BotStatus::Error;
             r.activity = "Couldn't start".into();
             r.started_at = None;
+            r.turn_key = None;
             r.lane = None;
             r.message = None;
             r.session = None;

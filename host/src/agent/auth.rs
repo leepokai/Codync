@@ -96,13 +96,15 @@ fn bot_env_slot(backend: &str, bot: &str) -> String {
     format!("agent-env:{backend}:{bot}")
 }
 
+fn stored_env(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
+    Ok(crate::market::vault::read(store, slot)?.as_deref().map(serde_json::from_str).transpose()?.unwrap_or_default())
+}
+
 /// Keys saved for `backend`, and for `bot` on top of them, as environment for its process.
 pub fn env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<(String, String)>> {
     let mut values: BTreeMap<String, String> = BTreeMap::new();
     for slot in [Some(env_slot(backend)), bot.map(|bot| bot_env_slot(backend, bot))].into_iter().flatten() {
-        if let Some(raw) = crate::market::vault::read(store, &slot)? {
-            values.extend(serde_json::from_str::<BTreeMap<String, String>>(&raw)?);
-        }
+        values.extend(stored_env(store, &slot)?);
     }
     Ok(values.into_iter().collect())
 }
@@ -117,7 +119,8 @@ pub fn launch_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec
 
 /// Names of the saved keys (values never leave the host).
 fn saved_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<String>> {
-    Ok(env(store, backend, bot)?.into_iter().map(|(k, _)| k).collect())
+    let slot = bot.map_or_else(|| env_slot(backend), |bot| bot_env_slot(backend, bot));
+    Ok(stored_env(store, &slot)?.into_keys().collect())
 }
 
 /// Names saved for this bot itself and those it inherits from its agent, without values.
@@ -294,8 +297,16 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
 pub async fn set_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map<String, Value>) -> Result<Value> {
+    save_env(store, backend, bot, vars)?;
+    check(store, backend).await
+}
+
+/// Only persist this scope's overrides. Copying the merged launch environment into a bot's
+/// vault slot would freeze inherited credentials and prevent later provider-key rotation.
+fn save_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map<String, Value>) -> Result<()> {
+    let _configuration = store.connector_lock.locked();
     let slot = bot.map_or_else(|| env_slot(backend), |bot| bot_env_slot(backend, bot));
-    let mut saved: BTreeMap<String, String> = env(store, backend, bot)?.into_iter().collect();
+    let mut saved = stored_env(store, &slot)?;
     for (k, v) in vars {
         if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || k.is_empty() {
             bail!("`{k}` isn't an environment variable name");
@@ -305,9 +316,11 @@ pub async fn set_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map
             None => saved.remove(k),
         };
     }
-    crate::market::vault::write(store, &slot, &serde_json::to_string(&saved)?)?;
-    check(store, backend).await
+    crate::market::vault::write(store, &slot, &serde_json::to_string(&saved)?)
 }
+
+#[cfg(test)]
+mod environment_tests;
 
 #[cfg(test)]
 mod tests {

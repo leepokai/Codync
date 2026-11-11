@@ -217,6 +217,16 @@ impl App {
                 self.open_folder(&start);
                 return None;
             }
+            KeyCode::Char('h') if field == Field::Agent && f.backend == "hermes" => {
+                let bot = f.bot_id.clone();
+                self.overlays.push(Overlay::Form(f));
+                if bot.is_empty() {
+                    self.flash("Save this bot before configuring its runtime");
+                } else {
+                    self.open_hermes_runtime(&bot);
+                }
+                return None;
+            }
             KeyCode::Enter if field == Field::Agent => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));

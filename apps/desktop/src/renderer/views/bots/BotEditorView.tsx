@@ -16,6 +16,7 @@ import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentAccountPicker } from './AgentAccountPicker'
 import { BotAgentKeys } from './BotAgentKeys'
+import { HermesRuntimeCard } from './HermesRuntimeCard'
 import { AgentModelPicker } from './AgentModelPicker'
 import { agentChoice, AgentStepBanner, FallbacksRow } from './Fallbacks'
 import { useAgentSetup } from './agent-status'
@@ -396,6 +397,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             onQuick={(next) => onChange((d) => ({ ...d, actionRulesOn: next.on, actionRules: next.policies }))}
           />
         </CardSection>
+
+        {saved?.backend === 'hermes' ? <HermesRuntimeCard key={`${store.hello?.hostId ?? ''}/${saved.id}`} botId={saved.id} /> : null}
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />

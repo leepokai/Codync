@@ -16,6 +16,9 @@ import kotlinx.serialization.json.jsonPrimitive
     }
     ProactivePolicySection(draft, change)
     draft.id?.let { id ->
+        if (draft.backend == "hermes" && state.bots.any { it.id == id && it.backend == "hermes" }) {
+            HermesRuntimeCard(id, state, store)
+        }
         DocumentsCard(id, state, store)
         ComputerPanelCard(id, state, store) { enabled, permissions ->
             change(draft.copy(computer = enabled, computerPermissions = permissions))

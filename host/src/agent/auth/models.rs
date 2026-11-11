@@ -27,7 +27,7 @@ pub async fn models(store: &Store, backend: &str, account: Option<&str>) -> Resu
                 }
             }
         };
-        // Cursor lists each model's options (effort, fastâ€¦) only through its own method.
+        // Cursor lists each model's options (effort, fast…) only through its own method.
         let options = if backend == "cursor" {
             acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default()
         } else {

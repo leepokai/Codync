@@ -213,7 +213,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         hovered={hovered === key || held}
         compact={compact}
         label={many ? `${name}, on ${item.store.hostName}` : name}
-        title={many ? `${item.bot.name} Â· ${item.store.hostName}` : item.bot.name}
+        title={many ? `${item.bot.name} · ${item.store.hostName}` : item.bot.name}
         selected={isSelected}
         dragKey={key}
         onHover={(on) => setHovered((h) => (on ? key : h === key ? null : h))}
@@ -231,7 +231,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
         <button disabled={item.store.connection.kind !== 'online'} onClick={() => item.store.setPinned(item.bot, !item.bot.pinned)}>{item.bot.pinned ? 'Unpin' : 'Pin'}</button>
         {['working', 'needsInput'].includes(item.bot.status) ? <button disabled={item.store.connection.kind !== 'online' || stops.pending.has(JSON.stringify([item.ref.computerId, item.bot.id]))}
           onClick={() => void stops.stop(item.store, item.bot).catch((e: unknown) => item.store.setError(e instanceof Error ? e.message : String(e)))}>
-          {stops.pending.has(JSON.stringify([item.ref.computerId, item.bot.id])) ? 'Stoppingâ€¦' : 'Stop'}</button> : null}
+          {stops.pending.has(JSON.stringify([item.ref.computerId, item.bot.id])) ? 'Stopping…' : 'Stop'}</button> : null}
         <button disabled={item.store.connection.kind !== 'online'} onClick={() => item.store.setHidden(item.bot, true)}>Hide</button>
       </div> : null}
       </div>

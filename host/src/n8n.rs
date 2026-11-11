@@ -269,7 +269,7 @@ impl N8n {
         let (path, port) = {
             let s = self.settings.locked();
             let path = s.path.clone().context(
-                "n8n doesn't know its install folder yet. Choose the folder that holds packages/cli/bin/automan in Settings â†’ n8n.",
+                "n8n doesn't know its install folder yet. Choose the folder that holds packages/cli/bin/automan in Settings → n8n.",
             )?;
             (path, s.port)
         };
@@ -450,7 +450,7 @@ impl N8n {
             let body = get_json(&client, &format!("{base}/rest/mcp/api-key"), "reading the n8n MCP API key").await?;
             let mut key =
                 api_key_field(&body).map(str::to_owned).ok_or_else(|| anyhow!("no MCP API key in the n8n reply"))?;
-            // A redacted reply (`******â€¦`) means a key exists and we don't have it: rotate.
+            // A redacted reply (`******…`) means a key exists and we don't have it: rotate.
             if key.starts_with('*') {
                 let body =
                     post_json(&client, &format!("{base}/rest/mcp/api-key/rotate"), "rotating the n8n MCP API key")

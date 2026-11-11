@@ -149,7 +149,7 @@ function menu() {
         { label: 'Conversation Details', accelerator: 'Alt+CmdOrCtrl+I', click: () => send({ kind: 'toggleDetails' }, false) },
         { label: 'Refresh', accelerator: 'CmdOrCtrl+R', click: () => send({ kind: 'refresh' }, false) },
         { type: 'separator' },
-        // The dev page reload sits on ÃƒÂ¢Ã¢â‚¬Â¡Ã‚Â§ÃƒÂ¢Ã…â€™Ã‹Å“R, leaving ÃƒÂ¢Ã…â€™Ã‹Å“R to Refresh.
+        // The dev page reload sits on ⇧⌘R, leaving ⌘R to Refresh.
         ...(app.isPackaged ? [] : [{ role: 'toggleDevTools' as const }, { role: 'forceReload' as const }]),
         { role: 'togglefullscreen' },
       ],

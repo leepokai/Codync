@@ -23,7 +23,7 @@ export type HostState =
 /** The files of another agent's folder that the importer reads (`main/agent-import.ts`). */
 export interface AgentFolder {
   root: string
-  /** Path relative to the agent's home (or its workspace) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ text. */
+  /** Path relative to the agent's home (or its workspace) → text. */
   files: Record<string, string>
   /** Settings and secret files: named, never read. */
   secretPaths: string[]
@@ -131,7 +131,7 @@ export interface UpdateState {
   supported: boolean
   checking: boolean
   availableVersion: string | null
-  /** Downloading: percent done (0ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“100); null when nothing is downloading. */
+  /** Downloading: percent done (0–100); null when nothing is downloading. */
   downloadPercent: number | null
   /** Downloaded and ready: installs on restart. */
   staged: boolean
@@ -203,7 +203,7 @@ export interface CodyncBridge {
     start(locale: string | null): void
     stop(): void
     onEvent(cb: (e: SpeechEvent) => void): () => void
-    /** The voice input shortcut (Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ General); always `off` without on-device speech. */
+    /** The voice input shortcut (Settings → General); always `off` without on-device speech. */
     shortcut(): Promise<VoiceShortcut>
     setShortcut(shortcut: VoiceShortcut): Promise<VoiceShortcut>
     /** A call is on (or over): it has the microphone, so the voice input shortcut does nothing meanwhile. */
@@ -225,7 +225,7 @@ export interface CodyncBridge {
     setShape(rect: IslandRect): void
     /** The message field takes the keyboard (the island never does otherwise). */
     setFocusable(on: boolean): void
-    /** ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥Y / ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥N answer the approval on screen, from any app, while it shows. */
+    /** ⌥Y / ⌥N answer the approval on screen, from any app, while it shows. */
     setKeys(on: boolean): void
     onKey(cb: (answer: 'allow' | 'deny') => void): () => void
     /** The voice input shortcut's taps, from any app, while the island is on. */
@@ -296,7 +296,7 @@ export interface CodyncBridge {
     openSettings(url: string): void
     /**
      * Opens `url` in the system browser and resolves with the URL it returns to on `scheme`
-     * (`codync://ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦`), like ASWebAuthenticationSession. Rejects when cancelled or timed out.
+     * (`codync://…`), like ASWebAuthenticationSession. Rejects when cancelled or timed out.
      */
     authenticate(url: string, scheme: string): Promise<string>
     /** macOS: registers or removes the Codync Screen agent (SMAppService). */
@@ -321,7 +321,7 @@ export interface CodyncBridge {
     open(): Promise<void>
     /** The start page calls it once the instance runs: the window then loads the editor. */
     gotoEditor(): Promise<void>
-    /** The start page's "Open settings": the chat window shows Settings ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ n8n. */
+    /** The start page's "Open settings": the chat window shows Settings → n8n. */
     openSettings(): void
   }
   /** The bundled tools' windows (ComfyUI): the tool's own page, or this window's start page while the host brings it up. */

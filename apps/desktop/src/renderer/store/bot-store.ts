@@ -61,7 +61,7 @@ export interface SendOptions {
 /** Anything larger is refused by the computer. */
 export const MAX_FILE_SIZE = 100 * 1024 * 1024
 
-export const QUICK_REACTIONS = ['Ã°Å¸â€˜Â', 'Ã¢ÂÂ¤Ã¯Â¸Â', 'Ã°Å¸Ëœâ€š', 'Ã°Å¸Å½â€°', 'Ã°Å¸â€˜â‚¬', 'Ã¢Å“â€¦']
+export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
 
 /**
  * One computer's mirror (bots, transcripts), kept by one events stream (catch-up since

@@ -125,7 +125,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
-    ? (auth === null ? `Checking with ${backend.name}â€¦ The first check can download it.` : 'Checkingâ€¦')
+    ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
     : signedIn === true ? (backend.email ? `Signed in as ${backend.email}.` : 'Signed in.')
     : nodeMissing ? 'Add Node.js first.'
     : !setUp ? (curated ? 'Install it first.' : `Not set up on ${host} yet.`)
@@ -161,7 +161,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
         options.push(optionRow(
           m.id,
           m.name,
-          authenticating === m.id ? `Finish signing in in the browser on ${host}â€¦` : (m.description ?? `Opens a browser on ${host}.`),
+          authenticating === m.id ? `Finish signing in in the browser on ${host}…` : (m.description ?? `Opens a browser on ${host}.`),
           'safari',
           () => void authenticate(m),
           authenticating === m.id,

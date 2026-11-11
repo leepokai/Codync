@@ -57,12 +57,12 @@ export function shownSection(bot: Omit<Placed, 'unread'>): string | undefined {
   return bot.pinned ? undefined : bot.section || undefined
 }
 
-/** Whether a drag (or Alt+ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ/ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“) may move one bot past another: the same band (pinned, the rest) and the same section shown. */
+/** Whether a drag (or Alt+↑/↓) may move one bot past another: the same band (pinned, the rest) and the same section shown. */
 export function sameRosterGroup(a: Omit<Placed, 'unread'>, b: Omit<Placed, 'unread'>): boolean {
   return rosterBand(a) === rosterBand(b) && shownSection(a) === shownSection(b)
 }
 
-/** Every section among `bots` once, by name as the user's language sorts it ("Ãƒâ€žÃ‚Â°Ãƒâ€¦Ã…Â¸" too; "work" before "Work", as on the phones). */
+/** Every section among `bots` once, by name as the user's language sorts it ("İş" too; "work" before "Work", as on the phones). */
 export function sectionNames(bots: Iterable<{ section?: string | null }>): string[] {
   const names = new Set<string>()
   for (const bot of bots) if (bot.section) names.add(bot.section)

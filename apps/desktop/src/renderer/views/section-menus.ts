@@ -17,7 +17,7 @@ export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: 
   const others = sectionNames(store.bots.values() as Iterable<{ section?: string }>).filter((name) => name !== bot.section)
   const submenu: MenuItem[] = [
     ...others.map((name) => ({ title: name, icon: 'tray', verbatim: true, action: () => store.sections.move(bot, name) })),
-    { title: 'New sectionâ€¦', icon: 'plus', divider: others.length > 0, action: () => askName({ title: 'New section', name: '', save: (name) => store.sections.move(bot, name) }) },
+    { title: 'New section…', icon: 'plus', divider: others.length > 0, action: () => askName({ title: 'New section', name: '', save: (name) => store.sections.move(bot, name) }) },
     ...(bot.section ? [{ title: 'Remove from section', icon: 'minus.circle', action: () => store.sections.move(bot, null) }] : []),
   ]
   return [{ title: 'Move to section', icon: 'tray', submenu }]
@@ -27,7 +27,7 @@ export function moveToSectionItems(bot: Bot, store: BotStore, askName: (naming: 
 export function sectionHeaderItems(section: string, store: BotStore, askName: (naming: SectionNaming) => void, rename: (to: string | null) => void): MenuItem[] {
   if (!store.hasRosterSections) return []
   return [
-    { title: 'Rename sectionâ€¦', icon: 'pencil', action: () => askName({ title: 'Rename section', name: section, save: rename }) },
+    { title: 'Rename section…', icon: 'pencil', action: () => askName({ title: 'Rename section', name: section, save: rename }) },
     { title: 'Remove section', icon: 'xmark.circle', action: () => rename(null) },
   ]
 }

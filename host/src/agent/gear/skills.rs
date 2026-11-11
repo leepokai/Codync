@@ -13,11 +13,36 @@ use super::Named;
 
 pub(super) fn list(backend: &str, home: &Path) -> Vec<Named> {
     let mut out = Vec::new();
-    for root in homes(home, roots(backend)) {
+    let roots = if backend == "hermes" {
+        hermes_roots(
+            home,
+            dirs::data_local_dir().as_deref(),
+            std::env::var("HERMES_HOME").ok().as_deref(),
+            &std::env::var("HERMES_DATA_DIR_SUFFIX").unwrap_or_default(),
+        )
+    } else {
+        homes(home, roots(backend))
+    };
+    for root in roots {
         walk(&root, 0, &mut out);
     }
     super::dedupe(&mut out);
     out
+}
+
+fn hermes_roots(home: &Path, local: Option<&Path>, configured: Option<&str>, suffix: &str) -> Vec<std::path::PathBuf> {
+    if let Some(configured) = configured.map(str::trim).filter(|s| !s.is_empty()) {
+        let root = configured
+            .strip_prefix("~/")
+            .or_else(|| configured.strip_prefix("~\\"))
+            .map_or_else(|| std::path::PathBuf::from(configured), |rest| home.join(rest));
+        return vec![root.join("skills")];
+    }
+    if cfg!(windows) {
+        vec![local.map_or_else(|| home.join("AppData/Local"), Path::to_path_buf).join(format!("hermes{suffix}/skills"))]
+    } else {
+        vec![home.join(format!(".hermes{suffix}/skills"))]
+    }
 }
 
 fn roots(backend: &str) -> &'static [&'static str] {
@@ -83,6 +108,15 @@ fn skill_item(path: &Path, folder: &str) -> Option<Named> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hermes_skill_roots_follow_its_profile_and_platform_data_directory() {
+        let home = std::path::PathBuf::from("home");
+        let local = std::path::PathBuf::from("local");
+        assert_eq!(hermes_roots(&home, Some(&local), Some("~/work-hermes"), ""), [home.join("work-hermes/skills")]);
+        let expected = if cfg!(windows) { local.join("hermes-test/skills") } else { home.join(".hermes-test/skills") };
+        assert_eq!(hermes_roots(&home, Some(&local), None, "-test"), [expected]);
+    }
 
     /// A directory link. Windows has no `std::os::unix`.
     fn link_dir(target: &Path, link: &Path) {

@@ -1947,5 +1947,6 @@
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "먼저 해당 제공업체의 클라우드 컴퓨터를 삭제하세요. Codync가 절전시키려면 이 키가 필요합니다.",
   "Codync Cloud updates it before it next sleeps.": "다음에 절전하기 전에 Codync Cloud가 업데이트합니다.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync는 무료이며 한 사람이 만들고 있습니다. 도움이 되었다면 Ko-fi에서 후원할 수 있습니다.",
-  "Support on Ko-fi": "Ko-fi에서 후원하기"
+  "Support on Ko-fi": "Ko-fi에서 후원하기",
+  "What's new": "새로운 기능"
 }

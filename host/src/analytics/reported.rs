@@ -124,10 +124,23 @@ pub enum Reported {
     CloudComputerRenamed {
         outcome: CloudRenameOutcome,
     },
+    CloudComputerDeleted {
+        outcome: CloudDeleteOutcome,
+        provider: CloudProvider,
+    },
+    CloudKeyRemoved {
+        outcome: CloudKeyRemoveOutcome,
+        provider: CloudProvider,
+    },
+    CloudSnapshotsDeleted {
+        outcome: CloudDeleteOutcome,
+        provider: CloudProvider,
+    },
     KofiInviteShown,
     KofiInviteAnswered {
         opened: bool,
     },
+    WhatsNewShown,
 }
 
 // Value lists. A value a newer client adds arrives as `other` instead of being refused.
@@ -355,6 +368,30 @@ pub enum CloudRenameOutcome {
     Other,
 }
 
+/// How deleting a Codync Cloud computer, or its snapshots, ended: deleted, turned down by the cloud (`409`: its snapshots
+/// while it sleeps), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudDeleteOutcome {
+    Deleted,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// How removing a cloud provider's key from Codync Cloud ended: removed, turned down by the cloud (`409`: a computer
+/// still runs on that provider), or failed otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloudKeyRemoveOutcome {
+    Removed,
+    Refused,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
 /// The cloud provider a Codync Cloud key or computer is for (the cloud's id for it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -440,6 +477,12 @@ mod tests {
         assert_eq!(read_json(&newer), Some((Event::ScreenViewed, json!({"app": "tui", "screen": "other"}))));
         let unknown_app = json!({"event": "window_opened", "app": "watch"});
         assert_eq!(read_json(&unknown_app), Some((Event::WindowOpened, json!({"app": "other"}))));
+        let newer = json!({"event": "cloud_key_removed", "outcome": "expired", "provider": "fly"});
+        assert_eq!(
+            read_json(&newer),
+            Some((Event::CloudKeyRemoved, json!({"app": "desktop", "outcome": "other", "provider": "other"})))
+        );
+        assert!(read(&json!({"event": "cloud_computer_deleted", "outcome": "deleted"})).is_err(), "missing `provider`");
 
         // Extra keys, content above all, never reach the event.
         let noisy = json!({"event": "link_opened", "link": "discord", "url": "https://example.com/secret",
@@ -499,6 +542,7 @@ mod tests {
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
             (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
             (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),
                 Event::JoinOfferAnswered,
@@ -515,6 +559,18 @@ mod tests {
             (
                 json!({"event": "cloud_computer_renamed", "app": "desktop", "outcome": "failed"}),
                 Event::CloudComputerRenamed,
+            ),
+            (
+                json!({"event": "cloud_computer_deleted", "app": "desktop", "outcome": "deleted", "provider": "boat"}),
+                Event::CloudComputerDeleted,
+            ),
+            (
+                json!({"event": "cloud_key_removed", "app": "desktop", "outcome": "removed", "provider": "instabox"}),
+                Event::CloudKeyRemoved,
+            ),
+            (
+                json!({"event": "cloud_snapshots_deleted", "app": "desktop", "outcome": "refused", "provider": "boat"}),
+                Event::CloudSnapshotsDeleted,
             ),
             (
                 json!({"event": "reach_account_answered", "app": "desktop", "outcome": "own_relay"}),

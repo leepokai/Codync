@@ -19,7 +19,7 @@ pub use tools::{BRIEF, START, TOOLS, call, tools};
 
 use crate::LockExt;
 use crate::agent::acp::Acp;
-use crate::agent::process::Process;
+use crate::agent::process::{Process, UNWIND};
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::Store;
@@ -37,10 +37,11 @@ use tokio::sync::{Notify, watch};
 const KV_PREFIX: &str = "dev-server:";
 /// Running at once per bot: a loop of retries can't fill the computer.
 const MAX_RUNNING: usize = 5;
-/// What a server gets to stop by itself before the rest of its tree is killed.
+/// What a server gets to stop by itself before the rest of its tree is ended.
 const STOP_GRACE: Duration = Duration::from_secs(3);
-/// How long a stop waits: the grace, then a moment for what's left to be killed.
-const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + 2);
+/// How long a stop waits: the grace, the rest of the tree ending from its leaves up, then a moment for what's left to be
+/// killed.
+const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + UNWIND.as_secs() + 2);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

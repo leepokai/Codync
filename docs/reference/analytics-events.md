@@ -5,7 +5,9 @@ never content; one switch per device; identity) are in [usage analytics](../feat
 A property is a count, a boolean, a public catalog name or one of the values listed here; a
 value outside the list is `other`. Add an event here in the same change that sends it.
 
-Common properties on every event: `env`, `app_version`, `$os`, `$lib`, `$session_id`.
+Common properties on every event from the apps and the host: `env`, `app_version`, `$os`, `$lib`, `$session_id`.
+Events from the Codync cloud (`codync-cloud`) carry `env`, `$lib`, `provider` and the computer's `computer` key
+instead (no `app_version`, `$os` or `$session_id`).
 
 ## Senders
 
@@ -15,6 +17,7 @@ Common properties on every event: `env`, `app_version`, `$os`, `$lib`, `$session
 | `codync-ios` | The iPhone app | `apps/ios/Kit/Sources/CodyncKit/Analytics/` (`AnalyticsEvent.swift`), `CodyncUI/AnalyticsTracking.swift` |
 | `codync-android` | The Android app | `apps/android/.../Analytics.kt`, `AnalyticsEvent.kt` |
 | `codync-desktop` | The desktop app's main process, only for host setup failures (no host to report through) | `apps/desktop/src/main/analytics.ts` |
+| `codync-cloud` | The Codync cloud (Worker), only for waking a Codync Cloud computer, and only while that computer's own host last said analytics are on | `cloud/src/analytics.ts`, `cloud/src/relay-wake.ts` |
 | `web` | codync.dev, cookieless | `web/app/analytics.tsx` |
 
 Host events also carry `computer` (the computer's key) and `arch`. Host events from API calls
@@ -58,8 +61,15 @@ host answers and sends it once the host is up.
 | `cloud_offer_opened` | iOS, Android, host `track` (desktop) | The user opened a cloud provider's free plan from its key sheet (*Get a free sandbox*) | `provider` (`instabox`; the host reads one it doesn't know yet as `other`) |
 | `cloud_keeper_checked` | host (a Codync Cloud computer, once per start; on its first boot, once its claim lands) | The host checked the keeper that holds this cloud computer's secrets | `state` (`unlocked`; `locked`: still waiting for its key from the cloud; `missing`: no keeper on this machine), `sudo` (whether the agents' user could still use sudo, which would leave the secrets unprotected) |
 | `cloud_computer_renamed` | iOS, Android, host `track` (desktop) | The user renamed a Codync Cloud computer (never the name) | `outcome` (`renamed`/`failed`) |
+| `cloud_computer_deleted` | iOS, Android, host `track` (desktop) | The user deleted a Codync Cloud computer | `outcome` (`deleted`; `refused`: the cloud said no, `409`; `failed`), `provider` |
+| `cloud_key_removed` | iOS, Android, host `track` (desktop) | The user removed their key for a cloud provider | `outcome` (`removed`; `refused`: a computer still runs on that provider, `409`; `failed`), `provider` |
+| `cloud_snapshots_deleted` | iOS, Android, host `track` (desktop) | The user deleted a Codync Cloud computer's snapshots | `outcome` (`deleted`; `refused`: it sleeps, `409`; `failed`), `provider` |
+| `cloud_sleep_asked` | host (a Codync Cloud computer) | Its host, idle long enough, asked the cloud to put it to sleep; sent at once when it goes to sleep | `outcome` (`asleep`; `update`: the cloud named a release to install instead; `in_use`: a device connected meanwhile; `failed`), `routine` (it asked to wake for a routine) |
+| `cloud_computer_woken` | cloud (`codync-cloud`) | The cloud asked the provider to start a sleeping Codync Cloud computer | `outcome` (`started`; `restored`: from its backup; `refused`: the owner has to fix something, such as the key or the provider's billing; `failed`: a provider error, retried), `provider`, `cause` (`device`: a device connected; `message`: a mailbox message or routine webhook; `access`: an access request; `routine`: the time its host asked to wake for a routine; `retry`: a retried wake) |
+| `cloud_computer_awake` | cloud (`codync-cloud`) | A woken Codync Cloud computer's host is back on its relay | `seconds` (since the first wake attempt, to a tenth), `attempts` (provider wakes it took), `provider` |
 | `kofi_invite_shown` | host `track` (desktop, TUI) | The Ko-fi invitation appeared under the first reply on this device (the phones don't show it: store rules on external tip links) | — |
 | `kofi_invite_answered` | host `track` (desktop) | The Ko-fi invitation was opened or dismissed, which ends it on this device (the terminal UI only shows the link) | `opened` |
+| `whats_new_shown` | host `track` (desktop, TUI), iOS, Android | The What's new window is on screen after an update to a release with an announcement ([What's new](../features/whats-new.md)); `app_version` says which | — |
 | `computer_found_on_network` | iOS, Android | A phone reached a computer in no account at an address it found on the local network | — |
 | `pairing_code_created` | host (`pairing`) | A pairing QR code is made (desktop, terminal UI, `codync-host pair`), including each new one an open pairing screen makes when its code expires: count persons, not events | `client` |
 | `pairing_failed` | iOS, Android | A pairing attempt fails | `reason` (`not_pairing_link`/`outdated_host`/`invalid`/`expired`/`unauthorized`/`unreachable`/`timeout`/`upgrade_required`/`other`) |
@@ -180,7 +190,7 @@ codync.dev counts visits without cookies or anything stored on the visitor's dev
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
 without it PostHog drops these events): `$pageview`, `$pageleave` (time on page and scroll depth), `$web_vitals` (load speed, without attribution), `download_clicked` (`platform`:
 `mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
+`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, `cloud_new`, the homepage's "New" link to the Codync Cloud card, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
 link's `href` against its `links` table, so a new link needs a row there to be counted; the film counts as `demo` when focus moves
 into its frame. Events go through the site's own `/e` path, which `web/vercel.json` rewrites to
 PostHog, so content blockers don't drop them; only Vercel has the rewrite, so `next dev` on a LAN

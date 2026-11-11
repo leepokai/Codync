@@ -56,6 +56,7 @@ pub async fn run(url: Option<String>, port: u16, token: Option<String>) -> Resul
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = app::App::new(client.clone(), tx.clone(), url);
     app.on_this_computer = on_this_computer;
+    app.open_whats_new();
     let mut drafts = match drafts::Drafts::load(&app.url).await {
         Ok(saved) => {
             app.drafts = saved.restore();
@@ -112,6 +113,7 @@ pub async fn run(url: Option<String>, port: u16, token: Option<String>) -> Resul
             app.tick();
             app.report_screen();
             app.kofi_seen();
+            app.whats_new_seen();
             term.draw(|f| view::draw(f, &mut app))?;
             dirty = false;
         }

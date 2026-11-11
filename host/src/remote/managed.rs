@@ -11,6 +11,7 @@
 //! the latest release from any device (`installHostUpdate`), like on any computer.
 
 use crate::LockExt;
+use crate::analytics::{self, SleepOutcome};
 use crate::environment::Environment;
 use crate::hub::Hub;
 use crate::remote::cloud::{self, CloudError};
@@ -19,7 +20,7 @@ use crate::update;
 use anyhow::Result;
 use reqwest::Method;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -143,17 +144,22 @@ pub async fn sleep_loop(hub: Arc<Hub>) {
             continue;
         }
         let wake_at = next.map(|t| t - WAKE_EARLY_MS);
-        match request(&hub, wake_at).await {
+        let answer = request(&hub, wake_at).await;
+        let outcome = sleep_outcome(&answer);
+        analytics::cloud_sleep_asked(&hub, outcome, wake_at.is_some());
+        match answer {
             Ok(Some(order)) => {
                 update_to(&hub, order);
                 active = Instant::now();
             }
             Ok(None) => {
                 tracing::info!(wake_at, "asked the cloud to put this computer to sleep");
+                // The machine stops within seconds: what's queued goes now or never.
+                analytics::flush_now(&hub).await;
                 wait_for_wake(&hub, idle).await;
                 active = Instant::now();
             }
-            Err(e) if e.downcast_ref::<CloudError>().is_some_and(|c| c.code == "conflict") => {
+            Err(_) if outcome == SleepOutcome::InUse => {
                 tracing::debug!("a device is connected; staying awake");
                 active = Instant::now();
             }
@@ -197,8 +203,44 @@ async fn state(hub: &Hub) -> Result<Option<String>> {
 /// update to install instead when a newer release suits every device of the account.
 async fn request(hub: &Hub, wake_at: Option<i64>) -> Result<Option<UpdateOrder>> {
     let base = cloud::codync_url(hub)?;
-    let v = cloud::call(hub, &base, Method::POST, "/v1/host/sleep", Some(&json!({ "wakeAt": wake_at }))).await?;
+    let body = sleep_body(wake_at, hub.analytics.state());
+    let v = cloud::call(hub, &base, Method::POST, "/v1/host/sleep", Some(&body)).await?;
     Ok(serde_json::from_value(v["update"].clone()).ok())
+}
+
+/// A sleep request also says the owner's analytics switch, `analytics`: the cloud reports this computer's wakes only
+/// while it is on (it hears a change at once too, `share_analytics`).
+fn sleep_body(wake_at: Option<i64>, analytics: bool) -> Value {
+    json!({ "wakeAt": wake_at, "analytics": analytics })
+}
+
+/// `POST /v1/host/analytics`: on a cloud computer, the cloud hears the owner's analytics switch as soon as it turns, so
+/// a switch turned off stops its reports of this computer's wakes right away. Unreachable, it hears it with the next
+/// sleep request.
+pub fn share_analytics(hub: &Arc<Hub>) {
+    if !is_managed(&hub.store) {
+        return;
+    }
+    let hub = Arc::clone(hub);
+    tokio::spawn(async move {
+        let sent = async {
+            let body = json!({ "analytics": hub.analytics.state() });
+            cloud::call(&hub, &cloud::codync_url(&hub)?, Method::POST, "/v1/host/analytics", Some(&body)).await
+        };
+        if let Err(e) = sent.await {
+            tracing::warn!(error = format!("{e:#}"), "couldn't tell the cloud the analytics switch turned");
+        }
+    });
+}
+
+/// What came of asking to sleep (`cloud_sleep_asked`).
+fn sleep_outcome(answer: &Result<Option<UpdateOrder>>) -> SleepOutcome {
+    match answer {
+        Ok(None) => SleepOutcome::Asleep,
+        Ok(Some(_)) => SleepOutcome::Update,
+        Err(e) if e.downcast_ref::<CloudError>().is_some_and(|c| c.code == "conflict") => SleepOutcome::InUse,
+        Err(_) => SleepOutcome::Failed,
+    }
 }
 
 #[cfg(test)]
@@ -211,6 +253,24 @@ mod tests {
         assert!(!newer("2.25.0", "2.25.0"));
         assert!(!newer("2.24.9", "2.25.0"));
         assert!(!newer("garbage", "2.25.0"));
+    }
+
+    #[test]
+    fn a_sleep_request_reports_what_came_of_it() {
+        let refused =
+            |code: &str| Err(anyhow::Error::new(CloudError { status: 409, code: code.into(), message: String::new() }));
+        let order = UpdateOrder { version: "2.50.0".into(), force: false };
+        assert_eq!(sleep_outcome(&Ok(None)), SleepOutcome::Asleep);
+        assert_eq!(sleep_outcome(&Ok(Some(order))), SleepOutcome::Update);
+        assert_eq!(sleep_outcome(&refused("conflict")), SleepOutcome::InUse);
+        assert_eq!(sleep_outcome(&refused("notFound")), SleepOutcome::Failed);
+        assert_eq!(sleep_outcome(&Err(anyhow::anyhow!("offline"))), SleepOutcome::Failed);
+    }
+
+    #[test]
+    fn a_sleep_request_says_the_analytics_switch_as_the_cloud_reads_it() {
+        assert_eq!(sleep_body(Some(42), true), json!({"wakeAt": 42, "analytics": true}));
+        assert_eq!(sleep_body(None, false), json!({"wakeAt": null, "analytics": false}));
     }
 
     #[test]

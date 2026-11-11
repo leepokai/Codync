@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Coffee, DiscordLogo, GithubLogo, WechatLogo } from "@phosphor-icons/react/ssr";
 import DownloadButton from "./download-button";
+import { rivals } from "../compare/rivals";
 import { CHINA_COMMUNITY, DISCORD, EMAIL, GITHUB, KO_FI } from "../links";
 
 const nav: [href: string, label: string][] = [
@@ -15,7 +16,7 @@ const nav: [href: string, label: string][] = [
 // The header and footer every page shares.
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-30 bg-black/80 backdrop-blur-md">
+    <header className="sticky top-0 z-30 bg-neutral-950/80 backdrop-blur-md">
       <nav className="mx-auto grid h-16 max-w-6xl grid-cols-[1fr_auto] items-center px-4 sm:px-6 lg:grid-cols-[1fr_auto_1fr]">
         <Link href="/" className="flex items-center gap-2.5 font-semibold text-neutral-50">
           <Image src="/icon.png" alt="" width={28} height={28} className="rounded-[7px]" />
@@ -69,40 +70,67 @@ export function SiteHeader() {
   );
 }
 
-const footerLinks: [label: string, href: string][] = [
-  ["Docs", "/docs"],
-  ["Free AI agent app", "/free-ai-agent-app"],
-  ["Claude Code on iPhone", "/claude-code-iphone"],
-  ["Codex on iPhone", "/codex-iphone"],
-  ["Compare", "/compare"],
-  ["codync-mem", "/codync-mem"],
-  ["Terms", "/terms"],
-  ["Privacy", "/privacy"],
-  ["Code signing policy", "/code-signing"],
-  ["Discord", DISCORD],
-  ["WeChat / Lark (China)", CHINA_COMMUNITY],
-  ["Ko-fi", KO_FI],
-  ["Contact", `mailto:${EMAIL}`],
+// The footer's columns, by what a visitor is looking for.
+const footerColumns: { title: string; links: [label: string, href: string][] }[] = [
+  {
+    title: "Product",
+    links: [
+      ["Docs", "/docs"],
+      ["Free AI agent app", "/free-ai-agent-app"],
+      ["Claude Code on iPhone", "/claude-code-iphone"],
+      ["Codex on iPhone", "/codex-iphone"],
+      ["codync-mem", "/codync-mem"],
+    ],
+  },
+  { title: "Compare", links: [...rivals.map((r): [string, string] => [`vs ${r.name}`, `/compare/${r.slug}`]), ["All comparisons", "/compare"]] },
+  {
+    title: "Community",
+    links: [
+      ["GitHub", GITHUB],
+      ["Discord", DISCORD],
+      ["WeChat / Lark (China)", CHINA_COMMUNITY],
+      ["Ko-fi", KO_FI],
+      ["Contact", `mailto:${EMAIL}`],
+    ],
+  },
+  {
+    title: "Legal",
+    links: [
+      ["Terms", "/terms"],
+      ["Privacy", "/privacy"],
+      ["Code signing policy", "/code-signing"],
+    ],
+  },
 ];
 
 export function SiteFooter() {
   return (
-    <footer className="px-4 py-12 sm:px-6">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 text-sm text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
-        <p>
-          100% free and open source. No hidden fees.{" "}
-          <a href={GITHUB} className="text-neutral-300 underline underline-offset-4 hover:text-white">
-            Code on GitHub
-          </a>
-          <br />© {new Date().getFullYear()} leepokai
-        </p>
-        <div className="flex flex-wrap gap-x-6 gap-y-2">
-          {footerLinks.map(([label, href]) => (
-            <Link key={label} href={href} className="transition hover:text-neutral-300">
-              {label}
-            </Link>
-          ))}
+    <footer className="px-4 pt-16 pb-12 sm:px-6">
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-x-6 gap-y-10 text-sm md:grid-cols-[1.6fr_repeat(4,1fr)]">
+        <div className="col-span-2 md:col-span-1">
+          <Link href="/" className="flex items-center gap-2.5 font-semibold text-neutral-50">
+            <Image src="/icon.png" alt="" width={28} height={28} className="rounded-[7px]" />
+            Codync
+          </Link>
+          <p className="mt-4 max-w-[16rem] leading-relaxed text-neutral-500">
+            100% free and open source. No hidden fees.
+            <br />© {new Date().getFullYear()} leepokai
+          </p>
         </div>
+        {footerColumns.map(({ title, links }) => (
+          <div key={title}>
+            <p className="font-medium text-neutral-200">{title}</p>
+            <ul className="mt-4 flex flex-col gap-2.5">
+              {links.map(([label, href]) => (
+                <li key={label}>
+                  <Link href={href} className="text-neutral-500 transition hover:text-neutral-300">
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
     </footer>
   );

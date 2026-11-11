@@ -1947,5 +1947,6 @@
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "Сначала удалите облачные компьютеры у этого провайдера: Codync нужен ключ, чтобы переводить их в сон.",
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud обновит его перед следующим переходом в сон.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync бесплатный, и его делает один человек. Если он вам помогает, его можно поддержать на Ko-fi.",
-  "Support on Ko-fi": "Поддержать на Ko-fi"
+  "Support on Ko-fi": "Поддержать на Ko-fi",
+  "What's new": "Что нового"
 }

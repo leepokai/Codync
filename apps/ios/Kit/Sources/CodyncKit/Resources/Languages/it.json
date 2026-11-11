@@ -1947,5 +1947,6 @@
   "Delete your cloud computers on it first: Codync needs the key to put them to sleep.": "Prima elimina i tuoi computer cloud su questo provider: a Codync serve la chiave per metterli in stop.",
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud lo aggiorna prima che vada di nuovo in stop.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync è gratuito e fatto da una sola persona. Se ti è utile, puoi sostenerlo su Ko-fi.",
-  "Support on Ko-fi": "Sostieni su Ko-fi"
+  "Support on Ko-fi": "Sostieni su Ko-fi",
+  "What's new": "Novità"
 }

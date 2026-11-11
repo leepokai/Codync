@@ -79,6 +79,19 @@ class AnalyticsTest {
         val renamed = AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed)
         assertEquals("cloud_computer_renamed", renamed.name)
         assertEquals("""{"outcome":"failed"}""", JsonObject(renamed.properties).toString())
+        val deleted = AnalyticsEvent.CloudComputerDeleted(CloudDeleteOutcome.Deleted, "boat")
+        assertEquals("cloud_computer_deleted", deleted.name)
+        assertEquals("""{"outcome":"deleted","provider":"boat"}""", JsonObject(deleted.properties).toString())
+        val snapshots = AnalyticsEvent.CloudSnapshotsDeleted(CloudDeleteOutcome.Failed, "instabox")
+        assertEquals("cloud_snapshots_deleted", snapshots.name)
+        assertEquals("""{"outcome":"failed","provider":"instabox"}""", JsonObject(snapshots.properties).toString())
+        val removed = AnalyticsEvent.CloudKeyRemoved(CloudRemoveOutcome.Removed, "boat")
+        assertEquals("cloud_key_removed", removed.name)
+        assertEquals("""{"outcome":"removed","provider":"boat"}""", JsonObject(removed.properties).toString())
+        assertEquals(CloudDeleteOutcome.Refused, CloudDeleteOutcome.of(CloudError(409, "conflict", "It's asleep.")))
+        assertEquals(CloudDeleteOutcome.Failed, CloudDeleteOutcome.of(CloudError(503, "providerUnavailable")))
+        assertEquals(CloudRemoveOutcome.Refused, CloudRemoveOutcome.of(CloudError(409, "conflict")))
+        assertEquals(CloudRemoveOutcome.Failed, CloudRemoveOutcome.of(IOException("Offline")))
     }
 
     @Test fun `a crash keeps its type and Codync frames but never its message`() {

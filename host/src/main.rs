@@ -551,7 +551,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.shutdown().await;
     background::stop_agent_checks(agent_checks).await;
     agent::acp::stop_all().await;
-    analytics::flush_before_exit(&hub).await;
+    analytics::flush_now(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
     std::process::exit(0)

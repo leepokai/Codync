@@ -91,61 +91,73 @@ internal fun AccountStore.clearCloudError(place: CloudErrorPlace) = mutableState
 /** Gives the cloud the key to the user's own account with [provider]; a refusal shows the cloud's words for what to fix.
  * [saved] runs once it's kept. */
 fun AccountStore.saveCloudKey(provider: String, key: String, saved: () -> Unit) = action(cloudKeyAction(provider)) {
-    val credential = try { requireNotNull(cloud) { "Sign in to reach your account." }.saveCloudKey(provider, key) }
-    catch (error: Exception) {
-        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(error), provider))
-        throw error
+    val credential = tracked(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved, provider), { AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.of(it), provider) }) {
+        it.saveCloudKey(provider, key)
     }
-    Analytics.capture(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Saved, provider))
     mutableState.update { it.copy(cloudOffer = it.cloudOffer?.withCredential(provider, credential)) }
     saved()
 }
 
 /** `409` while a cloud computer runs on [provider] shows the cloud's own words. */
 fun AccountStore.removeCloudKey(provider: String) = action(cloudKeyAction(provider)) {
-    requireNotNull(cloud) { "Sign in to reach your account." }.deleteCloudKey(provider)
+    tracked(AnalyticsEvent.CloudKeyRemoved(CloudRemoveOutcome.Removed, provider), { AnalyticsEvent.CloudKeyRemoved(CloudRemoveOutcome.of(it), provider) }) {
+        it.deleteCloudKey(provider)
+    }
     mutableState.update { it.copy(cloudOffer = it.cloudOffer?.withCredential(provider, null)) }
 }
 
 /** Another cloud computer called [name] on [provider], one whose key works; the cloud's refusal (the limit, the key)
  * shows its own words. [created] runs once it's made. */
 fun AccountStore.createCloudComputer(provider: String, name: String, created: () -> Unit) = action(CLOUD_CREATE) {
-    val machine = try { requireNotNull(cloud) { "Sign in to reach your account." }.createCloudComputer(provider, name) }
-    catch (error: Exception) {
-        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.of(error), provider))
-        throw error
+    val machine = tracked(AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.Created, provider), { AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.of(it), provider) }) {
+        it.createCloudComputer(provider, name)
     }
-    Analytics.capture(AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.Created, provider))
     changeMachines { it + machine }
     created()
 }
 
 /** Its new [name] (the cloud refuses an empty one); a computer this phone uses shows it before its host says so. */
 fun AccountStore.renameCloudComputer(id: String, name: String) = action(CloudMachineAction.Rename.key(id)) {
-    val machine = try { requireNotNull(cloud) { "Sign in to reach your account." }.renameCloudComputer(id, name) }
-    catch (error: Exception) {
-        if (error !is CancellationException) Analytics.capture(AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed))
-        throw error
+    val machine = tracked(AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Renamed), { AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed) }) {
+        it.renameCloudComputer(id, name)
     }
-    Analytics.capture(AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Renamed))
     changeMachines { list -> list.map { if (it.cloudComputerId == id) machine else it } }
     store(machine.computerId)?.setHostName(machine.name)
     refreshCloud()
 }
 
-/** `409` while it sleeps shows the cloud's own words. */
+/** `409` while it sleeps shows the cloud's own words. [id] is a listed computer (its row asked); one gone from the list
+ * meanwhile has nothing left to act on (iOS too). */
 fun AccountStore.deleteCloudSnapshots(id: String) = action(CloudMachineAction.DeleteSnapshots.key(id)) {
-    requireNotNull(cloud) { "Sign in to reach your account." }.deleteCloudSnapshots(id)
+    val provider = state.value.cloudOffer?.machines?.firstOrNull { it.cloudComputerId == id }?.provider ?: return@action
+    tracked(AnalyticsEvent.CloudSnapshotsDeleted(CloudDeleteOutcome.Deleted, provider), { AnalyticsEvent.CloudSnapshotsDeleted(CloudDeleteOutcome.of(it), provider) }) {
+        it.deleteCloudSnapshots(id)
+    }
 }
 
-/** Deletes it with everything on it; this phone forgets it too when it uses it (iOS `onAccountChanged`). */
+/** Deletes it with everything on it; this phone forgets it too when it uses it (iOS `onAccountChanged`). [id] is a listed
+ * computer, as for [deleteCloudSnapshots]. */
 fun AccountStore.deleteCloudComputer(id: String) = action(CloudMachineAction.Delete.key(id)) {
-    val client = requireNotNull(cloud) { "Sign in to reach your account." }
-    val computerId = state.value.cloudOffer?.machines?.firstOrNull { it.cloudComputerId == id }?.computerId
-    client.deleteCloudComputer(id)
+    val machine = state.value.cloudOffer?.machines?.firstOrNull { it.cloudComputerId == id } ?: return@action
+    tracked(AnalyticsEvent.CloudComputerDeleted(CloudDeleteOutcome.Deleted, machine.provider), { AnalyticsEvent.CloudComputerDeleted(CloudDeleteOutcome.of(it), machine.provider) }) {
+        it.deleteCloudComputer(id)
+    }
     changeMachines { list -> list.filter { it.cloudComputerId != id } }
+    val computerId = machine.computerId
     if (computerId != null && store(computerId) != null) transitions.withLock { close(computerId) }
     refreshCloud()
+}
+
+/** [call] on the account's cloud, reporting what came of it: [ok] once the cloud answered, [failed] for its error. A
+ * cancelled call came to nothing and reports nothing (iOS too). */
+private inline fun <T> AccountStore.tracked(ok: AnalyticsEvent, failed: (Exception) -> AnalyticsEvent, call: (CloudClient) -> T): T {
+    val result = try { call(requireNotNull(cloud) { "Sign in to reach your account." }) }
+    catch (error: Exception) {
+        if (error !is CancellationException) Analytics.capture(failed(error))
+        throw error
+    }
+    Analytics.capture(ok)
+    return result
 }
 
 /** Changes the listed cloud computers. A look in flight would bring back the list from before, so it stops; the watch for

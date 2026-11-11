@@ -8,7 +8,7 @@ use super::super::manage::{
     AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, Library, Market, MemorySheet,
     NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
-use super::{Editor, Mark};
+use super::{Editor, Mark, WhatsNew};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
@@ -362,6 +362,7 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    WhatsNew(WhatsNew),
 }
 
 pub struct Toast {

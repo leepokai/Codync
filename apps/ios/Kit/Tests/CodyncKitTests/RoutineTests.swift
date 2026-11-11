@@ -66,6 +66,7 @@ import Testing
     #expect(Routine.timeoutText("1") == "1 second")
     #expect(Routine.timeoutText("1.5") == "1.5s")
     #expect(Routine.timeoutText("") == "s")
+    #expect(Routine.timeoutText("3600", locale: Locale(identifier: "it")) == "1 ora")
 }
 
 @Test func timeZoneSearchIsFuzzyAndRanksWordStartsFirst() {

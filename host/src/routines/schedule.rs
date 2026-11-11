@@ -198,9 +198,8 @@ mod tests {
     #[test]
     fn every_day_hours_read_as_clock_times() {
         let zone = "Europe/Rome";
-        let described = |expression: &str| {
-            Trigger::Cron { expression: expression.into(), time_zone: zone.into() }.description()
-        };
+        let described =
+            |expression: &str| Trigger::Cron { expression: expression.into(), time_zone: zone.into() }.description();
         assert_eq!(described("0 9 * * *"), "Every day at 09:00 · Europe/Rome");
         assert_eq!(described("0 9,18 * * *"), "Every day at 09:00, 18:00 · Europe/Rome");
         assert_eq!(described("0 09 * * *"), "Every day at 09:00 · Europe/Rome");

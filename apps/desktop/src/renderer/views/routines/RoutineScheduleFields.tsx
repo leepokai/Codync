@@ -5,7 +5,8 @@ import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
-import { useTr } from '../../lib/use-language'
+import { resolvedLanguage } from '../../lib/l10n'
+import { useAppLanguage, useTr } from '../../lib/use-language'
 
 
 const weekdays = [
@@ -107,6 +108,9 @@ export function LabeledRow({ label, top = false, className, children }: { label:
 /** The sentence, then the next run, under the group — or why the host can't read it. */
 function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
   const tr = useTr()
+  const appLanguage = useAppLanguage()
+  const timeLocale = resolvedLanguage(appLanguage, typeof navigator === 'undefined' ? 'en' : navigator.language)
+  const dateLocale = timeLocale === 'zh' ? 'zh-Hans' : timeLocale
   if (error) return <Text size="callout" tone="danger" className="schedule-preview">{error}</Text>
   const nextRunAt = preview?.nextRunAt
   return (
@@ -116,7 +120,7 @@ function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview |
           <Text size="callout" weight="medium" tone="text">{tr(preview.summary)}</Text>
           {nextRunAt ? (
             <Text size="callout" tone="secondary">
-              {tr('Next {when}').replaceAll('{when}', () => new Date(nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))}
+              {tr('Next {when}').replaceAll('{when}', () => new Date(nextRunAt).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' }))}
             </Text>
           ) : null}
           {preview.warning ? <Text size="callout" tone="secondary">{preview.warning}</Text> : null}

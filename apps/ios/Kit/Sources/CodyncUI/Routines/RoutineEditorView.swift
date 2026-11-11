@@ -8,6 +8,7 @@ struct RoutineEditorView: View {
     let saved: (Routine?) -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var name = ""
     @State private var instruction = ""
     @State private var schedule = RoutineScheduleDraft()
@@ -118,7 +119,10 @@ struct RoutineEditorView: View {
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
                                 .rotationEffect(.degrees(advanced ? 180 : 0))
                             Spacer()
-                            if !advanced { Text(L10n.tr("Timeout \(Routine.timeoutText(timeout))")).foregroundStyle(Palette.tertiary) }
+                            if !advanced {
+                                Text(L10n.tr("Timeout {time}").replacingOccurrences(of: "{time}", with: Routine.timeoutText(timeout, locale: locale)))
+                                    .foregroundStyle(Palette.tertiary)
+                            }
                         }
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
@@ -277,7 +281,7 @@ struct RoutineEditorView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    let when = Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened)
+                    let when = Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened).locale(locale)
                     Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }

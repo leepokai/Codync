@@ -713,7 +713,7 @@
   "A run is stopped after this long. 1 second to 24 hours.": "この時間が経過すると実行が停止されます。 1秒から24時間まで。",
   "Runs each time something is posted to its URL. Save to get the URL and key.": "URL に何かが投稿されるたびに実行されます。保存して URL とキーを取得します。",
   "Set up by the bot. Pick Schedule or Webhook to replace it.": "ボットによって設定されます。スケジュールまたは Webhook を選択して置き換えます。",
-  "minute  hour  day  month  weekday": "分 時 日 月 平日",
+  "minute  hour  day  month  weekday": "分  時  日  月  平日",
   "Check schedule again": "スケジュールをもう一度確認してください",
   "Retry loading schedule": "ロードスケジュールの再試行",
   "Connect to this computer to save your routine.": "このコンピュータに接続してルーチンを保存します。",

@@ -292,7 +292,7 @@ private val WEEKDAYS = listOf(1 to "Monday", 2 to "Tuesday", 3 to "Wednesday", 4
             preview != null -> {
                 Text(tr(preview.summary), style = Type.caption.medium, color = Palette.text)
                 preview.nextRunAt?.let {
-                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+                    val whenText = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, appLocale()).format(Date(it))
                     Text(tr("Next {when}").replace("{when}", whenText), style = Type.caption, color = Palette.secondary)
                 }
                 preview.warning?.let { Text(tr(it), style = Type.caption, color = Palette.secondary) }

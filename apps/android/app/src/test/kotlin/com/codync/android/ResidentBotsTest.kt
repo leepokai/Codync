@@ -2,17 +2,10 @@ package com.codync.android
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ResidentBotsTest {
-    @Test fun `the all sentinel is not an empty resident set`() {
-        assertTrue(Residency.All.preview < 0)
-        assertEquals(30, Residency(emptySet()).preview)
-        assertNotEquals(Residency.All, Residency(emptySet()))
-    }
-
     @Test fun `a chat window never shrinks below the default and never passes the ceiling`() {
         val residency = Residency(setOf("a"), windows = mapOf("a" to 500, "b" to 10, "c" to 1_000_000))
         assertEquals(500, residency.limit("a"))
@@ -22,14 +15,10 @@ class ResidentBotsTest {
     }
 
     @Test fun `earlier rows continue only while the shown chat is under the ceiling`() {
-        val residency = Residency(setOf("a"))
-        assertTrue(residency.needsEarlier(0, false))
-        assertTrue(residency.needsEarlier(Residency.MAX_WINDOW - 1, false))
-        assertFalse(residency.needsEarlier(Residency.MAX_WINDOW, false))
-        assertFalse(residency.needsEarlier(0, true))
-        val low = Residency(setOf("a"), ceiling = 1000)
-        assertTrue(low.needsEarlier(999, false))
-        assertFalse(low.needsEarlier(1000, false))
+        assertTrue(Residency.needsEarlier(0, false))
+        assertTrue(Residency.needsEarlier(Residency.MAX_WINDOW - 1, false))
+        assertFalse(Residency.needsEarlier(Residency.MAX_WINDOW, false))
+        assertFalse(Residency.needsEarlier(0, true))
     }
 
     @Test fun `a sixth open chat drops the least recently used`() {

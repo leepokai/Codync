@@ -22,12 +22,12 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
     companion object {
         /** Hidden rows read per chat row before a resident window stops. Keeps a tool-heavy chat bounded. */
         private const val RAW_PER_SHOWN = 10
-/** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
-private const val RESIDENT_BYTES = 6_000_000L
-private const val RESIDENT_BYTES_MAX = 24_000_000L
-private const val BYTES_PER_SHOWN = 20_000L
-/** Characters of stored payload a chat that isn't open may hold as its preview. */
-private const val PREVIEW_BYTES = 150_000L
+        /** Characters of stored payload one chat may hold in memory, so a run of very large rows can't outgrow the heap by itself. */
+        private const val RESIDENT_BYTES = 6_000_000L
+        private const val RESIDENT_BYTES_MAX = 24_000_000L
+        private const val BYTES_PER_SHOWN = 20_000L
+        /** Characters of stored payload a chat that isn't open may hold as its preview. */
+        private const val PREVIEW_BYTES = 150_000L
 
         private fun file(directory: File, computerId: String): File {
             require(computerId.matches(Regex("[A-Za-z0-9_-]{22}")))
@@ -66,6 +66,9 @@ private const val PREVIEW_BYTES = 150_000L
 
     private var iconConnectionEpoch = 0L
 
+    /** Per chat, the oldest row the mirror held when this event stream began, set by its hello (iOS `windowFloors`). */
+    private var streamFloors: Map<String, Long> = emptyMap()
+
     /** A reconnect's snapshot is authoritative even after restoring an older database with the same host id. */
     @Synchronized fun beginIconConnection(): Long = transaction { db ->
         iconConnectionEpoch++
@@ -94,8 +97,8 @@ private const val PREVIEW_BYTES = 150_000L
     }
 
     /**
-     * [residency] loads every row for [Residency.All] and, for each resident chat, enough rows to hold
-     * [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows, so a large roster is not decoded whole.
+     * Each resident chat with enough rows to hold its [Residency.limit] chat rows, every other chat with its newest
+     * [Residency.preview] rows, so a large roster is not decoded whole.
      */
     @Synchronized fun snapshot(residency: Residency): MirrorSnapshot {
         val db = readableDatabase
@@ -120,17 +123,8 @@ private const val PREVIEW_BYTES = 150_000L
      * Which drafts' message ids the mirror already holds as a sent message, without decoding payloads, so a draft is not
      * offered twice. A draft's key is its chat's id, or "chat/artifact/id" for one of its artifacts: the message is the chat's.
      */
-    @Synchronized internal fun confirmedNonces(drafts: Collection<ComposerDraft>): Set<String> {
-        val db = readableDatabase
-        return drafts.filter { draft ->
-            db.rawQuery("SELECT 1 FROM entries WHERE bot_id=? AND nonce=? LIMIT 1", arrayOf(draft.botId.substringBefore('/'), draft.nonce))
-                .use { it.moveToFirst() }
-        }.mapTo(mutableSetOf()) { it.nonce }
-    }
-
-    /** How many of [botId]'s rows start at [seq] or later: the window that holds a page just fetched, whatever arrived meanwhile. */
-    @Synchronized internal fun countSince(botId: String, seq: Long): Int = readableDatabase.rawQuery(
-        "SELECT COUNT(*) FROM entries WHERE bot_id=? AND seq>=?", arrayOf(botId, seq.toString())).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    @Synchronized internal fun confirmedNonces(drafts: Collection<ComposerDraft>): Set<String> =
+        drafts.filter { hasNonce(it.botId.substringBefore('/'), it.nonce) }.mapTo(mutableSetOf()) { it.nonce }
 
     /** Whether SQLite holds rows of [botId] older than [seq], so paging back can skip the computer. */
     @Synchronized internal fun hasOlder(botId: String, seq: Long): Boolean = readableDatabase.rawQuery(
@@ -164,6 +158,7 @@ private const val PREVIEW_BYTES = 150_000L
                 if (meta(db, "hostId")?.let { it != event.hostId } == true) reset(db)
                 setMeta(db, "hostId", event.hostId)
                 if (event.rev < (meta(db, "rev")?.toLong() ?: 0)) reset(db)
+                streamFloors = floorsAtCursor(db)
                 setMeta(db, "usage", event.usage.toString())
                 event.screen?.let { setMeta(db, "screen", it.toString()) }
                 // Hello's head revision precedes catch-up; it is never a checkpoint.
@@ -223,19 +218,16 @@ private const val PREVIEW_BYTES = 150_000L
         }
     }
     /**
-     * [live] is an event, not a history page. An old row the computer rewrote, one this phone never held, arrives
-     * below the chat's oldest stored row: keeping it would hide the gap before it from paging back, so it waits
-     * to be paged in (the iPhone leaves such rows out the same way).
+     * [live] is an event, not a history page. An old row the computer rewrote, one this phone never held, arrives below
+     * the oldest row its chat held when the stream began ([streamFloors]): keeping it would hide the gap before it from paging
+     * back, so it waits to be paged in, as on the iPhone.
      */
     private fun writeEntry(db: SQLiteDatabase, entry: Entry, live: Boolean = false) {
         val deleted = db.rawQuery("SELECT deleted FROM bots WHERE id=?", arrayOf(entry.botId)).use { it.moveToFirst() && it.getInt(0) == 1 }
         if (deleted) return
         val revision = db.rawQuery("SELECT rev FROM entries WHERE id=?", arrayOf(entry.id)).use { if (it.moveToFirst()) it.getLong(0) else -1 }
         if (revision > entry.rev) return
-        if (live && revision < 0) {
-            val oldest = db.rawQuery("SELECT MIN(seq) FROM entries WHERE bot_id=?", arrayOf(entry.botId)).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
-            if (oldest != null && entry.seq < oldest) return
-        }
+        if (live && revision < 0 && streamFloors[entry.botId]?.let { entry.seq < it } == true) return
         check(db.insertWithOnConflict("entries", null, ContentValues().apply {
             put("id", entry.id); put("bot_id", entry.botId)
             put("seq", entry.seq); put("rev", entry.rev); put("payload", WireJson.encodeToString(entry))
@@ -253,6 +245,18 @@ private const val PREVIEW_BYTES = 150_000L
     private fun dropConversation(db: SQLiteDatabase) {
         listOf("entries", "history").forEach { db.delete(it, null, null) }
         setMeta(db, "rev", "0")
+        streamFloors = emptyMap()
+    }
+    /**
+     * Each chat's oldest row among those the mirror held at the event cursor. A send's reply stored since comes again in
+     * the catch-up and says nothing about the window; a stream from rev 0 rebuilds every chat in rev order, so it has none.
+     */
+    private fun floorsAtCursor(db: SQLiteDatabase): Map<String, Long> {
+        val cursor = meta(db, "rev")?.toLong() ?: 0
+        if (cursor == 0L) return emptyMap()
+        return db.rawQuery("SELECT bot_id, MIN(seq) FROM entries WHERE rev<=? GROUP BY bot_id", arrayOf(cursor.toString())).use {
+            buildMap { while (it.moveToNext()) put(it.getString(0), it.getLong(1)) }
+        }
     }
     private fun bump(db: SQLiteDatabase, rev: Long) = setMeta(db, "rev", maxOf(rev, meta(db, "rev")?.toLong() ?: 0).toString())
     private fun meta(db: SQLiteDatabase, key: String): String? = db.rawQuery("SELECT v FROM meta WHERE k=?", arrayOf(key)).use {
@@ -267,67 +271,33 @@ private const val PREVIEW_BYTES = 150_000L
         rows(db, "SELECT payload FROM pending $order") { WireJson.decodeFromString<PendingSend>(it) }
 
     /** Resident chats come back with their newest [Residency.limit] chat rows. Every other chat keeps its newest [Residency.preview] rows. */
-    private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> {
-        if (residency.preview < 0) return rows(db, "SELECT payload FROM entries ORDER BY seq") { WireJson.decodeFromString<Entry>(it) }
-        val full = residency.full.filter { it.isNotBlank() }.toSet()
-        val preview = residency.preview.coerceAtLeast(0)
-        val loaded = mutableListOf<Entry>()
-        if (preview == 0 && full.isEmpty()) return emptyList()
-        for (bot in botIds(db)) {
-            if (preview == 0 && bot !in full) continue
-            val decoded = if (bot in full) residentEntries(db, bot, residency.limit(bot))
-            else {
-                previewEntries(db, bot, preview)
-            }
-            loaded += decoded
-        }
-        return loaded.sortedBy { it.seq }
-    }
+    private fun entries(db: SQLiteDatabase, residency: Residency): List<Entry> = botIds(db).flatMap { bot ->
+        if (bot in residency.full) residentEntries(db, bot, residency.limit(bot)) else previewEntries(db, bot, residency.preview)
+    }.sortedBy { it.seq }
 
-    /**
-     * Newest rows through the [target]-th chat row, oldest first. Hidden rows between those chat rows stay, so Trace
-     * and the working indicator still see them. A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table.
-     */
+    /** A tool run stops after [RAW_PER_SHOWN] rows per chat row instead of the whole table; the budget grows with the window, up to a fixed ceiling. */
     private fun residentEntries(db: SQLiteDatabase, bot: String, target: Int): List<Entry> {
-        if (target <= 0) return emptyList()
-        val cap = target.toLong() * RAW_PER_SHOWN
-        val decoded = mutableListOf<Entry>()
-        var shown = 0
-        var bytes = 0L
-        // Grows with the window so paging keeps reaching older rows, up to a fixed ceiling.
         val budget = (target * BYTES_PER_SHOWN).coerceIn(RESIDENT_BYTES, RESIDENT_BYTES_MAX)
-        db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $cap", arrayOf(bot)).use { cursor ->
-            while (cursor.moveToNext() && shown < target && bytes < budget) {
-                val text = cursor.getString(0)
-                bytes += text.length
-                val entry = WireJson.decodeFromString<Entry>(text)
-                decoded += entry
-                if (entry.isChat) shown++
-            }
-        }
-        return decoded.asReversed()
+        return newestPayloads(db, bot, target.toLong() * RAW_PER_SHOWN) { newestWindow(it, target, budget) }
     }
 
-    /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large: its newest row is always kept. */
-    private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<Entry> {
-        val decoded = mutableListOf<Entry>()
-        var bytes = 0L
+    /** A chat that isn't open keeps its newest [limit] rows, fewer when they are large. */
+    private fun previewEntries(db: SQLiteDatabase, bot: String, limit: Int): List<Entry> =
+        newestPayloads(db, bot, limit.toLong()) { newestWindow(it, limit, PREVIEW_BYTES) }
+
+    /** [bot]'s newest [limit] stored payloads, newest first, read while the cursor is open. */
+    private fun <T> newestPayloads(db: SQLiteDatabase, bot: String, limit: Long, read: (Sequence<String>) -> T): T =
         db.rawQuery("SELECT payload FROM entries WHERE bot_id=? ORDER BY seq DESC LIMIT $limit", arrayOf(bot)).use { cursor ->
-            while (cursor.moveToNext() && (decoded.isEmpty() || bytes < PREVIEW_BYTES)) {
-                val text = cursor.getString(0)
-                bytes += text.length
-                decoded += WireJson.decodeFromString<Entry>(text)
-            }
+            read(generateSequence { if (cursor.moveToNext()) cursor.getString(0) else null })
         }
-        return decoded.asReversed()
-    }
 
     private fun botIds(db: SQLiteDatabase): List<String> = db.rawQuery("SELECT DISTINCT bot_id FROM entries", null).use { cursor ->
         buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
     }
 
-    private fun <T> rows(db: SQLiteDatabase, query: String, args: Array<String>? = null, decode: (String) -> T): List<T> =
-        db.rawQuery(query, args).use { cursor -> buildList { while (cursor.moveToNext()) add(decode(cursor.getString(0))) } }
+    private fun <T> rows(db: SQLiteDatabase, query: String, decode: (String) -> T): List<T> = db.rawQuery(query, null).use {
+        buildList { while (it.moveToNext()) add(decode(it.getString(0))) }
+    }
     private fun <T> transaction(block: (SQLiteDatabase) -> T): T {
         val db = writableDatabase
         db.beginTransaction()

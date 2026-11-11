@@ -56,7 +56,6 @@ import com.codync.android.design.*
             }
         }
         ThinkingDetailsSettings()
-        LowMemorySettings(store)
         ShortcutLeadSettings(state, computers, store)
         NotificationsSection()
         CardSection(footer = "Which features you use, never your messages, code or files. Helps us spot bugs sooner and make Codync better for you.") {

@@ -41,7 +41,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppearancePreferences.initialize(applicationContext)
         ThinkingDetails.initialize(applicationContext)
-        LowMemoryMode.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
         WhatsNew.start(applicationContext)

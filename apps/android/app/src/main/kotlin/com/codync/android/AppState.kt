@@ -95,9 +95,8 @@ data class AppState(
     val callRequest: String? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
-    val historyComplete: Set<String> = emptySet(),
-    /** Chats whose memory budget is full: paging back stopped growing what the phone shows, so the earlier row is dropped. */
-    val windowFull: Set<String> = emptySet(),
+    /** Chats that page back no further, and why: their earlier row is dropped. */
+    val historyEnd: Map<String, HistoryEnd> = emptyMap(),
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
@@ -129,3 +128,6 @@ data class AppState(
         return !loading && rosterLoaded && actualConnection is LinkState.Ready && mirrorRevision >= head
     }
 }
+
+/** Why a chat pages back no further: the computer has no older rows, or paging back no longer grows what the phone shows (its memory budget is spent). */
+enum class HistoryEnd { Complete, MemoryFull }

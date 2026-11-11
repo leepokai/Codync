@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,17 +37,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * A conversation's scrolling list (iOS `ConversationList`): it opens at the newest message and follows
+ * A conversation's scrolling list (iOS `ConversationList`): it opens at the newest message (then `onOpened`) and follows
  * it as messages arrive (`last`, `rev`, `working`) until the reader scrolls away; then a round button
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
-@Composable internal fun ConversationList(last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
-    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp,
-    listState: LazyListState = rememberLazyListState(), settled: MutableState<Boolean>? = null,
-    content: LazyListScope.() -> Unit) {
-    val list = listState
+@Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
+    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, onOpened: () -> Unit = {}, content: LazyListScope.() -> Unit) {
     val bottom = padding.calculateBottomPadding()
-    val following = rememberFollowing(list, last, rev, working, bottom, settled)
+    val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     // Child controls consume their taps; only a plain conversation tap clears the composer.
@@ -69,7 +65,7 @@ import kotlinx.coroutines.launch
 
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
 @Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
-    settled: MutableState<Boolean>? = null): MutableState<Boolean> {
+    onOpened: () -> Unit = {}): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
@@ -80,12 +76,10 @@ import kotlinx.coroutines.launch
             if (!scrolling && touched.value) { touched.value = false; following.value = !list.canScrollForward }
         }
     }
-    LaunchedEffect(settled) {
-        // Already opened at the newest message. A new [settled] (another chat) scrolls again, then allows paging.
-        if (settled?.value == true) return@LaunchedEffect
+    LaunchedEffect(Unit) {
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
-        settled?.value = true
+        onOpened()
     }
     // The working steps can grow without a new chat entry. Follow their measured size,
     // not its offset (scrolling itself changes offsets), and always yield to the reader.

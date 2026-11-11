@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -132,7 +133,7 @@ import com.kyant.shapes.Capsule
     }
     CodyncSheet(state.trace, { store.showTrace(false) }) {
         AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Trace))
-        TraceView(bot, state, store)
+        TraceView(bot, state)
     }
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
@@ -230,28 +231,23 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
     // The ceiling counts rows the chat shows. Tool and thought rows stay in memory for Trace, but they do not fill it.
     val shown = entries.size
     val floor = state.entries.filter { it.botId == bot.id }.minOfOrNull { it.seq } ?: Long.MAX_VALUE
-    val more = store.residency().needsEarlier(shown, bot.id in state.historyComplete) && bot.id !in state.windowFull
+    val more = Residency.needsEarlier(shown, bot.id in state.historyEnd)
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
-    val settled = remember(bot.id) { mutableStateOf(false) }
-    val askedShown = remember(bot.id) { mutableIntStateOf(-1) }
-    val askedFloor = remember(bot.id) { mutableStateOf(Long.MAX_VALUE) }
+    var settled by remember { mutableStateOf(false) }
+    val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
-    ConversationList(items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
-        listState = list, settled = settled) {
+    ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
+        onOpened = { settled = true }) {
         if (more) item("earlier") {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
                 contentAlignment = Alignment.Center) { Spinner(14.dp) }
             // The list opens on the newest message, and this row is composed on that first frame. Page only after that
             // scroll has finished and the row is still showing: a short chat never scrolls, so the row staying up is the trigger.
             val loading = historyKey(bot.id) in state.busy
-            val visible = list.layoutInfo.visibleItemsInfo.any { it.key == "earlier" }
-            LaunchedEffect(bot.id, shown, floor, loading, settled.value, visible) {
-                if (pageEarlier(settled.value, visible, loading, shown, floor, askedShown.intValue, askedFloor.value)) {
-                    askedShown.intValue = shown
-                    askedFloor.value = floor
-                    store.loadHistory()
-                }
+            val visible by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.any { it.key == "earlier" } } }
+            LaunchedEffect(shown, floor, loading, settled, visible) {
+                if (paging.ask(settled, visible, loading, shown, floor)) store.loadHistory(paging::failed)
             }
         }
         // Shown while earlier messages may still load, as on the iPhone.

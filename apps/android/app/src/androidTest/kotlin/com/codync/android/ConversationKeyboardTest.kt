@@ -3,6 +3,7 @@ package com.codync.android
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
@@ -25,7 +26,7 @@ class ConversationKeyboardTest {
                 Column {
                     val draft = remember { mutableStateOf("Draft") }
                     BasicTextField(draft.value, { draft.value = it }, Modifier.testTag("composer"))
-                    ConversationList("message", 1, false, PaddingValues(0.dp)) {
+                    ConversationList(rememberLazyListState(), "message", 1, false, PaddingValues(0.dp)) {
                         item { Text("Conversation background") }
                         item { LinkButton("Keep editing", action = {}) }
                     }

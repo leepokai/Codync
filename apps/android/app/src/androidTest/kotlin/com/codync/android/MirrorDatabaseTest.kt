@@ -150,7 +150,6 @@ class MirrorDatabaseTest {
         mirror.receive(keep + previewed + short)
         mirror.save(PendingSend("unsent", "drop", text = "waiting", createdAt = 1))
         val everything = mirror.snapshot()
-        assertEquals(everything.entries.map { it.id }.sorted(), mirror.snapshot(Residency.All).entries.map { it.id }.sorted())
         val bounded = mirror.snapshot(Residency(full = setOf("keep"), preview = 30, window = 40))
         assertEquals((1L..40L).toList(), bounded.entries.filter { it.botId == "keep" }.map { it.seq })
         assertEquals((11L..40L).toList(), bounded.entries.filter { it.botId == "drop" }.map { it.seq })
@@ -175,16 +174,31 @@ class MirrorDatabaseTest {
     }
 
     @Test fun anOldRowTheComputerRewritesDoesNotHideTheGapBeforeIt() {
-        mirror.receive((100L..120L).map { chat("big", it) })
-        mirror.apply(MirrorEvent.EntryChanged(chat("big", 5)))
+        mirror.apply((100L..120L).map { MirrorEvent.EntryChanged(chat("big", it)) })
+        // A send's reply stored after the cursor comes again in the catch-up: it sets no floor.
+        mirror.receive(listOf(chat("quiet", 30).copy(rev = 128)))
+        mirror.apply(MirrorEvent.Hello("host", 130, JsonObject(emptyMap()), null))
+        mirror.apply(MirrorEvent.EntryChanged(chat("big", 5).copy(rev = 125)))
         assertFalse("a row below the oldest stored one waits to be paged in", mirror.hasNonce("big", "n-big-5"))
-        assertEquals(100L, mirror.snapshot(Residency(setOf("big"), window = 50)).entries.minOf { it.seq })
+        assertEquals(100L, mirror.snapshot(Residency(setOf("big"), window = 50)).entries.filter { it.botId == "big" }.minOf { it.seq })
         mirror.apply(MirrorEvent.EntryChanged(chat("big", 121)))
         assertTrue(mirror.hasNonce("big", "n-big-121"))
         mirror.receive(listOf(chat("big", 5)))
         assertTrue("a history page may reach below the stored rows", mirror.hasNonce("big", "n-big-5"))
-        mirror.apply(MirrorEvent.EntryChanged(chat("fresh", 3)))
-        assertTrue("a chat with no rows yet takes whatever arrives", mirror.hasNonce("fresh", "n-fresh-3"))
+        mirror.apply(MirrorEvent.EntryChanged(chat("quiet", 25).copy(rev = 126)))
+        assertTrue("a chat with no rows at the cursor takes whatever arrives", mirror.hasNonce("quiet", "n-quiet-25"))
+    }
+
+    @Test fun aCatchUpFromTheStartKeepsEveryRowWhateverItsOrder() {
+        mirror.setStamp("host", "build/1")
+        mirror.apply((10L..20L).map { MirrorEvent.EntryChanged(chat("bot", it)) })
+        // A new app or host version fetches the conversation again from rev 0, and a send's reply lands before the catch-up.
+        assertTrue(mirror.setStamp("host", "build/2"))
+        mirror.receive(listOf(chat("bot", 30)))
+        mirror.apply(MirrorEvent.Hello("host", 40, JsonObject(emptyMap()), null))
+        // Sorted by rev, so an older row edited later arrives after a newer one.
+        mirror.apply(listOf(4L, 2L, 7L).mapIndexed { i, seq -> MirrorEvent.EntryChanged(chat("bot", seq).copy(rev = 31L + i)) })
+        assertEquals(listOf(2L, 4L, 7L, 30L), mirror.snapshot().entries.map { it.seq })
     }
 
     @Test fun anArtifactDraftIsConfirmedByItsChatsMessage() {
@@ -192,12 +206,6 @@ class MirrorDatabaseTest {
         val artifact = ComposerDraft("bot/artifact/a1", nonce = "n-bot-1")
         val unsent = ComposerDraft("bot/artifact/a2", nonce = "never")
         assertEquals(setOf("n-bot-1"), mirror.confirmedNonces(listOf(artifact, unsent)))
-    }
-
-    @Test fun countSinceSizesTheWindowThatHoldsAFetchedPage() {
-        mirror.receive((1L..30L).map { chat("big", it) })
-        assertEquals(21, mirror.countSince("big", 10))
-        assertEquals(0, mirror.countSince("other", 1))
     }
 
     @Test fun largeRowsStopAChatFromGrowingPastItsByteBudgetAndAPreviewKeepsItsNewestRow() {

@@ -22,9 +22,11 @@ mod blocking;
 mod directory;
 pub mod flow;
 pub mod members;
+pub mod openai;
 mod pipeline;
 pub mod remote;
 mod requests;
+pub(crate) use blocking::tool_timeout;
 use blocking::{ASK_TIMEOUT, ask};
 pub use requests::{Requests, Turn};
 
@@ -183,6 +185,7 @@ impl BotRequest {
             }
             Back::Remote(to) => remote::answer(&message.hub, to, &outcome, self.hops),
             Back::Assistant { request } => message.hub.assistant.answered(request, outcome),
+            Back::Openai => {}
         }
     }
 }
@@ -234,6 +237,7 @@ pub(crate) enum RequestStatus {
 /// Where a request's outcome goes: a bot on this computer, an agent on another one, or the
 /// user's cloud assistant.
 enum Back {
+    Openai,
     Local { sender: String },
     Remote(remote::Return),
     Assistant { request: String },
@@ -244,7 +248,7 @@ impl Back {
     /// or the cloud assistant hears so, without a reply turn.
     fn cancelled(&self, hub: &Arc<Hub>, hops: u8) {
         match self {
-            Self::Local { .. } => {}
+            Self::Openai | Self::Local { .. } => {}
             Self::Remote(to) => remote::cancelled(hub, to, hops),
             Self::Assistant { request } => hub.assistant.cancelled(request),
         }
@@ -438,7 +442,7 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) ->
                 "ask_bot" => {
                     let to = args["botId"].as_str().ok_or_else(|| anyhow!("botId is required"))?;
                     let message = args["message"].as_str().unwrap_or_default().trim();
-                    ask(hub, &source, to, message, ASK_TIMEOUT).await
+                    ask(hub, &source, to, message, blocking::task_timeout(args)?).await
                 }
                 "delegate_batch" => batch::run(hub, &source, args).await,
                 _ => pipeline::run(hub, &source, args).await,

@@ -21,6 +21,8 @@ pub mod agent_sign_in;
 pub mod bot_secrets;
 pub mod catalog;
 pub mod composio;
+pub mod hermes;
+pub mod hermes_apps;
 pub mod login;
 pub mod logins;
 pub mod oauth;
@@ -30,11 +32,13 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod bundled_skills;
 mod discovery;
 mod install;
 mod registry;
 mod runtime_identity;
 mod secret_tools;
+pub mod skill_history;
 mod skill_usage;
 mod skills;
 mod updates;
@@ -117,6 +121,9 @@ impl Connector {
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
     pub fn acp(&self, exe: &std::path::Path, port: u16) -> Option<Value> {
+        if crate::native_channels::is_native(self) {
+            return None;
+        }
         let kind = if self.command.is_some() {
             "local"
         } else {

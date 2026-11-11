@@ -175,7 +175,7 @@ mod tests {
         run.status = Status::Failed;
         run.finished_at = Some(0);
         run.attempt = attempt;
-        (State { routines: vec![r], runs: vec![run] }, 0)
+        (State { routines: vec![r], runs: vec![run], ..State::default() }, 0)
     }
 
     #[test]

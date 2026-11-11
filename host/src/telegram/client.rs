@@ -63,6 +63,41 @@ pub(super) async fn call(ep: &Endpoint, token: &str, method: &str, body: &Value)
     send(ep, token, method, |r| r.json(body)).await
 }
 
+/// Download only a Telegram-issued relative file path, through the existing endpoint policy.
+/// Errors deliberately omit the request URL: it contains the bot's token.
+pub(super) async fn voice_note(ep: &Endpoint, token: &str, id: &str) -> Result<Vec<u8>> {
+    let file = call(ep, token, "getFile", &json!({"file_id":id})).await?;
+    if file["file_size"].as_u64().is_some_and(|size| size > 20 * 1024 * 1024) {
+        bail!("Telegram voice note exceeds 20 MiB");
+    }
+    let path = file["file_path"]
+        .as_str()
+        .filter(|path| valid_file_path(path))
+        .context("Telegram returned an invalid voice-note path")?;
+    let url = format!("{}/file/bot{token}/{path}", ep.api);
+    let client =
+        egress::client(ep.policy, &url).await.map_err(|_| anyhow::anyhow!("Telegram file endpoint unavailable"))?;
+    let response = client
+        .get(url)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|_| anyhow::anyhow!("Telegram voice-note download failed"))?;
+    if !response.status().is_success() {
+        bail!("Telegram voice-note download was refused ({})", response.status());
+    }
+    egress::body(response, crate::voice::transcription::MAX_NOTE_BYTES)
+        .await
+        .map_err(|_| anyhow::anyhow!("Telegram voice-note download failed or exceeded 20 MiB"))
+}
+
+fn valid_file_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= 1024
+        && path.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        && path.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-'))
+}
+
 /// New updates after `offset`, waiting up to the endpoint's poll time for one.
 pub(super) async fn updates(ep: &Endpoint, token: &str, offset: i64) -> Result<Vec<Value>> {
     let body = json!({"offset": offset, "timeout": ep.poll_seconds, "allowed_updates": ["message", "callback_query"]});

@@ -68,7 +68,6 @@ test('an output checks its own destination', () => {
   const output = (kind: string, target: string) => ({ kind, target })
   assert.equal(outputProblem(output('slack', 'C0123')), null)
   assert.equal(outputProblem(output('telegram', '-100123')), null)
-  assert.equal(outputProblem(output('whatsapp', '5215555555555@s.whatsapp.net')), null)
   assert.ok(outputProblem(output('whatsapp', '5215555555555')))
   assert.equal(outputProblem(output('githubComment', 'owner/repo')), null)
   assert.ok(outputProblem(output('slack', 'not a channel')))
@@ -77,6 +76,8 @@ test('an output checks its own destination', () => {
   assert.ok(outputProblem(output('discordReact', 'two words')))
   assert.equal(outputProblem(output('discordReact', '👍')), null)
   assert.ok(outputProblem(output('slack', '')))
+  assert.ok(outputProblem(output('whatsapp', '5215555555555@s.whatsapp.net')))
+  assert.equal(outputProblem({ kind: 'whatsapp', target: '5215555555555@s.whatsapp.net', account: '5215555555556@s.whatsapp.net' }), null)
 })
 
 test('a queued run says when a waiting retry goes', () => {

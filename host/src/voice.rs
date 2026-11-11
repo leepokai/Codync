@@ -8,8 +8,13 @@
 pub(crate) mod decisions;
 mod elevenlabs;
 mod endpoint;
+pub(crate) mod neutts;
 pub(crate) mod receipts;
+mod streaming;
+pub(crate) mod synthesis;
 mod transcript;
+pub(crate) mod transcription;
+pub use transcription::transcribe;
 
 use crate::market::vault;
 use crate::store::Store;
@@ -475,66 +480,6 @@ fn spoken_names(store: &Store) -> Vec<String> {
 
 fn names_hint(names: &[String]) -> String {
     format!("Names that may come up: {}.", names.join(", "))
-}
-
-/// Speech to text for one utterance (`audio`: base64 WAV, 16 kHz mono).
-pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) -> Result<Value> {
-    let key = key(store, p)?;
-    let model = checked(model)?;
-    let wav = STANDARD.decode(audio).map_err(|_| anyhow!("audio must be base64"))?;
-    let names = spoken_names(store);
-    let text = match p {
-        Provider::OpenAi => {
-            let boundary = format!("codync-{}", uuid::Uuid::new_v4().simple());
-            let mut body = Vec::with_capacity(wav.len() + 512);
-            body.extend_from_slice(
-                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{model}\r\n").as_bytes(),
-            );
-            // Keeps Traditional Chinese from coming back Simplified, and code terms intact.
-            let mut field = |name: &str, value: &str| {
-                body.extend_from_slice(
-                    format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
-                        .as_bytes(),
-                );
-            };
-            field("prompt", &format!("{TRANSCRIBE_HINT} {}", names_hint(&names)));
-            // Only gpt-transcribe takes keywords; the older models reject the field.
-            if model.starts_with("gpt-transcribe") {
-                for name in &names {
-                    field("keywords[]", name);
-                }
-            }
-            body.extend_from_slice(
-                format!(
-                    "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
-                )
-                .as_bytes(),
-            );
-            body.extend_from_slice(&wav);
-            body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-            let req = openai_http()?
-                .post(openai_url(openai_base()?.as_ref(), "/v1/audio/transcriptions"))
-                .bearer_auth(&key)
-                .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
-                .body(body);
-            send(p, req).await?["text"].as_str().unwrap_or_default().to_owned()
-        }
-        Provider::Gemini => {
-            let body = json!({"contents": [{"parts": [
-                {"text": format!("Transcribe this audio exactly as spoken. {TRANSCRIBE_HINT} {} Reply with the transcript only; reply with nothing if there is no speech.", names_hint(&names))},
-                {"inlineData": {"mimeType": "audio/wav", "data": audio}},
-            ]}]});
-            let v = send(p, gemini_generate(&key, model).json(&body)).await?;
-            v["candidates"][0]["content"]["parts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|part| part["text"].as_str())
-                .collect::<String>()
-        }
-        Provider::ElevenLabs => elevenlabs::transcribe(&key, model, wav).await?,
-    };
-    Ok(json!({"text": text.trim()}))
 }
 
 /// Text to speech for one stretch of a reply: `{audio: base64, format: "aac" | "wav" | "mp3"}`.

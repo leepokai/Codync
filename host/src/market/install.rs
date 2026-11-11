@@ -9,6 +9,9 @@ use std::collections::BTreeMap;
 
 /// The ways a registry server can run here, each with what the user must fill in.
 pub(super) fn install_options(server: &Value) -> Vec<Value> {
+    if server["codyncNativeApp"].is_object() {
+        return crate::native_channels::apps::options(server);
+    }
     let mut out = vec![];
     for (i, p) in server["packages"].as_array().into_iter().flatten().enumerate() {
         let kind = p["registryType"].as_str().unwrap_or_default();
@@ -158,6 +161,12 @@ fn package_command(p: &Value) -> Option<&'static str> {
 
 /// Installs a registry server with the user's inputs (`{NAME: value}`).
 pub async fn install_connector(store: &crate::store::Store, name: &str, option: &str, inputs: &Value) -> Result<Value> {
+    if name.starts_with("codync-native/") {
+        return crate::native_channels::apps::install(store, name, option, inputs).await;
+    }
+    if name.starts_with("hermes/") {
+        return super::hermes_apps::registry::install(store, name, option, inputs).await;
+    }
     install_server(store, &registry_server(name).await?, name, option, inputs).await
 }
 
@@ -279,6 +288,8 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     {
         c.login.clone_from(&app.server.login);
     }
+    super::hermes_apps::configure_connector(&mut c);
+    crate::native_channels::prepare_connector(&mut c)?;
     add_connector(store, c)
 }
 
@@ -381,9 +392,10 @@ pub fn list_connectors(store: &crate::store::Store) -> Result<Value> {
             if let Some(failure) = super::verify::last_failure(store, &c.id) {
                 pub_val["lastFailure"] = failure;
             }
-            pub_val
+            crate::native_channels::apps::decorate(store, c, &mut pub_val)?;
+            Ok(pub_val)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     items.extend(composio::connections(store)?.iter().filter(|c| c.active()).map(|c| {
         let id = format!("{}{}", composio::PREFIX, c.toolkit);
         let mut val = json!({

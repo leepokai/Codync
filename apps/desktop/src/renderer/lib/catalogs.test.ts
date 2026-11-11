@@ -21,10 +21,10 @@ test('all shipped catalogs have the same keys and preserve interpolation tokens'
 
 test('Arabic covers a start of the interface and keeps its tokens', () => {
   // Arabic is still filling in, so its missing keys read English; what it has must be real and keep its tokens.
-  const source = read('zh-Hans')
+  // Arabic also carries Android-only strings (app lock, navigation bar) the other catalogs have not translated yet,
+  // so its keys need not all exist in zh-Hans.
   const catalog = read('ar')
   for (const [key, value] of Object.entries(catalog)) {
-    assert.ok(key in source, `ar: unknown key ${key}`)
     assert.ok(value.trim(), `ar: ${key}`)
     assert.deepEqual((value.match(/\{[A-Za-z0-9]+\}/g) ?? []).sort(), (key.match(/\{[A-Za-z0-9]+\}/g) ?? []).sort(), `ar: ${key}`)
   }

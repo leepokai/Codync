@@ -142,6 +142,7 @@ fn offer_to_bots(store: &Store) -> Result<()> {
         catalog: None,
         command: Some("codync-host".to_owned()),
         args: vec![],
+        login: vec![],
         env: BTreeMap::new(),
         url: None,
         headers: BTreeMap::new(),

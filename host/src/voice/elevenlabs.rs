@@ -82,8 +82,8 @@ pub(super) async fn models(key: &str) -> Result<Vec<Model>> {
 
 /// Speech to text for one utterance (a WAV file). The reply is read aloud, so audio events like
 /// "(laughter)" have no place in the transcript.
-pub(super) async fn transcribe(key: &str, model: &str, wav: Vec<u8>) -> Result<String> {
-    let file = reqwest::multipart::Part::bytes(wav).file_name("speech.wav").mime_str("audio/wav")?;
+pub(super) async fn transcribe(key: &str, model: &str, audio: Vec<u8>, extension: &str, mime: &str) -> Result<String> {
+    let file = reqwest::multipart::Part::bytes(audio).file_name(format!("speech.{extension}")).mime_str(mime)?;
     let form = reqwest::multipart::Form::new()
         .text("model_id", model.to_owned())
         .text("tag_audio_events", "false")

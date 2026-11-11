@@ -37,11 +37,22 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
         "installAgent" => install_agent(hub, str_arg(&b, "id")?, b["backend"].as_str(), b["model"].as_str()).await?,
         "marketSkills" => {
             let installed = installed_skills(hub);
-            json!({"items": openbot::browse_skills(&installed)})
+            let mut items = openbot::browse_skills(&installed);
+            items.extend(crate::market::hermes::browse_skills(&installed));
+            json!({"items": items})
         }
         "marketApps" => {
             let installed = installed_apps(hub)?;
-            json!({"items": openbot::browse_apps(&installed, b["search"].as_str().unwrap_or_default())})
+            let search = b["search"].as_str().unwrap_or_default();
+            let mut items = openbot::browse_apps(&installed, search);
+            items.extend(crate::native_channels::apps::browse(&hub.store, search)?);
+            items.extend(crate::market::hermes_apps::browse(
+                &hub.store,
+                &crate::market::connectors(&hub.store)?,
+                search,
+                hub.port,
+            ));
+            json!({"items": items})
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))

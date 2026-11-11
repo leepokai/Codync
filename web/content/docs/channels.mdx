@@ -13,6 +13,34 @@ The same controls remain in **Settings → General → Channels**, with a shortc
 
 Tokens stay in the computer's credential vault. A paired phone can see the channels, pair or remove someone, and change what a channel remembers.
 
+## Voice notes
+
+Allowed Telegram, Slack and Discord senders can send a voice note using the computer's
+existing OpenAI or Gemini speech connection. The host adds its transcript to the bot's
+message; audio-only messages work too. Slack needs the app's `files:read` scope. Audio
+is limited to 20 MiB and sent to the configured speech provider, with its usual charges.
+See [messaging voice notes](/docs/voice#messaging-voice-notes) for supported behavior
+and failure notices. Removing a sender or disconnecting the channel revokes queued input.
+
+## Signal, Email and Home Assistant
+
+Install these native Hermes channels from **Extensions → Apps**, then enable the connection
+for exactly one bot. The terminal offers the same setup in its connector catalog. Leave
+optional account fields blank to reuse an existing Hermes profile and its credentials;
+Home Assistant requires explicit watched entity IDs. Each connection has its own session.
+
+Signal keeps the existing signal-cli account and group policy. Email uses the existing
+IMAP/SMTP mailbox and requires authenticated senders. An optional signed RFC822 webhook
+can receive mail through the host instead of polling alone. Home Assistant delivers watched
+state changes as text and sends replies as native persistent notifications.
+
+For a new Signal or Email sender, set a one-use DM pairing code in the app fields and send
+`/pair <code>` within ten minutes after connection. This never bypasses Email sender
+authentication. Native approval messages list the original choices; only the requesting
+sender can answer with `/approve <code> <number>`. Files and quoted replies are retained,
+and voice notes use the host's existing speech connection. Uncertain outbound sends are
+kept as unknown rather than automatically duplicated.
+
 ## Channel memory
 
 Each Telegram bot, Slack channel and Discord channel has a **Channel memory**: what the bot should know about that conversation, such as the project it covers or how its people like answers. It is given to the bot before every message from that channel and saved on its own, so it survives a reconnect.

@@ -54,6 +54,12 @@ enum class VoiceProvider(val id: String, val title: String, val keyPage: String,
  * models and voice, and this month's minutes. A default model isn't stored, so a newer one reaches the user.
  */
 class VoiceChoices(private val read: (String) -> String?, private val write: (String, String?) -> Unit) {
+    var localSpeech: Boolean
+        get() = read("callSpeechOutput") == "neutts"
+        set(value) = write("callSpeechOutput", if (value) "neutts" else null)
+    var wakePhrase: Boolean
+        get() = read("callWakePhrase") == "true"
+        set(value) = write("callWakePhrase", if (value) "true" else null)
     enum class Model(val prefix: String) { Realtime("callModel"), Transcribe("callSpeechToText"), Speech("callSpeechModel") }
 
     var provider: VoiceProvider?
@@ -91,8 +97,8 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
 
     /** What a call's engine is built from (`language`: on device): a different one picked mid-call takes over the call. */
     fun engineChoice(provider: VoiceProvider?, language: String): String = when {
-        provider == null -> "device $language"
-        speechMode(provider) -> "${provider.id} speech ${model(provider, Model.Transcribe)} ${model(provider, Model.Speech)} ${voice(provider)}"
+        provider == null -> "device $language wake=$wakePhrase"
+        speechMode(provider) -> "${provider.id} speech ${model(provider, Model.Transcribe)} ${model(provider, Model.Speech)} ${voice(provider)} local=$localSpeech"
         else -> "${provider.id} ${model(provider, Model.Realtime)} ${voice(provider)}"
     }
 

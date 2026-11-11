@@ -16,6 +16,7 @@ use std::path::Path;
 
 mod catalog;
 mod credentials;
+mod hermes;
 mod search_path;
 mod sign_in;
 mod workbuddy;

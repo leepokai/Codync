@@ -3,6 +3,8 @@ use super::{Arc, Context, Hub, Result, Value, bail, json, required};
 
 pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
+        "list_routine_templates" => Ok(super::blueprints::list()),
+        "routine_template_draft" => super::blueprints::draft(args),
         "list_routines" => Ok(hub.routines.list(bot, |_| false)),
         "save_routine" => hub.routines.save(hub, bot, args),
         "set_routine_enabled" => hub.routines.set_enabled(
@@ -38,6 +40,13 @@ pub fn tools() -> Value {
         json!({"name":"list_routines","description":"List this bot's routines and run history.","inputSchema":{"type":"object","properties":{}}}),
     ];
     tools.push(json!({"name":"save_routine","description":"Create or replace a routine. Omit id to create; include id to update. triggers is an OR list. Use cron for recurring clock schedules; interval is for explicitly requested elapsed-duration semantics or existing schedules: interval {type:interval,seconds}; once {type:once,at:Unix milliseconds}; cron {type:cron,expression:five cron fields,timeZone:IANA zone}; webhook {type:webhook}; event {type:event,source:slack/telegram/whatsapp/discord/github/origin/microsoftTeams/linear/sentry/pagerduty/email,event:event name or *,filters:field-to-value map}; watch {type:watch,kind:files or url,target:a file or folder path (relative to your working folder) or an https URL,everyMinutes:1-10080}: checked without you, it runs only when the target changed since the last check (the first check only records it; folders up to 2000 entries, .git and node_modules skipped). Events require a configured webhook sender. Minimum interval is one second.","inputSchema":{"type":"object","properties":{"id":id,"name":{"type":"string"},"instruction":{"type":"string"},"enabled":{"type":"boolean"},"timeoutSeconds":{"type":"integer","minimum":1,"maximum":86400},"triggers":{"type":"array","items":{"type":"object"}}},"required":["name","instruction","triggers"]}}));
+    if let Some(save) = tools.iter_mut().find(|tool| tool["name"] == "save_routine") {
+        save["inputSchema"]["properties"]["outputs"] = json!({"type":"array","maxItems":10,
+            "description":"Optional report destinations after the last workflow step. WhatsApp reuses this computer's existing linked number: target is the recipient JID, account is the linked sender JID (not the bot id). Link it before creating the run. Pending reports are revoked when that link is replaced or logged out. Do not retry an unknown send outcome.",
+            "items":{"type":"object","additionalProperties":false,"required":["kind","target"],"properties":{
+                "kind":{"type":"string","enum":["slack","telegram","whatsapp","discord","discordReact","githubComment","githubIssue","githubLabel","githubAssign","githubReview"]},
+                "target":{"type":"string"},"account":{"type":"string"},"value":{"type":"string"}}}});
+    }
     for (name, description) in [
         ("set_routine_enabled", "Pause or resume a routine; enabled boolean is required."),
         ("delete_routine", "Delete a routine and cancel pending runs."),
@@ -57,5 +66,7 @@ pub fn tools() -> Value {
         tools.push(json!({"name":name,"description":description,"inputSchema":{"type":"object","properties":properties,"required":required}}));
     }
     tools.extend(super::flow::tool_list());
+    tools.push(json!({"name":"list_routine_templates", "description":"List the bundled Hermes routine templates and their fields. Draft one with routine_template_draft, then save its result with save_routine.", "inputSchema":{"type":"object","properties":{}}, "annotations":{"readOnlyHint":true}}));
+    tools.push(json!({"name":"routine_template_draft", "description":"Validate and fill a Hermes routine template. Returns a disabled Codync routine draft; save it with save_routine after resolving its destination and timezone with the user.", "inputSchema":{"type":"object","properties":{"template":{"type":"string"},"values":{"type":"object","additionalProperties":{"type":"string"}},"timeZone":{"type":"string"},"destination":{"type":"string"},"account":{"type":"string"}},"required":["template","timeZone"]}, "annotations":{"readOnlyHint":true}}));
     json!(tools)
 }

@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.update
 class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, settings: VoiceSettings,
     private val mic: MicSource, private val player: ClipPlayer, private val speech: Speech,
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val clipCharacters: Int = provider.speechChunk,
 ) : ProviderEngine(parent, provider, settings, "${provider.title} speech") {
     class Speech(val transcribe: suspend (ByteArray) -> String, val synthesize: suspend (String) -> Pair<ByteArray, String>,
-        val send: (String) -> Unit)
+        val send: (String) -> Unit, val stream: (suspend (String) -> Stream)? = null)
+    interface Stream { suspend fun next(): Pair<ByteArray,String>?; suspend fun close() }
 
     private val detector = UtteranceDetector()
     /** Transcriptions finish in the order they were spoken. */
@@ -25,6 +27,7 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     private var speaking: Job? = null
     /** Playback just ended; the room's echo of it isn't speech. */
     private var deafUntil = 0L
+    private val barge = java.io.ByteArrayOutputStream()
 
     init {
         hop {
@@ -58,9 +61,9 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     override fun announce(notice: String) = hop { say(notice) }
     override fun mute(value: Boolean) = hop {
         mutable.update { it.copy(muted = value) }
-        if (value) { detector.reset(); level(0f) }
+        if (value) { detector.reset(); barge.reset(); level(0f) }
     }
-    override fun interrupt() = hop { if (phase == VoicePhase.Speaking) { transcript?.interrupted(); stopSpeaking(); phase(VoicePhase.Listening) } }
+    override fun interrupt() = hop { if (phase == VoicePhase.Speaking || speaking != null) { transcript?.interrupted(); stopSpeaking(); phase(VoicePhase.Listening) } }
     override fun focus(active: Boolean) = hop {
         if (!active && this.active) { stopSpeaking(); detector.reset(); level(0f); phase(VoicePhase.Interrupted) }
         else if (active && phase == VoicePhase.Interrupted) { phase(VoicePhase.Listening); if (queue.isNotEmpty()) playQueue() }
@@ -69,16 +72,27 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     private fun heard(pcm: ByteArray, level: Float) {
         // Listening once the microphone actually delivers.
         if (!ended && phase == VoicePhase.Starting) phase(VoicePhase.Listening)
-        if (muted || phase != VoicePhase.Listening || clock() < deafUntil) return
+        if (ended || muted) return
+        if (phase == VoicePhase.Speaking) {
+            level(level)
+            if (level > UtteranceDetector.THRESHOLD + .1f) barge.write(pcm) else barge.reset()
+            if (barge.size() < Pcm.RATE * 2 / 5) return
+            val start = barge.toByteArray(); barge.reset()
+            transcript?.interrupted(); stopSpeaking(); detector.reset(); deafUntil = 0L
+            phase(VoicePhase.Listening)
+            detector.feed(start, level, clock(), state.value.settings.pauseMillis)
+            return
+        }
+        if (phase != VoicePhase.Listening || clock() < deafUntil) return
         level(level)
-        detector.feed(pcm, level, clock(), state.value.settings.pauseMillis)?.let { utterances.trySend(it) }
+        detector.feed(pcm, level, clock(), state.value.settings.pauseMillis)?.let { stopSpeaking(); utterances.trySend(it) }
     }
 
     /** Queues text in clips the provider can turn into one channel message each. */
     private fun say(text: String) {
         if (ended || phase == VoicePhase.Starting || text.isEmpty()) return
         transcript?.add("assistant", "queued", text)
-        queue.addAll(speechClips(text, provider.speechChunk))
+        queue.addAll(speechClips(text, clipCharacters))
         if (phase != VoicePhase.Interrupted) playQueue()
     }
 
@@ -86,23 +100,44 @@ class CloudSpeechEngine(parent: CoroutineScope, provider: VoiceProvider, setting
     private fun playQueue() {
         if (speaking != null) return
         speaking = scope.launch {
-            coroutineScope {
+            try { coroutineScope {
                 fun fetch(text: String) = async {
-                    try { speech.synthesize(text) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+                    try { speech.synthesize(text) } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { hop { fail(error.message ?: "Couldn't synthesize this reply.", VoiceFailureKind.Provider) }; null }
                 }
                 var next: Deferred<Pair<ByteArray, String>?>? = null
                 while (true) {
+                    if (speech.stream != null) {
+                        val text = queue.removeFirstOrNull() ?: break
+                        val source = speech.stream.invoke(text)
+                        try {
+                            var frame = source.next()
+                            while (frame != null) {
+                                val clip = frame
+                                val ahead = async { source.next() }
+                                try {
+                                    detector.reset(); barge.reset(); level(0f); phase(VoicePhase.Speaking)
+                                    player.play(clip.first,clip.second)
+                                    frame = ahead.await()
+                                } finally { ahead.cancel() }
+                            }
+                        } finally { withContext(NonCancellable) { withTimeoutOrNull(2_000) { source.close() } } }
+                        continue
+                    }
                     val pending = next ?: queue.removeFirstOrNull()?.let(::fetch) ?: break
                     next = null
                     val clip = pending.await()
                     if (clip == null) { queue.clear(); break }
-                    detector.reset(); level(0f); phase(VoicePhase.Speaking)
+                    detector.reset(); barge.reset(); level(0f); phase(VoicePhase.Speaking)
                     queue.removeFirstOrNull()?.let { next = fetch(it) }
                     try { player.play(clip.first, clip.second) }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { /* An unplayable clip is skipped. */ }
                 }
             }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { fail(error.message ?: "Couldn't stream this reply.",VoiceFailureKind.Provider) }
+            if (!isActive) return@launch
             speaking = null
             deafUntil = clock() + 400
             if (phase == VoicePhase.Speaking) phase(VoicePhase.Listening)

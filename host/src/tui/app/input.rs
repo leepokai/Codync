@@ -60,6 +60,7 @@ impl App {
                 super::super::manage::RoutineField::Name => &mut f.name,
                 super::super::manage::RoutineField::Instruction => &mut f.instruction,
                 super::super::manage::RoutineField::When => &mut f.when,
+                super::super::manage::RoutineField::Outputs => &mut f.outputs,
             }),
             _ => None,
         }

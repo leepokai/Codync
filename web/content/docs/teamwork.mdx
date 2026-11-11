@@ -25,7 +25,7 @@ The recipient's tool calls and thinking are in its own **Full conversation**.
 
 ## How a message runs
 
-Bots never wait on each other. When one bot messages another:
+A normal bot message is queued without blocking its sender. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
 2. **The recipient does the work** in its own chat's session, one thing at a time: a busy recipient finishes what it's doing first.
@@ -33,6 +33,13 @@ Bots never wait on each other. When one bot messages another:
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
 Because nobody waits, there's no time limit: the recipient takes as long as the work needs.
+
+For a task whose result is needed in the same turn, a bot can use **ask_bot** instead. It waits up to ten minutes, including time in the recipient's queue. The bot can choose a shorter deadline with `timeoutSeconds` (1–600). Stopping the sender or reaching that deadline cancels only that ask; work already performed may remain, so check the result before trying again.
+
+The same `timeoutSeconds` setting is available on each task in **delegate_batch** and each
+stage in **run_pipeline**. A batch lets its other tasks finish when one times out. A pipeline
+stops at the failed stage and does not start later stages; its overall limit remains thirty
+minutes. All stage deadlines are checked before any work starts.
 
 ## How the recipient works
 
@@ -53,9 +60,9 @@ The menu of any message has **Send to a channel**. Pick a bot or group and the m
 
 ## Stopping, limits and restarts
 
-- **Stopping the sender** doesn't cancel what it already sent, but drops answers still waiting for it. Deleting the sender drops its answers too. The rows in both chats still show how each exchange ended.
+- **Stopping the sender** leaves accepted `message_bot` work running and drops deferred answers still waiting for it. Bounded asks, batches and pipelines are cancelled instead. Deleting the sender drops its deferred answers too. The rows in both chats still show how each exchange ended.
 - **Stopping or deleting the recipient** cancels its queued requests and stops the one it's working on, which may leave partial changes.
-- **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. Your next message starts a fresh allowance.
+- **Limits:** a bot can have up to 16 pending delegations, counting both queued messages and bounded asks. The computer accepts up to 64 pending bot and API requests together. A chain stops after eight handoffs; your next message starts a fresh chain, but does not release unfinished requests.
 - **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
 
 ## Bots on your other computers

@@ -24,9 +24,15 @@ use std::time::Duration;
 
 pub fn router(hub: Arc<Hub>) -> Router {
     let main = Router::new()
+        .merge(super::openai::router())
         .route("/health", get(health))
         .route("/hooks/routines/{id}", post(routine_hook))
         .route("/hooks/slack", post(crate::slack::ingress::receive))
+        .route(
+            "/hooks/native-email/{id}",
+            post(crate::native_channels::webhook::receive)
+                .layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024)),
+        )
         .route("/events", get(events))
         .route("/scim/v2/Users", get(scim_users).post(scim_create))
         .route("/scim/v2/Users/{id}", axum::routing::delete(scim_delete))

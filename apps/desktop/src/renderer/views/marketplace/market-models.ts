@@ -162,6 +162,7 @@ export interface MarketApp {
   description: string
   category: string
   creator: string
+  origin?: string | null
   version: string
   updated: string
   icon?: string | null

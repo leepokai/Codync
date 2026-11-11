@@ -61,6 +61,8 @@ DeepSeek Harness runs its own `dsh --profile acp` mode. It has no sign-in comman
 
 Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
 
+When Hermes asks you to choose between answers, Codync shows the choices for you to select, even when the bot automatically approves tools.
+
 ## Other agents from the ACP registry
 
 Codync also lists every other agent in the ACP registry, about 40 more. These need no install: Codync fetches one the first time a bot uses it, through `npx`, `uvx` or a build for your platform, which it keeps in `~/.codync/agents`. Codync refreshes its copy of the registry once a day.
@@ -127,3 +129,59 @@ There's no separate default-agent setting. A new bot gets Claude Code when Claud
 ## When an agent runs out
 
 A bot can have fallback agents that carry on the same turn when its own agent is out of usage, rate limited, signed out or won't start. See [Agent fallbacks](/docs/agent-fallbacks).
+## Use a bot from a local OpenAI-compatible client
+
+A local IDE or script can call a bot through this computer's `/v1/chat/completions` endpoint. The bot keeps its configured agent, tools, workspace and approval rules. Approval requests appear in Codync while the API client waits.
+
+Create a key through the host's authenticated local API: `POST /api/openaiCreateKey` with `{"label":"My IDE","bots":["BOT_ID"]}`. The response returns the key once and its grant id. `POST /api/openaiKeys` lists grant ids and the `baseUrl` to put in your client. These administration methods work only from the computer itself.
+
+Set your client's API key to the generated key and its base URL to that `baseUrl`. `GET /v1/models` lists the bots the key may access; select an id such as `bot/BOT_ID`. Send text `messages` to `/v1/chat/completions`. The endpoint accepts `model`, `messages`, `stream` and `n=1`. The bot's settings control generation; token limits, sampling controls, response-format constraints and client-defined tools are rejected when unsupported.
+
+Streaming keeps the connection open through tools and approvals, then returns the final answer as one content update. Closing the request cancels that request's work. `/v1/health` checks access, and `/v1/pricing` reports unknown provider prices as null.
+
+To revoke a key, send `POST /api/openaiRevokeKey` with `{"id":"GRANT_ID"}`. The key then stops authorizing new requests. Grants and key hashes stay encrypted in this computer's credential vault.
+
+## Configure a Hermes execution owner
+
+For a saved Hermes bot, open **Hermes runtime** in the bot settings (terminal:
+press **h** on its Agent field). Enable the managed runtime and choose the
+environment, memory provider, and subagent settings, then **Apply** once. A
+concurrent edit is refused so one device cannot overwrite another device's
+settings. Active work finishes with its original settings; the next turn starts
+the new owner. Installation options accept the pinned Hermes source directory
+and that installation's own virtual-environment Python. An installation check
+reports local prerequisites and profile metadata, not remote connection health.
+Use **Check saved environment (may start sandbox)** for a separate, explicit
+backend check (terminal: **Ctrl-P** in the runtime editor). It uses the saved
+revision, not unsaved edits, and may provision a temporary sandbox with the
+provider's usual charges. The host runs a fixed readiness command and cleans up
+its probe resource; it does not start a model conversation.
+
+The owner uses the existing Hermes profile and provider connections. Choose
+**From Hermes profile** to retain its environment or memory selection. Honcho
+requires its native plugin and credentials in that profile; it is never silently
+replaced with file memory when initialization fails. Local, Docker, SSH, Modal,
+Daytona and Vercel Sandbox retain their native names and policies. SSH uses the
+existing SSH configuration/agent or the key path you choose, and synchronizes
+project files without copying profile credentials. A conflicting local edit is
+reported instead of overwritten. Remote SSH requires Python 3 and POSIX process
+controls. Docker mounts the bot's project at `/workspace`. Serverless lifecycle
+and charges depend on the configured provider.
+
+Saved task routes give the bot a choice of approved provider/model combinations
+for each subagent. Children use the existing credentials for the selected
+provider. Each child has its own iteration budget; concurrency is shared. The
+child timeout measures inactivity, not total elapsed time or money. In the
+terminal, enter one quoted route per line: `'Research' 'provider' 'model'`.
+An empty quoted provider or model inherits that part of the route.
+
+Stopping the bot cancels its turn and closes the Hermes execution owner. The
+conversation identifiers remain available for a later resume. Remote cleanup
+after a broken SSH connection uses a bounded heartbeat lease; file recovery
+requires the connection to return.
+
+## Call host tools from scripts
+
+`codync-host tool --bot BOT_ID --server memory search_history --file query.json` calls a built-in host tool using a JSON argument file. Use `--file -` to read the JSON object from stdin, or `--arguments` for a small non-private object. Arguments are limited to 256 KiB. The server can be `chat`, `connectors`, `routines`, `computer`, `team`, `manage` or `memory`; use that server's existing MCP tool names and schemas.
+
+The command writes one MCP tool-result JSON object and exits successfully only when the tool succeeds. A tool refusal or failure exits with code 1. It uses this computer's existing host connection, bot permissions and approval cards. Keep Codync open when a tool needs your approval. A script can chain these calls without asking the bot for another reasoning turn; tools that use a model or an external service still have their usual cost. A failed call may have done partial work, so mutating calls are never retried automatically.

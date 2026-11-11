@@ -1,5 +1,8 @@
 //! Durable bot routines, shared by API clients and the built-in MCP server.
+mod bindings;
+pub mod blueprints;
 mod check;
+mod delivery;
 pub use check::Checked;
 mod editor;
 pub mod events;
@@ -12,6 +15,7 @@ pub mod hooks;
 use hooks::Refused;
 mod mcp;
 pub use mcp::{INSTRUCTIONS, call, tools};
+mod output_text;
 mod outputs;
 pub use outputs::Output;
 mod retry;
@@ -122,6 +126,9 @@ pub struct Run {
     pub finished_at: Option<i64>,
     pub detail: Option<String>,
     pub event: Value,
+    /// Immutable authorization captured on the first attempt to start this run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    whatsapp_binding: Option<Value>,
     pub delivery_id: Option<String>,
     #[serde(default)]
     pub started_at: Option<i64>,
@@ -167,9 +174,13 @@ impl Run {
 struct State {
     routines: Vec<Routine>,
     runs: Vec<Run>,
+    /// Written with the terminal run, acknowledged only after its outputs have been queued.
+    #[serde(default)]
+    pending_flows: Vec<flow::Start>,
 }
 
 pub struct Routines {
+    output_workers: Arc<tokio::sync::Semaphore>,
     state: Mutex<State>,
     /// How many runs each bot has in flight (at most `Hub::MAX_SIDE`).
     active: Mutex<std::collections::HashMap<String, usize>>,
@@ -184,6 +195,7 @@ pub struct Routines {
 impl Default for Routines {
     fn default() -> Self {
         Self {
+            output_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             state: Mutex::default(),
             active: Mutex::default(),
             scheduler: Mutex::default(),
@@ -217,6 +229,7 @@ fn webhook_key() -> String {
 
 impl Routines {
     pub fn restore(&self, store: &Store) -> Result<()> {
+        store.recover_routine_outputs()?;
         let mut state = match store.kv_read(STATE_KEY)? {
             Some(raw) => serde_json::from_str::<State>(&raw).context("reading routines")?,
             None => State::default(),
@@ -381,7 +394,7 @@ impl Routines {
             .filter(|b| !b.deleted && !b.config.is_group())
             .context("routine requires an existing agent bot")?;
         let Checked { name, instruction, mut triggers, timeout } = Checked::parse(body)?;
-        let wanted_outputs = body.get("outputs").map(|value| outputs::parse(Some(value))).transpose()?;
+        let wanted_outputs = output_text::request(body)?;
         // "Keep" means the saved triggers, not the client's copy of them, which an older app
         // may have decoded without the fields of a trigger type it doesn't know.
         if body["schedule"]["kind"] == "keep"
@@ -397,6 +410,7 @@ impl Routines {
         let updated = body["id"].is_string();
         let routine = self.change(&hub.store, |s| {
             let old = check::replaced(s, bot, body, &triggers, now)?;
+            output_text::check_expected(body, old.as_ref())?;
             if !updated && s.routines.iter().filter(|r| !r.deleted).count() >= 1000 {
                 bail!("routine limit reached");
             }
@@ -446,6 +460,9 @@ impl Routines {
                 bail!("timeoutSeconds must be between 1 and 86400");
             }
             if !r.enabled {
+                hub.store.cancel_routine_outputs(&id)?;
+                s.pending_flows.retain(|flow| flow.routine_id != id);
+                self.flows.cancel_routine(&id);
                 cancel_pending(s, &id);
             }
             s.routines.retain(|r| r.id != id);
@@ -471,6 +488,9 @@ impl Routines {
             r.enabled = enabled;
             r.updated_at = now_ms();
             if !enabled {
+                store.cancel_routine_outputs(id)?;
+                s.pending_flows.retain(|flow| flow.routine_id != id);
+                self.flows.cancel_routine(id);
                 for run in &mut s.runs {
                     if run.routine_id == id && run.status == Status::Pending {
                         cancel_run(run);
@@ -640,9 +660,14 @@ fn policy(
     }
 }
 pub(crate) fn public(r: &Routine) -> Value {
+    let (output_text, output_text_error) = match output_text::format(&r.outputs) {
+        Ok(text) => (Some(text), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     json!({"id":r.id,"botId":r.bot_id,"name":r.name,"instruction":r.instruction,"triggers":r.triggers,"enabled":r.enabled,"createdAt":r.created_at,"updatedAt":r.updated_at,
         "timeoutSeconds":r.timeout_seconds,"lastError":r.last_error,"missedPolicy":r.missed_policy,"limitPolicy":r.limit_policy,
         "outputs":r.outputs,"outputDescriptions":r.outputs.iter().map(outputs::describe).collect::<Vec<_>>(),
+        "outputText":output_text,"outputTextError":output_text_error,
         "thread":r.thread,
         "triggerDescriptions":r.triggers.iter().map(Trigger::description).collect::<Vec<_>>(),"nextRunAt": if r.enabled {r.next_runs.iter().flatten().min().copied()} else {None}})
 }
@@ -656,6 +681,7 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         finished_at: None,
         detail: None,
         event,
+        whatsapp_binding: None,
         delivery_id,
         started_at: None,
         thread_root: None,

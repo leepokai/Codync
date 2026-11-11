@@ -27,6 +27,7 @@ mod lead;
 mod order;
 mod patch;
 mod reactions;
+mod skill_updates;
 mod stop;
 mod sync;
 mod terminal;
@@ -347,10 +348,11 @@ impl Hub {
         // From reading the bot to saving it, so no other update saves a stale copy in between.
         let _one = crate::chat::instruction_history::lock();
         let row = self.store.bot(&id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+        skill_updates::check(&row.config, patch)?;
         let before = row.config.clone();
         let mut merged = serde_json::to_value(&row.config)?;
         for (k, v) in patch.as_object().into_iter().flatten() {
-            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead") {
+            if !matches!(k.as_str(), "id" | "createdAt" | "createdBy" | "lead" | "ifSkills") {
                 merged[k] = v.clone();
             }
         }

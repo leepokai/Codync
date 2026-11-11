@@ -17,6 +17,7 @@
 //! from a session of its own (see `session`).
 
 mod approval_age;
+mod channel_input;
 mod cmd;
 mod compaction;
 mod fallback;
@@ -25,6 +26,7 @@ mod files;
 mod launch;
 mod lifecycle;
 mod model_override;
+mod native_revocation;
 mod outcome;
 pub(crate) mod pause;
 mod proactive;
@@ -33,7 +35,9 @@ mod proactive_tests;
 mod queue;
 #[cfg(test)]
 mod queue_tests;
+mod reconfigure;
 mod refuse;
+mod request_control;
 mod results;
 mod session;
 mod skill_use;
@@ -42,6 +46,7 @@ mod stall;
 mod tool_entry;
 mod turn;
 mod updates;
+mod user_input;
 mod verdict;
 mod verify;
 mod watchdog;
@@ -164,6 +169,7 @@ fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
         restart_after_turn: false,
         steering: 0,
         turn_done: None,
+        stop_owner_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
         loop_guard: stall::LoopGuard::default(),
@@ -364,6 +370,8 @@ struct Actor {
     tools_changed: bool,
     /// A change that restarts the agent (`restart_agent`) came during a turn: it restarts once the turn ends.
     restart_after_turn: bool,
+    /// Stop releases the native execution owner but keeps resumable conversation ids.
+    stop_owner_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.
     fast_support: FastModeSupport,
     /// When idle sessions and agents were last looked for.
@@ -468,8 +476,7 @@ impl Actor {
                     }
                     if self.active_routine.is_some() && self.turn.is_some() && self.routine_deadline.is_some_and(|deadline| Instant::now() >= deadline) && !self.routine_timed_out {
                         self.routine_timed_out = true;
-                        self.stop_requested = true;
-                        if let Some(c) = self.conn.take() { c.acp.kill().await; }
+                        self.cancel_turn().await;
                     }
                     // The agent ignored the cancel: stop its process so the bot is free again.
                     if self.turn.is_some() && self.cancel_deadline.is_some_and(|deadline| Instant::now() >= deadline) {

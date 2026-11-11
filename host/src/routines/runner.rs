@@ -82,6 +82,7 @@ impl Routines {
             let Some(routine) = s.routines.iter().find(|r| r.id == run.routine_id && !r.deleted) else { cancel_run(run); return Ok(None); };
             if !may_run(routine, &run.event) || crate::chat::lead::check_in_waits(hub, &routine.id, &routine.bot_id, &run.event) { cancel_run(run); return Ok(None); }
             run.status = Status::Starting;
+            run.pin_outputs(&hub.store, &routine.outputs)?;
             // A routine that asks for a thread gets one per routine, kept across runs.
             let lane = if routine.thread {
                 let key = format!("routine.thread.{}", routine.id);
@@ -176,6 +177,9 @@ impl Routines {
                 if !s.runs[i].retryable {
                     s.runs[i].event = Value::Null;
                 }
+                if let Some(start) = &flow {
+                    s.pending_flows.push(start.clone());
+                }
             }
             Ok((s.runs[i].bot_id.clone(), withdrawn, flow))
         })?;
@@ -195,6 +199,10 @@ impl Routines {
         self.flows.cancel_bot(bot);
         let now = now_ms();
         self.change(store, |s| {
+            for routine in s.routines.iter().filter(|r| r.bot_id == bot) {
+                store.cancel_routine_outputs(&routine.id)?;
+            }
+            s.pending_flows.retain(|flow| flow.owner != bot);
             for r in s.runs.iter_mut().filter(|r| r.bot_id == bot && r.status == Status::Pending && !r.waiting(now)) {
                 cancel_run(r);
             }
@@ -377,6 +385,7 @@ pub(super) fn failure_code(status: Status, timed_out: bool, detail: Option<&str>
 }
 
 pub fn start(hub: &Arc<Hub>) {
+    super::delivery::resume_flows(hub);
     let weak = Arc::downgrade(hub);
     let task = tokio::spawn(async move {
         let mut clock = tokio::time::interval(Duration::from_secs(1));
@@ -397,6 +406,9 @@ pub fn start(hub: &Arc<Hub>) {
 
 fn tick(hub: &Arc<Hub>) -> Result<()> {
     hub.update_keep_awake();
+    if let Err(error) = super::delivery::dispatch(hub) {
+        tracing::error!(%error, "routine platform delivery queue needs attention");
+    }
     if let Err(error) = hub.routines.publish(hub) {
         tracing::error!(%error, "routine result publication will retry");
     }

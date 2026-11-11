@@ -100,7 +100,7 @@ async fn card(hub: &Arc<Hub>, entry: &serde_json::Value) -> Result<()> {
 pub(crate) fn claim_prompt(hub: &Hub, entry: &str) -> Result<bool> {
     let _configuration = hub.store.connector_lock.locked();
     let Some(c) = load(&hub.store)? else { return Ok(false) };
-    let Some(e) = hub.store.entry(entry) else { return Ok(false) };
+    let Some(e) = hub.store.entry_checked(entry)? else { return Ok(false) };
     if e.data["discordGeneration"] != c.generation
         || !c.bindings.iter().any(|b| {
             b.bot_id == e.bot_id
@@ -120,8 +120,8 @@ async fn tick(hub: &Arc<Hub>) -> Result<()> {
     crate::market::vault::unlock(hub.clone()).await?;
     let Some(c) = load(&hub.store)? else { return Ok(()) };
     let ep = super::Endpoint::discord();
-    for event in hub.store.pending_discord()? {
-        if let Err(error) = deliver(hub, &event) {
+    for mut event in hub.store.pending_discord()? {
+        if let Err(error) = deliver_audio(hub, &mut event).await {
             tracing::warn!(%error,event=%event.event,"Discord prompt was not queued");
         }
     }
@@ -148,6 +148,38 @@ async fn tick(hub: &Arc<Hub>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn deliver_audio(hub: &Arc<Hub>, event: &mut DiscordIncoming) -> Result<()> {
+    if let Some(audio) = &event.audio
+        && hub.store.entry_checked(&event.entry)?.is_none()
+    {
+        let text = crate::channels::voice_notes::append(
+            &hub.store,
+            crate::channels::voice_notes::Platform::Discord,
+            audio,
+            None,
+            &event.text,
+            || {
+                let _configuration = hub.store.connector_lock.locked();
+                Ok(load(&hub.store)?.is_some_and(|c| {
+                    c.generation == event.generation
+                        && c.bindings.iter().any(|b| {
+                            b.channel_id == event.channel
+                                && b.bot_id == event.bot
+                                && b.allowed_users.contains(&event.user)
+                        })
+                }) && hub.store.bot(&event.bot)?.is_some_and(|b| !b.deleted && !b.config.is_group()))
+            },
+        )
+        .await?;
+        let Some(text) = text else {
+            hub.store.reject_discord(&event.event)?;
+            return Ok(());
+        };
+        event.text = text;
+    }
+    deliver(hub, event)
 }
 
 fn deliver(hub: &Hub, event: &DiscordIncoming) -> Result<()> {

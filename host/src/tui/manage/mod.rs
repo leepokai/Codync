@@ -14,6 +14,8 @@ pub(in crate::tui) mod computer;
 pub(in crate::tui) mod documents;
 mod fields;
 mod flow;
+mod hermes_routes;
+pub(super) mod hermes_runtime;
 mod library;
 mod market;
 pub(in crate::tui) mod mcp_tools;
@@ -104,6 +106,11 @@ pub enum Reply {
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
+    HermesRuntime(String),
+    HermesEnvironment {
+        bot: String,
+        revision: Value,
+    },
     Setup,
     FieldsSaved,
     SignIn,
@@ -214,6 +221,7 @@ pub enum RoutineField {
     Name,
     Instruction,
     When,
+    Outputs,
 }
 
 pub struct RoutineForm {
@@ -222,6 +230,10 @@ pub struct RoutineForm {
     pub name: Editor,
     pub instruction: Editor,
     pub when: Editor,
+    pub outputs: Editor,
+    /// None preserves outputs that the host cannot express in the text editor.
+    pub original_outputs: Option<String>,
+    pub original_output_values: Value,
     /// What an edited routine runs on; kept when `when` stays empty.
     pub original: Value,
     pub original_text: String,
@@ -307,6 +319,11 @@ pub struct Input {
 }
 
 pub enum Submit {
+    HermesRuntime {
+        bot: String,
+        revision: Value,
+        config: Value,
+    },
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
@@ -377,6 +394,10 @@ fn newline(k: KeyEvent) -> bool {
 }
 
 impl App {
+    pub(in crate::tui) fn open_hermes_runtime(&self, bot: &str) {
+        self.sheet("hermesRuntimeStatus", json!({"botId":bot}), Reply::HermesRuntime(bot.into()));
+    }
+
     pub(in crate::tui) fn sheet(&self, method: &'static str, body: Value, r: Reply) {
         self.call(method, body, After::Sheet(r));
     }

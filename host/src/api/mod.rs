@@ -16,6 +16,8 @@ mod host;
 mod http;
 mod marketplace;
 mod network;
+mod openai;
+mod openai_keys;
 mod origin;
 mod rebinding;
 mod remote;
@@ -88,6 +90,9 @@ pub async fn dispatch(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -
 }
 
 async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<Value> {
+    if crate::native_channels::METHODS.contains(&method) {
+        return crate::native_channels::call(hub, method, &b);
+    }
     if matches!(method, "savedSearches" | "saveSearch" | "deleteSavedSearch") {
         return saved_searches::call(hub, caller, method, &b);
     }

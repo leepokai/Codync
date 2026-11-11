@@ -105,6 +105,61 @@ The relay only ever sees encrypted data. Whenever audio leaves your device, the 
 
 ## Dictation
 
+### Messaging voice notes
+
+Telegram, WhatsApp, Slack and Discord voice notes can reuse the computer's saved OpenAI or Gemini speech
+connection. The host checks the channel's sender permissions before transcription. It sends
+recognized audio containers of up to 20 MiB to OpenAI when configured, or otherwise to Gemini,
+and adds the transcript to the incoming message. Provider charges apply. Without a configured
+provider, or when transcription fails, the channel reports the failure instead of inventing text.
+If the host uses `CODYNC_OPENAI_BASE_URL`, the OpenAI engine sends the recording to that
+configured compatible endpoint instead; the audio does not go to OpenAI through this path.
+
+Queued notes are checked again when the bot starts answering. Removing a sender or unlinking
+the connection prevents an old queued note from starting after authorization is restored.
+
+In Slack and Discord, this uses the first audio attachment, up to 20 MiB, in an allowed
+conversation. An audio-only message is supported. Slack needs permission to read the file;
+Discord attachment links can expire while the computer is offline. If downloading or
+transcribing fails, the bot receives a notice to ask for clarification. Other attachments
+remain listed by name.
+
+### Local NeuTTS speech
+
+In **Voice chat settings**, choose an existing OpenAI or Gemini connection, **Speech** mode,
+then **Speech output → NeuTTS local · Jo**. Recognition keeps using that connection; the bot's
+reply is synthesized on the linked computer. No additional voice key is created.
+
+Prepare Hermes's optional NeuTTS environment with **hermes setup tts** before selecting it.
+The pinned Hermes installation uses NeuTTS 1.4.1 on Python 3.11–3.13, espeak-ng, the
+`neuphonic/neutts-air-q4-gguf` backbone, `neuphonic/neucodec`, and its Jo reference voice.
+Models must already be cached: a call never installs packages or downloads models. Missing
+prerequisites appear as a call error with setup guidance.
+
+NeuTTS streams inference into mono 24 kHz PCM16 WAV frames of at most half a second.
+The host bounds the frame queue and the app pulls one frame ahead of playback. Sustained
+speech interrupts the reply and cancels its owned synthesis worker; leaving the call cancels
+pending frames too. The voice is fixed to Jo for this engine.
+
+### Foreground wake phrase on phones
+
+With **On device** selected, enable **Wake phrase → Hey Hermes** on iPhone or Android.
+It starts off. While the call is visible, say “Hey Hermes, open the report”, or say
+“Hey Hermes” followed by a command within fifteen seconds. The prefix is removed before
+sending the command. Unrelated recognized speech is discarded locally.
+
+This uses the phone's on-device speech recognizer, rather than Hermes's Python wake-word
+model. The microphone remains active while waiting, and operating-system microphone and
+speech permissions still apply. An unsupported offline language reports an error instead
+of uploading audio for wake detection. Muting, an interruption, backgrounding, ending the
+call, or losing its connection stops recognition and resets the command window.
+
+Wake-phrase detection is mobile-only. Desktop keeps its existing manual call controls;
+the terminal UI has no microphone or audio playback engine. NeuTTS output is available
+through the host API and desktop/phone call engines.
+
+### Message box
+
 The microphone button (**Dictate**) sits beside the send button. Press it and speak: the words go into the message box, after anything you've already typed. Nothing is sent until you send it.
 
 While it listens, the microphone becomes a recording pill with a stop button, the time, and dots that follow your voice.

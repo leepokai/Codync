@@ -40,6 +40,14 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 工作流程的連線可以指定目標機器人那一輪要用的模型與選項。
 - 每個聊天都可以有討論串：從任何訊息或列表開啟，回覆留在討論串裡，聊天只顯示回覆數。
 - 語音通話新增 ElevenLabs：使用你自己的金鑰，由 Scribe 聽你說話、帳號中的聲音讀出回覆；測試會唸出「OK」。
+- Hermes 環境、記憶與子代理路由可一次套用。
+- 通話可選 NeuTTS 本機串流語音，說話可中斷回覆；手機新增自選 Hey Hermes 前景喚醒。
+- 擴充功能加入 Hermes 技能與 MCP 應用程式，標示來源；技能可離線安裝。
+- Bot 可保留自己的技能改進，並依要求查看、還原版本。
+- Telegram、WhatsApp、Slack、Discord 語音訊息沿用語音金鑰；例行工作可透過已連結的 WhatsApp 傳送報告。
+- 市集的代理附技能與例行工作；Workflow Builder 可建立連動步驟。
+- Bot 可使用獨立瀏覽器設定檔與聊天顏色；訊息刪除會同步。
+- Slack、Telegram、Discord 與 GitHub 事件可啟動流程；新增 TickTick 等應用程式及代理資訊。
 
 ### en-US
 - Extensions is now a marketplace with Apps, Agents and Skills, featured picks and categories.
@@ -72,6 +80,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - A workflow link can name the model and its options for the target bot's turn.
 - Every chat can have threads: open one from any message or the list; replies stay in the thread and the chat shows a "3 replies" chip.
 - Voice calls add ElevenLabs: on your own key, Scribe hears you and the account's own voices read replies; Test says "OK".
+- Apply Hermes environment, memory and delegation routes together.
+- Local NeuTTS streams replies; talk to interrupt. Optional foreground Hey Hermes.
+- Extensions adds offline Hermes skills, MCP apps and restorable skill improvements.
+- Voice notes reuse speech keys; WhatsApp delivers routine reports.
+- Marketplace agents include skills and routines; Workflow Builder links steps.
+- Browser profiles, chat colors and synced deletion. Event workflows and TickTick.
 
 ## 2.32.0
 

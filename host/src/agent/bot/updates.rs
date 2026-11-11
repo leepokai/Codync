@@ -13,6 +13,18 @@ use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
+#[cfg(test)]
+#[path = "updates_tests.rs"]
+mod tests;
+
+/// Hermes presents clarification questions as ACP permission cards when form elicitation is unavailable.
+/// These are questions for the user, even if the bot is configured to approve tools automatically.
+fn is_hermes_clarification(tool: &Value) -> bool {
+    tool["toolCallId"].as_str().is_some_and(|id| id.starts_with("clarify-"))
+        && tool["rawInput"]["question"].is_string()
+        && tool["rawInput"]["choices"].is_array()
+}
+
 /// Who waits for an approval card's answer.
 pub(super) enum Answer {
     /// The agent's `session/request_permission`, by its JSON-RPC id.
@@ -235,7 +247,10 @@ impl Actor {
             Outcome::Rule { decision: Decision::Allow, .. } | Outcome::Setting { permission: Permission::Auto }
         );
         // Like the bot's automatic setting always did: with no allow option, its first option.
-        if allowed && self.pick_option(&rpc_id, &options, &["allow_once", "allow_always"], true).await {
+        if allowed
+            && !is_hermes_clarification(tool)
+            && self.pick_option(&rpc_id, &options, &["allow_once", "allow_always"], true).await
+        {
             return;
         }
         let mut detail = json!({"output": "", "diffs": []});
@@ -249,6 +264,7 @@ impl Actor {
             "cwd": self.cfg.cwd,
             "options": options.iter().map(|o| json!({"optionId": o["optionId"], "name": o["name"], "kind": o["kind"]})).collect::<Vec<_>>(),
             "status": "pending",
+            "inputEntryIds": self.turn_entries,
             "selected": Value::Null,
             // The rule that asked for this card, when one did (the bot itself approves everything).
             "rule": rule_pattern,

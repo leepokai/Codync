@@ -121,6 +121,7 @@ import kotlinx.coroutines.launch
 
 /** Set up or edit one routine (iOS `RoutineEditorView`); `saved` gets the routine, or null once it's deleted. */
 @Composable private fun RoutineEditor(botId: String, routine: Routine?, state: AppState, store: AppStore, saved: (Routine?) -> Unit) {
+    val originalOutputs = remember(routine?.id) { routine?.outputs.orEmpty().toList() }
     var draft by remember(routine?.id) {
         mutableStateOf(RoutineDraft(routine?.id, routine?.name.orEmpty(), routine?.instruction.orEmpty(),
             timeoutSeconds = (routine?.timeoutSeconds ?: 3600).toString(),
@@ -235,16 +236,17 @@ import kotlinx.coroutines.launch
                         FieldBox(output.target, { target ->
                             draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(target = target) else o })
                         }, when (output.kind) {
-                            "githubComment" -> "owner/name"
+                            "githubComment", "githubIssue", "githubLabel", "githubAssign", "githubReview" -> "owner/name"
+                            "whatsapp" -> "5215555555555@s.whatsapp.net"
                             "telegram" -> "-1001234567890"
                             "whatsapp" -> "5215555555555@s.whatsapp.net"
                             "discordReact" -> "👍"
                             else -> "1234567890"
                         }, fill = Palette.bubbleUser, capitalize = false)
-                        if (output.kind == "telegram") {
+                        if (output.kind in listOf("telegram", "whatsapp")) {
                             FieldBox(output.account.orEmpty(), { account ->
                                 draft = draft.copy(outputs = draft.outputs.mapIndexed { i, o -> if (i == index) o.copy(account = account) else o })
-                            }, "The bot it sends as, if there are several", fill = Palette.bubbleUser, capitalize = false)
+                            }, if (output.kind == "whatsapp") "Your linked number, e.g. 5215555555556@s.whatsapp.net" else "The bot it sends as, if there are several", fill = Palette.bubbleUser, capitalize = false)
                         }
                         if (output.kind in listOf("githubLabel", "githubAssign", "githubReview", "githubIssue")) {
                             FieldBox(output.value.orEmpty(), { value ->
@@ -282,7 +284,7 @@ import kotlinx.coroutines.launch
                         store.routineAction(botId, routine.id, "runRoutine") { started = true }
                     }
                 }
-                PrimaryButton({ store.saveRoutine(botId, draft) { saved(it) } }, Modifier.weight(1f), canSave) {
+                PrimaryButton({ store.saveRoutine(botId, draft, originalOutputs) { saved(it) } }, Modifier.weight(1f), canSave) {
                     Row(Modifier.heightIn(min = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (busy) Spinner(color = Palette.onAccent)
                         Text(if (busy) "Saving…" else if (routine == null) "Create routine" else "Save changes")

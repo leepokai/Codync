@@ -94,7 +94,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
                 list.extend(crate::research::tools().as_array().into_iter().flatten().cloned());
                 list.extend(crate::chat::fallbacks::tools());
                 list.push(crate::chat::reactions::tool());
-                list.push(crate::chat::skills::tool());
+                list.extend(crate::chat::skills::tools());
             }
             ("codync-chat", crate::chat::outbox::INSTRUCTIONS, tools)
         }
@@ -190,7 +190,7 @@ async fn computer_tools(port: u16, token: &str) -> Value {
 }
 
 /// One tool call through the host. Failures are tool errors the agent can read, not protocol errors.
-async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
+pub(crate) async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server) -> Value {
     let body = json!({
         "botId": bot,
         "name": params["name"],
@@ -203,7 +203,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
         Server::Chat if params["name"] == "review_document" => ("chatCall", crate::documents::REVIEW_TIMEOUT),
         Server::Chat if params["name"] == "research_sources" => ("chatCall", Duration::from_secs(60)),
         Server::Chat => ("chatCall", Duration::from_secs(if params["name"] == "send_file" { 70 } else { 30 })),
-        Server::Team => ("teamCall", Duration::from_secs(30)),
+        Server::Team => ("teamCall", crate::chat::team::tool_timeout(params["name"].as_str().unwrap_or_default())),
         Server::Manage => ("manageCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Memory => ("memoryCall", Duration::from_mins(2)),
         Server::Comfy => ("comfyCall", crate::tools::comfy_mcp::CALL_TIMEOUT),

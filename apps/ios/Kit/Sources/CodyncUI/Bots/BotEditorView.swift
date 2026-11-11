@@ -284,6 +284,10 @@ struct BotSettingsForm: View {
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot?.agentStep)
 
+            if let id = draft.id, draft.backend == "hermes", model.bots[id]?.backend == "hermes" {
+                HermesRuntimeCard(botId: id).id(id)
+            }
+
             CardSection("Activity") {
                 SwitchRow("Notifications", detail: "Get notified when this bot finishes or needs you",
                           isOn: Binding(get: { draft.notify ?? true }, set: { draft.notify = $0 }))

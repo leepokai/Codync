@@ -280,6 +280,7 @@ export const outputKinds = [
 export function outputProblem(output: RoutineOutput): string | null {
   const target = output.target.trim()
   if (!target) return 'An output needs a destination.'
+  if (output.kind === 'whatsapp' && !output.account?.trim()) return 'Use the linked WhatsApp account id as account.'
   if (output.kind === 'telegram' && !/^-?\d+$/.test(target)) return 'Use a Telegram chat id.'
   if (output.kind === 'whatsapp' && !/^[\d-]+@(s\.whatsapp\.net|g\.us)$/.test(target)) return 'Use a WhatsApp chat id.'
   if (output.kind === 'githubComment' && !/^[^/\s]+\/[^/\s]+$/.test(target)) return 'Use owner/name.'

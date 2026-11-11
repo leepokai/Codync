@@ -74,6 +74,9 @@ async fn verify_inner(store: &Store, id: &str, port: u16) -> Result<Value> {
         bail!("Finish signing in before checking this connection.");
     }
     let c = super::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
+    if crate::native_channels::is_native(&c) {
+        return crate::native_channels::apps::verify(store, &c);
+    }
     if c.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
         bail!("Sign in before checking this connection.");
     }

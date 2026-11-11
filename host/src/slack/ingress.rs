@@ -77,7 +77,10 @@ pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
         return Ok(());
     }
     let event = &envelope["event"];
-    if event.get("bot_id").is_some() || event.get("subtype").is_some() || event["user"] == c.bot_user_id {
+    if event.get("bot_id").is_some()
+        || event.get("subtype").is_some_and(|subtype| subtype != "file_share")
+        || event["user"] == c.bot_user_id
+    {
         return Ok(());
     }
     let Some(binding) = c.bindings.iter().find(|b| {
@@ -100,9 +103,13 @@ pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
         return Ok(());
     }
     let message = normalize(c, event, &binding.channel_id, thread).context("Missing user")?;
-    if message.text.is_empty() || message.text.len() > 32 * 1024 {
+    let audio = crate::channels::voice_notes::Platform::Slack.attachment(event);
+    let has_audio = crate::channels::voice_notes::Platform::Slack.has_audio(event);
+    if (message.text.is_empty() && !has_audio) || message.text.len() > 32 * 1024 {
         return Ok(());
     }
+    let prompt = message.prompt();
+    let prompt = if has_audio && audio.is_none() { crate::channels::voice_notes::unavailable(&prompt) } else { prompt };
     if mention {
         hub.routines.receive_event(
             &hub.store,
@@ -124,9 +131,10 @@ pub(super) fn accept(hub: &Hub, c: &Config, envelope: &Value) -> Result<()> {
         text: crate::channels::with_notes(
             &binding.memory,
             &crate::channels::notes(&hub.store, "slack", &binding.channel_id),
-            &message.prompt(),
+            &prompt,
         ),
         user: message.person,
+        audio,
     };
     hub.store.enqueue_slack(&incoming)?;
     let root = stable_id(&[&c.generation, &binding.channel_id, thread, "root"]);

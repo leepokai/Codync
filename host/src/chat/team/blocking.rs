@@ -15,6 +15,28 @@ use tokio::sync::oneshot;
 
 pub(super) const ASK_TIMEOUT: Duration = Duration::from_secs(600);
 
+pub(super) fn task_timeout(args: &Value) -> Result<Duration> {
+    let Some(value) = args.get("timeoutSeconds") else {
+        return Ok(ASK_TIMEOUT);
+    };
+    let seconds = value
+        .as_u64()
+        .filter(|seconds| (1..=ASK_TIMEOUT.as_secs()).contains(seconds))
+        .ok_or_else(|| anyhow!("timeoutSeconds must be an integer between 1 and {}", ASK_TIMEOUT.as_secs()))?;
+    Ok(Duration::from_secs(seconds))
+}
+
+/// The transport must outlive the host's own task or whole-pipeline deadline.
+/// Read-only team lookups keep the short transport budget.
+pub(crate) fn tool_timeout(name: &str) -> Duration {
+    let work = match name {
+        "ask_bot" | "delegate_batch" | "ask_member" => ASK_TIMEOUT,
+        "run_pipeline" => super::pipeline::TOTAL_TIME,
+        _ => return Duration::from_secs(30),
+    };
+    work.saturating_add(Duration::from_secs(30))
+}
+
 pub(super) fn tool() -> Value {
     json!({
         "name": "ask_bot",
@@ -23,6 +45,7 @@ pub(super) fn tool() -> Value {
             "type": "object", "properties": {
                 "botId": {"type": "string", "description": "Recipient ID from list_bots."},
                 "message": {"type": "string", "description": "Self-contained task, context, paths and expected result."},
+                "timeoutSeconds": {"type":"integer","minimum":1,"maximum":600,"description":"Task deadline including queue time (default 600). Expiry cancels only this request; partial work may have happened."},
             }, "required": ["botId", "message"],
         },
         "annotations": {"readOnlyHint": false, "idempotentHint": false},

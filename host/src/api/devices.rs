@@ -30,6 +30,11 @@ impl Caller {
 
 /// Methods only this computer may call.
 const LOCAL_ONLY: &[&str] = &[
+    "nativeChannelPairing",
+    "nativeChannelSetAllowed",
+    "openaiKeys",
+    "openaiCreateKey",
+    "openaiRevokeKey",
     "hostUpdateStatus",
     "diagnostics",
     "checkHostUpdate",

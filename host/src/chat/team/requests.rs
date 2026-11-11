@@ -42,16 +42,19 @@ pub(super) struct RequestState {
 }
 
 impl Requests {
+    /// An authenticated external caller never waits on another caller, so it has no bot hop edge.
+    pub(super) fn begin_external(&self, id: &str, from: &str, to: &str) -> Result<watch::Receiver<bool>> {
+        let mut state = self.0.locked();
+        state.capacity(from, "API requests")?;
+        let (cancel, receiver) = watch::channel(false);
+        state.pending.insert(id.to_owned(), Request { from: from.to_owned(), to: to.to_owned(), cancel });
+        Ok(receiver)
+    }
     pub(super) fn reserve_message(&self, from: &str) -> Result<u8> {
         let mut state = self.0.locked();
         let hops = state.next_hop(from)?;
-        if state.messages >= MAX_PENDING_MESSAGES {
-            bail!("too many pending bot messages");
-        }
+        state.capacity(from, "bot messages")?;
         let count = state.messages_by_sender.entry(from.to_owned()).or_default();
-        if *count >= MAX_PENDING_MESSAGES_PER_SENDER {
-            bail!("too many pending bot messages from this bot (limit {MAX_PENDING_MESSAGES_PER_SENDER})");
-        }
         *count += 1;
         state.messages += 1;
         Ok(hops)
@@ -75,9 +78,7 @@ impl Requests {
         if from == to {
             bail!("a bot cannot ask itself");
         }
-        if state.pending.len() >= MAX_PENDING_MESSAGES {
-            bail!("too many pending bot requests");
-        }
+        state.capacity(from, "bot requests")?;
         if state.pending.values().any(|r| r.from == from && r.to == to) {
             bail!("already waiting for this bot");
         }
@@ -123,6 +124,18 @@ impl Requests {
 }
 
 impl RequestState {
+    fn capacity(&self, from: &str, kind: &str) -> Result<()> {
+        if self.messages + self.pending.len() >= MAX_PENDING_MESSAGES {
+            bail!("too many pending {kind}");
+        }
+        let own = self.messages_by_sender.get(from).copied().unwrap_or_default()
+            + self.pending.values().filter(|request| request.from == from).count();
+        if own >= MAX_PENDING_MESSAGES_PER_SENDER {
+            let source = if kind == "API requests" { "this API key" } else { "this bot" };
+            bail!("too many pending {kind} from {source} (limit {MAX_PENDING_MESSAGES_PER_SENDER})");
+        }
+        Ok(())
+    }
     fn next_hop(&self, from: &str) -> Result<u8> {
         match self.active.get(from) {
             None => bail!("the requesting bot is no longer working"),
@@ -142,6 +155,57 @@ impl RequestState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn synchronous_and_deferred_delegations_share_the_same_sender_capacity() {
+        let requests = Requests::default();
+        requests.start_turn("a", Turn::Chat(0));
+        let half = MAX_PENDING_MESSAGES_PER_SENDER / 2;
+        for _ in 0..half {
+            requests.reserve_message("a").unwrap();
+        }
+        for index in half..MAX_PENDING_MESSAGES_PER_SENDER {
+            requests.begin(&format!("ask-{index}"), "a", &format!("target-{index}")).unwrap();
+        }
+        assert!(requests.reserve_message("a").is_err());
+        assert!(requests.begin("overflow", "a", "other").is_err());
+        assert!(requests.begin_external("external-overflow", "a", "other").is_err());
+        requests.start_turn("c", Turn::Chat(0));
+        assert!(requests.begin("other-sender", "c", "other").is_ok());
+        requests.0.locked().pending.remove(&format!("ask-{half}"));
+        assert!(requests.reserve_message("a").is_ok());
+        requests.release_message("a");
+        assert!(requests.begin("released-slot", "a", "other").is_ok());
+    }
+
+    #[test]
+    fn mixed_api_and_bot_requests_share_the_global_capacity() {
+        let requests = Requests::default();
+        let half = MAX_PENDING_MESSAGES / 2;
+        for index in 0..half {
+            requests.begin_external(&format!("api-{index}"), &format!("caller-{index}"), "target").unwrap();
+        }
+        for index in half..MAX_PENDING_MESSAGES {
+            let bot = format!("bot-{index}");
+            requests.start_turn(&bot, Turn::Chat(0));
+            requests.reserve_message(&bot).unwrap();
+        }
+        assert!(requests.begin_external("overflow", "new-caller", "target").is_err());
+        requests.start_turn("new-bot", Turn::Chat(0));
+        assert!(requests.reserve_message("new-bot").is_err());
+    }
+
+    #[test]
+    fn hermes_api_requests_have_capacity_and_recipient_cancellation_without_a_fake_bot() {
+        let requests = Requests::default();
+        let mut cancelled = requests.begin_external("one", "openai:key", "a").unwrap();
+        for n in 1..MAX_PENDING_MESSAGES_PER_SENDER {
+            requests.begin_external(&format!("request-{n}"), "openai:key", "a").unwrap();
+        }
+        assert!(requests.begin_external("too-many", "openai:key", "a").is_err());
+        requests.cancel_bot("a");
+        assert!(*cancelled.borrow_and_update());
+    }
 
     #[test]
     fn reciprocal_synchronous_asks_are_rejected_before_they_can_deadlock() {

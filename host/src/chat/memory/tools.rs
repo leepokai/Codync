@@ -48,6 +48,8 @@ pub fn tools() -> Value {
                     "query": {"type": "string", "description": "Words that must all appear, separated by spaces."},
                     "from": {"type": "string", "description": "A message id (from a result, next, or a memory's source): start at that message and go back."},
                     "limit": {"type": "integer", "description": "Maximum results (default 10, at most 30)."},
+                    "since": {"type": "integer", "description": "Inclusive start time in Unix milliseconds. Use with until for daily or weekly recaps."},
+                    "until": {"type": "integer", "description": "Exclusive end time in Unix milliseconds."},
                 },
             },
             "annotations": {"readOnlyHint": true},
@@ -161,6 +163,11 @@ async fn search_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result
         args["query"].as_str().unwrap_or_default().split_whitespace().take(SEARCH_TERMS).map(str::to_owned).collect();
     let from = args["from"].as_str().map(str::to_owned);
     let limit = args["limit"].as_i64().unwrap_or(SEARCH_DEFAULT).clamp(1, SEARCH_MAX);
+    let since = history_bound(args, "since", i64::MIN)?;
+    let until = history_bound(args, "until", i64::MAX)?;
+    if since >= until {
+        bail!("since must be before until");
+    }
     let hub = hub.clone();
     let bot = cfg.id.clone();
     let (rows, next) = tokio::task::spawn_blocking(move || -> Result<_> {
@@ -175,7 +182,7 @@ async fn search_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result
             None => None,
         };
         // One more than asked tells whether there is a page before.
-        let mut rows = hub.store.search_messages(&bot, &terms, from, limit + 1)?;
+        let mut rows = hub.store.search_messages_between(&bot, &terms, from, limit + 1, since..until)?;
         let next = if rows.len() > usize::try_from(limit)? { rows.pop().map(|e| e.id) } else { None };
         Ok((rows, next))
     })
@@ -192,6 +199,13 @@ async fn search_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result
         })
         .collect();
     Ok(json!({"results": results, "next": next}))
+}
+
+fn history_bound(args: &Value, key: &str, default: i64) -> Result<i64> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(value) => value.as_i64().ok_or_else(|| anyhow!("{key} must be Unix milliseconds")),
+    }
 }
 
 async fn read_history(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result<Value> {

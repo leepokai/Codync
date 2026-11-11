@@ -73,7 +73,13 @@ impl Client {
                 .post(format!("{}/api/{method}", self.base))
                 .bearer_auth(&token)
                 .json(body)
-                .timeout(Duration::from_secs(if SLOW.contains(&method) { 11 * 60 } else { 60 }))
+                .timeout(Duration::from_secs(if SLOW.contains(&method) {
+                    11 * 60
+                } else if method == "hermesEnvironmentHealth" {
+                    70
+                } else {
+                    60
+                }))
                 .send()
                 .await;
             match sent {

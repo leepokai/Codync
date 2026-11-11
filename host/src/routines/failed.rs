@@ -59,6 +59,7 @@ mod tests {
         let mut waiting = run("a", Status::Failed);
         waiting.retryable = true;
         let mut state = State {
+            pending_flows: vec![],
             routines: vec![],
             runs: vec![
                 settled,

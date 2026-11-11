@@ -375,6 +375,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
+        Field::Agent if f.backend == "hermes" => "←→ change · ↵ install / sign in · h runtime · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Account => "left/right pick account; i sign in; r refresh",
         Field::Model => "←→ pick a model · or type its id",

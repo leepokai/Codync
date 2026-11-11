@@ -15,6 +15,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         return Ok(ControlFlow::Break(answer));
     }
     Ok(ControlFlow::Break(match method {
+        "hermesRuntime" | "hermesRuntimeStatus" | "setHermesRuntime" | "hermesEnvironmentHealth" => {
+            crate::agent::hermes::api(hub, method, &b).await?
+        }
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "browserProxy" => {
             let bot = str_arg(&b, "botId")?;
@@ -36,12 +39,20 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"proxy": null, "authenticated": false})
         }
         "routines" => hub.routines.list(str_arg(&b, "botId")?, |_| false),
+        "routineTemplates" => crate::routines::blueprints::list(),
+        "routineTemplateDraft" => crate::routines::blueprints::draft(&b)?,
         "routineCalendar" => hub.routines.calendar(
             str_arg(&b, "botId")?,
             b["from"].as_i64().context("from is required")?,
             b["to"].as_i64().context("to is required")?,
         )?,
         "saveRoutine" => hub.routines.save(hub, str_arg(&b, "botId")?, &b)?,
+        "saveRoutineWithOutputs" => {
+            if b.get("outputs").is_none() && b.get("outputText").is_none() {
+                bail!("outputs or outputText is required");
+            }
+            hub.routines.save(hub, str_arg(&b, "botId")?, &b)?
+        }
         "setRoutineEnabled" => hub.routines.set_enabled(
             &hub.store,
             str_arg(&b, "botId")?,
@@ -93,8 +104,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 crate::chat::apps::call(hub, bot, name, &b["arguments"])?
             } else if crate::chat::open_items::TOOLS.contains(&name) {
                 crate::chat::open_items::call(hub, bot, name, &b["arguments"])?
-            } else if name == crate::chat::skills::TOOL {
-                crate::chat::skills::call(hub, bot, &b["arguments"]).await?
+            } else if crate::chat::skills::TOOLS.contains(&name) {
+                crate::chat::skills::dispatch(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::fallbacks::TOOLS.contains(&name) {
                 crate::chat::fallbacks::call(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::artifacts::TOOLS.contains(&name) {

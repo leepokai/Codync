@@ -1,10 +1,10 @@
 //! Where a finished workflow's last reply goes: a channel, a chat, or the issue or pull request that
 //! started the run.
 //!
-//! Outputs are delivered once, after every step ended, from the deepest replies that have no step
-//! after them. A failed delivery is logged and does not fail the run; the run's chat stays the record.
+//! Outputs are durably queued after every step ends. See `delivery` for restart and cancellation
+//! semantics; the run's chat remains the record if a destination cannot confirm its send.
 
-use super::Output as RoutineOutput;
+use super::delivery::before_send;
 use crate::hub::Hub;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub struct Output {
     pub kind: String,
     /// A channel id, a chat id, or (for GitHub) the repository, `owner/name`.
     pub target: String,
-    /// The Telegram bot to send as; other kinds ignore it.
+    /// The Telegram bot name, or the linked `WhatsApp` account id to send as.
     #[serde(default)]
     pub account: Option<String>,
     /// Labels, reviewers, or the issue title; other kinds ignore it.
@@ -42,7 +42,14 @@ pub fn problem(output: &Output) -> Option<String> {
         }
         "discordReact" if target.contains(char::is_whitespace) => Some("Use one emoji or name:id.".into()),
         "telegram" if target.parse::<i64>().is_err() => Some("Use a Telegram chat id.".into()),
-        "whatsapp" if !whatsapp_chat(target) => Some("Use a WhatsApp chat id.".into()),
+        "whatsapp" if !crate::whatsapp::delivery::jid(target) => Some("Use a WhatsApp person or group id.".into()),
+        "whatsapp"
+            if !output.account.as_deref().is_some_and(|account| {
+                account.ends_with("@s.whatsapp.net") && crate::whatsapp::delivery::jid(account)
+            }) =>
+        {
+            Some("Use the linked WhatsApp account id as account.".into())
+        }
         "githubComment" | "githubIssue" if !github_repo(target) => Some("Use owner/name.".into()),
         "githubLabel" | "githubAssign" | "githubReview" => {
             if !github_repo(target) {
@@ -104,38 +111,18 @@ pub fn describe(output: &Output) -> String {
     }
 }
 
-/// Delivers `text` to every output in turn; errors are logged, never returned.
-pub async fn deliver(hub: &Arc<Hub>, routine: &str, outputs: &[RoutineOutput], event: &Value, text: &str) {
-    if outputs.is_empty() || text.trim().is_empty() {
-        return;
-    }
-    for output in outputs {
-        let mut last = Ok(());
-        for attempt in 0..2 {
-            last = one(hub, output, event, text).await;
-            if last.is_ok() {
-                break;
-            }
-            if attempt == 0 {
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-        }
-        if let Err(error) = last {
-            tracing::warn!(routine, kind = output.kind, error = format!("{error:#}"), "workflow output failed");
-        }
-    }
-}
-
-async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Result<()> {
+pub(super) async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Result<()> {
     match output.kind.as_str() {
         "slack" => {
             let (token, _) = crate::slack::credentials(&hub.store)?.context("Slack is not configured.")?;
             let thread = event["thread"].as_str().unwrap_or_default();
-            let client = crate::egress::client(
-                crate::egress::Policy::Only(&["slack.com"]),
-                "https://slack.com/api/chat.postMessage",
-            )
-            .await?;
+            let client = before_send(
+                crate::egress::client(
+                    crate::egress::Policy::Only(&["slack.com"]),
+                    "https://slack.com/api/chat.postMessage",
+                )
+                .await,
+            )?;
             let body = json!({"channel": output.target, "text": text, "thread_ts": thread,
                 "unfurl_links": false, "unfurl_media": false});
             let response = client
@@ -159,7 +146,7 @@ async fn one(hub: &Arc<Hub>, output: &Output, event: &Value, text: &str) -> Resu
             crate::telegram::send_text(&hub.store, &account, chat, text).await?;
         }
         "discord" => crate::discord::send_text(&hub.store, &output.target, text).await?,
-        "whatsapp" => hub.whatsapp.send_message(&output.target, text, None, None, None).await?,
+        "whatsapp" => crate::whatsapp::delivery::send(hub, output, event, text).await?,
         "discordReact" => {
             let channel = event["channel"].as_str().context("The run did not come from a channel.")?;
             let message = event["messageId"].as_str().context("The run did not name a message.")?;
@@ -239,7 +226,7 @@ async fn github_issue_action(hub: &Arc<Hub>, output: &Output, event: &Value) -> 
 
 async fn github_call(hub: &Arc<Hub>, method: reqwest::Method, url: &str, body: Value) -> Result<()> {
     let token = crate::github::connection(&hub.store)?.context("GitHub is not configured.")?.token;
-    let client = crate::egress::client(crate::egress::Policy::Only(&["api.github.com"]), url).await?;
+    let client = before_send(crate::egress::client(crate::egress::Policy::Only(&["api.github.com"]), url).await)?;
     let response = client
         .request(method, url)
         .header("authorization", format!("Bearer {token}"))
@@ -278,8 +265,12 @@ mod tests {
         assert!(problem(&output("discordReact", "👍")).is_none());
         assert!(problem(&output("discordReact", "two words")).is_some());
         assert!(problem(&output("telegram", "-100123")).is_none());
-        assert!(problem(&output("whatsapp", "5215555555555@s.whatsapp.net")).is_none());
-        assert!(problem(&output("whatsapp", "1203630@g.us")).is_none());
+        let linked = |target: &str| Output {
+            account: Some("5215555555556@s.whatsapp.net".into()),
+            ..output("whatsapp", target)
+        };
+        assert!(problem(&linked("5215555555555@s.whatsapp.net")).is_none());
+        assert!(problem(&linked("1203630@g.us")).is_none());
         assert!(problem(&output("whatsapp", "5215555555555")).is_some());
         assert!(problem(&output("whatsapp", "abc@s.whatsapp.net")).is_some());
         assert!(problem(&output("githubComment", "owner/repo")).is_none());
@@ -289,6 +280,22 @@ mod tests {
         assert!(problem(&output("githubComment", "owner/repo/extra")).is_some());
         assert!(problem(&output("nope", "x")).is_some());
         assert!(problem(&output("slack", " ")).is_some());
+    }
+
+    #[test]
+    fn whatsapp_outputs_require_distinct_recipient_and_linked_account_ids() {
+        let mut report = output("whatsapp", "5215555555555@s.whatsapp.net");
+        assert!(problem(&report).is_some(), "sender account is required");
+        report.account = Some("5215555555556@s.whatsapp.net".into());
+        assert!(problem(&report).is_none());
+        report.target = "123-456@g.us".into();
+        assert!(problem(&report).is_none());
+        report.account = Some("123-456@g.us".into());
+        assert!(problem(&report).is_some(), "a group cannot be the sending account");
+        for target in ["bot-id", "123@other.net", "@g.us", "123@s.whatsapp.net?extra"] {
+            report.target = target.into();
+            assert!(problem(&report).is_some());
+        }
     }
 
     #[test]

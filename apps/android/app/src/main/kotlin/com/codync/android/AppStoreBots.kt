@@ -99,9 +99,14 @@ private suspend fun AppStore.receiveRoutines(botId: String) {
     val listing = WireJson.decodeFromJsonElement<RoutineListing>(response)
     mutableState.update { it.copy(routines = it.routines + (botId to listing)) }
 }
-fun AppStore.saveRoutine(botId: String, draft: RoutineDraft, saved: (Routine) -> Unit) = action("routines:$botId") {
+fun AppStore.saveRoutine(botId: String, draft: RoutineDraft, originalOutputs: List<RoutineOutput>, saved: (Routine) -> Unit) = action("routines:$botId") {
     val active = ready()
-    val response = active.call("saveRoutine", draft.body(botId))
+    val outputsChanged = draft.outputs != originalOutputs
+    val request = buildJsonObject {
+        putAll(draft.body(botId, includeOutputs = outputsChanged))
+        if (outputsChanged) put("ifOutputs", WireJson.encodeToJsonElement(originalOutputs))
+    }
+    val response = active.call(if (outputsChanged) "saveRoutineWithOutputs" else "saveRoutine", request)
     val routine = WireJson.decodeFromJsonElement<Routine>(response.jsonObject.getValue("routine"))
     receiveRoutines(botId)
     saved(routine)

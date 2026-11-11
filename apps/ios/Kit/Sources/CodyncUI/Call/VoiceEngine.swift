@@ -95,6 +95,10 @@ struct VoiceError: LocalizedError {
 /// The engine picked in the call settings, kept on this device.
 enum VoiceSettings {
     static let engineKey = "callEngine"
+    static let speechOutputKey = "callSpeechOutput"
+    static let wakePhraseKey = "callWakePhrase"
+    static var localSpeech: Bool { UserDefaults.standard.string(forKey: speechOutputKey) == "neutts" }
+    static var wakePhrase: Bool { UserDefaults.standard.bool(forKey: wakePhraseKey) }
 
     static var provider: VoiceProvider? {
         UserDefaults.standard.string(forKey: engineKey).flatMap(VoiceProvider.init(rawValue:))
@@ -176,9 +180,9 @@ enum VoiceSettings {
 
     /// What a call's engine is built from (`CallView.begin`): a different one picked mid-call takes over the call.
     static func engineChoice(_ provider: VoiceProvider?) -> String {
-        guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "")" }
+        guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "") wake=\(wakePhrase)" }
         return isSpeechMode(provider)
-            ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider))"
+            ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider)) \(localSpeech)"
             : "\(provider.rawValue) \(model(provider)) \(voice(provider))"
     }
 

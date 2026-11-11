@@ -8,7 +8,6 @@ use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::fmt::Write as _;
 
 pub(super) fn row_entry(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let data: String = r.get(6)?;
@@ -104,12 +103,21 @@ impl Store {
     }
 
     pub fn entry(&self, id: &str) -> Option<Entry> {
+        logged("entry", self.entry_checked(id)).flatten()
+    }
+
+    /// Authorization and durable queues must distinguish missing rows from failed reads.
+    pub fn entry_checked(&self, id: &str) -> rusqlite::Result<Option<Entry>> {
         let c = self.db.locked();
         let row = c.query_row(&format!("SELECT {ENTRY_COLS} FROM entries WHERE id = ?1"), [id], row_entry);
-        logged("entry", row.optional()).flatten()
+        row.optional()
     }
 
     pub fn find_by_nonce(&self, bot_id: &str, nonce: &str) -> Option<Entry> {
+        logged("entry by nonce", self.find_by_nonce_checked(bot_id, nonce)).flatten()
+    }
+
+    pub fn find_by_nonce_checked(&self, bot_id: &str, nonce: &str) -> rusqlite::Result<Option<Entry>> {
         let c = self.db.locked();
         let row = c.query_row(
             &format!(
@@ -118,7 +126,7 @@ impl Store {
             params![bot_id, nonce],
             row_entry,
         );
-        logged("entry by nonce", row.optional()).flatten()
+        row.optional()
     }
 
     /// What a voice call carried in `bot_id`'s chat (`chat::calls`), oldest first: its messages and final replies.
@@ -265,31 +273,6 @@ impl Store {
              ORDER BY rev"
         ))?;
         Ok(st.query_map([backend], row_entry)?.collect::<rusqlite::Result<_>>()?)
-    }
-
-    /// Chat-visible messages (the user's, final replies) in `bot_id`'s chat that
-    /// contain every term (case-insensitive for ASCII), newest first, from `from` (a `seq`) back.
-    // ponytail: substring scan, no index (CJK needs no tokenizer this way): 0.6 s over 180k messages of one bot.
-    // An FTS5 trigram table once a bot's search passes a second.
-    pub fn search_messages(&self, bot_id: &str, terms: &[String], from: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
-        let mut sql = format!(
-            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND {PUBLIC} AND seq <= ?3 AND
-               (kind = 'user' OR (kind = 'agent' AND json_extract(data, '$.final') = 1))"
-        );
-        for i in 0..terms.len() {
-            let _ = write!(
-                sql,
-                " AND instr(codync_lower(CAST(COALESCE(json_extract(data, '$.text'), '') AS TEXT)), ?{}) > 0",
-                i + 4
-            );
-        }
-        sql.push_str(" ORDER BY seq DESC LIMIT ?2");
-        let mut args: Vec<rusqlite::types::Value> =
-            vec![bot_id.to_owned().into(), limit.into(), from.unwrap_or(i64::MAX).into()];
-        args.extend(terms.iter().map(|t| t.to_lowercase().into()));
-        let c = self.db.locked();
-        let mut st = c.prepare(&sql)?;
-        Ok(st.query_map(rusqlite::params_from_iter(args), row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
     /// The newest `limit` bot-to-bot notices in `bot_id`'s main chat that involve `peer_id`, oldest first.

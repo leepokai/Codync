@@ -6,7 +6,6 @@ import esPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages
 import arPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ar.json' with { type: 'json' }
 import ruPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ru.json' with { type: 'json' }
 import ptBRPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/pt-BR.json' with { type: 'json' }
-import arPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/ar.json' with { type: 'json' }
 import hansPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hans.json' with { type: 'json' }
 import hantPhrases from '../../../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json' with { type: 'json' }
 

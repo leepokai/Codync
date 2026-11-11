@@ -9,6 +9,7 @@ import SwiftUI
 public struct VoiceChatSettingsView: View {
     @AppStorage(VoiceSettings.engineKey) private var engine = "device"
     @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
+    @AppStorage(VoiceSettings.wakePhraseKey) private var wakePhrase = false
     @AppStorage(OnDeviceEngine.rateKey) private var rate = Double(AVSpeechUtteranceDefaultSpeechRate)
     @AppStorage(OnDeviceEngine.languageKey) private var language = ""
     @State private var languages = OnDeviceEngine.languageOptions
@@ -33,6 +34,9 @@ public struct VoiceChatSettingsView: View {
                     if let provider = VoiceProvider(rawValue: engine) {
                         ModeRows(provider: provider).id(provider)
                     } else {
+                        ValueRow("Wake phrase", detail: "Say Hey Hermes before an on-device turn. Audio stays on this phone. Available only while the call is open and the app is visible.") {
+                            ChoicePicker(selection: $wakePhrase, options: [(false, "Off"), (true, "Hey Hermes")])
+                        }
                         ValueRow("Language", detail: "The language you speak in calls.") {
                             ChoicePicker(selection: $language, options: languages)
                         }
@@ -73,6 +77,7 @@ public struct VoiceChatSettingsView: View {
 private struct ModeRows: View {
     let provider: VoiceProvider
     @AppStorage private var mode: String
+    @AppStorage(VoiceSettings.speechOutputKey) private var speechOutput = "provider"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(provider: VoiceProvider) {
@@ -87,7 +92,12 @@ private struct ModeRows: View {
                              options: [("realtime", "Realtime"), ("speech", "Speech")])
             }
         }
-        if !provider.live || mode == "speech" { PauseRow() }
+        if !provider.live || mode == "speech" {
+            ValueRow("Speech output", detail: "NeuTTS runs on your computer with its prepared Hermes model. Recognition still uses your selected speech provider.") {
+                ChoicePicker(selection: $speechOutput, options: [("provider", "Provider voice"), ("neutts", "NeuTTS local · Jo")])
+            }
+            PauseRow()
+        }
     }
 }
 
@@ -327,7 +337,7 @@ private struct ProviderVoiceSettings: View {
                 if dictationOnly {
                     _ = try await client.voiceModels(provider)
                 } else if speechMode {
-                    heard = try await client.voiceSpeak(provider, model: speechModel, voice: voice, text: "OK")
+                    heard = try await client.voiceSpeak(provider, model: speechModel, voice: voice, text: "OK", localOutput: VoiceSettings.localSpeech)
                 } else {
                     _ = try await client.voiceSession(provider, model: model, voice: voice)
                 }

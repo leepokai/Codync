@@ -21,6 +21,7 @@ mod tools;
 
 pub use api::{call as api_call, forget_bot, forget_routine};
 pub use canvas::catch_up;
+pub(super) use engine::Start;
 pub use engine::{spawn, start_for};
 pub use recover::recover;
 pub use registry::Registry;

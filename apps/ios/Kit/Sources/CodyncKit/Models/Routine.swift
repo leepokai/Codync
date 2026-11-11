@@ -17,7 +17,7 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var missedPolicy: String?
     /// What a run that would pass the bot's daily token limit follows: `wait` or `skip` (older hosts send nothing).
     public var limitPolicy: String?
-    /// Where the workflow's last reply goes (older hosts send nothing).
+    /// Optional on hosts predating workflow destinations.
     public var outputs: [RoutineOutput]?
     /// Its runs post in a thread of the bot chat instead of its main one.
     public var thread: Bool?
@@ -219,7 +219,7 @@ extension HostClient {
     public func saveRoutine(botId: String, id: String?, name: String, instruction: String,
                             triggers: [RoutineTrigger], timeoutSeconds: Int,
                             missedPolicy: String? = nil, limitPolicy: String? = nil,
-                            outputs: [RoutineOutput] = [], thread: Bool = false) async throws -> Routine {
+                            outputs: [RoutineOutput]? = nil, ifOutputs: [RoutineOutput]? = nil, thread: Bool = false) async throws -> Routine {
         struct Body: Encodable {
             let botId: String
             let id: String?
@@ -229,13 +229,14 @@ extension HostClient {
             let timeoutSeconds: Int
             let missedPolicy: String?
             let limitPolicy: String?
-            let outputs: [RoutineOutput]
+            let outputs: [RoutineOutput]?
+            let ifOutputs: [RoutineOutput]?
             let thread: Bool
         }
         struct Response: Decodable { let routine: Routine }
-        let response: Response = try await call("saveRoutine", Body(botId: botId, id: id, name: name,
+        let response: Response = try await call(outputs == nil ? "saveRoutine" : "saveRoutineWithOutputs", Body(botId: botId, id: id, name: name,
             instruction: instruction, triggers: triggers, timeoutSeconds: timeoutSeconds,
-            missedPolicy: missedPolicy, limitPolicy: limitPolicy, outputs: outputs, thread: thread))
+            missedPolicy: missedPolicy, limitPolicy: limitPolicy, outputs: outputs, ifOutputs: ifOutputs, thread: thread))
         return response.routine
     }
 }

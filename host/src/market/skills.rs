@@ -1,5 +1,6 @@
 //! Skills: the anthropics/skills catalog, downloads, hand-written skills and the profile's skills block.
 
+use super::bundled_skills::SKILLS_LOCK;
 use super::{GITHUB, SKILLS_REPO, Skill, TIMEOUT, get_bytes, save, skills, skills_dir, slug, unique_id};
 use crate::LockExt;
 use anyhow::{Context, Result, anyhow, bail};
@@ -10,7 +11,6 @@ use std::time::{Duration, Instant};
 static SKILL_CATALOG: Mutex<Option<(Instant, Value)>> = Mutex::new(None);
 /// Largest skill file downloaded.
 const MAX_FILE: usize = 1_000_000;
-static SKILLS_LOCK: Mutex<()> = Mutex::new(());
 
 /// `Skill::source` of a skill written in Codync rather than downloaded.
 const CUSTOM: &str = "custom";
@@ -373,30 +373,22 @@ pub fn update_custom_skill(
     description: &str,
     body: &str,
 ) -> Result<Skill> {
-    update_skills(store, |all| {
-        let s = all.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("There's no skill with the id {id}"))?;
-        if s.written_by.as_deref() != Some(bot) {
-            bail!("{} wasn't saved by you: only skills you saved can be changed", s.name);
-        }
-        s.name = one_line(name);
-        s.description = one_line(description);
-        write_skill_md(s, body)?;
-        Ok(s.clone())
-    })
+    super::skill_history::update(store, bot, id, name, description, body)
 }
 
 /// A name or description for the front matter, which takes one line each.
-fn one_line(text: &str) -> String {
+pub(super) fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn write_skill_md(s: &Skill, body: &str) -> Result<()> {
     std::fs::create_dir_all(s.dir())?;
-    std::fs::write(
-        s.dir().join("SKILL.md"),
-        format!("---\nname: {}\ndescription: {}\n---\n\n{}\n", s.name, s.description, body.trim()),
-    )?;
+    std::fs::write(s.dir().join("SKILL.md"), markdown(s, body))?;
     Ok(())
+}
+
+pub(super) fn markdown(s: &Skill, body: &str) -> String {
+    format!("---\nname: {}\ndescription: {}\n---\n\n{}\n", s.name, s.description, body.trim())
 }
 
 pub fn list_skills(store: &crate::store::Store) -> Value {
@@ -405,6 +397,7 @@ pub fn list_skills(store: &crate::store::Store) -> Value {
 
 pub fn remove_skill(store: &crate::store::Store, id: &str) -> Result<()> {
     update_skills(store, |all| {
+        super::skill_history::remove(store, id)?;
         if let Some(s) = all.iter().find(|s| s.id == id) {
             let _ = std::fs::remove_dir_all(s.dir());
         }

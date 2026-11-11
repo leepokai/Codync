@@ -8,6 +8,7 @@ use crate::hub::Hub;
 use crate::routines::{Routine, Run, Status};
 use crate::store::{FlowLink, FlowStep, NewStep, StepStatus};
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,6 +16,7 @@ use tokio::sync::watch;
 use tokio::task::JoinSet;
 
 /// How the routine's own run ended.
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Root {
     Replied(String),
     Failed(String),
@@ -22,6 +24,7 @@ pub enum Root {
 }
 
 /// One routine run whose flow should run.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Start {
     pub run_id: String,
     pub routine_id: String,
@@ -68,8 +71,13 @@ enum Begin {
 
 pub async fn execute(hub: Arc<Hub>, start: Start) {
     let (run, routine) = (start.run_id.clone(), start.routine_id.clone());
-    if let Err(error) = run_flow(&hub, Arc::new(start)).await {
-        tracing::error!(run, routine, error = format!("{error:#}"), "routine flow failed");
+    match run_flow(&hub, Arc::new(start)).await {
+        Ok(()) => {
+            if let Err(error) = hub.routines.ack_flow(&hub.store, &run) {
+                tracing::error!(run, %error, "could not acknowledge routine flow; recovery will replay it idempotently");
+            }
+        }
+        Err(error) => tracing::error!(run, routine, error = format!("{error:#}"), "routine flow failed"),
     }
 }
 
@@ -125,11 +133,14 @@ fn skip_all<'a>(hub: &Hub, start: &Start, bots: impl IntoIterator<Item = &'a str
 }
 
 async fn run_flow(hub: &Arc<Hub>, start: Arc<Start>) -> Result<()> {
+    if !hub.routines.flow_allowed(&start) {
+        return Ok(());
+    }
     let links: Vec<FlowLink> =
         hub.store.flow_links(&start.routine_id)?.into_iter().filter(|l| l.created_at <= start.run_at).collect();
     if links.is_empty() {
         if let Root::Replied(reply) = &start.root {
-            crate::routines::outputs::deliver(hub, &start.routine_id, &start.outputs, &start.event, reply).await;
+            hub.routines.queue_flow_outputs(&hub.store, &start, reply)?;
         }
         return Ok(());
     }
@@ -180,7 +191,7 @@ async fn run_flow(hub: &Arc<Hub>, start: Arc<Start>) -> Result<()> {
         }
     }
     // The bots nothing hangs below carry the workflow's result out.
-    if !start.outputs.is_empty() {
+    if !start.outputs.is_empty() && !*running.cancel.borrow() {
         let mut final_bots: Vec<&String> =
             results.keys().filter(|bot| !links.iter().any(|link| &link.from_bot_id == *bot)).collect();
         final_bots.sort();
@@ -192,7 +203,9 @@ async fn run_flow(hub: &Arc<Hub>, start: Arc<Start>) -> Result<()> {
             })
             .collect::<Vec<_>>()
             .join("\n\n---\n\n");
-        crate::routines::outputs::deliver(hub, &start.routine_id, &start.outputs, &start.event, &text).await;
+        if !text.trim().is_empty() {
+            hub.routines.queue_flow_outputs(&hub.store, &start, &text)?;
+        }
     }
     Ok(())
 }
@@ -208,6 +221,13 @@ fn begin(
     depth: usize,
     cancel: &watch::Receiver<bool>,
 ) -> Result<Begin> {
+    // A completed step is a durable result, independent of whether its bot is still visible or
+    // runnable. Resolve it before current recipient/input checks when replaying after a crash.
+    if !*cancel.borrow()
+        && let Some(step) = hub.store.flow_run_steps(&start.run_id)?.into_iter().find(|step| step.bot_id == bot)
+    {
+        return Ok(Begin::Done(saved_outcome(step)));
+    }
     let inputs: Vec<(&FlowLink, &str)> = links
         .iter()
         .filter(|l| l.to_bot_id == bot)
@@ -252,10 +272,14 @@ fn begin(
 
 fn earlier_outcome(hub: &Hub, run_id: &str, bot: &str) -> Result<Outcome> {
     let step = hub.store.flow_run_steps(run_id)?.into_iter().find(|s| s.bot_id == bot).context("the step is gone")?;
-    Ok(match (step.status, step.output) {
+    Ok(saved_outcome(step))
+}
+
+fn saved_outcome(step: FlowStep) -> Outcome {
+    match (step.status, step.output) {
         (StepStatus::Succeeded, Some(text)) => Outcome::Replied(text),
         _ => Outcome::Nothing,
-    })
+    }
 }
 
 async fn send(hub: &Arc<Hub>, start: &Start, pending: Pending, cancel: watch::Receiver<bool>) -> Outcome {

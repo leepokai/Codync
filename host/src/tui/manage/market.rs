@@ -23,7 +23,11 @@ impl App {
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
         self.sheet("marketSkills", json!({}), Reply::Skills);
-        self.sheet("marketConnectors", json!({"search": ""}), Reply::Registry { search: String::new(), cursor: None });
+        self.sheet(
+            "marketConnectors",
+            json!({"search": "", "includeBundledApps":true}),
+            Reply::Registry { search: String::new(), cursor: None },
+        );
         self.sheet("botCatalog", json!({}), Reply::Catalog);
         self.overlays.push(Overlay::Market(Box::new(Market {
             tab: Tab::Agents,
@@ -47,7 +51,7 @@ impl App {
         m.loading = true;
         let search = m.searched.clone().unwrap_or_default();
         let reply = Reply::Registry { search: search.clone(), cursor: m.next.clone() };
-        self.sheet("marketConnectors", json!({"search": search, "cursor": m.next}), reply);
+        self.sheet("marketConnectors", json!({"search": search, "cursor": m.next, "includeBundledApps":true}), reply);
     }
 
     /// The cursor near the end of the Connectors list asks for the next registry page, and again as pages
@@ -149,7 +153,7 @@ impl App {
                 m.next = None;
                 self.sheet(
                     "marketConnectors",
-                    json!({"search": search}),
+                    json!({"search": search, "includeBundledApps":true}),
                     Reply::Registry { search: search.clone(), cursor: None },
                 );
                 m.searched = Some(search);

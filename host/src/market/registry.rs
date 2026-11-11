@@ -43,6 +43,12 @@ async fn registry_page(search: &str, cursor: &str, limit: usize) -> Result<(Vec<
 
 /// One registry server by exact name (its latest version).
 pub(super) async fn registry_server(name: &str) -> Result<Value> {
+    if let Some(server) = crate::native_channels::apps::server(name)? {
+        return Ok(server);
+    }
+    if let Some(server) = super::hermes_apps::registry::server(name) {
+        return Ok(server);
+    }
     let mut url = reqwest::Url::parse(MCP_REGISTRY)?;
     url.path_segments_mut().map_err(|()| anyhow!("bad registry URL"))?.extend([name, "versions", "latest"]);
     let v = get_json(url.as_str()).await.with_context(|| format!("{name} isn't in the MCP Registry"))?;
@@ -86,7 +92,8 @@ pub(super) fn listing(server: &Value, installed: &[Connector]) -> Option<Value> 
         "description": server["description"],
         "version": server["version"],
         "website": server["websiteUrl"].as_str().or_else(|| server["repository"]["url"].as_str()),
-        "installed": installed.iter().any(|c| c.registry_name.as_deref() == Some(name)),
+        "installed": installed.iter().any(|c| c.registry_name.as_deref() == Some(name)
+            || server["codyncCatalog"].as_str().is_some_and(|id| c.catalog.as_deref() == Some(id))),
         "options": options,
     }))
 }

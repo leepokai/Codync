@@ -62,6 +62,36 @@ fn config(hub: &Hub) -> Config {
 }
 
 #[test]
+fn authorized_voice_only_mentions_keep_their_attachment_until_the_worker_runs() {
+    let f = fixture();
+    let mut event = message(MINE, Some(GUILD), &format!("<@{BOT}>"), &[BOT]);
+    event["attachments"] = json!([{
+        "filename":"voice.ogg", "content_type":"audio/ogg", "size":42,
+        "url":"https://cdn.discordapp.com/attachments/1/2/voice.ogg?ex=123"
+    }]);
+    ingress::accept(&f.hub, &config(&f.hub), &event).unwrap();
+    ingress::accept(&f.hub, &config(&f.hub), &event).unwrap();
+    let pending = f.hub.store.pending_discord().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].audio.is_some());
+    assert!(pending[0].text.contains("voice.ogg"));
+    event["id"] = "999999".into();
+    event["author"]["id"] = OTHER.into();
+    ingress::accept(&f.hub, &config(&f.hub), &event).unwrap();
+    assert_eq!(f.hub.store.pending_discord().unwrap().len(), 1);
+    event["id"] = "999998".into();
+    event["author"]["id"] = MINE.into();
+    event["attachments"][0]["size"] = (21_u64 * 1024 * 1024).into();
+    ingress::accept(&f.hub, &config(&f.hub), &event).unwrap();
+    let pending = f.hub.store.pending_discord().unwrap();
+    let oversized = pending.iter().find(|message| message.event == "999998").unwrap();
+    assert!(oversized.audio.is_none());
+    assert!(oversized.text.contains("could not be transcribed"));
+    f.hub.store.reject_stale_discord(Some("replacement-generation")).unwrap();
+    assert!(f.hub.store.pending_discord().unwrap().is_empty());
+}
+
+#[test]
 fn a_mention_from_an_allowed_person_is_queued() {
     let f = fixture();
     ingress::accept(&f.hub, &config(&f.hub), &message(MINE, Some(GUILD), &format!("<@{BOT}> resúmeme esto"), &[BOT]))

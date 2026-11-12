@@ -64,11 +64,16 @@ export function modifiers(keys: Keys, local: string, remote: string): string[] {
   return [...out]
 }
 
-/** The key under a shortcut, ignoring what Shift or Option turned it into (`KeyZ` → `z`). */
-function baseKey(code: string): string | null {
-  const letter = /^Key([A-Z])$/.exec(code)
+/**
+ * The letter or digit of a shortcut: the one the keyboard layout gives (German Ctrl+Z is `z`, though the key sits where
+ * QWERTY has Y), else the key's position when Shift, Option or a non-Latin layout turned it into something else
+ * (⌥Z typing `Ω`, Shift+1 typing `!`, `я`).
+ */
+function shortcutKey(e: KeyPress): string | null {
+  if (/^[a-z0-9]$/i.test(e.key)) return e.key.toLowerCase()
+  const letter = /^Key([A-Z])$/.exec(e.code)
   if (letter) return letter[1]!.toLowerCase()
-  const digit = /^Digit(\d)$/.exec(code)
+  const digit = /^Digit(\d)$/.exec(e.code)
   return digit ? digit[1]! : null
 }
 
@@ -88,12 +93,12 @@ export function keyInput(e: KeyPress, local: string, remote: string): KeyInput |
   const shortcut = e.metaKey || e.ctrlKey || e.altKey
   if (!shortcut || altTyped(e, local)) return null
   if (e.key === ' ') return { type: 'key', key: 'space', modifiers: mods }
-  const key = baseKey(e.code) ?? (e.key.length === 1 ? e.key.toLowerCase() : null)
+  const key = shortcutKey(e) ?? (e.key.length === 1 ? e.key.toLowerCase() : null)
   return key ? { type: 'key', key, modifiers: mods } : null
 }
 
 /** Whether a press pastes here: the local clipboard goes over first, then the shortcut. */
-export const isPaste = (e: KeyPress, local: string) => baseKey(e.code) === 'v' && (local === 'darwin' ? e.metaKey : e.ctrlKey) && !e.altKey
+export const isPaste = (e: KeyPress, local: string) => shortcutKey(e) === 'v' && (local === 'darwin' ? e.metaKey : e.ctrlKey) && !e.altKey
 
 export interface Box {
   left: number

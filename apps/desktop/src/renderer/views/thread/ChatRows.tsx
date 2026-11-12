@@ -14,7 +14,7 @@ import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
-import { messageCopyItems, type MessageMenu } from './use-image-actions'
+import { copyMessageText, messageCopyItems, type MessageMenu } from './use-image-actions'
 import { callLength, relativeTime } from './chat-items'
 import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
@@ -134,7 +134,6 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
-  const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
   // A picture here has the same menu as the bubble: reactions and Reply, its own copy items in place of Copy.
   const menu: MessageMenu = { items: () => (reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []), reactions: reactionPick(store, entry) }
   return (
@@ -146,12 +145,12 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
             className="bubble user selectable"
             reactions={reactionPick(store, entry)}
             items={() => [
-              { title: 'Copy', icon: 'square.on.square', action: copy },
+              { title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) },
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
             {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
-            {entry.data.text}
+            <span data-find-text>{entry.data.text}</span>
           </Bubble>
         ) : null}
         {status && status !== 'sent' ? <UserStatus entry={entry} hovering={hovering} /> : null}
@@ -208,12 +207,12 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
           ) : voiceNote ? (
             <>
               <VoiceNotePlayer entry={entry} file={voiceNote} menu={menu} />
-              <MarkdownText text={entry.data.text ?? ''} />
+              <MarkdownText text={entry.data.text ?? ''} findable />
             </>
           ) : entry.data.files?.length ? (
             <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} menu={menu} />)}</div>
           ) : (
-            <MarkdownText text={entry.data.text ?? ''} />
+            <MarkdownText text={entry.data.text ?? ''} findable />
           )}
         </Bubble>
         <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />

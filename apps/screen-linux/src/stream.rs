@@ -103,23 +103,43 @@ impl Session {
         gst::Element::link_many(chain)?;
 
         // Input from the phone, applied in order.
-        let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
-        let view = View {
+        let (tx, mut rx) = mpsc::unbounded_channel::<Incoming>();
+        observe_frame(&convert, tx.downgrade())?;
+        let mut view = View {
+            // Weak: the pipeline holds this task's sender, through webrtcbin's data channels.
+            pipeline: pipeline.downgrade(),
+            src: src.clone(),
+            convert: convert.clone(),
             crop: crop.clone(),
             size: size.clone(),
             display: display.clone(),
+            frame: None,
+            shown: None,
+            fit: None,
         };
         let channels: Arc<Mutex<Vec<gst_webrtc::WebRTCDataChannel>>> = Arc::default();
         {
             let helper = helper.clone();
             let channels = channels.clone();
-            let display = display.clone();
+            let owner = id.clone();
             tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
+                while let Some(incoming) = rx.recv().await {
+                    let msg = match incoming {
+                        Incoming::Frame(frame) => {
+                            view.frame = Some(frame);
+                            view.resize();
+                            continue;
+                        }
+                        Incoming::Viewer(msg) => msg,
+                    };
                     let reply = if msg["type"] == "view" {
-                        Some(view.apply(&msg))
+                        Some(
+                            view.view(&helper, &msg)
+                                .await
+                                .unwrap_or_else(|e| error_msg(&e)),
+                        )
                     } else {
-                        apply(&helper, &display, &msg)
+                        apply(&helper, &view.display, &owner, &msg)
                             .await
                             .err()
                             .as_ref()
@@ -143,7 +163,7 @@ impl Session {
                         .flatten()
                         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
                     {
-                        let _ = tx.send(msg);
+                        let _ = tx.send(Incoming::Viewer(msg));
                     }
                     None
                 });
@@ -180,35 +200,104 @@ impl Drop for Session {
     }
 }
 
-/// Crop and output size for what the phone shows (see the iOS `ScreenViewport`).
+/// What the session's task handles, in order.
+enum Incoming {
+    /// A message from the viewer.
+    Viewer(Value),
+    /// The capture source's frame size, sent whenever the source (re)negotiates.
+    Frame((f64, f64)),
+}
+
+/// Reports each frame size the capture source negotiates into `convert`. Weak: `View` holds
+/// `convert`, so a strong sender here would keep the session's task alive forever.
+fn observe_frame(convert: &gst::Element, tx: mpsc::WeakUnboundedSender<Incoming>) -> Result<()> {
+    let pad = convert
+        .static_pad("sink")
+        .context("videoconvert has no sink")?;
+    pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+        if let Some(gst::PadProbeData::Event(event)) = &info.data
+            && let gst::EventView::Caps(caps) = event.view()
+            && let Some(s) = caps.caps().structure(0)
+            && let (Ok(w), Ok(h)) = (s.get::<i32>("width"), s.get::<i32>("height"))
+            && let Some(tx) = tx.upgrade()
+        {
+            let _ = tx.send(Incoming::Frame((f64::from(w), f64::from(h))));
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
+/// The display a viewer sees and controls, and the crop and output size it's shown at (see the
+/// iOS `ScreenViewport`).
 struct View {
+    pipeline: gst::glib::WeakRef<gst::Pipeline>,
+    /// The display's capture source, feeding `convert`.
+    src: gst::Element,
+    convert: gst::Element,
     crop: gst::Element,
     size: gst::Element,
     display: Display,
+    /// The source's frame size, larger than the display's logical size on HiDPI; `None` until
+    /// the current source negotiates.
+    frame: Option<(f64, f64)>,
+    /// The display region shown (x, y, width, height in logical points); `None` for all of it.
+    shown: Option<(f64, f64, f64, f64)>,
+    /// The longest and shortest side the viewer shows the picture at, once it said.
+    fit: Option<(f64, f64)>,
 }
 
 impl View {
-    fn apply(&self, msg: &Value) -> Value {
-        // Source frames can be larger than the logical size (HiDPI).
-        let (fw, fh) = self
-            .crop
-            .static_pad("sink")
-            .and_then(|p| p.current_caps())
-            .and_then(|c| {
-                let s = c.structure(0)?;
-                Some((
-                    f64::from(s.get::<i32>("width").ok()?),
-                    f64::from(s.get::<i32>("height").ok()?),
-                ))
-            })
-            .unwrap_or((self.display.width, self.display.height));
-        let factor = fw / self.display.width;
-        let crop = msg["crop"].as_array().and_then(|c| {
-            let v: Vec<f64> = c.iter().filter_map(Value::as_f64).collect();
-            (v.len() == 4 && v[2] >= 16.0 && v[3] >= 16.0)
-                .then(|| (v[0].max(0.0), v[1].max(0.0), v[2], v[3]))
-        });
-        let (x, y, w, h) = crop.unwrap_or((0.0, 0.0, self.display.width, self.display.height));
+    /// A `view` message: moves to the display it names, else takes its crop; its size, when given, either way.
+    async fn view(&mut self, helper: &Helper, msg: &Value) -> Result<Value> {
+        if let (Some(long), Some(short)) = (msg["long"].as_f64(), msg["short"].as_f64()) {
+            self.fit = Some((long, short));
+        }
+        match msg["display"]
+            .as_u64()
+            .filter(|&id| id != u64::from(self.display.id))
+        {
+            // Shown whole until the viewer crops the new display's picture.
+            Some(id) => self.switch(helper, id).await?,
+            None => {
+                self.shown = msg["crop"].as_array().and_then(|c| {
+                    let v: Vec<f64> = c.iter().filter_map(Value::as_f64).collect();
+                    (v.len() == 4 && v[2] >= 16.0 && v[3] >= 16.0)
+                        .then(|| (v[0].max(0.0), v[1].max(0.0), v[2], v[3]))
+                });
+            }
+        }
+        self.resize();
+        Ok(json!({
+            "type": "view",
+            "display": self.display.id,
+            "crop": self.shown.map(|(x, y, w, h)| json!([x, y, w, h])),
+        }))
+    }
+
+    /// Moves capture and input to display `id`, shown whole.
+    async fn switch(&mut self, helper: &Helper, id: u64) -> Result<()> {
+        let backend = helper.backend().await?;
+        let display = backend.display(Some(id))?;
+        let src = backend.source(&display).await?;
+        let pipeline = self
+            .pipeline
+            .upgrade()
+            .context("the screen session ended")?;
+        replace_source(&pipeline, &self.src, &src, &self.convert)?;
+        self.src = src;
+        self.display = display;
+        self.frame = None;
+        self.shown = None;
+        Ok(())
+    }
+
+    /// Sets the crop and output size for the shown region, the frame size and the viewer's size.
+    fn resize(&self) {
+        let (dw, dh) = (self.display.width, self.display.height);
+        let (fw, fh) = self.frame.unwrap_or((dw, dh));
+        let factor = fw / dw;
+        let (x, y, w, h) = self.shown.unwrap_or((0.0, 0.0, dw, dh));
         let px = |v: f64| to_i32(v * factor);
         self.crop.set_property("left", px(x));
         self.crop.set_property("top", px(y));
@@ -216,7 +305,7 @@ impl View {
             .set_property("right", (to_i32(fw) - px(x + w)).max(0));
         self.crop
             .set_property("bottom", (to_i32(fh) - px(y + h)).max(0));
-        if let (Some(long), Some(short)) = (msg["long"].as_f64(), msg["short"].as_f64()) {
+        if let Some((long, short)) = self.fit {
             let (cw, ch) = (w * factor, h * factor);
             let fit = (long.min(3840.0) / cw.max(ch))
                 .min(short.min(2160.0) / cw.min(ch))
@@ -230,8 +319,37 @@ impl View {
                     .build(),
             );
         }
-        json!({"type": "view", "display": self.display.id, "crop": crop.map(|(x, y, w, h)| json!([x, y, w, h]))})
     }
+}
+
+/// Swaps `old` for `new` in front of `convert`; on failure the old source is put back.
+fn replace_source(
+    pipeline: &gst::Pipeline,
+    old: &gst::Element,
+    new: &gst::Element,
+    convert: &gst::Element,
+) -> Result<()> {
+    let attach = |src: &gst::Element| -> Result<()> {
+        pipeline.add(src)?;
+        src.link(convert)?;
+        src.sync_state_with_parent()?;
+        Ok(())
+    };
+    // Stopped first, so the old source never pushes into an unlinked pad.
+    old.set_state(gst::State::Null)?;
+    // A source a failed earlier swap couldn't put back is already out.
+    if old.parent().is_some() {
+        pipeline.remove(old)?;
+    }
+    let Err(error) = attach(new) else {
+        return Ok(());
+    };
+    let _ = new.set_state(gst::State::Null);
+    if new.parent().is_some() {
+        pipeline.remove(new)?;
+    }
+    attach(old).with_context(|| format!("{error:#}; couldn't go back to the previous display"))?;
+    Err(error)
 }
 
 #[expect(
@@ -242,14 +360,14 @@ fn to_i32(v: f64) -> i32 {
     v.round() as i32
 }
 
-/// A clipboard or input message from the phone, on the current backend.
-async fn apply(helper: &Helper, display: &Display, msg: &Value) -> Result<()> {
+/// A clipboard or input message from `owner`'s viewer, on the current backend.
+async fn apply(helper: &Helper, display: &Display, owner: &str, msg: &Value) -> Result<()> {
     let backend = helper.backend().await?;
     if msg["type"] == "clipboard" {
         return set_clipboard(&backend, msg["text"].as_str().unwrap_or_default()).await;
     }
     helper
-        .input(&backend, display, input::Event::parse(msg)?)
+        .input(&backend, display, Some(owner), input::Event::parse(msg)?)
         .await
 }
 

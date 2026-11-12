@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach, steerBot } from './sandbox.ts'
+import { execFileSync } from 'node:child_process'
+import { api, attach, echoBot, steerBot } from './sandbox.ts'
 
 /** A `width` x `height` PNG drawn in the app, as base64. */
 function pngBase64(page: Page, width: number, height: number) {
@@ -52,6 +53,33 @@ test('a sent picture opens full size, zooms, copies, and offers Copy image and C
       await api(page, 'stop', { botId }).catch(() => {})
       await api(page, 'deleteBot', { botId }).catch(() => {})
     }
+    await browser.close()
+  }
+})
+
+test("a message's Copy right after Copy image keeps the message's text on the clipboard", async () => {
+  test.skip(process.platform !== 'darwin', 'reads the clipboard with pbpaste')
+  const { browser, page } = await attach()
+  const name = `Copy order e2e ${Date.now()}`
+  const text = `copy me ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = (await echoBot(page, name)).id
+    const uploadId = crypto.randomUUID()
+    await api(page, 'upload', { botId, uploadId, name: 'chart.png', data: await pngBase64(page, 1600, 1200), offset: 0, done: true })
+    await api(page, 'send', { botId, text: '', clientNonce: crypto.randomUUID(), attachments: [uploadId] })
+    await api(page, 'send', { botId, text, clientNonce: crypto.randomUUID() })
+    await page.locator('.roster-row', { hasText: name }).click()
+    const bubble = page.locator('.bubble.user', { hasText: text })
+    await expect(bubble).toBeVisible()
+
+    await page.locator('.attachment-image-button').last().click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Copy image' }).click()
+    await bubble.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Copy', exact: true }).click()
+    await expect.poll(() => execFileSync('pbpaste').toString()).toBe(text)
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await browser.close()
   }
 })

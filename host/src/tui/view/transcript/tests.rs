@@ -32,6 +32,7 @@ async fn a_voice_note_shows_its_message_under_its_file_line() {
     let file = lines.iter().position(|l| l.contains("note.m4a")).unwrap();
     let message = lines.iter().position(|l| l.contains("Here is the plan.")).unwrap();
     assert!(file < message, "{lines:?}");
+    assert!(chat.texts.iter().any(|&(from, to)| (from..to).contains(&message)), "find searches the note's text");
 }
 
 #[tokio::test]

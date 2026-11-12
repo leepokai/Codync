@@ -32,9 +32,9 @@ function viewMenu(pid: number, item: string) {
   execFileSync('osascript', ['-e', `tell application "System Events" to tell (first process whose unix id is ${pid}) to click menu item "${item}" of menu "View" of menu bar 1`])
 }
 
-/** ⌘F: View > Find in Conversation. */
+/** ⌘F: View > Find in conversation. */
 async function openFind(page: Page, pid: number) {
-  viewMenu(pid, 'Find in Conversation')
+  viewMenu(pid, 'Find in conversation')
   await expect(page.getByRole('search')).toBeVisible()
 }
 
@@ -117,9 +117,9 @@ test('find in a conversation keeps to the messages, steps through matches and ke
     await field(page).press('Enter')
     await field(page).press('Shift+Enter')
     await expect(count(page)).toHaveText('2/4')
-    viewMenu(pid, 'Find Next')
+    viewMenu(pid, 'Next match')
     await expect(count(page)).toHaveText('3/4')
-    viewMenu(pid, 'Find Previous')
+    viewMenu(pid, 'Previous match')
     await expect(count(page)).toHaveText('2/4')
     await page.getByRole('search').getByRole('button', { name: 'Next match' }).click()
     await expect(count(page)).toHaveText('3/4')
@@ -165,6 +165,29 @@ test("an empty chat's hints aren't searched", async () => {
     await openFind(page, pid)
     await field(page).fill('notification')
     await expect(count(page)).toHaveText('No results')
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    await browser.close()
+  }
+})
+
+test("a chat's time separator isn't searched, only what messages say", async () => {
+  const { browser, page } = await attach()
+  const name = `Find separator e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    const pid = await appPid(browser)
+    botId = (await echoBot(page, name)).id
+    await say(page, botId, 'hello')
+    await page.locator('.roster-row', { hasText: name }).click()
+    // The chat's first message opens with a time separator (one shows only above the oldest message loaded).
+    const separator = (await page.locator('.transcript .time-separator').first().textContent()) ?? ''
+    expect(separator).not.toBe('')
+    await openFind(page, pid)
+    await field(page).fill(separator)
+    await expect(count(page)).toHaveText('No results')
+    await field(page).fill('hello')
+    await expect(count(page)).toHaveText('1/2')
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     await browser.close()

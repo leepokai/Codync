@@ -41,13 +41,20 @@ fn data_dir() -> PathBuf {
 /// Messages to the host, one JSON line each.
 pub type Outbox = mpsc::UnboundedSender<Value>;
 
+/// The press held down, and the viewer session that pressed it (`None`: a bot's `input`).
+#[derive(Default)]
+struct Held {
+    owner: Option<String>,
+    press: Option<(Display, Press)>,
+}
+
 pub struct Helper {
     /// `None` until the portal is set up, or while no X display is reachable (`current_backend`).
     backend: Arc<Mutex<Option<Backend>>>,
     /// The session has screen sharing portals (once seen, they stay): use them, never the X display.
     portals: AtomicBool,
     /// A viewer's `Down` on its display, until its `Up`.
-    held: std::sync::Mutex<Option<(Display, Press)>>,
+    held: std::sync::Mutex<Held>,
     last_status: Mutex<Option<Value>>,
     sessions: sessions::Sessions,
     out: Outbox,
@@ -107,7 +114,7 @@ async fn serve(sock: UnixStream, backend: &Arc<Mutex<Option<Backend>>>) -> Resul
     .await;
     status_task.abort();
     helper.sessions.close_all().await;
-    helper.release_held().await;
+    helper.release_held(None).await;
     result
 }
 
@@ -123,14 +130,14 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
     // Close requests remain valid before setup; all other methods require a granted session.
     if method == "closeAll" {
         h.sessions.close_all().await;
-        h.release_held().await;
+        h.release_held(None).await;
         return Ok(json!({}));
     }
     if method == "close" {
         if let Some(id) = p["session"].as_str() {
             h.sessions.close(id).await;
+            h.release_held(Some(id)).await;
         }
-        h.release_held().await;
         return Ok(json!({}));
     }
     let backend = h.backend().await?;
@@ -173,7 +180,7 @@ async fn handle(h: &Arc<Helper>, method: &str, p: &Value) -> Result<Value> {
             json!({"data": jpeg})
         }
         "input" => {
-            h.input(&backend, &display()?, Event::parse(&p["event"])?)
+            h.input(&backend, &display()?, None, Event::parse(&p["event"])?)
                 .await?;
             json!({})
         }
@@ -202,16 +209,35 @@ impl Helper {
             .ok_or_else(|| anyhow!("Set up Computer access in Codync on this computer first."))
     }
 
-    /// One input event. An `Up` lets go of the modifiers its `Down` pressed, not the ones it
-    /// carries: the user may let go of a modifier before the button.
-    async fn input(&self, backend: &Backend, d: &Display, event: Event) -> Result<()> {
-        let event = input::track_held(&mut self.held(), d, event);
+    /// One input event from `owner`'s session. An `Up` lets go of the modifiers its `Down`
+    /// pressed, not the ones it carries: the user may let go of a modifier before the button.
+    async fn input(
+        &self,
+        backend: &Backend,
+        d: &Display,
+        owner: Option<&str>,
+        event: Event,
+    ) -> Result<()> {
+        let event = {
+            let mut held = self.held();
+            if matches!(event, Event::Down(_)) {
+                held.owner = owner.map(str::to_owned);
+            }
+            input::track_held(&mut held.press, d, event)
+        };
         backend.input(d, &event).await
     }
 
-    /// Lets go of a `Down` whose viewer left before its `Up`.
-    async fn release_held(&self) {
-        let Some((d, press)) = self.held().take() else {
+    /// Lets go of a `Down` whose viewer left before its `Up`: `owner`'s only, so a viewer leaving
+    /// never ends another one's drag; `None` lets go of any.
+    async fn release_held(&self, owner: Option<&str>) {
+        let Some((d, press)) = ({
+            let mut held = self.held();
+            if owner.is_some() && held.owner.as_deref() != owner {
+                return;
+            }
+            held.press.take()
+        }) else {
             return;
         };
         let released = match self.backend().await {
@@ -226,7 +252,7 @@ impl Helper {
         }
     }
 
-    fn held(&self) -> std::sync::MutexGuard<'_, Option<(Display, Press)>> {
+    fn held(&self) -> std::sync::MutexGuard<'_, Held> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -269,7 +295,7 @@ impl Helper {
         self.rt.spawn(async move {
             this.sessions.close(&id).await;
             this.notify_session(&id, "closed");
-            this.release_held().await;
+            this.release_held(Some(&id)).await;
         });
     }
 
@@ -286,6 +312,51 @@ impl Helper {
                 self.notify_session(id, "closed");
             })
             .await;
-        self.release_held().await;
+        self.release_held(Some(id)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_viewer_leaving_lets_go_only_of_its_own_press() {
+        let (out, _events) = mpsc::unbounded_channel();
+        let helper = Helper {
+            backend: Arc::new(Mutex::new(None)),
+            portals: AtomicBool::new(false),
+            held: std::sync::Mutex::default(),
+            last_status: Mutex::new(None),
+            sessions: sessions::Sessions::default(),
+            out,
+            rt: tokio::runtime::Handle::current(),
+        };
+        let display = Display {
+            id: 0,
+            x: 0,
+            y: 0,
+            width: 100.0,
+            height: 100.0,
+        };
+        let press = Press {
+            at: (1.0, 1.0),
+            button: input::Button::Left,
+            modifiers: vec![],
+        };
+        *helper.held() = Held {
+            owner: Some("a".into()),
+            press: Some((display, press)),
+        };
+        helper.release_held(Some("b")).await;
+        assert!(
+            helper.held().press.is_some(),
+            "another viewer's drag goes on"
+        );
+        helper.release_held(Some("a")).await;
+        assert!(
+            helper.held().press.is_none(),
+            "its own viewer leaving lets go"
+        );
     }
 }

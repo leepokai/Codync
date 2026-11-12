@@ -48,7 +48,7 @@ export async function copyImageOf(store: BotStore, source: ImageSource, from: Im
 }
 
 export function copyNameOf(source: ImageSource, from: ImageFrom) {
-  void copyText(source.file.name, (name) => window.codync.app.copy(name))
+  void copyText(source.file.name)
   analytics.track(imageActionEvent('copy_name', from))
 }
 
@@ -64,7 +64,12 @@ export function imageCopyItems(store: BotStore, source: ImageSource, from: Image
 export function messageCopyItems(store: BotStore, entry: Entry): MenuItem[] {
   const picture = copiedPicture(entry)
   if (picture) return imageCopyItems(store, picture, 'menu')
-  return [{ title: 'Copy', icon: 'square.on.square', action: () => entry.data.text && window.codync.app.copy(entry.data.text) }]
+  return [{ title: 'Copy', icon: 'square.on.square', action: () => copyMessageText(entry) }]
+}
+
+/** A message's plain Copy: its text, which a picture copy still in progress can't land over. */
+export function copyMessageText(entry: Entry) {
+  if (entry.data.text) void copyText(entry.data.text)
 }
 
 /** A message's own menu minus its Copy (Reply, what it did, …) and its reactions: a picture in it shows these with its own copy items. */

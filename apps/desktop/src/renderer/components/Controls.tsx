@@ -282,13 +282,25 @@ export function ValueRow({ label, detail, children }: { label: string; detail?: 
 }
 
 /** A search box: the replacement for `.searchable`. */
-export function SearchField({ value, onChange, prompt = 'Search', inputRef }: { value: string; onChange: (v: string) => void; prompt?: string; inputRef?: React.RefObject<HTMLInputElement | null> }) {
+export function SearchField({
+  value,
+  onChange,
+  prompt = 'Search',
+  inputRef,
+  onKeyDown,
+}: {
+  value: string
+  onChange: (v: string) => void
+  prompt?: string
+  inputRef?: React.RefObject<HTMLInputElement | null>
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+}) {
   const tr = useTr()
   const clear = tr('Clear search')
   return (
     <div className="search-field">
       <Icon name="magnifyingglass" size={12} color="var(--secondary)" />
-      <input ref={inputRef} value={value} placeholder={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+      <input ref={inputRef} value={value} placeholder={tr(prompt)} aria-label={tr(prompt)} spellCheck={false} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} />
       {value ? (
         <button aria-label={clear} title={clear} className="search-clear" onClick={() => onChange('')}>
           <Icon name="xmark.circle.fill" size={12} />

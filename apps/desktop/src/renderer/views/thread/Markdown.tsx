@@ -76,13 +76,14 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
       const cols = Array.from({ length: columns }, (_, i) => i)
       return (
         <div className="md-table-scroll">
+          {/* Each cell is its own block to find in: a match never runs from one cell into the next. */}
           <div className="md-table md-body" style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}>
             {cols.map((i) => (
-              <Text key={`h${i}`} weight="semibold">{inline(block.header[i] ?? '', `h${i}`)}</Text>
+              <Text key={`h${i}`} weight="semibold" data-find-block>{inline(block.header[i] ?? '', `h${i}`)}</Text>
             ))}
             {block.rows.map((row, r) => [
               <Hairline key={`l${r}`} style={{ gridColumn: `1 / span ${columns}` }} />,
-              ...cols.map((i) => <span key={`${r}-${i}`}>{inline(row[i] ?? '', `${r}-${i}`)}</span>),
+              ...cols.map((i) => <span key={`${r}-${i}`} data-find-block>{inline(row[i] ?? '', `${r}-${i}`)}</span>),
             ])}
           </div>
         </div>

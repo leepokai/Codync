@@ -128,6 +128,12 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
         override val properties get() = mapOf("action" to use.json)
     }
+    /** Find in a conversation opened (iOS `conversationFindOpened`). */
+    data object ConversationFindOpened : AnalyticsEvent("conversation_find_opened")
+    /** A search in the find bar settled: whether it found anything, never the text (iOS `conversationFindSearched`). */
+    data class ConversationFindSearched(val found: Boolean) : AnalyticsEvent("conversation_find_searched") {
+        override val properties get() = mapOf("found" to JsonPrimitive(found))
+    }
 }
 
 /** One of a property's catalog values, as sent. */

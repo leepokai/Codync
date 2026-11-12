@@ -1,0 +1,53 @@
+# Find in the conversation on the phones: the magnifying glass opens the bar, typing counts the matches in message text,
+# next and previous step through them, closing clears it, and the chat still follows a new reply afterwards. The phone
+# must already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes),
+# so run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags conversation \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e HISTORY_AGENT="$PWD/host/tests/fixtures/history_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - conversation
+onFlowComplete:
+  - runScript:
+      file: find-in-conversation.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: find-in-conversation.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "Reply 3"
+    timeout: 20000
+- tapOn: "Find in conversation"
+- inputText: "needle"
+- assertVisible: "1/2"
+- tapOn: "Next match"
+- assertVisible: "2/2"
+- tapOn: "Previous match"
+- assertVisible: "1/2"
+- takeScreenshot: find-in-conversation
+- tapOn: "Close"
+- assertNotVisible: "1/2"
+# Closed, the chat follows the newest message again.
+- runScript:
+    file: find-in-conversation.js
+    env:
+      SEND: "4"
+- extendedWaitUntil:
+    visible: "Reply 4"
+    timeout: 20000

@@ -100,6 +100,10 @@ export type WindowCommand =
   | { kind: 'networkSettings' }
   | { kind: 'newBot' }
   | { kind: 'search' }
+  /** ⌘F: the find bar over the open conversation. */
+  | { kind: 'find' }
+  /** ⌘G / ⇧⌘G: the next or previous match of the open find bar. */
+  | { kind: 'findStep'; forward: boolean }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
   | { kind: 'refresh' }

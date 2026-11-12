@@ -90,6 +90,8 @@ host answers and sends it once the host is up.
 | Event | Sent by | When | Properties |
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
+| `conversation_find_opened` | host `track` (desktop, TUI), iOS, Android | The find bar opens in a conversation (desktop ⌘F, the phones' magnifying glass, the terminal's `/` or ^f) | — |
+| `conversation_find_searched` | host `track` (desktop, TUI), iOS, Android | A search in the find bar settles, at most once per searched text: typing paused (desktop and phones), a step to another match, or the bar closing (phones and terminal) | `found` (whether anything matched; never the text searched for) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |

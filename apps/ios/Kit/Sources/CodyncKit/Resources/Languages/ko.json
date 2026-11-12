@@ -2408,5 +2408,10 @@
   "Retry model list": "모델 목록 다시 시도",
   "Optional": "선택 사항",
   "computer": "컴퓨터",
-  "Create a bot in Codync to get started.": "시작하려면 Codync에서 봇을 만드세요."
+  "Create a bot in Codync to get started.": "시작하려면 Codync에서 봇을 만드세요.",
+  "Downloaded by Codync": "Codync가 다운로드함",
+  "Use the one Codync downloads": "Codync가 다운로드한 것 사용",
+  "Downloading Node.js for n8n…": "n8n용 Node.js 다운로드 중…",
+  "Unpacking Node.js…": "Node.js 압축 해제 중…",
+  "Installing n8n… the first time takes a few minutes.": "n8n 설치 중… 처음에는 몇 분 걸립니다."
 }

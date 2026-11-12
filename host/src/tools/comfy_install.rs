@@ -57,7 +57,7 @@ struct Progress {
 }
 
 /// What to fetch and how to know it arrived whole.
-pub struct Source {
+pub(crate) struct Source {
     pub url: String,
     pub size: u64,
     pub sha256: String,
@@ -155,14 +155,14 @@ impl Installer {
 }
 
 /// `CODYNC_7ZA` for development, else the `7za.exe` the package puts beside the host.
-fn seven_zip() -> Option<PathBuf> {
+pub(crate) fn seven_zip() -> Option<PathBuf> {
     let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|p| p.join("7za.exe")));
     std::env::var_os("CODYNC_7ZA").map(PathBuf::from).into_iter().chain(beside).find(|p| p.is_file())
 }
 
 /// Downloads `source` into `dest`, checking it as it arrives; `progress` gets the bytes so far.
 /// Network failures and server errors are tried again; a wrong archive or a refused address is not.
-pub async fn download(source: &Source, dest: &Path, progress: impl Fn(u64)) -> Result<()> {
+pub(crate) async fn download(source: &Source, dest: &Path, progress: impl Fn(u64)) -> Result<()> {
     let mut attempt = 1;
     loop {
         match fetch_once(source, dest, &progress).await {
@@ -172,7 +172,7 @@ pub async fn download(source: &Source, dest: &Path, progress: impl Fn(u64)) -> R
                 if attempt == TRIES || !retryable(&e) {
                     return Err(e);
                 }
-                tracing::info!(attempt, error = format!("{e:#}"), "downloading ComfyUI again");
+                tracing::info!(attempt, error = format!("{e:#}"), "downloading again");
                 tokio::time::sleep(Duration::from_secs(5 * u64::from(attempt))).await;
                 attempt += 1;
             }
@@ -192,8 +192,8 @@ fn retryable(e: &anyhow::Error) -> bool {
 }
 
 async fn fetch_once(source: &Source, dest: &Path, progress: &impl Fn(u64)) -> Result<()> {
-    let resp = crate::http().get(&source.url).send().await.context("downloading ComfyUI")?;
-    let resp = resp.error_for_status().context("downloading ComfyUI")?;
+    let resp = crate::http().get(&source.url).send().await.context("downloading the program")?;
+    let resp = resp.error_for_status().context("downloading the program")?;
     let mut file = tokio::fs::File::create(dest).await.with_context(|| format!("creating {}", dest.display()))?;
     let mut hash = Sha256::new();
     let mut done = 0_u64;
@@ -206,7 +206,7 @@ async fn fetch_once(source: &Source, dest: &Path, progress: &impl Fn(u64)) -> Re
         else {
             break;
         };
-        let chunk = chunk.context("downloading ComfyUI")?;
+        let chunk = chunk.context("downloading the program")?;
         hash.update(&chunk);
         file.write_all(&chunk).await.context("saving the download")?;
         done += chunk.len() as u64;
@@ -224,7 +224,7 @@ async fn fetch_once(source: &Source, dest: &Path, progress: &impl Fn(u64)) -> Re
     Ok(())
 }
 
-fn hex(digest: &[u8]) -> String {
+pub(crate) fn hex(digest: &[u8]) -> String {
     digest.iter().fold(String::with_capacity(64), |mut s, b| {
         let _ = write!(s, "{b:02x}");
         s
@@ -232,7 +232,7 @@ fn hex(digest: &[u8]) -> String {
 }
 
 /// Whether `path` already holds the pinned archive, checked byte for byte. Blocking.
-fn already_downloaded(path: &Path, size: u64, sha256: &str) -> bool {
+pub(crate) fn already_downloaded(path: &Path, size: u64, sha256: &str) -> bool {
     use std::io::Read;
     if std::fs::metadata(path).map(|m| m.len()).ok() != Some(size) {
         return false;
@@ -251,7 +251,7 @@ fn already_downloaded(path: &Path, size: u64, sha256: &str) -> bool {
 }
 
 /// `std::fs::rename` that waits out a scanner holding files in `from` open.
-fn rename_patiently(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn rename_patiently(from: &Path, to: &Path) -> std::io::Result<()> {
     let mut tries = 1;
     loop {
         match std::fs::rename(from, to) {

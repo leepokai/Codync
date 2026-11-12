@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { N8nState } from '@shared/models'
+import type { N8nInstall, N8nState } from '@shared/models'
 import { Button, CardForm, CardSection, Spinner, Switch, ValueRow } from '../../components/Controls'
 import { FolderPicker } from '../../components/FolderPicker'
 import { Sheet } from '../../components/Overlay'
@@ -104,11 +104,18 @@ function N8nSettingsBody() {
         </div>
         {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </CardSection>
-      <CardSection title="Instance" footer={live?.url ?? tr('Set the install folder to choose where the instance runs.')}>
-        <ValueRow label="Install folder" detail={live?.path ? lastPathComponent(live.path) : null}>
-          <Button kind="secondary" disabled={!online} onClick={() => setPicking(true)}>
-            {tr('Change…')}
-          </Button>
+      <CardSection title="Instance" footer={live?.url ?? null}>
+        <ValueRow label="Install folder" detail={live?.path ? lastPathComponent(live.path) : tr('Downloaded by Codync')}>
+          <HStack gap={6}>
+            {live?.path ? (
+              <Button kind="secondary" disabled={!online || busy} onClick={() => void act('setN8nPath', { path: '' })}>
+                {tr('Use the one Codync downloads')}
+              </Button>
+            ) : null}
+            <Button kind="secondary" disabled={!online} onClick={() => setPicking(true)}>
+              {tr('Change…')}
+            </Button>
+          </HStack>
         </ValueRow>
         <ValueRow label="Port">
           <HStack gap={6}>
@@ -135,8 +142,16 @@ function N8nSettingsBody() {
         <CardSection>
           <HStack gap={8}>
             <Spinner size={14} />
-            <Text tone="secondary">{tr('Starting… the first start can take a minute.')}</Text>
+            <Text tone="secondary">{tr(startingNote(live?.install ?? null))}</Text>
           </HStack>
+          {live?.install?.phase === 'downloading' && live.install.total > 0 ? (
+            <progress value={live.install.done} max={live.install.total} aria-label={tr('Downloading Node.js for n8n…')} />
+          ) : null}
+        </CardSection>
+      ) : null}
+      {live?.install?.phase === 'failed' && live.install.error ? (
+        <CardSection>
+          <Text size="footnote" tone="danger">{live.install.error}</Text>
         </CardSection>
       ) : null}
       <Sheet open={picking} onClose={() => setPicking(false)} width={460} height={520}>
@@ -150,6 +165,16 @@ function N8nSettingsBody() {
       </Sheet>
     </CardForm>
   )
+}
+
+/** What the wait is for: the first start fetches Node.js and n8n, a later one only starts the instance. */
+function startingNote(install: N8nInstall | null): string {
+  switch (install?.phase) {
+    case 'downloading': return 'Downloading Node.js for n8n…'
+    case 'unpacking': return 'Unpacking Node.js…'
+    case 'installing': return 'Installing n8n… the first time takes a few minutes.'
+    default: return 'Starting… the first start can take a minute.'
+  }
 }
 
 function stateLabel(state: string | null): string {

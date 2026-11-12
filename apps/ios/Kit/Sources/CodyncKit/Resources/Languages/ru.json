@@ -2408,5 +2408,10 @@
   "Retry model list": "Повторить список моделей",
   "Optional": "Необязательно",
   "computer": "компьютер",
-  "Create a bot in Codync to get started.": "Чтобы начать, создайте бота в Codync."
+  "Create a bot in Codync to get started.": "Чтобы начать, создайте бота в Codync.",
+  "Downloaded by Codync": "Загружено Codync",
+  "Use the one Codync downloads": "Использовать загруженный Codync",
+  "Downloading Node.js for n8n…": "Загрузка Node.js для n8n…",
+  "Unpacking Node.js…": "Распаковка Node.js…",
+  "Installing n8n… the first time takes a few minutes.": "Установка n8n… в первый раз это займёт несколько минут."
 }

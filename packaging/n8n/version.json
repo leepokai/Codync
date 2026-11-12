@@ -1,0 +1,9 @@
+{
+  "n8n": "2.47.4",
+  "node": {
+    "version": "v24.22.3",
+    "url": "https://nodejs.org/dist/v24.22.3/node-v24.22.3-win-x64.zip",
+    "size": 37762649,
+    "sha256": "e612af99f626ab415ea225af6bce5c971feb448cb5cae250bb1c3fa50c5f7d9f"
+  }
+}

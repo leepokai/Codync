@@ -73,3 +73,11 @@ fn executions_keep_what_a_card_needs_and_read_numeric_ids() {
     assert_eq!(rows[1]["startedAt"], Value::Null);
     assert!(rows[0].get("finished").is_none(), "n8n's deprecated field stays out");
 }
+
+#[test]
+fn a_phone_reads_the_downloaded_program_as_set_up() {
+    let state = json!({"state": "stopped", "path": null, "auth": null});
+    assert_eq!(view(&Caller::Local, state.clone())["path"], Value::Null);
+    let device = Caller::Device { key: "phone".into(), scopes: vec![] };
+    assert_eq!(view(&device, state)["path"], "Codync");
+}

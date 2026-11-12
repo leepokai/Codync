@@ -1,6 +1,6 @@
 //! What a paired phone sees and does of this computer's n8n: whether it runs, its workflows (with a
 //! switch to publish or unpublish each) and its latest runs. The host asks n8n's public API
-//! (`/api/v1`, header `X-AUTOMAN-API-KEY`) with a key it creates once, for the owner it seeded, and
+//! (`/api/v1`, with the key header of the running build) with a key it creates once, for the owner it seeded, and
 //! keeps in its store; the phone never sees the key nor the editor's session cookie (see [`view`]).
 //!
 //! Routes and fields are those of the `automan` public API (`packages/cli/src/public-api/v1`):
@@ -18,7 +18,6 @@ use std::time::Duration;
 
 /// The public API key the host made for itself.
 const KV_API_KEY: &str = "n8n.apiKey";
-const KEY_HEADER: &str = "X-AUTOMAN-API-KEY";
 /// What the key may do: list and switch workflows, and read runs. Nothing that edits or deletes.
 const SCOPES: [&str; 6] =
     ["workflow:list", "workflow:read", "workflow:activate", "workflow:deactivate", "execution:list", "execution:read"];
@@ -35,7 +34,15 @@ pub fn without_session(mut state: Value) -> Value {
 
 /// The n8n state a caller may see: the session cookie is for this computer's own app only.
 pub fn view(caller: &Caller, state: Value) -> Value {
-    if matches!(caller, Caller::Local) { state } else { without_session(state) }
+    if matches!(caller, Caller::Local) {
+        return state;
+    }
+    let mut state = without_session(state);
+    // A phone reads a missing folder as "not set up", but the program Codync downloads has none to show.
+    if state["path"].is_null() {
+        state["path"] = "Codync".into();
+    }
+    state
 }
 
 /// The instance's workflows, name order as n8n lists them.
@@ -105,8 +112,10 @@ async fn call(
         reqwest::Url::parse_with_params(&format!("{base}/api/v1{path}"), query).context("building the n8n address")?;
     for attempt in 0..2 {
         let key = api_key(hub, &base, attempt > 0).await?;
-        let mut request =
-            crate::http().request(method.clone(), url.clone()).header(KEY_HEADER, key).timeout(CALL_TIMEOUT);
+        let mut request = crate::http()
+            .request(method.clone(), url.clone())
+            .header(hub.n8n.flavor().key_header(), key)
+            .timeout(CALL_TIMEOUT);
         if let Some(body) = &body {
             request = request.json(body);
         }

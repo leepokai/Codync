@@ -660,7 +660,7 @@ export function normalizeScreen(raw: Partial<ScreenState> | undefined | null): S
   }
 }
 
-/** The n8n instance the host runs; `url` is set once its folder is. */
+/** The n8n instance the host runs. */
 export interface N8nState {
   enabled: boolean
   state: 'stopped' | 'starting' | 'running' | 'error'
@@ -672,6 +672,18 @@ export interface N8nState {
   mcp: boolean
   /** The instance's session cookie: the editor signs in with it. */
   auth: string | null
+  /** The cookie's name, which depends on the n8n build that runs. */
+  authCookie?: string
+  /** The program arriving the first time (Node.js and n8n are downloaded once, like ComfyUI). */
+  install?: N8nInstall
+}
+
+/** Where the n8n program's first download stands; `idle` when there is nothing to fetch. */
+export interface N8nInstall {
+  phase: 'idle' | 'downloading' | 'unpacking' | 'installing' | 'failed'
+  done: number
+  total: number
+  error: string | null
 }
 
 export interface Hello {

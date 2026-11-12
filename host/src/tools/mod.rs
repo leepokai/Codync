@@ -7,7 +7,7 @@
 
 pub mod comfy;
 mod comfy_api;
-mod comfy_install;
+pub(crate) mod comfy_install;
 mod comfy_job;
 pub mod comfy_mcp;
 mod health;

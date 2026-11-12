@@ -6,9 +6,9 @@
 //! instance's `/healthz` endpoint.
 
 use crate::LockExt;
-use crate::agent::backends;
 use crate::agent::process::Process;
 use crate::hub::Hub;
+use crate::n8n_program::{self, Flavor, Installer, NODE_MAJOR, Program};
 use crate::service;
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -22,8 +22,6 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::broadcast;
 
-/// The oldest Node.js major that runs an n8n install.
-const NODE_MAJOR: u32 = 24;
 /// The first start runs database setup and migrations, so the wait is patient.
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 const DEFAULT_PORT: u16 = 5678;
@@ -32,6 +30,8 @@ const LOG_CAP: usize = 16 * 1024;
 const KV_PATH: &str = "n8n.path";
 const KV_PORT: &str = "n8n.port";
 const KV_ENABLED: &str = "n8n.enabled";
+/// Set once the person chose the n8n Codync downloads over a folder of their own.
+const KV_MANAGED: &str = "n8n.managed";
 /// The settings' keys under the pre-rename name, read once and moved to the new keys.
 const LEGACY_KV: [(&str, &str); 3] =
     [("automan.path", KV_PATH), ("automan.port", KV_PORT), ("automan.enabled", KV_ENABLED)];
@@ -41,8 +41,6 @@ pub(crate) const KV_OWNER_PASSWORD: &str = "n8n.owner.password";
 const KV_MCP_KEY: &str = "n8n.mcpApiKey";
 /// The owner the host creates for an instance that doesn't have one yet.
 const OWNER_EMAIL: &str = "owner@codync.local";
-/// The instance's session cookie; the desktop's editor logs in with it.
-const AUTH_COOKIE: &str = "automan-auth";
 /// The instance's MCP server in the bots' MCP list.
 const CONNECTOR_ID: &str = "n8n";
 
@@ -90,12 +88,18 @@ pub struct N8n {
     session: Mutex<Option<String>>,
     /// Whether the instance's MCP server is registered as a connector for the bots.
     mcp: Mutex<bool>,
+    /// Gets n8n's program when the person's own folder isn't set.
+    installer: Installer,
+    /// The build of the last start: its cookie and key header differ.
+    flavor: Mutex<Flavor>,
 }
 
 impl N8n {
     pub fn new(store: &Store, events: broadcast::Sender<Value>, host_url: String, host_token: String) -> Self {
+        let path = initial_path(store);
+        let own_folder = path.is_some();
         let settings = Settings {
-            path: initial_path(store),
+            path,
             port: kv(store, KV_PORT).and_then(|v| v.parse().ok()).unwrap_or(DEFAULT_PORT),
             enabled: kv(store, KV_ENABLED).as_deref() == Some("1"),
         };
@@ -110,6 +114,8 @@ impl N8n {
             host_token,
             session: Mutex::default(),
             mcp: Mutex::default(),
+            installer: Installer::default(),
+            flavor: Mutex::new(if own_folder { Flavor::Automan } else { Flavor::Official }),
         }
     }
 
@@ -123,11 +129,13 @@ impl N8n {
             "enabled": s.enabled,
             "state": st.name(),
             "error": match &*st { State::Error(e) => Some(e.clone()), _ => None },
-            "url": s.path.is_some().then(|| format!("http://127.0.0.1:{}", s.port)),
+            "url": format!("http://127.0.0.1:{}", s.port),
             "port": s.port,
             "path": s.path.as_ref().map(|p| p.to_string_lossy().into_owned()),
             "mcp": mcp,
             "auth": auth,
+            "authCookie": self.flavor().cookie(),
+            "install": self.installer.status(),
         })
     }
 
@@ -143,6 +151,11 @@ impl N8n {
     /// The port the editor and the API listen on.
     pub fn port(&self) -> u16 {
         self.settings.locked().port
+    }
+
+    /// The build the instance runs: its cookie name and API-key header.
+    pub fn flavor(&self) -> Flavor {
+        *self.flavor.locked()
     }
 
     fn set_state(&self, state: State) {
@@ -166,6 +179,10 @@ impl N8n {
         let s = self.settings.locked();
         if let Some(path) = &s.path {
             store.kv_set(KV_PATH, &path.to_string_lossy())?;
+            store.kv_delete(KV_MANAGED)?;
+        } else {
+            store.kv_delete(KV_PATH)?;
+            store.kv_set(KV_MANAGED, "1")?;
         }
         if s.port != DEFAULT_PORT {
             store.kv_set(KV_PORT, &s.port.to_string())?;
@@ -217,9 +234,12 @@ impl N8n {
     }
 
     pub async fn set_path(&self, store: &Store, path: &str) -> Result<()> {
-        let path = PathBuf::from(path.trim());
-        check_install(&path)?;
-        self.settings.locked().path = Some(path);
+        // An empty folder is the choice of the n8n Codync downloads itself.
+        let path = Some(path.trim()).filter(|p| !p.is_empty()).map(PathBuf::from);
+        if let Some(path) = &path {
+            check_install(path)?;
+        }
+        self.settings.locked().path = path;
         self.persist(store)?;
         self.after_settings_change(store).await;
         Ok(())
@@ -268,30 +288,40 @@ impl N8n {
     async fn launch(self: &Arc<Self>, generation: u64, hub: &Arc<Hub>) -> Result<()> {
         let (path, port) = {
             let s = self.settings.locked();
-            let path = s.path.clone().context(
-                "n8n doesn't know its install folder yet. Choose the folder that holds packages/cli/bin/automan in Settings → n8n.",
-            )?;
-            (path, s.port)
+            (s.path.clone(), s.port)
         };
-        let bin = path.join("packages/cli/bin/automan");
-        ensure!(bin.exists(), "that folder isn't an n8n install (missing packages/cli/bin/automan)");
-        let node =
-            tokio::task::spawn_blocking(|| node_at_least(NODE_MAJOR)).await?.context("Node.js for the n8n instance")?;
+        let program = match path {
+            Some(path) => local_program(&path).await?,
+            None => self.installer.ensure(|| self.broadcast()).await?,
+        };
+        *self.flavor.locked() = program.flavor;
+        self.broadcast();
         let user_folder = service::data_dir().join("n8n");
         migrate_data_dir(&user_folder).await?;
         tokio::fs::create_dir_all(&user_folder).await.context("preparing the n8n data folder")?;
         install_node_package(&user_folder).await?;
 
+        let flavor = program.flavor;
+        let Program { node, entry, cwd, .. } = program;
         let mut command = Command::new(&node);
         command
-            .arg(&bin)
-            .current_dir(&path)
-            .env("AUTOMAN_USER_FOLDER", &user_folder)
-            .env("AUTOMAN_PORT", port.to_string())
-            .env("AUTOMAN_HOST", "127.0.0.1")
-            .env("AUTOMAN_PROTOCOL", "http")
-            .env("AUTOMAN_DIAGNOSTICS_ENABLED", "false")
-            .env("NODE_ENV", "production")
+            .arg(&entry)
+            .current_dir(&cwd)
+            .env(flavor.env("USER_FOLDER"), &user_folder)
+            .env(flavor.env("PORT"), port.to_string())
+            .env(flavor.env("HOST"), "127.0.0.1")
+            .env(flavor.env("PROTOCOL"), "http")
+            .env(flavor.env("DIAGNOSTICS_ENABLED"), "false")
+            .env("NODE_ENV", "production");
+        if flavor == Flavor::Official {
+            // Loopback over http: the editor's cookie must be allowed without TLS, and nothing phones home.
+            command
+                .arg("start")
+                .env("N8N_SECURE_COOKIE", "false")
+                .env("N8N_VERSION_NOTIFICATIONS_ENABLED", "false")
+                .env("N8N_PERSONALIZATION_ENABLED", "false");
+        }
+        command
             // The Codync node in this instance's editor: the host it talks to, with
             // its loopback token, so workflows need no configured credential.
             .env("CODYNC_HOST_URL", &self.host_url)
@@ -322,6 +352,15 @@ impl N8n {
                 bail!("n8n didn't come up within three minutes{}", tail_hint(&self.log_tail()));
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        // /healthz answers before the editor and the API are mounted: running means they answer too.
+        ensure!(
+            self.rest_ready(generation).await,
+            "n8n's editor and API didn't come up{}",
+            tail_hint(&self.log_tail())
+        );
+        if self.generation.load(Ordering::SeqCst) != generation {
+            return Ok(());
         }
         self.set_state(State::Running);
         // The instance is up: the bots get its MCP server, the editor its auto-login.
@@ -377,11 +416,7 @@ impl N8n {
             if self.generation.load(Ordering::SeqCst) != generation {
                 return false; // a stop or new start took over
             }
-            let mounted = matches!(
-                crate::http().get(&url).timeout(Duration::from_secs(2)).send().await,
-                Ok(r) if r.status().as_u16() != 404
-            );
-            if mounted {
+            if mounted(&url).await {
                 return true;
             }
             if tokio::time::Instant::now() > deadline {
@@ -429,9 +464,9 @@ impl N8n {
                 .context("logging into the n8n instance")?;
         }
         let status = resp.status();
-        let cookie = cookie_value(resp.headers(), AUTH_COOKIE);
+        let cookie = cookie_value(resp.headers(), self.flavor().cookie());
         resp.error_for_status().with_context(|| format!("logging into the n8n instance ({status})"))?;
-        let cookie = cookie.ok_or_else(|| anyhow!("the n8n login set no {AUTH_COOKIE} cookie"))?;
+        let cookie = cookie.ok_or_else(|| anyhow!("the n8n login set no {} cookie", self.flavor().cookie()))?;
 
         // MCP access is off by default.
         let resp = client
@@ -632,14 +667,13 @@ fn tail_hint(tail: &str) -> String {
     if tail.is_empty() { ".".into() } else { format!(": {tail}") }
 }
 
-/// Node.js on the computer, at least `min_major`.
-fn node_at_least(min_major: u32) -> Result<PathBuf> {
-    let node = backends::which("node").context("Node.js isn't on this computer's PATH")?;
-    let out = std::process::Command::new(&node).arg("--version").output().context("checking Node.js's version")?;
-    let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-    let major: u32 = version.trim_start_matches('v').split('.').next().unwrap_or_default().parse().unwrap_or(0);
-    ensure!(major >= min_major, "n8n needs Node.js {min_major} or newer; this computer has {version}");
-    Ok(node)
+/// A folder the person chose: the fork's entry point, run with the Node.js on this computer.
+async fn local_program(path: &Path) -> Result<Program> {
+    check_install(path)?;
+    let node = tokio::task::spawn_blocking(|| n8n_program::node_at_least(NODE_MAJOR))
+        .await?
+        .context("Node.js for the n8n instance")?;
+    Ok(Program { node, entry: path.join("packages/cli/bin/automan"), cwd: path.to_path_buf(), flavor: Flavor::Automan })
 }
 
 /// Whether the install folder has the entry point the host starts.
@@ -658,6 +692,7 @@ fn initial_path(store: &Store) -> Option<PathBuf> {
     #[cfg(not(test))]
     {
         if saved.is_none()
+            && kv(store, KV_MANAGED).is_none()
             && let Some(found) = discover_install()
         {
             let _ = store.kv_set(KV_PATH, &found.to_string_lossy());
@@ -676,6 +711,16 @@ fn discover_install() -> Option<PathBuf> {
         .into_iter()
         .map(|name| home.join(name))
         .find(|path| check_install(path).is_ok())
+}
+
+/// Whether the REST layer answers for real: the official build answers every route with a "starting up" page
+/// (status 200, no cookie) until it has loaded, and the fork answers 404 until it is mounted.
+async fn mounted(url: &str) -> bool {
+    let Ok(reply) = crate::http().get(url).timeout(Duration::from_secs(2)).send().await else { return false };
+    if reply.status().as_u16() == 404 {
+        return false;
+    }
+    !reply.text().await.unwrap_or_default().contains("n8n is starting up")
 }
 
 /// One readiness probe; connection errors mean "not up yet".
@@ -742,7 +787,26 @@ mod tests {
         assert_eq!(s["enabled"], false);
         assert_eq!(s["state"], "stopped");
         assert_eq!(s["port"], DEFAULT_PORT);
-        assert!(s["url"].is_null());
+        assert_eq!(
+            s["url"],
+            format!("http://127.0.0.1:{DEFAULT_PORT}"),
+            "the editor lives here with or without a folder"
+        );
+        assert_eq!(s["install"]["phase"], "idle");
+        assert_eq!(s["authCookie"], "n8n-auth", "with no folder of its own the official build runs");
+    }
+
+    #[tokio::test]
+    async fn choosing_the_downloaded_n8n_clears_the_folder_and_is_remembered() {
+        let store = temp_store();
+        store.kv_set(KV_PATH, "C:\n8n-install").unwrap();
+        let (events, _) = broadcast::channel(8);
+        let n8n = N8n::new(&store, events, "http://127.0.0.1:19306".into(), "test".into());
+        n8n.set_path(&store, "").await.unwrap();
+        assert!(n8n.state()["path"].is_null());
+        assert!(store.kv_get(KV_PATH).is_none());
+        assert_eq!(store.kv_get(KV_MANAGED).as_deref(), Some("1"));
+        assert!(initial_path(&store).is_none(), "a first run doesn't look for a folder again");
     }
 
     #[test]
@@ -885,7 +949,7 @@ mod tests {
             axum::http::header::SET_COOKIE,
             axum::http::HeaderValue::from_static("automan-auth=abc123; Path=/; HttpOnly"),
         );
-        assert_eq!(cookie_value(&headers, AUTH_COOKIE).as_deref(), Some("abc123"));
+        assert_eq!(cookie_value(&headers, "automan-auth").as_deref(), Some("abc123"));
         assert_eq!(cookie_value(&headers, "missing").as_deref(), None);
     }
 

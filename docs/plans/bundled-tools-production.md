@@ -15,8 +15,8 @@ Objetivo: que producción instale los dos ya dentro, los arranque sola y abra el
 
 | Pieza | n8n | ComfyUI |
 | --- | --- | --- |
-| Código del programa | Se compila en CI y se copia a `resources/n8n` | Portable oficial descomprimido a `resources/comfy` |
-| Runtime | Node embebido en `resources/node` | Python y torch del portable |
+| Código del programa | Se descarga una vez en el primer arranque (Node.js y el `n8n` fijado de npm, `packaging/n8n/version.json`) a `<datos>/n8n-program`, como ComfyUI; la carpeta propia elegida en Ajustes sigue ganando | Portable oficial descomprimido a `resources/comfy` |
+| Runtime | Node.js 24 del sistema, o el portable fijado, descargado con la misma descarga verificada que ComfyUI | Python y torch del portable |
 | Datos | `userData/n8n` (base y archivos) | `userData/comfy` + `models/` |
 | Puerto | 5678 con búsqueda de libre | 8188 con búsqueda de libre |
 | Auth | Propietario sembrado + cookie de sesión | Ninguna |

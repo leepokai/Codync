@@ -19,9 +19,6 @@ pub fn draw(buf: &mut Buffer, area: Rect, sheet: &N8nSheet) {
     };
     put(buf, inner.x, inner.y, inner.width, &state, palette.text);
     let detail = match s(&sheet.status, "error") {
-        "" if sheet.loaded() && sheet.status["path"].is_null() && !sheet.active() => {
-            tr("n8n isn't set up on this computer yet. Choose its folder in the desktop app.").into_owned()
-        }
         "" => String::new(),
         error => error.to_owned(),
     };

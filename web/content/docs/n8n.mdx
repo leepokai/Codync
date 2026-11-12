@@ -6,18 +6,21 @@ The instance is an install of [n8n](https://github.com/n8n-io/n8n), the open-sou
 
 ## Requirements
 
-- Node.js 24 or newer on the computer's PATH.
-- An install folder with an n8n build in it: the folder that contains `packages/cli/bin/automan`. Codync starts that entry point for you.
+Nothing to install by hand. The first time n8n starts, Codync downloads what it runs on, once, and keeps it in `~/.codync/n8n-program`:
+
+- Node.js 24, from nodejs.org (about 38 MB, checked by size and SHA-256), unless this computer already has Node.js 24 or newer.
+- n8n itself, from the npm registry, at the version this Codync release pins (`packaging/n8n/version.json`). It needs a few GB of free disk space while it installs.
+
+The settings page shows the progress while it arrives. If you keep your own n8n build, choose its folder (the one that contains `packages/cli/bin/automan`) with **Change…**; **Use the one Codync downloads** goes back.
 
 ## Set it up
 
 n8n is a desktop feature. Its settings are in **Settings → n8n**, and the sidebar's **n8n** button opens the editor directly.
 
-1. Choose the **Install folder** with **Change…**: the folder where n8n is installed.
-2. Pick the **Port** (default 5678, 1024 or above) and **Save** it.
-3. Turn on **Run n8n with this computer** and choose **Start**.
+1. Pick the **Port** (default 5678, 1024 or above) and **Save** it.
+2. Turn on **Run n8n with this computer** and choose **Start**.
 
-The first start can take a few minutes: it sets up the instance's database and runs its migrations. The dot next to **n8n** in the sidebar shows the state: it pulses while starting, stays lit while running, and turns red on an error.
+The first start can take several minutes: it downloads the program, then sets up the instance's database and runs its migrations. The dot only turns to running once the editor and the API answer. The dot next to **n8n** in the sidebar shows the state: it pulses while starting, stays lit while running, and turns red on an error.
 
 The switch and **Stop** act differently: **Stop** stops the instance but leaves it on, so it starts again the next time the host starts. Turning the switch off stops it and keeps it off until you turn it on again.
 

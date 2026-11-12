@@ -160,7 +160,7 @@ fn prepare_data(data: &Path) -> Result<PathBuf> {
 }
 
 /// Free bytes on the disk that holds `path`.
-pub(super) fn free_space(path: &Path) -> Option<u64> {
+pub(crate) fn free_space(path: &Path) -> Option<u64> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     disks
         .list()

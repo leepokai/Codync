@@ -2408,5 +2408,10 @@
   "Retry model list": "Réessayer la liste des modèles",
   "Optional": "Facultatif",
   "computer": "ordinateur",
-  "Create a bot in Codync to get started.": "Créez un bot dans Codync pour commencer."
+  "Create a bot in Codync to get started.": "Créez un bot dans Codync pour commencer.",
+  "Downloaded by Codync": "Téléchargé par Codync",
+  "Use the one Codync downloads": "Utiliser celui que Codync télécharge",
+  "Downloading Node.js for n8n…": "Téléchargement de Node.js pour n8n…",
+  "Unpacking Node.js…": "Décompression de Node.js…",
+  "Installing n8n… the first time takes a few minutes.": "Installation de n8n… la première fois prend quelques minutes."
 }

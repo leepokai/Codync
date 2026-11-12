@@ -2408,5 +2408,10 @@
   "Retry model list": "重试模型列表",
   "Optional": "可选",
   "computer": "电脑",
-  "Create a bot in Codync to get started.": "在 Codync 中创建一个 Bot 即可开始。"
+  "Create a bot in Codync to get started.": "在 Codync 中创建一个 Bot 即可开始。",
+  "Downloaded by Codync": "由 Codync 下载",
+  "Use the one Codync downloads": "使用 Codync 下载的版本",
+  "Downloading Node.js for n8n…": "正在为 n8n 下载 Node.js…",
+  "Unpacking Node.js…": "正在解压 Node.js…",
+  "Installing n8n… the first time takes a few minutes.": "正在安装 n8n… 首次需要几分钟。"
 }

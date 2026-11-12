@@ -112,7 +112,7 @@ fun AppStore.connect() {
                                     changed
                                 }
                                 // Dropped chats page their earlier messages again.
-                                mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
+                                mutableState.update { it.copy(historyEnd = if (dropped) emptyMap() else it.historyEnd) }
                                 noteHello(hello)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster

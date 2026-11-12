@@ -229,7 +229,9 @@ impl App {
                     self.answer(&id, &option);
                 }
             }
-            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N')) if !roster_page && self.pending().is_some() => {
+            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N'))
+                if !roster_page && self.pending().is_some_and(|e| e.kind == Kind::Permission) =>
+            {
                 self.answer_kind(c);
             }
             KeyCode::Char('n') => self.new_bot(),

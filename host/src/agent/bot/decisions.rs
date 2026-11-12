@@ -104,7 +104,9 @@ impl Actor {
             .ok_or_else(|| anyhow!("no such option on that card"))?;
         // Save one user entry in this same turn; typed input already has an entry, so update it instead.
         let mut data = typed.map_or_else(|| json!({"text": choice}), |e| e.data.clone());
-        data["from"] = "decision".into();
+        if data["from"].is_null() {
+            data["from"] = "decision".into();
+        }
         data["decisionId"] = id.into();
         data["decisionChoice"] = choice.clone().into();
         data["status"] = "sent".into();
@@ -127,10 +129,7 @@ impl Actor {
             None => choice.clone(),
         };
         self.record_joined_input(&user.id, &input);
-        card.data["status"] = json!(decision::Status::Answered);
-        card.data["selected"] = choice.clone().into();
-        let text = card.data["text"].as_str().unwrap_or_default();
-        card.data["text"] = format!("{text}\n\nAnswered: {choice}").into();
+        decision::mark_answered(&mut card.data, &choice);
         let saved = self.hub.set_entry(id, &card.data);
         self.continue_after_decision();
         ensure!(saved.is_some(), "the choice was delivered but the card could not be saved; do not repeat the action");
@@ -149,6 +148,15 @@ impl Actor {
             return false;
         }
         let Some(entry) = self.hub.store.entry(entry_id) else { return false };
+        // Host notes and voice relays are not the user's typed answer; a host note leaves the card waiting.
+        match entry.data["from"].as_str() {
+            Some("host") => return false,
+            Some(_) => {
+                self.expire_decisions("the user sent a different message");
+                return false;
+            }
+            None => {}
+        }
         let id = self.asked.keys().next().cloned().unwrap_or_default();
         let Some(card) = self.hub.store.entry(&id) else { return false };
         let text = entry.data["text"].as_str().unwrap_or_default();

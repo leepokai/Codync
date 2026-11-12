@@ -7,7 +7,7 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## Unreleased
+## 2.45.0
 ### zh-Hant
 - bot 要你選擇時，聊天中會出現可點選的選項卡。選項會送回正在進行的工作，已回答或過期的卡片不會重複送出。
 

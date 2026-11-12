@@ -46,8 +46,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
             } else if name == crate::chat::decision::TOOL {
-                let cfg = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
-                crate::chat::decision::ask(hub, &cfg, &b["arguments"]).await?
+                crate::chat::decision::ask(hub, bot, &b["arguments"]).await?
             } else if name == crate::chat::skills::TOOL {
                 crate::chat::skills::call(hub, bot, &b["arguments"]).await?
             } else if crate::chat::fallbacks::TOOLS.contains(&name) {

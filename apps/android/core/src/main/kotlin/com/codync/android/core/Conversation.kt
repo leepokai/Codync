@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -34,6 +36,10 @@ data class Entry(
     val isDecision: Boolean get() = kind == "notice" && data["decision"]?.jsonPrimitive?.booleanOrNull == true
     /** A choice card's status; null for a value this app doesn't know. */
     val decisionStatus: DecisionStatus? get() = DecisionStatus.entries.firstOrNull { it.wire == status }
+    /** A choice card's options, in order. */
+    val choices: List<String> get() = (data["choices"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    /** The index of a choice card's suggested option. */
+    val recommended: Int? get() = (data["recommended"] as? JsonPrimitive)?.intOrNull
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */

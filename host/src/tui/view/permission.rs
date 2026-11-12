@@ -41,10 +41,11 @@ fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
 pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let answering = app.answering.get(&e.id);
-    let question = e.data["question"].as_str().unwrap_or("Choose one");
+    let question = e.data["question"].as_str().unwrap_or_default();
     let bw = width.saturating_sub(1).max(20);
     let inner = bw.saturating_sub(4);
-    card_head(out, &format!(" ◆ {} asks ", truncate(&b.name, inner.saturating_sub(10))), bw);
+    let ask = tr("Needs your choice");
+    card_head(out, &format!(" ◆ {} · {ask} ", truncate(&b.name, inner.saturating_sub(w(&ask) + 8))), bw);
     for l in md::wrap(&[Span::styled(question.to_owned(), t.secondary)], inner, &[], &[]) {
         card_row(out, l.spans, inner);
     }
@@ -107,11 +108,10 @@ fn card_foot(out: &mut Built, bw: usize) {
 /// A choice card's line once it is decided: what the user picked, or that it went before they did.
 pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
     let t = theme();
-    let question = e.data["question"].as_str().unwrap_or("Choose one");
+    let question = e.data["question"].as_str().unwrap_or_default();
     let (g, gs, what) = match (Status::of(&e.data), e.data["selected"].as_str()) {
         (Some(Status::Answered), Some(chosen)) => ("✓", t.green, chosen.to_owned()),
-        (Some(Status::Expired), _) => ("·", t.dim, "Expired".to_owned()),
-        _ => ("·", t.dim, "No answer".to_owned()),
+        _ => ("·", t.dim, tr("No answer — the bot moved on").into_owned()),
     };
     out.lines.push(Line::from(vec![
         Span::styled(format!(" {g} "), gs),
@@ -130,21 +130,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     let inner = bw.saturating_sub(4);
     let title = e.data["title"].as_str().unwrap_or("Use a tool");
     let head = format!(" ◆ {} wants to: {} ", b.name, truncate(title, inner.saturating_sub(w(&b.name) + 14)));
-    let side = bw.saturating_sub(w(&head) + 3);
-    out.lines.push(Line::from(vec![
-        Span::raw(" "),
-        Span::styled("╭─", t.amber),
-        Span::styled(head, t.amber.add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{}╮", "─".repeat(side)), t.amber),
-    ]));
-    let row = |content: Vec<Span<'static>>| -> Line<'static> {
-        let used: usize = content.iter().map(|s| w(&s.content)).sum();
-        let mut spans = vec![Span::raw(" "), Span::styled("│ ", t.amber)];
-        spans.extend(content);
-        spans.push(Span::raw(" ".repeat(inner.saturating_sub(used))));
-        spans.push(Span::styled(" │", t.amber));
-        Line::from(spans)
-    };
+    card_head(out, &head, bw);
     if let Some(cmd) = e.data["command"].as_str().filter(|c| !c.is_empty()) {
         for (i, l) in md::wrap(&[Span::styled(cmd.to_owned(), t.bold)], inner.saturating_sub(2), &[], &[])
             .into_iter()
@@ -153,17 +139,21 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         {
             let mut c = vec![Span::styled(if i == 0 { "$ " } else { "  " }, t.dim)];
             c.extend(l.spans);
-            out.lines.push(row(c));
+            card_row(out, c, inner);
         }
         let cwd = tilde(e.data["cwd"].as_str().unwrap_or(&b.cwd), home);
-        out.lines.push(row(vec![Span::styled(format!("  in {}", truncate(&cwd, inner.saturating_sub(5))), t.dim)]));
+        card_row(out, vec![Span::styled(format!("  in {}", truncate(&cwd, inner.saturating_sub(5))), t.dim)], inner);
     }
     for d in e.data["diffs"].as_array().into_iter().flatten().take(3) {
         let path = tilde(d["path"].as_str().unwrap_or_default(), home);
         let stat = format!("+{} −{}", d["added"].as_u64().unwrap_or(0), d["removed"].as_u64().unwrap_or(0));
         let p = truncate(&path, inner.saturating_sub(w(&stat) + 2));
         let pad = inner.saturating_sub(w(&p) + w(&stat));
-        out.lines.push(row(vec![Span::styled(p, t.bold), Span::raw(" ".repeat(pad)), Span::styled(stat, t.secondary)]));
+        card_row(
+            out,
+            vec![Span::styled(p, t.bold), Span::raw(" ".repeat(pad)), Span::styled(stat, t.secondary)],
+            inner,
+        );
         let patch = d["patch"].as_str().unwrap_or_default();
         let n = patch.lines().count();
         for l in patch.lines().take(6) {
@@ -176,20 +166,20 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
             };
             let body = truncate(l, inner);
             let padded = format!("{body}{}", " ".repeat(inner.saturating_sub(w(&body))));
-            out.lines.push(row(vec![Span::styled(padded, s)]));
+            card_row(out, vec![Span::styled(padded, s)], inner);
         }
         if n > 6 {
-            out.lines.push(row(vec![Span::styled(format!("… {} more lines · t shows the whole diff", n - 6), t.dim)]));
+            card_row(out, vec![Span::styled(format!("… {} more lines · t shows the whole diff", n - 6), t.dim)], inner);
         }
     }
     if let Some(detail) = e.data["detail"].as_str().filter(|d| !d.trim().is_empty() && e.data["command"].is_null()) {
         // As the apps show it: wrapped, up to the length a team change's card is held to.
         let detail: String = detail.chars().take(crate::chat::manage::MAX_CARD_DETAIL).collect();
         for l in md::wrap(&[Span::styled(detail, t.secondary)], inner, &[], &[]) {
-            out.lines.push(row(l.spans));
+            card_row(out, l.spans, inner);
         }
     }
-    out.lines.push(row(vec![]));
+    card_row(out, vec![], inner);
     // Buttons, wrapping onto more lines when narrow.
     let opts = e.options();
     let keys = option_keys(&opts);
@@ -199,7 +189,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     let flush =
         |out: &mut Built, line: &mut Vec<Span<'static>>, used: &mut usize, pending: &mut Vec<(u16, u16, Click)>| {
             let li = out.lines.len();
-            out.lines.push(row(std::mem::take(line)));
+            card_row(out, std::mem::take(line), inner);
             for (x, bw, c) in pending.drain(..) {
                 out.buttons.push((li, x, bw, c));
             }
@@ -238,10 +228,7 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         }
         flush(out, &mut line, &mut used, &mut pending);
     }
-    out.lines.push(Line::from(vec![
-        Span::raw(" "),
-        Span::styled(format!("╰{}╯", "─".repeat(bw.saturating_sub(2))), t.amber),
-    ]));
+    card_foot(out, bw);
 }
 
 pub(super) fn decided_line(out: &mut Built, e: &Entry) {

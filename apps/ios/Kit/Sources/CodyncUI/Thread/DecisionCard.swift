@@ -58,18 +58,15 @@ struct DecisionCard: View {
                     .accessibilityIdentifier("decision-outcome")
             }
             if expanded || clamped {
-                Button { Motion.animate { expanded.toggle() } } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                IconButton(expanded ? "Collapse" : "Expand", systemImage: expanded ? "chevron.up" : "chevron.down") {
+                    Motion.animate { expanded.toggle() }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L10n.tr(expanded ? "Collapse" : "Expand"))
                 .accessibilityIdentifier("decision-expand")
             }
         }
         .padding(16).frame(maxWidth: 420, alignment: .leading)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .padding(.trailing, 40).accessibilityIdentifier("decision-card")
+        .padding(.trailing, 40)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("decision-card")
     }
 }

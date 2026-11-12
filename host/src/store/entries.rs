@@ -337,10 +337,10 @@ impl Store {
         };
         for id in &ids {
             if let Some(mut e) = self.entry(id) {
-                let status = if e.kind == EntryKind::Notice.as_str() && e.data["decision"] == true {
-                    let text = e.data["text"].as_str().unwrap_or_default();
-                    e.data["text"] = format!("{text}\n\nNo answer — the host restarted.").into();
-                    "expired"
+                let status = if crate::chat::decision::is_card(&e) {
+                    crate::chat::decision::mark_expired(&mut e.data, "the host restarted");
+                    self.update_entry(id, &e.data)?;
+                    continue;
                 } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
                     e.data["text"] = format!(

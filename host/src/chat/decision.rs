@@ -3,7 +3,7 @@
 
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
-use crate::store::{BotConfig, Entry};
+use crate::store::Entry;
 use anyhow::{Result, anyhow, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -107,7 +107,8 @@ pub fn pick(choices: &[String], wanted: &str, numbered: bool) -> Option<String> 
     None
 }
 
-pub async fn ask(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result<Value> {
+pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+    let cfg = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
     ensure!(!cfg.is_group(), "request_decision works only in a bot's own chat");
     let rt = hub.runtime(&cfg.id);
     ensure!(rt.lane.is_some_and(|lane| lane.chat == cfg.id), "request_decision works only in your own chat");
@@ -139,11 +140,27 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
 pub fn expire(hub: &Hub, entry_id: &str) {
     let Some(mut card) = hub.store.entry(entry_id).filter(is_card) else { return };
     if Status::of(&card.data) == Some(Status::Pending) {
-        card.data["status"] = json!(Status::Expired);
-        let text = card.data["text"].as_str().unwrap_or_default();
-        card.data["text"] = format!("{text}\n\nNo answer — the bot moved on.").into();
+        mark_expired(&mut card.data, "the bot moved on");
         hub.set_entry(entry_id, &card.data);
     }
+}
+
+/// Marks a card's data answered with `choice`, also in the text older clients show.
+pub fn mark_answered(data: &mut Value, choice: &str) {
+    data["status"] = json!(Status::Answered);
+    data["selected"] = choice.into();
+    append_text(data, &format!("Answered: {choice}"));
+}
+
+/// Marks a card's data expired, saying why in the text older clients show.
+pub fn mark_expired(data: &mut Value, why: &str) {
+    data["status"] = json!(Status::Expired);
+    append_text(data, &format!("No answer — {why}."));
+}
+
+fn append_text(data: &mut Value, line: &str) {
+    let text = data["text"].as_str().unwrap_or_default();
+    data["text"] = format!("{text}\n\n{line}").into();
 }
 
 #[cfg(test)]

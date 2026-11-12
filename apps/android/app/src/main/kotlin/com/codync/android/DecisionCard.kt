@@ -20,16 +20,13 @@ import com.codync.android.core.Entry
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 /** Selection and expiry come from the host, including answers made on another device. */
 @Composable internal fun DecisionCard(entry: Entry, answering: Boolean, respond: (String) -> Unit) {
     val d = entry.data
     val pending = entry.decisionStatus == DecisionStatus.Pending
-    val choices = (d["choices"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
-    val suggested = d["recommended"]?.jsonPrimitive?.intOrNull
+    val choices = entry.choices
+    val suggested = entry.recommended
     var chosen by remember(entry.id) { mutableStateOf<String?>(null) }
     var expanded by remember(entry.id) { mutableStateOf(false) }
     // Whether the clamped question hides lines: only then is there something to expand.

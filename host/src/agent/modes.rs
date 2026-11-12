@@ -37,7 +37,8 @@ pub enum Switch<'a> {
     /// It's in that mode already, or the bot wants [`AUTO`] from an agent without one, which keeps its own.
     Stay,
     To(&'a Mode),
-    /// The agent doesn't have that mode: the turn doesn't start, rather than run in one the user didn't pick.
+    /// The agent doesn't have that mode: the turn doesn't start, rather than run in one the user didn't pick (a fallback
+    /// step may run in its [`Modes::stand_in`]).
     Missing,
 }
 
@@ -64,13 +65,29 @@ impl Modes {
         self.list.iter().find(|m| m.id == id)
     }
 
-    /// The mode a fallback step runs in when it doesn't have the bot's mode: its Auto, else the mode it opened in.
-    /// `None` when it lists no mode to fall back to, which fails the turn rather than work in the agent's default.
-    pub fn fallback_mode(&self) -> Option<&Mode> {
-        self.auto
-            .as_deref()
-            .and_then(|id| self.by_id(id))
-            .or_else(|| self.opening.as_deref().and_then(|id| self.by_id(id)))
+    /// The mode a fallback step runs in when it doesn't have `wanted`, the bot's mode on its own agent: the most
+    /// permissive of its modes that is no more permissive than `wanted` (see [`rank`]), the first listed on a tie.
+    /// `None` when none qualifies, so the step doesn't take the turn rather than work more freely than the user picked;
+    /// also when `wanted` itself can't be ranked (OpenCode's `build`), since how free it is can't be told.
+    pub fn stand_in(&self, wanted: &str) -> Option<&Mode> {
+        let limit = if wanted == AUTO { AUTO_RANK } else { rank(wanted)? };
+        let mut best: Option<(u8, &Mode)> = None;
+        for mode in &self.list {
+            let r = self.rank_of(mode);
+            if r < UNKNOWN && r <= limit && best.is_none_or(|(b, _)| r > b) {
+                best = Some((r, mode));
+            }
+        }
+        best.map(|(_, mode)| mode)
+    }
+
+    /// How freely `mode` lets this agent act: its Auto mode ranks as Auto; any other the higher of what its id and
+    /// name say, [`UNKNOWN`] when neither says.
+    fn rank_of(&self, mode: &Mode) -> u8 {
+        if self.auto.as_deref() == Some(mode.id.as_str()) {
+            return AUTO_RANK;
+        }
+        rank(&mode.id).into_iter().chain(rank(&mode.name)).max().unwrap_or(UNKNOWN)
     }
 
     /// What clients offer: `[{id, name, description}]`, the Auto mode first and listed as [`AUTO`], so a bot's choice
@@ -108,6 +125,25 @@ pub fn switch<'a>(modes: Option<&'a Modes>, wanted: Option<&str>) -> Switch<'a> 
     match mode {
         Some(mode) if modes.current.as_deref() != Some(&mode.id) => Switch::To(mode),
         _ => Switch::Stay,
+    }
+}
+
+/// The rank of an Auto mode (see [`rank`]).
+const AUTO_RANK: u8 = 3;
+/// A mode [`rank`] can't place: the most permissive, so it never stands in for another.
+const UNKNOWN: u8 = 5;
+
+/// How freely a mode lets the agent act, from its id or name, least first: read-only and plan (0), ask and manual (1),
+/// default and auto-edit (2), Auto ([`AUTO_RANK`], only the agent's own: another agent's `auto` may approve
+/// everything), bypass and full access (4). `None` for words it doesn't know.
+fn rank(word: &str) -> Option<u8> {
+    let word: String = word.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect();
+    match word.as_str() {
+        "readonly" | "plan" => Some(0),
+        "ask" | "manual" | "dontask" => Some(1),
+        "default" | "autoedit" | "acceptedits" => Some(2),
+        "bypass" | "bypasspermissions" | "fullaccess" | "agentfullaccess" | "yolo" => Some(4),
+        _ => None,
     }
 }
 
@@ -221,16 +257,26 @@ mod tests {
     }
 
     #[test]
-    fn a_fallback_runs_in_auto_else_in_the_mode_it_opened_in() {
+    fn a_fallback_stands_in_with_its_freest_mode_no_freer_than_the_bots() {
+        let stand_in = |modes: &Modes, wanted: &str| modes.stand_in(wanted).map(|m| m.id.clone());
+        let codex = Modes::from_session(&codex(), "codex").unwrap();
+        assert_eq!(stand_in(&codex, "plan").as_deref(), Some("read-only"));
+        assert_eq!(stand_in(&codex, "acceptEdits").as_deref(), Some("read-only"), "Auto review is freer");
+        assert_eq!(stand_in(&codex, "bypassPermissions").as_deref(), Some("agent-full-access"));
         let claude = Modes::from_session(&claude(), "claude").unwrap();
-        assert_eq!(claude.fallback_mode().map(|m| m.id.as_str()), Some("auto"));
-        // No Auto of its own: the mode it opened in.
+        assert_eq!(stand_in(&claude, "read-only").as_deref(), Some("plan"));
+        assert_eq!(stand_in(&claude, "agent-full-access").as_deref(), Some("auto"));
+        assert_eq!(stand_in(&codex, AUTO).as_deref(), Some("agent"), "the bot's Auto takes the step's Auto review");
+        // A bot mode that can't be ranked never lets a fallback pick one, not even full access.
+        assert_eq!(stand_in(&codex, "build"), None);
+        // Nothing as careful as Plan: no stand-in, and never the mode it opened in for that alone.
         let manual = json!({"modes": {"currentModeId": "ask", "availableModes": [{"id": "ask", "name": "Ask"}, {"id": "code", "name": "Code"}]}});
         let legacy = Modes::from_session(&manual, "kimi").unwrap();
-        assert_eq!(legacy.fallback_mode().map(|m| m.id.as_str()), Some("ask"));
-        // Goose's `auto` isn't an Auto mode, so its opening mode stands.
+        assert_eq!(stand_in(&legacy, "plan"), None);
+        assert_eq!(stand_in(&legacy, "default").as_deref(), Some("ask"), "Code is unknown, so never picked");
+        // Goose's `auto` approves every tool call: unknown, like its other modes, so nothing stands in.
         let goose = Modes::from_session(&goose(), "goose").unwrap();
-        assert_eq!(goose.fallback_mode().map(|m| m.id.as_str()), Some("smart_approve"));
+        assert_eq!(stand_in(&goose, "bypassPermissions"), None);
     }
 
     #[test]

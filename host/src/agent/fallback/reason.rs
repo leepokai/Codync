@@ -21,7 +21,7 @@ pub enum Reason {
     NotStarting,
     /// The agent doesn't have the step's model.
     ModelMissing,
-    /// The agent doesn't have the mode the bot works in, and a fallback step found nothing to run it as.
+    /// A fallback step lacks the mode the bot works in and any no freer than it, or won't switch to it.
     ModeMissing,
 }
 

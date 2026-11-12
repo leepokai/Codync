@@ -75,7 +75,7 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
 
 impl Actor {
     /// The step of the agent the bot is on (its own: 0).
-    fn step(&self) -> Option<usize> {
+    pub(super) fn step(&self) -> Option<usize> {
         fallback::step_of(&self.base, &self.cfg.backend)
     }
 

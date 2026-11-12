@@ -24,7 +24,13 @@ pub(super) fn hook_item(hub: &Arc<Hub>, item: &Value) -> Value {
     let Some(body) = item["body"].as_str().and_then(|b| crypto::unb64(b).ok()) else {
         return json!({"t": "hook.ack", "seq": seq, "ok": false, "code": "invalid"});
     };
-    match hub.routines.receive(hub, hook, &headers, &body) {
+    let result = match hub.routines.receive(hub, hook, &headers, &body) {
+        Err(crate::routines::hooks::Refused::Unauthorized) => {
+            crate::workflows::receive_hook(hub, hook, &headers, &body)
+        }
+        other => other,
+    };
+    match result {
         Ok(_) => json!({"t": "hook.ack", "seq": seq, "ok": true}),
         Err(e) => {
             tracing::info!(hook, code = e.code(), reason = %e, "refused a webhook delivery");

@@ -11,6 +11,14 @@ pub enum Cmd {
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
     Routine(String),
+    /// One assistant step of a workflow. `step_id` is `workflow_steps.id`.
+    WorkflowStep {
+        step_id: String,
+    },
+    /// Stop that step if it is the current turn, or drop it if it is still queued.
+    WorkflowStop {
+        step_id: String,
+    },
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -93,6 +101,7 @@ pub enum Cmd {
 
 pub(super) enum Queued {
     Routine(String),
+    WorkflowStep(String),
     User {
         lane: Lane,
         entry_id: String,

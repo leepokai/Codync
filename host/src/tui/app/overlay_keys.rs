@@ -108,6 +108,16 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
+                        ConfirmAct::DeleteWorkflow(id) => {
+                            self.call(
+                                "deleteWorkflow",
+                                json!({"id": id}),
+                                After::Sheet(Reply::Workflow(super::super::manage::WorkflowReply::Deleted)),
+                            );
+                        }
+                        ConfirmAct::RejectWorkflowStep(id) => {
+                            self.call("decideWorkflowStep", json!({"stepId": id, "approved": false}), changed);
+                        }
                     }
                     None
                 }
@@ -140,6 +150,7 @@ impl App {
                 // Answering the last question closes a sheet opened only for it.
                 (!(matches!(o, Overlay::Pair(PairCode::QuestionOnly)) && self.pairing_requests.is_empty())).then_some(o)
             }
+            Overlay::Workflows(sheet) => self.workflows_key(*sheet, k),
             // A new code: after a failure, or in place of the one shown.
             o @ Overlay::Pair(PairCode::QuestionOnly) if k.code == KeyCode::Char('r') => Some(o),
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {

@@ -18,7 +18,7 @@ class ConnectionUiTest {
 
     @Test fun theComputerRowNamesTheActualConnectionState() = compose.withPreviewAccounts(computer) { accounts ->
         val state = mutableStateOf(fixture(LinkState.Failed("Your access was revoked.", 403)))
-        compose.setContent { Hosted { ComputersView(app, listOf(state.value), accounts, {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(app, listOf(state.value), accounts, {}, {}, {}, {}) } }
         compose.onNodeWithText("Your access was revoked.").assertIsDisplayed()
         compose.onNodeWithText("Extensions").assertDoesNotExist()
         compose.runOnUiThread { state.value = fixture(LinkState.ComputerOffline(null)) }

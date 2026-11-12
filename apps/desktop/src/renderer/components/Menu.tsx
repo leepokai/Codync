@@ -193,7 +193,7 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   if (!mounted || !rect) return null
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
-    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
+    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
       <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
         <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
       </div>

@@ -49,7 +49,27 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+}
+/* The picture moves inside the box (ZoomableImage); the box clips what is zoomed past its edge. */
+.zoom-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.zoom-box.zoomed {
+  cursor: grab;
+}
+.zoom-box.zoomed:active {
+  cursor: grabbing;
+}
+.zoom-box > * {
+  transform: var(--zoom);
 }
 
 .file-card {
@@ -88,6 +108,10 @@
 /* Steady digits, so the bar's end doesn't move as the clock runs. */
 .voice-note .file-card-detail {
   font-variant-numeric: tabular-nums;
+}
+.file-card-image-menu {
+  display: flex;
+  align-self: flex-start;
 }
 .file-card-image {
   display: flex;
@@ -151,4 +175,8 @@
 }
 .file-card-play > button {
   margin: 0 -6px;
+}
+.attachment-viewer-note {
+  padding: 0 16px;
+  overflow-wrap: anywhere;
 }

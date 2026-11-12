@@ -29,6 +29,9 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
@@ -47,8 +50,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** A file a bot shared, as iOS `FileDownloadCard`: an image shows itself (tap for full size), a voice note plays, then its
- *  name and size, and a button to download (or cancel). One accessibility element: `<name>, <caption>` plus the actions. */
-@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
+ *  name and size, and a button to download (or cancel). One accessibility element: `<name>, <caption>` plus the actions.
+ *  Holding it opens its message's `menu`; an image's copies the picture or its name. */
+@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, menu: MessageMenu, state: AppState, store: AppStore) {
+    val context = LocalContext.current
+    val focus = LocalFocusManager.current
     var viewing by remember { mutableStateOf(false) }
     val player = if (file.playsInChat) rememberSharedAudio(entry, file, store) else null
     val scope = rememberCoroutineScope()
@@ -59,7 +65,9 @@ import kotlinx.coroutines.launch
     val play = { player?.let { scope.launch { it.toggle() } }; Unit }
     val save = { store.toggleFile(entry.id, entry.botId, file) }
     val view = if (file.showsAsImage) ({ viewing = true }) else null
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
+    Column(Modifier.fillMaxWidth().contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }) {
+        menu.items(if (file.showsAsImage) imageCopyItems(store, file.imageSource(entry.id, store)) else listOf(textCopyItem(context, entry.text)))
+    }.clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
         .clearAndSetSemantics {
             contentDescription = "${file.name}, $caption"
             audioSeek(player)
@@ -78,7 +86,7 @@ import kotlinx.coroutines.launch
         FileRow(file, download, player, caption, save, play)
     }
 
-    SharedImageSheet(file.takeIf { viewing }, entry.id, state, store) { viewing = false }
+    SharedImageSheet(file.takeIf { viewing }, entry, menu, state, store) { viewing = false }
 }
 
 @Composable private fun FileRow(file: SharedFile, download: FileDownloadState?, audio: SharedAudio?, caption: String,
@@ -140,6 +148,19 @@ internal fun clock(seconds: Double): String {
     val total = seconds.roundToInt()
     return if (total >= 3600) "%d:%02d:%02d".format(total / 3600, total / 60 % 60, total % 60) else "%d:%02d".format(total / 60, total % 60)
 }
+
+/** A shared file's download button, on its card and in its viewer: downloads (again after a failure or a save), or cancels
+ *  the download under way. In the image viewer (`inViewer`) its end is reported. */
+@Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, inViewer: Boolean = false) {
+    val busy = state.fileDownloads[file.id] is FileDownloadState.Downloading
+    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, if (inViewer) ::reportViewerDownload else null) }
+        .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
+        Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
+    }
+}
+
+/** How a download from the image viewer ended. */
+private fun reportViewerDownload(error: ImageError?) = Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error))
 
 /** A shared file's caption: a player failure, then how its download goes, then the sound's progress, then its size. */
 internal fun detail(file: SharedFile, download: FileDownloadState?, audio: SharedAudio? = null, tr: (String) -> String = { it }): String {

@@ -22,5 +22,6 @@ struct RoutineNoticeRow: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 }

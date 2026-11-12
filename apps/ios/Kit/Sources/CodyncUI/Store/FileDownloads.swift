@@ -35,18 +35,27 @@ public final class FileDownloads {
         save(client: client, entryId: entry.id, botId: entry.botId, file: file)
     }
 
-    /// `entryId`: the message that shared the file (a Library row has only that).
-    public func save(client: HostClient?, entryId: String, botId: String, file: SharedFile) {
+    /// `entryId`: the message that shared the file (a Library row has only that). `ended` hears how the download
+    /// ended, saved or failed (not cancelled), even after the view that started it is gone.
+    public func save(client: HostClient?, entryId: String, botId: String, file: SharedFile,
+                     ended: (@MainActor (AnalyticsEvent.ImageOutcome) -> Void)? = nil) {
         guard !retired else { return }
         guard tasks.isEmpty else {
-            if tasks[file.id] == nil { states[file.id] = .failed("Finish the current download first.") }
+            if tasks[file.id] == nil {
+                states[file.id] = .failed("Finish the current download first.")
+                ended?(.failed(.transfer))
+            }
             return
         }
         // This file's export sheet is already waiting in its chat.
         if export?.id == file.id { return }
         // Another file's export whose chat was left never showed its sheet; this tap replaces it.
         dismissExport()
-        guard let client else { states[file.id] = .failed("Connect to this computer to download the file."); return }
+        guard let client else {
+            states[file.id] = .failed("Connect to this computer to download the file.")
+            ended?(.failed(.transfer))
+            return
+        }
         states[file.id] = .downloading(0)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("CodyncDownloads", isDirectory: true)
         tasks[file.id] = Task {
@@ -57,13 +66,17 @@ public final class FileDownloads {
                 }
                 guard !Task.isCancelled, !retired else { try await writer.remove(url); return }
                 states[file.id] = .saved
+                ended?(.done)
                 let item = Export(id: file.id, url: url, botId: botId)
                 exported = item
                 export = item
             } catch is CancellationError {
                 states[file.id] = nil
             } catch {
-                if !Task.isCancelled, !retired { states[file.id] = .failed(error.localizedDescription) }
+                if !Task.isCancelled, !retired {
+                    states[file.id] = .failed(error.localizedDescription)
+                    ended?(.failed(.transfer))
+                }
             }
         }
     }
@@ -75,18 +88,15 @@ public final class FileDownloads {
 
     public func cancel(_ id: String) { tasks[id]?.cancel(); states[id] = nil }
 
-    /// Whether this file's download is running.
-    func isDownloading(_ id: String) -> Bool {
+    public func isDownloading(_ id: String) -> Bool {
         if case .downloading = states[id] { return true }
         return false
     }
 
-    /// A card's download button: cancels the running download, else saves the shared file.
-    func toggle(client: HostClient?, entry: Entry, file: SharedFile) {
-        Motion.animate {
-            if isDownloading(file.id) { cancel(file.id) }
-            else { save(client: client, entry: entry, file: file) }
-        }
+    /// A file's Download button (its card, Library row or picture viewer): saves it, or stops its download under way.
+    public func toggle(client: HostClient?, entryId: String, botId: String, file: SharedFile,
+                       ended: (@MainActor (AnalyticsEvent.ImageOutcome) -> Void)? = nil) {
+        if isDownloading(file.id) { cancel(file.id) } else { save(client: client, entryId: entryId, botId: botId, file: file, ended: ended) }
     }
 
     /// The native share sheet has finished using the verified temporary file.

@@ -32,7 +32,25 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 - Desktop opens an image in a large panel that fits the window; a large image shrinks to fit
   below the header without cropping, even when the window is resized, and a small one keeps its
   own size. Sent and bot-shared images use the same viewer.
-- Terminal UI: dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
+- The desktop viewer zooms (trackpad pinch or ctrl + wheel, two fingers on a touch screen,
+  double-click, `+` / `-` / `0`) and moves the picture by dragging or scrolling once zoomed in.
+  The header has Copy image (the picture itself on the clipboard, re-encoded as PNG when it is
+  another format, decoded straight to at most 36 megapixels so a huge one is never decoded whole) and, for a bot-shared file, the file's Download button next to the close button; while that file downloads or fails, its progress or error shows under the header. A Copy image from a picture's menu that fails shows "Couldn't copy image" in the app's error dialog.
+  On every client a Copy image or Copy name started while an earlier Copy image is still fetching or converting takes its place:
+  the earlier one leaves the clipboard alone and shows and reports nothing (`CopyRequests`). On desktop a Copy name
+  also waits for a picture the clipboard is still writing, so the picture can't land after the name.
+  Right-click on a picture, in the chat or the viewer, opens its message's own menu (reactions, Reply, what it did) with Copy turned into Copy image and Copy name. iPhone and
+  Android open a picture in a sheet that zooms the same way (pinch, drag once zoomed in, double-tap
+  to 2.5x and back; at fit size a swipe down still closes it), with Copy image (the picture
+  itself; iPhone puts the file's own bytes on the pasteboard, plus a PNG copy when it is not PNG,
+  JPEG or GIF, made off the main thread, upright, and scaled down past 4096 pixels on its long side
+  like the viewer (`ImageData.largestPixels`), so a small compressed HEIC or TIFF can't run the phone
+  out of memory; Android clips the original file as a FileProvider `content://` link) and, for a
+  bot-shared file, its Download button by the close button. Holding a picture, in the chat or the
+  viewer, opens that same message menu; in the Library it offers only Copy image and Copy name.
+- Terminal UI: has no full-size viewer, zoom or Copy image: a terminal can't draw a picture, and the
+  clipboard it reaches is text only. A picture shows as a file line like any other file, and `f` saves a
+  bot-shared one, which is how the terminal downloads it. Dragging a file onto the terminal pastes its path, which becomes an attachment (⌫ on
   an empty draft removes the last one); sent files show as `▤ name size` lines. It uploads with the
   same `upload` chunks.
 - A files-only message previews in the roster as its file names.

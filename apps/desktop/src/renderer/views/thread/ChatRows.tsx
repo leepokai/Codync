@@ -1,7 +1,7 @@
-import { FileDownloadCard, VoiceNotePlayer, type MessageMenu } from './FileDownloadCard'
+import { FileDownloadCard, VoiceNotePlayer } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, voiceNoteOf, type Bot, type Entry, type ReplyQuote } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -14,6 +14,7 @@ import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
 import { AttachmentList } from './Attachments'
+import { messageCopyItems, type MessageMenu } from './use-image-actions'
 import { callLength, relativeTime } from './chat-items'
 import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
@@ -126,10 +127,12 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
   const [hovering, setHovering] = useState(false)
   const status = entry.data.status
   const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
+  // A picture here has the same menu as the bubble: reactions and Reply, its own copy items in place of Copy.
+  const menu: MessageMenu = { items: () => (reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []), reactions: reactionPick(store, entry) }
   return (
     <div className="message user" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
-        {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} /> : null}
+        {entry.data.attachments?.length ? <AttachmentList attachments={entry.data.attachments} botId={entry.botId} menu={menu} /> : null}
         {entry.data.text || entry.data.replyTo ? (
           <Bubble
             className="bubble user selectable"
@@ -145,7 +148,7 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
         ) : null}
         {status && status !== 'sent' ? <UserStatus entry={entry} hovering={hovering} /> : null}
         {/* Beside the bubble, inside its hover region: showing them never changes the height. */}
-        <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={copy} />
+        <MessageActions className="leading" visible={hovering} reactions={reactionPick(store, entry)} reply={reply} copy={messageCopyItems(store, entry)} />
       </div>
     </div>
   )
@@ -175,38 +178,37 @@ function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
 export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
-  const copy = () => entry.data.text && window.codync.app.copy(entry.data.text)
   const voiceNote = voiceNoteOf(entry.data)
   const reactions = reactionPick(store, entry)
-  const items = (download?: MenuItem): MenuItem[] => [
-    { title: 'Copy', icon: 'square.on.square', action: copy },
+  const rest = (): MenuItem[] => [
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-    ...(download ? [download] : []),
     { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
   ]
-  const message: MessageMenu = { items, reactions }
+  // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
+  const menu: MessageMenu = { items: rest, reactions }
+  const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   return (
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
       <div className="message-body">
         <Bubble
           className={!voiceNote && (entry.data.files?.length || entry.data.artifact) ? 'file-message' : 'bubble agent'}
           reactions={reactions}
-          items={() => items(voiceNote ? downloadItem(store.fileDownloads.states.get(voiceNote.id), () => store.fileDownloads.toggle(store.client, entry.id, voiceNote)) : undefined)}
+          items={() => [...messageCopyItems(store, entry), ...(voiceNote ? [download(voiceNote)] : []), ...rest()]}
         >
           {entry.data.artifact ? (
             <ArtifactCard botId={entry.botId} card={entry.data.artifact} open={() => openArtifact?.(entry.data.artifact!.id)} />
           ) : voiceNote ? (
             <>
-              <VoiceNotePlayer entry={entry} file={voiceNote} message={message} />
+              <VoiceNotePlayer entry={entry} file={voiceNote} menu={menu} />
               <MarkdownText text={entry.data.text ?? ''} />
             </>
           ) : entry.data.files?.length ? (
-            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} message={message} />)}</div>
+            <div className="file-message-cards">{entry.data.files.map((file) => <FileDownloadCard key={file.id} entry={entry} file={file} menu={menu} />)}</div>
           ) : (
             <MarkdownText text={entry.data.text ?? ''} />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={copy} />
+        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />
       </div>
     </div>
   )
@@ -281,7 +283,8 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
   reactions: ReactionPick
   reply?: () => void
   trace?: () => void
-  copy: () => void
+  /** What its Copy is (`copyItems`). */
+  copy: MenuItem[]
 }) {
   const [menu, setMenu] = useState<'reactions' | 'more' | null>(null)
   const smile = useRef<HTMLButtonElement>(null)
@@ -301,7 +304,7 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
         open={menu === 'more'}
         onClose={() => setMenu(null)}
         anchor={more}
-        items={() => [{ title: 'Copy', icon: 'square.on.square', action: copy }, ...(trace ? [{ title: 'Show what it did', icon: 'list.bullet', action: trace }] : [])]}
+        items={() => [...copy, ...(trace ? [{ title: 'Show what it did', icon: 'list.bullet', action: trace }] : [])]}
       />
     </div>
   )

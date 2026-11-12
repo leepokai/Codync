@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { findSpans, joinRuns, matchStarts } from './text-find.ts'
+import { findSpans, joinRuns, matchRanges } from './text-find.ts'
+
+const matchStarts = (text: string, query: string) => matchRanges(text, query).map((m) => m.start)
 
 const run = (text: string, block: unknown = 'p') => ({ text, block })
 

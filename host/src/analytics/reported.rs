@@ -74,7 +74,7 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
-    /// ⌘F in a conversation (desktop).
+    /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
     ConversationFindOpened,
     ConversationFindSearched {
         /// Whether the search found anything; never the text searched for.

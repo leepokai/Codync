@@ -65,11 +65,6 @@ export function matchRanges(text: string, query: string): Match[] {
   return found
 }
 
-/** Where `query` begins in `text`, ignoring case. */
-export function matchStarts(text: string, query: string): number[] {
-  return matchRanges(text, query).map((m) => m.start)
-}
-
 export interface RunPoint {
   run: number
   offset: number

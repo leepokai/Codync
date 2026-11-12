@@ -13,9 +13,8 @@
   background: var(--surface);
   box-shadow: var(--shadow-m);
 }
-.find-bar input {
-  width: 180px;
-  min-width: 0;
+.find-bar .search-field {
+  width: 200px;
 }
 .find-count {
   flex: none;

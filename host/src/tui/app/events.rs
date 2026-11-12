@@ -120,6 +120,7 @@ impl App {
             self.drafts.remove(id);
             self.files.remove(id);
             if self.selected.as_deref() == Some(id) {
+                self.close_find();
                 self.selected = None;
                 self.reply = None;
                 self.pick = None;

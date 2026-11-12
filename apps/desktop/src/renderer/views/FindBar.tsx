@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { IconButton } from '../components/Controls'
-import { Icon } from '../components/Icon'
+import { IconButton, SearchField } from '../components/Controls'
 import { Text } from '../components/Text'
 import { findLabel } from '../lib/find-label'
 import { useTr } from '../lib/use-language'
@@ -40,11 +39,9 @@ export function FindBar({ focusKey, onClose }: { focusKey: number; onClose: () =
 
   const label = findLabel(query, state, tr('No results'))
   const none = !!query.trim() && state.matches === 0
-  const title = tr('Find in conversation')
   return (
     <div ref={bar} className="find-bar" role="search">
-      <Icon name="magnifyingglass" size={13} color="var(--secondary)" />
-      <input ref={input} value={query} placeholder={title} aria-label={title} spellCheck={false} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKey} />
+      <SearchField value={query} onChange={setQuery} prompt="Find in conversation" inputRef={input} onKeyDown={onInputKey} />
       {label ? (
         <Text size="callout" tone={none ? 'attention' : 'secondary'} tabular className="find-count">
           {label}

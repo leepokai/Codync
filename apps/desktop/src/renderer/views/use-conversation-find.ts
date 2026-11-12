@@ -94,3 +94,23 @@ export function useConversationFind(root: () => HTMLElement | null) {
 
   return { query, setQuery, state, step }
 }
+
+/**
+ * Whether the find bar is open over the conversation `key`: its focus count while open (⌘F again bumps it, putting the
+ * cursor back in the field), null while closed. Another conversation closes it; opening it is counted once per bar.
+ */
+export function useFindBar(key: string | null) {
+  const [focus, setFocus] = useState<number | null>(null)
+  const isOpen = useRef(false)
+  const open = useCallback(() => {
+    if (!isOpen.current) analytics.track({ event: 'conversation_find_opened' })
+    isOpen.current = true
+    setFocus((n) => (n ?? 0) + 1)
+  }, [])
+  const close = useCallback(() => {
+    isOpen.current = false
+    setFocus(null)
+  }, [])
+  useEffect(close, [key, close])
+  return { focus, open, close }
+}

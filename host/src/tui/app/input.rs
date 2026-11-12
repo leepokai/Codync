@@ -214,10 +214,11 @@ impl App {
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
-                let pending = if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.options())) };
+                let pending =
+                    if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.answer_options())) };
                 match pending {
                     Some((entry, opts)) if !opts.is_empty() => {
-                        if let Some((option, _, _)) = opts.get(i) {
+                        if let Some(option) = opts.get(i) {
                             self.answer(&entry, option);
                         }
                     }
@@ -228,7 +229,17 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N')) if !roster_page && self.pending().is_some() => {
+            KeyCode::F(n @ 1..=12) if !roster_page => {
+                if let Some((id, option)) = self
+                    .pending_of(Kind::Decision)
+                    .and_then(|e| e.choices().get(usize::from(n - 1)).cloned().map(|option| (e.id.clone(), option)))
+                {
+                    self.answer(&id, &option);
+                }
+            }
+            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N'))
+                if !roster_page && self.pending_of(Kind::Permission).is_some() =>
+            {
                 self.answer_kind(c);
             }
             KeyCode::Char('n') => self.new_bot(),

@@ -23,6 +23,10 @@ publish_artifact(path, artifact: its id); never make a second artifact for the s
 Reactions are rare: react(emoji) only where a person would (❤️ to thanks, 👍 to a plain OK, 🎉 to big news, 😂 to a real joke), \
 never to a question or a request. When a message needs no words, the reaction is the whole reply; when it needs neither, \
 end your turn by replying exactly \"(pass)\".";
+/// The `chat` server's instructions: [`INSTRUCTIONS`] plus how to ask the user to choose.
+pub fn instructions() -> String {
+    format!("{INSTRUCTIONS} {}", crate::chat::decision::INSTRUCTIONS)
+}
 
 /// Longest message accepted, in bytes.
 const MAX_MESSAGE_BYTES: usize = 32 * 1024;
@@ -48,7 +52,7 @@ pub fn tools() -> Value {
             "text": {"type": "string", "description": "Optional message (Markdown) the voice note belongs to."},
         }, "required": ["path"]},
         "annotations": {"readOnlyHint": false, "idempotentHint": false},
-    }])
+    }, crate::chat::decision::tool()])
 }
 
 pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {

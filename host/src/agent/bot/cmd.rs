@@ -72,6 +72,20 @@ pub enum Cmd {
         chat: String,
     },
     Stop,
+    /// A `request_decision` call (`chat::decision`): its card in the turn's chat, the call waiting.
+    Ask {
+        data: Value,
+        started_at: i64,
+        /// When the call's own timeout gives up (`chat::decision::WAIT` from its start).
+        deadline: std::time::Instant,
+        reply: tokio::sync::oneshot::Sender<Result<Value>>,
+    },
+    /// The user pressed one of a card's options (`respondDecision`).
+    Decision {
+        entry_id: String,
+        choice: String,
+        reply: tokio::sync::oneshot::Sender<Result<Value>>,
+    },
     Permission {
         entry_id: String,
         option_id: Option<String>,

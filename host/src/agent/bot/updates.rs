@@ -254,6 +254,7 @@ impl Actor {
 
     /// A Codync card whose tool stopped waiting (it timed out, or its call was dropped) expires, buttons and all.
     pub(super) async fn expire_abandoned(&mut self) {
+        self.expire_abandoned_decisions();
         let gone: Vec<String> = self
             .perms
             .iter()
@@ -286,7 +287,7 @@ impl Actor {
             e.data["selected"] = option_id.into();
             self.hub.set_entry(entry_id, &e.data);
         }
-        if self.perms.is_empty() && self.turn.is_some() {
+        if self.perms.is_empty() && self.asked.is_empty() && self.turn.is_some() {
             self.hub.set_runtime(&self.cfg.id, |r| {
                 r.status = BotStatus::Working;
                 r.activity = "Continuing…".into();

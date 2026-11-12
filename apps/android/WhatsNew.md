@@ -14,6 +14,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
 - 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
 - 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
+- bot 要你選擇時，聊天中會出現可點選的選項卡。選項會送回正在進行的工作，已回答或過期的卡片不會重複送出。
 - bot 可以傳語音訊息了：語音會在那則訊息的泡泡最上方直接播放，文字接在下面。
 - bot 傳來的音訊檔（MP3、M4A、WAV、AAC，20 MB 以內）可以直接在聊天裡播放：點播放鍵，進度列會顯示播放到哪，拖動或點一下進度列就能跳到別的位置。
 
@@ -23,6 +24,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
 - Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
 - Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
+- When your bot needs a choice, tap an option in its chat card. Your answer continues the current work; answered or expired cards cannot send another choice.
 - Bots can now send voice notes: the note plays at the top of its message's bubble, with the text under it.
 - Sound files a bot sends (MP3, M4A, WAV or AAC, up to 20 MB) play right in the chat: tap play, and drag or tap the progress bar to jump to another point.
 

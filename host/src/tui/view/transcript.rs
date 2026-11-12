@@ -9,7 +9,7 @@ use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
-use super::permission::{decided_line, permission_card};
+use super::permission::{chosen_line, decided_line, decision_card, permission_card};
 use super::roster::plain;
 use super::style::{FACE, bot_color, face_style, person, spin, theme};
 use super::time::clock;
@@ -268,6 +268,15 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 permission_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 decided_line(out, e);
+            }
+        }
+        // A choice card is laid out like an approval card, the bot asking one of its own options.
+        Kind::Decision => {
+            gap(out);
+            if e.pending() {
+                decision_card(out, app, e, author.unwrap_or(b), width);
+            } else {
+                chosen_line(out, e);
             }
         }
         // Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a

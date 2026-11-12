@@ -15,7 +15,7 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
     public var lastError: String?
 
     /// A timeout as typed, in words: whole hours, else whole minutes, else seconds; anything else as typed.
-    public static func timeoutText(_ text: String) -> String {
+    public static func timeoutText(_ text: String, locale: Locale = .autoupdatingCurrent) -> String {
         guard let seconds = Int(text), seconds >= 0 else { return "\(text)s" }
         let unit: Duration.UnitsFormatStyle.Unit
         if seconds > 0, seconds % 3600 == 0 {
@@ -25,7 +25,7 @@ public struct Routine: Codable, Identifiable, Hashable, Sendable {
         } else {
             unit = .seconds
         }
-        return Duration.seconds(seconds).formatted(.units(allowed: [unit], width: .wide))
+        return Duration.seconds(seconds).formatted(.units(allowed: [unit], width: .wide).locale(locale))
     }
 }
 

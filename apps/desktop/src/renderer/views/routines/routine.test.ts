@@ -40,6 +40,7 @@ test('a timeout reads in the largest whole unit', () => {
   assert.equal(durationText('1'), '1 second')
   assert.equal(durationText('abc'), 'abcs')
   assert.equal(durationText('0'), '0s')
+  assert.equal(durationText('3600', 'it').replaceAll('\u00a0', ' ').replaceAll('\u202f', ' '), '1 ora')
 })
 
 test('styles the editor has no choice for open as Custom', () => {

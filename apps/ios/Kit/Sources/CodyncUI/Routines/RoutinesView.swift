@@ -102,14 +102,14 @@ struct RoutinesView: View {
         }
     }
 
-    /// The row's second line: what's happening now, else when it runs.
+    /// The row's second line, translated: what's happening now, else when it runs.
     private func summary(_ routine: Routine) -> String {
-        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return runLabel(active) }
-        if routine.lastError != nil { return "Schedule needs attention" }
+        if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return L10n.tr(runLabel(active)) }
+        if routine.lastError != nil { return L10n.tr("Schedule needs attention") }
         if let last = runs.first(where: { $0.routineId == routine.id }), ["failed", "interrupted"].contains(last.status) {
-            return "Last run \(runLabel(last).lowercased())"
+            return L10n.tr("Last run {status}").replacingOccurrences(of: "{status}", with: L10n.tr(runLabel(last)).lowercased())
         }
-        return routine.triggerDescriptions.joined(separator: " · ")
+        return routine.scheduleLine
     }
 
     private func runLabel(_ run: RoutineRun) -> String {
@@ -167,4 +167,9 @@ struct EditorTarget: Identifiable {
     func isReady(in routines: [Routine]) -> Bool {
         routineId == nil || routines.contains { $0.id == routineId }
     }
+}
+
+extension Routine {
+    /// When it runs: each schedule line translated, joined.
+    var scheduleLine: String { triggerDescriptions.map { L10n.tr($0) }.joined(separator: " · ") }
 }

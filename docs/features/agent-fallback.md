@@ -48,7 +48,7 @@ What their issues taught, and the answer here:
   where the step's agent has it (`fallback::effective`). Its mode too ([agent modes](marketplace.md#agent-modes)):
   `auto` is each step's own Auto mode. A fallback step whose agent lacks any other mode runs in its stand-in
   (`Modes::stand_in`): the most permissive of its modes that is no more permissive than the bot's, ranked read-only
-  and plan < ask and manual < default and auto-edit < Auto < bypass and full access, a mode it can't place counting as
+  and plan < ask, manual and default (Claude's Manual) < auto-edit < Auto < bypass and full access, a mode it can't place counting as
   the most permissive (never a stand-in; a bot mode it can't place gets no stand-in at all), with an info notice
   naming it. Without one, or when the agent refuses the
   switch, the turn moves on (`modeMissing`). The bot's own agent (step 0) without its mode fails the turn instead.

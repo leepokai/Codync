@@ -133,15 +133,16 @@ const AUTO_RANK: u8 = 3;
 /// A mode [`rank`] can't place: the most permissive, so it never stands in for another.
 const UNKNOWN: u8 = 5;
 
-/// How freely a mode lets the agent act, from its id or name, least first: read-only and plan (0), ask and manual (1),
-/// default and auto-edit (2), Auto ([`AUTO_RANK`], only the agent's own: another agent's `auto` may approve
+/// How freely a mode lets the agent act, from its id or name, least first: read-only and plan (0), ask, manual and
+/// `default` (Claude's Manual) (1), auto-edit (2), Auto ([`AUTO_RANK`], only the agent's own: another agent's `auto` may approve
 /// everything), bypass and full access (4). `None` for words it doesn't know.
 fn rank(word: &str) -> Option<u8> {
     let word: String = word.chars().filter(char::is_ascii_alphanumeric).map(|c| c.to_ascii_lowercase()).collect();
     match word.as_str() {
         "readonly" | "plan" => Some(0),
-        "ask" | "manual" | "dontask" => Some(1),
-        "default" | "autoedit" | "acceptedits" => Some(2),
+        // `default` is Claude's Manual (and Gemini's ask-first default): it asks before every edit.
+        "ask" | "manual" | "dontask" | "default" => Some(1),
+        "autoedit" | "acceptedits" => Some(2),
         "bypass" | "bypasspermissions" | "fullaccess" | "agentfullaccess" | "yolo" => Some(4),
         _ => None,
     }
@@ -269,6 +270,10 @@ mod tests {
         assert_eq!(stand_in(&codex, AUTO).as_deref(), Some("agent"), "the bot's Auto takes the step's Auto review");
         // A bot mode that can't be ranked never lets a fallback pick one, not even full access.
         assert_eq!(stand_in(&codex, "build"), None);
+        // Claude's Manual is `default`: a fallback never takes an edit-without-asking mode for it.
+        let edits = json!({"modes": {"currentModeId": "acceptEdits", "availableModes": [{"id": "plan", "name": "Plan"}, {"id": "acceptEdits", "name": "Accept edits"}]}});
+        let edits = Modes::from_session(&edits, "other").unwrap();
+        assert_eq!(stand_in(&edits, "default").as_deref(), Some("plan"));
         // Nothing as careful as Plan: no stand-in, and never the mode it opened in for that alone.
         let manual = json!({"modes": {"currentModeId": "ask", "availableModes": [{"id": "ask", "name": "Ask"}, {"id": "code", "name": "Code"}]}});
         let legacy = Modes::from_session(&manual, "kimi").unwrap();

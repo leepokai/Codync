@@ -40,6 +40,8 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Voice input shortcut', 'zh', false), '语音输入快捷键')
   assert.equal(translate('Right ⌘ twice', 'zh', false), '右 ⌘ 两次')
   assert.equal(translate('Left ⌘ twice', 'zh', false), '左 ⌘ 两次')
+  // The speech helper's message for Siri and Dictation off reaches the user translated.
+  assert.match(translate('Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.', 'zh', false), /打开听写/)
   assert.equal(translate('Claude Code (not installed)', 'zh', false), 'Claude Code（未安装）')
   assert.equal(translate('Copy template', 'zh', false), '复制模板')
   assert.equal(translate('Siri and Dictation are disabled', 'zh', false), 'Siri 和听写已关闭')

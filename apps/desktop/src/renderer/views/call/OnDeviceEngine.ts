@@ -149,8 +149,8 @@ export class OnDeviceEngine extends VoiceEngine {
         break
       case 'error':
         // Before it listened: permissions or no recognizer for the language.
-        if (!this.started) return this.fail(e.message)
-        this.restart(e.message)
+        if (!this.started) return this.fail(trNow(e.message))
+        this.restart(trNow(e.message))
         break
       case 'stopped':
         if (!this.started) return this.fail(trNow("Speech recognition stopped."))

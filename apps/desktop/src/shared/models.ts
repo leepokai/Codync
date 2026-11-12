@@ -160,7 +160,7 @@ export interface Fallback {
   modelOptions: Record<string, string>
 }
 
-/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing */
+/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing · modeMissing */
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */

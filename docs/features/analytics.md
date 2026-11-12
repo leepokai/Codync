@@ -74,7 +74,8 @@ can be traced from the events around it:
 - **Host** (`host/src/analytics.rs`, `analytics/`): `api::dispatch` maps successful API calls to
   events (`analytics::observe_call`), so every client is covered once; a resent message (same
   `clientNonce`) is not counted again. Bot actors report `turn_finished`, `agent_fell_back` (a turn moved on to the bot's next
-  agent: the agent and why, see [agent fallbacks](agent-fallback.md)) and `agent_retired` (an agent stopped between
+  agent: the agent and why, see [agent fallbacks](agent-fallback.md)), `handoff_carried` (what the agent taking over
+  was told first, by size) and `agent_retired` (an agent stopped between
   turns to give back its processes, and why), the phone channel
   reports pairing and daily phone connections, and the host reports its own start. Each event
   carries its own `timestamp` and `uuid` (a resent batch counts once) and the computer's key

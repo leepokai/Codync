@@ -1534,6 +1534,7 @@
   "After five quiet minutes or eight messages, or once memory is nearly full, the bot reads what you said since its last run and updates its memory.": "5분간 조용하거나 메시지가 8개 쌓이거나 기억 공간이 거의 찼을 때, 봇은 지난 실행 이후 당신이 한 말을 읽고 기억을 업데이트합니다.",
   "Allow once": "한 번 허용",
   "Allow the microphone for Codync in Settings to talk to your bots.": "봇과 대화하려면 설정에서 Codync의 마이크 접근을 허용하세요.",
+  "Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.": "이 Mac에서 Siri 및 받아쓰기가 꺼져 있습니다. 시스템 설정 → 키보드에서 받아쓰기를 켜거나 음성에 OpenAI 또는 Gemini를 선택하세요.",
   "Allowed once": "한 번 허용됨",
   "Always allow": "항상 허용",
   "Always allowed": "항상 허용됨",

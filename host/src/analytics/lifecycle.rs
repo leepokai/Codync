@@ -1,4 +1,5 @@
-//! Events outside API calls: the host's own start (and a cloud computer's keeper), a phone added, a phone connecting.
+//! Events outside API calls: the host's own start (and a cloud computer's keeper and sleep), a phone added, a phone
+//! connecting.
 
 use super::{Analytics, Event, capture, platform, platform_of};
 use crate::LockExt as _;
@@ -64,6 +65,34 @@ pub fn cloud_keeper_checked(hub: &Hub, state: KeeperState, sudo: bool) {
         hub,
         Event::CloudKeeperChecked,
         Map::from_iter([("state".into(), state.into()), ("sudo".into(), sudo.into())]),
+    );
+}
+
+/// What came of a cloud computer's host asking the cloud to put it to sleep (`cloud_sleep_asked`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SleepOutcome {
+    /// The cloud took it: the machine stops.
+    Asleep,
+    /// The cloud answered with an update to install instead.
+    Update,
+    /// Refused while a device is connected.
+    InUse,
+    /// Any other error.
+    Failed,
+}
+
+/// `cloud_sleep_asked`: an idle cloud computer's host asked to sleep; `routine`: to be woken for its next routine.
+pub fn cloud_sleep_asked(hub: &Hub, outcome: SleepOutcome, routine: bool) {
+    let outcome = match outcome {
+        SleepOutcome::Asleep => "asleep",
+        SleepOutcome::Update => "update",
+        SleepOutcome::InUse => "in_use",
+        SleepOutcome::Failed => "failed",
+    };
+    capture(
+        hub,
+        Event::CloudSleepAsked,
+        Map::from_iter([("outcome".into(), outcome.into()), ("routine".into(), routine.into())]),
     );
 }
 
@@ -180,23 +209,31 @@ mod tests {
         assert_eq!(p(None, true), json!({"first_run": false, "service": true}), "a host from before this was kept");
     }
 
-    #[test]
-    fn a_cloud_computer_reports_its_keeper_and_sudo_once_per_start() {
+    /// The events `report` queued on a throwaway host.
+    fn queued(report: impl FnOnce(&Hub)) -> Vec<Value> {
         use crate::LockExt as _;
-        let dir = std::env::temp_dir().join(format!("codync-keeper-event-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("codync-cloud-event-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
         let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
         let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
-        cloud_keeper_checked(&hub, KeeperState::Missing, true);
-        cloud_keeper_checked(&hub, KeeperState::Unlocked, false);
-        cloud_keeper_checked(&hub, KeeperState::Locked, false);
-
+        report(&hub);
         let mut rx = hub.analytics.rx.locked().take().unwrap();
         let mut sent = Vec::new();
         while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
             sent.push(event);
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+        sent
+    }
+
+    #[test]
+    fn a_cloud_computer_reports_its_keeper_and_sudo_once_per_start() {
+        let sent = queued(|hub| {
+            cloud_keeper_checked(hub, KeeperState::Missing, true);
+            cloud_keeper_checked(hub, KeeperState::Unlocked, false);
+            cloud_keeper_checked(hub, KeeperState::Locked, false);
+        });
         let own = |e: &Value| json!({"event": e["event"], "state": e["properties"]["state"], "sudo": e["properties"]["sudo"]});
         assert_eq!(
             sent.iter().map(own).collect::<Vec<_>>(),
@@ -224,6 +261,25 @@ mod tests {
                 "sudo"
             ]
         );
-        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_cloud_computer_reports_what_came_of_asking_to_sleep() {
+        let sent = queued(|hub| {
+            cloud_sleep_asked(hub, SleepOutcome::Asleep, true);
+            cloud_sleep_asked(hub, SleepOutcome::Update, false);
+            cloud_sleep_asked(hub, SleepOutcome::InUse, false);
+            cloud_sleep_asked(hub, SleepOutcome::Failed, true);
+        });
+        let own = |e: &Value| json!({"event": e["event"], "outcome": e["properties"]["outcome"], "routine": e["properties"]["routine"]});
+        assert_eq!(
+            sent.iter().map(own).collect::<Vec<_>>(),
+            [
+                json!({"event": "cloud_sleep_asked", "outcome": "asleep", "routine": true}),
+                json!({"event": "cloud_sleep_asked", "outcome": "update", "routine": false}),
+                json!({"event": "cloud_sleep_asked", "outcome": "in_use", "routine": false}),
+                json!({"event": "cloud_sleep_asked", "outcome": "failed", "routine": true}),
+            ]
+        );
     }
 }

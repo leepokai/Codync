@@ -197,6 +197,32 @@ The first start of a swapped host took several minutes to answer `hello`; poll i
 minutes. Until the swap is undone, the test host also starts at every sign-in. To undo it, stop
 the three processes and copy the `.orig.exe` files back, or reinstall the release.
 
+## codync-network between the VM and the Mac
+
+The VM is a realistic Windows peer for [codync-network](../features/codync-network.md): Defender Firewall lets
+nothing in (the network is *Public*, `codync-host.exe` has Block rules from a dismissed prompt, `codync-hostw.exe`
+none), and the VM reaches every IPv4 address of the Mac. Run the standalone daemon on both sides:
+
+1. Cross-build it like the host above, with `--profile dev-app -p codync-network --bin codync-network` (the debug
+   profile fails to link iroh with mingw: `export ordinal too large`), and `scp` the `.exe` to the VM. On the Mac,
+   `cargo build -p codync-network` in `host/`.
+2. The Windows daemon has no control socket, so keep its `ssh` stdin on a FIFO and write commands into it:
+
+   ```sh
+   mkfifo win.in; (sleep 100000 > win.in &)
+   ssh codync-win ".\codync-network.exe --dir C:\Users\codync\net --connector private join '<invite>' win" < win.in > win.log &
+   echo peers > win.in; echo 'send terminal@desk hello' > win.in      # answers land in win.log
+   ```
+
+   The Mac side is `codync-network --dir <dir> --connector private init desk`, then `invite`, `peers` and
+   `send terminal@win …` from another terminal.
+3. Walk `public` and `private`, each side as the owner: `peers` and a `send` both ways; with `private`, leave the
+   pair idle for more than 3 minutes and send from the Mac first; then restart the Mac daemon (`up`) and send from
+   the Mac again within a minute.
+
+`RUST_LOG` needs a `tracing-subscriber` the daemon doesn't have: add one in a scratch worktree when a connection
+has to be traced (`iroh=debug,noq_proto=trace` shows each packet and why it was dropped).
+
 ## Reproducing Windows conditions on the Mac
 
 When the VM can't run a check, reproduce the Windows condition in the worktree's desktop sandbox

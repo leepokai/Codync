@@ -21,16 +21,7 @@ async fn detached_work(leader: Option<u32>) -> bool {
     else {
         return true;
     };
-    detached_descendant(&processes, leader, session)
-}
-
-/// `pid`'s session, or `None` once it's gone.
-#[cfg(unix)]
-fn session(pid: u32) -> Option<i32> {
-    let pid = libc::pid_t::try_from(pid).ok()?;
-    // SAFETY: getsid only reads the process table.
-    let sid = unsafe { libc::getsid(pid) };
-    (sid >= 0).then_some(sid)
+    detached_descendant(&processes, leader, process::session)
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its
@@ -48,10 +39,6 @@ pub(super) async fn background_work(acp: &Acp) -> bool {
     }
 }
 
-/// The console window Windows gives a process started without one: no work of its own.
-#[cfg(any(windows, test))]
-const CONSOLE_HOST: &str = "conhost.exe";
-
 /// Whether an agent's job holds a process that isn't the agent or Codync's MCP servers (`own`: the host's own
 /// program name, and whatever those servers start). The agent is what leads to them, so anything else that starts
 /// nothing further counts: a dev server from its shell tool, but also an MCP server from the user's own config, a
@@ -60,11 +47,8 @@ const CONSOLE_HOST: &str = "conhost.exe";
 // remembering which process started the servers, if it matters.
 #[cfg(any(windows, test))]
 fn runs_something_else(processes: &[JobProcess], own: &str) -> bool {
-    let is_console = |p: &JobProcess| p.name.eq_ignore_ascii_case(CONSOLE_HOST);
     let ours = process::under_program(processes, own);
-    let starts_nothing =
-        |p: &JobProcess| !processes.iter().any(|c| c.parent == p.pid && c.pid != p.pid && !is_console(c));
-    processes.iter().filter(|p| !is_console(p) && !ours(p)).any(starts_nothing)
+    processes.iter().filter(|p| !process::is_console(p) && !ours(p)).any(|p| process::starts_nothing(processes, p))
 }
 
 /// `processes`: what's on the computer; `session` finds a live process's session. One that exited since the listing

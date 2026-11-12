@@ -3,6 +3,7 @@
 
 use super::{Adapter, Conn, SessionCaps};
 use crate::agent::acp::{self, Acp};
+use crate::agent::backends;
 use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow};
@@ -42,7 +43,7 @@ fn claude_options(cfg: &BotConfig) -> Value {
 pub(crate) fn launch_commands(cfg: &BotConfig) -> Result<Vec<Candidate>> {
     Ok(match cfg.command.as_deref().map(str::trim) {
         Some(c) if !c.is_empty() => vec![Candidate::Ready(Cmd { program: c.to_owned(), args: String::new() })],
-        _ => crate::agent::backends::launch_candidates(&cfg.backend)?,
+        _ => backends::launch_candidates(&cfg.backend)?,
     })
 }
 
@@ -163,9 +164,16 @@ pub(crate) async fn start_first<F: Future<Output = Result<Conn>>>(
     Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")))
 }
 
-/// Spawns an ACP agent and completes the `initialize` handshake.
-pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String)], budget: Duration) -> Result<Conn> {
-    let (acp, rx) = Acp::spawn(command, cwd, env)?;
+/// Spawns `backend`'s ACP agent and completes the `initialize` handshake. An agent that quits during it fails
+/// with what it printed on the way out (`backends::exit_reason`).
+pub(crate) async fn start_agent(
+    backend: &str,
+    command: &str,
+    cwd: &str,
+    env: &[(String, String)],
+    budget: Duration,
+) -> Result<Conn> {
+    let (acp, mut rx) = Acp::spawn(command, cwd, env)?;
     let init = tokio::time::timeout(
         budget,
         acp.request(
@@ -189,6 +197,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
     let init = match init {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
+            let e = backends::explain_exit(backend, e, &mut rx).await;
             acp.kill().await;
             return Err(e);
         }
@@ -218,6 +227,7 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         adapter: adapter(&init),
         superseded: superseded(&init),
         loaded: HashMap::new(),
+        spent: false,
         started: Instant::now(),
         opening: false,
         fast_options: HashMap::new(),
@@ -263,6 +273,19 @@ mod tests {
         assert!(!superseded(&json!({})));
     }
 
+    #[tokio::test]
+    async fn an_outdated_agent_that_quits_at_start_is_told_to_update() {
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let command = format!(
+            r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#
+        );
+        let Err(e) = start_agent("dsh", &command, env!("CARGO_MANIFEST_DIR"), &[], Duration::from_secs(10)).await
+        else {
+            panic!("the agent quit, so it can't start");
+        };
+        assert!(format!("{e:#}").contains("too old to run in Codync"), "{e:#}");
+    }
+
     /// Starts each candidate as an agent answering `initialize` as the OpenCode version its command names ("broken"
     /// doesn't start). Returns whether the agent that runs is superseded, and whether each start got its own database.
     #[cfg(unix)]
@@ -277,7 +300,7 @@ mod tests {
                 let Candidate::Ready(Cmd { program: version, .. }) = candidate else { unreachable!() };
                 anyhow::ensure!(version != "broken", "didn't start");
                 let command = format!("sh -c '{}' {version}", AGENT.replace('\'', "'\\''"));
-                start_agent(&command, "/tmp", &env, Duration::from_secs(10)).await
+                start_agent("opencode", &command, "/tmp", &env, Duration::from_secs(10)).await
             }
         })
         .await

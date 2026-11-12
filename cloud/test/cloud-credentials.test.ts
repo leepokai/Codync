@@ -138,9 +138,9 @@ describe("a key Boat turns down later", () => {
     boat("ready", { "/sandboxes/bx_test": forbidden("api_key_expired") });
     expect(await credential(userId)).toMatchObject({ problem: "This key has expired. Make a new one.", blocking: true });
     // Only the owner can fix it: a wake doesn't keep trying, unlike a busy Boat.
-    expect(await wake(env, host.cid, Date.now())).toBe("none");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("none");
     boat("ready", { "/sandboxes/bx_test": [503, { code: "unavailable" }] });
-    expect(await wake(env, host.cid, Date.now())).toBe("retry");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("retry");
 
     boat("ready");
     expect((await credential(userId)).problem).toBeNull();
@@ -149,7 +149,7 @@ describe("a key Boat turns down later", () => {
   it("keeps a refused action shown though reads still work", async () => {
     const { userId, host } = await cloudComputer();
     boat("archived", { "/sandboxes/bx_test/resume": forbidden("api_key_action_forbidden") });
-    expect(await wake(env, host.cid, Date.now())).toBe("none");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("none");
     expect((await credential(userId)).problem).toContain("missing a permission Codync needs");
   });
 

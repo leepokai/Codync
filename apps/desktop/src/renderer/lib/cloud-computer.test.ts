@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  actionMachine, canCreate, canRemoveKey, chosenProvider, cloudCreateOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed, machineActions,
+  actionMachine, canCreate, canRemoveKey, chosenProvider, cloudCreateOutcome, cloudDeleteOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed, machineActions,
   limitCloudName, limitNote, machineStatus, offlineCloudStatus, placementLine, providerOption, suggestedName, type CloudMachine, type CloudProvider,
 } from './cloud-computer.ts'
 
@@ -113,6 +113,12 @@ test('a create the cloud answered with what to fix is refused, anything else fai
   assert.equal(cloudCreateOutcome(Object.assign(new Error('This key has expired. Make a new one.'), { status: 400, code: 'keyRefused' })), 'refused')
   assert.equal(cloudCreateOutcome(Object.assign(new Error("Couldn't reach the cloud provider."), { status: 503, code: 'providerUnavailable' })), 'failed')
   assert.equal(cloudCreateOutcome(new TypeError('fetch failed')), 'failed')
+})
+
+test('a deletion or key removal the cloud turned down is refused, anything else failed', () => {
+  assert.equal(cloudDeleteOutcome(Object.assign(new Error("It's asleep."), { status: 409, code: 'conflict' })), 'refused')
+  assert.equal(cloudDeleteOutcome(Object.assign(new Error("Couldn't reach the cloud provider."), { status: 503, code: 'providerUnavailable' })), 'failed')
+  assert.equal(cloudDeleteOutcome(new TypeError('fetch failed')), 'failed')
 })
 
 test('New cloud computer lists every provider and starts on the first with a usable key', () => {

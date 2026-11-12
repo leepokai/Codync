@@ -134,7 +134,7 @@ impl Actor {
         let mut command = [candidate.resolve(progress).await?.acp()];
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
-        let conn = start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
+        let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
         })?;
         self.hub.dev_servers.agent_started(&self.cfg.id, &conn.acp, &self.cfg.backend, &command[0]);

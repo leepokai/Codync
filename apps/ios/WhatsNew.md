@@ -6,6 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.44.1
+### zh-Hant
+- 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。
+
+### en-US
+- After an important update, Codync shows a What's new window the first time you open it, listing what changed. Most updates don't show one.
+
 ## 2.43.2
 ### zh-Hant
 - bot 頭像的點變大了：大頭像也改用 9 × 9 的大點，看起來更清楚。

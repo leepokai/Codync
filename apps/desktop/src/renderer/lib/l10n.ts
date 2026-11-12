@@ -171,7 +171,8 @@ export const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : n
 /** The `Intl` locale for dates and units: the system's own (with its region) when the app shows that language, else the chosen one. */
 export function intlLocale(preference: AppLanguage, system: string): string {
   const language = resolvedLanguage(preference, system)
-  if (language === resolvedLanguage('system', system)) return system
+  // Keep the system region only when the system really speaks the chosen language (a Dutch device that picked English gets 'en').
+  if (language === resolvedLanguage('system', system) && system.toLowerCase().split(/[-_]/)[0] === language.split('-')[0]) return system
   return language === 'zh' ? 'zh-Hans' : language
 }
 

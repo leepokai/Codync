@@ -155,7 +155,10 @@ val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 @Composable fun appLocale(): java.util.Locale {
     val system = LocalSystemTag.current
     val language = LocalAppLanguage.current.resolved(system)
-    return java.util.Locale.forLanguageTag(if (language == AppLanguage.System.resolved(system)) system else language.tag)
+    val systemLocale = java.util.Locale.forLanguageTag(system)
+    // Keep the system region only when the system really speaks the chosen language (a Dutch device that picked English gets "en").
+    val speaksIt = language == AppLanguage.System.resolved(system) && systemLocale.language == language.tag.substringBefore('-')
+    return if (speaksIt) systemLocale else java.util.Locale.forLanguageTag(language.tag)
 }
 
 /** [tr] as a function, for code that translates outside composition (a template filled in later). */

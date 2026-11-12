@@ -251,4 +251,6 @@ test('dates keep the system region when the app shows the system language', () =
   assert.equal(intlLocale('en', 'en-GB'), 'en-GB')
   assert.equal(intlLocale('it', 'en-GB'), 'it')
   assert.equal(intlLocale('zh', 'en-US'), 'zh-Hans')
+  assert.equal(intlLocale('en', 'nl-NL'), 'en')
+  assert.equal(intlLocale('system', 'pl-PL'), 'en')
 })

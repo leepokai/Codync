@@ -84,8 +84,10 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
         // The system's own language keeps its region (en-GB dates); another choice formats in that language.
         let system = Locale.autoupdatingCurrent
         let language = resolved(preference: preference)
-        return language == resolved(preference: .system, languages: [system.identifier])
-            ? system : Locale(identifier: language.catalogName)
+        // Only when the system really speaks it: a Dutch device that picked English formats in "en".
+        let speaksIt = language == resolved(preference: .system, languages: [system.identifier])
+            && system.language.languageCode?.identifier == language.catalogName.split(separator: "-").first.map(String.init)
+        return speaksIt ? system : Locale(identifier: language.catalogName)
     }
 
     /// What the language menu shows for this choice. Names of languages stay in that language.

@@ -49,7 +49,7 @@ class ImageViewerTest {
             put("text", "Sent $sharedName"); put("final", true); put("files", buildJsonArray { add(shared) })
         })
         val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(bot.id), entries = listOf(entry, reply))
+            historyEnd = mapOf(bot.id to HistoryEnd.Complete), entries = listOf(entry, reply))
         compose.setContent { Hosted { ChatScreen(state, store, {}) } }
         // The list scrolls to its end as it first lays out: touches wait for that.
         compose.waitForIdle()
@@ -83,8 +83,11 @@ class ImageViewerTest {
         compose.onNodeWithText("Copy image").assertIsDisplayed()
         compose.onNodeWithText("Reply").assertIsDisplayed()
         compose.onNodeWithText("Copy").assertDoesNotExist()
+        // A picture copy still converting when Copy name is chosen must not land over the name.
+        val converting = store.imageCopies.start()
         compose.onNodeWithText("Copy name").performClick()
         compose.runOnIdle { assertEquals(name, clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        assertFalse(store.imageCopies.isLatest(converting))
     }
 
     @Test fun theViewerCopiesThePictureItselfThenShowsCopied() {

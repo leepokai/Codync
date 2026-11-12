@@ -57,7 +57,8 @@ struct CopyRequests {
         case overtaken
     }
 
-    private static var requests = CopyRequests()
+    /// Every copy of a picture or its name: whichever started last owns the clipboard.
+    static var requests = CopyRequests()
 
     /// The viewer shows the result on its copy button; from a chat's menu the caller tells the user.
     static func image(_ source: ImageSource, model: BotStore, from: AnalyticsEvent.ImageFrom) async -> Outcome {
@@ -75,7 +76,9 @@ struct CopyRequests {
         return failure == nil ? .copied : .failed
     }
 
+    /// The name overtakes a picture copy still converting, so that one can't land over it.
     static func name(_ source: ImageSource, from: AnalyticsEvent.ImageFrom) {
+        _ = requests.start()
         Pasteboard.copy(source.name)
         Analytics.shared.capture(.imagePreviewAction(.copyName, from: from))
     }

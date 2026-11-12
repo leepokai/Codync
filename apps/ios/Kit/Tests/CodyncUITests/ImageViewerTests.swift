@@ -84,6 +84,12 @@ private let big = CGSize(width: 2000, height: 1600)
     #expect(requests.isLatest(second))
 }
 
+@MainActor @Test func copyNameOvertakesAPictureCopyStillConverting() {
+    let converting = ImageCopy.requests.start()
+    ImageCopy.name(.sent(Attachment(id: "a", name: "chart.png", size: 1), botId: "b"), from: .menu)
+    #expect(!ImageCopy.requests.isLatest(converting))
+}
+
 @MainActor @Test func aPictureTakesCopysPlaceInItsMessageMenuAndInTheViewerWhatLeavesClosesItFirst() {
     var log: [String] = []
     let entry = Entry(id: "e", seq: 1, botId: "b", rev: 1, kind: "agent", turn: 1, data: EntryData(text: "Hi"), createdAt: 0, updatedAt: 0)

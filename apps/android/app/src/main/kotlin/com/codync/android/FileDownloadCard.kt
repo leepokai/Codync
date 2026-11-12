@@ -60,11 +60,14 @@ import com.kyant.shapes.RoundedRectangle
  *  the download under way. In the image viewer (`inViewer`) its end is reported. */
 @Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, inViewer: Boolean = false) {
     val busy = state.fileDownloads[file.id] is FileDownloadState.Downloading
-    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, inViewer) }
+    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, if (inViewer) ::reportViewerDownload else null) }
         .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
         Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
     }
 }
+
+/** How a download from the image viewer ended. */
+private fun reportViewerDownload(error: ImageError?) = Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error))
 
 /** A shared file's size, or how its download goes. */
 internal fun detail(file: SharedFile, download: FileDownloadState?): String {

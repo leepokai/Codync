@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { CopyRequests, fitPixels, isPng } from './image-clipboard.ts'
+import { copies, copyImage, copyText, CopyRequests, decodeOptions, fitPixels, isPng } from './image-clipboard.ts'
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0])
 
@@ -29,4 +29,45 @@ test('a copy overtaken by a newer one is no longer the one to land', () => {
   const second = requests.start()
   assert.equal(requests.isLatest(first), false)
   assert.equal(requests.isLatest(second), true)
+})
+
+test('a huge picture is decoded straight to its capped size, a small one at its own', () => {
+  assert.deepEqual(decodeOptions(400, 300), { resizeWidth: 400, resizeHeight: 300, resizeQuality: 'high' })
+  const huge = decodeOptions(30_000, 20_000)
+  assert.ok(huge.resizeWidth! * huge.resizeHeight! <= 36_000_000)
+})
+
+test('Copy name started while a picture is still converting keeps the clipboard: the picture never lands', async () => {
+  const request = copies.start()
+  const picture = copyImage(PNG, () => copies.isLatest(request))
+  let written = ''
+  const name = copyText('chart.png', (text) => { written = text })
+  // Landing would reach for the clipboard, which isn't here, and throw.
+  await Promise.all([picture, name])
+  assert.equal(written, 'chart.png')
+  assert.equal(copies.isLatest(request), false)
+})
+
+test('Copy name clicked while a picture is still being written lands after it, not under it', async () => {
+  const landed: string[] = []
+  let finishWrite = () => {}
+  const write = () => new Promise<void>((done) => { finishWrite = () => { landed.push('picture'); done() } })
+  Object.defineProperty(globalThis, 'ClipboardItem', { value: class {}, configurable: true })
+  const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { write } }, configurable: true })
+  try {
+    const request = copies.start()
+    const picture = copyImage(PNG, () => copies.isLatest(request))
+    await new Promise((done) => setTimeout(done))
+    const name = copyText('chart.png', (text) => landed.push(text))
+    await new Promise((done) => setTimeout(done))
+    assert.deepEqual(landed, [])
+    finishWrite()
+    await Promise.all([picture, name])
+    assert.deepEqual(landed, ['picture', 'chart.png'])
+  } finally {
+    if (navigator) Object.defineProperty(globalThis, 'navigator', navigator)
+    else Reflect.deleteProperty(globalThis, 'navigator')
+    Reflect.deleteProperty(globalThis, 'ClipboardItem')
+  }
 })

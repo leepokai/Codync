@@ -1,41 +1,23 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Entry } from '@shared/models'
 import type { MenuItem, ReactionPick } from '../../components/Menu'
 import type { ImageFailure, ImageFrom } from '../../../shared/analytics.ts'
-import { copyImage, CopyRequests } from '../../lib/image-clipboard'
+import { copies, copyImage, copyText } from '../../lib/image-clipboard'
 import { copyFailure, imageActionEvent } from '../../lib/image-analytics.ts'
 import { analytics } from '../../store/analytics'
 import type { BotStore } from '../../store/bot-store'
 import { useStoreRef } from '../../store/context'
 import type { ImageSource } from './Attachments'
 import { copiedPicture } from './message-copy'
+import { trNow } from '../../lib/l10n.ts'
 
-/** How long a copy's check mark (or failure) shows. */
+/** How long the copy button's check mark (or failure) shows. */
 const FLASH_MS = 1500
 
 /** A picture's bytes from the computer, cached after the first read. */
 export function imageBytes(store: BotStore, source: ImageSource) {
   return 'entryId' in source ? store.sharedFileData(source.file, source.entryId) : store.attachmentData(source.file.id, source.botId)
 }
-
-/** Whether a copy from a picture's menu just failed: nothing on screen shows its result, so the thread says so for a moment. */
-let copyFailed = false
-const failureListeners = new Set<() => void>()
-let failureTimer: ReturnType<typeof setTimeout> | undefined
-function flashCopyFailure() {
-  copyFailed = true
-  failureListeners.forEach((listener) => listener())
-  clearTimeout(failureTimer)
-  failureTimer = setTimeout(() => {
-    copyFailed = false
-    failureListeners.forEach((listener) => listener())
-  }, FLASH_MS * 2)
-}
-export function useCopyFailed() {
-  return useSyncExternalStore((listener) => { failureListeners.add(listener); return () => void failureListeners.delete(listener) }, () => copyFailed)
-}
-
-const copyRequests = new CopyRequests()
 
 /**
  * How a copy of the picture itself went. `overtaken`: a newer copy started before this one finished, so the clipboard and
@@ -45,8 +27,8 @@ export type CopyOutcome = 'copied' | 'failed' | 'overtaken'
 
 /** The picture itself on the clipboard (not its name). Reported, done or failed, unless a newer copy overtook it. */
 export async function copyImageOf(store: BotStore, source: ImageSource, from: ImageFrom): Promise<CopyOutcome> {
-  const request = copyRequests.start()
-  const current = () => copyRequests.isLatest(request)
+  const request = copies.start()
+  const current = () => copies.isLatest(request)
   let error: ImageFailure | undefined
   const bytes = await imageBytes(store, source).catch(console.error)
   if (!bytes) error = 'unavailable'
@@ -61,12 +43,12 @@ export async function copyImageOf(store: BotStore, source: ImageSource, from: Im
   if (!current()) return 'overtaken'
   analytics.track(imageActionEvent('copy_image', from, error))
   // The viewer's own copy button shows its result; a picture's menu elsewhere has nothing to show it.
-  if (error && from === 'menu') flashCopyFailure()
+  if (error && from === 'menu') store.lastError = trNow("Couldn't copy image")
   return error ? 'failed' : 'copied'
 }
 
 export function copyNameOf(source: ImageSource, from: ImageFrom) {
-  window.codync.app.copy(source.file.name)
+  void copyText(source.file.name, (name) => window.codync.app.copy(name))
   analytics.track(imageActionEvent('copy_name', from))
 }
 

@@ -34,7 +34,6 @@ import { GroupEditorView } from '../bots/GroupEditorView'
 import { BotTemplateView } from '../bots/BotTemplateView'
 import { BotEditorView } from '../bots/BotEditorView'
 import { FormSheet } from '../marketplace/pieces'
-import { ImageCopyNotice } from './ImageContextMenu'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
@@ -198,7 +197,6 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
         <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
-        <ImageCopyNotice />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (

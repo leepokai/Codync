@@ -36,10 +36,9 @@ function DownloadButton({ entry, file, inViewer = false }: { entry: Entry; file:
   const busy = state?.kind === 'downloading'
   const start = async () => {
     if (busy) return store.fileDownloads.cancel(file.id)
-    await store.fileDownloads.save(store.client, entry.id, file)
-    // Reported once it ends, and only the viewer's button: a cancel (no new state) or a save that never started says nothing.
-    const ended = store.fileDownloads.states.get(file.id)
-    if (inViewer && ended && ended !== state && ended.kind !== 'downloading') analytics.track(imageActionEvent('download', 'viewer', ended.kind === 'failed' ? 'transfer' : undefined))
+    const outcome = await store.fileDownloads.save(store.client, entry.id, file)
+    // Only the viewer's button reports, once the save ends; a cancel says nothing.
+    if (inViewer && outcome !== 'cancelled') analytics.track(imageActionEvent('download', 'viewer', outcome === 'failed' ? 'transfer' : undefined))
   }
   return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={inViewer ? 28 : 36} onClick={() => void start()} />
 }

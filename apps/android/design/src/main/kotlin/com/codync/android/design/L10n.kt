@@ -148,6 +148,12 @@ val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 
 @Composable fun tr(text: String): String = translator()(text)
 
+/** The app language as a [java.util.Locale], for dates and units (`Zh` is simplified Chinese). */
+@Composable fun appLocale(): java.util.Locale {
+    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
+    return java.util.Locale.forLanguageTag(if (language == AppLanguage.Zh) "zh-Hans" else language.stored)
+}
+
 /** [tr] as a function, for code that translates outside composition (a template filled in later). */
 @Composable fun translator(): (String) -> String {
     val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)

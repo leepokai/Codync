@@ -1973,5 +1973,7 @@
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud 會在它下次休眠前更新它。",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync 是免費的，由一個人開發。如果它幫得上你，可以在 Ko-fi 上支持它。",
   "Support on Ko-fi": "在 Ko-fi 上支持",
-  "What's new": "新功能"
+  "What's new": "新功能",
+  "seconds": "秒",
+  "Timeout (seconds)": "逾時（秒）"
 }

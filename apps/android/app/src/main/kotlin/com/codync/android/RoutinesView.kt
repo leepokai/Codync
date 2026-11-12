@@ -89,7 +89,7 @@ import kotlinx.coroutines.launch
                 Row(Modifier.outlinedCard(vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f).plainButton { editing = routine.id }.padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(routine.name, style = Type.system(13f), color = Palette.text)
-                        Text(scheduleLine(routine, listing?.summary(routine).orEmpty()), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
+                        Text(listing?.summary(routine, translator()).orEmpty(), style = Type.caption, color = if (routine.lastError == null) Palette.secondary else Palette.danger)
                     }
                     CodyncSwitch(routine.enabled, { store.routineAction(bot.id, routine.id, "setRoutineEnabled", it) },
                         Modifier.width(34.dp).semantics { contentDescription = routine.name }, enabled = online && !busy) {}
@@ -243,19 +243,6 @@ import kotlinx.coroutines.launch
     CodyncSheet(choosingZone, { choosingZone = false }) {
         ZonePicker(draft.schedule.zone) { draft = draft.copy(schedule = draft.schedule.copy(zone = it)); choosingZone = false }
     }
-}
-
-@Composable private fun appLocale(): Locale {
-    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
-    val tag = if (language == AppLanguage.Zh) "zh-Hans" else language.stored
-    return Locale.forLanguageTag(tag)
-}
-
-/** The schedule line in the app language; a status line ("Last run failed") stays as `summary` wrote it. */
-@Composable private fun scheduleLine(routine: Routine, summary: String): String {
-    val translate = translator()
-    val schedule = routine.triggerDescriptions.joinToString(" · ")
-    return if (summary == schedule) routine.triggerDescriptions.joinToString(" · ") { translate(it) } else summary
 }
 
 /** Whole hours, else whole minutes, else seconds, in `locale`. Anything else stays as typed plus "s". */

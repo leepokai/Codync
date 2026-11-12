@@ -41,12 +41,13 @@ import java.time.format.FormatStyle
 }
 
 @Serializable data class RoutineListing(val routines: List<Routine>, val runs: List<RoutineRun>) {
-    fun summary(routine: Routine): String {
+    /** The row's second line: what's happening now, else when it runs (each schedule line through `describe`). */
+    fun summary(routine: Routine, describe: (String) -> String = { it }): String {
         runs.firstOrNull { it.routineId == routine.id && it.isActive }?.let { return it.label }
         if (routine.lastError != null) return "Schedule needs attention"
         runs.firstOrNull { it.routineId == routine.id }?.takeIf { it.status in listOf("failed", "interrupted") }
             ?.let { return "Last run ${it.label.lowercase()}" }
-        return routine.triggerDescriptions.joinToString(" · ")
+        return routine.triggerDescriptions.joinToString(" · ", transform = describe)
     }
 }
 

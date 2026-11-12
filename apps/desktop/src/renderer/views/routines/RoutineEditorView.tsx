@@ -11,8 +11,7 @@ import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
-import { resolvedLanguage } from '../../lib/l10n'
-import { useAppLanguage, useTr } from '../../lib/use-language'
+import { useIntlLocale, useTr } from '../../lib/use-language'
 
 
 const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
@@ -24,9 +23,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   saved: (routine: Routine | null) => void
 }) {
   const tr = useTr()
-  const appLanguage = useAppLanguage()
-  const timeLocale = resolvedLanguage(appLanguage, typeof navigator === 'undefined' ? 'en' : navigator.language)
-  const durationLocale = timeLocale === 'zh' ? 'zh-Hans' : timeLocale
+  const durationLocale = useIntlLocale()
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')

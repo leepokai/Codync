@@ -5,8 +5,7 @@ import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
-import { resolvedLanguage } from '../../lib/l10n'
-import { useAppLanguage, useTr } from '../../lib/use-language'
+import { useIntlLocale, useTr } from '../../lib/use-language'
 
 
 const weekdays = [
@@ -108,9 +107,7 @@ export function LabeledRow({ label, top = false, className, children }: { label:
 /** The sentence, then the next run, under the group — or why the host can't read it. */
 function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
   const tr = useTr()
-  const appLanguage = useAppLanguage()
-  const timeLocale = resolvedLanguage(appLanguage, typeof navigator === 'undefined' ? 'en' : navigator.language)
-  const dateLocale = timeLocale === 'zh' ? 'zh-Hans' : timeLocale
+  const dateLocale = useIntlLocale()
   if (error) return <Text size="callout" tone="danger" className="schedule-preview">{error}</Text>
   const nextRunAt = preview?.nextRunAt
   return (

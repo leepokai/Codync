@@ -1973,5 +1973,7 @@
   "Codync Cloud updates it before it next sleeps.": "O Codync Cloud o atualiza antes de ele dormir de novo.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "O Codync é gratuito e feito por uma só pessoa. Se ele ajuda você, dá para apoiá-lo no Ko-fi.",
   "Support on Ko-fi": "Apoiar no Ko-fi",
-  "What's new": "Novidades"
+  "What's new": "Novidades",
+  "seconds": "segundos",
+  "Timeout (seconds)": "Tempo limite (segundos)"
 }

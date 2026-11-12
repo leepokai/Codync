@@ -71,5 +71,6 @@ class RoutineTest {
         assertEquals("Last run failed", RoutineListing(listOf(routine), listOf(failed)).summary(routine))
         assertEquals("Schedule needs attention", RoutineListing(emptyList(), emptyList()).summary(routine.copy(lastError = "invalid schedule")))
         assertEquals("Every day", RoutineListing(emptyList(), emptyList()).summary(routine))
+        assertEquals("<Every day>", RoutineListing(emptyList(), emptyList()).summary(routine) { "<$it>" })
     }
 }

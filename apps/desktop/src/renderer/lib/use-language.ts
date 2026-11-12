@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { prefs } from './prefs'
-import { resetLine, translate, type AppLanguage } from './l10n'
+import { resetLine, resolvedLanguage, translate, type AppLanguage } from './l10n'
 
 export function useAppLanguage(): AppLanguage {
   return useSyncExternalStore(prefs.appLanguage.subscribe, prefs.appLanguage.get)
@@ -18,4 +18,10 @@ export function useResetLine(): (raw: string) => string {
   const language = useAppLanguage()
   const system = typeof navigator === 'undefined' ? 'en' : navigator.language
   return (raw) => resetLine(raw, language, system)
+}
+
+/** The `Intl` locale tag for the language chosen in Settings (dates, durations). */
+export function useIntlLocale(): string {
+  const language = resolvedLanguage(useAppLanguage(), typeof navigator === 'undefined' ? 'en' : navigator.language)
+  return language === 'zh' ? 'zh-Hans' : language
 }

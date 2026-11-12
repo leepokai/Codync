@@ -290,7 +290,7 @@ mod tests {
                 let Candidate::Ready(Cmd { program: version, .. }) = candidate else { unreachable!() };
                 anyhow::ensure!(version != "broken", "didn't start");
                 let command = format!("sh -c '{}' {version}", AGENT.replace('\'', "'\\''"));
-                start_agent(&command, "/tmp", &env, Duration::from_secs(10)).await
+                start_agent("opencode", &command, "/tmp", &env, Duration::from_secs(10)).await
             }
         })
         .await

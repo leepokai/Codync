@@ -157,7 +157,9 @@ fn an_outdated_cli_is_told_to_update() {
     let why = exit_reason("dsh", "Error: profile acp does not exist").expect("a reason");
     assert!(why.starts_with("The DeepSeek Harness on this computer is too old to run in Codync. Update it (run `"));
     // Codync's own npm, which works without one on the computer.
-    assert!(why.ends_with(" npm install -g @deepseek-ai/dsh@latest` on this computer) and try again."), "{why}");
+    let shell = if cfg!(windows) { " in Command Prompt" } else { "" };
+    let suffix = format!(" npm install -g @deepseek-ai/dsh@latest`{shell} on this computer) and try again.");
+    assert!(why.ends_with(&suffix), "{why}");
     // Another harness saying the same isn't outdated for it.
     assert_eq!(exit_reason("kiro", "profile acp does not exist").as_deref(), Some("profile acp does not exist"));
     assert_eq!(exit_reason("dsh", "Error: no API key").as_deref(), Some("Error: no API key"));

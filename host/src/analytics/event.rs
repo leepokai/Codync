@@ -37,6 +37,8 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// An agent taking over a bot's chat was told what came before (`agent::fallback::carry`).
+    HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
     AgentRetired,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
@@ -156,6 +158,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",

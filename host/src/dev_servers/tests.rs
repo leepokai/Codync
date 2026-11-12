@@ -4,7 +4,8 @@ use super::platform::same_boot;
 use super::ports::{Listening, Port, sockets_of, urls_with};
 use super::scan::SETTLE_MS;
 use super::tools::tidied;
-use super::{Live, Saved, Status};
+use super::{DevServers, Live, Saved, Status};
+use crate::LockExt;
 use crate::agent::process::{JobProcess, descendants, parse_ps};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -235,6 +236,22 @@ fn a_server_settles_on_its_first_socket_or_after_a_while() {
     server.begin(0);
     assert!(server.observed(vec![socket("127.0.0.1:1")], None, 1));
     assert_eq!(server.status, Status::Running);
+}
+
+#[test]
+fn only_the_hosts_own_running_servers_outlive_an_agent() {
+    let servers = DevServers::default();
+    let mut web = live();
+    web.begin(0);
+    web.ports = vec![Port { port: 5173, local: String::new(), remote: Vec::new() }];
+    let mut done = live();
+    done.saved.id = "done".into();
+    servers.live.locked().extend([("a".to_owned(), web), ("done".to_owned(), done)]);
+    // What the agent started through its shell shows in the apps, and ends with the agent.
+    servers.detected.locked().insert("b".into(), vec![found(vec![7])]);
+    assert_eq!(servers.wire("b").as_array().map(Vec::len), Some(3));
+    assert_eq!(servers.active("b"), [("web".to_owned(), vec![5173])]);
+    assert_eq!(servers.active("other"), []);
 }
 
 #[test]

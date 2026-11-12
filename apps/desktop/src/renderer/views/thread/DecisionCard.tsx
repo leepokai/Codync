@@ -13,8 +13,8 @@ import './permission-card.css'
 export function DecisionCard({ entry, answering, respond }: { entry: Entry; answering: string | null; respond: (choice: string) => void }) {
   const d = entry.data
   const status = d.status as DecisionStatus | undefined
-  const [expanded, setExpanded] = useState(false)
   const question = useRef<HTMLElement>(null)
+  const { expanded, height, toggle, settle } = useExpand(question)
   const clamped = useClamped(question, expanded)
   const pending = status === 'pending'
   const choices = d.choices ?? []
@@ -28,9 +28,11 @@ export function DecisionCard({ entry, answering, respond }: { entry: Entry; answ
           <Text size="headline" tone="text">{trNow('Needs your choice')}</Text>
           {pending ? <span className="permission-card-dot" /> : null}
         </HStack>
-        <Text ref={question} as="div" size="subheadline" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
-          {d.question ?? ''}
-        </Text>
+        <div className="decision-card-question-box" style={{ maxHeight: height ?? undefined }} onTransitionEnd={settle}>
+          <Text ref={question} as="div" size="subheadline" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
+            {d.question ?? ''}
+          </Text>
+        </div>
         {pending ? (
           <div className="permission-card-options">
             {choices.map((choice, i) => (
@@ -57,11 +59,46 @@ export function DecisionCard({ entry, answering, respond }: { entry: Entry; answ
           </HStack>
         )}
         {expanded || clamped ? (
-          <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={() => setExpanded((e) => !e)} />
+          <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={toggle} />
         ) : null}
       </VStack>
     </div>
   )
+}
+
+/** Expands and collapses the clamped question with an animated height (`--layout`): the box's max-height runs from the
+ *  height it has to the height it will have, and is lifted once it settles so the text can reflow. */
+function useExpand(ref: React.RefObject<HTMLElement | null>) {
+  const [expanded, setExpanded] = useState(false)
+  const [collapsing, setCollapsing] = useState(false)
+  const [height, setHeight] = useState<number | null>(null)
+  const toggle = () => {
+    const el = ref.current
+    if (!el) return
+    // Reduced motion (`--layout: 0s`) fires no transitionend: switch straight away.
+    if (el.parentElement && getComputedStyle(el.parentElement).transitionDuration === '0s') {
+      setExpanded(!expanded)
+      return
+    }
+    const from = el.getBoundingClientRect().height
+    if (!expanded) {
+      setHeight(from)
+      setExpanded(true)
+      requestAnimationFrame(() => setHeight(el.scrollHeight))
+    } else {
+      setHeight(from)
+      setCollapsing(true)
+      requestAnimationFrame(() => setHeight(Number.parseFloat(getComputedStyle(el).lineHeight) * 4))
+    }
+  }
+  const settle = () => {
+    if (collapsing) {
+      setCollapsing(false)
+      setExpanded(false)
+    }
+    setHeight(null)
+  }
+  return { expanded, height, toggle, settle }
 }
 
 /** Whether the clamped question hides lines, so the expand button only shows when there is more to read. */

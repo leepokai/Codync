@@ -43,6 +43,10 @@
 .decision-card-question {
   white-space: pre-wrap;
 }
+.decision-card-question-box {
+  overflow: hidden;
+  transition: max-height var(--layout);
+}
 .decision-option {
   gap: 10px;
   padding-block: 6px;

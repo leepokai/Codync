@@ -2026,5 +2026,7 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "无法连接到远程屏幕。请检查电脑的网络连接后再试一次。",
   "Move active bots to the top": "将有新动态的机器人移到最前面",
   "Active bots move to the top": "有新动态的机器人会移到最前面",
-  "Bots keep the order you set": "机器人保持你设置的顺序"
+  "Bots keep the order you set": "机器人保持你设置的顺序",
+  "Waking the computer…": "正在唤醒电脑…",
+  "Open the screen": "打开屏幕"
 }

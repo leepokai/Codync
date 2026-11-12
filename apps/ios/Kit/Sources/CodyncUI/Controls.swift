@@ -234,6 +234,16 @@ public struct TabChoice<ID: Hashable>: View {
     }
 
     public var body: some View {
+        // Labels too long for the width shrink a little, then scroll, rather than cut one short.
+        ViewThatFits(in: .horizontal) {
+            tabs(small: false)
+            tabs(small: true)
+            ScrollView(.horizontal) { tabs(small: false) }
+                .scrollIndicators(.hidden)
+        }
+    }
+
+    private func tabs(small: Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(options, id: \.id) { option in
                 let on = option.id == selection
@@ -241,12 +251,10 @@ public struct TabChoice<ID: Hashable>: View {
                     withAnimation(Motion.reduced(Motion.morph, reduceMotion)) { selection = option.id }
                 } label: {
                     Text(L10n.tr(option.label))
-                        .font(.subheadline)
+                        .font(small ? .footnote : .subheadline)
                         .foregroundStyle(on ? Palette.text : Palette.secondary)
                         .lineLimit(1)
-                        // Four tabs on a narrow iPhone shrink a little rather than cut a label short.
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, small ? 10 : 12)
                         .padding(.vertical, 6)
                         .background {
                             if on { Capsule().fill(Palette.bubbleAgent).matchedGeometryEffect(id: "pill", in: pill) }

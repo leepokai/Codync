@@ -211,7 +211,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "screenTakeover" => {
-            hub.screen.takeover(b["on"].as_bool().unwrap_or(false));
+            hub.screen.takeover(caller.device_key(), b["on"].as_bool().unwrap_or(false));
             hub.screen.state()
         }
         "setAnalytics" => {

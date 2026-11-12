@@ -18,6 +18,8 @@ public enum HostEvent: Sendable {
     case network(NetworkView)
     /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
     case name(String)
+    /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
+    case autoOrder(Bool)
     case resync
     /// One this app has no use for.
     case skipped
@@ -145,6 +147,9 @@ public struct HostClient: Sendable {
         case "name":
             struct NameWrap: Decodable { var name: String }
             return (try? d.decode(NameWrap.self, from: data)).map { .name($0.name) }
+        case "autoOrder":
+            struct AutoOrderWrap: Decodable { var enabled: Bool }
+            return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
         default:

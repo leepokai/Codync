@@ -124,6 +124,7 @@ impl App {
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
+            Overlay::Computer(bot) => self.computer_key(bot, k),
             Overlay::Library(l) => self.library_key(l, k),
             Overlay::Gear(g) => Self::gear_key(g, k),
             Overlay::Market(m) => self.market_key(m, k),

@@ -26,6 +26,8 @@ test('shortcuts send the key under them, ⌘ as Ctrl off a Mac', () => {
   // With ⌘, Option still names the key under it.
   assert.deepEqual(keyInput(press('Ω', 'KeyZ', { metaKey: true, altKey: true }), 'darwin', 'linux'), { type: 'key', key: 'z', modifiers: ['ctrl', 'option'] })
   assert.deepEqual(keyInput(press('f', 'KeyF', { altKey: true }), 'linux', 'linux'), { type: 'key', key: 'f', modifiers: ['option'] })
+  assert.deepEqual(keyInput(press('z', 'KeyY', { ctrlKey: true }), 'linux', 'linux'), { type: 'key', key: 'z', modifiers: ['ctrl'] }, 'a German Ctrl+Z stays Undo')
+  assert.deepEqual(keyInput(press('я', 'KeyZ', { ctrlKey: true }), 'linux', 'linux'), { type: 'key', key: 'z', modifiers: ['ctrl'] }, 'a non-Latin layout uses the key position')
   assert.deepEqual(keyInput(press(' ', 'Space', { ctrlKey: true }), 'linux', 'linux'), { type: 'key', key: 'space', modifiers: ['ctrl'] })
 })
 
@@ -45,6 +47,7 @@ test('paste is ⌘V on a Mac and Ctrl+V elsewhere', () => {
   assert.equal(isPaste(press('v', 'KeyV', { metaKey: true }), 'darwin'), true)
   assert.equal(isPaste(press('v', 'KeyV', { ctrlKey: true }), 'darwin'), false)
   assert.equal(isPaste(press('v', 'KeyV', { ctrlKey: true }), 'linux'), true)
+  assert.equal(isPaste(press('v', 'Period', { ctrlKey: true }), 'linux'), true, 'Dvorak Ctrl+V')
 })
 
 test('a letterboxed picture maps to display points', () => {

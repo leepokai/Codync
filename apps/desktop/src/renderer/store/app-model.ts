@@ -62,6 +62,8 @@ export class AppModel extends Observable {
   screenError: string | null = null
   /** The computer whose screen is open in the viewer (another computer: this one's screen is right here). */
   screenComputer: string | null = null
+  /** The bot the viewer was opened to watch: it starts by looking rather than taking over. */
+  screenWatching: string | null = null
   private screenSynced = false
   /** Whether the account was signed in when last seen; null until its state first arrives. */
   private signedIn: boolean | null = null
@@ -120,8 +122,9 @@ export class AppModel extends Observable {
     this.changed()
   }
 
-  openScreen(computerId: string | null) {
+  openScreen(computerId: string | null, watching: string | null = null) {
     this.screenComputer = computerId
+    this.screenWatching = computerId ? watching : null
     this.changed()
   }
 

@@ -164,6 +164,13 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
     out.lines.extend(md::wrap(&[Span::styled(hello, t.secondary)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
 }
 
+/// A message's text, which find searches.
+fn message_text(out: &mut Built, e: &Entry, width: usize) {
+    let text_from = out.lines.len();
+    out.lines.extend(md::render(e.text(), width, 1));
+    out.texts.push((text_from, out.lines.len()));
+}
+
 /// One chat entry.
 fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i64, TurnInfo>, width: usize) {
     let t = theme();
@@ -240,12 +247,10 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 }
                 // A message's voice note: the terminal can't play it, so its line, then the message.
                 if e.data["voiceNote"] == true {
-                    out.lines.extend(md::render(e.text(), width, 1));
+                    message_text(out, e, width);
                 }
             } else {
-                let text_from = out.lines.len();
-                out.lines.extend(md::render(e.text(), width, 1));
-                out.texts.push((text_from, out.lines.len()));
+                message_text(out, e, width);
             }
             reactions(out, app, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));

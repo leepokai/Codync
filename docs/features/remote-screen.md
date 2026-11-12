@@ -37,7 +37,7 @@ back to the bots, then reconnects when the app returns.
 
 - `host/src/screen/` coordinates access to the local helper and owns viewer sessions. Another device cannot renegotiate or close a session it does not own.
 - `apps/screen-macos/` is the macOS capture/input helper (Xcode `Screen` target, `CodyncScreen.app`). The desktop app bundles it and registers it through `SMAppService` (`apps/desktop/src/main/screen.ts`); it is responsible for the OS permissions, including those of the computer-use driver it starts.
-- `apps/screen-linux/` implements the Linux helper with GStreamer, including ICE URL conversion and TURN transport configuration. It captures and injects input through the desktop portals; on a plain X server without them (a cloud computer's virtual display) it uses `ximagesrc` and XTest on `$DISPLAY` (`backend.rs`, `x11/`), never another X socket (one may be another user's desktop) and not on a Wayland session. It checks for portals again until it finds them, so a desktop session that starts after the helper still gets them, and setup moves a helper that chose X over to portals that came up later. X needs no permission dialog. An `up` lets go of the modifiers its `down` pressed, and a viewer that leaves mid-press has the button and modifiers let go. The host starts it from beside its own executable (then `PATH`). Linux host releases ship `codync-screen` in the same archive (built on Ubuntu 24.04: glibc 2.39+ and GStreamer 1.22+ with the base, good and bad plugins, PipeWire and xdg-desktop-portal at run time); `install.sh`, Homebrew and `codync-host update` put it next to the host.
+- `apps/screen-linux/` implements the Linux helper with GStreamer, including ICE URL conversion and TURN transport configuration. It captures and injects input through the desktop portals; on a plain X server without them (a cloud computer's virtual display) it uses `ximagesrc` and XTest on `$DISPLAY` (`backend.rs`, `x11/`), never another X socket (one may be another user's desktop) and not on a Wayland session. It checks for portals again until it finds them, so a desktop session that starts after the helper still gets them, and setup moves a helper that chose X over to portals that came up later. X needs no permission dialog. On X every session and every still for the bots takes its frames from one `ximagesrc` per display, through an `appsrc` each (`x11/capture.rs`), started with the first and stopped a second after the last: `ximagesrc` grabs the X server for each frame and, inside the grab, takes Xlib's process-wide lock, so a second one opening its display meanwhile (holding that lock while the server, held by the grab, can't answer) froze the X server for every app on that desktop. A session's task stops with the session, letting go of its data channels and its source. An `up` lets go of the modifiers its `down` pressed, and a viewer that leaves mid-press has its own button and modifiers let go (never another viewer's). A `view` naming another display swaps the session's capture source in place and moves its input there. The host starts it from beside its own executable (then `PATH`). Linux host releases ship `codync-screen` in the same archive (built on Ubuntu 24.04: glibc 2.39+ and GStreamer 1.22+ with the base, good and bad plugins, PipeWire and xdg-desktop-portal at run time); `install.sh`, Homebrew and `codync-host update` put it next to the host.
 - Helpers communicate locally through `~/.codync/screen.sock`. Updated helpers advertise `trickle` in `status`, emit ordered `candidate {session, candidate}` notifications, and accept the host's `candidate` request. Input uses the `input` and `input-fast` data channels.
 - Linux waits for an in-progress answer before acknowledging that viewer's close, and cancels pending helper requests when the socket ends. A late answer cannot restart closed capture; other viewers can still negotiate and close independently.
 - macOS replies stay bound to the socket that received the request. Closed peers ignore queued input and channel callbacks. The phone retires a failed peer before preparing its replacement and checks peer identity after each native negotiation await.
@@ -83,19 +83,37 @@ channels `input` and `input-fast`), recovery and renewal like the iPhone's `Scre
   direct only. Complete SDP needs no `screenCandidates` stream on either route.
 - **Mouse**: forwarded as it happens, not as gestures: `down`/`up` with the button, the click count (so a double-click
   stays one) and the modifiers held, `move` once per frame on `input-fast`, the wheel as `scroll` in pixels.
-- **Keyboard**: a hidden text field holds focus. Named keys and shortcuts go as `key` (from the physical key, so
-  ⌘⌥Z is Z); typing, characters typed with Option or AltGr (`@` on a German keyboard) and input methods (Zhuyin,
+- **Keyboard**: a hidden text field holds focus. Named keys and shortcuts go as `key` (the letter the keyboard layout gives, so German Ctrl+Z stays Z, else
+  the physical key, so ⌘⌥Z is Z), and the app's menu shortcuts (⌘F, ⌘R, …) stay off while the field has focus on a live screen (a dropped connection gives them back)
+  (`main/remote-keyboard.ts`; paste keeps its menu item); typing, characters typed with Option or AltGr (`@` on a German keyboard) and input methods (Zhuyin,
   Pinyin) arrive as `text`. On a Mac viewing Linux or Windows, ⌘
   acts as Ctrl. Paste sends the local clipboard (`clipboard`) before the shortcut; **Copy from computer** appears
   when the computer copied text. Escape and Tab go to the computer while you have control; the close button ends the
   session.
-- **Control**: opening takes over from the bots (`screenTakeover`), like the iPhone opened from Computers; **Hand back
-  to bots** and closing return it. Back live after a failure or a long outage, it asks again if the host handed
-  control back meanwhile. A view-only computer says so.
-- **Other clients**: phones reach a computer's screen from Manage computers and from a chat's **Computer** button,
-  which watches a bot at work before taking over; their computer headings keep only Extensions, since those two
-  entries already reach every computer. The desktop has no chat **Computer** button yet, so a bot at work stops when
-  its computer's screen opens there. The TUI has no viewer.
+- **Control**: opening takes over from the bots (`screenTakeover`), like the iPhone opened from Computers; opened from
+  the Computer tab's picture of a bot that's using the computer (`AppModel.openScreen(id, watching)`), it watches first,
+  like the phones' chat **Computer** button. **Hand back to bots** and closing return it. Back live after a failure or a long outage, it asks again if the host handed
+  control back meanwhile. A view-only computer says so. The host ties a takeover to the device that asked: once that
+  device has no screen session left, control goes back to the bots, even while another device (a Computer tab picture)
+  still watches.
+- **Other clients**: phones reach a computer's screen from Manage computers, from a chat's **Computer** button and
+  from the Computer tab, which watch a bot at work before taking over; their computer headings keep only Extensions,
+  since those entries already reach every computer. The desktop watches a bot from its Computer tab and has no chat
+  **Computer** button. The TUI has no viewer.
+
+## The bot details' Computer tab
+
+Each bot runs on one computer, so bot details (desktop inspector, iPhone and Android sheets) have a **Computer** tab
+between Details and Library: the computer's name and connection label, a live picture of its screen, and the Use the
+computer switch (moved from Details). The picture is a view-only session of its own (no `screenTakeover`, no input) at
+the picture's size, 16:10 and letterboxed; it streams only while the tab shows, the window or app is in front and the
+full viewer isn't open (one stream per device), and stops when any of that ends. A bot using the computer shows as
+"{name} is using the computer" over it. Clicking or tapping it opens the full viewer: watching when this bot is the one
+using the computer, else as from Computers. Until it's live the picture shows the viewer's own notices
+(`screenNotice` in `lib/screen-state.ts` on the desktop, `ScreenNotice` on the iPhone, `unavailableNotice` on Android): a sleeping cloud computer reads "Waking the computer…",
+since a device connecting through the relay is what wakes it (no separate wake call), and "Connecting to the screen…" while the app is still connecting. A session sends its picture size again once its `input` channel opens, since the helper drops a `view` sent before. The desktop's own computer has
+no picture. The TUI's **Computer** page has the name, state and switch without a picture. `screen_viewed` reports it
+as `bot_computer`; each session's outcome is the host's `remote_screen_finished`.
 
 ## Cloud computers
 

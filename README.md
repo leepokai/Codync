@@ -245,11 +245,11 @@ Clients and the host each name the oldest version of the other they still work w
 
 ## Community
 
-| Discord | WeChat · China community | Lark · if you can't join on WeChat |
+| Discord | WeChat · China community (temporarily unavailable) | Lark · China community |
 | --- | --- | --- |
-| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with regular WeChat; WeCom is not required. | If you can't join the WeChat group, join here instead. Scan with the Lark app; you need a Lark account. |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | **The WeChat group is temporarily unavailable.** Please join the Lark group for now. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with the Lark app; you need a Lark account. |
 | | <img src="web/public/wechat-group.png" width="200" alt="QR code to join the Codync WeChat community for users in China"> | <img src="web/public/lark-group.png" width="200" alt="QR code to join the Codync Lark community for users in China"> |
-| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) | [Download the QR code](web/public/lark-group.png) · [Open in Lark](https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=210q827f-a135-4b31-8be0-d4baf5lgh4cj&qr_code=true) |
+| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) | [Download the QR code](web/public/lark-group.png) · [Open in Lark](https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=bb2ibae9-710a-4d4a-96a5-e69d85ktg60s&qr_code=true) |
 
 ## Contact
 

@@ -82,7 +82,7 @@ All four clients show the same things; layout follows each platform.
   Open, Rename artifact and the share action. A file the bot shared is its file symbol, name and size, and saves like
   its card in the chat. An image the user sent shows a thumbnail and opens full size; other files they sent show their
   name and size. Empty: "Library is empty" / "Artifacts {name} makes and files shared in this chat show here."
-  - Desktop: a Library tab in the conversation details panel (Details · Library · Memory · Settings).
+  - Desktop: a Library tab in the conversation details panel (Details · Computer · Library · Memory · Settings).
   - iPhone and Android: the same tab in the bot's details sheet, which tapping the chat's title opens.
 - **Terminal UI**: a card is a `▤ Artifact: <title>` line. On the selected message, `o` opens the artifact in the
   computer's browser (its HTML written to a temporary file) and `f` saves `<title>.html` to Downloads, like files.

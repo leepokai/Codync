@@ -174,7 +174,7 @@ class MirrorDatabase(context: Context, directory: File, computerId: String) :
             is MirrorEvent.Screen -> setMeta(db, "screen", event.value.toString())
             // Artifacts, the network and the name live in memory (`AppStore.receiveArtifacts`, `receiveNetwork`, `setHostName`).
             MirrorEvent.Resync, MirrorEvent.Ignored, is MirrorEvent.ArtifactChanged, is MirrorEvent.Call, is MirrorEvent.Network,
-            is MirrorEvent.Name -> Unit
+            is MirrorEvent.Name, is MirrorEvent.AutoOrder -> Unit
         }
     }
 

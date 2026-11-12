@@ -5,21 +5,21 @@ import { CHINA_COMMUNITY, DISCORD, LARK_JOIN, LARK_QR, WECHAT_QR } from "../link
 
 export const metadata: Metadata = {
   title: "中国用户交流群 · WeChat and Lark community for China",
-  description: "加入 Codync 中国用户交流群，交流使用经验、提问与反馈。使用普通微信扫码即可，无需安装企业微信；加入不了的话，可以加入飞书（Lark）群。",
+  description: "加入 Codync 中国用户交流群，交流使用经验、提问与反馈。微信群暂时无法加入，请先加入飞书（Lark）群。",
   alternates: { canonical: CHINA_COMMUNITY },
 };
 
 const groups = [
   {
     name: "微信",
-    join: "使用普通微信扫描二维码加入，无需安装企业微信。",
+    join: "微信群暂时无法加入，请先加入飞书（Lark）群。",
     phone: "在手机上浏览？保存二维码后，在微信「扫一扫」中从相册选择图片。",
     qr: WECHAT_QR,
     file: "codync-wechat-group.png",
   },
   {
     name: "飞书（Lark）",
-    join: "微信群加入不了的话，用 Lark App 扫描二维码加入。还没有账号的话，需要先下载并注册 Lark。",
+    join: "用 Lark App 扫描二维码加入。还没有账号的话，需要先下载并注册 Lark。",
     phone: "在手机上浏览？直接点下方链接，在 Lark 中打开。",
     qr: LARK_QR,
     file: "codync-lark-group.png",
@@ -40,7 +40,7 @@ export default function CommunityPage() {
             中国用户交流群
           </h1>
           <p className="mt-5 text-lg leading-relaxed text-neutral-400">
-            和中国的 Codync 用户交流使用经验、提问与反馈。请先加入微信群；如果加入不了，再加入飞书（Lark）群。
+            和中国的 Codync 用户交流使用经验、提问与反馈。微信群暂时无法加入，请先加入飞书（Lark）群。
           </p>
           <div className="mt-10 grid gap-12 sm:grid-cols-2 sm:gap-8">
             {groups.map((group) => (

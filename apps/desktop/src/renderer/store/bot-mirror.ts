@@ -149,6 +149,13 @@ export class BotMirror extends Observable {
     return this.hello?.name ?? this.computer.name
   }
 
+  /** The automatic bot order switch as the computer has it: switched here, or its `autoOrder` event (another device). */
+  showAutoOrder(on: boolean) {
+    if (!this.hello || this.hello.autoOrder === on) return
+    this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
+  }
+
   /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
    * asleep perhaps, says so). */
   setHostName(name: string) {

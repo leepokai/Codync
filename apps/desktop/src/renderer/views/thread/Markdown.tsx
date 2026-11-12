@@ -101,10 +101,11 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
 }, (a, b) => JSON.stringify(a.block) === JSON.stringify(b.block))
 
 /** The desktop's Markdown for messages; a block that didn't change keeps its rendering. */
-export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+/** `findable`: a message's text, which find in the conversation searches. */
+export const MarkdownText = memo(function MarkdownText({ text, findable = false }: { text: string; findable?: boolean }) {
   const blocks = parseMarkdown(text)
   return (
-    <VStack gap={10} shrink className="markdown selectable">
+    <VStack gap={10} shrink className="markdown selectable" data-find-text={findable || undefined}>
       {blocks.map((b, i) => (
         <MarkdownBlock key={i} block={b} />
       ))}

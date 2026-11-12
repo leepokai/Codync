@@ -268,6 +268,8 @@ export interface CodyncBridge {
     reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
+    /** The remote screen keyboard took or lost focus: while it has it, shortcuts go to the other computer, not the menu. */
+    remoteKeyboard(on: boolean): void
     /** Files picked in the system dialog: name and bytes. */
     pickFiles(): Promise<PickedFile[]>
     /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */

@@ -403,11 +403,11 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
       >
         <div className="transcript-content">
           {more ? (
-            <button className="load-earlier" data-find-skip disabled={loadingEarlier} onClick={() => void showEarlier()}>
+            <button className="load-earlier" disabled={loadingEarlier} onClick={() => void showEarlier()}>
               {loadingEarlier ? <Spinner size={14} /> : tr('Load earlier messages')}
             </button>
           ) : null}
-          {items.length === 0 && bot ? <div className="transcript-intro" data-find-skip>{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
+          {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />

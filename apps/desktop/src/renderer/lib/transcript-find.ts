@@ -3,12 +3,12 @@ import { findSpans, type TextRun } from './text-find'
 
 /**
  * Finding text in the conversation on screen, drawn with the page's own highlights (`::highlight(find-match)`,
- * `find-active`). Views mark what the find treats specially: `data-find-block` on an element that holds text of its
- * own without being one of these tags (a table cell drawn as a span in a grid), `data-find-skip` on the transcript's
- * own text that isn't the conversation (Load earlier messages, an empty chat's hints).
+ * `find-active`). Only what messages say is searched, as on the phones and the terminal: views mark it with
+ * `data-find-text` (time separators, notices, names and status labels stay out). `data-find-block` marks an element
+ * that holds text of its own without being one of these tags (a table cell drawn as a span in a grid).
  */
 const BLOCKS = '[data-find-block], p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, tr, td, th, table, section, article, button, div'
-const SKIPPED = 'script, style, [aria-hidden="true"], [data-find-skip]'
+const SKIPPED = 'script, style, [aria-hidden="true"]'
 
 type VisibilityCheck = { checkVisibility?: (options?: { checkVisibilityCSS?: boolean }) => boolean }
 
@@ -20,7 +20,7 @@ function collect(root: HTMLElement): { runs: TextRun[]; nodes: Text[] } {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node as Text
     const parent = text.parentElement
-    if (!parent || !text.data || parent.closest(SKIPPED)) continue
+    if (!parent || !text.data || !parent.closest('[data-find-text]') || parent.closest(SKIPPED)) continue
     if ((parent as VisibilityCheck).checkVisibility?.({ checkVisibilityCSS: true }) === false) continue
     runs.push({ text: text.data, block: parent.closest(BLOCKS) ?? root })
     nodes.push(text)

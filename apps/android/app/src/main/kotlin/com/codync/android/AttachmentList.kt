@@ -66,7 +66,7 @@ internal class ImageSource(val id: String, val name: String, val load: suspend (
 
 internal fun Attachment.imageSource(botId: String, store: AppStore) = ImageSource(id, name) { store.attachment(botId, this) }
 
-internal fun SharedFile.imageSource(entryId: String, store: AppStore) = ImageSource(id, name) { store.sharedImage(entryId, this) }
+internal fun SharedFile.imageSource(entryId: String, store: AppStore) = ImageSource(id, name) { store.sharedFile(entryId, this) }
 
 /** A sent image, fetched from the computer once and then read from the cache; a placeholder until then. */
 @Composable internal fun AttachmentImage(file: Attachment, botId: String, maxPixels: Int, state: AppState, store: AppStore, modifier: Modifier,
@@ -106,12 +106,41 @@ internal fun SharedFile.imageSource(entryId: String, store: AppStore) = ImageSou
 
 /** The symbol for a file by its extension. */
 internal object AttachmentIcon {
-    fun symbol(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-        "png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp" -> "photo"
-        "pdf" -> "doc.richtext"
-        "zip", "gz", "tar", "7z" -> "doc.zipper"
-        "mov", "mp4", "m4v" -> "film"
-        "mp3", "m4a", "wav", "aac" -> "waveform"
-        else -> "doc"
+    fun symbol(name: String): String {
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return when {
+            isImageName(name) -> "photo"
+            ext == "pdf" -> "doc.richtext"
+            ext in listOf("zip", "gz", "tar", "7z") -> "doc.zipper"
+            ext in listOf("mov", "mp4", "m4v") -> "film"
+            isAudioName(name) -> "waveform"
+            else -> "doc"
+        }
     }
 }
+
+/**
+ * A file size the way `ByteCountFormatter(.file)` writes it: powers of 1000, no decimals for KB, one for MB, two for GB,
+ * the trailing `.0` dropped, and a size that rounds up to 1000 of a unit shown in the next one.
+ */
+fun formatBytes(size: Long): String {
+    if (size == 0L) return "Zero KB"
+    if (size < 1000) return if (size == 1L) "1 byte" else "$size bytes"
+    val units = listOf("KB", "MB", "GB", "TB")
+    var value = size / 1000.0
+    var unit = 0
+    while (unit < units.lastIndex && round(value, if (unit == 0) 0 else unit.coerceAtMost(2)) >= 1000) {
+        value /= 1000
+        unit++
+    }
+    val shown = round(value, if (unit == 0) 0 else unit.coerceAtMost(2))
+    return "${trim(shown)} ${units[unit]}"
+}
+
+private fun round(value: Double, decimals: Int): Double {
+    val scale = Math.pow(10.0, decimals.toDouble())
+    return Math.floor(value * scale + 0.5) / scale
+}
+
+private fun trim(value: Double): String =
+    if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()

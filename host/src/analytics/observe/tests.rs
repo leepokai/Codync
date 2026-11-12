@@ -161,6 +161,13 @@ fn connectors_skills_and_agents() {
     );
     assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
     assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+    let sent =
+        |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "send_file", "arguments": arguments}));
+    assert_eq!(
+        sent(json!({"path": "/secret/note.m4a", "text": "never sent"})),
+        Some((Event::VoiceNoteSent, json!({"client": "local"})))
+    );
+    assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")

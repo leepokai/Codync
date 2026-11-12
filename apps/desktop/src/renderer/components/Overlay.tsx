@@ -294,7 +294,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen, tabIndex }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void
@@ -305,6 +305,8 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
   buttonRef?: RefObject<HTMLButtonElement | null>
   /** Set when the button opens a menu: whether that menu is open. */
   menuOpen?: boolean
+  /** -1 for a pointer-only button whose action its container offers to the keyboard. */
+  tabIndex?: number
 }) {
   const tr = useTr()
   const label = tr(title)
@@ -319,6 +321,7 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       aria-expanded={menuOpen}
       disabled={disabled}
       onClick={onClick}
+      tabIndex={tabIndex}
     >
       <Icon name={icon} size={size / 2} weight="medium" />
     </button>

@@ -78,6 +78,37 @@
   border-radius: var(--radius-l);
   max-width: 380px;
 }
+.file-card:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
+}
+/* A message's voice note, at the top of its bubble: no card of its own, the text follows under it. The row keeps the
+   text bubble's padding: the play glyph sits on the text's edge, its button's hover chip inside the bubble. */
+.voice-note {
+  min-width: 220px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-m);
+}
+.voice-note:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
+}
+.voice-note .file-card-play {
+  width: 21px;
+  height: 24px;
+}
+.voice-note .file-card-play > button {
+  margin: -6px -7.5px;
+}
+.voice-note .file-card-progress {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+/* Steady digits, so the bar's end doesn't move as the clock runs. */
+.voice-note .file-card-detail {
+  font-variant-numeric: tabular-nums;
+}
 .file-card-image-menu {
   display: flex;
   align-self: flex-start;
@@ -92,6 +123,59 @@
   overflow-wrap: anywhere;
 }
 
+/* The sound's clock made visible and movable: a 4 px bar filling left to right, in a 24 px strip that takes the
+   pointer (the margins keep the layout at the bar's height). Its knob shows while the pointer is on it. */
+@property --played {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+/* Only the bar seeks: its box is the thumb's height, so a click beside it on the card plays or pauses instead. */
+.file-card-progress {
+  appearance: none;
+  height: 12px;
+  margin: 2px 0 -4px;
+  background: transparent;
+  cursor: pointer;
+  transition: --played 0.2s linear;
+}
+.file-card-progress:active {
+  transition: none;
+}
+.file-card-progress::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--text) calc(var(--played) * 100%), color-mix(in srgb, var(--tertiary) 30%, transparent) 0);
+}
+.file-card-progress::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--text);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.file-card-progress:hover::-webkit-slider-thumb,
+.file-card-progress:active::-webkit-slider-thumb {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-card-progress,
+  .file-card-progress::-webkit-slider-thumb { transition: none; }
+}
+/* The play button's 36 px target overflows the file icon's 24 px slot, so names line up across cards. The slot
+   keeps its size while the sound loads. */
+.file-card-play {
+  width: 24px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+}
+.file-card-play > button {
+  margin: 0 -6px;
+}
 .attachment-viewer-note {
   padding: 0 16px;
   overflow-wrap: anywhere;

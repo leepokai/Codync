@@ -74,6 +74,35 @@ async fn a_steered_message_gets_its_reply_even_after_the_bot_used_send_message()
 }
 
 #[tokio::test]
+async fn a_voice_note_sent_before_a_message_joined_keeps_earlier_text_in_the_trace() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Voice", "steer_agent.py", "voice 30").await;
+    let (_, second) = queue_behind_a_turn(&host, &bot).await;
+    let find =
+        async |text: &str| entries(&host, &bot).await.into_iter().find(|e| e["data"]["text"].as_str() == Some(text));
+    eventually("the bot sent its voice note", Duration::from_secs(20), async || {
+        find("Listen before it joined").await.is_some()
+    })
+    .await;
+    host.call("steer", json!({"botId": bot, "entryId": second})).await;
+    eventually("the turn ended", Duration::from_secs(20), async || {
+        status(&host, &bot, &second).await == "sent" && idle(&host, &bot).await
+    })
+    .await;
+
+    let note = find("Listen before it joined").await.unwrap();
+    assert_eq!((&note["data"]["final"], &note["data"]["voiceNote"]), (&json!(true), &json!(true)));
+    assert_eq!(
+        find("Working").await.unwrap()["data"]["final"],
+        false,
+        "what it wrote before the note stays in the trace"
+    );
+}
+
+#[tokio::test]
 async fn behind_other_work_a_steered_message_goes_first_in_line() {
     if python_missing() {
         return;

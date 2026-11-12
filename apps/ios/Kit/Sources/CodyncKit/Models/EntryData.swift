@@ -63,6 +63,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var attachments: [Attachment]?
     /// Immutable files explicitly sent by the bot.
     public var files: [SharedFile]?
+    /// agent: the message is a voice note, played inside its bubble above the text.
+    public var voiceNote: Bool?
     /// notice: a finished voice call's length.
     public var callSeconds: Int?
     /// The voice call it was said in (user), answered during (agent), or that it ends (notice); the chat shows those
@@ -145,6 +147,13 @@ extension EntryData {
             }
         }
     }
+
+    /// The sound a voice-note message plays inside its bubble: its first file, when the host marked the message
+    /// and the chat can play it. A sound shared without the mark stays a file card.
+    public var voiceNoteFile: SharedFile? {
+        guard voiceNote == true, let file = files?.first, file.playsInChat else { return nil }
+        return file
+    }
 }
 
 /// A file sent with a message; the agent reads it on the computer.
@@ -163,6 +172,10 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
 
     public static func isImage(_ name: String) -> Bool {
         ["png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
+    }
+
+    public static func isAudio(_ name: String) -> Bool {
+        ["mp3", "m4a", "wav", "aac"].contains((name as NSString).pathExtension.lowercased())
     }
 }
 

@@ -54,6 +54,8 @@ pub enum Cmd {
     SendFile {
         path: String,
         name: Option<String>,
+        /// A voice note's message: the file plays at the top of this text's bubble.
+        text: Option<String>,
         cancelled: Arc<std::sync::atomic::AtomicBool>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },

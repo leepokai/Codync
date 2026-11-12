@@ -309,11 +309,17 @@ impl Actor {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
-        self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
-            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        self.record_sent(turn, json!({"text": text, "final": true}), text)?;
+        self.set_activity("Working…");
+        Ok(())
+    }
+
+    /// Saves a message the agent sent the user this turn (`send_message`, a voice note) and counts it as the turn's
+    /// reply, so what the agent writes as its reply stays in the trace.
+    pub(super) fn record_sent(&mut self, turn: i64, data: Value, text: String) -> anyhow::Result<()> {
+        self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.last_text = None;
-        self.set_activity("Working…");
         Ok(())
     }
 

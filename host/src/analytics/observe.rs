@@ -168,6 +168,8 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if update { "update" } else { "new" }).into());
             Event::ArtifactPublished
         }
+        // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
+        "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
         "agentSetup" | "agentAuthenticate" => {
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {

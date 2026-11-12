@@ -92,6 +92,10 @@ pub enum Event {
     SkillWritten,
     /// A bot's `publish_artifact`.
     ArtifactPublished,
+    /// A bot's `send_file` with text: a message that carries a voice note.
+    VoiceNoteSent,
+    /// A voice note played from its start, or failed to (`outcome`).
+    VoiceNotePlayed,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
@@ -212,6 +216,8 @@ impl Event {
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
             Self::ArtifactPublished => "artifact_published",
+            Self::VoiceNoteSent => "voice_note_sent",
+            Self::VoiceNotePlayed => "voice_note_played",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",

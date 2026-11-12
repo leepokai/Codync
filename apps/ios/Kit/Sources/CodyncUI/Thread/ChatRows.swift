@@ -197,13 +197,15 @@ struct AgentBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if entry.data.artifact == nil, let files = entry.data.files, !files.isEmpty {
+            if entry.data.artifact == nil, entry.data.voiceNoteFile == nil, let files = entry.data.files, !files.isEmpty {
                 // Each card has the menu, its picture's copy items in Copy's place.
                 ForEach(files) { file in FileDownloadCard(entry: entry, file: file, menu: menu) }
             } else {
                 Group {
                     if let artifact = entry.data.artifact {
                         ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
+                    } else if let voiceNote = entry.data.voiceNoteFile {
+                        VoiceNoteBubble(entry: entry, file: voiceNote)
                     } else {
                         MarkdownText(entry.data.text ?? "").equatable()
                             .padding(.horizontal, 16)
@@ -211,11 +213,22 @@ struct AgentBubble: View {
                             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                 }
-                .contextActions(reactions: menu.reactions) { menu.items(copy: menu.textCopy) }
+                .contextActions(reactions: menu.reactions) {
+                    // A voice note's Download follows Copy, as on desktop and Android.
+                    menu.items(copy: menu.textCopy + (entry.data.voiceNoteFile.map { [downloadItem($0)] } ?? []))
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
+    }
+
+    /// A voice-note bubble's Download row: the player's own action, on the menu.
+    private func downloadItem(_ file: SharedFile) -> MenuItem {
+        let downloading = model.fileDownloads.isDownloading(file.id)
+        return MenuItem(downloading ? "Cancel download" : "Download", icon: "arrow.down.to.line") {
+            Motion.animate { model.fileDownloads.toggle(client: model.client, entryId: entry.id, botId: entry.botId, file: file) }
+        }
     }
 
     private var menu: MessageMenu {

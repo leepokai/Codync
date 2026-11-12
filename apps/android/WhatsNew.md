@@ -17,6 +17,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - bot 要你選擇時，聊天中會出現可點選的選項卡。選項會送回正在進行的工作，已回答或過期的卡片不會重複送出。
 - 更新 App 或電腦上的 Codync 之後，手機上保存的聊天記錄會保留，不再清空重新下載。
 - 聊天裡的 routine 紀錄改為置中顯示。
+- bot 可以傳語音訊息了：語音會在那則訊息的泡泡最上方直接播放，文字接在下面。
+- bot 傳來的音訊檔（MP3、M4A、WAV、AAC，20 MB 以內）可以直接在聊天裡播放：點播放鍵，進度列會顯示播放到哪，拖動或點一下進度列就能跳到別的位置。
 
 ### en-US
 - New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
@@ -27,6 +29,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - When your bot needs a choice, tap an option in its chat card. Your answer continues the current work; answered or expired cards cannot send another choice.
 - After an update of the app or of Codync on your computer, the conversations saved on the phone are kept, not emptied and downloaded again.
 - A routine's line in the chat is centered.
+- Bots can now send voice notes: the note plays at the top of its message's bubble, with the text under it.
+- Sound files a bot sends (MP3, M4A, WAV or AAC, up to 20 MB) play right in the chat: tap play, and drag or tap the progress bar to jump to another point.
 
 ## 2.44.1
 ### zh-Hant

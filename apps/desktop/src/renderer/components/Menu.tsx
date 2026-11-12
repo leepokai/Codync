@@ -202,7 +202,7 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   )
 }
 
-/** Right-click opens a Codync menu at the pointer (kit's `.contextActions`). */
+/** Right-click opens a Codync menu at the pointer (kit's `.contextActions`); `openAt` opens it from the keyboard. */
 export function useContextMenu() {
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
   return {
@@ -213,6 +213,7 @@ export function useContextMenu() {
       e.stopPropagation()
       setPoint({ x: e.clientX, y: e.clientY })
     },
+    openAt: setPoint,
     close: () => setPoint(null),
   }
 }

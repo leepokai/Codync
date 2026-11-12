@@ -52,6 +52,10 @@ internal fun AppStore.saveFile(entryId: String, botId: String, file: SharedFile,
     }
 }
 
+/** A file's one download control (iOS `FileDownloads.toggle`): downloads it, or cancels the download under way. */
+fun AppStore.toggleFile(entryId: String, botId: String, file: SharedFile) =
+    if (state.value.fileDownloads[file.id] is FileDownloadState.Downloading) cancelFile(file.id) else saveFile(entryId, botId, file)
+
 fun AppStore.cancelFile(fileId: String) {
     actions[downloadKey(fileId)]?.cancel()
     setDownload(fileId, null)

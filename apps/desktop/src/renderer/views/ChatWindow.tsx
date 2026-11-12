@@ -495,7 +495,7 @@ function ChatSplitView() {
         {settings ? <SettingsView page={settings} setPage={setSettings} /> : null}
       </Sheet>
       <Sheet open={screenStore !== null} onClose={() => app.openScreen(null)} width={windowSize.width - 48} height={sheetHeight}>
-        {screenStore ? <ScreenViewer key={screenStore.computer.id} store={screenStore} /> : null}
+        {screenStore ? <ScreenViewer key={screenStore.computer.id} store={screenStore} watching={app.screenWatching} /> : null}
       </Sheet>
       <Dialog
         open={confirmDelete !== null}

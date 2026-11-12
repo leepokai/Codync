@@ -2022,5 +2022,7 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピューターの接続を確認して、もう一度お試しください。",
   "Move active bots to the top": "動きのあったボットを上に移動",
   "Active bots move to the top": "動きのあったボットが上に移動します",
-  "Bots keep the order you set": "ボットは設定した順序のままです"
+  "Bots keep the order you set": "ボットは設定した順序のままです",
+  "Waking the computer…": "コンピューターを起動しています…",
+  "Open the screen": "画面を開く"
 }

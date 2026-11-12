@@ -126,8 +126,8 @@ host answers and sends it once the host is up.
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
-| `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
-| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
+| `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included; the bot details' Computer tab picture counts too, one per visit, as `screen_viewed` `bot_computer` shows) | — |
+| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client; the Computer tab picture's sessions included) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
@@ -165,6 +165,7 @@ host answers and sends it once the host is up.
 | `chat` | a conversation opened | a conversation opened | a conversation opened |
 | `trace` | full conversation | full conversation | full trace |
 | `bot_details` | bot details | details panel | settings page |
+| `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
 | `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | routines overlay |
 | `marketplace` | extensions | extensions | marketplace overlay |

@@ -73,6 +73,8 @@ class ConnectionPresentationTest {
         assertEquals("Sleeping", connectionLabel(asleep))
         assertEquals("Cloud computer failed", statusText(cloudState(LinkState.Failed("Connection closed."), "failed")))
         assertEquals("Connecting…", statusText(cloudState(LinkState.Connecting, "stopped")))
+        assertTrue(asleep.isAsleep)
+        assertFalse(cloudState(LinkState.Connecting, "stopped").isAsleep)
         val behind = cloudState(LinkState.Ready(HostRoute.Relay), "running").copy(hello = buildJsonObject { put("version", "2.0.0") })
         assertTrue(behind.cloudUpdating)
         assertEquals("Updating…", statusText(behind))
@@ -153,5 +155,16 @@ class ConnectionPresentationTest {
         // Two computers paired here: the older copy of the second one is found too.
         val laptop = Computer("laptop", "Laptop", "laptop")
         assertTrue(context(listOf(renamed), computers = listOf(computer, laptop)).isOlderCopy(renamed))
+    }
+
+    @Test fun aScreenThatCantShowSaysWhyInTheOrderTheOtherAppsCheck() {
+        val asleep = state(LinkState.ComputerOffline(null)).copy(cloudHosting = CloudPlacement("boat", "Boat", "EU", "stopped"))
+        assertEquals(null to "Waking the computer…", unavailableNotice(asleep))
+        assertEquals(null to "Connecting to the screen…", unavailableNotice(state(LinkState.Connecting)))
+        assertEquals("wifi.slash" to "This computer is offline.", unavailableNotice(state(LinkState.ComputerOffline(null))))
+        val online = state(LinkState.Ready(HostRoute.Direct))
+        assertEquals("arrow.down.circle", unavailableNotice(online).first)
+        val off = ScreenState(platform = "linux")
+        assertEquals("lock.display" to off.accessGuidance, unavailableNotice(online.copy(screen = off)))
     }
 }

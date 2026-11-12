@@ -6,7 +6,9 @@ import { attach, openGeneralSettings } from './sandbox.ts'
 // runs on never offers its own. With CODYNC_E2E_SCREEN_COMPUTER naming another computer in the sandbox whose Remote
 // screen is on and allows control (an SSH computer on the Lima VM `codync-linux`, its host started with DISPLAY on an
 // Xvfb display), its sidebar heading's Screen button opens the viewer, which takes over from the bots and keeps Escape
-// and Tab; Hand back gives Escape to the sheet again, and the computer's Settings card opens the viewer as well.
+// and Tab; Hand back gives Escape to the sheet again, and the computer's Settings card opens the viewer as well. A bot
+// on it shows that screen live, view only, on its details' Computer tab while the window shows, and the picture opens
+// the viewer; a bot on this computer has the tab without a picture.
 
 test('this computer offers no Screen button for itself', async () => {
   const { browser, page } = await attach()
@@ -16,6 +18,67 @@ test('this computer offers no Screen button for itself', async () => {
     )
     expect(local).toBeTruthy()
     await expect(page.locator(`[data-computer-section="${local!.computerId}"]`).getByRole('button', { name: 'Screen', exact: true })).toHaveCount(0)
+  } finally {
+    await browser.close()
+  }
+})
+
+/** Opens the first bot under `computer`'s sidebar heading and its details' Computer tab. */
+async function openComputerTab(page: import('@playwright/test').Page, computer: import('@playwright/test').Locator) {
+  await computer.locator('.bot-row').first().click()
+  const details = page.locator('.details-panel')
+  if (!(await details.isVisible())) await page.getByRole('button', { name: 'Conversation details' }).click()
+  await details.getByRole('tab', { name: 'Computer', exact: true }).click()
+  return details
+}
+
+test("a bot on this computer has a Computer tab without a picture", async () => {
+  const { browser, page } = await attach()
+  try {
+    const local = await page.evaluate(
+      async () => (await (window as unknown as { codync: { host: { snapshot(): Promise<HostSnapshot> } } }).codync.host.snapshot()).local,
+    )
+    const section = page.locator(`[data-computer-section="${local!.computerId}"]`)
+    test.skip((await section.locator('.bot-row').count()) === 0, 'Needs a bot on this computer.')
+    const details = await openComputerTab(page, section)
+    await expect(details.locator('.computer-tab-card')).toBeVisible()
+    await expect(details.locator('.computer-tab-screen')).toHaveCount(0)
+    await details.getByRole('tab', { name: 'Details', exact: true }).click()
+  } finally {
+    await browser.close()
+  }
+})
+
+test("a bot's Computer tab shows its computer's screen and opens it", async () => {
+  const name = process.env.CODYNC_E2E_SCREEN_COMPUTER
+  test.skip(!name, 'Needs another computer with Remote screen on: set CODYNC_E2E_SCREEN_COMPUTER (see the top of this file).')
+  test.setTimeout(90_000)
+  const { browser, page } = await attach()
+  try {
+    const section = page.locator('aside.sidebar').getByRole('region', { name })
+    test.skip((await section.locator('.bot-row').count()) === 0, `Needs a bot on ${name}.`)
+    const details = await openComputerTab(page, section)
+    const picture = details.locator('.computer-tab-screen')
+    await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
+    await picture.getByRole('button', { name: 'Open the screen' }).click()
+    const viewer = page.getByRole('dialog').filter({ has: page.locator('.screen-viewer') })
+    await expect(viewer.locator('video')).toBeVisible({ timeout: 30_000 })
+    // One stream per device: the picture lets go while the viewer has the screen.
+    await expect(picture.locator('video')).toBeHidden()
+    await viewer.getByRole('button', { name: 'Close' }).click()
+    await expect(viewer).toHaveCount(0)
+    await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
+    // A hidden window (closed to the background, minimized) lets the picture go too, and gets it back when shown.
+    const showWindow = (shown: boolean) => page.evaluate((shown) => {
+      if (shown) Reflect.deleteProperty(document, 'visibilityState')
+      else Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, shown)
+    await showWindow(false)
+    await expect(picture.locator('video')).toBeHidden()
+    await showWindow(true)
+    await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
+    await details.getByRole('tab', { name: 'Details', exact: true }).click()
   } finally {
     await browser.close()
   }
@@ -56,6 +119,9 @@ test("another computer's screen takes the controls, keeps Escape and Tab, and ha
     await controlling()
     await viewer.getByRole('button', { name: 'Close' }).click()
     await expect(viewer).toHaveCount(0)
+    // Settings closed again, so the next run starts on the chat.
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
   } finally {
     await browser.close()
   }

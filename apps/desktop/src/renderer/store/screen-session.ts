@@ -48,6 +48,8 @@ export class ScreenSession extends Observable {
   #connectTimer: ReturnType<typeof setTimeout> | null = null
   #recovery: ReturnType<typeof setTimeout> | null = null
   #attempts = 0
+  /** The size last asked for: sent again once a new peer's channel opens, which drops what came before. */
+  #shown: { long: number; short: number } | null = null
 
   readonly #client: HostClient
   /** Through Codync's relay: the host hands out TURN servers, since a direct path may not exist. */
@@ -88,7 +90,8 @@ export class ScreenSession extends Observable {
 
   /** The size the picture is shown at, in device pixels, so the computer sends no more than that. */
   view(long: number, short: number) {
-    this.send({ type: 'view', display: this.display.id, long: Math.round(long), short: Math.round(short) })
+    this.#shown = { long: Math.round(long), short: Math.round(short) }
+    this.send({ type: 'view', display: this.display.id, ...this.#shown })
   }
 
   switchDisplay(display: ScreenDisplay) {
@@ -136,6 +139,9 @@ export class ScreenSession extends Observable {
     this.#fast = pc.createDataChannel('input-fast', { ordered: false, maxRetransmits: 0 })
     this.#reliable.onmessage = (e) => {
       if (this.#pc === pc && typeof e.data === 'string') this.#received(e.data)
+    }
+    this.#reliable.onopen = () => {
+      if (this.#pc === pc && this.#shown) this.view(this.#shown.long, this.#shown.short)
     }
     pc.oniceconnectionstatechange = () => {
       if (this.#pc === pc) this.#iceChanged(pc.iceConnectionState)

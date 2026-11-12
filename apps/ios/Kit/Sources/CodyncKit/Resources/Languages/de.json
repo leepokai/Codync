@@ -2022,5 +2022,7 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Keine Verbindung zum Remote-Bildschirm. Prüfe die Verbindung des Computers und versuche es erneut.",
   "Move active bots to the top": "Aktive Bots nach oben verschieben",
   "Active bots move to the top": "Aktive Bots wandern nach oben",
-  "Bots keep the order you set": "Bots behalten deine Reihenfolge"
+  "Bots keep the order you set": "Bots behalten deine Reihenfolge",
+  "Waking the computer…": "Computer wird geweckt…",
+  "Open the screen": "Bildschirm öffnen"
 }

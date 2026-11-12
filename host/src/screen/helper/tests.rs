@@ -125,7 +125,7 @@ async fn helper_roundtrip_over_the_socket() {
         }],
         ..IceConfig::default()
     };
-    screen.takeover(true);
+    screen.takeover("phone", true);
     let prepared = screen.prepare("phone", config, false).unwrap();
     screen.session_closed(res["session"].as_str().unwrap());
     assert_eq!(screen.state()["userControl"], true, "renewal keeps takeover while the replacement is pending");

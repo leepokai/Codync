@@ -24,6 +24,7 @@ import androidx.annotation.DrawableRes
     "arrow.turn.down.right" -> R.drawable.sf_arrow_turn_down_right
     "arrow.up" -> R.drawable.sf_arrow_up
     "arrow.up.doc.on.clipboard" -> R.drawable.sf_arrow_up_doc_on_clipboard
+    "arrow.up.left.and.arrow.down.right" -> R.drawable.sf_arrow_up_left_and_arrow_down_right
     "arrow.up.right" -> R.drawable.sf_arrow_up_right
     "arrowshape.turn.up.left" -> R.drawable.sf_arrowshape_turn_up_left
     "battery.100percent" -> R.drawable.sf_battery_100percent

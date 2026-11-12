@@ -111,13 +111,7 @@ public struct ScreenView: View {
         HStack(spacing: 8) {
             OverlayButton("Close", "xmark") { if let close { close() } else { dismiss() } }
             if let agent, !interactive {
-                Label("\(agent.name) is using the computer", systemImage: "cursorarrow.motionlines")
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.opacity)
+                AgentAtScreen(name: agent.name).transition(.opacity)
             }
             Spacer()
             // Allow an explicit rotation even when the user has enabled iOS rotation lock.
@@ -180,63 +174,25 @@ public struct ScreenView: View {
     }
 
     @ViewBuilder private func status(_ session: ScreenSession) -> some View {
-        switch session.phase {
-        case .connecting:
-            Overlay(icon: nil, text: "Connecting to the screen…")
-        case .reconnecting:
-            Overlay(icon: nil, text: "Reconnecting…")
-        case let .failed(message):
-            Overlay(icon: "exclamationmark.triangle", text: message) {
-                Task { await session.start() }
-            }
-        case .live, .closed:
-            if screen?.input != true {
-                Text(L10n.tr("View only. To allow control, open Codync → Settings → Computer access on the computer."))
-                    .font(.caption).padding(12)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
-            } else if let error = session.lastError {
-                Text(L10n.tr(error))
-                    .font(.caption)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 24)
-            }
+        if let notice = ScreenNotice(session) {
+            notice
+        } else if screen?.input != true {
+            Text(L10n.tr("View only. To allow control, open Codync → Settings → Computer access on the computer."))
+                .font(.caption).padding(12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 24)
+        } else if let error = session.lastError {
+            Text(L10n.tr(error))
+                .font(.caption)
+                .padding(8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 24)
         }
     }
 
-    @ViewBuilder private var unavailable: some View {
-        let s = screen
-        let (icon, text): (String, String) =
-            if model.connection != .online { ("wifi.slash", "This computer is offline.") }
-            else if s == nil { ("arrow.down.circle", "Update Codync on your computer to use its screen from here.") }
-            else { ("lock.display", s?.accessGuidance ?? "Set up Computer access in Codync on the computer.") }
-        Overlay(icon: icon, text: text)
-    }
-}
-
-private struct Overlay: View {
-    let icon: String?
-    let text: String
-    var retry: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            if let icon {
-                Image(systemName: icon).font(.largeTitle).foregroundStyle(.secondary)
-            } else {
-                Spinner(size: 22)
-            }
-            Text(L10n.tr(text)).font(.callout).multilineTextAlignment(.center).foregroundStyle(.secondary)
-            if let retry {
-                Button(L10n.tr("Try again"), systemImage: "arrow.clockwise", action: retry)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.secondary)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: 420)
+    private var unavailable: some View {
+        ScreenNotice(model) ?? ScreenNotice(icon: "lock.display", text: screen?.accessGuidance ?? "")
     }
 }
 

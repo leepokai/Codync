@@ -1,15 +1,15 @@
 //! One X display shared without a portal (a cloud computer's virtual desktop, an X server with
-//! no portals): capture through GStreamer's `ximagesrc`, input through XTest. There is nothing to
-//! approve: whoever may connect to the display may share it.
+//! no portals): capture through GStreamer's `ximagesrc` (one, shared: `capture.rs`), input through
+//! XTest. There is nothing to approve: whoever may connect to the display may share it.
 
+mod capture;
 mod input;
 mod keymap;
 
 use crate::backend::{self, Display};
 use anyhow::{Context, Result, bail};
-use gst::prelude::*;
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{ConnectionExt as _, Window};
@@ -24,6 +24,8 @@ pub struct X11 {
     /// What input keeps between events; also keeps one event's key remapping from interleaving
     /// with another's or with clearing spare keys.
     input: Mutex<input::State>,
+    /// The display's capture while some pipeline takes its frames.
+    capture: Mutex<Option<capture::Capture>>,
 }
 
 /// The X display to share where the session has no screen sharing portals: `$DISPLAY`, unless the session is
@@ -66,9 +68,10 @@ impl X11 {
             conn,
             root,
             input: Mutex::default(),
+            capture: Mutex::default(),
         });
         x.watch();
-        x.sweep_spares();
+        x.sweep();
         tracing::info!(display = name, "sharing the X display");
         Ok(x)
     }
@@ -106,18 +109,31 @@ impl X11 {
         }
     }
 
-    /// The whole screen with its pointer. ponytail: 30 fps fixed (each frame copies the full
-    /// screen, no damage tracking); follow the viewer's `maxFramerate` if 60 is ever needed here.
+    /// The whole screen with its pointer, from the display's one capture (started if none runs).
     pub fn source(&self) -> Result<gst::Element> {
-        let bin = gst::parse::bin_from_description(
-            "ximagesrc name=x use-damage=false show-pointer=true ! capsfilter caps=video/x-raw,framerate=30/1",
-            true,
-        )
-        .context("GStreamer's X11 capture (ximagesrc, gstreamer1.0-plugins-good) is missing")?;
-        bin.by_name("x")
-            .context("ximagesrc is missing from its bin")?
-            .set_property("display-name", &self.name);
-        Ok(bin.upcast())
+        let mut capture = self.capture.lock().unwrap_or_else(PoisonError::into_inner);
+        let capture = match &mut *capture {
+            Some(c) => c,
+            none @ None => none.insert(capture::Capture::start(&self.name)?),
+        };
+        Ok(capture.output())
+    }
+
+    /// Once a second: clears spare keys apps have read, and stops the capture nobody watches.
+    fn sweep(self: &Arc<Self>) {
+        let x = self.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(keymap::HOLD);
+                if let Err(error) = x.clear_spares() {
+                    tracing::debug!(error = format!("{error:#}"), "can't clear spare keys");
+                }
+                let mut capture = x.capture.lock().unwrap_or_else(PoisonError::into_inner);
+                if capture.as_ref().is_some_and(capture::Capture::idle) {
+                    *capture = None;
+                }
+            }
+        });
     }
 
     /// Exits when the X server goes away: the host starts the helper again, which then finds

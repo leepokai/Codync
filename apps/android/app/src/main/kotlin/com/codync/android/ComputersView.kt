@@ -184,8 +184,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             if (inAccount) Symbol("person.crop.circle.badge.checkmark", size = 20.dp, tint = Palette.tertiary, contentDescription = "In your account")
         }
         if (cloud != null) Text(cloud.runsOn(), style = Type.footnote, color = Palette.secondary)
-        // A sleeping cloud computer is fine: messaging it wakes it.
-        val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating && cloud?.asleep != true
+        val unreachable = state.unreachable
         val ink = when {
             !unreachable -> Palette.secondary
             cloud?.failed == true -> Palette.danger

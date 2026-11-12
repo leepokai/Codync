@@ -1,8 +1,12 @@
 import type { ScreenDisplay, ScreenState } from '@shared/models'
+import type { ScreenPhase } from '../store/screen-session'
 import { fill } from './fill.ts'
 
 /** The screen can be watched: on, its helper running, and allowed to record. */
 export const screenAvailable = (s: ScreenState | null) => !!s && s.enabled && s.connected && s.capture
+
+/** Bots can use the computer: Windows says so itself; elsewhere the screen is available and control is allowed. */
+export const controlReady = (s: ScreenState) => s.platform === 'windows' ? s.computerUse : screenAvailable(s) && s.input
 
 export const mainDisplay = (s: ScreenState): ScreenDisplay | undefined => s.displays.find((d) => d.main) ?? s.displays[0]
 
@@ -21,4 +25,40 @@ export function screenGuidance(s: ScreenState, tr: (text: string) => string): st
   }
   if (!s.input) return fill(tr('Allow computer control for {name}. macOS may call this Device Control and Data Access or Accessibility. {setup}'), { name, setup })
   return tr('Computer access is ready.')
+}
+
+/** What shows instead of the picture: a spinner without `icon`, and a retry for a failed session. */
+export interface ScreenNotice {
+  icon?: string
+  text: string
+  retry?: () => void
+}
+
+/** The computer as the picture needs it: its screen, whether it's a cloud computer asleep (looking wakes it), and its
+ * connection. */
+export interface ScreenComputer {
+  screen: ScreenState | null
+  asleep: boolean
+  connection: 'online' | 'connecting' | 'offline'
+}
+
+/** What shows instead of the picture, through `tr`; null once it's live. */
+export function screenNotice(
+  c: ScreenComputer,
+  session: { phase: ScreenPhase; start(): Promise<void> } | null,
+  available: boolean,
+  tr: (text: string) => string,
+): ScreenNotice | null {
+  if (!available) {
+    if (c.asleep) return { text: tr('Waking the computer…') }
+    if (c.connection === 'connecting') return { text: tr('Connecting to the screen…') }
+    if (c.connection === 'offline') return { icon: 'wifi.slash', text: tr('This computer is offline.') }
+    if (!c.screen) return { icon: 'arrow.down.circle', text: tr('Update Codync on your computer to use its screen from here.') }
+    return { icon: 'lock.display', text: screenGuidance(c.screen, tr) }
+  }
+  const phase = session?.phase
+  if (!session || !phase || phase.kind === 'connecting') return { text: tr('Connecting to the screen…') }
+  if (phase.kind === 'reconnecting') return { text: tr('Reconnecting…') }
+  if (phase.kind === 'failed') return { icon: 'exclamationmark.triangle', text: tr(phase.message), retry: () => void session.start() }
+  return null
 }

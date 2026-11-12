@@ -6,6 +6,9 @@ import type { HostClient } from '../client/host-client'
 /** A peer that negotiates at once and connects when the test says (`ice`). */
 class FakePeer {
   static last: FakePeer | null = null
+  /** Channels open at once unless a test opens them itself. */
+  static opens = true
+  channels: FakeChannel[] = []
   iceGatheringState = 'complete'
   iceConnectionState = 'new'
   localDescription: { sdp?: string } | null = null
@@ -18,8 +21,10 @@ class FakePeer {
   addTransceiver() {
     return { setCodecPreferences() {} }
   }
-  createDataChannel() {
-    return { readyState: 'open', send() {}, close() {}, onmessage: null }
+  createDataChannel(label: string) {
+    const channel = new FakeChannel(label, FakePeer.opens ? 'open' : 'connecting')
+    this.channels.push(channel)
+    return channel
   }
   async createOffer() {
     return { type: 'offer', sdp: 'offer' }
@@ -36,6 +41,25 @@ class FakePeer {
   ice(state: string) {
     this.iceConnectionState = state
     this.oniceconnectionstatechange?.()
+  }
+}
+class FakeChannel {
+  sent: string[] = []
+  onmessage: unknown = null
+  onopen: (() => void) | null = null
+  readonly label: string
+  readyState: string
+  constructor(label: string, readyState: string) {
+    this.label = label
+    this.readyState = readyState
+  }
+  send(text: string) {
+    this.sent.push(text)
+  }
+  close() {}
+  open() {
+    this.readyState = 'open'
+    this.onopen?.()
   }
 }
 Object.assign(globalThis, { RTCPeerConnection: FakePeer, RTCRtpReceiver: { getCapabilities: () => ({ codecs: [] }) } })
@@ -130,4 +154,19 @@ test('a peer that never connects fails after the connect timeout', async (t) => 
   assert.equal(session.phase.kind, 'failed')
   assert.equal(FakePeer.last!.closed, true)
   assert.deepEqual(state.methods().at(-1), 'close s1')
+})
+
+test('a size asked for before the input channel opens reaches the computer once it does', async (t) => {
+  FakePeer.opens = false
+  t.after(() => (FakePeer.opens = true))
+  const { client } = host()
+  const session = new ScreenSession(client, false, display)
+  void session.start()
+  await settle()
+  session.view(800, 500)
+  const input = FakePeer.last!.channels.find((c) => c.label === 'input')!
+  assert.deepEqual(input.sent, [])
+  input.open()
+  assert.deepEqual(input.sent.map((m) => JSON.parse(m)), [{ type: 'view', display: 0, long: 800, short: 500 }])
+  session.close()
 })

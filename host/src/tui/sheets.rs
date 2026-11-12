@@ -10,10 +10,12 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
+mod computer_view;
 mod gear_view;
 mod library_view;
 mod market_view;
 mod memory_view;
+pub use computer_view::draw as computer;
 pub use gear_view::draw as gear;
 pub use library_view::draw as library;
 pub use market_view::draw as market;
@@ -64,7 +66,7 @@ fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
-/// A bot's pages on the top line (Details, Library, Memory, Settings) with this one marked.
+/// A bot's pages on the top line (Details, Computer, Library, Memory, Settings) with this one marked.
 /// Returns the area under it.
 pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let t = theme();
@@ -112,13 +114,6 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         put(buf, inner.x, line, inner.width, &truncate(first.trim(), room), t.secondary.patch(t.panel));
         let used = line + 2 - inner.y;
         inner = Rect::new(inner.x, inner.y + used, inner.width, inner.height.saturating_sub(used));
-    }
-    if !app.screen.is_null() {
-        let on = app.bots.get(&l.bot).is_some_and(|b| b.computer);
-        put(buf, inner.x, inner.y, inner.width, &tr("Use the computer"), t.text.patch(t.panel));
-        let x = rput(buf, inner.right(), inner.y, "  u switches", t.dim.patch(t.panel));
-        rput(buf, x, inner.y, if on { "◉ On" } else { "○ Off" }, if on { t.text } else { t.secondary }.patch(t.panel));
-        inner = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
     }
     put(buf, inner.x, inner.y, inner.width, &tr("Routines"), t.bold.patch(t.panel));
     let list_h = usize::from(inner.height.saturating_sub(3)) / 2;

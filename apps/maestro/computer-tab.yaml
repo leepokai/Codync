@@ -1,0 +1,53 @@
+# A bot's Computer tab on the phones: the computer's connection over a live picture of its screen, or the notice saying
+# why there's none, and Use the computer, which is there and no longer on Details. The phone must already be signed in
+# and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
+# `welcome`; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags computer-tab \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - computer-tab
+onFlowComplete:
+  - runScript:
+      file: computer-tab.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: computer-tab.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+# The chat header (the empty chat's big title has the same text but opens nothing).
+- tapOn: "${output.bot.name}, view details"
+- assertVisible: "Details"
+- assertVisible: "Memory"
+- assertVisible: "Settings"
+# On iPhone the switch's row reads as one element with its detail, hence the `.*`.
+- assertNotVisible: "Use the computer.*"
+- tapOn: "Computer"
+- assertVisible: "Connected"
+- assertVisible: "Use the computer.*"
+# The host's own screen streams when it can; a sandbox host without Codync Screen says how to set it up instead.
+- runFlow:
+    when:
+      notVisible: "Open the screen"
+    commands:
+      - assertVisible: ".*Permissions are set separately on each computer\\."
+- takeScreenshot: computer-tab
+- tapOn: "Details"
+- assertNotVisible: "Use the computer.*"

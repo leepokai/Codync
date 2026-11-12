@@ -270,6 +270,7 @@ pub enum Screen {
     Chat,
     Trace,
     BotDetails,
+    BotComputer,
     Memory,
     Routines,
     Marketplace,

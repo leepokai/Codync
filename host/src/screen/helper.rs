@@ -315,7 +315,7 @@ impl Screen {
     fn reset_helper_state(&self) {
         self.end_viewers(&mut self.sessions.locked(), |_, _| true);
         *self.status.locked() = HelperStatus::default();
-        self.control.locked().user = false;
+        self.control.locked().user = None;
     }
 }
 

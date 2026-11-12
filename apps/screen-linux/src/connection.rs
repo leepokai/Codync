@@ -53,7 +53,9 @@ mod tests {
     async fn connection_notifications_ignore_closed_and_replaced_native_peers() {
         let (out, mut events) = mpsc::unbounded_channel();
         let helper = Arc::new(Helper {
-            portal: Arc::new(Mutex::new(None)),
+            backend: Arc::new(Mutex::new(None)),
+            portals: std::sync::atomic::AtomicBool::new(true),
+            held: std::sync::Mutex::default(),
             last_status: Mutex::new(None),
             sessions: crate::sessions::Sessions::default(),
             out,

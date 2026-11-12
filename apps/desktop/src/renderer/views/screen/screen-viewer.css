@@ -1,0 +1,63 @@
+/* The remote screen sheet: its header, then the picture letterboxed on black. */
+.screen-viewer-menu {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.screen-viewer-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 8px 12px 12px;
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  background: #000;
+  display: grid;
+  place-items: center;
+}
+
+.screen-viewer-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Holds the keyboard for the computer; never seen. */
+.screen-viewer-keys {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  resize: none;
+  pointer-events: none;
+}
+
+.screen-viewer-notice {
+  position: relative;
+  max-width: 420px;
+  padding: 32px;
+  align-items: center;
+  text-align: center;
+  /* On the black stage in either theme, its retry button included. */
+  --secondary: rgba(255, 255, 255, 0.72);
+  --text: #fff;
+  --bubble-user: rgba(255, 255, 255, 0.16);
+}
+
+.screen-viewer-note {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+  text-align: center;
+}

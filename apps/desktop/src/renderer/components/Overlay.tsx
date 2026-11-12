@@ -38,6 +38,10 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
 
+/** Typing in a field that takes every key for something else (the remote screen's keyboard while you control it):
+ * Escape and Tab are that field's, not the modal's. */
+const capturesKeys = (e: KeyboardEvent) => e.target instanceof Element && e.target.closest('[data-captures-keys]') !== null
+
 /** Layers in the order they opened: Escape goes to the newest one still live (not inert under the modal on top). */
 const stack: { id: number; layer: RefObject<HTMLElement | null> }[] = []
 let nextLayer = 0
@@ -49,7 +53,7 @@ export function useEscape(active: boolean, onEscape: () => void, layer: RefObjec
     const id = ++nextLayer
     stack.push({ id, layer })
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
+      if (e.key === 'Escape' && !capturesKeys(e) && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
         e.preventDefault()
         e.stopPropagation()
         handler.current()
@@ -99,7 +103,7 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
     syncModals()
     // Tab cycles inside the top modal instead of leaving the page.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || node.inert) return
+      if (e.key !== 'Tab' || node.inert || capturesKeys(e)) return
       const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0 && !el.closest('[inert]'))
       const first = items[0]
       const last = items[items.length - 1]

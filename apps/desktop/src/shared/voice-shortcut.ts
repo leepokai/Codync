@@ -8,7 +8,8 @@ export type VoiceShortcut = 'off' | 'rightCommand' | 'leftCommand'
 /** A tap of the shortcut's key, or the tap that completes a double tap. */
 export type VoiceKey = 'tap' | 'double'
 
-export const DEFAULT_VOICE_SHORTCUT: VoiceShortcut = 'rightCommand'
+/** Off until chosen: a stray double tap in another app would start dictation (and its errors) unasked. */
+export const DEFAULT_VOICE_SHORTCUT: VoiceShortcut = 'off'
 
 export const VOICE_SHORTCUTS: { id: VoiceShortcut; label: string }[] = [
   { id: 'off', label: 'Off' },

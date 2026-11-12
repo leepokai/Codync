@@ -14,12 +14,15 @@ use super::roster::plain;
 use super::style::{FACE, bot_color, face_style, person, spin, theme};
 use super::time::clock;
 
+#[derive(Default)]
 pub(super) struct Built {
     pub(super) lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
     /// Each message's (entry id, first line, end line), for picking one to reply to.
     pub(super) messages: Vec<(String, usize, usize)>,
+    /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
+    pub(super) texts: Vec<(usize, usize)>,
 }
 
 struct TurnInfo {
@@ -63,7 +66,7 @@ pub(super) fn name_style(color: &str) -> Style {
 
 pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     let t = theme();
-    let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
+    let mut out = Built::default();
     let entries = app.chat(&b.id);
     let info = turn_info(&entries);
     if entries.is_empty() {
@@ -196,7 +199,9 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     Span::styled(format!("  {}", file_size(size)), t.dim),
                 ]));
             }
+            let text_from = out.lines.len();
             out.lines.extend(with_bg(body, width, t.band));
+            out.texts.push((text_from, out.lines.len()));
             reactions(out, app, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));
         }
@@ -238,7 +243,9 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     out.lines.extend(md::render(e.text(), width, 1));
                 }
             } else {
+                let text_from = out.lines.len();
                 out.lines.extend(md::render(e.text(), width, 1));
+                out.texts.push((text_from, out.lines.len()));
             }
             reactions(out, app, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));

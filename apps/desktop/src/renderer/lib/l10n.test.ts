@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { appLanguages, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
+import { appLanguages, intlLocale, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
 
 test('chinese follows the choice, and a system preference follows the computer', () => {
   assert.equal(usesChinese('zh', false), true)
@@ -40,6 +40,8 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Voice input shortcut', 'zh', false), '语音输入快捷键')
   assert.equal(translate('Right ⌘ twice', 'zh', false), '右 ⌘ 两次')
   assert.equal(translate('Left ⌘ twice', 'zh', false), '左 ⌘ 两次')
+  // The speech helper's message for Siri and Dictation off reaches the user translated.
+  assert.match(translate('Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.', 'zh', false), /打开听写/)
   assert.equal(translate('Claude Code (not installed)', 'zh', false), 'Claude Code（未安装）')
   assert.equal(translate('Copy template', 'zh', false), '复制模板')
   assert.equal(translate('Siri and Dictation are disabled', 'zh', false), 'Siri 和听写已关闭')
@@ -238,4 +240,19 @@ test('all catalogs preserve names and substitute captured values only once', () 
       .replaceAll('{hint}', translate(hint, language)).replaceAll('{name}', '{hint}')
     assert.equal(translate(`{hint} isn't set up on this computer. ${hint}`, language), expected)
   }
+})
+
+test('host schedule sentences match their catalog templates', () => {
+  assert.equal(translate('Every day at 09:00, 18:00 · Europe/Rome', 'it'), 'Ogni giorno alle 09:00, 18:00 · Europe/Rome')
+  assert.equal(translate('Every Monday at 09:00 · Europe/Rome', 'it'), 'Ogni lunedì alle 09:00 · Europe/Rome')
+  assert.equal(translate('Every 30 minutes', 'it'), 'Ogni 30 minuti')
+})
+
+test('dates keep the system region when the app shows the system language', () => {
+  assert.equal(intlLocale('system', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('en', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('it', 'en-GB'), 'it')
+  assert.equal(intlLocale('zh', 'en-US'), 'zh-Hans')
+  assert.equal(intlLocale('en', 'nl-NL'), 'en')
+  assert.equal(intlLocale('system', 'pl-PL'), 'en')
 })

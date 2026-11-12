@@ -144,6 +144,12 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     if (BuildConfig.PUSH_CONFIGURED) row {
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
+    val autoOrder = autoOrder(state.hello)
+    if (state.connection is LinkState.Ready && autoOrder != null) row {
+        CodyncSwitch(autoOrder, store::setAutoOrder, Modifier.fillMaxWidth()) {
+            RowLabel("Move active bots to the top", "arrow.up", modifier = Modifier.weight(1f))
+        }
+    }
     row { ConnectionRow(state.computer, store) }
     if (canAddToAccount(signedIn, state)) row { AddToAccount(store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.

@@ -294,6 +294,11 @@ public extension HostClient {
         return out
     }
 
+    /// Whether a bot with a new message moves to the top of the roster.
+    func setAutoOrder(_ enabled: Bool) async throws {
+        let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
+    }
+
     /// The user makes this bot the lead, in place of the one before.
     func setLead(_ botId: String) async throws {
         let _: Empty = try await self.call("setLead", ["botId": botId])

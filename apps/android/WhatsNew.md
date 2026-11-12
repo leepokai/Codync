@@ -7,12 +7,16 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.45.0
+## 2.45.1
 ### zh-Hant
+- 新增「將有新動態的機器人移到最前面」：在電腦的設定裡開啟後，有新訊息（你的訊息、bot 的回覆或 routine 執行）的 bot 會自動排到列表最上面。
+- 在對話中尋找：點聊天右上角的放大鏡，輸入文字就會顯示有幾個符合項目，用上、下箭頭在它們之間移動，目前的訊息會被標示出來。搜尋的是已載入的訊息。
 - bot 可以傳語音訊息了：語音會在那則訊息的泡泡最上方直接播放，文字接在下面。
 - bot 傳來的音訊檔（MP3、M4A、WAV、AAC，20 MB 以內）可以直接在聊天裡播放：點播放鍵，進度列會顯示播放到哪，拖動或點一下進度列就能跳到別的位置。
 
 ### en-US
+- New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
+- Find in a conversation: tap the magnifying glass at the top right of a chat and type. The bar shows how many matches there are, the arrows move between them, and the message with the current match is highlighted. It searches the messages loaded so far.
 - Bots can now send voice notes: the note plays at the top of its message's bubble, with the text under it.
 - Sound files a bot sends (MP3, M4A, WAV or AAC, up to 20 MB) play right in the chat: tap play, and drag or tap the progress bar to jump to another point.
 

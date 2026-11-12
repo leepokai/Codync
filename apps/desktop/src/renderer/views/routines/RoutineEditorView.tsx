@@ -5,13 +5,13 @@ import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, scheduleLine, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
-import { useTr } from '../../lib/use-language'
+import { useIntlLocale, useTr } from '../../lib/use-language'
 
 
 const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
@@ -23,6 +23,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   saved: (routine: Routine | null) => void
 }) {
   const tr = useTr()
+  const durationLocale = useIntlLocale()
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
@@ -147,7 +148,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
           <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
-        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
+        return <Note icon="sparkles" title={routine ? scheduleLine(routine, tr) : ''} detail={tr('Set up by the bot. Pick Schedule or Webhook to replace it.')} />
     }
   }
 
@@ -181,17 +182,17 @@ export function RoutineEditorView({ botId, routine, saved }: {
           </VStack>
           <VStack gap={10}>
             <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
-              Run settings
+              {tr('Run settings')}
               <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
               <Spacer />
-              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout))}</Text> : null}
+              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout, durationLocale))}</Text> : null}
             </button>
             {advanced ? (
               <div className="routine-fade">
                 <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
-                  <LabeledRow label={tr('Timeout')}>
+                  <LabeledRow label="Timeout">
                     <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
                     <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>

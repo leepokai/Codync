@@ -737,8 +737,18 @@ first reply. A routine fires while it sleeps. The same computer reaches Android 
 
 ## Follow-ups found while testing
 
-1. Host restarts `codync-screen` every 30 s forever on a machine with an X display but no GStreamer
-   libraries (`supervise_linux_helper`, `host/src/screen/helper.rs`): stop after a few immediate exits
-   and say why once.
-2. Remote screen can't work on InstaBox's Xvnc desktop (no portal); InstaBox has its own desktop stream.
+1. ~~Host restarts `codync-screen` every 30 s forever on a machine with an X display but no GStreamer
+   libraries~~: done 2026-11-12, `supervise_linux_helper` backs off to two minutes and says why once per failing
+   streak, so the helper comes up by itself once the setup has installed GStreamer.
+2. ~~Remote screen can't work on InstaBox's Xvnc desktop (no portal)~~: done 2026-11-12. `codync-screen` drives a
+   plain X server (`ximagesrc` + XTest), and every cloud computer gets a desktop of its own, Xvfb `:20` with Xfce run
+   as `codync-agent` ([remote screen](../features/remote-screen.md#cloud-computers)), never the provider's.
 3. Check each agent's sign-in on a headless machine (Codex: device-code login).
+4. **The provider's desktop is open to every local user** (checked on InstaBox 2026-11-12): once something starts
+   InstaBox's desktop (its dashboard's **Computer** tab, `desktop.start`), it is Xvnc `:1` with no X authorization
+   and VNC on `127.0.0.1:5901` with `-SecurityTypes None`, running as `user`, which has passwordless sudo. Any local
+   process, `codync-agent`'s included, can drive it and so reach root. Codync never starts it or picks it (the screen
+   helper uses only `$DISPLAY`, the computer-use driver `$DISPLAY` or a display its own user runs), and agents can't start it
+   (it needs the InstaBox key). Boat's Xorg `:0` is unchecked. To close it: have the setup deny `codync-agent` that
+   display and port (an `xhost` list kept by the provider user at each start, an nftables owner rule for the port),
+   or stop the provider's desktop where nothing of the provider needs it.

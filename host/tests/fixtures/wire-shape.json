@@ -214,6 +214,7 @@
     "event:icons.type": "string",
     "hello": "object",
     "hello.analytics": "bool",
+    "hello.autoOrder": "bool",
     "hello.boxKey": "string",
     "hello.canJoinAccount": "bool",
     "hello.canUpdate": "bool",

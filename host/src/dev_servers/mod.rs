@@ -228,6 +228,20 @@ impl DevServers {
         json!(servers)
     }
 
+    /// The servers the host runs for `bot` that run or are starting, oldest first: each one's name and ports. What its
+    /// agent left running through its own shell isn't among them: that ends with the agent.
+    pub fn active(&self, bot: &str) -> Vec<(String, Vec<u16>)> {
+        let mut own: Vec<(i64, String, Vec<u16>)> = self
+            .live
+            .locked()
+            .values()
+            .filter(|live| live.saved.bot == bot && live.status.active())
+            .map(|live| (live.saved.created_at, live.saved.name.clone(), live.ports.iter().map(|p| p.port).collect()))
+            .collect();
+        own.sort_by_key(|(created_at, ..)| *created_at);
+        own.into_iter().map(|(_, name, ports)| (name, ports)).collect()
+    }
+
     /// `command`: the line it was started with, on `backend`'s harness.
     pub fn agent_started(&self, bot: &str, acp: &Arc<Acp>, backend: &str, command: &str) {
         let agent = Agent { acp: Arc::downgrade(acp), programs: detected::agent_programs(backend, command) };

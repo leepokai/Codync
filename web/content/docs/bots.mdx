@@ -73,7 +73,7 @@ The **Permissions** setting decides how much the agent does on its own before it
 - **An agent without an Auto mode:** a new bot asks you about every request (**Ask me**).
 - **A model without Claude Code's Auto mode:** Claude Code works in **Accept edits** instead and says so in the chat.
 - **Another agent:** when you change the bot's agent, a mode you picked becomes the new agent's Auto mode.
-- **A mode the agent won't switch to, or doesn't have:** the bot doesn't start the turn, and the chat says why. A fallback agent without the bot's mode doesn't take over either; with **Auto**, each agent carries on in its own Auto mode.
+- **A mode the agent won't switch to, or doesn't have:** the bot doesn't start the turn, and the chat says why. A fallback agent without the bot's mode works in its own closest mode that is no less careful, and the chat says which; with none, or when it won't switch, the next fallback takes over. With **Auto**, each agent carries on in its own Auto mode.
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 

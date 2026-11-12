@@ -173,13 +173,17 @@ pub(super) fn linux_session() -> bool {
     std::env::var_os("SWAYSOCK").is_some() || (!wayland && x_display().is_some())
 }
 
-/// `$DISPLAY`, or the first X server's when a service started without one.
+/// `$DISPLAY`, or when a service started without one the first X server this user runs: never another
+/// user's (a cloud provider's desktop runs as its sudo user).
 #[cfg(target_os = "linux")]
 fn x_display() -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
     std::env::var("DISPLAY").ok().filter(|d| !d.is_empty()).or_else(|| {
+        let uid = std::fs::metadata("/proc/self").ok()?.uid();
         let mut servers: Vec<String> = std::fs::read_dir("/tmp/.X11-unix")
             .ok()?
             .flatten()
+            .filter(|e| e.metadata().is_ok_and(|m| m.uid() == uid))
             .filter_map(|e| e.file_name().to_str()?.strip_prefix('X').map(|n| format!(":{n}")))
             .collect();
         servers.sort();

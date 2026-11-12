@@ -24,7 +24,7 @@ internal object AppLanguageStore {
         if (resolved == AppLanguage.En) return emptyMap()
         synchronized(catalogs) {
             catalogs[resolved]?.let { return it }
-            val name = if (resolved == AppLanguage.Zh) "zh-Hans" else resolved.stored
+            val name = resolved.tag
             return try {
                 val text = context.assets.open("$name.json").bufferedReader().use { it.readText() }
                 val parsed = Json.parseToJsonElement(text).jsonObject.mapValues { (_, value) -> value.jsonPrimitive.content }

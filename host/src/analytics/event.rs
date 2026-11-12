@@ -39,6 +39,8 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// An agent taking over a bot's chat was told what came before (`agent::fallback::carry`).
+    HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
     AgentRetired,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
@@ -68,6 +70,8 @@ pub enum Event {
     /// A desktop window's crashed page loaded again, or crashed too often and stays down.
     WindowRecovery,
     RemoteScreenOpened,
+    /// A viewer's screen session ended (`screen::watch_viewer`).
+    RemoteScreenFinished,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
@@ -160,6 +164,7 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
@@ -181,6 +186,7 @@ impl Event {
             Self::VoiceCallQuality => "voice_call_quality",
             Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
+            Self::RemoteScreenFinished => "remote_screen_finished",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",

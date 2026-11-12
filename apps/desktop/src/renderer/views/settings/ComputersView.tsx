@@ -202,6 +202,9 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
               // This computer's voice settings are their own Settings page.
               <IconButton title="Voice chat" icon="waveform" selected={showVoice} disabled={!online} onClick={() => setShowVoice((s) => !s)} />
             ) : null}
+            {store !== app.local && store.screen ? (
+              <IconButton title="Screen" icon="display" disabled={!app.canOpenScreen(store)} onClick={() => app.openScreen(store.computer.id)} />
+            ) : null}
             <IconButton title="Pair iPhone" icon="qrcode" selected={showPairing} disabled={!online} onClick={() => setShowPairing((s) => !s)} />
           </div>,
           // Until the host gives its cloud status, there's no way to tell its relay or account.

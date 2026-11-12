@@ -46,8 +46,12 @@ What their issues taught, and the answer here:
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode
   where the step's agent has it (`fallback::effective`). Its mode too ([agent modes](marketplace.md#agent-modes)):
-  `auto` is each step's own Auto mode, and a step whose agent lacks any other mode fails the turn rather than work in
-  its default.
+  `auto` is each step's own Auto mode. A fallback step whose agent lacks any other mode runs in its stand-in
+  (`Modes::stand_in`): the most permissive of its modes that is no more permissive than the bot's, ranked read-only
+  and plan < ask, manual and default (Claude's Manual) < auto-edit < Auto < bypass and full access, a mode it can't place counting as
+  the most permissive (never a stand-in; a bot mode it can't place gets no stand-in at all), with an info notice
+  naming it. Without one, or when the agent refuses the
+  switch, the turn moves on (`modeMissing`). The bot's own agent (step 0) without its mode fails the turn instead.
 
 ## When the bot moves on (`fallback::reason`)
 
@@ -62,6 +66,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
 | `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
+| `modeMissing` | A fallback step lacks the bot's mode and any no more permissive than it, or refuses the switch (`FailureKind::ModeMissing`) | None, the same as `modelMissing` |
 
 Stop, refusal, output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move
 on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a refusal with the error in
@@ -88,8 +93,10 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
 - **What the next agent hears**, before the turn's messages (`fallback::carry`), decided once its session is up. Only
   the user's messages and the bot's replies count:
   - a new session (also when its parked session won't load): a recap of the chat (the last summary of the session it
-    takes over from, the latest 12 messages, the open plan, a `search_history` bookmark);
-  - a session it had: a catch-up of what was said since it left (an agent that never started keeps its mark);
+    takes over from, the latest messages, the open plan, the ledger below, a `search_history` bookmark), sized to
+    the agent's window once that is known;
+  - a session it had: a catch-up of what was said since it left, with the ledger of what the other agents did
+    meanwhile (an agent that never started keeps its mark);
   - and when agents failed this turn: who stopped last and why, then each failed agent's tool calls, the messages it
     sent and its last note, with "check what's already done before you redo any step". It follows a handoff the user
     approved, which waits for the next turn if this one can't start at all.
@@ -101,6 +108,40 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
 - **Going back.** Each turn starts on the first step that isn't resting, so the bot goes back on its first turn after
   the reset, never mid-turn; after signing in to a signed-out agent, on its next message. Switch back (`switchBack`)
   clears its own agent's rest and moves an idle bot now.
+
+## The handover ledger
+
+A recap and a catch-up carry a ledger of what the agents before left behind, read by rule from the chat's tool calls:
+no model call, so it always runs and costs nothing (`fallback::carry::ledger`). It covers the same stretch of the chat
+as the messages read (after the last new session; for a catch-up, since the agent left), without the running turn's
+own calls, which the takeover lists, and without the bot's own bookkeeping (a message sent, a memory kept):
+
+- **Files changed**, newest first, each once: `created` or `modified`, from edits that completed. A refused or failed
+  edit changed nothing, and a file only read isn't listed.
+- **Commands run**, failed ones first, each line once as its newest call ended (`failed`, `didn't finish`); a
+  command of several lines is listed on one.
+- **Running now**: the [dev servers](dev-servers.md) Codync runs for the bot that run or are starting, with their
+  ports. What an agent started through its own shell ends with that agent, so it isn't listed.
+
+It is an **index, not the contents**: paths and command lines only, never a diff or an output, at most 10 files, 6
+commands and 6 servers, the rest counted ("and 4 more"). The next agent reads a file before changing it and
+`search_history` for what was said.
+
+What the user asked for is not gathered here. Standing rules reach every session through the bot's
+[memory](context-and-memory.md), which every new session gets whichever agent runs it, and what was said in this chat
+comes from the user's own messages:
+
+- **The latest 12 messages** in full (2,000 bytes each), as before.
+- **The user's earlier messages**, theirs only and cut to 900 bytes (about 300 tokens: 300 CJK characters), as far back as they fit. The bot's earlier
+  replies stay in the history; a line says when not everything is repeated.
+
+**How much it takes.** A recap may fill a tenth of the next agent's window, and never more than 20,000 tokens: a
+model with a wider window reads further back itself. The window is the one that agent last reported when a turn of the
+bot's own chat ended (`kv` `fallback.window.<bot>.<agent>`); an agent that never finished one there gets the latest 12
+messages alone. A catch-up isn't sized: it repeats at most 20 messages. Tokens are
+counted as three bytes each, which holds for CJK text (a character is three bytes and about a token) and errs on the
+small side for Latin text. The summary, the plan and the ledger always go; the messages share what they leave, and the
+newest message always goes.
 
 ## The bot sets its own
 
@@ -122,7 +163,8 @@ iPhone, Android, desktop and terminal show the same things:
   and a ⋯ menu (Move up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its
   fallbacks" switch. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
-  on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told. Moving past a
+  on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told (past 8,000 bytes,
+  its start and its end: the messages in the middle are in the chat). Moving past a
   signed-out agent also posts its sign-in card (`connectionRequest` kind `agent`), whose Sign in opens the agent's
   sign-in sheet. A failure with
   `addFallback` offers **Add a fallback**, which opens the Agent card.
@@ -139,4 +181,5 @@ All additive (no `minApp` change):
   reason} | null` and `resting: [{agent, until, reason}]` (agent bots only).
 - Method: `switchBack {botId}`.
 - Notices: `agentSwitch: {from, to, back, reason, resetsAt, carried}`; failure notices' `addFallback: true`.
-- Analytics: `agent_fell_back {agent, reason}`; `turn_finished` once per agent the turn ran on.
+- Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap
+  or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished` once per agent the turn ran on.

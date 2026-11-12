@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { execSync } from 'node:child_process'
 import type { HostSnapshot } from '../src/shared/ipc.ts'
 import { attach, openGeneralSettings } from './sandbox.ts'
 
@@ -8,7 +9,10 @@ import { attach, openGeneralSettings } from './sandbox.ts'
 // Xvfb display), its sidebar heading's Screen button opens the viewer, which takes over from the bots and keeps Escape
 // and Tab; Hand back gives Escape to the sheet again, and the computer's Settings card opens the viewer as well. A bot
 // on it shows that screen live, view only, on its details' Computer tab while the window shows, and the picture opens
-// the viewer; a bot on this computer has the tab without a picture.
+// the viewer, taking over while that bot isn't using the computer; a bot on this computer has the tab without a picture.
+// With CODYNC_E2E_SCREEN_RESTART set to a command that restarts that computer's screen helper (`limactl shell
+// codync-linux pkill -x codync-screen`: its host starts it again), Hand back and Take over each hold through the new
+// session that replaces the viewer's.
 
 test('this computer offers no Screen button for itself', async () => {
   const { browser, page } = await attach()
@@ -63,6 +67,7 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     await picture.getByRole('button', { name: 'Open the screen' }).click()
     const viewer = page.getByRole('dialog').filter({ has: page.locator('.screen-viewer') })
     await expect(viewer.locator('video')).toBeVisible({ timeout: 30_000 })
+    await expect(viewer.getByRole('button', { name: 'Hand back to bots' })).toBeVisible()
     // One stream per device: the picture lets go while the viewer has the screen.
     await expect(picture.locator('video')).toBeHidden()
     await viewer.getByRole('button', { name: 'Close' }).click()
@@ -122,6 +127,45 @@ test("another computer's screen takes the controls, keeps Escape and Tab, and ha
     // Settings closed again, so the next run starts on the chat.
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
+  } finally {
+    await browser.close()
+  }
+})
+
+test("Hand back and Take over hold when a new session replaces the viewer's", async () => {
+  const name = process.env.CODYNC_E2E_SCREEN_COMPUTER
+  const restart = process.env.CODYNC_E2E_SCREEN_RESTART
+  test.skip(!name || !restart, 'Needs another computer with Remote screen on and a way to restart its helper (see the top of this file).')
+  test.setTimeout(150_000)
+  const { browser, page } = await attach()
+  try {
+    const viewer = page.getByRole('dialog').filter({ has: page.locator('.screen-viewer') })
+    const video = viewer.locator('video')
+    /** Restarts the helper and waits for the picture to go (its session closed) and come back on a new one. */
+    const replaceSession = async () => {
+      await video.evaluate((element: HTMLVideoElement) => {
+        (window as unknown as { screenGone: Promise<void> }).screenGone = new Promise((gone) => new MutationObserver((_, observer) => {
+          if (!element.hidden) return
+          observer.disconnect()
+          gone()
+        }).observe(element, { attributes: true, attributeFilter: ['hidden'] }))
+      })
+      execSync(restart!)
+      await page.evaluate(() => (window as unknown as { screenGone: Promise<void> }).screenGone)
+      await expect(video).toBeVisible({ timeout: 60_000 })
+    }
+
+    await page.locator('aside.sidebar').getByRole('region', { name }).getByRole('button', { name: 'Screen', exact: true }).click()
+    await expect(video).toBeVisible({ timeout: 30_000 })
+    await viewer.getByRole('button', { name: 'Hand back to bots' }).click()
+    await replaceSession()
+    await expect(viewer.getByRole('button', { name: 'Take over' })).toBeVisible()
+
+    await viewer.getByRole('button', { name: 'Take over' }).click()
+    await replaceSession()
+    await expect(viewer.getByRole('button', { name: 'Hand back to bots' })).toBeVisible()
+    await viewer.getByRole('button', { name: 'Close' }).click()
+    await expect(viewer).toHaveCount(0)
   } finally {
     await browser.close()
   }

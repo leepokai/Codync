@@ -29,6 +29,8 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
   const session = useScreenSession(store, available)
   const [interactive, setInteractive] = useState(false)
   const tookOver = useRef(false)
+  /** Whether the user wants the controls: at first unless this opened to watch a bot, then what they last chose. */
+  const wanted = useRef(!watching)
   const stage = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const keys = useRef<HTMLTextAreaElement>(null)
@@ -44,12 +46,15 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
     tookOver.current = allowed
     store.screenTakeover(allowed)
   }
-  useEffect(() => {
-    if (session) control(!watching)
-  }, [session])
+  const choose = (on: boolean) => {
+    wanted.current = on
+    control(on)
+  }
+  // Each session (a new one replaces it after an outage) and control allowed again bring the user's choice back.
   useEffect(() => {
     if (!canControl) control(false)
-  }, [canControl])
+    else if (session) control(wanted.current)
+  }, [session, canControl])
   // Back live after a failure or a long outage, the host may have handed control back to the bots when its last
   // viewer went: ask again.
   const live = session?.phase.kind === 'live'
@@ -81,7 +86,7 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
           <Icon name="display.2" size={14} weight="medium" />
         </DropdownMenu>
       ) : null}
-      <IconButton title={interactive ? 'Hand back to bots' : 'Take over'} icon={interactive ? 'hand.raised.slash' : 'hand.raised'} selected={interactive} disabled={!canControl} onClick={() => control(!interactive)} />
+      <IconButton title={interactive ? 'Hand back to bots' : 'Take over'} icon={interactive ? 'hand.raised.slash' : 'hand.raised'} selected={interactive} disabled={!canControl} onClick={() => choose(!interactive)} />
     </>
   ) : null
 

@@ -31,7 +31,7 @@ The Android viewer follows auto-rotate like the rest of the Android app. Rotate 
 the other orientation until the viewer closes. The activity handles orientation and
 keyboard changes itself, so turning the phone or attaching a hardware keyboard keeps
 the stream. In the background the Android viewer closes its stream and hands control
-back to the bots, then reconnects when the app returns.
+back to the bots, then reconnects when the app returns, with the control you last chose.
 
 ## Boundaries
 
@@ -92,8 +92,10 @@ channels `input` and `input-fast`), recovery and renewal like the iPhone's `Scre
   session.
 - **Control**: opening takes over from the bots (`screenTakeover`), like the iPhone opened from Computers; opened from
   the Computer tab's picture of a bot that's using the computer (`AppModel.openScreen(id, watching)`), it watches first,
-  like the phones' chat **Computer** button. **Hand back to bots** and closing return it. Back live after a failure or a long outage, it asks again if the host handed
-  control back meanwhile. A view-only computer says so. The host ties a takeover to the device that asked: once that
+  like the phones' chat **Computer** button. **Hand back to bots** and closing return it. The last choice holds while it's
+  open: a session that replaces one after an outage, or control allowed again on the computer, brings it back, and back
+  live after a failure or a long outage it asks again if the host handed control back meanwhile. The phone viewers do
+  the same. A view-only computer says so. The host ties a takeover to the device that asked: once that
   device has no screen session left, control goes back to the bots, even while another device (a Computer tab picture)
   still watches.
 - **Other clients**: phones reach a computer's screen from Manage computers, from a chat's **Computer** button and

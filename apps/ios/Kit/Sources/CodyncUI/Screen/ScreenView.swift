@@ -8,8 +8,6 @@ public struct ScreenView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The bot being watched, when opened from its chat.
-    private let watching: String?
     /// Animated close from the presenting layer (`.codyncOverlay`'s `close`); falls back to `dismiss`.
     private let close: (() -> Void)?
 
@@ -22,11 +20,15 @@ public struct ScreenView: View {
     @State private var zoomed = false
     @State private var resetToken = 0
     @State private var tookOver = false
+    /// Whether the user wants the controls: at first unless watching a bot (look first; otherwise take
+    /// the screen, bots may still look), then what they last chose.
+    @State private var wanted: Bool
     @State private var portrait = false
 
+    /// `watching`: the bot being watched, when opened from its chat.
     public init(watching: String? = nil, close: (() -> Void)? = nil) {
-        self.watching = watching
         self.close = close
+        _wanted = State(initialValue: watching == nil)
     }
 
     private var screen: ScreenState? { model.screen }
@@ -70,8 +72,15 @@ public struct ScreenView: View {
         .onChange(of: screen?.available) { _, available in
             if available == true, session == nil { start() }
         }
-        .onChange(of: screen?.input) { _, input in
-            if input != true { setInteractive(false) }
+        // Control comes and goes with the computer (a restarted helper, its permission): the user's
+        // choice comes back with it.
+        .onChange(of: screen?.input) {
+            setInteractive(session != nil && wanted)
+        }
+        // Back live after a failure or a long outage, the host may have handed control back to the bots when this
+        // phone's last session went: ask again.
+        .onChange(of: session?.phase == .live) { _, live in
+            if live, tookOver, screen?.userControl == false { model.screenTakeover(true) }
         }
     }
 
@@ -84,8 +93,7 @@ public struct ScreenView: View {
         let s = ScreenSession(client: client, display: d)
         session = s
         Task { await s.start() }
-        // Watching a bot: look first. Otherwise take the screen (bots may still look).
-        setInteractive(watching == nil)
+        setInteractive(wanted)
     }
 
     private func stop() {
@@ -139,7 +147,10 @@ public struct ScreenView: View {
                     } label: { IconLabel("Displays", "display.2") }
                 }
                 OverlayButton(interactive ? "Hand back to bots" : "Take over", interactive ? "hand.raised.slash" : "hand.raised") {
-                    animate { setInteractive(!interactive) }
+                    animate {
+                        wanted = !interactive
+                        setInteractive(wanted)
+                    }
                 }
                 .disabled(screen?.input != true)
             }

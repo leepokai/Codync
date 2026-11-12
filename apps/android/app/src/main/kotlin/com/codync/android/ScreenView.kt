@@ -64,6 +64,9 @@ import com.codync.android.design.*
     var zoomed by remember { mutableStateOf(false) }
     var resetToken by remember { mutableIntStateOf(0) }
     var tookOver by remember { mutableStateOf(false) }
+    /** Whether the user wants the controls: at first unless watching a bot (look first; otherwise take the
+     *  screen, bots may still look), then what they last chose, kept when the app comes back to the front. */
+    var wanted by remember { mutableStateOf(watching == null) }
     val portrait = LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE
 
     fun setInteractive(on: Boolean) {
@@ -82,8 +85,7 @@ import com.codync.android.design.*
         val d = display ?: current.mainDisplay ?: return
         display = d
         session = ScreenSession(store, d).also { it.start() }
-        // Watching a bot: look first. Otherwise take the screen (bots may still look).
-        setInteractive(watching == null)
+        setInteractive(wanted)
     }
     fun stop() {
         session?.close()
@@ -96,7 +98,12 @@ import com.codync.android.design.*
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { stop() }
     DisposableEffect(Unit) { onDispose { stop() } }
     LaunchedEffect(screen?.available) { if (screen?.available == true && session == null) start() }
-    LaunchedEffect(screen?.input) { if (screen?.input != true) setInteractive(false) }
+    // Control comes and goes with the computer (a restarted helper, its permission): the user's choice comes back with it.
+    LaunchedEffect(screen?.input) { setInteractive(session != null && wanted) }
+    // Back live after a failure or a long outage, the host may have handed control back to the bots when this
+    // phone's last session went: ask again.
+    val live = session?.phase == ScreenSession.Phase.Live
+    LaunchedEffect(live) { if (live && tookOver && state.screen?.userControl == false) store.screenTakeover(true) }
     BackHandler(onBack = close)
     FullScreenWindow()
     KeyboardDismissal(keyboard) { keyboard = false }
@@ -111,7 +118,7 @@ import com.codync.android.design.*
                 toggleMode = { mode = if (mode == TouchMode.Trackpad) TouchMode.Direct else TouchMode.Trackpad },
                 fit = { resetToken += 1 },
                 pick = { d -> display = d; session?.switchDisplay(d); resetToken += 1 },
-                takeOver = { setInteractive(!interactive) })
+                takeOver = { wanted = !interactive; setInteractive(wanted) })
             AnimatedVisibility(showBar, Modifier.align(Alignment.BottomCenter).imePadding().onSizeChanged { bar.intValue = it.height },
                 enter = slideInVertically(Motion.layoutOffset) { it } + fadeIn(Motion.fade()),
                 exit = slideOutVertically(Motion.layoutOffset) { it } + fadeOut(Motion.fade())) {

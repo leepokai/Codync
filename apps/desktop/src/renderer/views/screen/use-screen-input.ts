@@ -17,6 +17,9 @@ interface State {
   remote: string
 }
 
+/** Input goes to the computer only while you have the controls of a live screen. */
+const controlling = (s: State) => s.enabled && s.session?.phase.kind === 'live'
+
 /**
  * Sends the mouse and keyboard over the picture to the computer while `enabled`: real button presses and
  * releases (with the click count, so double-clicks stay double-clicks), moves and wheel travel once per
@@ -31,7 +34,7 @@ export function useScreenInput({ stage, video, keys }: Targets, state: State) {
     const field = keys.current
     if (!area || !field) return
     const local = window.codync.platform
-    const live = () => (current.current.enabled && current.current.session?.phase.kind === 'live' ? current.current.session : null)
+    const live = () => (controlling(current.current) ? current.current.session : null)
     const mods = (e: Keys) => modifiers(e, local, current.current.remote)
     let last: { x: number; y: number } | null = null
     const point = (x: number, y: number) => {
@@ -142,16 +145,7 @@ export function useScreenInput({ stage, video, keys }: Targets, state: State) {
     field.addEventListener('input', onInput)
     field.addEventListener('compositionend', onComposed)
     field.addEventListener('paste', onPaste)
-    // While the field has focus, menu shortcuts (⌘F, ⌘R, …) go to the computer instead of acting here.
-    const onFocus = () => window.codync.app.remoteKeyboard(true)
-    const onBlur = () => window.codync.app.remoteKeyboard(false)
-    field.addEventListener('focus', onFocus)
-    field.addEventListener('blur', onBlur)
-    if (document.activeElement === field) onFocus()
     return () => {
-      onBlur()
-      field.removeEventListener('focus', onFocus)
-      field.removeEventListener('blur', onBlur)
       cancelAnimationFrame(moveFrame)
       cancelAnimationFrame(wheelFrame)
       area.removeEventListener('mousedown', onDown)
@@ -165,4 +159,21 @@ export function useScreenInput({ stage, video, keys }: Targets, state: State) {
       field.removeEventListener('paste', onPaste)
     }
   }, [stage, video, keys])
+
+  // While you control a live screen and its field has focus, menu shortcuts (⌘F, ⌘R, …) go to the computer
+  // instead of acting here; a dropped connection gives them back.
+  const capturing = controlling(state)
+  useEffect(() => {
+    const field = keys.current
+    if (!field || !capturing) return
+    const report = () => window.codync.app.remoteKeyboard(document.activeElement === field)
+    report()
+    field.addEventListener('focus', report)
+    field.addEventListener('blur', report)
+    return () => {
+      field.removeEventListener('focus', report)
+      field.removeEventListener('blur', report)
+      window.codync.app.remoteKeyboard(false)
+    }
+  }, [keys, capturing])
 }

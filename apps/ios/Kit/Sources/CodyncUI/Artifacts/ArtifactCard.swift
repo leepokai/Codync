@@ -11,6 +11,7 @@ struct ArtifactCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let symbol = "chart.bar.doc.horizontal"
+    private static let width: CGFloat = 280
     private static let previewHeight: CGFloat = 150
     /// The artifact lays out at twice the card's size and shows at half.
     private static let scale: CGFloat = 0.5
@@ -22,7 +23,7 @@ struct ArtifactCard: View {
                 preview
                 footer
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: Self.width)
             .background(Palette.bubbleAgent, in: Self.shape)
             .clipShape(Self.shape)
             .contentShape(Self.shape)
@@ -36,27 +37,23 @@ struct ArtifactCard: View {
 
     private var preview: some View {
         let html = model.artifacts.html[ref.id]
-        return GeometryReader { proxy in
-            let width = proxy.size.width
-            ZStack {
-                if let html {
-                    // ponytail: one live web view per card on screen; a cached snapshot per version if scrolling stutters.
-                    ArtifactWebView(artifactId: ref.id, html: html, interactive: false)
-                        .frame(width: width / Self.scale, height: Self.previewHeight / Self.scale)
-                        .scaleEffect(Self.scale, anchor: .topLeading)
-                        .frame(width: width, height: Self.previewHeight, alignment: .topLeading)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                } else if model.artifacts.failures[ref.id] == nil {
-                    Spinner()
-                } else {
-                    Image(systemName: Self.symbol).font(.system(size: 34)).foregroundStyle(Palette.tertiary)
-                }
+        return ZStack {
+            if let html {
+                // ponytail: one live web view per card on screen; a cached snapshot per version if scrolling stutters.
+                ArtifactWebView(artifactId: ref.id, html: html, interactive: false)
+                    .frame(width: Self.width / Self.scale, height: Self.previewHeight / Self.scale)
+                    .scaleEffect(Self.scale, anchor: .topLeading)
+                    .frame(width: Self.width, height: Self.previewHeight, alignment: .topLeading)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            } else if model.artifacts.failures[ref.id] == nil {
+                Spinner()
+            } else {
+                Image(systemName: Self.symbol).font(.system(size: 34)).foregroundStyle(Palette.tertiary)
             }
-            .frame(width: width, height: Self.previewHeight)
-            .clipped()
         }
-        .frame(height: Self.previewHeight)
+        .frame(width: Self.width, height: Self.previewHeight)
+        .clipped()
         .mask(LinearGradient(stops: [.init(color: .black, location: 0.5), .init(color: .clear, location: 1)],
                              startPoint: .top, endPoint: .bottom))
         .animation(Motion.reduced(Motion.fade, reduceMotion), value: html?.updatedAt)
@@ -64,19 +61,18 @@ struct ArtifactCard: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: Self.symbol)
-                .font(.system(size: 22))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Palette.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.artifacts.title(ref))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Palette.text)
-                    .lineLimit(2)
-                Text(L10n.tr("Artifact")).font(.caption2).foregroundStyle(Palette.secondary)
-            }
+            Text(model.artifacts.title(ref))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Palette.text)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(L10n.tr("Artifact")).font(.caption).foregroundStyle(Palette.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 12)
+        .padding(.vertical, 12)
     }
 }

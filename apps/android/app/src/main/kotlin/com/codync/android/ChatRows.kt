@@ -275,7 +275,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             val player = rememberSharedAudio(entry, voiceNote, store)
             val download = state.fileDownloads[voiceNote.id]
             val busy = download is FileDownloadState.Downloading
-            val save = { if (busy) store.cancelFile(voiceNote.id) else store.saveFile(entry.id, entry.botId, voiceNote) }
+            val save = { store.toggleFile(entry.id, entry.botId, voiceNote) }
             Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
                 .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() },
                     preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) }) {

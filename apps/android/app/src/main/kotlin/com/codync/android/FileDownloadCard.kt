@@ -50,14 +50,14 @@ import kotlinx.coroutines.launch
  *  name and size, and a button to download (or cancel). One accessibility element: `<name>, <caption>` plus the actions. */
 @Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
     var viewing by remember { mutableStateOf(false) }
-    val player = if (file.showsAsAudio) rememberSharedAudio(entry, file, store) else null
+    val player = if (file.playsInChat) rememberSharedAudio(entry, file, store) else null
     val scope = rememberCoroutineScope()
     val translate = translator()
     val download = state.fileDownloads[file.id]
     val busy = download is FileDownloadState.Downloading
     val caption = detail(file, download, player, translate)
     val play = { player?.let { scope.launch { it.toggle() } }; Unit }
-    val save = { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file) }
+    val save = { store.toggleFile(entry.id, entry.botId, file) }
     val view = if (file.showsAsImage) ({ viewing = true }) else null
     Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
         .clearAndSetSemantics {

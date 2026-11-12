@@ -146,7 +146,7 @@ extension EntryData {
     /// The sound a voice-note message plays inside its bubble: its first file, when the host marked the message
     /// and the chat can play it. A sound shared without the mark stays a file card.
     public var voiceNoteFile: SharedFile? {
-        guard voiceNote == true, let file = files?.first, file.showsAsAudio else { return nil }
+        guard voiceNote == true, let file = files?.first, file.playsInChat else { return nil }
         return file
     }
 }

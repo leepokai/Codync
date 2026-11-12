@@ -25,7 +25,7 @@ struct FileDownloadCard: View {
         .accessibilityLabel("\(file.name), \(caption)")
         .accessibilityAction { firstAction() }
         .accessibilityActions {
-            if file.showsAsAudio {
+            if file.playsInChat {
                 Button(audio.state == .playing ? L10n.tr("Pause") : L10n.tr("Play"), action: play)
             }
             if file.showsAsImage {
@@ -33,13 +33,13 @@ struct FileDownloadCard: View {
             }
             Button(busy ? L10n.tr("Cancel download") : L10n.tr("Download"), action: self.download)
         }
-        .audioSeekAdjustable(file.showsAsAudio ? audio : nil)
+        .audioSeekAdjustable(file.playsInChat ? audio : nil)
     }
 
     /// A double tap runs what the card leads with: play a sound, open a picture, else download (Android's and the
     /// desktop's first action, the voice-note bubble's double tap).
     private func firstAction() {
-        if file.showsAsAudio { play() } else if file.showsAsImage { viewing = true } else { download() }
+        if file.playsInChat { play() } else if file.showsAsImage { viewing = true } else { download() }
     }
 
     /// The picture itself; tap for full size.
@@ -53,7 +53,7 @@ struct FileDownloadCard: View {
 
     private func row(caption: String) -> some View {
         HStack(spacing: 12) {
-            if file.showsAsAudio { playButton } else {
+            if file.playsInChat { playButton } else {
                 Image(systemName: AttachmentIcon.symbol(file.name)).font(.system(size: 24)).foregroundStyle(Palette.secondary)
                     .frame(width: 24)
             }
@@ -109,68 +109,6 @@ struct FileDownloadCard: View {
         if let duration { return "\(SharedAudio.timeText(elapsed)) / \(SharedAudio.timeText(duration))" }
         if case .saved = download { return "\(size) · \(L10n.tr("Downloaded"))" }
         return size
-    }
-}
-
-/// A shared sound's play/pause: a spinner while it loads, and the 44 pt tap target of every card-sized control.
-/// Both a file card and a bubble's voice note show it.
-struct AudioPlayButton: View {
-    let state: SharedAudio.State
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Group {
-                if state == .loading {
-                    Spinner(size: 24)
-                } else {
-                    Image(systemName: state == .playing ? "pause.circle" : "play.circle")
-                        .font(.system(size: 24)).foregroundStyle(Palette.text)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-            }
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// How far a shared sound has played: a 4 pt bar filling left to right. Tap or drag it to move there; its touch
-/// area runs 20 pt over and under the bar without taking up layout, as the play button's does.
-struct AudioProgress: View {
-    let elapsed: TimeInterval
-    let duration: TimeInterval
-    let seek: (TimeInterval) -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Palette.tertiary)
-                Capsule().fill(Palette.text).frame(width: proxy.size.width * min(1, elapsed / max(1, duration)))
-            }
-            .frame(height: 4)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
-                seek(duration * min(max(drag.location.x / proxy.size.width, 0), 1))
-            })
-        }
-        .frame(height: 44)
-        .padding(.vertical, -20)
-    }
-}
-
-extension View {
-    /// VoiceOver's swipe up or down on a voice note moves it five seconds; another file's card isn't adjustable.
-    @ViewBuilder func audioSeekAdjustable(_ audio: SharedAudio?) -> some View {
-        if let audio {
-            accessibilityAdjustableAction { direction in
-                audio.seek(to: audio.elapsed + (direction == .increment ? 5 : -5))
-            }
-        } else {
-            self
-        }
     }
 }
 

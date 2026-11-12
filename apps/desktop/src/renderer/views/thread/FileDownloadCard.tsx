@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { showsAsAudio, showsAsImage, type Entry, type SharedFile } from '@shared/models'
+import { showsAsImage, type Entry, type SharedFile } from '@shared/models'
 import { useStore } from '../../store/context'
 import { Icon } from '../../components/Icon'
 import { AnchoredMenu, useContextMenu, type MenuItem, type ReactionPick } from '../../components/Menu'
@@ -21,7 +21,7 @@ export interface MessageMenu {
 }
 
 export function FileDownloadCard({ entry, file, message }: { entry: Entry; file: SharedFile; message: MessageMenu }) {
-  return showsAsAudio(file) ? <AudioFileCard entry={entry} file={file} message={message} /> : <FileCard entry={entry} file={file} message={message} />
+  return file.playsInChat ? <AudioFileCard entry={entry} file={file} message={message} /> : <FileCard entry={entry} file={file} message={message} />
 }
 
 /** A voice note's card: its play state (and a spinner while it loads) in place of the file icon. */
@@ -32,10 +32,11 @@ function AudioFileCard({ entry, file, message }: { entry: Entry; file: SharedFil
 
 /** A message's voice note, at the top of its bubble: the play button, the progress bar and the clock on one row. */
 export function VoiceNotePlayer({ entry, file, message }: { entry: Entry; file: SharedFile; message: MessageMenu }) {
+  const tr = useTr()
   const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
   const stop = useFileStop(entry, file, message, snapshot, toggle, seek)
   return <>
-    <div className="voice-note" {...stop.props} aria-label={`Voice note, ${stop.detail}`}>
+    <div className="voice-note" {...stop.props} aria-label={`${tr('Voice note')}, ${stop.detail}`}>
       <HStack gap={10} aria-hidden>
         <AudioIcon snapshot={snapshot} toggle={toggle} />
         <AudioProgress snapshot={snapshot} seek={seek} />

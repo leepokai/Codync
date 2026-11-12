@@ -50,6 +50,8 @@ that stays undecodable after the one rewind, or a `hello` whose other fields can
 
 Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
 
+Apps older than 2.45.0 would show a voice note (`voiceNote: true`, a sound in `files` and the message in `text`) as its file card only, without the message, so 2.45.0 raises `minApp`.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 
@@ -152,6 +154,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.45.0 | 2.45.0 | 2.26.0 (unchanged) | A bot's voice note is one message: the player and, in `text`, what the bot wrote. Older apps show a message with `files` as the file card only and never its `text`, so they would drop the message. |
 | 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
 | 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |

@@ -241,7 +241,7 @@ async fn a_voice_note_goes_inside_its_message() {
     assert_eq!(shared.len(), 1, "{entries:?}");
     let message = &shared[0]["data"];
     assert_eq!((message["text"].as_str(), message["voiceNote"].as_bool()), (Some("Here is the **plan**."), Some(true)));
-    assert_eq!(message["files"][0]["name"], "note.m4a");
+    assert_eq!((&message["files"][0]["name"], &message["files"][0]["playsInChat"]), (&json!("note.m4a"), &json!(true)));
     // The voice note's message is the turn's reply: what the agent wrote as its reply stays in the trace.
     assert!(entries.iter().all(|e| e["data"]["text"] != "The files are ready." || e["data"]["final"] != true));
 }

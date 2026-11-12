@@ -113,7 +113,7 @@ impl Actor {
             ensure!(self.hub.store.bot(&self.cfg.id)?.is_some_and(|bot| !bot.deleted), "bot was deleted");
             let mut snapshot = completed.result?;
             ensure!(
-                completed.text.is_none() || snapshot.meta.plays_in_chat(),
+                completed.text.is_none() || snapshot.meta.plays_in_chat,
                 "text goes only with a voice note: an mp3, m4a, wav or aac file up to 20 MiB"
             );
             self.close_seg();
@@ -137,17 +137,10 @@ impl Actor {
         Ok(text)
     }
 
-    /// A message carrying a voice note: one bubble, the player over the text. Like `send_message`, it is the turn's
-    /// reply, so what the agent writes as its reply stays in the trace.
+    /// A message carrying a voice note: one bubble, the player over the text, sent like `send_message`.
     fn post_voice_note(&mut self, turn: i64, text: String, snapshot: &Snapshot) -> Result<String> {
-        self.add(
-            EntryKind::Agent,
-            turn,
-            json!({"text": text, "final": true, "files": [snapshot.meta], "voiceNote": true}),
-        )
-        .ok_or_else(|| anyhow!("couldn't save the message"))?;
-        self.sent.push(text.clone());
-        self.last_text = None;
+        let data = json!({"text": text, "final": true, "files": [snapshot.meta], "voiceNote": true});
+        self.record_sent(turn, data, text.clone())?;
         Ok(text)
     }
 }

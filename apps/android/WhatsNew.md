@@ -7,6 +7,15 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.45.0
+### zh-Hant
+- bot 可以傳語音訊息了：語音會在那則訊息的泡泡最上方直接播放，文字接在下面。
+- bot 傳來的音訊檔（MP3、M4A、WAV、AAC，20 MB 以內）可以直接在聊天裡播放：點播放鍵，進度列會顯示播放到哪，拖動或點一下進度列就能跳到別的位置。
+
+### en-US
+- Bots can now send voice notes: the note plays at the top of its message's bubble, with the text under it.
+- Sound files a bot sends (MP3, M4A, WAV or AAC, up to 20 MB) play right in the chat: tap play, and drag or tap the progress bar to jump to another point.
+
 ## 2.44.1
 ### zh-Hant
 - 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。

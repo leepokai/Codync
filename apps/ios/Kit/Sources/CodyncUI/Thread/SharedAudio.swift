@@ -2,10 +2,6 @@ import AVFoundation
 import CodyncKit
 import Foundation
 import Observation
-@preconcurrency import WebRTC
-import os
-
-private let log = Logger(subsystem: "com.pokai.Codync", category: "Thread")
 
 /// Plays a sound a bot shared (a voice note), fetched from the computer; one player per file card or
 /// voice-note bubble.
@@ -41,14 +37,7 @@ final class SharedAudio {
     private let deactivate: @MainActor () -> Void
 
     init(load: @escaping @MainActor (BotStore, SharedFile, String) async -> Data? = { await $0.sharedFileData($1, entryId: $2) },
-         deactivate: @escaping @MainActor () -> Void = {
-             do {
-                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-             } catch {
-                 // The note is already stopped; other apps' audio just stays ducked until the next session change.
-                 log.error("voice note session release: \(error.localizedDescription, privacy: .public)")
-             }
-         }) {
+         deactivate: @escaping @MainActor () -> Void = CallAudioSession.releasePlayback) {
         self.load = load
         self.deactivate = deactivate
     }
@@ -72,13 +61,7 @@ final class SharedAudio {
             let player = try await prepared(file, entryId: entryId, model: model, for: started)
             failure = .playback
             if let other = Self.sounding, other !== self, other.state == .playing { other.pause() }
-            // Heard with the ringer off too.
-            let session = AVAudioSession.sharedInstance()
-            if !recordingActive {
-                try session.setCategory(.playback, mode: .default, options: [])
-                try session.setActive(true)
-                ownsSession = true
-            }
+            if try CallAudioSession.activatePlayback() { ownsSession = true }
             guard player.play() else { throw CocoaError(.coderReadCorrupt) }
             Self.sounding = self
             elapsed = player.currentTime
@@ -139,15 +122,11 @@ final class SharedAudio {
         releaseSession()
     }
 
-    private var recordingActive: Bool {
-        CallAudioSession.active || Dictation.active != nil || RTCAudioSession.sharedInstance().isActive
-    }
-
-    /// Only the session this note activated is ours to release; an active recording keeps it.
+    /// Only the session this note activated is ours to release; a recording started since keeps it.
     private func releaseSession() {
         guard ownsSession else { return }
         ownsSession = false
-        guard !recordingActive else { return }
+        guard !CallAudioSession.recording else { return }
         deactivate()
     }
 

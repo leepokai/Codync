@@ -10,16 +10,18 @@ private func message(_ file: SharedFile?, marked: Bool?) -> EntryData {
     return data
 }
 
-private let sound = SharedFile(id: "note", name: "note.m4a", size: 120_000, sha256: String(repeating: "0", count: 64))
+private let sound = SharedFile(id: "note", name: "note.m4a", size: 120_000, sha256: String(repeating: "0", count: 64), playsInChat: true)
 
-/// A message marked `voiceNote` plays inside its bubble only when its file is a sound the chat can play; every
+/// A message marked `voiceNote` plays inside its bubble only when the computer stamped its file `playsInChat`; every
 /// other file message, marked or not, keeps today's file cards.
 @Test func voiceNoteMessagesPickTheBubblePlayerOnlyForPlayableSounds() {
     #expect(message(sound, marked: true).voiceNoteFile == sound)
     let document = SharedFile(id: "doc", name: "notes.txt", size: 10, sha256: String(repeating: "0", count: 64))
     #expect(message(document, marked: true).voiceNoteFile == nil)
-    let tooBig = SharedFile(id: "long", name: "long.mp3", size: 21 * 1024 * 1024, sha256: String(repeating: "0", count: 64))
+    let tooBig = SharedFile(id: "long", name: "long.mp3", size: 21 * 1024 * 1024, sha256: String(repeating: "0", count: 64), playsInChat: false)
     #expect(message(tooBig, marked: true).voiceNoteFile == nil)
+    let unstamped = SharedFile(id: "note", name: "note.m4a", size: 120_000, sha256: String(repeating: "0", count: 64))
+    #expect(message(unstamped, marked: true).voiceNoteFile == nil)
     #expect(message(sound, marked: false).voiceNoteFile == nil)
     #expect(message(sound, marked: nil).voiceNoteFile == nil)
     #expect(message(nil, marked: true).voiceNoteFile == nil)
@@ -30,7 +32,7 @@ private let sound = SharedFile(id: "note", name: "note.m4a", size: 120_000, sha2
     let payload = try JSONSerialization.data(withJSONObject: [
         "text": "On it.",
         "final": true,
-        "files": [["id": "note", "name": "note.m4a", "size": 120_000, "sha256": String(repeating: "0", count: 64)]],
+        "files": [["id": "note", "name": "note.m4a", "size": 120_000, "sha256": String(repeating: "0", count: 64), "playsInChat": true]],
         "voiceNote": true,
     ])
     let data = try JSONDecoder().decode(EntryData.self, from: payload)
@@ -40,4 +42,7 @@ private let sound = SharedFile(id: "note", name: "note.m4a", size: 120_000, sha2
     let older = try JSONDecoder().decode(EntryData.self, from: Data(#"{"text":"On it.","final":true}"#.utf8))
     #expect(older.voiceNote == nil)
     #expect(older.voiceNoteFile == nil)
+
+    let unstamped = try JSONDecoder().decode(SharedFile.self, from: Data(#"{"id":"n","name":"n.m4a","size":1,"sha256":"0"}"#.utf8))
+    #expect(!unstamped.playsInChat)
 }

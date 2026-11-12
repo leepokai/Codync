@@ -41,12 +41,8 @@ struct DictationService {
 @MainActor @Observable
 final class Dictation {
     private(set) var listening = false {
-        didSet {
-            if listening { Self.active = self }
-            else if Self.active === self { Self.active = nil }
-        }
+        didSet { if listening != oldValue { CallAudioSession.dictating = listening } }
     }
-    private(set) static weak var active: Dictation?
     /// Recorded for a provider, waiting for its transcript.
     private(set) var transcribing = false
     /// When it started listening, for the recording pill's time.

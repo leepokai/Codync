@@ -96,8 +96,7 @@ import com.kyant.shapes.RoundedRectangle
 /** A file the bot shared: tapping downloads it to the share sheet, as its card in the chat does (again: cancels). */
 @Composable private fun FileRow(item: LibraryItem.FileItem, botId: String, state: AppState, store: AppStore) {
     val download = state.fileDownloads[item.file.id]
-    val busy = download is FileDownloadState.Downloading
-    LibraryRow(Modifier.plainButton { if (busy) store.cancelFile(item.file.id) else store.saveFile(item.entryId, botId, item.file) },
+    LibraryRow(Modifier.plainButton { store.toggleFile(item.entryId, botId, item.file) },
         { Symbol(AttachmentIcon.symbol(item.file.name), size = 22.dp, tint = Palette.secondary) }) {
         NameAndDetail(item.file.name, detail(item.file, download, tr = translator()))
     }

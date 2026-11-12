@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,33 +30,44 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 
 /** A file a bot shared, as iOS `FileDownloadCard`: an image shows itself (tap for full size), then its name and size, and a
- *  button to download (or cancel). */
-@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
+ *  button to download (or cancel). Holding it opens its message's `menu`; an image's copies the picture or its name. */
+@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, menu: MessageMenu, state: AppState, store: AppStore) {
+    val context = LocalContext.current
+    val focus = LocalFocusManager.current
     var viewing by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }) {
+        menu.items(if (file.showsAsImage) imageCopyItems(store, file.imageSource(entry.id, store)) else listOf(textCopyItem(context, entry.text)))
+    }.clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (file.showsAsImage) SharedImage(file, entry.id, 720, state, store, Modifier.sizeIn(maxHeight = 280.dp)
             .clip(RoundedRectangle(10.dp)).plainButton { viewing = true }.semantics { contentDescription = file.name })
         FileRow(entry, file, state, store)
     }
-    SharedImageSheet(file.takeIf { viewing }, entry.id, state, store) { viewing = false }
+    SharedImageSheet(file.takeIf { viewing }, entry, menu, state, store) { viewing = false }
 }
 
 @Composable private fun FileRow(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
-    val download = state.fileDownloads[file.id]
-    val busy = download is FileDownloadState.Downloading
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(detail(file, download), style = Type.caption2, color = Palette.secondary)
+            Text(detail(file, state.fileDownloads[file.id]), style = Type.caption2, color = Palette.secondary)
         }
-        Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file) }
-            .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
-            Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
-        }
+        DownloadButton(entry, file, state, store)
     }
 }
+
+/** A shared file's download button, on its card and in its viewer: downloads (again after a failure or a save), or cancels
+ *  the download under way. In the image viewer (`inViewer`) its end is reported. */
+@Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, inViewer: Boolean = false) {
+    val busy = state.fileDownloads[file.id] is FileDownloadState.Downloading
+    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, if (inViewer) ::reportViewerDownload else null) }
+        .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
+        Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
+    }
+}
+
+/** How a download from the image viewer ended. */
+private fun reportViewerDownload(error: ImageError?) = Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error))
 
 /** A shared file's size, or how its download goes. */
 internal fun detail(file: SharedFile, download: FileDownloadState?): String {

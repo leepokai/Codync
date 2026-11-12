@@ -47,6 +47,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// never), reconnects, the first phase stuck too long, why it failed.
     case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
+    /// A picture in a chat or the Library opened full size.
+    case imagePreviewOpened
+    /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
+    /// A download is reported when it ends, not when it starts.
+    case imagePreviewAction(ImageAction, from: ImageFrom, outcome: ImageOutcome = .done)
     case reviewRequested(prompts: Int)
     case reviewLinkOpened
     /// The What's new window is on screen after an update (docs/features/whats-new.md).
@@ -71,6 +76,16 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Link: String, Sendable {
         case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
     }
+    public enum ImageAction: String, Sendable { case zoom, copyImage = "copy_image", copyName = "copy_name", download }
+    /// Where it was done: inside the full-size viewer, or from a picture's menu in a chat while the viewer is closed.
+    public enum ImageFrom: String, Sendable { case viewer, menu }
+    /// How it went; `zoom` and `copy_name` are always done.
+    public enum ImageOutcome: Equatable, Sendable {
+        case done, failed(ImageError)
+    }
+    /// Why a picture action failed: its bytes aren't there, it couldn't be read or encoded, the pasteboard write
+    /// failed, or a download failed. Never the picture or its name.
+    public enum ImageError: String, Sendable { case unavailable, convert, clipboard, transfer }
     public enum DevServerUse: String, Sendable { case open, copy }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
@@ -217,6 +232,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
+        case .imagePreviewOpened: "image_preview_opened"
+        case .imagePreviewAction: "image_preview_action"
         case .reviewRequested: "review_requested"
         case .reviewLinkOpened: "review_link_opened"
         case .whatsNewShown: "whats_new_shown"
@@ -238,9 +255,16 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
-             .addToAccountCompleted, .whatsNewShown, .conversationFindOpened: return [:]
+             .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened: return [:]
         case let .conversationFindSearched(found): return ["found": .bool(found)]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
+        case let .imagePreviewAction(action, from, outcome):
+            var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]
+            switch outcome {
+            case .done: p["outcome"] = .string("done")
+            case let .failed(error): p["outcome"] = .string("failed"); p["error"] = .string(error.rawValue)
+            }
+            return p
         case let .cloudKeySaved(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .cloudComputerCreated(outcome, provider): return ["outcome": .string(outcome.rawValue), "provider": .string(provider)]
         case let .cloudOfferOpened(provider): return ["provider": .string(provider)]

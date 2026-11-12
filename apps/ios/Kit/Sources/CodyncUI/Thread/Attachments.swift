@@ -48,6 +48,10 @@ struct PickedFile: Transferable {
 }
 
 enum ImageData {
+    /// The long side, in pixels, of the largest picture the app decodes (the viewer, a converted upload, the clipboard's
+    /// PNG): a bigger one is scaled down to it, so a small compressed file can't take more memory than the phone has.
+    static let largestPixels = 4096
+
     static func isImage(_ data: Data) -> Bool {
         CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) > 0 } ?? false
     }
@@ -66,10 +70,28 @@ enum ImageData {
     }
 
     static func jpeg(_ data: Data) -> Data? {
-        guard let image = thumbnail(data, maxPixels: 4096) else { return nil }
+        guard let image = thumbnail(data, maxPixels: largestPixels) else { return nil }
+        return encode(image, as: .jpeg, [kCGImageDestinationLossyCompressionQuality: 0.85])
+    }
+
+    /// The picture's first frame, upright (its orientation applied), as PNG: full size up to `maxPixels` on the long
+    /// side, scaled down to it past that.
+    static func png(_ source: CGImageSource, maxPixels: Int) -> Data? {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height, 1), maxPixels),
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).flatMap { encode($0, as: .png) }
+    }
+
+    private static func encode(_ image: CGImage, as type: UTType, _ options: [CFString: Any] = [:]) -> Data? {
         let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard let dest = CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, options as CFDictionary)
         return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 }
@@ -88,22 +110,61 @@ enum AttachmentIcon {
     }
 }
 
-/// Files sent with a message, on the sender's side: images as pictures (tap for full size),
-/// other files as cards.
+/// Where a picture's bytes are on the computer: a file sent with a message, or one a bot shared.
+enum ImageSource: Hashable {
+    case sent(Attachment, botId: String)
+    case shared(SharedFile, entryId: String, botId: String)
+
+    var id: String {
+        switch self {
+        case .sent(let file, _): file.id
+        case .shared(let file, _, _): file.id
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .sent(let file, _): file.name
+        case .shared(let file, _, _): file.name
+        }
+    }
+
+    /// The chat it's in.
+    var botId: String {
+        switch self {
+        case .sent(_, let botId), .shared(_, _, let botId): botId
+        }
+    }
+
+    /// The whole file, fetched once and then read from the cache.
+    @MainActor func data(_ model: BotStore) async -> Data? {
+        switch self {
+        case .sent(let file, let botId): await model.attachmentData(file, bot: botId)
+        case .shared(let file, let entryId, _): await model.sharedFileData(file, entryId: entryId)
+        }
+    }
+}
+
+/// Files sent with a message, on the sender's side: images as pictures (tap for full size; long-press for the
+/// message's menu, with Copy image and Copy name for Copy), other files as cards.
 struct AttachmentList: View {
     let attachments: [Attachment]
     let botId: String
-    @State private var viewing: Attachment?
+    let menu: MessageMenu
+    @Environment(BotStore.self) private var model
+    @Environment(\.openImage) private var openImage
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             ForEach(attachments) { file in
                 if file.isImage {
-                    AttachmentImage(file: file, botId: botId, maxPixels: 720)
+                    let source = ImageSource.sent(file, botId: botId)
+                    AttachmentImage(source, maxPixels: 720)
                         .frame(maxWidth: 220, maxHeight: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .contentShape(Rectangle())
-                        .onTapGesture { viewing = file }
+                        .onTapGesture { openImage(ImageViewing(source: source, menu: menu)) }
+                        .contextActions(reactions: menu.reactions) { menu.items(copy: ImageCopy.menuItems(source, model: model)) }
                         .accessibilityLabel(file.name)
                         .accessibilityAddTraits(.isButton)
                 } else {
@@ -111,7 +172,6 @@ struct AttachmentList: View {
                 }
             }
         }
-        .codyncSheet(item: $viewing) { AttachmentViewer(file: $0, botId: botId) }
     }
 
     private func card(_ file: Attachment) -> some View {
@@ -137,52 +197,18 @@ struct AttachmentList: View {
     }
 }
 
-/// A picture full size: a sent image or one a bot shared.
-struct AttachmentViewer: View {
-    let name: String
-    let image: AttachmentImage
-
-    init(file: Attachment, botId: String) {
-        name = file.name
-        image = AttachmentImage(file: file, botId: botId, maxPixels: 4096)
-    }
-
-    init(shared file: SharedFile, entryId: String) {
-        name = file.name
-        image = AttachmentImage(shared: file, entryId: entryId, maxPixels: 4096)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader(name)
-            image
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(12)
-        }
-        .background(Palette.background)
-    }
-}
-
 /// A picture from the computer (a sent image or one a bot shared), fetched once and then read from the cache.
 struct AttachmentImage: View {
-    let id: String
+    let source: ImageSource
     let maxPixels: Int
     var contentMode: ContentMode = .fit
-    let load: @MainActor (BotStore) async -> Data?
     @Environment(BotStore.self) private var model
     @State private var image: CGImage?
 
-    init(file: Attachment, botId: String, maxPixels: Int, contentMode: ContentMode = .fit) {
-        id = file.id
+    init(_ source: ImageSource, maxPixels: Int, contentMode: ContentMode = .fit) {
+        self.source = source
         self.maxPixels = maxPixels
         self.contentMode = contentMode
-        load = { await $0.attachmentData(file, bot: botId) }
-    }
-
-    init(shared file: SharedFile, entryId: String, maxPixels: Int) {
-        id = file.id
-        self.maxPixels = maxPixels
-        load = { await $0.sharedFileData(file, entryId: entryId) }
     }
 
     var body: some View {
@@ -198,8 +224,8 @@ struct AttachmentImage: View {
         }
         // Asked again when the computer comes online: a chat shown from the cache before it connects
         // gets its pictures once it does. A loaded picture is never fetched again.
-        .task(id: [id, model.connection == .online ? "online" : "waiting"]) {
-            guard image == nil, let data = await load(model) else { return }
+        .task(id: [source.id, model.connection == .online ? "online" : "waiting"]) {
+            guard image == nil, let data = await source.data(model) else { return }
             let size = maxPixels
             image = await Task.detached { ImageData.thumbnail(data, maxPixels: size) }.value
         }

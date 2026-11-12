@@ -153,7 +153,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   return createPortal(
     <DismissContext.Provider value={onClose}>
       <ModalTitleContext.Provider value={titleId}>
-        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId}>
+        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId} onContextMenu={(e) => e.stopPropagation()}>
           <div className="modal-dim" onClick={dismissOnDim ? onClose : undefined} />
           <div className="modal-content" data-modal-card tabIndex={-1} style={{ width, height, maxHeight }}>
             {open ? children : last.current}

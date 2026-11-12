@@ -1,5 +1,7 @@
 package com.codync.android
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -97,9 +99,25 @@ class AttachmentFiles(private val context: Context, private val directory: File)
         return File(root, UUID.randomUUID().toString())
     }
 
+    /**
+     * Picture [source] itself as a clip (iOS `UIPasteboard` image): a copy named [name] in a `shareFolder`, as a
+     * `content://` link the app that pastes reads through the FileProvider. The clipboard grants it that read once
+     * [putOnClipboard] has it.
+     */
+    fun stageImage(source: File, name: String): ClipData {
+        val copy = File(shareFolder().apply { mkdirs() }, cleanName(name))
+        source.copyTo(copy, overwrite = true)
+        return ClipData.newUri(context.contentResolver, copy.name, uri(copy))
+    }
+
+    /** [clip] as the clipboard's current item. */
+    fun putOnClipboard(clip: ClipData) = context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+
+    private fun uri(shared: File) = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
+
     /** The system share sheet for a file in a `shareFolder`. */
     fun open(shared: File, name: String) {
-        val uri = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
+        val uri = uri(shared)
         val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(shared.extension.lowercase()) ?: "application/octet-stream"
         val intent = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

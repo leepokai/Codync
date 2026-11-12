@@ -5,6 +5,7 @@ use crate::agent::bot::Cmd;
 use crate::hub::Hub;
 use crate::store::{BotConfig, Entry};
 use anyhow::{Result, anyhow, bail, ensure};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fmt::Write;
 use std::sync::Arc;
@@ -18,6 +19,22 @@ pub const INSTRUCTIONS: &str = "When the user should pick among a few ways forwa
 options, recommended?) instead of repeating the question in a message. One card waits at a time, for up to four and a \
 half minutes. The user's button or typed choice answers this tool and is recorded in the chat; it does not start a \
 second turn. An expired card takes no answer. Do not choose the suggested option on the user's behalf.";
+
+/// A choice card's lifecycle, stored lowercase in `data.status`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Pending,
+    Answered,
+    Expired,
+}
+
+impl Status {
+    /// A card's status from its data; `None` for a value this host doesn't know.
+    pub fn of(data: &Value) -> Option<Self> {
+        Self::deserialize(&data["status"]).ok()
+    }
+}
 
 pub fn tool() -> Value {
     json!({
@@ -66,7 +83,7 @@ fn card_data(args: &Value) -> Result<Value> {
     }
     text.push_str("\n\nReply with the full option or its number. Exact option text takes priority over a number.");
     Ok(json!({"decision": true, "text": text, "question": question, "choices": choices,
-        "recommended": recommended, "status": "pending", "selected": Value::Null}))
+        "recommended": recommended, "status": Status::Pending, "selected": Value::Null}))
 }
 
 pub fn is_card(card: &Entry) -> bool {
@@ -107,7 +124,7 @@ pub async fn ask(hub: &Arc<Hub>, cfg: &BotConfig, args: &Value) -> Result<Value>
 pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Value> {
     let card = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
     ensure!(is_card(&card), "that entry is not a decision card");
-    if card.data["status"] != "pending" {
+    if Status::of(&card.data) != Some(Status::Pending) {
         bail!("that card is already answered or expired");
     }
     let owner = card.data["author"].as_str().unwrap_or(&card.bot_id);
@@ -121,8 +138,8 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
 
 pub fn expire(hub: &Hub, entry_id: &str) {
     let Some(mut card) = hub.store.entry(entry_id).filter(is_card) else { return };
-    if card.data["status"] == "pending" {
-        card.data["status"] = "expired".into();
+    if Status::of(&card.data) == Some(Status::Pending) {
+        card.data["status"] = json!(Status::Expired);
         let text = card.data["text"].as_str().unwrap_or_default();
         card.data["text"] = format!("{text}\n\nNo answer — the bot moved on.").into();
         hub.set_entry(entry_id, &card.data);
@@ -140,7 +157,7 @@ mod tests {
         assert!(card.get("options").is_none(), "old phone decoders expect object options");
         assert_eq!(card["recommended"], 1);
         assert!(card["text"].as_str().unwrap().contains("2. Wait"));
-        assert_eq!(card["status"], "pending");
+        assert_eq!(card["status"], "pending", "the wire value stays lowercase");
     }
 
     #[test]

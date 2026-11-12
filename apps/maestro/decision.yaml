@@ -27,7 +27,8 @@ onFlowComplete:
           appId: com.pokai.Codync.android.dev
 - tapOn: ${output.bot.name}
 - assertVisible: "Needs your choice"
-- tapOn: "More"
+- tapOn:
+    id: decision-expand
 - assertVisible: ".*Fifth line matters.*"
 - tapOn:
     id: decision-option-1

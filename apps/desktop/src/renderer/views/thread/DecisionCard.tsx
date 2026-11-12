@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import type { Entry } from '@shared/models'
+import { useEffect, useRef, useState } from 'react'
+import type { DecisionStatus, Entry } from '@shared/models'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
-import { Spinner } from '../../components/Controls'
+import { IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { trNow } from '../../lib/l10n.ts'
 import './permission-card.css'
@@ -12,8 +12,11 @@ import './permission-card.css'
  *  card reads the same after it and when it is loaded again. */
 export function DecisionCard({ entry, answering, respond }: { entry: Entry; answering: string | null; respond: (choice: string) => void }) {
   const d = entry.data
+  const status = d.status as DecisionStatus | undefined
   const [expanded, setExpanded] = useState(false)
-  const pending = d.status === 'pending'
+  const question = useRef<HTMLElement>(null)
+  const clamped = useClamped(question, expanded)
+  const pending = status === 'pending'
   const choices = d.choices ?? []
   const chosen = d.selected ?? null
   const suggested = d.recommended ?? null
@@ -25,7 +28,7 @@ export function DecisionCard({ entry, answering, respond }: { entry: Entry; answ
           <Text size="headline" tone="text">{trNow('Needs your choice')}</Text>
           {pending ? <span className="permission-card-dot" /> : null}
         </HStack>
-        <Text as="div" size="subheadline" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
+        <Text ref={question} as="div" size="subheadline" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
           {d.question ?? ''}
         </Text>
         {pending ? (
@@ -47,18 +50,29 @@ export function DecisionCard({ entry, answering, respond }: { entry: Entry; answ
           </div>
         ) : (
           <HStack gap={6}>
-            <Icon name={d.status === 'answered' ? 'checkmark' : 'clock'} size={10} color="var(--secondary)" />
+            <Icon name={status === 'answered' ? 'checkmark' : 'clock'} size={10} color="var(--secondary)" />
             <Text as="div" size="caption" weight="medium" tone="secondary">
-              {d.status === 'answered' && chosen ? chosen : trNow('No answer — the bot moved on')}
+              {status === 'answered' && chosen ? chosen : trNow('No answer — the bot moved on')}
             </Text>
           </HStack>
         )}
-        {(d.question ?? '').length > 0 ? (
-          <button className="press decision-card-more" onClick={() => setExpanded((e) => !e)}>
-            <Text size="caption" weight="medium" tone="secondary">{expanded ? trNow('Less') : trNow('More')}</Text>
-          </button>
+        {expanded || clamped ? (
+          <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={() => setExpanded((e) => !e)} />
         ) : null}
       </VStack>
     </div>
   )
+}
+
+/** Whether the clamped question hides lines, so the expand button only shows when there is more to read. */
+function useClamped(ref: React.RefObject<HTMLElement | null>, expanded: boolean) {
+  const [clamped, setClamped] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || expanded) return
+    const observer = new ResizeObserver(() => setClamped(el.scrollHeight > el.clientHeight + 1))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [ref, expanded])
+  return clamped
 }

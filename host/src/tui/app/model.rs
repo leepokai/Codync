@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+use crate::chat::decision;
+
 use super::super::manage::Reply;
 
 pub enum Msg {
@@ -226,7 +228,11 @@ impl Entry {
     }
 
     pub fn pending(&self) -> bool {
-        matches!(self.kind, Kind::Permission | Kind::Decision) && self.data["status"] == "pending"
+        match self.kind {
+            Kind::Permission => self.data["status"] == "pending",
+            Kind::Decision => decision::Status::of(&self.data) == Some(decision::Status::Pending),
+            _ => false,
+        }
     }
 
     /// A choice card's options, in the order the bot offered them.

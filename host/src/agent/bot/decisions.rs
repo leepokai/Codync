@@ -96,7 +96,10 @@ impl Actor {
             decision::expire(&self.hub, id);
             return Err(anyhow!("that card expired: no live call is waiting"));
         }
-        ensure!(card.data["status"] == "pending", "that card is already answered or expired");
+        ensure!(
+            decision::Status::of(&card.data) == Some(decision::Status::Pending),
+            "that card is already answered or expired"
+        );
         let choice = decision::pick(&decision::choices(&card), wanted, typed.is_some())
             .ok_or_else(|| anyhow!("no such option on that card"))?;
         // Save one user entry in this same turn; typed input already has an entry, so update it instead.
@@ -124,7 +127,7 @@ impl Actor {
             None => choice.clone(),
         };
         self.record_joined_input(&user.id, &input);
-        card.data["status"] = "answered".into();
+        card.data["status"] = json!(decision::Status::Answered);
         card.data["selected"] = choice.clone().into();
         let text = card.data["text"].as_str().unwrap_or_default();
         card.data["text"] = format!("{text}\n\nAnswered: {choice}").into();

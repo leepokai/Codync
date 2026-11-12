@@ -32,6 +32,8 @@ data class Entry(
     val clientNonce: String? get() = data.text("clientNonce")
     val status: String? get() = data.text("status")
     val isDecision: Boolean get() = kind == "notice" && data["decision"]?.jsonPrimitive?.booleanOrNull == true
+    /** A choice card's status; null for a value this app doesn't know. */
+    val decisionStatus: DecisionStatus? get() = DecisionStatus.entries.firstOrNull { it.wire == status }
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
@@ -99,7 +101,7 @@ private data class EntryFields(
     val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
     val callSeconds: Long? = null,
 )
-@Serializable private data class PermissionChoice(val optionId: String, val name: String, val kind: String)
+@Serializable internal data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 /** A quoted message: its entry, who wrote it (`user` or a bot id) and its text, cut short by the computer; `artifact` when it
  *  quotes an artifact card (the message is about that artifact). */
 @Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null)
@@ -208,3 +210,6 @@ data class MirrorSnapshot(
     val screen: JsonObject? = null,
     val icons: Map<String, CustomIcon> = emptyMap(),
 )
+
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+enum class DecisionStatus(val wire: String) { Pending("pending"), Answered("answered"), Expired("expired") }

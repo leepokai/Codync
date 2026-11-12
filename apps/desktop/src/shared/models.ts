@@ -303,6 +303,9 @@ export interface AgentSwitch {
   carried: string | null
 }
 
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+export type DecisionStatus = 'pending' | 'answered' | 'expired'
+
 export interface EntryData {
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage
@@ -342,7 +345,7 @@ export interface EntryData {
   locations?: { path: string; line?: number }[]
   options?: PermissionOption[]
   selected?: string
-  /** An additive notice card; older clients still display its text. */
+  /** An additive notice card; older clients still display its text. Its `status` is a `DecisionStatus`. */
   decision?: boolean
   /** What the bot asks the user to choose (`request_decision`). */
   question?: string

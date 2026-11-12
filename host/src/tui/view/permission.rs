@@ -10,6 +10,7 @@ use super::buffer::u;
 use super::style::{spin, theme};
 use super::time::clock;
 use super::transcript::Built;
+use crate::chat::decision::Status;
 
 /// Keys printed on approval buttons: y / a / n for the usual kinds, digits otherwise.
 fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
@@ -107,9 +108,9 @@ fn card_foot(out: &mut Built, bw: usize) {
 pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
     let t = theme();
     let question = e.data["question"].as_str().unwrap_or("Choose one");
-    let (g, gs, what) = match (e.data["status"].as_str(), e.data["selected"].as_str()) {
-        (Some("answered"), Some(chosen)) => ("✓", t.green, chosen.to_owned()),
-        (Some("expired"), _) => ("·", t.dim, "Expired".to_owned()),
+    let (g, gs, what) = match (Status::of(&e.data), e.data["selected"].as_str()) {
+        (Some(Status::Answered), Some(chosen)) => ("✓", t.green, chosen.to_owned()),
+        (Some(Status::Expired), _) => ("·", t.dim, "Expired".to_owned()),
         _ => ("·", t.dim, "No answer".to_owned()),
     };
     out.lines.push(Line::from(vec![

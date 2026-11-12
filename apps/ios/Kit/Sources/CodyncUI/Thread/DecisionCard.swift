@@ -7,9 +7,13 @@ struct DecisionCard: View {
     var answering: String?
     let respond: (String) -> Void
     @State private var expanded = false
+    @State private var shownHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
 
     private var d: EntryData { entry.data }
-    private var pending: Bool { d.status == "pending" }
+    private var pending: Bool { d.decisionStatus == .pending }
+    /// The clamped question hides lines: only then is there something to expand.
+    private var clamped: Bool { fullHeight > shownHeight + 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -20,6 +24,11 @@ struct DecisionCard: View {
             Text(d.question ?? "")
                 .font(.subheadline).foregroundStyle(Palette.text)
                 .lineLimit(expanded ? nil : 4).textSelection(.enabled)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+                .background(alignment: .top) {
+                    Text(d.question ?? "").font(.subheadline).fixedSize(horizontal: false, vertical: true).hidden()
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                }
             if pending {
                 VStack(spacing: 0) {
                     ForEach(Array((d.choices ?? []).enumerated()), id: \.offset) { index, choice in
@@ -44,14 +53,19 @@ struct DecisionCard: View {
                 }
                 .background(Palette.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else {
-                Text(d.status == "answered" ? (d.selected ?? L10n.tr("Answered")) : L10n.tr("No answer — the bot moved on"))
+                Text(d.decisionStatus == .answered ? (d.selected ?? L10n.tr("Answered")) : L10n.tr("No answer — the bot moved on"))
                     .font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
                     .accessibilityIdentifier("decision-outcome")
             }
-            if !(d.question ?? "").isEmpty {
+            if expanded || clamped {
                 Button { Motion.animate { expanded.toggle() } } label: {
-                    Text(L10n.tr(expanded ? "Less" : "More")).font(.caption.weight(.medium))
-                }.buttonStyle(.plain)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L10n.tr(expanded ? "Collapse" : "Expand"))
+                .accessibilityIdentifier("decision-expand")
             }
         }
         .padding(16).frame(maxWidth: 420, alignment: .leading)

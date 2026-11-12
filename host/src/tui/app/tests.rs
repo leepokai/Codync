@@ -15,7 +15,7 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
         cursor: 0,
     }));
 
-    app.on_key(KeyEvent::from(KeyCode::Char('c')));
+    app.on_key(KeyEvent::from(KeyCode::Char('x')));
     assert!(matches!(app.overlays.last(), Some(Overlay::Routines(_))));
     assert_eq!(app.drafts["b"].text, "My unfinished message");
 

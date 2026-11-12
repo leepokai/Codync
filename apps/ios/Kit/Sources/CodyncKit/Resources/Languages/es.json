@@ -1828,6 +1828,9 @@
   "S sends this now": "S envía este ahora",
   "D removes the last": "D elimina el último",
   "Update Codync on {host}: sending now and taking back need {version} or newer.": "Actualiza Codync en {host}: enviar ahora y retirar necesitan {version} o una versión más reciente.",
+  "Find in conversation": "Buscar en la conversación",
+  "Previous match": "Coincidencia anterior",
+  "Next match": "Siguiente coincidencia",
   "Add {name} to your account first": "Primero añade {name} a tu cuenta",
   "Your phone reaches {name} from anywhere through your account. Adding it also turns this on.": "Tu teléfono accede a {name} desde cualquier lugar a través de tu cuenta. Al añadirlo también se activa esta opción.",
   "Use your own relay": "Usar tu propio relé",
@@ -2006,5 +2009,8 @@
   "Hand back to bots": "Devolver a los bots",
   "Copy from computer": "Copiar desde la computadora",
   "Keyboard for the remote screen": "Teclado para la pantalla remota",
-  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "No se pudo conectar con la pantalla remota. Revisa la conexión de la computadora e inténtalo de nuevo."
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "No se pudo conectar con la pantalla remota. Revisa la conexión de la computadora e inténtalo de nuevo.",
+  "Move active bots to the top": "Mover los bots activos arriba",
+  "Active bots move to the top": "Los bots activos suben arriba",
+  "Bots keep the order you set": "Los bots mantienen el orden que elegiste"
 }

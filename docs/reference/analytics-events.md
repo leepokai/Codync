@@ -90,6 +90,8 @@ host answers and sends it once the host is up.
 | Event | Sent by | When | Properties |
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
+| `conversation_find_opened` | host `track` (desktop, TUI), iOS, Android | The find bar opens in a conversation (desktop ⌘F, the phones' magnifying glass, the terminal's `/` or ^f) | — |
+| `conversation_find_searched` | host `track` (desktop, TUI), iOS, Android | A search in the find bar settles, at most once per searched text: typing paused (desktop and phones), a step to another match, or the bar closing (phones and terminal) | `found` (whether anything matched; never the text searched for) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
@@ -138,7 +140,7 @@ host answers and sends it once the host is up.
 | `agent_setup_started` | host | `agentSetup` (an agent's install or sign-in terminal) | `agent` |
 | `agent_signed_in` | host | `agentAuthenticate` | `agent` |
 | `reach_account_answered` | host `track` (desktop) | The ask before *Reach from anywhere* turns on for a computer in no account ended | `outcome` (`added`/`own_relay`/`cancelled`/`failed`), `error` on `failed` (`unreachable`: the cloud couldn't be reached; `refused`: it refused; `host`: the host failed) |
-| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
+| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`auto_order` (a bot with a new message moves to the top)/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
 | `host_update_installed` | host | `installHostUpdate` | — |
 | `network_joined` | host | `networkCreate` / `networkJoin`: the computer is in a network of the user's computers | `via` (`create`/`invite`), never a name, invite or connector address |
 | `network_changed` | host | `networkInvite` / `networkPromote` / `networkRemove` / `networkRecover` / `setNetworkRules` / `networkLeave` | `action` (`invite`/`promote`/`remove`/`recover`/`rules`/`leave`), never a computer's name, the invite, the recovery code or a rule |

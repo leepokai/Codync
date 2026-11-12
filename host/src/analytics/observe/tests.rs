@@ -74,6 +74,10 @@ fn settings_routines_screen_and_devices() {
         Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
     );
     assert_eq!(
+        setting("setAutoOrder", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("auto_order"), json!(true)))
+    );
+    assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
     );

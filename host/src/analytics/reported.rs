@@ -74,6 +74,12 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
+    /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
+    ConversationFindOpened,
+    ConversationFindSearched {
+        /// Whether the search found anything; never the text searched for.
+        found: bool,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -467,6 +473,11 @@ mod tests {
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
+            (
+                json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
+                Event::ConversationFindSearched,
+            ),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,

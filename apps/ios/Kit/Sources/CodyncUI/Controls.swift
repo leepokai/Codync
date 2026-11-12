@@ -449,16 +449,22 @@ public struct ValueRow<Value: View>: View {
 public struct SearchField: View {
     let prompt: String
     @Binding var text: String
+    /// Puts the cursor in the field as it appears.
+    let autoFocus: Bool
+    @FocusState private var focused: Bool
 
-    public init(_ prompt: String = "Search", text: Binding<String>) {
+    public init(_ prompt: String = "Search", text: Binding<String>, autoFocus: Bool = false) {
         self.prompt = prompt
         _text = text
+        self.autoFocus = autoFocus
     }
 
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
             TextField(prompt, text: $text).textFieldStyle(.plain).plainTextInput()
+                .focused($focused)
+                .onAppear { if autoFocus { focused = true } }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)

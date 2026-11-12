@@ -45,6 +45,13 @@
 }
 .decision-option {
   gap: 10px;
+  padding-block: 6px;
+  text-align: start;
+}
+/* An option can be 200 characters with no spaces: it wraps inside the card instead of widening it. */
+.decision-option .permission-option-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .decision-card-more {
   align-self: flex-start;

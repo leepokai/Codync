@@ -3,16 +3,18 @@
 use super::Actor;
 use crate::agent::acp;
 use crate::analytics::{self, Event};
-use crate::chat::decision;
+use crate::chat::decision::{self, Expiry};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow, ensure};
 use serde_json::{Map, Value, json};
+use std::time::Instant;
 use tokio::sync::oneshot;
 
 pub(super) struct Asked {
     reply: oneshot::Sender<Result<Value>>,
+    at: Instant,
 }
 
 impl Actor {
@@ -53,7 +55,7 @@ impl Actor {
             Event::DecisionAsked,
             Map::from_iter([("options".into(), decision::choices(&card).len().into())]),
         );
-        self.asked.insert(card.id, Asked { reply });
+        self.asked.insert(card.id, Asked { reply, at: Instant::now() });
     }
 
     pub(super) fn expire_abandoned_decisions(&mut self) {
@@ -62,16 +64,20 @@ impl Actor {
             return;
         }
         for id in gone {
-            self.asked.remove(&id);
+            let Some(asked) = self.asked.remove(&id) else { continue };
             decision::expire(&self.hub, &id);
+            // The call's own timeout drops it at WAIT; anything earlier is the agent cancelling.
+            let why = if asked.at.elapsed() >= decision::WAIT { Expiry::Timeout } else { Expiry::Cancelled };
+            why.capture(&self.hub);
         }
         self.continue_after_decision();
     }
 
-    pub(super) fn expire_decisions(&mut self, reason: &str) {
+    pub(super) fn expire_decisions(&mut self, why: Expiry) {
         for (id, asked) in std::mem::take(&mut self.asked) {
             decision::expire(&self.hub, &id);
-            let _ = asked.reply.send(Err(anyhow!("the choice expired: {reason}")));
+            let _ = asked.reply.send(Err(anyhow!("the choice expired: {}", why.text())));
+            why.capture(&self.hub);
         }
         self.continue_after_decision();
     }
@@ -120,6 +126,7 @@ impl Actor {
             decision::expire(&self.hub, id);
             data["status"] = "failed".into();
             self.hub.set_entry(&user.id, &data);
+            analytics::capture(&self.hub, Event::DecisionFailed, Map::new());
             self.continue_after_decision();
             return Err(anyhow!("the call stopped waiting before receiving the choice"));
         }
@@ -152,7 +159,7 @@ impl Actor {
         match entry.data["from"].as_str() {
             Some("host") => return false,
             Some(_) => {
-                self.expire_decisions("the user sent a different message");
+                self.expire_decisions(Expiry::OtherMessage);
                 return false;
             }
             None => {}
@@ -171,7 +178,7 @@ impl Actor {
                 }
             }
         }
-        self.expire_decisions("the user sent a different message");
+        self.expire_decisions(Expiry::OtherMessage);
         false
     }
 }

@@ -44,9 +44,11 @@ test('choice buttons preserve numeric labels and show the same answer after a la
     const replies = history.entries.filter((e) => e.kind === 'user' && e.data.from === 'decision')
     expect(replies).toHaveLength(1)
     expect(replies[0].turn).toBe(decision?.turn)
-    await api(page, 'send', { botId, text: 'ASK Wait for the build?|Yes|No' })
+    await api(page, 'send', { botId, text: `ASK Wait for the build?|Yes|${'x'.repeat(200)}` })
     const expiring = page.locator('.decision-card').last()
     await expect(expiring.locator('button.decision-option')).toHaveCount(2)
+    // A 200-character option with no spaces wraps inside the card instead of widening it.
+    expect(await expiring.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
     await api(page, 'stop', { botId })
     await expect(expiring.locator('button.decision-option')).toHaveCount(0)
     await expect(expiring).toContainText('No answer — the bot moved on')

@@ -174,7 +174,7 @@ impl Actor {
             return;
         }
         self.stop_requested = true;
-        self.expire_decisions("the user stopped the turn");
+        self.expire_decisions(crate::chat::decision::Expiry::Stopped);
         self.cancel_deadline.get_or_insert_with(|| Instant::now() + CANCEL_GRACE);
         self.files.cancel();
         let ids: Vec<String> = self.perms.keys().cloned().collect();

@@ -231,14 +231,14 @@ impl App {
             }
             KeyCode::F(n @ 1..=12) if !roster_page => {
                 if let Some((id, option)) = self
-                    .pending()
+                    .pending_of(Kind::Decision)
                     .and_then(|e| e.choices().get(usize::from(n - 1)).cloned().map(|option| (e.id.clone(), option)))
                 {
                     self.answer(&id, &option);
                 }
             }
             KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N'))
-                if !roster_page && self.pending().is_some_and(|e| e.kind == Kind::Permission) =>
+                if !roster_page && self.pending_of(Kind::Permission).is_some() =>
             {
                 self.answer_kind(c);
             }

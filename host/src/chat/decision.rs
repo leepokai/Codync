@@ -137,6 +137,47 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
         .map_err(|_| anyhow!("the bot stopped before acknowledging the choice"))?
 }
 
+/// Why a choice card stopped waiting; the `reason` of `decision_expired` (never the question or its options).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Expiry {
+    /// Four and a half minutes passed without an answer.
+    Timeout,
+    /// The agent cancelled its tool call.
+    Cancelled,
+    /// The user stopped the turn.
+    Stopped,
+    /// The turn ended with the card unanswered.
+    TurnEnded,
+    /// The user sent a message that isn't one of the options.
+    OtherMessage,
+    /// The host restarted while the card waited.
+    Restart,
+}
+
+impl Expiry {
+    /// What the waiting tool call is told.
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::Timeout => "the card expired after four and a half minutes without an answer",
+            Self::Cancelled => "the call was cancelled",
+            Self::Stopped => "the user stopped the turn",
+            Self::TurnEnded => "the turn ended",
+            Self::OtherMessage => "the user sent a different message",
+            Self::Restart => "the host restarted",
+        }
+    }
+
+    /// Records the expiry, content-free.
+    pub fn capture(self, hub: &Hub) {
+        crate::analytics::capture(
+            hub,
+            crate::analytics::Event::DecisionExpired,
+            serde_json::Map::from_iter([("reason".into(), json!(self))]),
+        );
+    }
+}
+
 pub fn expire(hub: &Hub, entry_id: &str) {
     let Some(mut card) = hub.store.entry(entry_id).filter(is_card) else { return };
     if Status::of(&card.data) == Some(Status::Pending) {

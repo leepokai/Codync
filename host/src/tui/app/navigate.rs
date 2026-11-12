@@ -119,7 +119,7 @@ impl App {
     }
 
     pub(super) fn answer_kind(&mut self, key: char) {
-        let Some(e) = self.pending() else { return };
+        let Some(e) = self.pending_of(super::model::Kind::Permission) else { return };
         let (entry, opts) = (e.id.clone(), e.options());
         let want: &[&str] = match key {
             'y' => &["allow_once", "allow_always"],

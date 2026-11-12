@@ -50,6 +50,10 @@ pub enum Event {
     PermissionAnswered,
     DecisionAsked,
     DecisionAnswered,
+    /// A choice card stopped waiting unanswered (`reason`: `chat::decision::Expiry`).
+    DecisionExpired,
+    /// The user's choice was saved but its tool call had already stopped waiting.
+    DecisionFailed,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -174,6 +178,8 @@ impl Event {
             Self::PermissionAnswered => "permission_answered",
             Self::DecisionAsked => "decision_asked",
             Self::DecisionAnswered => "decision_answered",
+            Self::DecisionExpired => "decision_expired",
+            Self::DecisionFailed => "decision_failed",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",

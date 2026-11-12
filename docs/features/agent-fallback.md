@@ -87,8 +87,9 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
   or model forgets its session.
 - **What the next agent hears**, before the turn's messages (`fallback::carry`), decided once its session is up. Only
   the user's messages and the bot's replies count:
-  - a new session (also when its parked session won't load): a recap of the chat (the last summary of the session it
-    takes over from, the latest 12 messages, the open plan, a `search_history` bookmark);
+  - a new session (also when its parked session won't load): a recap of the chat — the turn's ledger (below), the
+    last summary of the session it takes over from, as many messages as the new model's window holds, the open plan and
+    a `search_history` bookmark;
   - a session it had: a catch-up of what was said since it left (an agent that never started keeps its mark);
   - and when agents failed this turn: who stopped last and why, then each failed agent's tool calls, the messages it
     sent and its last note, with "check what's already done before you redo any step". It follows a handoff the user
@@ -101,6 +102,31 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
 - **Going back.** Each turn starts on the first step that isn't resting, so the bot goes back on its first turn after
   the reset, never mid-turn; after signing in to a signed-out agent, on its next message. Switch back (`switchBack`)
   clears its own agent's rest and moves an idle bot now.
+
+## The handover ledger
+
+The recap starts with a ledger of what the last turn left behind, gathered by rule from the chat alone — no model call,
+so it always runs and costs nothing (`fallback::carry::ledger`):
+
+- **What the user asked for**, the newest messages that carry a rule (a prohibition, an order, a preference; Chinese
+  and English markers), quoted in their own words.
+- **Paths, addresses and ids** the user named.
+- **Files the turn touched**, with what each call did (`created`, `modified`, `read`), the file's size now and the
+  SHA-256 of its bytes (a file gone or outside the bot's folders reads "unknown", never guessed).
+- **Commands the turn ran**, with the exit status their output ends with (`[exit code: 1]`,
+  `Process exited with code 2`), or that it didn't report one.
+- **Running now**: the bot's dev servers and its routines that are on.
+- **Waiting for the user**: approvals still pending.
+
+The ledger is capped, and so is the rest: the recap takes the new model's window when its agent reports one (about
+three characters a token, a quarter kept for the turn itself), and otherwise about a quarter of a 128k window. Whatever
+doesn't fit is **named, not dropped**: messages the recap leaves out say how many and point at `search_history`, and the
+ledger ends with `Omitted due to budget: N …` and a line per item it couldn't show. The next agent then knows what it
+hasn't seen and can read it again.
+
+The idea of a manifest a fresh agent picks up comes from [oh-my-hermes](https://github.com/mutouann/oh-my-hermes)
+(MIT): its handoff lists the files and commands a task touched so the next agent doesn't start from nothing. This is an
+independent implementation of that idea for Codync's rules (no code copied).
 
 ## The bot sets its own
 

@@ -53,7 +53,7 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let folder = host.home.join("bots").join(&bot).join("workspace");
     std::fs::write(folder.join("primary.limit"), "").unwrap();
 
-    host.reply(&bot, "Fix the login tests").await;
+    host.reply(&bot, "Fix the login tests. Never touch the lockfile.").await;
     let reply = wait_for(&host, &bot, "reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
     assert_eq!(reply["data"]["text"], "standin answered");
     let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
@@ -140,6 +140,12 @@ async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_s
     let last = last_prompt(&host, &bot, "primary");
     assert!(last.contains("<handoff>") && !last.contains("<catch_up>"), "{last}");
     assert!(last.contains("Fix the login tests") && last.contains("\"standin answered\""), "{last}");
+    // The handoff carries the ledger: the user's own rules, quoted, and the files the last turn touched.
+    assert!(last.contains("<ledger>"), "the ledger goes with the recap: {last}");
+    let ledger = &last[last.find("<ledger>").unwrap()..last.find("</ledger>").unwrap()];
+    assert!(ledger.contains("Files this turn touched"), "the files the last turn touched: {ledger}");
+    assert!(ledger.contains("a.txt (read"), "with their reason: {ledger}");
+    assert!(!ledger.contains("\"standin answered\""), "the ledger is not a second copy of the chat");
 
     // After New session, no agent is told what came before it.
     std::fs::write(folder.join("primary.limit"), "").unwrap();

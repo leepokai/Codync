@@ -232,7 +232,14 @@ impl Actor {
             .last_of_kind(&main, EntryKind::Plan, oldest.max(fresh))
             .map(|e| crate::chat::handoff::plan_text(&e.data));
         let bookmark = entries.last().map(|e| e.id.as_str());
-        Some(carry::recap(&fallback::name(from), summary.as_deref(), &said, plan.as_deref(), bookmark))
+        // The ledger of the last turn, and the window this model has: a wider one repeats more of the chat, and
+        // whatever the ledger can't fit is named as omitted rather than dropped.
+        let ledger = carry::ledger::build(&self.hub, bot);
+        let window = super::compaction::context_window(&self.hub.store, bot).map(|tokens| {
+            // About four characters a token, less a quarter for the turn itself.
+            usize::try_from(tokens).unwrap_or(usize::MAX).saturating_mul(3)
+        });
+        Some(carry::recap(&fallback::name(from), summary.as_deref(), &said, plan.as_deref(), bookmark, &ledger, window))
     }
 
     /// What the failing attempt did: its tool calls, the messages it sent, its last words.

@@ -502,7 +502,8 @@ export class BotStore extends BotSync {
   }
 
   async loadOlder(botId: string) {
-    if (!this.client || this.historyComplete.has(botId)) return
+    // Held while everything is fetched again, like `canLoadOlder`.
+    if (!this.client || this.refetched || this.historyComplete.has(botId)) return
     const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)

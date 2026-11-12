@@ -455,7 +455,8 @@ extension BotStore {
     }
 
     public func loadOlder(_ botId: String) async {
-        guard let client, !historyComplete.contains(botId) else { return }
+        // Held while everything is fetched again, like `canLoadOlder`.
+        guard let client, refetched == nil, !historyComplete.contains(botId) else { return }
         let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }

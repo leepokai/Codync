@@ -68,6 +68,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // What a client's copy of the conversation was synced under; it holds across versions.
+                "schema": crate::store::SCHEMA,
                 // Whether `installHostUpdate` can update this computer, from here or a phone.
                 "canUpdate": tokio::task::spawn_blocking(crate::update::installable).await?,
                 // The latest release, so a phone can say whether this computer is current (null: unknown).

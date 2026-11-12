@@ -46,8 +46,12 @@ What their issues taught, and the answer here:
   (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode
   where the step's agent has it (`fallback::effective`). Its mode too ([agent modes](marketplace.md#agent-modes)):
-  `auto` is each step's own Auto mode, and a step whose agent lacks any other mode fails the turn rather than work in
-  its default.
+  `auto` is each step's own Auto mode. A fallback step whose agent lacks any other mode runs in its stand-in
+  (`Modes::stand_in`): the most permissive of its modes that is no more permissive than the bot's, ranked read-only
+  and plan < ask, manual and default (Claude's Manual) < auto-edit < Auto < bypass and full access, a mode it can't place counting as
+  the most permissive (never a stand-in; a bot mode it can't place gets no stand-in at all), with an info notice
+  naming it. Without one, or when the agent refuses the
+  switch, the turn moves on (`modeMissing`). The bot's own agent (step 0) without its mode fails the turn instead.
 
 ## When the bot moves on (`fallback::reason`)
 
@@ -62,6 +66,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
 | `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
+| `modeMissing` | A fallback step lacks the bot's mode and any no more permissive than it, or refuses the switch (`FailureKind::ModeMissing`) | None, the same as `modelMissing` |
 
 Stop, refusal, output or step limits, a routine's time limit, compactions and uncategorized internal errors don't move
 on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a refusal with the error in

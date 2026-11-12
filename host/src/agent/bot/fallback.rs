@@ -43,8 +43,9 @@ pub(super) struct Relay {
     attempt: Option<Attempt>,
     /// Agents (their `rest::account`) this turn already failed on.
     tried: Vec<String>,
-    /// Agents (their `rest::account`) that lack their step's model: skipped until the bot's settings change.
-    no_model: Vec<String>,
+    /// Agents (their `rest::account`) that can't run their step as set up (no such model or mode): skipped, and the
+    /// turn moves on, without resting them.
+    skipped: Vec<String>,
     /// Agents this turn left signed out, in order, whose sign-in cards are in the chat. When no agent can answer, the
     /// first one's card holds the turn's messages.
     signed_out: Vec<String>,
@@ -81,7 +82,7 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
 
 impl Actor {
     /// The step of the agent the bot is on (its own: 0).
-    fn step(&self) -> Option<usize> {
+    pub(super) fn step(&self) -> Option<usize> {
         fallback::step_of(&self.base, &self.cfg.backend)
     }
 
@@ -91,7 +92,7 @@ impl Actor {
         (0..fallback::steps(&self.base)).find(|&s| {
             let account = fallback::account(&self.base, s);
             !self.relay.tried.contains(&account)
-                && !self.relay.no_model.contains(&account)
+                && !self.relay.skipped.contains(&account)
                 && rest::get(&self.hub.store, &account, now).is_none()
         })
     }
@@ -346,8 +347,8 @@ impl Actor {
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &account);
             }
-            if reason == Reason::ModelMissing {
-                self.relay.no_model.push(account.clone());
+            if matches!(reason, Reason::ModelMissing | Reason::ModeMissing) {
+                self.relay.skipped.push(account.clone());
             }
             self.relay.tried.push(account);
             let failed = start_error.as_ref().unwrap_or(error);
@@ -481,8 +482,8 @@ impl Actor {
     /// idle bot off an agent it no longer uses.
     pub(super) async fn settle_chain(&mut self, old: &BotConfig) {
         self.forget_changed(old);
-        // A model the agent lacked may be one the bot no longer asks for.
-        self.relay.no_model.clear();
+        // A model or mode the agent lacked may be one the bot no longer asks for.
+        self.relay.skipped.clear();
         if self.step().is_none() && self.turn.is_none() {
             let from = self.cfg.clone();
             self.idle_relay();

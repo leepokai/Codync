@@ -161,6 +161,7 @@ fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::
             FailureKind::Timeout => "timeout",
             FailureKind::Exited => "exited",
             FailureKind::NoModel => "no_model",
+            FailureKind::ModeMissing => "mode_missing",
         };
         return (kind, None);
     }

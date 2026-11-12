@@ -94,6 +94,8 @@ pub enum FailureKind {
     Exited,
     /// The agent wouldn't take the bot's model.
     NoModel,
+    /// The agent doesn't have the mode the bot works in.
+    ModeMissing,
 }
 
 #[derive(Debug)]

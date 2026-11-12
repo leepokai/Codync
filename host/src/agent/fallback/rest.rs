@@ -77,7 +77,7 @@ pub fn record(store: &Store, account: &str, reason: Reason, now: i64, resets_at:
     // An hour after its last rest ended, a failure starts the backoff over.
     let failures = before.filter(|r| now - r.until < BACKOFF[3]).map_or(0, |r| r.failures) + 1;
     let wait = match reason {
-        Reason::ModelMissing => return None,
+        Reason::ModelMissing | Reason::ModeMissing => return None,
         Reason::UsageLimit => resets_at.filter(|t| *t > now).map_or(UNKNOWN_RESET, |t| t - now),
         Reason::OutOfCredits => OUT_OF_CREDITS,
         Reason::SignedOut if crate::agent::backends::harness(backend_of(account)).is_some() => SIGNED_OUT,
@@ -160,6 +160,7 @@ mod tests {
         assert_eq!(record(&store, "gemini", Reason::Overloaded, 0, None).map(|r| r.until), Some(MINUTE));
         assert!(!clear(&store, "cursor"));
         assert_eq!(record(&store, "cursor", Reason::ModelMissing, 0, None), None);
+        assert_eq!(record(&store, "opencode", Reason::ModeMissing, 0, None), None);
 
         let mut custom: crate::store::BotConfig =
             serde_json::from_value(serde_json::json!({"id": "b", "name": "B", "backend": "custom", "command": "a"}))

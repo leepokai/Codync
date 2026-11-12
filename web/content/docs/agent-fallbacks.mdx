@@ -22,7 +22,7 @@ Each agent can appear once, and the bot's own agent isn't offered. The info butt
 
 In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
 
-Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A mode only the bot's own agent has (Claude Code's Plan, say) doesn't carry over: a fallback without it doesn't take the turn, and the chat says why.
+Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A fallback without the bot's mode (Claude Code's Plan, say) works in its own closest mode that is no less careful, such as Codex's Read-only, and the chat says which. A fallback with no mode that careful, or one that won't switch to it, doesn't take the turn: the next one does.
 
 > **Note:** A fallback that runs on an API key instead of a subscription costs money with that provider.
 
@@ -40,6 +40,7 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 | is signed out | it's signed in again (Codync also looks again after an hour, or after 10 minutes for an agent it doesn't know by name) |
 | couldn't start | 5 minutes have passed |
 | doesn't have this bot's model | you change the bot's settings (this one is about the bot's setup, so only this bot skips that step) |
+| doesn't have this bot's mode | you change the bot's settings (likewise only this bot) |
 
 A rest also ends early when any turn on that agent finishes normally. **Switch back** ends the rest of the bot's own agent.
 

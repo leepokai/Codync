@@ -125,6 +125,86 @@ async fn a_fallback_without_the_bots_mode_doesnt_take_the_turn() {
     assert!(!standin.iter().any(|r| r["method"] == "session/prompt"), "the fallback never works in its own mode");
 }
 
+fn moded(args: &str) -> String {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/named_mode_agent.py");
+    format!("{} {args}", common::python_agent(&script))
+}
+
+/// A bot in `mode` on agent `primary` (`named_mode_agent.py` args) with `fallbacks`, the files in `blocked` made in
+/// its folder, after its first message.
+async fn moded_bot(host: &Host, mode: &str, primary: &str, fallbacks: Value, blocked: &[&str]) -> String {
+    let bot = json!({"name": "Moded", "backend": "custom", "command": moded(primary), "connectors": [],
+        "notify": false, "permission": "ask", "mode": mode});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    for file in blocked {
+        std::fs::write(folder.join(file), "").unwrap();
+    }
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests"})).await;
+    bot
+}
+
+fn prompted(host: &Host, bot: &str, agent: &str) -> bool {
+    host.log(bot, &format!("{agent}.jsonl")).iter().any(|r| r["method"] == "session/prompt")
+}
+
+#[tokio::test]
+async fn a_step_without_the_bots_mode_lets_the_next_one_answer() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")},
+        {"backend": "gemini", "command": moded("third read-only agent")}]);
+    let bot = moded_bot(&host, "read-only", "primary read-only agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode read-only").await;
+    assert!(!prompted(&host, &bot, "standin"));
+}
+
+#[tokio::test]
+async fn a_step_without_the_bots_mode_runs_in_its_freest_one_no_freer() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin agent read-only agent-full-access")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the stand-in's answer", |e| e["data"]["text"] == "standin mode read-only").await;
+    let notice = wait_for(&host, &bot, "a notice", |e| {
+        e["data"]["text"].as_str().is_some_and(|t| t.contains("doesn't have plan") && t.contains("as read-only"))
+    })
+    .await;
+    assert_eq!(notice["data"]["style"], "info", "{notice}");
+}
+
+#[tokio::test]
+async fn a_step_with_only_freer_modes_moves_on_to_the_next() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin build agent")},
+        {"backend": "gemini", "command": moded("third agent plan")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode plan").await;
+    assert!(!prompted(&host, &bot, "standin"), "the fallback never works more freely than the bot");
+}
+
+#[tokio::test]
+async fn a_step_that_refuses_the_switch_moves_on_to_the_next() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin agent read-only")},
+        {"backend": "gemini", "command": moded("third agent plan")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit", "standin.stuck"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode plan").await;
+    assert!(!prompted(&host, &bot, "standin"));
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history.to_string().contains("runs this bot as"), "no stand-in notice for a refused switch: {history}");
+}
+
+#[tokio::test]
+async fn the_bots_own_agent_without_its_mode_fails_the_turn() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin plan")}]);
+    let bot = moded_bot(&host, "plan", "primary read-only agent", fallbacks, &[]).await;
+    let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    let text = failed["data"]["text"].as_str().unwrap();
+    assert!(text.contains("doesn't have plan, the mode this bot works in"), "{text}");
+    assert!(!prompted(&host, &bot, "primary") && !prompted(&host, &bot, "standin"), "the chain doesn't move on");
+}
+
 #[tokio::test]
 async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;

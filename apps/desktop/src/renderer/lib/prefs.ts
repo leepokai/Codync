@@ -17,6 +17,15 @@ function stored<T>(raw: string | null, fallback: T): T {
   }
 }
 
+/** A boolean saved under an older preference key, so renaming a key doesn't ask its question again. */
+function savedChoice(oldKey: string): boolean {
+  try {
+    return localStorage.getItem(oldKey) === 'true'
+  } catch {
+    return false
+  }
+}
+
 /** A per-window preference in localStorage (kit's `@AppStorage`), observable by views. */
 export function pref<T>(key: string, fallback: T) {
   const listeners = new Set<() => void>()
@@ -81,8 +90,8 @@ export const prefs = {
   /** The roster marks each bot with its agent's logo while the bots run more than one agent. */
   agentLogos: pref('showAgentLogos', true),
   onboardingDone: pref('macAccountOnboardingCompleted', false),
-  /** Chose to go on without signing in; signing in ends it. */
-  withoutAccount: pref('withoutAccount', false),
+  /** Chose to go on without signing in; signing in ends it. A choice saved under the old key (`accountWelcomeSkipped`) still counts. */
+  withoutAccount: pref('withoutAccount', savedChoice('accountWelcomeSkipped')),
   computerAccessSetup: pref<'ready' | 'later' | null>('computerAccessSetup', null),
   starAsk: pref<StarAsk>('githubStarAsk', { kind: 'never' }),
   /** Prompts this computer delivered, voice calls aside; they bring the second star ask. */

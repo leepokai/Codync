@@ -24,7 +24,7 @@ mod turns;
 pub use event::Event;
 pub use lifecycle::{
     DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, SleepOutcome, Via, cloud_keeper_checked, cloud_sleep_asked,
-    device_paired, discovery_failed, host_started, join_from_phone_answered, phone_connected,
+    device_paired, discovery_failed, host_started, join_from_phone_answered, phone_connected, remote_screen_finished,
 };
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;

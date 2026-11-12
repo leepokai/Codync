@@ -13,7 +13,7 @@ Codync/
 │   │   ├── hub.rs, store/     # Shared state + event fan-out / SQLite persistence (schema, model, bots, entries, devices)
 │   │   ├── service/           # Data dir, launchd/systemd/Windows install, keep-awake
 │   │   ├── usage/, mcp.rs     # usage/: plan limits from each agent; mcp.rs: built-in stdio MCP servers; mcp/remote.rs: remote connector proxy
-│   │   ├── screen/            # Remote screen: helper protocol, helper socket, phone viewers, bot computer use (cua-driver)
+│   │   ├── screen/            # Remote screen: helper protocol, helper socket, viewers (phones, desktop app), bot computer use (cua-driver)
 │   │   ├── api/               # Dispatch (mod.rs), HTTP/SSE routes (http.rs, events.rs), method groups (bots.rs, host.rs, marketplace.rs, remote.rs), caller permissions (devices.rs)
 │   │   ├── agent/             # ACP client, harness discovery, registry, sign-in, setup PTYs, bot actor, new bot defaults (new_bot.rs)
 │   │   ├── chat/              # Groups, bot-to-bot requests, prompt snapshots, memory
@@ -56,7 +56,7 @@ Codync/
 │   │   └── tools/             # symbols.py (SF Symbol stand-ins), launcher_icon.py, agent_icons.py
 │   ├── screen-macos/          # macOS screen helper (Xcode Screen target)
 │   ├── screen-macos-tests/    # Swift package testing the helper's socket lifecycle and candidate rules
-│   └── screen-linux/          # Linux portal/GStreamer screen helper
+│   └── screen-linux/          # Linux screen helper: portals or a plain X display, GStreamer
 ├── cloud/                     # Account API + encrypted relay Worker and Durable Object
 │   ├── src/
 │   ├── migrations/            # D1 migrations
@@ -80,7 +80,7 @@ Codync/
 - `iOS` (`apps/ios/`) — iOS app
 - `Screen` (`apps/screen-macos/`) — Codync Screen: capture, input and WebRTC for Remote screen, embedded in the macOS desktop app (`Contents/Library/LoginItems`); starts the computer-use driver it carries in `Contents/Helpers`
 - `apps/screen-macos-tests/` — native helper tests: socket lifecycle and candidate rules (`swift test --package-path apps/screen-macos-tests --scratch-path build/dd/screen-macos-tests`)
-- `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals), the Linux Remote screen helper
+- `apps/screen-linux/` — `codync-screen` (Rust, GStreamer + xdg portals, or `ximagesrc` + XTest on a plain X display: `backend.rs`, `x11/`), the Linux Remote screen helper
 - `Widgets` (`apps/ios/Widgets/`) — usage widget + bot Live Activity (bundle id `com.pokai.Codync.ios.LiveActivity`)
 - `apps/android/` — Android app (`com.pokai.Codync.android`, Dev `.dev`; Gradle modules `app`, `core`, `design`; CI `.github/workflows/android.yml`)
 - `CodyncKit` (`apps/ios/Kit/`) — the iPhone app's Swift package: `CodyncKit` + `CodyncUI` libraries (tests: `xcodebuild test -scheme CodyncKit-Package` on an iOS simulator)

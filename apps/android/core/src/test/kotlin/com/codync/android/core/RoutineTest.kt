@@ -56,10 +56,11 @@ class RoutineTest {
         assertTrue(null.canEdit(""))
     }
 
-    @Test fun `timeout reads as a human duration`() {
-        for ((seconds, text) in listOf("3600" to "1 hour", "7200" to "2 hours", "1800" to "30 minutes", "60" to "1 minute",
-            "90" to "90 seconds", "1" to "1 second", "0" to "0 seconds", "abc" to "abcs")) {
-            assertEquals(text, RoutineDraft(timeoutSeconds = seconds).timeoutText)
+    @Test fun `timeout reads in the largest whole unit`() {
+        for ((seconds, parts) in listOf("3600" to (1L to TimeoutUnit.Hour), "7200" to (2L to TimeoutUnit.Hour), "1800" to (30L to TimeoutUnit.Minute),
+            "60" to (1L to TimeoutUnit.Minute), "90" to (90L to TimeoutUnit.Second), "1" to (1L to TimeoutUnit.Second),
+            "0" to (0L to TimeoutUnit.Second), "abc" to null)) {
+            assertEquals(parts, RoutineDraft(timeoutSeconds = seconds).timeoutParts)
         }
     }
 
@@ -71,5 +72,7 @@ class RoutineTest {
         assertEquals("Last run failed", RoutineListing(listOf(routine), listOf(failed)).summary(routine))
         assertEquals("Schedule needs attention", RoutineListing(emptyList(), emptyList()).summary(routine.copy(lastError = "invalid schedule")))
         assertEquals("Every day", RoutineListing(emptyList(), emptyList()).summary(routine))
+        assertEquals("<Every day>", RoutineListing(emptyList(), emptyList()).summary(routine) { "<$it>" })
+        assertEquals("<Last run <failed>>", RoutineListing(listOf(routine), listOf(failed)).summary(routine) { "<$it>" })
     }
 }

@@ -123,6 +123,7 @@ host answers and sends it once the host is up.
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
 | `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
+| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
@@ -165,7 +166,7 @@ host answers and sends it once the host is up.
 | `account` | account sheet | account panel | — |
 | `pairing` | pair a computer after setup (first run: `onboarding_step_viewed`) | pair a phone | pair overlay |
 | `voice_settings` | voice chat settings | voice chat settings | — |
-| `remote_screen` | remote screen | — | — |
+| `remote_screen` | remote screen | another computer's screen (sheet) | — |
 | `computer_access` | — | computer access | — |
 | `help` | — | — | keys overlay |
 | `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |

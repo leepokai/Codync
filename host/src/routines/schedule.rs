@@ -113,11 +113,13 @@ impl Trigger {
             Self::Interval { seconds } => format!("Every {seconds} seconds"),
             Self::Once { at } => DateTime::from_timestamp_millis(*at)
                 .map_or_else(|| "Once".into(), |d| format!("Once at {}", d.to_rfc3339())),
-            Self::Cron { expression, time_zone } => format!(
-                "{} · {time_zone}",
-                Cron::from_str(expression)
-                    .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
-            ),
+            Self::Cron { expression, time_zone } => {
+                let phrase = calendar_phrase(expression).unwrap_or_else(|| {
+                    Cron::from_str(expression)
+                        .map_or_else(|_| expression.clone(), |cron| cron.describe().trim_end_matches('.').to_owned())
+                });
+                format!("{phrase} · {time_zone}")
+            }
             Self::Webhook => "When a webhook fires".into(),
             Self::Event { source, event, .. } => format!("{source} · {event}"),
         }
@@ -134,6 +136,34 @@ impl Trigger {
                     payload[key].as_str() == Some(value)
                 }
             })
+    }
+}
+
+const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/// The editor's calendar styles in fixed sentences the clients' catalogs translate
+/// (`Every day at 09:00, 18:00`, `Every Monday at 09:00`). Anything else stays on croner's sentence.
+fn calendar_phrase(expression: &str) -> Option<String> {
+    let fields: Vec<&str> = expression.split_whitespace().collect();
+    let [minute, hour, day, "*", weekday] = fields.as_slice() else { return None };
+    let minute = minute.parse::<u8>().ok().filter(|minute| *minute <= 59)?;
+    if [*hour, *day, *weekday] == ["*"; 3] {
+        return Some(format!("Every hour at minute {minute}"));
+    }
+    let times = hour
+        .split(',')
+        .map(|hour| hour.parse::<u8>().ok().filter(|hour| *hour <= 23).map(|hour| format!("{hour:02}:{minute:02}")))
+        .collect::<Option<Vec<_>>>()?
+        .join(", ");
+    match (*day, *weekday) {
+        ("*", "*") => Some(format!("Every day at {times}")),
+        ("*", "1-5") => Some(format!("Every weekday at {times}")),
+        ("*", weekday) => Some(format!("Every {} at {times}", WEEKDAYS.get(weekday.parse::<usize>().ok()?)?)),
+        (day, "*") => {
+            let day = day.parse::<u8>().ok().filter(|day| (1..=31).contains(day))?;
+            Some(format!("Every month on day {day} at {times}"))
+        }
+        _ => None,
     }
 }
 
@@ -160,6 +190,25 @@ mod tests {
             trigger.validate(now).unwrap();
             let expected = DateTime::parse_from_rfc3339(expected).unwrap().timestamp_millis();
             assert_eq!(trigger.next(now).unwrap(), Some(expected), "{expression}");
+        }
+    }
+
+    #[test]
+    fn editor_styles_read_as_fixed_sentences() {
+        let described = |expression: &str| {
+            Trigger::Cron { expression: expression.into(), time_zone: "Europe/Rome".into() }.description()
+        };
+        assert_eq!(described("0 9 * * *"), "Every day at 09:00 · Europe/Rome");
+        assert_eq!(described("0 9,18 * * *"), "Every day at 09:00, 18:00 · Europe/Rome");
+        assert_eq!(described("0 09 * * *"), "Every day at 09:00 · Europe/Rome");
+        assert_eq!(described("47 * * * *"), "Every hour at minute 47 · Europe/Rome");
+        assert_eq!(described("30 8 * * 1-5"), "Every weekday at 08:30 · Europe/Rome");
+        assert_eq!(described("0 9 * * 1"), "Every Monday at 09:00 · Europe/Rome");
+        assert_eq!(described("0 9 * * 0"), "Every Sunday at 09:00 · Europe/Rome");
+        assert_eq!(described("15 23 31 * *"), "Every month on day 31 at 23:15 · Europe/Rome");
+        for other in ["*/15 * * * *", "0 9 * * 1,3", "0 9 1 6 *", "0 9 1 * 1"] {
+            let text = described(other);
+            assert!(text.ends_with(" · Europe/Rome") && !text.starts_with("Every day at"), "{text}");
         }
     }
 

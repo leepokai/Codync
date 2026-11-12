@@ -116,6 +116,10 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
     return out
 }
 
+/** The text find searches (iOS `ThreadView.findable`): each message's own words, not separators, notices or exchanges. */
+internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
+    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to it.entry.text } }
+
 /** A chat's time separator: Today 3:27 AM. */
 @Composable internal fun TimeSeparator(at: Long) {
     Text(RelativeTime.separator(at, tr("Today"), tr("Yesterday")), Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), style = Type.footnote,

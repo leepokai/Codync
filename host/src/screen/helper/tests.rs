@@ -209,3 +209,23 @@ async fn preparing_a_viewer_uses_one_helper_generation_and_its_capabilities() {
     let fresh = screen.prepare("phone", IceConfig::default(), true).unwrap();
     assert_eq!(fresh["trickle"], false);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_helper_that_keeps_exiting_is_retried_less_often_and_reported_once_per_streak() {
+    let mut restarts = Restarts::default();
+    let waits: Vec<u64> = (0..6).map(|_| restarts.next_wait().as_secs()).collect();
+    assert_eq!(waits, [1, 2, 4, 8, 16, 30]);
+    let quick = Duration::from_secs(1);
+    assert!(!restarts.exited(quick));
+    assert!(!restarts.exited(quick));
+    assert!(restarts.exited(quick), "the third quick exit starts the streak");
+    assert!(!restarts.exited(quick), "a streak is reported once");
+    let waits: Vec<u64> = (0..3).map(|_| restarts.next_wait().as_secs()).collect();
+    assert_eq!(waits, [60, 120, 120]);
+    assert!(!restarts.exited(Duration::from_mins(1)), "running a while ends the streak");
+    assert_eq!(restarts.next_wait().as_secs(), 30);
+    assert!(!restarts.exited(quick));
+    assert!(!restarts.exited(quick));
+    assert!(restarts.exited(quick), "a new streak is reported again");
+}

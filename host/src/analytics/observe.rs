@@ -29,12 +29,13 @@ const FIXED: [(&str, Event, &str, &str); 14] = [
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 5] = [
+const SETTINGS: [(&str, &str); 6] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
     ("setAssistants", "cloud_assistants"),
+    ("setAutoOrder", "auto_order"),
 ];
 
 /// The event an API call stands for, with its properties, read before the call runs.

@@ -36,6 +36,7 @@ pub enum After {
     /// `track`: fire and forget; analytics never surfaces an error.
     Tracked,
     Analytics,
+    AutoOrder,
     History(String),
     Dirs(String),
     WorkspaceSelected(String),

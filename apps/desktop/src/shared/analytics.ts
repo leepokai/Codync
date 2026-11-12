@@ -19,6 +19,7 @@ export type Screen =
   | 'computer_access'
   | 'library'
   | 'artifact'
+  | 'remote_screen'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
@@ -57,6 +58,8 @@ export type AnalyticsEvent =
   | { event: 'voice_note_played'; outcome: 'played' }
   | { event: 'voice_note_played'; outcome: 'failed'; error: 'load' | 'playback' }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'conversation_find_opened' }
+  | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }

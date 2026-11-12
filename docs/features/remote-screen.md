@@ -1,6 +1,6 @@
 # Remote screen
 
-Remote screen lets an authorized phone view and control a computer. Signaling travels through the end-to-end encrypted host API; video and input use WebRTC, including when a TURN server forwards the encrypted packets.
+Remote screen lets an authorized phone, or the desktop app, view and control a computer. Signaling travels through the end-to-end encrypted host API; video and input use WebRTC, including when a TURN server forwards the encrypted packets.
 
 ## Connection path
 
@@ -37,14 +37,14 @@ back to the bots, then reconnects when the app returns.
 
 - `host/src/screen/` coordinates access to the local helper and owns viewer sessions. Another device cannot renegotiate or close a session it does not own.
 - `apps/screen-macos/` is the macOS capture/input helper (Xcode `Screen` target, `CodyncScreen.app`). The desktop app bundles it and registers it through `SMAppService` (`apps/desktop/src/main/screen.ts`); it is responsible for the OS permissions, including those of the computer-use driver it starts.
-- `apps/screen-linux/` implements the Linux helper using desktop portals and GStreamer, including ICE URL conversion and TURN transport configuration. The host starts it from beside its own executable (then `PATH`). Linux host releases ship `codync-screen` in the same archive (built on Ubuntu 24.04: glibc 2.39+ and GStreamer 1.22+ with the base, good and bad plugins, PipeWire and xdg-desktop-portal at run time); `install.sh`, Homebrew and `codync-host update` put it next to the host.
+- `apps/screen-linux/` implements the Linux helper with GStreamer, including ICE URL conversion and TURN transport configuration. It captures and injects input through the desktop portals; on a plain X server without them (a cloud computer's virtual display) it uses `ximagesrc` and XTest on `$DISPLAY` (`backend.rs`, `x11/`), never another X socket (one may be another user's desktop) and not on a Wayland session. It checks for portals again until it finds them, so a desktop session that starts after the helper still gets them, and setup moves a helper that chose X over to portals that came up later. X needs no permission dialog. An `up` lets go of the modifiers its `down` pressed, and a viewer that leaves mid-press has the button and modifiers let go. The host starts it from beside its own executable (then `PATH`). Linux host releases ship `codync-screen` in the same archive (built on Ubuntu 24.04: glibc 2.39+ and GStreamer 1.22+ with the base, good and bad plugins, PipeWire and xdg-desktop-portal at run time); `install.sh`, Homebrew and `codync-host update` put it next to the host.
 - Helpers communicate locally through `~/.codync/screen.sock`. Updated helpers advertise `trickle` in `status`, emit ordered `candidate {session, candidate}` notifications, and accept the host's `candidate` request. Input uses the `input` and `input-fast` data channels.
 - Linux waits for an in-progress answer before acknowledging that viewer's close, and cancels pending helper requests when the socket ends. A late answer cannot restart closed capture; other viewers can still negotiate and close independently.
 - macOS replies stay bound to the socket that received the request. Closed peers ignore queued input and channel callbacks. The phone retires a failed peer before preparing its replacement and checks peer identity after each native negotiation await.
 - A trickle session accepts one offer and one candidate subscription. Each direction permits 128 candidates of at most 4096 bytes followed by one `complete` event. Candidates include `candidate`, `sdpMLineIndex` and optional `sdpMid`; `type` distinguishes `candidate` and `complete`. The subscription starts with `ready` and may report `error` before ending. It never uses the shared chat broadcast.
 - Both directions buffer candidates until the phone installs its answer. Native candidate additions and upload acknowledgments are awaited in order. Completion follows every candidate; Apple WebRTC records completion at app level because its native API has no usable null-candidate operation. The finite connection deadline remains in place.
 - Overflow and candidate protocol errors end the attempt. Signaling loss ends an unfinished negotiation; once ICE connects or both directions deliver completion (including the phone upload acknowledgment), it detaches the candidate subscription and leaves media and input running. Credentials, Screen authorization and the on/off switch continue to govern the viewer independently. Recovery reserves a fresh session rather than resubscribing, reoffering or replaying an uncertain candidate addition. The phone waits for a ready host channel before spending one of its three recovery attempts; a successful answer alone does not reset that budget. A permanently stopped channel ends recovery with its authorization or update error. Closing, disabling screen access, changing helpers or removing Screen authorization closes media.
-- Android negotiates the same way (`core` `ScreenSignaling`, `ScreenCandidate`, `ScreenRoute`); desktop, terminal UI and Apple Watch have no remote-screen viewer. Their screen-helper management and permission controls are unaffected. Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
+- Android negotiates the same way (`core` `ScreenSignaling`, `ScreenCandidate`, `ScreenRoute`); the desktop app has its own viewer (below); terminal UI and Apple Watch have none. Their screen-helper management and permission controls are unaffected. Cloud and relay forwarding already carry the encrypted subscription and RPC frames; they need no signaling changes.
 - Phone viewers: iOS in `apps/ios/Kit/Sources/CodyncUI/Screen/`. Android keeps the same structure in `apps/android/app/.../Screen*.kt`, with gesture-to-input and viewport logic in `core` (`ScreenControl`, `ScreenViewport`). Both offer hardware H.264 first, High then Constrained Baseline.
 - The Linux helper answers with the packetized H.264 payload the phone offers, feeds the encoder 8-bit 4:2:0 video and timestamps capture on the system clock. It answers before capture starts, so the profile is negotiated before the encoder fixes its output.
 - Screen access is on by default on macOS and on Linux while a graphical session (Wayland or X11) is running; headless servers stay off. Turning it on or off is remembered. Enabling through `setScreenEnabled` requires a loopback caller. Interactive OS permission prompts must be completed on the computer.
@@ -68,8 +68,45 @@ connects or both directions acknowledge completion leaves WebRTC running.
 
 Android core owns `ScreenCandidate` and `ScreenSignaling`; the app's
 `ScreenSession` connects them to native WebRTC. The iOS implementation and
-host/helper contract are covered by PR #40. Desktop, terminal UI and Watch have
-no viewer and receive no client signaling changes here.
+host/helper contract are covered by PR #40.
+
+## Desktop viewer
+
+The desktop app shows another computer's screen in a sheet: the **Screen** button on that computer's heading in the
+sidebar, or on its card in Settings → Computers (not for the computer the app runs on, whose screen is right there).
+`views/screen/ScreenViewer.tsx` draws it; `store/screen-session.ts` holds the WebRTC peer (receive-only H.264, data
+channels `input` and `input-fast`), recovery and renewal like the iPhone's `ScreenSession`.
+
+- **Signaling**: `screenPrepare {relay, trickle: false}`, then `screenOffer` with the complete offer once gathering
+  ends (at most 10 s). `relay` is on for an account computer, reached over the relay's encrypted channel
+  (`main/channel/`), so the host hands out TURN servers; off for an SSH computer on the loopback tunnel, which goes
+  direct only. Complete SDP needs no `screenCandidates` stream on either route.
+- **Mouse**: forwarded as it happens, not as gestures: `down`/`up` with the button, the click count (so a double-click
+  stays one) and the modifiers held, `move` once per frame on `input-fast`, the wheel as `scroll` in pixels.
+- **Keyboard**: a hidden text field holds focus. Named keys and shortcuts go as `key` (from the physical key, so
+  ⌘⌥Z is Z); typing, characters typed with Option or AltGr (`@` on a German keyboard) and input methods (Zhuyin,
+  Pinyin) arrive as `text`. On a Mac viewing Linux or Windows, ⌘
+  acts as Ctrl. Paste sends the local clipboard (`clipboard`) before the shortcut; **Copy from computer** appears
+  when the computer copied text. Escape and Tab go to the computer while you have control; the close button ends the
+  session.
+- **Control**: opening takes over from the bots (`screenTakeover`), like the iPhone opened from Computers; **Hand back
+  to bots** and closing return it. Back live after a failure or a long outage, it asks again if the host handed
+  control back meanwhile. A view-only computer says so.
+- **Other clients**: phones reach a computer's screen from Manage computers and from a chat's **Computer** button,
+  which watches a bot at work before taking over; their computer headings keep only Extensions, since those two
+  entries already reach every computer. The desktop has no chat **Computer** button yet, so a bot at work stops when
+  its computer's screen opens there. The TUI has no viewer.
+
+## Cloud computers
+
+A cloud computer's screen is a desktop of its own: Xvfb on `:20` (1920×1080) with an Xfce session, user units
+`codync-display` and `codync-desktop` of the agents' user `codync-agent`, which the first-boot setup installs with
+GStreamer (x264, libnice) and puts `DISPLAY=:20` in the host's service (`cloud/src/cloud-setup.ts`). The session runs
+on that user's own bus, with the display in its user manager's environment, so the screen helper and the computer-use
+driver read the apps' accessibility tree on the same accessibility bus as the apps. Phones, the
+desktop app and bots all see that desktop. It is never the provider's own desktop (InstaBox's Xvnc on `:1`, Boat's
+Xorg on `:0`): those run as the provider's user, which has passwordless sudo, so handing them to the agents would hand
+them root. Computers made before this have no desktop until they are made again.
 
 ## Cloud setup
 
@@ -89,7 +126,7 @@ References: [Cloudflare credential issuance](https://developers.cloudflare.com/r
 
 ## Verification
 
-Run cloud tests/type checking, host formatting/Clippy/tests, iOS Kit package tests, Android `:core:test` and `:app:testDebugUnitTest`, and builds of the iOS app, the Android app and the macOS `Screen` helper target. Run Linux helper tests in a Linux environment with GStreamer and PipeWire development packages.
+Run cloud tests/type checking, host formatting/Clippy/tests, desktop `npm run typecheck` and `npm test`, iOS Kit package tests, Android `:core:test` and `:app:testDebugUnitTest`, and builds of the iOS app, the Android app and the macOS `Screen` helper target. Run Linux helper tests in a Linux environment with GStreamer and PipeWire development packages.
 
 Live acceptance requires the configured Worker and fresh host/helper/phone builds:
 

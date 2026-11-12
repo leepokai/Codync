@@ -26,7 +26,7 @@ npm run dev -- --cdp   # the worktree's sandbox, DevTools on its port + 10000
 npm run e2e            # in a second shell: e2e/*.spec.ts against that sandbox
 ```
 
-`e2e/sandbox.ts` finds the sandbox from its `sandbox.json` and attaches to its main window; `e2e/smoke.spec.ts` checks the app renders and runs against the sandbox's own host. A spec reaches the main process only through the `window.codync` bridge, as the renderer does. One worker per worktree, since one app runs per sandbox; worktrees run in parallel with each other.
+`e2e/sandbox.ts` finds the sandbox from its `sandbox.json` and attaches to its main window; `e2e/smoke.spec.ts` checks the app renders and runs against the sandbox's own host. A spec reaches the main process only through the `window.codync` bridge, as the renderer does. Keys sent over the DevTools protocol never reach the app menu's shortcuts (⌘F, ⌘G): `e2e/find.spec.ts` picks those menu items through System Events instead, so it runs on macOS only and needs Accessibility access for the terminal running Playwright. Every unpackaged sandbox app is a process named "Electron", so it picks the attached app by the process ID its DevTools protocol reports (`SystemInfo.getProcessInfo`), never by name. One worker per worktree, since one app runs per sandbox; worktrees run in parallel with each other.
 
 ## Phones: Maestro
 

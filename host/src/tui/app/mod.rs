@@ -2,11 +2,13 @@
 
 mod analytics;
 mod approvals;
+mod auto_order;
 mod bot;
 mod editor;
 mod events;
 mod exchange;
 mod fallbacks;
+mod find;
 mod forms;
 mod group_form;
 mod input;
@@ -29,6 +31,7 @@ pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
 pub use editor::Editor;
 pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group, rows};
+pub use find::{Find, match_ranges};
 pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
@@ -126,6 +129,8 @@ pub struct App {
     pub reply: Option<String>,
     /// A message picked to act on: reply, react, copy, save its files (`r`, then j/k and ↵).
     pub pick: Option<String>,
+    /// Find in the open conversation (`/` or ^f).
+    pub find: Option<Find>,
     /// Chat lines showing their full text: a handoff (`o` on the picked line).
     pub unfolded: HashSet<String>,
     /// Roster sections showing their label alone (`z`); this run only.
@@ -159,6 +164,8 @@ pub struct App {
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
+    /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
+    pub auto_order: Option<bool>,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
     kofi: kofi::Invite,
@@ -214,6 +221,7 @@ impl App {
             chat_top: false,
             reply: None,
             pick: None,
+            find: None,
             unfolded: HashSet::new(),
             folded: HashSet::new(),
             section_order: Vec::new(),
@@ -232,6 +240,7 @@ impl App {
             floors: HashMap::new(),
             hint: None,
             analytics: None,
+            auto_order: None,
             seen: analytics::Seen::default(),
             kofi: kofi::Invite::load(),
         }
@@ -332,6 +341,7 @@ impl App {
 
     fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
+            self.close_find();
             self.selected = Some(id.to_owned());
             self.reply = None;
             self.pick = None;

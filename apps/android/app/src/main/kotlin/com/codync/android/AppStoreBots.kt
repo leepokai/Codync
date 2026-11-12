@@ -225,6 +225,16 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
 internal fun AppStore.reorder(ids: List<String>) =
     command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
 
+/** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
+internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
+
+/** Turns automatic roster order on or off, shown at once and put back if the computer refuses (iOS `setAutoOrder`). */
+internal fun AppStore.setAutoOrder(on: Boolean) {
+    val show = { value: Boolean -> mutableState.update { it.copy(hello = JsonObject(it.hello.orEmpty() + ("autoOrder" to JsonPrimitive(value)))) } }
+    show(on)
+    command("setAutoOrder", buildJsonObject { put("enabled", on) }, "autoOrder", onFailure = { show(!on) })
+}
+
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =
     command("updateBot", buildJsonObject { put("id", bot.id); put("harnessMemory", on) }, "memory:" + bot.id)

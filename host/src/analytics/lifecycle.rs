@@ -174,6 +174,17 @@ impl Analytics {
     }
 }
 
+/// `remote_screen_finished`: how a viewer's screen session ended, on which client, whether through TURN, and how long
+/// it lasted from `screenPrepare`.
+pub fn remote_screen_finished(hub: &Hub, key: &str, ended: &crate::screen::EndedViewer) {
+    let mut p = Map::new();
+    p.insert("platform".into(), platform_of(hub, key).into());
+    p.insert("outcome".into(), ended.outcome.into());
+    p.insert("relay".into(), ended.relay.into());
+    p.insert("seconds".into(), ended.seconds.into());
+    capture(hub, Event::RemoteScreenFinished, p);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

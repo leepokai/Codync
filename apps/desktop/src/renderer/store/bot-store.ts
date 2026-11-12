@@ -222,6 +222,26 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */
+  get autoOrder() {
+    return this.hello?.autoOrder
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setAutoOrder(enabled: boolean) {
+    const show = (on: boolean) => {
+      if (this.hello) this.hello = { ...this.hello, autoOrder: on }
+      this.changed()
+    }
+    show(enabled)
+    try {
+      await (await this.ready()).call('setAutoOrder', { enabled })
+    } catch (e) {
+      show(!enabled)
+      throw e
+    }
+  }
+
   /** Toggles the user's reaction; shown at once, then replaced by the host's copy. */
   react(entry: Entry, emoji: string) {
     const list = this.entries.get(entry.botId)

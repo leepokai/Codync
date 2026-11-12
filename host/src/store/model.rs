@@ -228,6 +228,13 @@ pub struct Entry {
     pub updated_at: i64,
 }
 
+impl Entry {
+    /// A message the chat shows as one: the user's, or an agent's finished reply.
+    pub fn is_message(&self) -> bool {
+        self.kind == EntryKind::User.as_str() || (self.kind == EntryKind::Agent.as_str() && self.data["final"] == true)
+    }
+}
+
 /// A message's text, or the names of its files when it has none.
 pub fn message_text(data: &Value) -> String {
     match data["text"].as_str().unwrap_or_default() {

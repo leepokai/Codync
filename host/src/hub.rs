@@ -311,6 +311,12 @@ impl Hub {
     /// Persists and broadcasts a new transcript entry. A failed write is logged here
     /// (once) and yields `None`: the conversation goes on without that line.
     pub fn add_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
+        let e = self.insert_entry(lane, kind, turn, data)?;
+        self.order_on_message(&e);
+        Some(e)
+    }
+
+    fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.insert_entry(lane, kind, turn, data) {
             Ok(e) => {
@@ -337,10 +343,16 @@ impl Hub {
         turn: i64,
         data: &Value,
     ) -> Result<(Entry, bool)> {
-        let _guard = self.emit_lock.locked();
-        let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
+        let (entry, added) = {
+            let _guard = self.emit_lock.locked();
+            let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
+            if added {
+                let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
+            }
+            (entry, added)
+        };
         if added {
-            let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
+            self.order_on_message(&entry);
         }
         Ok((entry, added))
     }
@@ -352,6 +364,16 @@ impl Hub {
 
     /// [`Self::set_entry`] that also moves the entry into `turn` when given.
     pub fn set_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
+        // A reply counts as a message once it's finished, which is an update; nothing else here is a new message.
+        let finishes = data["final"] == true && self.store.entry(id).is_some_and(|old| old.data["final"] != true);
+        let e = self.update_entry(id, turn, data)?;
+        if finishes {
+            self.order_on_message(&e);
+        }
+        Some(e)
+    }
+
+    fn update_entry(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
         let _g = self.emit_lock.locked();
         match self.store.update_entry_turn(id, turn, data) {
             Ok(e) => {

@@ -5,7 +5,7 @@ import { Text } from '../../components/Text'
 import { TimeZonePicker } from './TimeZonePicker'
 import { compiledCron, repeatChoice, repeatChoices, type RepeatChoice, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import './routines.css'
-import { useTr } from '../../lib/use-language'
+import { useIntlLocale, useTr } from '../../lib/use-language'
 
 
 const weekdays = [
@@ -41,7 +41,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
   return (
     <CardSection footer={<SchedulePreview preview={preview} error={error} />}>
-      <LabeledRow key="Repeat" label={tr('Repeat')}>
+      <LabeledRow key="Repeat" label="Repeat">
         <ChipChoice label="Repeat" selection={repeat} options={repeatChoices} onChange={choose} />
       </LabeledRow>
       {repeat === 'weekly' ? (
@@ -54,7 +54,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
         </LabeledRow>
       ) : repeat === 'custom' ? (
-        <LabeledRow key="Cron" label={tr('Cron')} top>
+        <LabeledRow key="Cron" label="Cron" top>
           <VStack gap={6} grow>
             <input
               className="schedule-input routine-cron-input"
@@ -65,7 +65,11 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
               autoCorrect="off"
               onChange={(e) => update({ expression: e.target.value })}
             />
-            <Text size="caption" mono tone="tertiary" className="routine-cron-hint">{tr(`minute  hour  day  month  weekday`)}</Text>
+            <HStack gap={16} wrap className="routine-cron-hint">
+              {tr('minute  hour  day  month  weekday').split(/\s{2,}/).map((word) => (
+                <Text key={word} size="caption" mono tone="tertiary">{word}</Text>
+              ))}
+            </HStack>
           </VStack>
         </LabeledRow>
       ) : (
@@ -91,30 +95,31 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
 /** A row of the routine editor's groups (`CardSection`): its label in a fixed column, then the field; `top` for a tall one. */
 export function LabeledRow({ label, top = false, className, children }: { label: string; top?: boolean; className?: string; children: ReactNode }) {
+  const tr = useTr()
   return (
     <HStack align={top ? 'flex-start' : 'center'} className={`labeled-row${top ? ' top' : ''}${className ? ` ${className}` : ''}`}>
-      <Text size="callout" weight="medium" tone="secondary" className="labeled-row-label">{label}</Text>
+      <Text size="callout" weight="medium" tone="secondary" className="labeled-row-label">{tr(label)}</Text>
       {children}
     </HStack>
   )
 }
 
-/** One quiet line under the group: what the host read, or why it can't. */
+/** The sentence, then the next run, under the group — or why the host can't read it. */
 function SchedulePreview({ preview, error }: { preview: RoutineSchedulePreview | null; error: string | null }) {
   const tr = useTr()
+  const dateLocale = useIntlLocale()
   if (error) return <Text size="callout" tone="danger" className="schedule-preview">{error}</Text>
+  const nextRunAt = preview?.nextRunAt
   return (
-    <VStack gap={2} className="schedule-preview" aria-live="polite">
+    <VStack gap={8} className="schedule-preview" aria-live="polite">
       {preview ? (
         <>
-          <HStack gap={8} wrap>
-            <Text size="callout" weight="medium" tone="text">{preview.summary}</Text>
-            {preview.nextRunAt ? (
-              <Text size="callout" tone="secondary">
-                {tr('Next')} {new Date(preview.nextRunAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-              </Text>
-            ) : null}
-          </HStack>
+          <Text size="callout" weight="medium" tone="text">{tr(preview.summary)}</Text>
+          {nextRunAt ? (
+            <Text size="callout" tone="secondary">
+              {tr('Next {when}').replaceAll('{when}', () => new Date(nextRunAt).toLocaleString(dateLocale, { dateStyle: 'medium', timeStyle: 'short' }))}
+            </Text>
+          ) : null}
           {preview.warning ? <Text size="callout" tone="secondary">{preview.warning}</Text> : null}
         </>
       ) : null}

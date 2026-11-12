@@ -31,6 +31,15 @@ class AnalyticsTest {
         assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
+        assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",
+            json(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage, ImageFrom.Menu)))
+        assertEquals("""{"action":"zoom","from":"viewer","outcome":"done"}""", json(AnalyticsEvent.ImagePreviewAction(ImageAction.Zoom, ImageFrom.Viewer)))
+        // `error` is only there when the action failed, and is one of the catalog's categories.
+        for ((error, wire) in listOf(ImageError.Unavailable to "unavailable", ImageError.Convert to "convert", ImageError.Clipboard to "clipboard",
+            ImageError.Transfer to "transfer")) {
+            assertEquals("""{"action":"download","from":"viewer","outcome":"failed","error":"$wire"}""",
+                json(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error)))
+        }
         assertEquals("""{"computers":2,"keys":"moved"}""", json(AnalyticsEvent.SignedOutPairingsMoved(2, MovedKeys.Moved)))
         assertEquals("""{"computers":1,"keys":"rescan"}""", json(AnalyticsEvent.SignedOutPairingsMoved(1, MovedKeys.Rescan)))
         assertEquals("""{"engine":"gemini","reconnects":1,"stuck":"none","failure":"connection","ready_ms":1200}""",

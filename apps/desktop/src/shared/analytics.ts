@@ -24,6 +24,13 @@ export type Screen =
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
 
+/** What was done in the full-size picture viewer. */
+export type ImageAction = 'zoom' | 'copy_image' | 'copy_name' | 'download'
+/** Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library. */
+export type ImageFrom = 'viewer' | 'menu'
+/** Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke. */
+export type ImageFailure = 'unavailable' | 'convert' | 'clipboard' | 'transfer'
+
 export type SignInProvider = 'apple' | 'google' | 'github'
 
 /** Why a sign-in ended without an account. */
@@ -56,6 +63,8 @@ export type AnalyticsEvent =
   | { event: 'link_opened'; link: Link }
   | { event: 'dev_server_action'; action: 'open' | 'copy' }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'image_preview_opened' }
+  | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
   | { event: 'conversation_find_opened' }
   | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }

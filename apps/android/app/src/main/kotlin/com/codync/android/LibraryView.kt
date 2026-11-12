@@ -71,7 +71,7 @@ import com.kyant.shapes.RoundedRectangle
         }
     }
     NameDialog(naming, "Artifact title", { naming = null })
-    AttachmentImageSheet(image, bot.id, state, store) { image = null }
+    AttachmentImageSheet(image, bot.id, null, state, store) { image = null }
 }
 
 /** One row of the Library: what it is on the left, its name and detail. */

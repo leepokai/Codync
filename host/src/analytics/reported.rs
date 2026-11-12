@@ -74,6 +74,16 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
+    /// A picture opened full size (desktop).
+    ImagePreviewOpened,
+    ImagePreviewAction {
+        action: ImageAction,
+        from: ImageFrom,
+        outcome: ImageOutcome,
+        /// Why a copy or download failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ImageFailure>,
+    },
     /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
     ConversationFindOpened,
     ConversationFindSearched {
@@ -196,6 +206,50 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    #[serde(other)]
+    Other,
+}
+
+/// What was done in the full-size picture viewer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageAction {
+    Zoom,
+    CopyImage,
+    CopyName,
+    Download,
+    #[serde(other)]
+    Other,
+}
+
+/// Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFrom {
+    Viewer,
+    Menu,
+    #[serde(other)]
+    Other,
+}
+
+/// How a picture action ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOutcome {
+    Done,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFailure {
+    Unavailable,
+    Convert,
+    Clipboard,
+    Transfer,
     #[serde(other)]
     Other,
 }
@@ -473,6 +527,16 @@ mod tests {
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image", "from": "menu", "outcome": "done"}),
+                Event::ImagePreviewAction,
+            ),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "download", "from": "viewer",
+                    "outcome": "failed", "error": "transfer"}),
+                Event::ImagePreviewAction,
+            ),
             (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
             (
                 json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),

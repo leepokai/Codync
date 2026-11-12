@@ -90,6 +90,8 @@ host answers and sends it once the host is up.
 | Event | Sent by | When | Properties |
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
+| `image_preview_opened` | host `track` (desktop), iOS, Android | A picture in a chat or the Library opens full size | — |
+| `image_preview_action` | host `track` (desktop), iOS, Android | Something is done to a picture: zoomed in the full-size viewer (at most one `zoom` per opening), copied, or downloaded in the viewer (`download` is reported when it ends; a cancel reports nothing; a `copy_image` overtaken by a newer one before it finished reports nothing) | `action` (`zoom`/`copy_image`/`copy_name`/`download`), `from` (`viewer`: done inside the full-size viewer; `menu`: Copy image or Copy name from a picture's menu in a chat or the Library), `outcome` (`done`/`failed`), when failed `error` (`unavailable`: the picture's bytes weren't there; `convert`: it couldn't be turned into an image for the clipboard; `clipboard`: the clipboard refused it; `transfer`: a download broke); never the picture or its name |
 | `conversation_find_opened` | host `track` (desktop, TUI), iOS, Android | The find bar opens in a conversation (desktop ⌘F, the phones' magnifying glass, the terminal's `/` or ^f) | — |
 | `conversation_find_searched` | host `track` (desktop, TUI), iOS, Android | A search in the find bar settles, at most once per searched text: typing paused (desktop and phones), a step to another match, or the bar closing (phones and terminal) | `found` (whether anything matched; never the text searched for) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |

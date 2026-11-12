@@ -68,6 +68,15 @@ fn later_rounds_ask_only_the_members_another_member_mentioned() {
         Vec::<String>::new(),
         "the user's mentions pick the first round"
     );
+    let late_turn = |late: &[Entry]| -> Vec<String> {
+        let first = speakers(&members, &[said("@cara look")], Some(late), 0, &HashMap::new());
+        first.into_iter().map(|b| b.id.clone()).collect()
+    };
+    assert_eq!(
+        late_turn(&[by("a", "@bob check", 2)]),
+        ["b"],
+        "a late turn asks who the late answer names, from round 0"
+    );
 }
 
 use crate::api::devices::Caller;
@@ -79,7 +88,7 @@ use std::time::Duration;
 /// real processes, and a busy CI runner (Windows above all) can take seconds to start one.
 const WAIT: Duration = Duration::from_secs(30);
 
-/// A host with agent bots `a` and `b` (the scripted fixture agent) and a group of both.
+/// A host with agent bots (the scripted fixture agent) and a group of them all.
 struct Room {
     hub: Arc<Hub>,
     dir: PathBuf,
@@ -87,12 +96,17 @@ struct Room {
 }
 
 impl Room {
+    /// Bots `a` and `b`.
     fn new() -> Self {
+        Self::with(&["a", "b"])
+    }
+
+    fn with(ids: &[&str]) -> Self {
         let dir = std::env::temp_dir().join(format!("codync-group-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(&dir.join("test.db")).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-        for id in ["a", "b"] {
+        for &id in ids {
             let cwd = dir.join(id);
             std::fs::create_dir_all(&cwd).unwrap();
             let cfg: BotConfig = serde_json::from_value(json!({
@@ -110,10 +124,12 @@ impl Room {
             19222,
         );
         hub.start().unwrap();
+        // `a` twice: the roster deduplicates.
+        let members = [ids, &["a"]].concat();
         let group = hub
             .create_bot(
                 serde_json::from_value(
-                    json!({"id": "", "kind": "group", "name": "Crew", "description": "Ship the release", "members": ["a", "b", "a"]}),
+                    json!({"id": "", "kind": "group", "name": "Crew", "description": "Ship the release", "members": members}),
                 )
                 .unwrap(),
             )
@@ -146,6 +162,20 @@ impl Room {
             .filter(|e| e.kind == "agent")
             .map(|e| (e.data["author"].as_str().unwrap().to_owned(), e.data["text"].as_str().unwrap().to_owned()))
             .collect()
+    }
+
+    async fn until(&self, done: impl Fn() -> bool, what: &str) {
+        tokio::time::timeout(WAIT, async {
+            while !done() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect(what);
+    }
+
+    fn asked(&self, bot: &str) -> bool {
+        self.dir.join(bot).join("prompts.jsonl").exists()
     }
 
     async fn settle(&self) {
@@ -289,48 +319,26 @@ async fn replies_quote_the_message_they_answer() {
 async fn stop_ends_the_room_turn_before_the_next_speaker() {
     let room = Room::new();
     room.send("BLOCK everyone look", None).await;
-    let hub = room.hub.clone();
-    tokio::time::timeout(WAIT, async {
-        while hub.runtime("a").status != BotStatus::Working {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("a starts");
+    room.until(|| room.hub.runtime("a").status == BotStatus::Working, "a starts").await;
     crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": room.group})).await.unwrap();
     room.settle().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(!room.dir.join("b/prompts.jsonl").exists(), "b never got a turn after Stop");
+    assert!(!room.asked("b"), "b never got a turn after Stop");
     assert!(room.replies(&Lane::main(&room.group)).iter().all(|(_, t)| t != "reply: group"));
     room.shutdown().await;
 }
 
-/// `a` runs a turn in its own chat, and the room asks it: returns the room's notice.
-async fn ask_busy_a(room: &Room) -> Entry {
+/// `a` runs a turn in its own chat, and the room is sent `text` asking it: returns the room's notice.
+async fn ask_busy_a(room: &Room, text: &str) -> Entry {
     crate::api::dispatch(&room.hub, &Caller::Local, "send", json!({"botId": "a", "text": "BLOCK long work"}))
         .await
         .unwrap();
-    let hub = room.hub.clone();
-    tokio::time::timeout(WAIT, async {
-        while hub.runtime("a").status != BotStatus::Working {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("a starts its own turn");
-
-    room.send("@a are you there", None).await;
-    tokio::time::timeout(WAIT, async {
-        loop {
-            let entries = hub.store.history(&room.group, i64::MAX, 100).unwrap();
-            if let Some(e) = entries.into_iter().find(|e| e.kind == "notice") {
-                break e;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("a busy notice in the room")
+    room.until(|| room.hub.runtime("a").status == BotStatus::Working, "a starts its own turn").await;
+    room.send(text, None).await;
+    let notice =
+        || room.hub.store.history(&room.group, i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "notice");
+    room.until(|| notice().is_some(), "a busy notice in the room").await;
+    notice().unwrap()
 }
 
 #[tokio::test]
@@ -338,7 +346,7 @@ async fn a_member_busy_in_its_own_chat_is_announced_and_answers_once_free() {
     let room = Room::new();
     let main = Lane::main(&room.group);
     // The room says why `a` is quiet right away instead of waiting out the ask timeout in silence.
-    let notice = ask_busy_a(&room).await;
+    let notice = ask_busy_a(&room, "@a are you there").await;
     assert_eq!(notice.data["text"], "a is busy in another chat and will answer here when it's done.");
     assert_eq!(room.replies(&main), [] as [(String, String); 0]);
 
@@ -349,20 +357,68 @@ async fn a_member_busy_in_its_own_chat_is_announced_and_answers_once_free() {
     room.shutdown().await;
 }
 
+/// The room turn is over by the time a busy member answers: who it names there is still asked.
+#[tokio::test]
+async fn a_late_answer_asks_the_member_it_names() {
+    let room = Room::new();
+    let main = Lane::main(&room.group);
+    // `a` is busy in its own chat when the room asks it, so the turn ends without a spoken round.
+    ask_busy_a(&room, "@a PING are you there").await;
+    room.until(|| !room.hub.groups.running(&main), "the room turn ends without a reply").await;
+    assert!(!room.asked("b"), "b isn't part of that turn");
+
+    // Freed, `a` answers the room late and names `b`: that starts a room turn asking `b`.
+    std::fs::write(room.dir.join("a/release"), "").unwrap();
+    room.until(|| room.asked("b"), "b is asked after the late answer").await;
+    let prompts = std::fs::read_to_string(room.dir.join("b/prompts.jsonl")).unwrap();
+    assert!(prompts.contains("a: @b over to you"), "b sees what named it: {prompts}");
+    assert_eq!(room.replies(&main), [("a".to_owned(), "@b over to you".to_owned())]);
+    room.shutdown().await;
+}
+
+/// The room stopped waiting for a member that ran long: its answer still asks who it names.
+#[tokio::test]
+async fn a_member_that_outlives_the_room_still_has_its_mentions_asked() {
+    let room = Room::new();
+    let main = Lane::main(&room.group);
+    // The fixture answers in two chunks 0.4 s apart, so a 200 ms wait always ends first.
+    room.hub.groups.set_member_timeout(Duration::from_millis(200));
+    room.send("@a PING take your time", None).await;
+    room.until(|| room.asked("b"), "b is asked after the overdue answer").await;
+    let prompts = std::fs::read_to_string(room.dir.join("b/prompts.jsonl")).unwrap();
+    assert!(prompts.contains("a: @b over to you"), "b sees what named it: {prompts}");
+    assert_eq!(room.replies(&main), [("a".to_owned(), "@b over to you".to_owned())]);
+    room.shutdown().await;
+}
+
+/// A late answer that lands while a room turn runs asks who it names once that turn ends.
+#[tokio::test]
+async fn a_late_answer_during_a_room_turn_is_followed_up_when_it_ends() {
+    let room = Room::with(&["a", "b", "c"]);
+    let main = Lane::main(&room.group);
+    // `a` is busy elsewhere; `c` takes its room turn and holds it.
+    ask_busy_a(&room, "@a @c PING BLOCK").await;
+    room.until(|| room.hub.runtime("c").status == BotStatus::Working, "c answers the room").await;
+    std::fs::write(room.dir.join("a/release"), "").unwrap();
+    room.until(|| room.hub.groups.pending(&main), "a's late answer waits for the room turn").await;
+    assert!(!room.asked("b"), "b isn't asked while c's room turn runs");
+
+    // Stopped in its own chat, `c` passes: the room turn ends, and its end asks `b`.
+    crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": "c"})).await.unwrap();
+    room.until(|| room.asked("b"), "b is asked once the room turn ends").await;
+    let prompts = std::fs::read_to_string(room.dir.join("b/prompts.jsonl")).unwrap();
+    assert!(prompts.contains("a: @b over to you"), "b sees what named it: {prompts}");
+    room.shutdown().await;
+}
+
 #[tokio::test]
 async fn stopping_a_busy_member_in_its_own_chat_keeps_its_room_answer() {
     let room = Room::new();
     let main = Lane::main(&room.group);
-    ask_busy_a(&room).await;
+    ask_busy_a(&room, "@a are you there").await;
     // The user frees `a` from its own chat: the answer the room was promised still comes.
     crate::api::dispatch(&room.hub, &Caller::Local, "stop", json!({"botId": "a"})).await.unwrap();
-    tokio::time::timeout(WAIT, async {
-        while room.replies(&main).is_empty() {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("a answers the room after its own Stop");
+    room.until(|| !room.replies(&main).is_empty(), "a answers the room after its own Stop").await;
     assert_eq!(room.replies(&main), [("a".to_owned(), "reply: group".to_owned())]);
     room.shutdown().await;
 }
@@ -371,15 +427,9 @@ async fn stopping_a_busy_member_in_its_own_chat_keeps_its_room_answer() {
 async fn a_late_answer_survives_newer_messages_and_sees_them() {
     let room = Room::new();
     let main = Lane::main(&room.group);
-    ask_busy_a(&room).await;
+    ask_busy_a(&room, "@a are you there").await;
     room.send("@b meanwhile check CI", None).await;
-    tokio::time::timeout(WAIT, async {
-        while room.replies(&main).is_empty() {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("b answers while a is busy");
+    room.until(|| !room.replies(&main).is_empty(), "b answers while a is busy").await;
 
     std::fs::write(room.dir.join("a/release"), "").unwrap();
     room.settle().await;

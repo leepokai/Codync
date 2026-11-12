@@ -76,7 +76,7 @@ fun AppStore.connect() {
                 val target = state.value.computer
                 // With no relay, a changed address can only be found on the network.
                 val found = if (target.cloud == null) LocalDiscovery.urls(application, target.id).filter { it !in target.urls } else emptyList()
-                val active = HostConnector.connect(target, identity, found)
+                val active = HostConnector.connect(target, identity, BuildConfig.VERSION_NAME, found)
                 if (found.isNotEmpty()) Analytics.capture(AnalyticsEvent.ComputerFoundOnNetwork)
                 connected = active
                 channel = active
@@ -112,7 +112,7 @@ fun AppStore.connect() {
                                     changed
                                 }
                                 // Dropped chats page their earlier messages again.
-                                mutableState.update { it.copy(historyComplete = if (dropped) emptySet() else it.historyComplete) }
+                                mutableState.update { it.copy(historyEnd = if (dropped) emptyMap() else it.historyEnd) }
                                 noteHello(hello)
                                 // The event catch-up is ordered by revision; bot revisions can
                                 // follow hundreds of historical entries. Load the current roster
@@ -178,6 +178,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             refresh()
             receiveArtifacts(batch)
             receiveNetwork(batch)
+            batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()
@@ -251,22 +252,33 @@ private fun AppStore.showConnection(link: LinkState) {
     }
 }
 
-/** What waited on this phone, ready to go with the same nonces, oldest first. */
-internal fun heldOnPhone(pending: List<PendingSend>): List<PendingSend> =
-    pending.filter { it.status == SendStatus.Waiting }.sortedBy { it.createdAt }.map { it.copy(status = SendStatus.Sending) }
+/**
+ * What waited on this phone, ready to go with the same nonces, oldest first. With no relay now ([cloud] is null), what a
+ * relay held can't be asked about, so it goes too.
+ */
+internal fun readyToSend(pending: List<PendingSend>, cloud: String?): List<PendingSend> =
+    pending.filter { it.status == SendStatus.Held || (it.status == SendStatus.Waiting && cloud == null) }
+        .sortedBy { it.createdAt }.map { it.copy(status = SendStatus.Sending) }
+
+/** Delivers [ready] one at a time, leaving out what was taken back while an earlier one was on its way ([stillPending]). */
+internal suspend fun deliverInTurn(ready: List<PendingSend>, stillPending: suspend (PendingSend) -> Boolean, deliver: suspend (PendingSend) -> Unit) {
+    for (send in ready) if (stillPending(send)) deliver(send)
+}
 
 private suspend fun AppStore.reconcileMailbox(active: EncryptedChannel) {
-    // No relay holds them: what waited on this phone goes now, with the same nonces.
-    if (state.value.computer.cloud == null) {
-        for (send in heldOnPhone(state.value.pending)) deliver(send)
-        return
-    }
+    // What waited on this phone goes now, with the same nonces, also when the computer has joined an account since.
+    val cloud = state.value.computer.cloud
+    deliverInTurn(readyToSend(state.value.pending, cloud), { send ->
+        refresh() // A take-back may have reached the database and not yet the state.
+        state.value.pending.any { it.nonce == send.nonce }
+    }) { deliver(it) }
+    if (cloud == null) return
     if (active.route != HostRoute.Relay || state.value.pending.none { it.status in listOf(SendStatus.Waiting, SendStatus.Delivering) }) return
     try {
         val response = active.queued()
-        val held = response.getValue("items").jsonArray.associate { it.jsonObject.getValue("nonce").jsonPrimitive.content to it.jsonObject.getValue("state").jsonPrimitive.content }
+        val inRelay = response.getValue("items").jsonArray.associate { it.jsonObject.getValue("nonce").jsonPrimitive.content to it.jsonObject.getValue("state").jsonPrimitive.content }
         for (send in state.value.pending.filter { it.status in listOf(SendStatus.Waiting, SendStatus.Delivering) }) {
-            savePending(send.copy(status = when (held[send.nonce]) {
+            savePending(send.copy(status = when (inRelay[send.nonce]) {
                 "queued" -> SendStatus.Waiting
                 "delivering" -> SendStatus.Delivering
                 else -> SendStatus.Failed

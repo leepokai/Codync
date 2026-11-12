@@ -27,6 +27,8 @@ export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";
 // YouTube id of the launch film.
 export const FILM = "QAhyZWpV70U";
+// The homepage card for Codync Cloud, which the hero's "New" link opens.
+export const CLOUD_SECTION = "/#cloud";
 export const PRODUCT_HUNT = "https://www.producthunt.com/products/codync?launch=codync-2";
 // codync-mem, the memory crate: its read-only mirror, crates.io and docs.rs pages.
 export const CODYNC_MEM_REPO = "https://github.com/leepokai/codync-mem";

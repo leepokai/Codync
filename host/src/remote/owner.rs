@@ -78,12 +78,13 @@ pub fn while_unchanged<T>(hub: &Hub, f: impl FnOnce() -> T) -> T {
 }
 
 /// Out of an account, cloud assistants go off and the 6-digit check comes back on: the account this computer
-/// joins next is asked again.
+/// joins next is asked again. A cloud computer Codync runs for its user keeps approving that account's devices: it
+/// is out of the account only until its first claim completes.
 pub fn out_of_account(hub: &Hub) -> Result<()> {
     if assistant::enabled(&hub.store) {
         assistant::set_enabled(hub, false)?;
     }
-    if cloud::approval(&hub.store) == Approval::Auto {
+    if cloud::approval(&hub.store) == Approval::Auto && !super::managed::is_managed(&hub.store) {
         cloud::set_approval(hub, Approval::Code)?;
     }
     Ok(())
@@ -173,9 +174,9 @@ pub async fn sign_claim(hub: &Hub, claim_id: &str, nonce: &str, user_id: &str) -
         "computerId": computer_id,
         "signKey": hub.identity.sign_pub_b64(),
         "boxKey": box_key,
-        "name": crate::service::host_name(),
+        "name": super::managed::computer_name(&hub.store),
         "platform": std::env::consts::OS,
-        "device": tokio::task::spawn_blocking(crate::service::device).await?,
+        "device": super::managed::computer_device(&hub.store).await?,
         "version": env!("CARGO_PKG_VERSION"),
         "sig": crypto::b64(&hub.identity.sign(input.as_bytes())),
     }))
@@ -340,5 +341,17 @@ mod tests {
         assert!(owner(&hub.store).is_none(), "a private relay has no accounts");
         hub.store.kv_set("cloud_enabled", "false").unwrap();
         assert!(owner(&hub.store).is_none(), "nor does a computer with its cloud off");
+    }
+
+    #[test]
+    fn out_of_an_account_only_a_cloud_computer_keeps_approving_by_itself() {
+        let hub = hub();
+        cloud::set_approval(&hub, Approval::Auto).unwrap();
+        out_of_account(&hub).unwrap();
+        assert_eq!(cloud::approval(&hub.store), Approval::Code);
+        cloud::set_approval(&hub, Approval::Auto).unwrap();
+        crate::remote::managed::set_managed(&hub.store).unwrap();
+        out_of_account(&hub).unwrap();
+        assert_eq!(cloud::approval(&hub.store), Approval::Auto, "before its first claim completes");
     }
 }

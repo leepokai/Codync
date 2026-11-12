@@ -25,6 +25,14 @@ data class AccountContext(
     val approvedAccess: Map<String, String> = emptyMap(),
     /** Account computers an access request is being sent to. */
     val asking: Set<String> = emptySet(),
+    /** The account's Codync Cloud computers and whether it may have them (Computers → Codync Cloud); null until asked. */
+    val cloudOffer: CloudOffer? = null,
+    /** Codync Cloud sheets open (New cloud computer, a provider's key over it), each showing the account's error itself. */
+    val cloudSheets: Int = 0,
+    /** Computers → Codync Cloud's card is on screen, showing its cloud computers' errors itself. */
+    val cloudCardShown: Boolean = false,
+    /** The Codync cloud asked this app version to update (`426 appUpdateRequired`), with its reason. */
+    val appFloor: String? = null,
     val tasks: Boolean = true,
     val setupComplete: Boolean = false,
     val loading: Boolean = true,
@@ -51,9 +59,14 @@ data class AccountContext(
     val navigationPage: LinkPage = LinkPage.Bots,
     val busy: Set<String> = emptySet(),
     val error: String? = null,
+    /** The [AccountStore.action] key [error] came from, when it came from one. */
+    val failedAction: String? = null,
 ) {
     /** The computer Usage acts on: the last active one, else the first. */
     val currentComputerId: String? get() = computers.currentId(lastComputerId)
+
+    /** Codync Cloud runs this account computer: its provider, region and whether it's asleep. */
+    internal fun cloudOf(computerId: String?): CloudPlacement? = cloudComputers.firstOrNull { it.computerId == computerId }?.cloud
 }
 
 /** One computer as the UI renders it (iOS `BotStore`); its `AppStore` owns the only writer. */
@@ -82,7 +95,8 @@ data class AppState(
     val callRequest: String? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
-    val historyComplete: Set<String> = emptySet(),
+    /** Chats that page back no further, and why: their earlier row is dropped. */
+    val historyEnd: Map<String, HistoryEnd> = emptyMap(),
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
@@ -102,6 +116,10 @@ data class AppState(
     val signInCode: String? = null,
     /** The update this phone asked of a computer that's behind (`requestHostUpdate`). */
     val hostUpdate: HostUpdate? = null,
+    /** Codync Cloud runs this computer (the account's list says, `AccountStore.refreshCloud`): asleep isn't offline. */
+    val cloudHosting: CloudPlacement? = null,
+    /** The Codync cloud's emergency floor for this app version (`426 appUpdateRequired`), as the account last heard it. */
+    val appFloor: String? = null,
     val error: String? = null,
 ) {
     /** Connection alone cannot make a cached roster current before event catch-up. */
@@ -110,3 +128,6 @@ data class AppState(
         return !loading && rosterLoaded && actualConnection is LinkState.Ready && mirrorRevision >= head
     }
 }
+
+/** Why a chat pages back no further: the computer has no older rows, or paging back no longer grows what the phone shows (its memory budget is spent). */
+enum class HistoryEnd { Complete, MemoryFull }

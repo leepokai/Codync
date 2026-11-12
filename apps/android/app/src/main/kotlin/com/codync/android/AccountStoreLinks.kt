@@ -37,7 +37,7 @@ internal fun AccountStore.pair(text: String, via: PairedVia) {
             val certificate = client?.let { accountProof() }
             // Without a claim a computer in no account still lets the phone in and stays out of the account.
             val claim = client?.let { bestEffort("start a claim") { it.createClaim() } }
-            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), certificate, claim)
+            val paired = HostConnector.pair(pairing, identity, Build.MODEL.take(100), certificate, claim, BuildConfig.VERSION_NAME)
             // Picked on this phone: pairing again keeps them (iOS `AccountStore.pair`).
             val computer = paired.computer.keepingDevicePicks(old)
             transitions.withLock { addComputer(computer) }

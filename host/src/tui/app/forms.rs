@@ -1,5 +1,6 @@
 //! The bot settings form.
 
+use codync_mem::compaction::Threshold;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -51,6 +52,9 @@ impl App {
             manage_team: b.manage_team,
             offered_to_network: b.offered_to_network,
             reachable_by_assistants: b.reachable_by_assistants,
+            compaction: b.compaction,
+            compaction_sizes: b.compaction_sizes.clone(),
+            compaction_typed: String::new(),
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -138,6 +142,8 @@ impl App {
                     f.model = Editor::with(&m);
                 }
             }
+            KeyCode::Char(c) if field == Field::Compaction && c.is_ascii_digit() => f.type_compaction(Some(c)),
+            KeyCode::Backspace if field == Field::Compaction => f.type_compaction(None),
             KeyCode::Enter => self.save_form(&mut f),
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')
                 if matches!(
@@ -146,6 +152,7 @@ impl App {
                         | Field::Fast
                         | Field::SelfFallbacks
                         | Field::Approvals
+                        | Field::Compaction
                         | Field::Notify
                         | Field::Computer
                         | Field::Team
@@ -179,6 +186,7 @@ impl App {
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Approvals => self.cycle_approval(&mut f, d),
+                    Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
                     Field::Team => f.manage_team = f.manage_team.map(|on| !on),
@@ -283,11 +291,52 @@ impl Form {
             "manageTeam": self.manage_team.unwrap_or_default(),
             "offeredToNetwork": self.offered_to_network.unwrap_or(true),
             "reachableByAssistants": self.reachable_by_assistants.unwrap_or(true),
+            "compaction": self.compaction.map(|at| match (at, &self.compaction_sizes) {
+                (Threshold::Tokens(n), Some(sizes)) => Threshold::Tokens(sizes.fit(n)),
+                _ => at,
+            }),
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
             "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
         })
+    }
+
+    /// When Codync summarizes the chat, in the order ← → steps through: the three choices, then the sizes a menu lists.
+    pub fn compaction_choices(&self) -> Vec<Threshold> {
+        let presets = self.compaction_sizes.iter().flat_map(|s| s.presets.iter().map(|&n| Threshold::Tokens(n)));
+        [Threshold::Off, Threshold::Early, Threshold::NearLimit].into_iter().chain(presets).collect()
+    }
+
+    /// A digit typed into the size (thousands of tokens), or Backspace (`None`); held to the window's sizes on save.
+    fn type_compaction(&mut self, digit: Option<char>) {
+        if self.compaction.is_none() || self.compaction_sizes.is_none() {
+            return;
+        }
+        match digit {
+            Some(c) if self.compaction_typed.len() < 4 => self.compaction_typed.push(c),
+            Some(_) => return,
+            None => {
+                self.compaction_typed.pop();
+            }
+        }
+        if let Ok(k) = self.compaction_typed.parse::<u64>() {
+            self.compaction = Some(Threshold::Tokens(k * 1000));
+        }
+    }
+
+    fn cycle_compaction(&mut self, d: isize) {
+        let Some(now) = self.compaction else { return };
+        self.compaction_typed.clear();
+        let mut choices = self.compaction_choices();
+        // A size of one's own steps from its place among the presets.
+        if let Threshold::Tokens(n) = now
+            && !choices.contains(&now)
+        {
+            choices.insert(choices.partition_point(|c| !matches!(c, Threshold::Tokens(p) if *p > n)), now);
+        }
+        let i = choices.iter().position(|c| *c == now).unwrap_or(0);
+        self.compaction = Some(choices[cycle(i, d, choices.len())]);
     }
 
     /// Whether anything changed since the form opened.
@@ -358,6 +407,67 @@ mod tests {
         assert_eq!(f.changes(), json!({}));
         f.notify = false;
         assert_eq!(f.changes(), json!({"notify": false}), "a model changed elsewhere meanwhile stays");
+    }
+
+    /// Feeds `keys` to the editor, which must stay open.
+    fn press(app: &mut App, mut f: Box<Form>, keys: impl IntoIterator<Item = KeyCode>) -> Box<Form> {
+        for key in keys {
+            let Some(Overlay::Form(next)) = app.form_key(f, KeyEvent::from(key)) else { panic!("the editor stays") };
+            f = next;
+        }
+        f
+    }
+
+    /// The editor of a Claude Code bot on `compaction`, at the compaction field, in a window of up to 260K.
+    fn compaction_editor(app: &mut App, compaction: &Value) -> Box<Form> {
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": compaction,
+            "compactionTokens": {"min": 50_000, "max": 260_000, "step": 10_000, "presets": [100_000, 200_000]}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        f
+    }
+
+    #[tokio::test]
+    async fn the_compaction_threshold_steps_through_choices_then_sizes() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": "early"}), "auto first, then Codync's own");
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": 100_000}));
+        let f = press(&mut app, f, [KeyCode::Left, KeyCode::Left, KeyCode::Left]);
+        assert_eq!(f.changes(), json!({}));
+        assert_eq!(f.compaction_choices().len(), 5, "auto, early, near the limit, 100K, 200K");
+
+        for (key, next) in [(KeyCode::Right, 200_000), (KeyCode::Left, 100_000)] {
+            let f = compaction_editor(&mut app, &json!(150_000));
+            let f = press(&mut app, f, [key]);
+            assert_eq!(f.changes(), json!({"compaction": next}), "a size of one's own steps from its place");
+        }
+
+        let other = json!({"id": "g", "name": "G", "backend": "gemini", "compaction": null});
+        app.bots.insert("g".into(), Bot::parse(&other).expect("a bot"));
+        app.selected = Some("g".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({}), "nothing to choose where Codync doesn't summarize");
+    }
+
+    #[tokio::test]
+    async fn a_typed_size_is_fitted_on_save() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, "35490".chars().map(KeyCode::Char));
+        assert_eq!(f.compaction, Some(Threshold::Tokens(3_549_000)), "as typed, four digits at most");
+        let f = press(&mut app, f, [KeyCode::Backspace]);
+        assert_eq!(f.changes(), json!({"compaction": 260_000}), "held to the largest size the window takes");
+        let f = press(&mut app, f, [KeyCode::Backspace; 3].into_iter().chain("155".chars().map(KeyCode::Char)));
+        assert_eq!(f.changes(), json!({"compaction": 160_000}), "to the nearest 10K");
     }
 
     #[tokio::test]

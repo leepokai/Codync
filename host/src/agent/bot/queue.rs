@@ -17,6 +17,7 @@ impl Actor {
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
+            Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
             Cmd::Steer { entry_id } => self.steer(entry_id).await,
@@ -93,9 +94,13 @@ impl Actor {
                 // Live sessions switch before their next turn (see `fast_mode`).
                 let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
                 let mode_changed = cfg.mode != self.cfg.mode;
+                let threshold_changed = cfg.compaction != self.cfg.compaction;
                 // Name, description and skill changes reach the agent as a profile update
                 // on the next message (see `context`).
                 self.cfg = cfg;
+                if threshold_changed {
+                    self.threshold_changed();
+                }
                 if fast_changed {
                     self.fast_mode_changed();
                 }
@@ -170,7 +175,7 @@ impl Actor {
     }
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
-    async fn restart_agent(&mut self) {
+    pub(super) async fn restart_agent(&mut self) {
         self.files.cancel();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
@@ -263,10 +268,8 @@ impl Actor {
                     if turn.reply.is_closed() || !(turn.late || self.hub.groups.current(&turn.lane, turn.epoch)) {
                         continue;
                     }
-                    if turn.late
-                        && let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg)
-                    {
-                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "late room turn dropped");
+                    if let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg.id) {
+                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "room turn dropped");
                         continue;
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());

@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.CallQuality
+import com.codync.android.core.CloudError
 import com.codync.android.core.HostError
 import com.codync.android.core.PairingProblem
 import com.codync.android.core.VoiceFailureKind
@@ -47,6 +48,41 @@ class AnalyticsTest {
         assertEquals(PairingFailure.Timeout, PairingFailure.of(IOException("Late", java.net.SocketTimeoutException())))
         assertEquals(PairingFailure.Unreachable, PairingFailure.of(IOException("Offline")))
         assertEquals(PairingFailure.Other, PairingFailure.of(IllegalArgumentException("Use Start over")))
+    }
+
+    @Test fun `a refused Boat key is told apart from a save that failed`() {
+        assertEquals(CloudKeyOutcome.Refused, CloudKeyOutcome.of(CloudError(422, "keyRefused", "This key has expired. Make a new one.")))
+        assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(CloudError(429, "rateLimited")))
+        assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(IOException("Offline")))
+        assertEquals("""{"outcome":"refused","provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused, "instabox").properties).toString())
+        assertEquals("""{"provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudOfferOpened("instabox").properties).toString())
+    }
+
+    @Test fun `a cloud computer the cloud refuses is told apart from one that failed`() {
+        val limit = CloudError(409, "conflict", "You can have up to 3 cloud computers. Delete one to make another.")
+        assertEquals(CloudCreateOutcome.Refused, CloudCreateOutcome.of(limit))
+        assertEquals(CloudCreateOutcome.Refused, CloudCreateOutcome.of(CloudError(422, "keyRefused", "This key has expired. Make a new one.")))
+        assertEquals(CloudCreateOutcome.Failed, CloudCreateOutcome.of(CloudError(503, "providerUnavailable")))
+        assertEquals(CloudCreateOutcome.Failed, CloudCreateOutcome.of(IOException("Offline")))
+        val created = AnalyticsEvent.CloudComputerCreated(CloudCreateOutcome.Created, "boat")
+        assertEquals("cloud_computer_created", created.name)
+        assertEquals("""{"outcome":"created","provider":"boat"}""", JsonObject(created.properties).toString())
+        val renamed = AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed)
+        assertEquals("cloud_computer_renamed", renamed.name)
+        assertEquals("""{"outcome":"failed"}""", JsonObject(renamed.properties).toString())
+        val deleted = AnalyticsEvent.CloudComputerDeleted(CloudDeleteOutcome.Deleted, "boat")
+        assertEquals("cloud_computer_deleted", deleted.name)
+        assertEquals("""{"outcome":"deleted","provider":"boat"}""", JsonObject(deleted.properties).toString())
+        val snapshots = AnalyticsEvent.CloudSnapshotsDeleted(CloudDeleteOutcome.Failed, "instabox")
+        assertEquals("cloud_snapshots_deleted", snapshots.name)
+        assertEquals("""{"outcome":"failed","provider":"instabox"}""", JsonObject(snapshots.properties).toString())
+        val removed = AnalyticsEvent.CloudKeyRemoved(CloudRemoveOutcome.Removed, "boat")
+        assertEquals("cloud_key_removed", removed.name)
+        assertEquals("""{"outcome":"removed","provider":"boat"}""", JsonObject(removed.properties).toString())
+        assertEquals(CloudDeleteOutcome.Refused, CloudDeleteOutcome.of(CloudError(409, "conflict", "It's asleep.")))
+        assertEquals(CloudDeleteOutcome.Failed, CloudDeleteOutcome.of(CloudError(503, "providerUnavailable")))
+        assertEquals(CloudRemoveOutcome.Refused, CloudRemoveOutcome.of(CloudError(409, "conflict")))
+        assertEquals(CloudRemoveOutcome.Failed, CloudRemoveOutcome.of(IOException("Offline")))
     }
 
     @Test fun `a crash keeps its type and Codync frames but never its message`() {

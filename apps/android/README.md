@@ -111,6 +111,8 @@ uses a temporary copy rather than exposing the private cache.
 Ed25519/X25519 seeds use Android Keystore AES-GCM wrapping; no global crypto
 provider is replaced. Local data is excluded from backup and device transfer.
 The mirror commits updates, send reconciliation and the event cursor together.
+It loads only a window of each chat into memory (`Residency`); older rows stay on disk
+until the reader scrolls back ([chat messages](../../docs/features/chat-messages.md)).
 Context retirement joins writers before changing identity or closing databases.
 A changed host identity produces an error rather than silently trusting new keys.
 
@@ -174,7 +176,7 @@ crypto or camera library is introduced. WebRTC comes from the webrtc-sdk build o
 | CommonMark and GFM extensions | 0.30.0 | [CommonMark Java](https://github.com/commonmark/commonmark-java), BSD-2-Clause; selectable Markdown, tables and strikethrough |
 | Coil | 3.4.0 | [Coil](https://github.com/coil-kt/coil/releases/tag/3.4.0), Apache-2.0; bounded image loading and caching |
 | Java API desugaring | 2.1.5 | [Android desugaring](https://developer.android.com/studio/write/java11-default-support-table), GPL-2.0 with Classpath Exception; CommonMark runtime support |
-| Clerk Android | 1.1.11 | [Clerk SDK](https://github.com/clerk/clerk-android), MIT; native account sessions and browser/provider authentication |
+| Clerk Android | 1.4.1 | [Clerk SDK](https://github.com/clerk/clerk-android), MIT; native account sessions and browser/provider authentication |
 | Firebase BOM / Google Services plugin | 34.19.0 / 4.5.0 | [Firebase Android](https://firebase.google.com/support/release-notes/android), Apache-2.0; FID registration and data-only FCM delivery |
 | Play app update | 2.1.0 | [Play Core](https://developer.android.com/guide/playcore), [Play Core SDK Terms](https://developer.android.com/guide/playcore#license); the update notice and reminder |
 | WorkManager | 2.12.0 | [AndroidX Work](https://developer.android.com/jetpack/androidx/releases/work), Apache-2.0; bounded background registration retries |

@@ -36,7 +36,8 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::Queued;
-pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
+pub use compaction::{context_window, offers_threshold};
+pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
 use crate::agent::config::FastModeSupport;
@@ -180,13 +181,18 @@ pub(crate) enum Adapter {
     Other,
 }
 
+#[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
+    superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
+    /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
+    spent: bool,
     started: Instant,
     /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
     /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
@@ -371,6 +377,7 @@ impl Actor {
             Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
+        self.stop_spent().await;
         self.next_in_queue(done_tx).await;
     }
 

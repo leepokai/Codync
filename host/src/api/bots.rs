@@ -259,7 +259,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "stop" => {
             let bot = str_arg(&b, "botId")?;
             match hub.store.bot(bot)? {
-                Some(row) if row.config.is_group() => hub.groups.stop(hub, bot),
+                Some(row) if row.config.is_group() => crate::chat::group::stop(hub, bot),
                 _ => hub.send_cmd(bot, Cmd::Stop)?,
             }
             json!({})

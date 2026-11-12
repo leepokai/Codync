@@ -1,5 +1,5 @@
 {
-  "name": "codync-cloud",
+  "name": "codync-cloud-worker",
   "version": "2.2.0",
   "description": "Codync cloud: accounts, computers and the end-to-end encrypted relay (Cloudflare Worker + Durable Object)",
   "private": true,
@@ -11,7 +11,9 @@
     "deploy:main": "wrangler deploy",
     "typecheck": "tsc && tsc -p test/e2e",
     "test": "vitest run",
-    "e2e": "node --experimental-strip-types --no-warnings test/e2e/relay.e2e.ts"
+    "e2e": "node --experimental-strip-types --no-warnings test/e2e/relay.e2e.ts",
+    "e2e:cloud": "node --experimental-strip-types --no-warnings test/e2e/cloud-computer.e2e.ts",
+    "cloud:stack": "node --experimental-strip-types --no-warnings test/e2e/cloud-stack.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.20.1",

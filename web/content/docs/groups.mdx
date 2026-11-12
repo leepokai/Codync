@@ -40,7 +40,7 @@ Each member's reply is the one message the room sees. Its tool calls, thoughts a
 
 ### @-mentions
 
-To ask just one bot, mention it: its full name, its name without spaces, or its first word all work, in any letter case. On the desktop and iPhone, typing `@` in a group suggests its members.
+To ask just one bot, mention it: its full name, its name without spaces, or its first word all work, in any letter case. On the desktop, iPhone and Android, typing `@` in a group lists its members. On the desktop, while the caret is at the end of what you're typing, ↑ and ↓ move through the list, Return or Tab picks a member, and Esc hides it. With the caret elsewhere or text selected, the keys edit the message as usual and Return sends it. Return after `@all` or `@everyone` sends the message too.
 
 Replying to a member's message counts as mentioning it. To reply, long-press the message on iPhone, use **Reply** below the message on the desktop, or press `r` in the terminal UI.
 
@@ -57,6 +57,8 @@ A member may be working somewhere else when the group asks it, for example in it
 > Alice is busy in another chat and will answer here when it's done.
 
 and moves on to the next member. When Alice finishes her other work, she answers in the group, after reading what the room said in the meantime. She isn't asked again in later rounds of that exchange.
+
+If her late answer @-mentions another member, that member is asked next, as in a new round, unless you send a new message first. The same goes for a member that took longer than 10 minutes, which the room had counted as a pass. Up to three of these follow-ups come after one message of yours, and none after you press Stop.
 
 Her late answer is dropped if you press Stop in the group, remove her from the group, or send a newer message that asks her again (the newer one replaces it). Other new messages in the group, and Stop in Alice's own chat, don't drop it.
 
@@ -77,7 +79,7 @@ Sending a new message also ends the running exchange before the next member is a
 
 ## Notifications
 
-You get one "done" notification per exchange, from the last member that replied ("Alice in Ship room"), plus one for each late answer. When a member needs your approval, its card appears in the group and you get a "needs you" notification that opens the group.
+You get one "done" notification per exchange, from the last member that replied ("Alice in Ship room"), plus one for each answer from a member that was busy in another chat, and one for each follow-up a late answer's @-mentions start. A member that took longer than 10 minutes answers without a notification of its own. When a member needs your approval, its card appears in the group and you get a "needs you" notification that opens the group.
 
 Voice calls work in groups too: each reply is read with its speaker's name. See [Voice](/docs/voice).
 

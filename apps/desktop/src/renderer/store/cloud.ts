@@ -1,5 +1,6 @@
 import type { ClaimFailure } from '@shared/analytics'
 import type { CloudStatus, ClaimSignature } from '@shared/models'
+import type { CloudPlacement } from '../lib/cloud-computer'
 import { accountMismatch, mayJoinAfterInstall, mayOfferJoin, mayOfferMove, type AccountMismatch, type ClaimCandidate } from '../lib/join-offer'
 import { Observable } from '../lib/observable'
 import { isOlderCopy } from '../lib/older-copy'
@@ -27,6 +28,8 @@ export interface CloudComputer {
   claimedAt?: number | null
   /** `none` · `pending` · `granted`. */
   access?: string | null
+  /** Set for a cloud computer Codync runs (Codync Cloud). */
+  cloud?: CloudPlacement | null
 }
 
 export class CloudError extends Error {
@@ -44,14 +47,28 @@ export class CloudError extends Error {
   }
 }
 
+/** The Codync cloud's emergency floor: set once it refuses this app's version (`426 appUpdateRequired`). */
+class AppFloor extends Observable {
+  message: string | null = null
+
+  reached(message: string | null) {
+    if (this.message !== null) return
+    this.message = message ?? trNow('Update Codync to keep using it.')
+    this.changed()
+  }
+}
+
+export const appFloor = new AppFloor()
+
 /** `reach_account_answered`'s `error`: the category of a failed claim, never its message. */
 const claimFailure = (error: unknown): ClaimFailure =>
   !(error instanceof CloudError) ? 'host' : error.code === 'unreachable' ? 'unreachable' : 'refused'
 
-async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown, signed = false): Promise<T> {
   const res = await window.codync.cloud.request(method, path, body, signed)
-  if (!res.ok) throw new CloudError(res.error.status, res.error.code, res.error.message)
-  return res.value as T
+  if (res.ok) return res.value as T
+  if (res.error.code === 'appUpdateRequired') appFloor.reached(res.error.message)
+  throw new CloudError(res.error.status, res.error.code, res.error.message)
 }
 
 /** Host identities whose cloud default has been applied (or found already on). */
@@ -241,15 +258,15 @@ export class CloudModel extends Observable {
     analytics.track({ event: 'join_offer_answered', outcome: joined ? 'added' : 'failed' })
   }
 
-  /** The phones `store`'s computer would remove by joining the signed-in account. A host before this method removes the same phones and can't name them. */
-  joinWouldRemove = async (store: BotStore): Promise<string[]> => {
+  /** The phones `store`'s computer would remove by joining the signed-in account. `null`: it couldn't say. A host before this method removes the same phones and can't name them. */
+  joinWouldRemove = async (store: BotStore): Promise<string[] | null> => {
     const userId = this.userId
     if (!userId) return []
     try {
       return (await (await store.ready()).call<{ names: string[] }>('joinWouldRemove', { userId })).names
     } catch (error) {
       this.fail(error, true)
-      return []
+      return null
     }
   }
 

@@ -1,6 +1,7 @@
 // Clerk webhooks: a deleted user takes their account, devices, grants and computers with them.
 
 import { Webhook } from "svix";
+import { forgetCloud } from "../cloud-machines";
 import type { Env } from "../index";
 import { ApiError, audit, notify, revokeGrants, type Ctx } from "./common";
 import { deleteComputerIcons } from "./icons";
@@ -62,4 +63,5 @@ async function deleteAccount(env: Env, userId: string, now: number): Promise<voi
   await env.DB.prepare("UPDATE computers SET owner_user_id = NULL, claimed_at = NULL, updated_at = ? WHERE owner_user_id = ?")
     .bind(now, userId).run();
   await Promise.all(owned.results.map(({ id }) => notify(env, id)));
+  await forgetCloud(env, userId, now);
 }

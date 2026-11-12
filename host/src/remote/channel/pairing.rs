@@ -71,7 +71,7 @@ impl Channel {
         tracing::info!(device = self.key, platform, "device paired");
         let paired = PairedAccount::of(account.is_some(), answer);
         crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false, paired);
-        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::service::host_name()});
+        let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::remote::managed::computer_name(&self.hub.store)});
         if let Some(claim) = claim {
             // Joining the phone's account: the phone, which holds the account's session, completes the claim.
             ok["claim"] = claim;

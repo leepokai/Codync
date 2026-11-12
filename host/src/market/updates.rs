@@ -15,8 +15,8 @@ pub async fn automatic_loop(hub: Arc<Hub>) {
     let mut tracker = Tracker::default();
     loop {
         // Clients and bot sessions unlock the vault when needed. Background
-        // updates must not cause an unsolicited keychain prompt at login.
-        if hub.store.secret_key.locked().is_some()
+        // updates must not cause an unsolicited keychain prompt at login (a cloud computer's keeper prompts nobody).
+        if (hub.store.secret_key.locked().is_some() || crate::remote::managed::is_managed(&hub.store))
             && let Err(error) = tracker.refresh_due(&hub.store, Instant::now(), registry_server).await
         {
             tracing::warn!(error = format!("{error:#}"), "connector update check failed");

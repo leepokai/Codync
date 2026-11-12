@@ -4,8 +4,17 @@ Codync keeps your work on your computer. The phone and desktop apps are windows 
 
 - **Bots, conversations, routines and memory** are kept by the host in `~/.codync` on your computer. Your phone keeps a cache so the app opens quickly.
 - **Agents run with their own logins.** Claude Code, Codex and the other agents use the sign-ins you set up on the computer. Your prompts go from the agent to its provider, as they would without Codync.
-- **Secrets are encrypted.** Connector credentials, voice API keys and other keys you enter in Codync are stored encrypted on the computer. The encryption key is held by the system's credential store (Keychain on macOS, Secret Service on Linux, Credential Manager on Windows). They're never sent to Codync's cloud.
+- **Secrets are encrypted.** Connector credentials, voice API keys and other keys you enter in Codync are stored encrypted on the computer. The encryption key is held by the system's credential store (Keychain on macOS, Secret Service on Linux, Credential Manager on Windows). They're never sent to Codync's cloud. Codync Cloud computers work differently: see [Codync Cloud](#codync-cloud) below.
 - **Usage limits are read on your computer,** and only for the agents your bots run and the ones you turn on in the Usage screen. An agent you don't use is never started, and its saved sign-in is never read. Claude Code uses its usage command and status line, and the Codex CLI a read-only current-account query. oh-my-pi, Amp, Hermes Agent, Auggie, Kilo, Kiro, Kimi, OpenCode, Mistral Vibe and Junie report through their own command, a local database or an IDE file. GitHub Copilot (`account.getQuota`), Grok Build (`x.ai/billing`) and Antigravity (`/usage`, or its running app) are read by starting the agent's own server on your computer, which asks its provider with the agent's login; the host never handles that login. None of these starts a conversation or model turn. Cursor is the exception. It has no such report, so the host reads the sign-in Cursor saved and asks Cursor's dashboard service for unified-plan usage, or cursor.com for a legacy-plan summary. That token is not logged, and Codync does not call any other provider's API with an agent's login. To read Claude Code's limits, `codync-host install` routes its status line through `codync-host statusline`; a status line you already had keeps working and is restored when you uninstall.
+
+## Codync Cloud
+
+If you start a [cloud computer](/docs/codync-cloud), your bots, conversations, agent sign-ins and code live on a machine in your own account with the provider (Boat or InstaBox), not on your computer.
+
+- **Your provider key** is kept by Codync's account service, encrypted, and shown back only by its last four characters. The service opens it to create your cloud computers, put them to sleep, wake them, back them up and delete them. A Boat key reaches only its `codync` environment; an InstaBox key reaches every machine in its workspace and can run commands on them.
+- **The cloud computer's vault key**, which unlocks the secrets you save there, is kept by the same service, encrypted. With the access above, whoever controls that service could open those secrets.
+- **The provider runs the hardware** and can in principle read a running machine's memory and files. Boat documents no encryption at rest, and its snapshots may be stored outside the EU.
+- Your apps still reach the cloud computer end to end encrypted, through the relay.
 
 ## The relay
 
@@ -70,6 +79,8 @@ Codync records which features you use, to spot bugs sooner and see where people 
 **Location:** your IP address is used to look up an approximate location (country and city). The IP address itself isn't stored.
 
 **Who it's linked to:** your Codync account when you're signed in; otherwise a random ID made on that device.
+
+**Codync Cloud computers:** Codync's cloud also records when it wakes one of your Codync Cloud computers, why (a device connected, a message, an access request or a routine), and how long until it was back. This is linked to your account, carries no location, and is sent only while that computer's own switch is on.
 
 Analytics are never sold, never used for ads and never used to track you across other apps and websites. The website, codync.dev, counts page views, time on page, scrolling, load speed, and clicks on download and outbound links, without cookies. Vercel, which hosts the site, forwards these counts to PostHog.
 

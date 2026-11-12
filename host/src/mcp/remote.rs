@@ -27,7 +27,7 @@ pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut session: Option<String> = None;
     // The POST endpoint of a server on the older SSE transport, and the task reading its stream.
-    let mut legacy: Option<String> = None;
+    let mut legacy: Option<Endpoint> = None;
     let mut stream: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(line) = lines.next_line().await? {
         let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
@@ -74,9 +74,42 @@ struct Remote {
     connector: String,
 }
 
+/// Where messages go on the older transport: a URL, or, on a Codync Cloud computer, a path under each exchange's
+/// fresh grant from its keeper (the host's `base`), whose grants don't outlive a long session.
+enum Endpoint {
+    Url(String),
+    UnderGrant(String),
+}
+
+impl Endpoint {
+    /// The endpoint the server named (`path`) on the stream opened at `url`.
+    fn named(url: &str, base: Option<&str>, path: &str) -> Result<Self> {
+        let joined = reqwest::Url::parse(url)?.join(path)?.to_string();
+        Ok(match base {
+            // The keeper sends a grant to the connector's origin: an absolute path goes right under the grant.
+            Some(_) if path.starts_with('/') && !path.starts_with("//") => Self::UnderGrant(path.to_owned()),
+            Some(base) => {
+                joined.strip_prefix(base).map_or_else(|| Self::Url(joined.clone()), |p| Self::UnderGrant(p.to_owned()))
+            }
+            None => Self::Url(joined),
+        })
+    }
+
+    fn url(&self, base: Option<&str>) -> Result<String> {
+        match (self, base) {
+            (Self::Url(url), _) => Ok(url.clone()),
+            (Self::UnderGrant(path), Some(base)) => Ok(format!("{base}{path}")),
+            (Self::UnderGrant(_), None) => anyhow::bail!("the Codync host no longer gives this connector a grant"),
+        }
+    }
+}
+
+/// Where to send, the headers to send, and (a cloud computer) the keeper's grant the URL is under.
+type Target = (String, reqwest::header::HeaderMap, Option<String>);
+
 impl Remote {
     /// The connector's URL and headers, with a fresh sign-in token (`stale` forces a refresh).
-    async fn target(&self, stale: bool) -> Result<(String, reqwest::header::HeaderMap)> {
+    async fn target(&self, stale: bool) -> Result<Target> {
         let res = crate::http()
             .post(format!("http://127.0.0.1:{}/api/connectorTarget", self.port))
             .bearer_auth(&self.token)
@@ -97,14 +130,15 @@ impl Remote {
                 reqwest::header::HeaderValue::from_str(v.as_str().unwrap_or_default())?,
             );
         }
-        Ok((target["url"].as_str().unwrap_or_default().to_owned(), headers))
+        let base = target["base"].as_str().map(str::to_owned);
+        Ok((target["url"].as_str().unwrap_or_default().to_owned(), headers, base))
     }
 
     /// Sends one message over streamable HTTP; returns what the server answered (JSON, or
     /// the events of an SSE stream). None: the server doesn't speak streamable HTTP.
     async fn forward(&self, msg: &Value, session: &mut Option<String>) -> Result<Option<Vec<Value>>> {
         for stale in [false, true] {
-            let (url, headers) = self.target(stale).await?;
+            let (url, headers, _) = self.target(stale).await?;
             let mut req = crate::http()
                 .post(&url)
                 .headers(headers)
@@ -156,9 +190,9 @@ impl Remote {
 
     /// Opens the older transport's event stream, which carries every answer from now on
     /// (sent to `tx`); returns the URL messages are posted to and the task reading the stream.
-    async fn open_legacy(&self, tx: mpsc::UnboundedSender<Value>) -> Result<(String, tokio::task::JoinHandle<()>)> {
+    async fn open_legacy(&self, tx: mpsc::UnboundedSender<Value>) -> Result<(Endpoint, tokio::task::JoinHandle<()>)> {
         for stale in [false, true] {
-            let (url, headers) = self.target(stale).await?;
+            let (url, headers, base) = self.target(stale).await?;
             let res = crate::http()
                 .get(&url)
                 .headers(headers)
@@ -177,8 +211,7 @@ impl Remote {
                 let event =
                     events.next().await?.ok_or_else(|| anyhow::anyhow!("{url} closed before naming its endpoint"))?;
                 if event.lines().any(|l| l.trim() == "event: endpoint" || l.trim() == "event:endpoint") {
-                    let path = sse_text(&event);
-                    break reqwest::Url::parse(&url)?.join(path.trim())?.to_string();
+                    break Endpoint::named(&url, base.as_deref(), sse_text(&event).trim())?;
                 }
             };
             let connector = self.connector.clone();
@@ -202,11 +235,12 @@ impl Remote {
 
     /// Posts one message on the older transport. Answers normally arrive on the stream;
     /// a server that answers in the body is heard too.
-    async fn post_legacy(&self, endpoint: &str, msg: &Value) -> Result<Vec<Value>> {
+    async fn post_legacy(&self, endpoint: &Endpoint, msg: &Value) -> Result<Vec<Value>> {
         for stale in [false, true] {
-            let (_, headers) = self.target(stale).await?;
+            let (_, headers, base) = self.target(stale).await?;
+            let endpoint = endpoint.url(base.as_deref())?;
             let res = crate::http()
-                .post(endpoint)
+                .post(&endpoint)
                 .headers(headers)
                 .json(msg)
                 .timeout(Duration::from_mins(1))
@@ -283,6 +317,20 @@ fn sse_data(event: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_endpoints_follow_each_grant() {
+        let at = |base: Option<&str>, path: &str| {
+            Endpoint::named("http://127.0.0.1:1/t/old/sse", base, path)
+                .unwrap()
+                .url(Some("http://127.0.0.1:1/t/new"))
+                .unwrap()
+        };
+        let grant = Some("http://127.0.0.1:1/t/old");
+        assert_eq!(at(grant, "/messages?sessionId=1"), "http://127.0.0.1:1/t/new/messages?sessionId=1");
+        assert_eq!(at(grant, "messages?sessionId=1"), "http://127.0.0.1:1/t/new/messages?sessionId=1");
+        assert_eq!(at(None, "/messages"), "http://127.0.0.1:1/messages", "any other computer: as the server named it");
+    }
 
     #[test]
     fn reads_sse_events() {

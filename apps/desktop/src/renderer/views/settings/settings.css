@@ -258,3 +258,66 @@
 .settings-appear {
   animation: fade-in var(--layout) both;
 }
+
+/* Codync Cloud: the commands that make a provider's key, selectable, with their copy button. */
+.settings-commands {
+  padding: 8px 6px 8px 12px;
+  border-radius: 12px;
+  background: var(--bubble-user);
+}
+.settings-commands-text {
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* One provider's key sheet. */
+.cloud-key-sheet {
+  width: 520px;
+}
+.cloud-key-body {
+  padding: 4px 20px 20px;
+}
+/* A cloud computer's `⋯` menu, and a provider's in New cloud computer. */
+.cloud-machine-menu, .cloud-provider-menu {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-s);
+}
+/* New cloud computer: a name, the providers on their logo tiles (rows like the agent picker's), then the buttons. */
+.cloud-new-sheet {
+  width: 440px;
+}
+.cloud-new-body {
+  padding: 4px 20px 4px;
+}
+/* One fill per provider row: picked or hovered, it holds the row's `⋯` too. */
+.cloud-provider-row {
+  border-radius: var(--radius-xs);
+  transition: background var(--hover);
+}
+.cloud-provider-row:hover, .cloud-provider-row:has(> [aria-pressed="true"]) {
+  background: var(--surface);
+}
+.cloud-provider-row > .agent-picker-item, .cloud-provider-row > .agent-picker-item:is(:hover, [aria-pressed="true"]) {
+  flex: 1;
+  background: transparent;
+}
+.cloud-provider-menu {
+  margin-right: 4px;
+}
+.cloud-provider-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--field);
+}
+.cloud-new-footer {
+  padding: 16px 20px 20px;
+}

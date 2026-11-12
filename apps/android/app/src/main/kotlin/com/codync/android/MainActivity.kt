@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
+        WhatsNew.start(applicationContext)
         // Clerk's session, not the UI's copy of it: right as sign-in and sign-out happen.
         Analytics.userId = NativeAccounts::activeUserId
         NotificationDisplay.channels(this)
@@ -94,10 +95,11 @@ class MainActivity : ComponentActivity() {
                             isAppearanceLightNavigationBars = !darkBars
                         }
                     }
-                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts)
+                    var launching by remember { mutableStateOf(true) }
+                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts, launching)
                         // Held while sign-in restores too: signed out, the app is only the welcome.
                         LaunchLayer(state.loading || state.account.restoring,
-                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
+                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) { launching = false } } }
                 }
             }
         }

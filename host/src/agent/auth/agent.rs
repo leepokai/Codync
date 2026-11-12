@@ -34,7 +34,7 @@ pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &st
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let mut env = launch_env(store, backend)?;
+    let (mut env, mut grants) = launch_env(store, backend)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
@@ -73,7 +73,10 @@ pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &st
             }),
         );
         match tokio::time::timeout(budget, init).await {
-            Ok(Ok(init)) => return Ok(Started { acp, inbox: rx, init, cmd }),
+            Ok(Ok(init)) => {
+                acp.hold(std::mem::take(&mut grants));
+                return Ok(Started { acp, inbox: rx, init, cmd });
+            }
             Ok(Err(e)) => {
                 let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
                     Incoming::Closed { stderr_tail } => stderr_reason(&stderr_tail),

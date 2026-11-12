@@ -14,6 +14,19 @@ public struct CloudError: LocalizedError, Sendable, Equatable {
         self.message = message
     }
 
+    /// A refused response's body.
+    init(status: Int, body: Data) {
+        struct Failure: Decodable {
+            struct Detail: Decodable { var code: String; var message: String? }
+            var error: Detail
+        }
+        let e = try? JSONDecoder().decode(Failure.self, from: body)
+        self.init(status: status, code: e?.error.code ?? "http\(status)", message: e?.error.message)
+    }
+
+    /// The cloud's emergency floor turned this app version away.
+    var isAppUpdateRequired: Bool { status == 426 && code == "appUpdateRequired" }
+
     public var errorDescription: String? {
         switch code {
         case "requestExpired": "The request expired. Ask again."
@@ -35,6 +48,8 @@ public struct CloudClient: Sendable {
     let identity: DeviceIdentity?
     let token: @Sendable () async throws -> String
     let session: URLSession
+    /// Where an emergency floor's refusal goes.
+    let floor: AppFloor
     /// How often `requestAccess` polls for the host's nonce.
     var pollInterval: Duration = .seconds(2)
 
@@ -42,12 +57,18 @@ public struct CloudClient: Sendable {
         self.init(baseURL: baseURL, identity: identity, session: .shared, token: token)
     }
 
-    init(baseURL: URL, identity: DeviceIdentity?, session: URLSession, token: @escaping @Sendable () async throws -> String) {
+    init(baseURL: URL, identity: DeviceIdentity?, session: URLSession, floor: AppFloor = .shared,
+         token: @escaping @Sendable () async throws -> String) {
         self.baseURL = baseURL
         self.identity = identity
         self.session = session
+        self.floor = floor
         self.token = token
     }
+
+    /// `Codync-App`, sent with every request to the Worker (the relay upgrade too): the cloud records this
+    /// app's version and updates a cloud computer to its `minHost` before it talks to it.
+    static let appHeader = "ios/\(AppVersion.current); minHost=\(VersionMismatch.minHost)"
 
     // MARK: account and devices
 
@@ -182,7 +203,50 @@ public struct CloudClient: Sendable {
         try await send("DELETE", "v1/access-requests/\(requestId)")
     }
 
-    // MARK: claims (§4.2 A)
+    // MARK: Codync Cloud
+
+    /// The account's cloud computers, whether this account may create them and how many, and the provider keys it gave.
+    public func cloudStatus() async throws -> CloudStatus {
+        try await request("GET", "v1/cloud-computers")
+    }
+
+    /// Gives Codync Cloud the key to the user's own account with `provider`. The cloud checks it there and keeps it
+    /// sealed; a refusal (`422 keyRefused`) says what to fix.
+    public func saveCloudKey(_ key: String, provider: String) async throws -> CloudCredential {
+        struct Res: Decodable { var credential: CloudCredential }
+        let res: Res = try await request("PUT", "v1/cloud-credentials/\(provider)", body: ["key": key])
+        return res.credential
+    }
+
+    /// Forgets the key (`409 conflict` while a cloud computer runs on that provider).
+    public func deleteCloudKey(provider: String) async throws {
+        try await send("DELETE", "v1/cloud-credentials/\(provider)")
+    }
+
+    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` when the cloud has Codync Cloud off,
+    /// `409` at the account's limit or without that provider's key).
+    public func createCloudMachine(provider: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider, "name": name])
+        return res.cloudComputer
+    }
+
+    /// Gives it a new name; its computer in the account, and its host, take it too.
+    public func renameCloudMachine(_ id: String, name: String) async throws -> CloudMachine {
+        struct Res: Decodable { var cloudComputer: CloudMachine }
+        let res: Res = try await request("PATCH", "v1/cloud-computers/\(id)", body: ["name": name])
+        return res.cloudComputer
+    }
+
+    /// Deletes the machine, its snapshots and backup, and takes its computer out of the account.
+    public func deleteCloudMachine(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)")
+    }
+
+    /// Erases its earlier saved states and backup, keeping the computer (`409 conflict` while it sleeps).
+    public func deleteCloudSnapshots(_ id: String) async throws {
+        try await send("DELETE", "v1/cloud-computers/\(id)/snapshots")
+    }
 
     public func createClaim() async throws -> CloudClaim {
         try await request("POST", "v1/claims")
@@ -205,10 +269,6 @@ public struct CloudClient: Sendable {
     // MARK: plumbing
 
     private struct NoBody: Encodable {}
-    private struct Failure: Decodable {
-        struct Detail: Decodable { var code: String; var message: String? }
-        var error: Detail
-    }
     private struct Ignored: Decodable {}
 
     private func send(_ method: String, _ path: String, body: (some Encodable)? = NoBody?.none, signed: Bool = false) async throws {
@@ -229,6 +289,7 @@ public struct CloudClient: Sendable {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         req.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
+        req.setValue(Self.appHeader, forHTTPHeaderField: "Codync-App")
         if signed, let identity {
             let header = try identity.signatureHeader(method: method, authority: RelayCrypto.authority(of: url),
                                                       pathAndQuery: RelayCrypto.pathAndQuery(of: url), body: data)
@@ -237,8 +298,9 @@ public struct CloudClient: Sendable {
         let (bytes, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            let e = try? JSONDecoder().decode(Failure.self, from: bytes)
-            throw CloudError(status: status, code: e?.error.code ?? "http\(status)", message: e?.error.message)
+            let error = CloudError(status: status, body: bytes)
+            if error.isAppUpdateRequired { await floor.refuse(error.message) }
+            throw error
         }
         return try JSONDecoder().decode(T.self, from: bytes.isEmpty ? Data("{}".utf8) : bytes)
     }

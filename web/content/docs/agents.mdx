@@ -59,6 +59,8 @@ A Pi bot gets Codync's tools (messages, memory, routines, connectors, managing t
 
 Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
 
+On Windows, Antigravity unpacks itself into a `_MEI…` folder of about 130 MB in `%TEMP%` each time it starts, and removes it when it stops. Earlier versions of Codync ended it before it could, and a forced stop still does: updating Codync or restarting its host while Antigravity runs, signing out of Windows, or a crash. To get that space back, delete the `_MEI…` folders in `%TEMP%` that hold a `google3` folder while no Antigravity bot is working.
+
 WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.
 
 DeepSeek Harness runs its own `dsh --profile acp` mode. It has no sign-in command: it uses the DeepSeek API key saved in `dsh web`, or `DEEPSEEK_API_KEY` set in `~/.dsh/.env`. After the host or the agent restarts, a DeepSeek Harness bot carries on in the same session.
@@ -77,7 +79,7 @@ To run an agent that isn't listed, open the bot's settings, set **Agent** to **C
 
 ## How Codync finds installed agents
 
-The host looks for each agent's command on the same `PATH` your login shell uses, plus the usual install folders (Homebrew, `~/.local/bin`, nvm, bun, volta, asdf, mise, pnpm and others). When an installed agent has its own ACP mode, Codync runs it directly. Otherwise it runs the agent's ACP adapter from the registry.
+The host looks for each agent's command on the same `PATH` your login shell uses, plus the usual install folders (Homebrew, `~/.local/bin`, nvm, bun, volta, asdf, mise, pnpm and others). When an installed agent has its own ACP mode, Codync runs it directly. Otherwise it runs the agent's ACP adapter from the registry. OpenCode older than 2 is the exception: it keeps retrying a model that refused it, so a reply never comes, and Codync runs the registry's OpenCode instead, downloaded into `~/.codync/agents`. That copy uses your OpenCode sign-in but keeps its sessions apart from yours. Update OpenCode to 2 or later and Codync runs yours again.
 
 Opening **Extensions** checks again, so an agent you installed or signed in to outside Codync shows up without restarting anything.
 

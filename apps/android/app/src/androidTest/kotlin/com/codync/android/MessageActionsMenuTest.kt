@@ -37,7 +37,7 @@ class MessageActionsMenuTest {
         val text = "Checked the connection. The saved route works."
         val entry = Entry("reply", 1, bot.id, rev = 1, kind = "agent", data = buildJsonObject { put("text", text); put("final", true) })
         val initial = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot),
-            connection = LinkState.Ready(HostRoute.Direct), historyComplete = setOf(bot.id), entries = listOf(entry))
+            connection = LinkState.Ready(HostRoute.Direct), historyEnd = mapOf(bot.id to HistoryEnd.Complete), entries = listOf(entry))
         val state = mutableStateOf(initial)
         compose.setContent { Hosted { ChatScreen(state.value, store, {}) } }
         val bubble = compose.onNode(hasText(text, substring = true) and hasClickAction())
@@ -68,7 +68,7 @@ class MessageActionsMenuTest {
             put("text", "Ship it"); put("replyTo", buildJsonObject { put("id", reply.id); put("author", bot.id); put("text", text) })
         })
         val state = AppState(previewComputer, loading = false, selectedBot = bot.id, bots = listOf(bot), connection = LinkState.Ready(HostRoute.Direct),
-            historyComplete = setOf(bot.id), entries = listOf(reply, quoted))
+            historyEnd = mapOf(bot.id to HistoryEnd.Complete), entries = listOf(reply, quoted))
         var shown by mutableStateOf(state)
         compose.setContent { Hosted { ChatScreen(shown, store, {}) } }
         // The sent reply shows what it quotes.

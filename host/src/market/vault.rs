@@ -1,6 +1,10 @@
 //! Encrypted records backed by the operating system credential store. The database
 //! contains ciphertext only; its random master key lives in Keychain/Secret Service
 //! (a disposable host: in a file beside its data, see `key_in_folder`).
+//!
+//! A Codync Cloud computer keeps none of this: its records live in its keeper (`crate::keeper`), a process its
+//! agents can't read, and the host only asks it for them.
+use crate::remote::managed::is_managed;
 use crate::{LockExt, environment::Environment, store::Store};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -25,6 +29,9 @@ const PROMPT_TIMEOUT: Duration = Duration::from_mins(1);
 /// locks on runtime workers. One read runs at a time and owns `vault_unlock`: callers
 /// arriving meanwhile share its outcome instead of prompting again.
 pub async fn unlock(hub: Arc<crate::hub::Hub>) -> Result<()> {
+    if is_managed(&hub.store) {
+        return crate::keeper::client::wait_unlocked(&hub).await;
+    }
     if hub.store.secret_key.locked().is_some() {
         return Ok(());
     }
@@ -134,18 +141,56 @@ fn unavailable() -> anyhow::Error {
     )
 }
 
+/// Whether `slot` holds a record, answered without opening the vault.
+pub fn saved(store: &Store, slot: &str) -> Result<bool> {
+    if is_managed(store) {
+        return crate::keeper::client::has(store, slot);
+    }
+    Ok(store.kv_read(slot)?.is_some())
+}
+
 pub fn read(store: &Store, slot: &str) -> Result<Option<String>> {
+    if is_managed(store) {
+        return crate::keeper::client::reveal(store, slot);
+    }
     let Some(raw) = store.kv_read(slot)? else {
         return Ok(None);
     };
-    if !raw.starts_with(PREFIX) {
+    let Some(sealed) = raw.strip_prefix(PREFIX) else {
         // Move existing host configuration into the vault before returning it.
         write(store, slot, &raw)?;
         return Ok(Some(raw));
+    };
+    let key = store.secret_key.locked();
+    let key = key.as_ref().ok_or_else(unavailable)?;
+    Ok(Some(String::from_utf8(open(key, slot.as_bytes(), sealed)?.to_vec())?))
+}
+
+pub fn write(store: &Store, slot: &str, value: &str) -> Result<()> {
+    if is_managed(store) {
+        return crate::keeper::client::put(store, slot, value);
     }
     let key = store.secret_key.locked();
     let key = key.as_ref().ok_or_else(unavailable)?;
-    let bytes = STANDARD.decode(&raw[PREFIX.len()..]).map_err(|_| anyhow!("Invalid encrypted credential record"))?;
+    store.kv_set(slot, &format!("{PREFIX}{}", seal(key, slot.as_bytes(), value.as_bytes())?))
+}
+
+/// Seals `plain` with the 32-byte `key` (XChaCha20-Poly1305, a random nonce), bound to `aad`: base64 of the nonce
+/// and the ciphertext. The keeper seals its records the same way.
+pub(crate) fn seal(key: &[u8], aad: &[u8], plain: &[u8]) -> Result<String> {
+    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| unavailable())?;
+    let mut nonce = [0; 24];
+    getrandom::fill(&mut nonce).map_err(|_| anyhow!("Could not generate credential nonce"))?;
+    let sealed = cipher
+        .encrypt(&nonce.into(), Payload { msg: plain, aad })
+        .map_err(|_| anyhow!("Could not encrypt credentials"))?;
+    let bytes: Vec<u8> = nonce.into_iter().chain(sealed).collect();
+    Ok(STANDARD.encode(bytes))
+}
+
+/// Opens what [`seal`] made with the same `key` and `aad`; anything else fails.
+pub(crate) fn open(key: &[u8], aad: &[u8], sealed: &str) -> Result<Zeroizing<Vec<u8>>> {
+    let bytes = STANDARD.decode(sealed).map_err(|_| anyhow!("Invalid encrypted credential record"))?;
     if bytes.len() < 24 {
         bail!("Invalid encrypted credential record");
     }
@@ -153,23 +198,10 @@ pub fn read(store: &Store, slot: &str) -> Result<Option<String>> {
     let plain = cipher
         .decrypt(
             &XNonce::try_from(&bytes[..24]).map_err(|_| anyhow!("Invalid credential nonce"))?,
-            Payload { msg: &bytes[24..], aad: slot.as_bytes() },
+            Payload { msg: &bytes[24..], aad },
         )
         .map_err(|_| anyhow!("Could not decrypt credentials; the stored record was preserved"))?;
-    Ok(Some(String::from_utf8(plain)?))
-}
-
-pub fn write(store: &Store, slot: &str, value: &str) -> Result<()> {
-    let key = store.secret_key.locked();
-    let key = key.as_ref().ok_or_else(unavailable)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| unavailable())?;
-    let mut nonce = [0; 24];
-    getrandom::fill(&mut nonce).map_err(|_| anyhow!("Could not generate credential nonce"))?;
-    let sealed = cipher
-        .encrypt(&nonce.into(), Payload { msg: value.as_bytes(), aad: slot.as_bytes() })
-        .map_err(|_| anyhow!("Could not encrypt credentials"))?;
-    let bytes: Vec<u8> = nonce.into_iter().chain(sealed).collect();
-    store.kv_set(slot, &format!("{PREFIX}{}", STANDARD.encode(bytes)))
+    Ok(Zeroizing::new(plain))
 }
 
 #[cfg(test)]

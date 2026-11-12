@@ -33,7 +33,7 @@ In the terminal, the waiting messages show above the input; press `esc`, then `S
 
 **When the computer is offline**, the iPhone can still take a text message: it shows **Waiting for the computer to come online** and goes out when the computer is back. It waits in the Codync relay, encrypted for your computer, for up to 24 hours; after that it shows **Failed to send**. With no relay (a computer in no account), it waits on the phone instead and goes when the phone reaches the computer again. Tap the cancel button beside it to take it back. A message with files can't wait; its send button stays off until the computer is online.
 
-If a message fails to send, it shows **Failed to send** with buttons to resend or delete it.
+If a message fails to send, it shows **Failed to send** with buttons to resend or delete it. On **iPhone** and **Desktop**, a message's files stay on the device only until the app closes. After that, resending it shows an error instead of sending the text without its files: delete it and attach them again.
 
 On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
 
@@ -122,7 +122,7 @@ Type `/` at the start of a message to see the bot's commands:
 - `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 
-Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it. See [Bots](/docs/bots#sessions).
+Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
 
 ## Fresh conversations
 
@@ -137,6 +137,8 @@ Before your next message, you can:
 - **Terminal UI:** pick the card (`v`), then `o` to show what it carries, `e` to edit it, or `K` to keep the conversation.
 
 Afterwards the card folds into one line that unfolds to what was carried.
+
+Fresh conversations come only from a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) setting is something other than Auto, the default. Changing it takes back a card the new setting no longer calls for, and the conversation carries on.
 
 ## Notifications
 

@@ -180,6 +180,8 @@ pub struct Acp {
     /// The process and process group leader.
     #[cfg(unix)]
     pid: Option<u32>,
+    /// A cloud computer's keeper grants this process started with: revoked once it is stopped, or gone.
+    grants: std::sync::Mutex<crate::keeper::client::Grants>,
 }
 
 impl Acp {
@@ -274,6 +276,7 @@ impl Acp {
             child,
             #[cfg(unix)]
             pid,
+            grants: std::sync::Mutex::default(),
         });
         note_started(&acp);
         Ok((acp, rx))
@@ -284,11 +287,20 @@ impl Acp {
         self.pid
     }
 
+    /// Keeps the grants in this process's environment for as long as it runs (`stop` or drop revokes them).
+    pub fn hold(&self, grants: crate::keeper::client::Grants) {
+        *self.grants.locked() = grants;
+    }
+
+    /// Whether it was started with keeper grants (which a restarted keeper no longer knows).
+    pub fn holds_grants(&self) -> bool {
+        !self.grants.locked().is_empty()
+    }
+
     /// Everything still running in the agent's job.
     #[cfg(windows)]
     pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
-        let members = self.child.lock().await.job_members()?;
-        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
+        self.child.lock().await.processes().await
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -337,6 +349,8 @@ impl Acp {
         if !child.begin_stop() {
             return;
         }
+        let grants = std::mem::take(&mut *self.grants.locked());
+        drop(grants);
         self.stdin.lock().await.take();
         let owned = self.child.clone();
         let mut stopping = STOPPING.locked();
@@ -345,7 +359,8 @@ impl Acp {
     }
 }
 
-/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;

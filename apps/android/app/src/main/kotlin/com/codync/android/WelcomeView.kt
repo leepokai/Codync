@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -41,7 +40,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -69,11 +67,8 @@ import kotlin.math.sin
     LaunchedEffect(Unit) {
         for (next in beat + 1..4) { delay(if (next == 1) 150 else 280); beat = next }
     }
-    val density = LocalDensity.current
-    // What the pitch needs besides the crew, which shrinks into the rest.
-    var textHeight by remember { mutableStateOf(0.dp) }
     Column(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
-        // The way forward stays on screen at any size: the pitch above it gives way.
+        // The way forward stays on screen at any size: the pitch scrolls above it on the smallest.
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val room = maxHeight
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -81,8 +76,8 @@ import kotlin.math.sin
                 Column(Modifier.fillMaxWidth().heightIn(min = room).padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.SpaceBetween) {
                     Spacer(Modifier.height(0.dp))
-                    Crew(beat >= 1, room - textHeight - 48.dp, Modifier.padding(top = 24.dp))
-                    Column(Modifier.padding(top = 24.dp).onSizeChanged { textHeight = with(density) { it.height.toDp() } }) {
+                    Crew(beat >= 1, Modifier.padding(top = 24.dp))
+                    Column(Modifier.padding(top = 24.dp)) {
                         ChatGlimpse(beat >= 2, Modifier.padding(bottom = 24.dp))
                         Column(Modifier.rise(beat >= 3), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(tr("Your coding agents,\nas teammates."), style = Type.system(34f, FontWeight.SemiBold).copy(letterSpacing = (-0.6).sp),
@@ -103,13 +98,11 @@ import kotlin.math.sin
                 Modifier.fillMaxWidth().padding(bottom = 4.dp), style = Type.footnote, color = Palette.secondary)
             if (state.account.configured) {
                 SignInButtons(state, store)
-                SecondaryButton(start, Modifier.fillMaxWidth()) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(tr("Continue without an account"), style = Type.subheadline.medium, color = Palette.text)
-                        // A little stronger than `Palette.secondary`, which is too faint for this size on the fill.
-                        Text(tr("Only on the same Wi-Fi or Tailscale as your computer"), style = Type.caption,
-                            color = Palette.text.copy(alpha = 0.7f), textAlign = TextAlign.Center)
-                    }
+                Column(Modifier.fillMaxWidth().heightIn(min = 44.dp).plainButton(action = start),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
+                    Text(tr("Continue without an account"), style = Type.footnote.medium, color = Palette.text)
+                    Text(tr("Only on the same Wi-Fi or Tailscale as your computer"), style = Type.caption2, color = Palette.secondary,
+                        textAlign = TextAlign.Center)
                 }
             } else WideButton("Get started", action = start)
             // Restoring sign-in failed (the only account error): Clerk retries on its own with a backoff of up to a minute; Try again asks now.
@@ -124,34 +117,27 @@ import kotlin.math.sin
 }
 
 /** Five bots bobbing out of step: the "persistent, named" part of the pitch, without words. */
-@Composable private fun Crew(shown: Boolean, room: Dp, modifier: Modifier = Modifier) {
+@Composable private fun Crew(shown: Boolean, modifier: Modifier = Modifier) {
     val still = reduceMotion()
-    // It shrinks into the height the pitch leaves it, and goes when it would be too small to read.
-    val fit = (room / CREW_HEIGHT).coerceAtMost(1f).takeIf { it >= 0.35f } ?: 0f
-    val scale by animateFloatAsState(fit, Motion.fade(), label = "Crew")
     var time by remember { mutableFloatStateOf(0f) }
     if (shown && !still) LaunchedEffect(Unit) { while (true) withFrameNanos { time = it / 1e9f } }
     val density = LocalDensity.current
-    Box(modifier.fillMaxWidth().height(CREW_HEIGHT * scale), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().requiredHeight(CREW_HEIGHT).graphicsLayer { scaleX = scale; scaleY = scale }, contentAlignment = Alignment.Center) {
-            for ((index, member) in CREW.withIndex()) {
-                val entry = remember { Animatable(if (still) 1f else 0f) }
-                LaunchedEffect(shown) {
-                    if (shown) { delay(index * 70L); entry.animateTo(1f, Motion.spring(0.7f, 0.4f)) } else entry.snapTo(0f)
-                }
-                Box(Modifier.graphicsLayer {
-                    val bob = if (still) 0f else sin(time * 1.3f + index * 1.7f) * 5f
-                    translationX = with(density) { member.x.dp.toPx() }
-                    translationY = with(density) { (member.y + bob).dp.toPx() }
-                    val scale = 0.3f + 0.7f * entry.value
-                    scaleX = scale; scaleY = scale; alpha = entry.value.coerceIn(0f, 1f)
-                }) { CharacterAvatar(member.shape, member.color, member.size.dp, member.mood) }
+    Box(modifier.fillMaxWidth().height(170.dp), contentAlignment = Alignment.Center) {
+        for ((index, member) in CREW.withIndex()) {
+            val entry = remember { Animatable(if (still) 1f else 0f) }
+            LaunchedEffect(shown) {
+                if (shown) { delay(index * 70L); entry.animateTo(1f, Motion.spring(0.7f, 0.4f)) } else entry.snapTo(0f)
             }
+            Box(Modifier.graphicsLayer {
+                val bob = if (still) 0f else sin(time * 1.3f + index * 1.7f) * 5f
+                translationX = with(density) { member.x.dp.toPx() }
+                translationY = with(density) { (member.y + bob).dp.toPx() }
+                val scale = 0.3f + 0.7f * entry.value
+                scaleX = scale; scaleY = scale; alpha = entry.value.coerceIn(0f, 1f)
+            }) { CharacterAvatar(member.shape, member.color, member.size.dp, member.mood) }
         }
     }
 }
-
-private val CREW_HEIGHT = 170.dp
 
 private class CrewMember(val shape: String, val color: String, val size: Int, val x: Float, val y: Float, val mood: String)
 
@@ -202,15 +188,15 @@ private val CREW = listOf(
     val busy = "session" in state.busy
     val enabled = state.account.ready && !busy
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WideButton(enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Apple) }) {
+        WideButton(enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.Apple) }) {
             Symbol("apple.logo", size = 20.dp, tint = Palette.onAccent)
             Text(tr("Continue with Apple"))
         }
-        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.Google) }) {
+        WideButton(primary = false, enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.Google) }) {
             Image(painterResource(R.drawable.google_logo), null, Modifier.size(20.dp))
             Text(tr("Continue with Google"))
         }
-        WideButton(primary = false, enabled = enabled, busy = busy, action = { store.signIn(SignInProvider.GitHub) }) {
+        WideButton(primary = false, enabled = enabled, busy = busy, height = SIGN_IN_HEIGHT, action = { store.signIn(SignInProvider.GitHub) }) {
             Symbol("github.logo", size = 20.dp)
             Text(tr("Continue with GitHub"))
         }
@@ -223,10 +209,10 @@ private val CREW = listOf(
 @Composable internal fun WideButton(title: String, primary: Boolean = true, enabled: Boolean = true, action: () -> Unit) =
     WideButton(primary, enabled, action = action) { Text(tr(title)) }
 
-@Composable internal fun WideButton(primary: Boolean = true, enabled: Boolean = true, busy: Boolean = false, action: () -> Unit,
+@Composable internal fun WideButton(primary: Boolean = true, enabled: Boolean = true, busy: Boolean = false, height: Dp = WIDE_HEIGHT, action: () -> Unit,
     label: @Composable () -> Unit) {
     val content: @Composable () -> Unit = {
-        Box(Modifier.fillMaxWidth().heightIn(min = WIDE_HEIGHT), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().heightIn(min = height), contentAlignment = Alignment.Center) {
             Row(Modifier.graphicsLayer { alpha = if (busy) 0f else 1f }, verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides Type.headline) { label() }
@@ -239,6 +225,8 @@ private val CREW = listOf(
 
 // The label's own 50-point frame, inside the style's 11-point vertical padding (72 in all, as on iOS).
 private val WIDE_HEIGHT: Dp = 50.dp
+// 50 in all, so the welcome keeps its crew on small screens.
+private val SIGN_IN_HEIGHT: Dp = 28.dp
 
 /** Fades up into place once `shown`. */
 @Composable private fun Modifier.rise(shown: Boolean): Modifier {

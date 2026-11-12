@@ -1997,5 +1997,11 @@
   "Hide {name}": "{name} 가리기",
   "Hide Others": "기타 가리기",
   "Show All": "모두 보기",
-  "Services": "서비스"
+  "Services": "서비스",
+  "{name} is using the computer": "{name} 컴퓨터 사용 중",
+  "Take over": "제어 가져오기",
+  "Hand back to bots": "봇에게 돌려주기",
+  "Copy from computer": "컴퓨터에서 복사",
+  "Keyboard for the remote screen": "원격 화면 키보드",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "원격 화면에 연결할 수 없습니다. 컴퓨터의 연결을 확인하고 다시 시도하세요."
 }

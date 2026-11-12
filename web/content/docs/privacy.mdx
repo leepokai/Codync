@@ -37,7 +37,7 @@ The relay can't add a device to your computer. A new device needs either a pairi
 
 **Cloud assistants are the other exception.** If you turn them on at a computer and add the Codync connector to ChatGPT, Claude or another assistant, the assistant's requests to your bots and the bots' replies pass through the relay over HTTPS, and the relay can read them (it doesn't store them). They're off until you turn them on at the computer, and the relay passes on only requests from your own account. See [Cloud assistants](/docs/cloud-assistants).
 
-**Remote screen** sessions are encrypted between your phone and your computer. When there's no direct path, the video goes through a Cloudflare relay that can't see what's on your screen.
+**Remote screen** sessions are encrypted between your phone or desktop app and the computer you're viewing. When there's no direct path, the video goes through a Cloudflare relay that can't see what's on your screen. The desktop app uses that relay only for computers in your account (a cloud computer, for one); a computer it reaches over SSH always connects directly.
 
 **Local network advertising.** A computer in no account has no relay to tell a phone its new address, so it advertises its computer ID and private network addresses on the local network over mDNS. Anyone on that network can read them; Tailscale names and addresses are left out, and nothing is advertised once the computer is in an account. They go nowhere beyond the network.
 

@@ -1,11 +1,12 @@
-//! Phones viewing the screen: prepared WebRTC sessions, offers, takeover and the on/off switch.
+//! Viewers of the screen (phones, the desktop app): prepared WebRTC sessions, offers, takeover and the on/off switch.
 
-use super::{Control, KV_ENABLED, Screen, Viewer, ViewerState};
+use super::{Control, EndedViewer, KV_ENABLED, Screen, Viewer, ViewerState};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,7 +41,7 @@ impl Screen {
             let mut sessions = self.sessions.locked();
             let now = crate::store::now_ms();
             // Started/failed viewers stay registered until their watcher closes the helper.
-            sessions.retain(|_, v| v.state != ViewerState::Prepared || v.pending_until > now);
+            self.end_viewers(&mut sessions, |_, v| v.state == ViewerState::Prepared && v.pending_until <= now);
             if sessions.len() >= 32 || sessions.values().filter(|v| v.owner == owner).count() >= 4 {
                 bail!("too many screen sessions; close another screen and try again");
             }
@@ -52,6 +53,7 @@ impl Screen {
                     owner: owner.to_owned(),
                     ice,
                     state: ViewerState::Prepared,
+                    opened_at: now,
                     pending_until: now + 60_000,
                     link_id: link.id,
                     signaling: trickle.then(super::signaling::Signaling::new),
@@ -161,12 +163,37 @@ impl Screen {
 
     pub(super) fn remove_session(&self, session: &str) -> bool {
         let mut sessions = self.sessions.locked();
-        let removed = sessions.remove(session).is_some();
+        let removed = self.end_viewers(&mut sessions, |id, _| id == session);
         if sessions.is_empty() {
             // Nobody is watching: hand control back to the bots.
             self.control.locked().user = false;
         }
         removed
+    }
+
+    /// Removes the viewers `ends` picks; every removal goes through here, so each one's watcher reports how it ended.
+    /// Whether any was removed.
+    pub(super) fn end_viewers(
+        &self,
+        sessions: &mut HashMap<String, Viewer>,
+        ends: impl Fn(&str, &Viewer) -> bool,
+    ) -> bool {
+        let now = crate::store::now_ms();
+        let mut ended = self.ended.locked();
+        let before = sessions.len();
+        sessions.retain(|id, viewer| {
+            let end = ends(id, viewer);
+            if end {
+                ended.insert(id.clone(), viewer.ended(now));
+            }
+            !end
+        });
+        sessions.len() < before
+    }
+
+    /// How `session` ended, once (`watch_viewer` reports it).
+    fn take_ended(&self, session: &str) -> Option<EndedViewer> {
+        self.ended.locked().remove(session)
     }
 
     pub fn takeover(&self, on: bool) {
@@ -188,7 +215,7 @@ impl Screen {
             {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close screen sessions");
             }
-            self.sessions.locked().clear();
+            self.end_viewers(&mut self.sessions.locked(), |_, _| true);
             *self.control.locked() = Control::default();
         }
         self.emit();
@@ -202,7 +229,7 @@ pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let expired = {
             let sessions = hub.screen.sessions.locked();
-            let Some(viewer) = sessions.get(&session) else { return };
+            let Some(viewer) = sessions.get(&session) else { break };
             let now = crate::store::now_ms();
             viewer.expired(now)
         };
@@ -211,8 +238,11 @@ pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close expired screen session");
                 continue;
             }
-            return;
+            break;
         }
+    }
+    if let Some(ended) = hub.screen.take_ended(&session) {
+        crate::analytics::remote_screen_finished(&hub, &owner, &ended);
     }
 }
 
@@ -223,6 +253,23 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicI64;
     use tokio::sync::{broadcast, mpsc};
+
+    #[test]
+    fn an_ended_session_is_reported_once_with_how_far_it_got() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let (tx, _) = mpsc::unbounded_channel();
+        *screen.link.locked() =
+            Some(Arc::new(Link { id: 1, tx, pending: Mutex::default(), next_id: AtomicI64::new(1) }));
+        let id = screen.prepare("phone", IceConfig::default(), false).unwrap()["session"].as_str().unwrap().to_owned();
+        screen.sessions.locked().get_mut(&id).unwrap().state = ViewerState::Connected;
+        assert!(screen.remove_session(&id));
+        let ended = screen.take_ended(&id).unwrap();
+        assert_eq!(ended.outcome, "connected");
+        assert!(!ended.relay, "no TURN servers were handed out");
+        assert!(screen.take_ended(&id).is_none(), "reported once");
+        assert!(!screen.remove_session(&id));
+    }
 
     #[test]
     fn prepared_sessions_are_bounded_and_do_not_count_as_viewers() {

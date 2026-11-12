@@ -11,6 +11,17 @@ It needs a free Codync account (Apple, Google or GitHub). Every app reaches a cl
 
 Each account can have up to three cloud computers, on either provider. A provider's key stays while a cloud computer runs there. To replace it, open the provider's **⋯** in **New cloud computer** (or the cloud computer's **⋯** menu) and choose its API key; **Remove key** appears there once no cloud computer uses it.
 
+## Its screen
+
+A cloud computer has a desktop of its own (Linux with Xfce, 1920×1080). Watch and control it from the iPhone or
+Android (**Screen** on the computer in **Manage computers**, or **Computer** in a chat) or from the desktop app
+(**Screen** on the computer's heading in the sidebar), and turn on **Use the computer** for a bot to let it open apps
+and click and type there. The desktop runs as the same user as your bots, without sudo. It isn't the provider's own
+desktop (InstaBox's **Computer** tab shows that one, not this).
+
+The picture usually reaches you through Cloudflare's TURN service, encrypted end to end, at up to 4 Mbps and 30 fps.
+Cloud computers made before this feature have no desktop; delete and make the cloud computer again to get one.
+
 ## Sleep and wake
 
 A cloud computer goes to sleep while its bots have nothing to do, so it doesn't run up your provider's bill. It shows "Sleeping · wakes when you message", and it wakes when you message one of its bots, when a routine is due or when a webhook arrives. Waking takes a few seconds, longer after a long sleep.

@@ -68,6 +68,8 @@ pub enum Event {
     /// A desktop window's crashed page loaded again, or crashed too often and stays down.
     WindowRecovery,
     RemoteScreenOpened,
+    /// A viewer's screen session ended (`screen::watch_viewer`).
+    RemoteScreenFinished,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
@@ -180,6 +182,7 @@ impl Event {
             Self::VoiceCallQuality => "voice_call_quality",
             Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
+            Self::RemoteScreenFinished => "remote_screen_finished",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",

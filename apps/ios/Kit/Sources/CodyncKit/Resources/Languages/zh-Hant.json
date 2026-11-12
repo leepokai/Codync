@@ -1997,5 +1997,11 @@
   "Hide {name}": "隱藏 {name}",
   "Hide Others": "隱藏其他",
   "Show All": "顯示全部",
-  "Services": "服務"
+  "Services": "服務",
+  "{name} is using the computer": "{name} 正在使用這臺電腦",
+  "Take over": "接手控制",
+  "Hand back to bots": "交還給 Bot",
+  "Copy from computer": "從電腦複製",
+  "Keyboard for the remote screen": "遠端螢幕的鍵盤",
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "無法連線到遠端螢幕。請檢查電腦的網路連線後再試一次。"
 }

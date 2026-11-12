@@ -311,6 +311,9 @@ export class BotSync extends BotMirror {
       case 'name':
         this.setHostName(event.name)
         break
+      case 'autoOrder':
+        this.showAutoOrder(event.enabled)
+        break
       case 'network':
         this.network = event.network
         break

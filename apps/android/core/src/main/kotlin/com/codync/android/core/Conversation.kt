@@ -189,6 +189,8 @@ sealed interface MirrorEvent {
     data class Network(val view: NetworkView) : MirrorEvent
     /** The computer took a new name (a cloud computer renamed from any device): live only, its `hello` says it from now on. */
     data class Name(val name: String) : MirrorEvent
+    /** The computer's automatic bot order was switched (from any device): live only, its `hello` says it from now on. */
+    data class AutoOrder(val enabled: Boolean) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -209,6 +211,7 @@ sealed interface MirrorEvent {
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
             "name" -> value.text("name")?.let(::Name) ?: Ignored
+            "autoOrder" -> value["enabled"]?.jsonPrimitive?.booleanOrNull?.let(::AutoOrder) ?: Ignored
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored

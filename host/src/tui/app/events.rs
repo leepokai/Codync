@@ -70,6 +70,7 @@ impl App {
                     name.clone_into(&mut self.host);
                 }
             }
+            Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);

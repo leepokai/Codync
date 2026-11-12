@@ -83,8 +83,9 @@ channels `input` and `input-fast`), recovery and renewal like the iPhone's `Scre
   direct only. Complete SDP needs no `screenCandidates` stream on either route.
 - **Mouse**: forwarded as it happens, not as gestures: `down`/`up` with the button, the click count (so a double-click
   stays one) and the modifiers held, `move` once per frame on `input-fast`, the wheel as `scroll` in pixels.
-- **Keyboard**: a hidden text field holds focus. Named keys and shortcuts go as `key` (from the physical key, so
-  ⌘⌥Z is Z); typing, characters typed with Option or AltGr (`@` on a German keyboard) and input methods (Zhuyin,
+- **Keyboard**: a hidden text field holds focus. Named keys and shortcuts go as `key` (the letter the keyboard layout gives, so German Ctrl+Z stays Z, else
+  the physical key, so ⌘⌥Z is Z), and the app's menu shortcuts (⌘F, ⌘R, …) stay off while the field has focus
+  (`main/remote-keyboard.ts`; paste keeps its menu item); typing, characters typed with Option or AltGr (`@` on a German keyboard) and input methods (Zhuyin,
   Pinyin) arrive as `text`. On a Mac viewing Linux or Windows, ⌘
   acts as Ctrl. Paste sends the local clipboard (`clipboard`) before the shortcut; **Copy from computer** appears
   when the computer copied text. Escape and Tab go to the computer while you have control; the close button ends the

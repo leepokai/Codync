@@ -142,7 +142,16 @@ export function useScreenInput({ stage, video, keys }: Targets, state: State) {
     field.addEventListener('input', onInput)
     field.addEventListener('compositionend', onComposed)
     field.addEventListener('paste', onPaste)
+    // While the field has focus, menu shortcuts (⌘F, ⌘R, …) go to the computer instead of acting here.
+    const onFocus = () => window.codync.app.remoteKeyboard(true)
+    const onBlur = () => window.codync.app.remoteKeyboard(false)
+    field.addEventListener('focus', onFocus)
+    field.addEventListener('blur', onBlur)
+    if (document.activeElement === field) onFocus()
     return () => {
+      onBlur()
+      field.removeEventListener('focus', onFocus)
+      field.removeEventListener('blur', onBlur)
       cancelAnimationFrame(moveFrame)
       cancelAnimationFrame(wheelFrame)
       area.removeEventListener('mousedown', onDown)

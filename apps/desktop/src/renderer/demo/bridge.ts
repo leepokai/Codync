@@ -123,6 +123,7 @@ const bridge: CodyncBridge = {
     reportError() {},
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
     copy: (text) => void navigator.clipboard?.writeText(text).catch(() => {}),
+    remoteKeyboard: none,
     pickFiles: async () => [],
     pickExport: async () => null,
     readClipboardFiles: async () => [],

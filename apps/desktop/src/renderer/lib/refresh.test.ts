@@ -106,6 +106,21 @@ test('an unresponsive host cannot leave manual refresh spinning forever', async 
   store.retire()
 })
 
+test("another device's auto order switch shows here", async () => {
+  let send!: (event: object) => void
+  const ready = deferred()
+  const store = sync({
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [], autoOrder: false }),
+    stream: (_path, onData) => { send = (event) => onData(JSON.stringify(event)); ready.resolve(); return () => {} },
+  })
+  store.start()
+  await ready.promise
+  assert.equal(store.hello?.autoOrder, false)
+  send({ type: 'autoOrder', enabled: true })
+  assert.equal(store.hello?.autoOrder, true)
+  store.retire()
+})
+
 /** A store over the cache another app version left: "gone" and "kept" from the computer and a message that didn't send, with each events stream it opens. */
 function syncOverStaleCache() {
   const entry = (id: string, seq: number, rev: number, data = {}) => ({ id, seq, botId: 'b1', rev, kind: 'agent', turn: 1, data, createdAt: 1, updatedAt: 1 })

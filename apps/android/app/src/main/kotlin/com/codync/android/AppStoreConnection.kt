@@ -188,6 +188,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveArtifacts(batch)
             receiveNetwork(batch)
             batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
+            batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()

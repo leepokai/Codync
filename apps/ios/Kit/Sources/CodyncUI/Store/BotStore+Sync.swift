@@ -151,6 +151,8 @@ extension BotStore {
             network = view
         case let .name(name):
             hello?.name = name
+        case let .autoOrder(on):
+            hello?.autoOrder = on
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

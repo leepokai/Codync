@@ -12,10 +12,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// Starts `backend` and completes `initialize`, trying each way to launch it.
-/// The agent's inbox must stay open: the reader stops when nobody listens.
-pub(super) type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
+/// An agent past `initialize`.
+pub(crate) struct Started {
+    pub(crate) acp: Arc<Acp>,
+    /// Must stay open: the reader stops when nobody listens, and the agent then never answers.
+    pub(crate) inbox: mpsc::UnboundedReceiver<Incoming>,
+    /// Its answer to `initialize`.
+    pub(crate) init: Value,
+    pub(crate) cmd: Cmd,
+}
 
+/// Starts `backend` and completes `initialize`, trying each way to launch it.
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
     start_candidates(store, backend, &[], false).await
 }
@@ -29,6 +36,12 @@ pub(crate) async fn start_registry(store: &Store, backend: &str, extra_env: &[(S
 /// `start` with the environment an account or a probe adds on top of the launch's own.
 pub(crate) async fn start_with_env(store: &Store, backend: &str, extra_env: &[(String, String)]) -> Result<Started> {
     start_candidates(store, backend, extra_env, false).await
+}
+
+/// [`start`], with `extra` added to the agent's environment.
+pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &str)]) -> Result<Started> {
+    let extra: Vec<(String, String)> = extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    start_with_env(store, backend, &extra).await
 }
 
 async fn start_candidates(
@@ -47,7 +60,7 @@ async fn start_candidates(
         // The installed CLI alone when there is one: resolving the registry build can mean a long download.
         candidates.truncate(1);
     }
-    let mut env = launch_env(store, backend, None)?;
+    let (mut env, mut grants) = launch_env(store, backend, None)?;
     for (k, v) in extra_env {
         env.retain(|(ek, _)| ek != k);
         env.push((k.clone(), v.clone()));
@@ -89,7 +102,10 @@ async fn start_candidates(
             }),
         );
         match tokio::time::timeout(budget, init).await {
-            Ok(Ok(init)) => return Ok((acp, rx, init, cmd)),
+            Ok(Ok(init)) => {
+                acp.hold(std::mem::take(&mut grants));
+                return Ok(Started { acp, inbox: rx, init, cmd });
+            }
             Ok(Err(e)) => {
                 let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
                     Incoming::Closed { stderr_tail } => stderr_reason(&stderr_tail),
@@ -127,7 +143,7 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
             .await
             .context("couldn't prepare WorkBuddy sign-in")?;
     }
-    let (acp, mut inbox, _, _) = start(store, backend).await?;
+    let Started { acp, mut inbox, .. } = start(store, backend).await?;
     let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
     acp.kill().await;
     match res {

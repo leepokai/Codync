@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// The message box under a chat: send, or stop while the bot (or the group) is working
 /// there. A leading `/` lists commands (a group's act on its bots); in a group, typing `@`
-/// suggests its bots.
+/// lists its bots.
 struct Composer: View {
     let botId: String
     /// The message the next send quotes, shown above the field until sent or cancelled.
@@ -50,8 +50,8 @@ struct Composer: View {
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
     private var canSend: Bool {
-        // Offline computers still take messages when the relay can hold them for it (text only).
-        !isEmpty && (model.connection == .online || (model.canQueue && files.isEmpty))
+        // Offline computers still take text: the relay holds it for them, or with no relay this phone does.
+        !isEmpty && (model.connection == .online || ((model.canQueue || model.holdsOnPhone) && files.isEmpty))
     }
 
     private var canAttach: Bool { bot != nil }
@@ -65,19 +65,10 @@ struct Composer: View {
         return L10n.tr(key).replacingOccurrences(of: "{name}", with: name)
     }
 
-    /// The `@partial` being typed at the end, if any.
-    private var mentionQuery: String? {
-        guard bot?.isGroup == true, let at = draft.lastIndex(of: "@") else { return nil }
-        let query = draft[draft.index(after: at)...]
-        if at > draft.startIndex, !draft[draft.index(before: at)].isWhitespace { return nil }
-        return query.contains(where: \.isNewline) || query.count > 24 ? nil : String(query)
-    }
-
+    /// The group's bots whose name holds the `@partial` at the end of the draft.
     private var suggestions: [Bot] {
-        guard let query = mentionQuery else { return [] }
-        return members.filter {
-            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
-        }
+        guard bot?.isGroup == true, let query = mentionQuery(draft, members: members) else { return [] }
+        return members.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     /// A group's bots, which its commands act on.
@@ -104,19 +95,9 @@ struct Composer: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if !suggestions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(suggestions) { member in
-                            SuggestionChip(title: member.name) {
-                                CharacterAvatar(bot: member, size: 18, animated: false)
-                            } action: {
-                                mention(member)
-                            }
-                        }
-                    }
+                MentionList(members: suggestions, pick: mention)
                     .padding(.horizontal, 16)
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             // The messages waiting behind the running turn, with what can be done with the next one.
             if bot != nil {
@@ -161,12 +142,12 @@ struct Composer: View {
             append(picked.map(\.file))
             return true
         }
-        .reviewInterruption(active: focused || pickingFiles || pickingPhotos || !files.isEmpty
-                            || dictation.listening || dictation.transcribing)
         .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { add(urls) }
         }
-            .photosPicker(isPresented: $pickingPhotos, selection: $photoItems, maxSelectionCount: 10, matching: .images)
+            .quietPresentation(shown: pickingPhotos) {
+                $0.photosPicker(isPresented: $pickingPhotos, selection: $photoItems, maxSelectionCount: 10, matching: .images)
+            }
             .onChange(of: photoItems) { _, items in
                 guard !items.isEmpty else { return }
                 photoItems = []
@@ -431,25 +412,5 @@ struct Composer: View {
             files = []
             replyingTo = nil
         }
-    }
-}
-
-/// One suggestion above the box: a bot to @mention.
-private struct SuggestionChip<Icon: View>: View {
-    let title: String
-    @ViewBuilder let icon: Icon
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                icon
-                Text(title).font(.subheadline).foregroundStyle(Palette.text)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Palette.surface, in: Capsule())
-        }
-        .buttonStyle(PressScale())
     }
 }

@@ -75,13 +75,22 @@ host_tests() {
     printf '%s\n' "$filter"
 }
 
-if touches '^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
+# The catalogs and What's new announcements the iPhone app shares with the desktop app and the terminal UI.
+shared_text='apps/ios/Kit/Sources/CodyncKit/Resources/(Announcements|Languages)/'
+
+if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\\.json|$shared_text)"; then
     if ! cargo nextest --version >/dev/null 2>&1; then
         echo "The host checks run their tests with cargo-nextest, as CI does: cargo install cargo-nextest --locked"
         exit 1
     fi
     staged_copy
     tests=$(host_tests)
+    # Cargo only warns when a patch stops applying (host/vendor/noq-udp/CODYNC.md).
+    if grep -q '^\[\[patch.unused\]\]' "$snapshot/host/Cargo.lock" ||
+        grep -A2 '^name = "noq-udp"' "$snapshot/host/Cargo.lock" | grep -q '^source'; then
+        echo "noq-udp no longer comes from host/vendor/noq-udp: see host/vendor/noq-udp/CODYNC.md"
+        exit 1
+    fi
     echo "Checking the host (cargo fmt, clippy, test: $tests)..."
     set -- --profile ci
     [ "$tests" = all ] || set -- "$@" -E "$tests"
@@ -91,7 +100,7 @@ if touches '^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vect
         within 900 cargo nextest run --workspace "$@")
 fi
 
-if touches '^apps/desktop/'; then
+if touches "^(apps/desktop/|$shared_text)"; then
     staged_copy
     echo "Checking the desktop app (typecheck, test)..."
     ln -s "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"

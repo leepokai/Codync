@@ -1,8 +1,11 @@
-import { Button } from '../components/Controls'
+import type { ReactNode } from 'react'
+import { Button, Spinner } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { updateNeededText } from '../lib/host-update'
+import { useModel } from '../lib/observable'
+import { appFloor } from '../store/cloud'
 import { useApp, useStore } from '../store/context'
 import { UpdateButton, useUpdates } from './UpdateButton'
 
@@ -17,6 +20,8 @@ export function UpdateNeededCard() {
   const mismatch = store.mismatch
   if (!mismatch) return null
   const host = store.hostName
+  // The cloud updates a cloud computer on its own: this app's version asks for it.
+  if (store.isCloudUpdating) return <UpdateNotice title={updateNeededText.title(mismatch, host, true)} detail={updateNeededText.detail(mismatch, host, null, null, false, true)} button={null} updating />
   const offer = mismatch.kind === 'updateHost' ? store.hostUpdateOffer : null
   // This app updates itself (its download and restart, as in Settings); on macOS and Windows this
   // computer's own host is put back on the app's bundled copy. Any other computer that can update
@@ -37,11 +42,23 @@ export function UpdateNeededCard() {
     offer?.kind === 'updating' ? updateNeededText.updating(host)
     : offer?.kind === 'available' && offer.last ? `${needs} ${updateNeededText.notUpdated(offer.last, host)}`
     : needs
+  return <UpdateNotice title={updateNeededText.title(mismatch, host)} detail={detail} button={button} />
+}
+
+/** The Codync cloud refuses this app's version (an emergency floor): *Update this app*, with the cloud's reason. */
+export function AppFloorCard() {
+  const floor = useModel(appFloor)
+  const updates = useUpdates()
+  if (!floor.message) return null
+  return <UpdateNotice title="Update this app" detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
+}
+
+function UpdateNotice({ title, detail, button, updating = false }: { title: string; detail: string; button: ReactNode; updating?: boolean }) {
   return (
     <HStack align="flex-start" gap={12} className="update-needed">
-      <Icon name="arrow.down.circle" size={15} color="var(--warning)" />
+      {updating ? <Spinner size={15} /> : <Icon name="arrow.down.circle" size={15} color="var(--warning)" />}
       <VStack gap={6} grow>
-        <Text as="div" size="subheadline" weight="semibold" tone="text">{updateNeededText.title(mismatch, host)}</Text>
+        <Text as="div" size="subheadline" weight="semibold" tone="text">{title}</Text>
         <Text as="div" size="footnote" tone="secondary">{detail}</Text>
         {button ? <div className="update-needed-action">{button}</div> : null}
       </VStack>

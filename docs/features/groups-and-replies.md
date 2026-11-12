@@ -43,12 +43,19 @@ quotes itself.
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
 | `markRead` | `botId` | Reads the chat. A no-op when nothing there is unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
 
-## How a group answers (`host/src/chat/group.rs`, Grok Bot's design)
+## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 
 - The user's message starts a *room turn* in the group: up to 3 rounds, 10 replies in all.
 - Who answers the first round: the members the user @-mentioned (full name, name without
   spaces, or first word; `@all` / `@everyone`) or replied to, or everyone if none is. A reply to
   a member's message counts like `@`-mentioning it.
+- Typing `@` lists the group's members above the box, filtered by what follows it: each row shows
+  the face, name and description, in the same list as the `/` commands
+  ([marketplace](marketplace.md#commands)). On the desktop, with the caret at the end of the
+  draft, ↑/↓ move the highlight and Tab or Return picks it, and Escape hides the list until the
+  draft changes; on the phones a tap picks. A member's full name and its space end the list, so
+  the next Return sends, and Return on a whole `@all` / `@everyone` sends, since the list doesn't
+  offer them. The terminal has no `@` list: you type the name.
 - Who answers a later round: only the members another member @-mentioned in this room turn
   (a member's `@all` / `@everyone`: all the others) and who haven't spoken or been asked since
   (one that passed after seeing the mention isn't asked again). Nobody named,
@@ -71,6 +78,12 @@ quotes itself.
   Newer messages in the group, and Stop in the member's own chat, don't drop that late answer;
   the group's Stop or removing the member from the group does, and a newer room turn that asks
   the member again replaces it.
+- A late answer (a busy member's, or one from a member the room stopped waiting for after 10
+  minutes) that @-mentions teammates gets a *late room turn*: it asks the members named from that
+  answer on who haven't spoken or been asked since, then goes on like any room turn. It starts
+  right away when no room turn runs, or as the running one ends (a newer message of the user's
+  drops it). Up to 3 late room turns follow one user message, and none after the group's Stop
+  until the user writes again.
 - A new message in the group, or Stop, ends a running room turn before its next speaker.
 - Tool calls, thoughts and permission cards of a member's group turn are written to the
   group (with `author`), not to the member's own chat. One "done" push per room turn, plus

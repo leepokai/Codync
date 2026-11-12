@@ -142,6 +142,7 @@ android {
     buildFeatures.buildConfig = true
     buildFeatures.resValues = true
     sourceSets.getByName("main").assets.srcDir(rootProject.file("../ios/Kit/Sources/CodyncKit/Resources/Languages"))
+    sourceSets.getByName("main").assets.srcDir(rootProject.file("../ios/Kit/Sources/CodyncKit/Resources/Announcements"))
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("../../docs/reference/fixtures"))
     compileOptions {
         isCoreLibraryDesugaringEnabled = true

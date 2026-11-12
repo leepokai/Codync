@@ -82,3 +82,49 @@ pub async fn run(args: CloudArgs) -> Result<()> {
     );
     Ok(())
 }
+
+/// `--leave`: after a yes in a terminal, the desktop app's Remove from account (`unclaim`). Returns the status.
+async fn leave_account(port: u16) -> Result<Value> {
+    let status = local_call(port, "cloudStatus", json!({})).await?;
+    let Some(owner) = owner(&status) else { bail!("This computer isn't in an account.") };
+    if !std::io::stdin().is_terminal() {
+        bail!("Run `codync-host cloud --leave` in a terminal to confirm.");
+    }
+    let prompt =
+        format!("Take this computer out of {owner}'s account? Every device paired with it loses access. [y/N] ");
+    if !crate::prompt::ask_yes_no(&prompt).await? {
+        return Ok(status);
+    }
+    // The cloud call and the state pull after it: the desktop app allows them 30 seconds too.
+    local_call_for(port, "unclaim", json!({}), Duration::from_secs(30)).await?;
+    local_call(port, "cloudStatus", json!({})).await
+}
+
+/// The account this computer is in, by email when the cloud gave one.
+fn owner(status: &Value) -> Option<&str> {
+    status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str())
+}
+
+/// How a computer with no desktop app gets into an account (docs/architecture/connections.md, headless computers).
+fn account_hint(status: &Value) -> Option<&'static str> {
+    if !status["owner"].is_null() {
+        return None;
+    }
+    Some(if status["canJoinAccount"] == true {
+        "Not in an account, so phones connect only over Wi-Fi or Tailscale. Add it from a signed-in phone: run `codync-host pair` and scan the code, or type the short code it prints; or, on a phone already paired, tap Add to account and answer with `codync-host access approve <code>`. Or, from a desktop app that reaches this computer over SSH, choose Add to account."
+    } else {
+        "Not in an account. Phones pair with `codync-host pair` and a QR code; joining an account needs the Codync cloud (`codync-host cloud --enable`)."
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_computer_out_of_an_account_says_how_to_join_one() {
+        assert_eq!(account_hint(&json!({"owner": {"userId": "u"}, "canJoinAccount": false})), None);
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": true})).unwrap().contains("signed-in phone"));
+        assert!(account_hint(&json!({"owner": null, "canJoinAccount": false})).unwrap().contains("--enable"));
+    }
+}

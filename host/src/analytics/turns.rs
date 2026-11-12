@@ -85,6 +85,32 @@ pub fn agent_fell_back(hub: &Hub, agent: &str, reason: crate::agent::fallback::R
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
 }
 
+/// Why a bot's agent stopped between turns (`agent_retired`); the next message starts it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Retired {
+    /// Every session sat unused for 30 minutes.
+    Idle,
+    /// A routine run ended with no other session open.
+    RoutineFinished,
+    /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
+    SessionNotClosed,
+}
+
+/// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.
+pub fn agent_retired(hub: &Hub, agent: &str, reason: Retired) {
+    let p = json!({"agent": agent, "reason": reason});
+    capture(hub, Event::AgentRetired, p.as_object().cloned().unwrap_or_default());
+}
+
+/// `context_compacted`: Codync started summarizing a bot's chat, at the end of a turn or while it rested, and at
+/// which of the user's thresholds.
+pub fn context_compacted(hub: &Hub, agent: &str, idle: bool, threshold: codync_mem::compaction::Threshold) {
+    let when = if idle { "idle" } else { "turn_end" };
+    let p = json!({"agent": agent, "when": when, "threshold": threshold.kind()});
+    capture(hub, Event::ContextCompacted, p.as_object().cloned().unwrap_or_default());
+}
+
 /// What became of a queued message the user had handled now (`message_steered`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

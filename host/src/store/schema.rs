@@ -10,7 +10,8 @@ use std::sync::Mutex;
 /// 7: the account a device joined with (devices.account).
 /// 8: a flow link's own model and effort (`routine_flow_links.model`, `.model_options`).
 /// 9: a thread's title, branch origin and archive flag (`threads`).
-const SCHEMA: i64 = 9;
+/// 10: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
+const SCHEMA: i64 = 10;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.
@@ -19,6 +20,11 @@ const SCHEMA: i64 = 9;
 /// 5: threads merge into their chats (quote replies took their place, see [`migrate_5`]); side conversations
 /// (a document's `doc:<id>`, a Slack thread's `slack-…`) keep `thread_id`.
 /// 6: the dividers that announced a fresh agent session go; the chat no longer shows session resets.
+/// 7: each device records the account it was let in for (`devices.account`), so a computer that changes
+/// accounts drops the old account's devices.
+/// 8: a flow link's own model and effort (`routine_flow_links.model`, `.model_options`).
+/// 9: a thread's title, branch origin and archive flag (`threads`).
+/// 10: a phone that paired with no account is told apart from a device paired before 2.36.0 (`devices.no_account`).
 fn migrate(c: &Connection) -> Result<()> {
     let version: i64 =
         c.query_row("SELECT CAST(v AS INTEGER) FROM kv WHERE k = 'schema'", [], |r| r.get(0)).optional()?.unwrap_or(0);
@@ -37,7 +43,8 @@ fn migrate(c: &Connection) -> Result<()> {
     migrate_6(c)?;
     migrate_7(c)?;
     migrate_8(c)?;
-    migrate_9(c)
+    migrate_9(c)?;
+    migrate_10(c)
 }
 
 fn migrate_3(c: &Connection) -> Result<()> {
@@ -176,6 +183,19 @@ fn migrate_6(c: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// A phone that paired with no account is told apart from a device paired before 2.36.0.
+fn migrate_10(c: &Connection) -> Result<()> {
+    let has: bool =
+        c.query_row("SELECT count(*) > 0 FROM pragma_table_info('devices') WHERE name = 'no_account'", [], |r| {
+            r.get(0)
+        })?;
+    if !has {
+        c.execute_batch("ALTER TABLE devices ADD COLUMN no_account INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    c.execute_batch("INSERT INTO kv(k, v) VALUES('schema', '10') ON CONFLICT(k) DO UPDATE SET v = '10';")?;
+    Ok(())
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let c = Connection::open(path)?;
@@ -270,7 +290,7 @@ mod tests {
         }
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty());
-        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("10"));
         drop(s);
         let s = Store::open(&db).unwrap();
         assert!(s.devices().unwrap().is_empty(), "reopening keeps the new table");
@@ -293,7 +313,7 @@ mod tests {
         let s = Store::open(&db).unwrap();
         let chat: Vec<String> = s.history("b", i64::MAX, 10).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(chat, ["info"]);
-        assert_eq!(s.kv_get("schema").as_deref(), Some("9"));
+        assert_eq!(s.kv_get("schema").as_deref(), Some("10"));
     }
 
     #[test]

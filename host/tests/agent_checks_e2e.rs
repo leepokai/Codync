@@ -32,7 +32,7 @@ fn call(base: &str, home: &Path, method: &str) -> reqwest::RequestBuilder {
     reqwest::Client::new()
         .post(format!("{base}/api/{method}"))
         .bearer_auth(token.trim())
-        .json(&serde_json::json!({"refresh": true, "backend": "cursor"}))
+        .json(&serde_json::json!({"refresh": true, "backend": "cursor", "id": "claude", "shown": true}))
 }
 
 fn alive(pid: &str) -> bool {
@@ -52,6 +52,8 @@ async fn a_stopped_host_ends_the_checks_it_was_running() {
         ("CODYNC_AGENT_CHECKS", "on".as_ref()),
     ];
     let (mut host, base) = common::serve_with(&home, &env).await;
+    // No bot runs Claude here, so its usage is only read once it's asked for.
+    assert!(call(&base, &home, "setUsageShown").send().await.unwrap().status().is_success());
     // A check that starts the agent, which never answers: the host is still waiting when it stops.
     tokio::spawn(call(&base, &home, "agentAuth").send());
     let read = || std::fs::read_to_string(&log).unwrap_or_default();
@@ -72,19 +74,67 @@ async fn a_stopped_host_ends_the_checks_it_was_running() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// The background reading starts the agent so that it can't open a browser, and asks it without a session.
+#[tokio::test]
+async fn a_usage_reading_starts_the_agent_with_no_browser_to_open() {
+    if common::python_missing() {
+        return;
+    }
+    let home = std::env::temp_dir().join(format!("codync-agent-checks-{}", uuid::Uuid::new_v4()));
+    let bin = home.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/usage_command_agent.py");
+    // Each start logs to a file named for the `BROWSER` it got: the host's sign-in checks start the agent too.
+    let script = format!(
+        "#!/bin/sh\nUSAGE_AGENT_LOG=\"{home}/calls-${{BROWSER:-none}}.log\" USAGE_AGENT_COMMAND=usage PATH='{path}' exec {python} '{fixture}'\n",
+        home = home.display(),
+        path = std::env::var("PATH").unwrap(),
+        python = common::python(),
+        fixture = fixture.display(),
+    );
+    let file = bin.join("grok");
+    std::fs::write(&file, script).unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = std::env::join_paths([bin.as_path(), Path::new("/usr/bin"), Path::new("/bin")]).unwrap();
+    let env = [
+        ("PATH", path.as_os_str()),
+        ("HOME", home.as_os_str()),
+        ("ZDOTDIR", home.as_os_str()),
+        ("CODYNC_AGENT_CHECKS", "on".as_ref()),
+    ];
+    let (mut host, base) = common::serve_with(&home, &env).await;
+    let token = std::fs::read_to_string(home.join("token")).unwrap();
+    let client = reqwest::Client::new();
+    let post = |method: &str, body: serde_json::Value| {
+        client.post(format!("{base}/api/{method}")).bearer_auth(token.trim()).json(&body).send()
+    };
+    let turned_on = post("setUsageShown", serde_json::json!({"id": "grok", "shown": true})).await.unwrap();
+    assert!(turned_on.status().is_success());
+    let read = || std::fs::read_to_string(home.join("calls-true.log")).unwrap_or_default();
+    common::eventually("the host read Grok's plan", Duration::from_secs(30), async || read().contains("x.ai/billing"))
+        .await;
+    let calls = read();
+    assert!(!calls.contains("session/"), "no session and no prompt: {calls}");
+    common::eventually("Grok's reading landed", Duration::from_secs(10), async || {
+        let usage: serde_json::Value = post("usage", serde_json::json!({})).await.unwrap().json().await.unwrap();
+        usage["providers"][0]["id"] == "grok" && usage["providers"][0]["windows"][0]["label"] == "Weekly"
+    })
+    .await;
+    common::stop(&mut host);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 #[tokio::test]
 async fn a_test_host_never_runs_the_agent_clis() {
     let home = std::env::temp_dir().join(format!("codync-agent-checks-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&home).unwrap();
     let (path, log) = slow_agents(&home);
     let (mut host, base) = common::serve_with(&home, &[("PATH", path.as_os_str())]).await;
-    for method in ["refreshBackends", "usage", "agentAuth"] {
+    for method in ["refreshBackends", "setUsageShown", "usage", "agentAuth"] {
         let response = call(&base, &home, method).send().await.unwrap();
         let status = response.status();
         let body = response.text().await.unwrap();
-        // `agentAuth` opens the vault first: a computer with no keyring, like Linux CI, refuses it there, before any agent.
-        let no_keyring = method == "agentAuth" && body.contains("Secure credential storage");
-        assert!(status.is_success() || no_keyring, "{method}: {status} {body}");
+        assert!(status.is_success(), "{method}: {status} {body}");
     }
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_eq!(std::fs::read_to_string(&log).unwrap_or_default(), "");

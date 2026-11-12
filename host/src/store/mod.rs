@@ -40,7 +40,7 @@ pub(crate) mod whatsapp;
 
 pub use apps::{AppLink, AppLinkMode, BotApp};
 pub use computer_activity::{ComputerActivity, ComputerActivityResult};
-pub use devices::{Device, DeviceSource, Scope};
+pub use devices::{Device, DeviceAccount, DeviceSource, Scope};
 pub use documents::{Document, DocumentDraft, ReviewDecision, ReviewStatus};
 pub use flow_steps::{FlowRun, FlowStep, NewStep, StepStatus};
 pub use flows::{FlowChange, FlowLink};

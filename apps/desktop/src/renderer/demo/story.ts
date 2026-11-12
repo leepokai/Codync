@@ -1,16 +1,16 @@
 import type { Bot, EntryData, Usage } from '@shared/models'
 
-// The website demo's story: four bots on a small `pace` project (an isoWeek / weeklyTotals bug),
-// the "Ship room" group, replies quoting earlier messages and a pending approval. Same story as web/public/screens.
+// The website demo's story, on two computers. The MacBook Pro: four bots on a small `pace` project (an
+// isoWeek / weeklyTotals bug), the "Ship room" group, replies quoting earlier messages and a pending
+// approval (same story as web/public/screens). The Mac mini, reached over SSH: the bots that test and
+// deploy it.
 
-export const COMPUTER_ID = 'demo-mac'
-export const HOST_NAME = 'MacBook Pro'
 const CWD = '/Users/demo/code/pace'
 
 export type SeedBot = Pick<Bot, 'id' | 'name' | 'description' | 'avatarColor' | 'avatarShape' | 'backend' | 'model'> &
   Partial<Pick<Bot, 'kind' | 'members' | 'permission' | 'status' | 'activity' | 'unread'>>
 
-export const bots: SeedBot[] = [
+const bots: SeedBot[] = [
   { id: 'pacer', name: 'Pacer', description: 'Owns the pace math', avatarColor: 'orange', avatarShape: 'squircle', backend: 'claude', model: 'opus', permission: 'ask', status: 'needsInput', activity: 'Needs approval: Edit src/pace.js', unread: 1 },
   { id: 'scout', name: 'Scout', description: 'Finds things in the repo and builds them', avatarColor: 'green', avatarShape: 'cloud', backend: 'codex', model: null, unread: 1 },
   { id: 'reviewer', name: 'Reviewer', description: 'Reviews every change before it ships', avatarColor: 'violet', avatarShape: 'blob', backend: 'claude', model: 'sonnet', unread: 1 },
@@ -37,6 +37,7 @@ const user = (id: string, botId: string, at: number, text: string, quoting?: See
 const reply = (id: string, botId: string, author: string, at: number, text: string): SeedEntry => ({ id, botId, kind: 'agent', at, data: { text, final: true, author } })
 const thought = (id: string, botId: string, at: number, text: string): SeedEntry => ({ id, botId, kind: 'thought', at, data: { text, author: botId } })
 const tool = (id: string, botId: string, at: number, title: string, toolKind: string, output = ''): SeedEntry => ({ id, botId, kind: 'tool', at, data: { title, toolKind, status: 'completed', output, author: botId } })
+const run = (id: string, botId: string, at: number, command: string, output: string): SeedEntry => ({ id, botId, kind: 'tool', at, data: { title: command, toolKind: 'execute', command, status: 'completed', output, author: botId } })
 
 const weeklyPatch = [
   '@@ -18,3 +18,15 @@ export function isoWeek(date) {',
@@ -68,13 +69,13 @@ const isoWeekPatch = [
 const relaySummary = reply('l2', 'relay', 'relay', 40, 'Added `weeklyTotals` to group run distance and time by ISO week, with a test for the 2026 to 2027 rollover. Reviewer found no blockers. An invalid-date guard is being added in Ship room.')
 const scoutGuard = reply('g3', 'ship', 'scout', 19, 'Added the guard: `weeklyTotals` now throws a `RangeError` on an invalid date, and all 5 tests pass. Weeks are still grouped in UTC, so say if they should follow the runner\'s local time instead.')
 
-export const entries: SeedEntry[] = [
+const entries: SeedEntry[] = [
   // Scout builds weeklyTotals.
   user('s1', 'scout', 58, 'Add a weeklyTotals(runs) helper that sums distance and time per ISO week, with a test.'),
   thought('s2', 'scout', 58, 'isoWeek already lives in src/pace.js, so weeklyTotals can key on it and stay small.'),
   tool('s3', 'scout', 57, 'Read src/pace.js', 'read'),
   { id: 's4', botId: 'scout', kind: 'tool', at: 57, data: { title: 'Edit src/pace.js', toolKind: 'edit', status: 'completed', author: 'scout', diffs: [{ path: 'src/pace.js', added: 10, removed: 0, isNew: false, startLine: 18, patch: weeklyPatch }] } },
-  { id: 's5', botId: 'scout', kind: 'tool', at: 56, data: { title: 'npm test', toolKind: 'execute', command: 'npm test', status: 'completed', output: '✓ isoWeek: mid year\n✓ isoWeek: first week\n✓ weeklyTotals: sums one week\n✓ weeklyTotals: week that crosses into 2027\n\n4 passing (12ms)', author: 'scout' } },
+  run('s5', 'scout', 56, 'npm test', '✓ isoWeek: mid year\n✓ isoWeek: first week\n✓ weeklyTotals: sums one week\n✓ weeklyTotals: week that crosses into 2027\n\n4 passing (12ms)'),
   reply('s6', 'scout', 'scout', 55, 'I added `weeklyTotals(runs)` to `src/pace.js`. It takes runs shaped like `{ date, distance, time }`, groups them by ISO week in UTC (keys like `"2026-W53"`) and sums distance and time. The new test covers the week that crosses into 2027. All 4 tests pass and nothing is committed yet.'),
 
   // Reviewer looks it over.
@@ -116,8 +117,7 @@ export const entries: SeedEntry[] = [
   },
 ]
 
-/** What a bot says back to a new message: rotated so repeated sends read differently. */
-export const replies: Record<string, string[]> = {
+const replies: Record<string, string[]> = {
   pacer: [
     'Sure. I\'ll keep it inside `src/pace.js` and rerun `npm test` when it\'s done.',
     'Makes sense. The week math is the risky part, so I\'ll add a test for it first.',
@@ -140,6 +140,52 @@ export const replies: Record<string, string[]> = {
   ],
 }
 
+/** One computer in the demo: what its host says about itself, its bots and their history. */
+export interface DemoComputer {
+  id: string
+  name: string
+  /** The host's `Device` (laptop, macmini…): the computer's icon. */
+  device: string
+  bots: SeedBot[]
+  entries: SeedEntry[]
+  /** What a bot says back to a new message: rotated so repeated sends read differently. */
+  replies: Record<string, string[]>
+}
+
+export const macBook: DemoComputer = { id: 'demo-mac', name: 'MacBook Pro', device: 'laptop', bots, entries, replies }
+
+const e2eRun = '212 passing (6m 04s)\n1 failing\n\n1) sync › uploads a run recorded offline:\n   Error: Timeout of 30000ms exceeded'
+
+export const macMini: DemoComputer = {
+  id: 'demo-mini',
+  name: 'Mac mini',
+  device: 'macmini',
+  bots: [
+    { id: 'tester', name: 'Tester', description: 'Runs the full e2e suite', avatarColor: 'cyan', avatarShape: 'hex', backend: 'claude', model: 'sonnet', unread: 1 },
+    { id: 'harbor', name: 'Harbor', description: 'Deploys pace to staging', avatarColor: 'magenta', avatarShape: 'pebble', backend: 'codex', model: null, unread: 1 },
+  ],
+  entries: [
+    user('t1', 'tester', 95, 'Run the full e2e suite on main and tell me what fails.'),
+    run('t2', 'tester', 94, 'npm run e2e', e2eRun),
+    run('t3', 'tester', 87, 'npm run e2e -- --grep "recorded offline"', '1 passing (21s)'),
+    reply('t4', 'tester', 'tester', 86, '212 of 213 pass. `sync › uploads a run recorded offline` timed out after 30 s, then passed when I ran it alone, so it looks flaky rather than broken. Nothing else failed.'),
+    user('h1', 'harbor', 30, 'Deploy to staging once the isoWeek fix is on main.'),
+    reply('h2', 'harbor', 'harbor', 29, 'Will do. I\'m watching main: when the fix lands I\'ll build, deploy to staging and check `/health` before I tell you.'),
+  ],
+  replies: {
+    tester: [
+      'Running it now. The full suite takes about 6 minutes on this Mac mini.',
+      'Sure. I\'ll run the sync tests first, they\'re the slow ones.',
+      'On it. I\'ll post what fails here when it\'s done.',
+    ],
+    harbor: [
+      'Got it. Staging first, production only after you say so.',
+      'Sure. I\'ll post the build number and the staging link here once it\'s up.',
+      'I\'ll watch `/health` and the error rate for 10 minutes after the deploy.',
+    ],
+  },
+}
+
 export const waitingReply = 'I\'m still waiting on your approval for the `isoWeek` edit. Once you allow it, I\'ll keep going.'
 export const approvedReply = 'Fixed: `isoWeek` now takes the year from the Thursday of the week, so Dec 30, 2024 is 2025-W01. I added a test for it and all 6 tests pass.'
 export const deniedReply = 'OK, I left `src/pace.js` alone. Want me to explain the fix so you can make it yourself?'
@@ -156,6 +202,10 @@ export function usage(now: number): Usage {
         { id: 'primary', label: '5-hour', percent: 22, resetsAt: hours(3.1) },
         { id: 'secondary', label: 'Weekly', percent: 47, resetsAt: hours(95) },
       ] },
+    ],
+    services: [
+      { id: 'claude', name: 'Claude', shown: true },
+      { id: 'codex', name: 'Codex', shown: true },
     ],
   }
 }

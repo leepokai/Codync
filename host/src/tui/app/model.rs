@@ -81,6 +81,8 @@ pub enum After {
     Sheet(Reply),
     /// The network sheet's calls.
     Network(super::super::manage::NetReply),
+    /// A move in the Usage chooser, to this row.
+    UsageOrder(usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

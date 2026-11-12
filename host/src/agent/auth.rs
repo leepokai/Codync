@@ -11,18 +11,20 @@
 //! - agent: the agent signs itself in on `authenticate` (usually a browser on
 //!   this computer);
 //! - env var: keys the user types, kept in the store and handed to the agent's
-//!   environment on every launch.
+//!   environment on every launch (on a Codync Cloud computer, provider keys through its keeper: `proxied`).
 
 use crate::LockExt;
 use crate::agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
 use crate::agent::backends;
 use crate::agent::registry::{Cmd, env_prefix};
+use crate::keeper::client::Grants;
+use crate::remote::managed::is_managed;
 use crate::shell::quote as shell_quote;
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -31,10 +33,11 @@ use tokio::sync::mpsc;
 
 mod agent;
 mod models;
+mod proxied;
 pub use agent::authenticate;
 use agent::start;
-pub(crate) use agent::{start_registry, start_with_env};
-pub use models::models;
+pub(crate) use agent::{Started, start_registry, start_with, start_with_env};
+pub use models::{InFlight, models, shared_models};
 pub(crate) use models::{hidden, model_config, model_ids, set_hidden};
 
 #[derive(Clone, Debug, Serialize)]
@@ -100,32 +103,72 @@ fn stored_env(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
     Ok(crate::market::vault::read(store, slot)?.as_deref().map(serde_json::from_str).transpose()?.unwrap_or_default())
 }
 
-/// Keys saved for `backend`, and for `bot` on top of them, as environment for its process.
-pub fn env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<(String, String)>> {
-    let mut values: BTreeMap<String, String> = BTreeMap::new();
-    for slot in [Some(env_slot(backend)), bot.map(|bot| bot_env_slot(backend, bot))].into_iter().flatten() {
-        values.extend(stored_env(store, &slot)?);
+/// The keys saved for `backend` that its agents may read: all of them, except a cloud computer's proxied ones.
+fn visible(store: &Store, backend: &str) -> Result<BTreeMap<String, String>> {
+    stored_env(store, &env_slot(backend))
+}
+
+/// Applies `changes` (a value, or `None` to remove it) to `saved`: the names removed.
+fn apply(saved: &mut BTreeMap<String, String>, changes: &[(String, Option<String>)]) -> BTreeSet<String> {
+    let mut removed = BTreeSet::new();
+    for (name, value) in changes {
+        if let Some(value) = value {
+            saved.insert(name.clone(), value.clone());
+        } else {
+            saved.remove(name);
+            removed.insert(name.clone());
+        }
     }
-    Ok(values.into_iter().collect())
+    removed
+}
+
+/// Keys saved for `backend`, and for `bot` on top of them, as environment for its process, and the grants a cloud
+/// computer's proxied ones are on: the process holds those for as long as it runs (`Acp::hold`); dropping them revokes
+/// them.
+pub fn env(store: &Store, backend: &str, bot: Option<&str>) -> Result<(Vec<(String, String)>, Grants)> {
+    let mut values = visible(store, backend)?;
+    if let Some(bot) = bot {
+        values.extend(stored_env(store, &bot_env_slot(backend, bot))?);
+    }
+    let mut env: Vec<(String, String)> = values.into_iter().collect();
+    let mut grants = Grants::default();
+    if is_managed(store) {
+        proxied::add(store, backend, &mut env, &mut grants)?;
+    }
+    Ok((env, grants))
+}
+
+/// One saved value its agent reads as is (a folder, such as `CODEX_HOME`); never a proxied key.
+pub fn saved_value(store: &Store, backend: &str, name: &str) -> Result<Option<String>> {
+    Ok(visible(store, backend)?.remove(name))
 }
 
 /// The environment `backend`'s process starts with: the saved keys (the bot's above the backend's), and what the
-/// harness needs to start.
-pub fn launch_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<(String, String)>> {
-    let mut env = env(store, backend, bot)?;
+/// harness needs to start (and [`env`]'s grants).
+pub fn launch_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<(Vec<(String, String)>, Grants)> {
+    let (mut env, grants) = env(store, backend, bot)?;
     backends::apply_process_env(backend, &mut env);
-    Ok(env)
+    Ok((env, grants))
 }
 
-/// Names of the saved keys (values never leave the host).
-fn saved_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<String>> {
-    let slot = bot.map_or_else(|| env_slot(backend), |bot| bot_env_slot(backend, bot));
-    Ok(stored_env(store, &slot)?.into_keys().collect())
+/// Names of the saved keys (values never leave the host), proxied ones too; with a `bot`, its own on top.
+pub(crate) fn saved_env(store: &Store, backend: &str, bot: Option<&str>) -> Result<Vec<String>> {
+    let mut names: Vec<String> = visible(store, backend)?.into_keys().collect();
+    if is_managed(store) {
+        names.extend(proxied::names(store, backend)?);
+    }
+    if let Some(bot) = bot {
+        names.extend(stored_env(store, &bot_env_slot(backend, bot))?.into_keys());
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 /// Names saved for this bot itself and those it inherits from its agent, without values.
 pub fn env_names(store: &Store, backend: &str, bot: &str) -> Result<Value> {
-    Ok(json!({"own": saved_env(store, backend, Some(bot))?, "inherited": saved_env(store, backend, None)?}))
+    let own: Vec<String> = stored_env(store, &bot_env_slot(backend, bot))?.into_keys().collect();
+    Ok(json!({"own": own, "inherited": saved_env(store, backend, None)?}))
 }
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
@@ -150,11 +193,11 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     if backends::agent_checks_off() {
         return Ok(Status::default());
     }
-    let (acp, mut inbox, init, cmd) = start(store, backend).await?;
+    let Started { acp, mut inbox, init, cmd } = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
-    if let ControlFlow::Break(signed_in) =
-        login_without_session(&init, &mut inbox, backend, &env(store, backend, None)?).await
-    {
+    // Held until the check below is done.
+    let (vars, _grants) = env(store, backend, None)?;
+    if let ControlFlow::Break(signed_in) = login_without_session(&init, &mut inbox, backend, &vars).await {
         acp.kill().await;
         return Ok(Status { signed_in, detail: None, methods });
     }
@@ -301,6 +344,8 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
 pub async fn set_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map<String, Value>) -> Result<Value> {
     save_env(store, backend, bot, vars)?;
+    // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
+    backends::clear_prompt_refused(backend);
     check(store, backend).await
 }
 
@@ -308,18 +353,26 @@ pub async fn set_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map
 /// vault slot would freeze inherited credentials and prevent later provider-key rotation.
 fn save_env(store: &Store, backend: &str, bot: Option<&str>, vars: &Map<String, Value>) -> Result<()> {
     let _configuration = store.connector_lock.locked();
-    let slot = bot.map_or_else(|| env_slot(backend), |bot| bot_env_slot(backend, bot));
-    let mut saved = stored_env(store, &slot)?;
+    let mut changes = Vec::new();
     for (k, v) in vars {
         if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || k.is_empty() {
             bail!("`{k}` isn't an environment variable name");
         }
-        match v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
-            Some(v) => saved.insert(k.clone(), v.to_owned()),
-            None => saved.remove(k),
-        };
+        changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
     }
-    crate::market::vault::write(store, &slot, &serde_json::to_string(&saved)?)
+    if let Some(bot) = bot {
+        let slot = bot_env_slot(backend, bot);
+        let mut saved = stored_env(store, &slot)?;
+        apply(&mut saved, &changes);
+        crate::market::vault::write(store, &slot, &serde_json::to_string(&saved)?)?;
+    } else if is_managed(store) {
+        proxied::save(store, backend, &changes)?;
+    } else {
+        let mut saved = visible(store, backend)?;
+        apply(&mut saved, &changes);
+        crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

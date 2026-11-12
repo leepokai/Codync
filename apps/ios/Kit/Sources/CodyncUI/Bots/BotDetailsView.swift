@@ -122,6 +122,7 @@ struct BotDetailsView: View {
         switch tab {
         case .details:
             VStack(alignment: .leading, spacing: 28) {
+                if let bot, !bot.devServers.isEmpty { DevServersSection(bot: bot) }
                 if let draft = Binding($draft) {
                     BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .often)
                 }

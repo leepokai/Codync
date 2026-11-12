@@ -64,7 +64,7 @@ Codync/
 ├── private-relay/             # Single-process relay (the cloud WebSocket subset) for a person's own computers
 ├── relay/                     # Separate APNs push Worker; src/ and test/
 ├── discord/                   # Discord GitHub-role Worker (discord.codync.dev)
-├── docs/                      # Architecture, features, design, guides, reference, plans, investigations, archive
+├── docs/                      # Architecture, features, design, guides, reference, upstream agent bugs, plans, investigations, archive
 ├── tools/                     # Release, App Store and Google Play submission (store_release.py: what both share), font scripts
 ├── packaging/                 # Distribution templates
 ├── marketing/app-store-screenshots/ # App Store screenshot editor (bun dev; Export bundle → out/)
@@ -72,7 +72,7 @@ Codync/
 └── .github/workflows/         # CI, signing and release automation
 ```
 
-`build/`, `apps/ios/Kit/.build/`, `apps/desktop/out/`, `apps/desktop/dist/`, Cargo `target/`, `node_modules/` and Wrangler local state are generated working data. They are not source modules and should not become documentation locations. Edit `apps/project.yml` and run `xcodegen generate --spec apps/project.yml`; never hand-edit `project.pbxproj`.
+`build/`, `apps/ios/Kit/.build/`, `apps/desktop/out/`, `apps/desktop/dist/`, Cargo `target/`, `node_modules/` and Wrangler local state are generated working data. They are not source modules and should not become documentation locations. Edit `apps/project.yml` and run `xcodegen generate --spec apps/project.yml`; never hand-edit `project.pbxproj` (`tools/bump-version.py` sets its `MARKETING_VERSION` lines to what xcodegen would write).
 
 ## Targets
 
@@ -92,20 +92,17 @@ Codync/
 | CLI and background service | `host/src/main.rs`, `service/`; subcommands `cloud_cli.rs`, `network_cli.rs`, `send_cli.rs` (+ `send_cli/events.rs`, `wait.rs`) |
 | API, caller permissions, event ordering | `host/src/api/`, `hub.rs` |
 | SQLite transcript, bots, lanes and sessions | `host/src/store/` (`entries.rs`, `bots.rs`, `model.rs`, `devices.rs`, `schema.rs`) |
-| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `steer.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_windows.rs` on Windows) |
+| Agent process, ACP, queue and session lifecycle | `host/src/agent/bot/` (`launch.rs`, `queue.rs`, `session.rs`, `steer.rs`, `turn.rs`, `updates.rs`; `codex_names.rs` / `pi_tools.rs` how Codex and pi get Codync's MCP servers), `acp.rs` (+ `acp/codebuddy.rs`, CodeBuddy's ACP extensions), `process.rs` (process-tree ownership; `process_unix.rs` on macOS and Linux, `process_windows.rs` on Windows) |
 | Compaction timing and rollover | `host/src/agent/bot/compaction.rs`, the handoff card in `host/src/chat/handoff.rs`; the rules in `codync-mem`'s `compaction.rs` |
-| Group room turns / bot-to-bot requests | `host/src/chat/group.rs` / `team.rs` |
-| A bot's own name and instructions, their versions, its scratchpad, skills it writes | `host/src/chat/profile.rs`, `instruction_history.rs`, `scratchpad.rs`, `skills.rs` (`save_skill`), `teach.rs` (`recorded_steps`) |
-| Team management (bots creating and changing themselves and the bots they created) | `host/src/chat/manage.rs`, its approval card (`Cmd::Approve`) in `agent/bot/updates.rs` |
-| Approval rules and answering approval cards | `host/src/agent/approval_rules.rs`, `agent/bot/updates.rs` ([approvals](../features/approvals.md)) |
-| Turn watchdog (tool loops, stalls) | `host/src/agent/bot/watchdog.rs` |
-| Routines: schedules, runs, watch triggers, MCP tools | `host/src/routines/` (`schedule.rs`, `runner.rs`, `watch.rs`, `mcp.rs`, `retry.rs`, `check.rs`, `editor.rs`, `hooks.rs`) |
-| Routine flows: bot-to-bot hand-offs of a routine's reply | `host/src/routines/flow/` (`graph.rs` rules, `engine.rs` run, `api.rs`, `canvas.rs`, `tools.rs`, `recover.rs`), `host/src/store/flows.rs` + `flow_steps.rs`, `host/src/chat/team/flow.rs` (the hand-off), `host/src/tui/manage/flow.rs` |
+| Group room turns / bot-to-bot requests | `host/src/chat/group.rs` (+ `group/rooms.rs`) / `team.rs` |
 | Voice calls (the call, the voice's instructions and tools, transcripts, call lines) | `host/src/chat/calls/` (`mod.rs`, `context.rs`, `project.rs` the git state, `tools.rs`, `announce.rs` what the voice hears while the call lasts, `speech.rs` text as a voice says it); the user's messages it relays go through `host/src/chat/messages.rs` like typed ones; clients' `CallLink` (iPhone `CodyncUI/Call/CallLink.swift`, desktop `views/call/call-link.ts`, Android `core/Calls.kt` + `HostCallLink.kt`) and call rows (`CallRows`); the call on the iPhone's Lock Screen (`CodyncUI/Call/CallActivity.swift`, the Live Activity) and Android's call notification (`VoiceService.kt`) |
+| Dev servers (programs a bot keeps running) | `host/src/dev_servers/` (`run.rs` starting and stopping, `scan.rs` restoring and reading ports, `ports.rs`, `tools.rs` the bot's tools, `logs.rs`, `detected.rs` what a bot left running through its shell, `platform.rs`); desktop `views/thread/DevServersSection.tsx` (+ `src/shared/dev-servers.ts`); iPhone `CodyncUI/Bots/DevServersSection.swift`; Android `DevServersSection.kt`; terminal `host/src/tui/manage/dev_servers.rs` and `view/dev_servers.rs` |
+| Team management (bots creating and changing bots) | `host/src/chat/manage.rs`, its approval card (`Cmd::Approve`) in `agent/bot/updates.rs` |
 | codync-network (your computers' network) | `host/crates/network` (the crate: roster, letters, reach, budgets, `rules.rs`; `node/endpoint.rs` for where a computer is), `host/src/network/` (one node per network in `mod.rs`, the saved networks in `saved.rs`, its bots' address names in `handles.rs`, the `network*` methods, `networkView` and the `network` event in `api.rs`), `host/src/network_cli.rs`; across-computer bot requests in `host/src/chat/team/remote.rs`; desktop `apps/desktop/src/renderer/views/settings/NetworkSection.tsx`, `NetworkCard.tsx`, `NetworkSheets.tsx`, `RuleSheet.tsx` and the bot editor's `views/bots/NetworkSwitches.tsx` (+ `store/network.ts`, `lib/network-copy.ts`, `src/shared/network.ts`); iPhone `apps/ios/Kit/Sources/CodyncUI/NetworkSheet.swift` (+ `CodyncKit/Models/Network.swift`); Android `NetworkSheet.kt`, `AppStoreNetwork.kt` (+ `core/Network.kt`); terminal `host/src/tui/manage/network.rs`, `network_setup.rs`, `network_rules.rs` and `view/network.rs`, `view/network_rules.rs` |
 | Prompt snapshots and memory | `host/src/chat/context.rs`, `memory/` (`api.rs` the apps' read-only view, `tools.rs` and `file_tools.rs` the MCP tools, `files.rs` the folders and scan, `turns.rs` which bot's turn a found change is credited to, `file_api.rs`, `dream.rs`, `import.rs`); the rules in `host/crates/memory` (`codync-mem`: files and facts in `files/`, dreaming in `dream/`, tombstones in `store.rs`, the old entries in `legacy.rs`); harnesses' own memory turned off in `host/src/agent/own_memory.rs` |
 | Identity, encryption and direct channel | `host/src/remote/identity.rs`, `crypto.rs`, `channel.rs` |
 | Host cloud state and relay connection | `host/src/remote/cloud.rs`, `cloud_url.rs`, `relay.rs` |
+| Codync Cloud computers (host side: self-claim, sleep, cloud updates, its name; the keeper that holds its secrets) | `host/src/remote/claim.rs`, `managed.rs`; `host/src/keeper/` (`store.rs` sealed secrets, `socket.rs` control socket, `proxy.rs` the local proxy that adds keys, `unlock.rs` its key from the cloud, `update.rs`, `client.rs` the host's side, `protocol.rs` what they say); Worker `cloud/src/routes/cloud-computers.ts`, `cloud-keeper.ts`, `cloud-host.ts`, `cloud-setup.ts`, providers in `cloud/machines/` |
 | Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs` (+ `backends/catalog.rs` the known harnesses, `backends/sign_in.rs`, `backends/search_path.rs`, `backends/workbuddy.rs` the CLI inside the WorkBuddy app), `registry.rs`, `auth.rs` (+ `auth/agent.rs` starting an agent and its own sign-in, `auth/models.rs`), `term.rs`, `node.rs` |
 | Fast mode (session config option) | `host/src/agent/config.rs`, `agent/bot/fast_mode.rs` |
 | Marketplace, Composio, connector OAuth, bot secrets | `host/src/market/` (bot secrets: `bot_secrets.rs`, `secret_tools.rs`) |
@@ -117,7 +114,7 @@ Codync/
 | Account aggregation / one host mirror | `apps/ios/Kit/Sources/CodyncUI/Store/AccountStore.swift` / `BotStore.swift` (+ `BotStore+Connection`, `+Sync`, `+Sending`, `+Actions`, `+Plugins`, `+Cache`, `+Shortcuts`) |
 | iPhone chat, replies, composer and trace | `apps/ios/Kit/Sources/CodyncUI/Thread/` |
 | Reusable iPhone UI chrome | `apps/ios/Kit/Sources/CodyncUI/Chrome.swift`, `Controls.swift`, `MenuItem.swift` (system menus: `MenuItem`, `.contextActions`, `DropdownMenu`), `Platform.swift` |
-| iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `ChooseComputerView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift` |
+| iOS navigation, pairing, account, settings, computer management | `apps/ios/Views/RootView.swift`, `BotListView.swift`, `ChooseComputerView.swift`, `PairingView.swift`, `AccountSwitcherView.swift`, `SettingsView.swift`, `ComputersView.swift`, `ComputerConnectionRows.swift` |
 | Apple account sessions / public environment config | `apps/ios/App/AccountSession.swift`, `apps/shared/Config/` |
 | Desktop local host / SSH lifecycle | `apps/desktop/src/main/host-controller.ts`, `ssh.ts` |
 | Desktop store, chat and controls | `apps/desktop/src/renderer/store/bot-store.ts` (actions; state in `bot-mirror.ts`, events stream in `bot-sync.ts`), `views/thread/`, `components/` |

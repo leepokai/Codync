@@ -136,6 +136,12 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
   go of a full sweep (`PullToRefresh.swift`) reconnects to the computer while the chat waits just
   below the turning arrow, then eases back. A pull that isn't full refreshes nothing. The desktop
   reconnects from the computer menu instead.
+- Android: the phone stores each chat on disk and holds only a window of it in memory: the newest
+  300 messages of the open chat and the 5 opened last, the newest 30 rows of every other chat.
+  Earlier messages load once the top of the chat is on screen: rows the phone already stored come
+  first, then a page from the computer, and the window grows by 200 messages each time. It stops at
+  3,000 messages or a per-chat memory budget (tool-heavy chats sooner); the iPhone pages to the
+  first message. `apps/maestro/history.yaml` scrolls a long chat back to its first message on both phones.
 - The terminal UI lists the same messages; its steps line goes under the turn's last message.
 
 - Electron keeps the activity row mounted during its 0.42 s exit and animates its height,

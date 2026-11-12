@@ -4,18 +4,24 @@ import { analytics } from '../store/analytics'
 
 export const STAR_REPO = 'https://github.com/leepokai/Codync'
 
-/** Setup and the later reminder share one persisted answer history. */
+/** A star ask (setup's panel or the invitation) was answered in this window: the Ko-fi invitation waits for a later one. */
+let answeredThisSession = false
+export const starAskedThisSession = () => answeredThisSession
+
+/** Setup and the invitation at the fifth prompt share one persisted answer history. */
 export function useStarAsk() {
   const [state, setState] = usePref(prefs.starAsk)
+  const [prompts] = usePref(prefs.promptsSent)
   const answer = (starred: boolean) => {
+    answeredThisSession = true
     const current = prefs.starAsk.get()
-    const now = Date.now()
-    const due = dueStarAsk(current, now)
-    setState(afterStarAsk(current, starred, now))
+    const sent = prefs.promptsSent.get()
+    const due = dueStarAsk(current, sent)
+    setState(afterStarAsk(current, starred, sent))
     if (due) {
       analytics.track({ event: 'star_prompt_answered', ask: due, starred })
     }
     if (starred) window.codync.app.openExternal(STAR_REPO)
   }
-  return { state, answer }
+  return { due: dueStarAsk(state, prompts), prompts, answer }
 }

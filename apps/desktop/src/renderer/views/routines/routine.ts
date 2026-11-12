@@ -136,6 +136,8 @@ export interface RoutineWebhook {
   localUrl: string
   key: string
   connected: boolean
+  /** In no account, so public deliveries can't reach it. */
+  needsAccount?: boolean
 }
 
 /** A moment on the routines calendar: a run that stood for it, or an occurrence still to come. */

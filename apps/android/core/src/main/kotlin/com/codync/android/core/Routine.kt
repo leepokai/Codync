@@ -146,7 +146,7 @@ fun RoutineListing?.canEdit(id: String): Boolean = id.isEmpty() || this?.routine
 
 @Serializable data class RoutineEventFilter(val key: String, val label: String, val hint: String)
 
-@Serializable data class RoutineWebhook(val url: String? = null, val localUrl: String, val key: String, val connected: Boolean)
+@Serializable data class RoutineWebhook(val url: String? = null, val needsAccount: Boolean = false, val localUrl: String, val key: String, val connected: Boolean)
 
 /** Where a workflow's last reply goes: a channel, a chat, or the issue that started it. */
 @Serializable data class RoutineOutput(

@@ -75,8 +75,8 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 
 ### How a run works
 
-- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own.
-- **Several at once, up to four.** Each run has its own agent process, so up to four runs of one bot work at the same time and the chat answers beside them. A fifth waits for a slot. Runs on different bots always run in parallel.
+- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own. When the run ends, its session closes and, on most agents, the connectors it started stop; Codex keeps them until the agent next stops. An agent that can't close a session, like Cursor, restarts instead once the bot has nothing else running; your next message picks the conversation up where it was, after a few seconds' start.
+- **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
 
@@ -121,7 +121,7 @@ The run's prompt tells the bot that the delivery's contents are untrusted data t
 
 ### What the Codync cloud sees
 
-A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that uses [your own relay](/docs/remote-access#your-own-relay) has no public URL: only the local one works.
+A routine's public URL goes through the Codync cloud, so services can reach your computer without an open port or fixed address. A computer that isn't in an account, or that uses [your own relay](/docs/remote-access#your-own-relay), has no public URL: only the local one works.
 
 - Deliveries to the public URL are **not end-to-end encrypted**. The cloud handles the HTTPS connection, can read each delivery, and stores the key to check it. Your computer checks the key again before anything runs.
 - If your computer is off or offline, the cloud keeps deliveries for up to 72 hours and hands them over once the host is back.

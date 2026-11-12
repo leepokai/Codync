@@ -13,8 +13,11 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+mod addresses;
+pub use addresses::{addresses, interface_addresses, public_addresses};
 
 #[cfg(unix)]
 mod unix;
@@ -53,9 +56,15 @@ pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
+/// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
+/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
+const HOST_EXIT: Duration = Duration::from_secs(40);
+
 /// Do not claim a restart succeeded while an old daemon still holds the data.
 fn wait_for_host_exit() -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // A moment past launchd's kill.
+    let deadline = Instant::now() + HOST_EXIT + Duration::from_secs(5);
     loop {
         match lock_host() {
             Ok(lock) => {
@@ -169,80 +178,13 @@ impl KeepAwake {
     }
 }
 
-/// Addresses the phone can try, best first: the ones set in `CODYNC_EXTERNAL_URL`, Tailscale, then LAN.
-pub fn addresses(port: u16) -> Vec<String> {
-    // Read once: every hello asks, and a bad entry warns once.
-    static EXTERNAL: LazyLock<Vec<String>> =
-        LazyLock::new(|| external_urls(&std::env::var("CODYNC_EXTERNAL_URL").unwrap_or_default()));
-    let mut tailscale = vec![];
-    let mut lan = vec![];
-    for iface in if_addrs::get_if_addrs().unwrap_or_default() {
-        if iface.is_loopback() {
-            continue;
-        }
-        if let std::net::IpAddr::V4(ip) = iface.ip() {
-            let o = ip.octets();
-            // 100.64.0.0/10 is Tailscale's CGNAT range.
-            if o[0] == 100 && (64..128).contains(&o[1]) {
-                tailscale.push(format!("http://{ip}:{port}"));
-            } else if ip.is_private() {
-                lan.push(format!("http://{ip}:{port}"));
-            }
-        }
-    }
-    if let Ok(out) = Command::new("tailscale").args(["status", "--json"]).output()
-        && let Ok(v) = serde_json::from_slice::<Value>(&out.stdout)
-        && let Some(dns) = v["Self"]["DNSName"].as_str()
-    {
-        let dns = dns.trim_end_matches('.');
-        if !dns.is_empty() {
-            tailscale.insert(0, format!("http://{dns}:{port}"));
-        }
-    }
-    tailscale.sort();
-    tailscale.dedup();
-    lan.sort();
-    lan.dedup();
-    EXTERNAL.iter().cloned().chain(tailscale).chain(lan).collect()
-}
-
-/// Where phones reach this host besides its own interfaces, such as an HTTPS reverse proxy that forwards
-/// `/channel`: comma-separated `http(s)://` URLs at the root of a host (phones dial `<url>/channel`). The pairing
-/// link and every `hello` carry them, so a phone keeps them when it refreshes its addresses.
-fn external_urls(var: &str) -> Vec<String> {
-    var.split(',')
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-        .filter_map(|u| match reqwest::Url::parse(u) {
-            Ok(url)
-                if matches!(url.scheme(), "http" | "https")
-                    && url.host().is_some()
-                    && url.username().is_empty()
-                    && url.password().is_none()
-                    && url.path() == "/"
-                    && url.query().is_none()
-                    && url.fragment().is_none() =>
-            {
-                Some(url.as_str().trim_end_matches('/').to_owned())
-            }
-            _ => {
-                tracing::warn!(
-                    url = u,
-                    "CODYNC_EXTERNAL_URL entry isn't an http(s) URL at the root of a host (no user or password); ignored"
-                );
-                None
-            }
-        })
-        .collect()
-}
-
 pub fn host_name() -> String {
     let n = gethostname::gethostname().to_string_lossy().into_owned();
     n.trim_end_matches(".local").to_owned()
 }
 
 /// What the computer is, so phones can draw the right icon (Linux gets its penguin;
-/// Windows counts as a desktop).
+/// Windows counts as a desktop; a Codync Cloud computer, its cloud).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {
@@ -253,6 +195,7 @@ pub enum Device {
     MacPro,
     Desktop,
     Linux,
+    Cloud,
 }
 
 /// Detected once; on macOS from `system_profiler`'s model name.
@@ -326,7 +269,7 @@ pub fn pairing_url(q: &PairingQr) -> String {
     url
 }
 
-pub(crate) fn read_settings(settings: &Path) -> Result<Option<Value>> {
+fn read_settings(settings: &Path) -> Result<Option<Value>> {
     match std::fs::read_to_string(settings) {
         Ok(text) => Ok(Some(serde_json::from_str(&text).context("parsing Claude settings")?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -334,7 +277,7 @@ pub(crate) fn read_settings(settings: &Path) -> Result<Option<Value>> {
     }
 }
 
-pub(crate) fn write_settings(settings: &Path, v: &Value) -> Result<()> {
+fn write_settings(settings: &Path, v: &Value) -> Result<()> {
     create_parent(settings)?;
     std::fs::write(settings, serde_json::to_string_pretty(v)? + "\n")
         .with_context(|| format!("writing {}", settings.display()))
@@ -418,17 +361,6 @@ mod tests {
             "{}",
             data_dir().display()
         );
-    }
-
-    #[test]
-    fn external_urls_keep_http_addresses_only() {
-        assert_eq!(
-            external_urls(
-                " https://codync.example.com/ , ftp://x, nonsense,http://10.0.0.2:8080,https://x.com/codync,https://x.com/?a,https://u:p@x.com"
-            ),
-            ["https://codync.example.com", "http://10.0.0.2:8080"]
-        );
-        assert_eq!(external_urls(""), [] as [String; 0]);
     }
 
     #[test]

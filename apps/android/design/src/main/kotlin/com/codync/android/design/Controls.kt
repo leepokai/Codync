@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -145,8 +144,8 @@ import com.kyant.shapes.RoundedRectangle
     })
         .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        label()
-        Spacer(Modifier.weight(1f))
+        // Its own row, so that a label's weight has all the room left of the track.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), content = label)
         Box(Modifier.size(34.dp, 20.dp).clip(Capsule()).background(track).padding(2.dp)) {
             Box(Modifier.offset(x = knob).size(16.dp).clip(Capsule()).background(knobInk))
         }

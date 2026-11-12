@@ -111,6 +111,7 @@ export class BotMirror extends Observable {
   protected retired = false
   protected unreadable = false
   protected saveTimer: ReturnType<typeof setTimeout> | null = null
+  /** What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Null: nothing held yet. */
   protected cacheStamp: string | null = null
 
   constructor(
@@ -369,7 +370,7 @@ export class BotMirror extends Observable {
     }
     const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
     // Saved partway through a refetch, the cache says so: the next launch begins it again.
-    const stamp = this.refetched ? '' : `${this.appVersion}/${this.hello?.version ?? ''}`
+    const stamp = this.refetched ? '' : this.cacheStamp ?? ''
     const cache = { stamp, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))

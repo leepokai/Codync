@@ -6,7 +6,7 @@ The desktop app and the terminal UI work differently: they talk to the host on t
 
 Each time it connects, the phone first tries the computer's direct addresses. If none answers, it connects through the relay, if it has one. When your network changes or you return to the app, it tries again, so it moves back to a direct connection when one becomes available.
 
-Over the relay, a phone catching up on many chats stays connected while the computer sends them. If the link does drop, the phone reconnects and picks up from the last change it received.
+Over the relay, a phone catching up on many chats stays connected while the computer sends them. If the link does drop, or after an update of the app or of Codync on the computer, the phone picks up from the last change it received instead of loading every chat again. Only an update that changes how the computer stores chats loads them all again, behind the chats already on screen.
 
 | Route | When it works | What you set up |
 | --- | --- | --- |

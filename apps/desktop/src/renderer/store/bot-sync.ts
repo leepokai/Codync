@@ -1,4 +1,4 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
@@ -14,6 +14,8 @@ const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
+/** Raise when the app starts to need a field the rows it cached may lack. */
+const MIRROR_FORMAT = 1
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -26,6 +28,14 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
     if (rest.length) kept.set(id, rest)
   }
   return kept
+}
+
+/**
+ * The mirror format and the host's store schema (its version on a host that sends none): updates of the app or
+ * the host that keep both keep the cached copy and its cursor.
+ */
+function syncStamp(hello: Hello) {
+  return `${MIRROR_FORMAT}:${hello.schema == null ? hello.version : `schema ${hello.schema}`}`
 }
 
 /**
@@ -236,21 +246,25 @@ export class BotSync extends BotMirror {
     this.iconsRevision = -1
     this.hello = h
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
+    this.noteSyncStamp(syncStamp(h))
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
     this.changed()
   }
 
+  /** A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed: fetch it all again, underneath what's shown. */
+  private noteSyncStamp(stamp: string) {
+    if (this.cacheStamp !== null && this.cacheStamp !== stamp) this.refetchAll()
+    this.cacheStamp = stamp
+  }
+
   private noteHostVersion(next: { version: string; minApp?: string | null }) {
-    const cached = this.cacheStamp !== null && this.cacheStamp !== `${this.appVersion}/${next.version}`
-    if (cached || (this.hostVersion && this.hostVersion.version !== next.version)) {
-      // A different host version or app build: data may carry new fields, so fetch it all again, underneath what's shown.
-      this.refetchAll()
+    if (this.hostVersion && this.hostVersion.version !== next.version) {
+      // Another host: its update is done, and what the last one sent no longer says anything.
       this.rewound = false
       this.unreadable = false
       this.hostUpdate = null
     }
-    this.cacheStamp = null
     this.hostVersion = next
   }
 

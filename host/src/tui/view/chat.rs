@@ -42,7 +42,8 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         Mark::Error => ("× error".to_owned(), t.red),
         _ => (String::new(), t.dim),
     };
-    let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    let mut sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    sx = super::dev_servers::in_header(buf, r, sx, app, &b);
     let room = sx.saturating_sub(x + 2);
     if b.group {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();

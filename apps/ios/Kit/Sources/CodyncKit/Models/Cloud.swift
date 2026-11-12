@@ -18,11 +18,124 @@ public struct CloudComputer: Codable, Hashable, Sendable, Identifiable {
     public var claimedAt: Int64?
     /// `none` · `pending` · `granted` (only when the request carried this device's signature).
     public var access: String?
+    /// Set for a Codync Cloud computer; nil for the user's own (and from clouds that predate it).
+    public var cloud: CloudHosting?
 
     public var id: ComputerID { computerId }
     public var isOnline: Bool { online ?? false }
     /// This device was approved on it through the account.
     public var isGranted: Bool { access == "granted" }
+}
+
+/// Who runs a Codync Cloud computer, where, and whether it's awake (`cloud` in `GET /v1/computers`).
+public struct CloudHosting: Codable, Hashable, Sendable {
+    public var provider: String
+    /// Shown as the cloud names it ("Boat"), never hard-coded here.
+    public var providerName: String
+    public var region: String
+    public var state: CloudMachineState
+
+    /// "Runs on Boat · EU", translated: under the computer's name.
+    public var runsOn: String {
+        L10n.tr("Runs on {provider} · {region}").replacingOccurrences(of: "{provider}", with: providerName)
+            .replacingOccurrences(of: "{region}", with: region)
+    }
+}
+
+public enum CloudMachineState: String, Codable, Sendable {
+    case starting, running, stopping, stopped, failed
+    /// A state this version doesn't know.
+    case unknown
+
+    public init(from decoder: any Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+    }
+
+    /// Asleep or falling asleep: a connection or a message wakes it, so it isn't offline.
+    public var isAsleep: Bool { self == .stopped || self == .stopping }
+}
+
+/// One of the account's Codync Cloud computers (`GET` / `POST` / `PATCH /v1/cloud-computers`).
+public struct CloudMachine: Decodable, Hashable, Sendable, Identifiable {
+    public var cloudComputerId: String
+    /// The name the user gave it.
+    public var name: String
+    public var hosting: CloudHosting
+    /// Nil until the machine has booted and claimed itself into the account.
+    public var computerId: ComputerID?
+    /// Whether its provider keeps snapshots (earlier states, a backup) that *Delete snapshots* erases; older clouds
+    /// don't say, and they all did.
+    public var snapshots: Bool
+
+    public var id: String { cloudComputerId }
+    /// Created, but not in the account yet (nor failed): it's booting and installing the host.
+    public var isPreparing: Bool { computerId == nil && hosting.state != .failed }
+
+    private enum CodingKeys: String, CodingKey { case cloudComputerId, name, computerId, snapshots }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        cloudComputerId = try c.decode(String.self, forKey: .cloudComputerId)
+        name = try c.decode(String.self, forKey: .name)
+        computerId = try c.decodeIfPresent(ComputerID.self, forKey: .computerId)
+        snapshots = try c.decodeIfPresent(Bool.self, forKey: .snapshots) ?? true
+        // Provider, region and state sit beside `computerId`.
+        hosting = try CloudHosting(from: decoder)
+    }
+}
+
+/// The account's Codync Cloud as the cloud describes it (`GET /v1/cloud-computers`).
+public struct CloudStatus: Decodable, Hashable, Sendable {
+    /// Oldest first.
+    public var cloudComputers: [CloudMachine]?
+    /// Whether this account may have them (the feature isn't public yet).
+    public var available: Bool?
+    /// How many it may have at once.
+    public var limit: Int?
+    /// Every provider the computers can run on, each with the account's key for it.
+    public var providers: [CloudProvider]?
+}
+
+/// A provider the cloud can run the computer on, as it lists them: where it runs, how to make its key (worded by the
+/// cloud, so a new provider needs no app release) and the account's key for it.
+public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
+    public var provider: String
+    public var name: String
+    public var region: String
+    /// What its keys start with, for the field's placeholder (`boat_…`).
+    public var keyPrompt: String
+    public var setup: CloudKeySetup
+    public var credential: CloudCredential?
+    /// Its own free plan, if it has one (older clouds don't say).
+    public var offer: CloudProviderOffer?
+
+    public var id: String { provider }
+    /// The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
+    /// when the provider said no for the plan or the account).
+    public var isReady: Bool { credential.map { $0.blocking != true } ?? false }
+}
+
+/// A key the account gave a provider, as the cloud shows it: never the key itself.
+public struct CloudCredential: Decodable, Hashable, Sendable {
+    /// Its kind and last four, `boat_…9abc`.
+    public var hint: String
+    /// What the owner has to fix while the provider turns the key down, in a sentence the app translates.
+    public var problem: String?
+    /// The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced.
+    public var blocking: Bool?
+}
+
+/// A provider's own free plan, in the cloud's words (the app translates `label` and `detail`), and its page.
+public struct CloudProviderOffer: Decodable, Hashable, Sendable {
+    public var label: String
+    public var detail: String
+    public var url: URL
+}
+
+/// How the user makes a provider's key: commands to run, and the provider's page for doing it there instead.
+public struct CloudKeySetup: Decodable, Hashable, Sendable {
+    public var page: URL
+    public var commands: String
 }
 
 /// A started access request, after both nonces were exchanged: `code` is ready to show.

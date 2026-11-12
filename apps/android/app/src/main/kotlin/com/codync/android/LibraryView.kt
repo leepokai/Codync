@@ -41,7 +41,7 @@ import com.kyant.shapes.RoundedRectangle
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Library))
     LaunchedEffect(bot.id, online) { if (online) store.loadLibrary(bot.id) }
     val items = state.artifacts.library(bot.id, state.library[bot.id].orEmpty())
-    var renaming by remember { mutableStateOf<Artifact?>(null) }
+    var naming by remember { mutableStateOf<Naming?>(null) }
     var image by remember { mutableStateOf<Attachment?>(null) }
     Column(Modifier.fillMaxWidth()) {
         when {
@@ -52,8 +52,13 @@ import com.kyant.shapes.RoundedRectangle
                         for ((index, item) in members.withIndex()) {
                             if (index > 0) Hairline(Modifier.padding(horizontal = 16.dp))
                             when (item) {
-                                is LibraryItem.ArtifactItem -> ArtifactRow(item.artifact, { open(OpenArtifact(bot.id, item.artifact.id, item.artifact.title, item.artifact.entryId)) },
-                                    { renaming = item.artifact }) { store.shareArtifact(bot.id, item.artifact.id, item.artifact.title) }
+                                is LibraryItem.ArtifactItem -> {
+                                    val artifact = item.artifact
+                                    ArtifactRow(artifact, { open(OpenArtifact(bot.id, artifact.id, artifact.title, artifact.entryId)) },
+                                        { naming = Naming("Rename artifact", artifact.title) { store.renameArtifact(bot.id, artifact.id, it) } }) {
+                                        store.shareArtifact(bot.id, artifact.id, artifact.title)
+                                    }
+                                }
                                 is LibraryItem.FileItem -> FileRow(item, bot.id, state, store)
                                 is LibraryItem.AttachmentItem -> AttachmentRow(item.file, bot.id, state, store) { image = item.file }
                             }
@@ -65,9 +70,7 @@ import com.kyant.shapes.RoundedRectangle
             else -> EmptyLibrary(bot.name)
         }
     }
-    // The artifact as composed: Save closes the dialog (clearing `renaming`) before it renames.
-    val target = renaming
-    RenameArtifactDialog(target?.title, { renaming = null }) { title -> target?.let { store.renameArtifact(bot.id, it.id, title) } }
+    NameDialog(naming, "Artifact title", { naming = null })
     AttachmentImageSheet(image, bot.id, state, store) { image = null }
 }
 

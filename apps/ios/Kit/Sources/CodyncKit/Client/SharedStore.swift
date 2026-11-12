@@ -156,8 +156,8 @@ public extension SharedStore.Context {
         public let keys: AnalyticsEvent.MovedKeys
     }
 
-    /// Sign-in is required: the signed-out context's computers move into this account context, which
-    /// then erases it. Runs before this context's stores and keys load. Nil when there was nothing to move.
+    /// Signing in: the signed-out context's computers move into this account context, which then erases it. Runs before
+    /// this context's stores and keys load. Nil when there was nothing to move.
     func adopt(from local: Self) -> Adoption? {
         guard accountID != nil, local.accountID == nil, local.suite == suite else { return nil }
         let moving = local.computers
@@ -169,24 +169,25 @@ public extension SharedStore.Context {
                 try DeviceIdentity.move(from: local, to: self)
             } catch {
                 log.error("Cannot move the device key: \(error.localizedDescription)")
-                return merge(moving)
+                return merge(moving, from: local, unmoved: &unmoved)
             }
             for name in Self.names { defaults.set(local.defaults.object(forKey: local.key(name)), forKey: key(name)) }
             unmoved = moveMirrorCaches(from: local)
             return Adoption(computers: moving.count, keys: .moved)
         }
-        return merge(moving)
+        return merge(moving, from: local, unmoved: &unmoved)
     }
 
     /// Unsent and failed messages live only in the mirror caches: they come along rather than go with `erase()`.
     /// A rename in one folder: only a cache left at the account's name (it has no computers yet) is in the way.
     /// Returns the caches that couldn't move: `erase` leaves them on disk rather than delete the only copy, though
     /// nothing loads them again (Start over removes them).
-    private func moveMirrorCaches(from local: Self) -> [URL] {
+    private func moveMirrorCaches(from local: Self, keeping own: Set<ComputerID> = []) -> [URL] {
         var unmoved: [URL] = []
         for file in Self.mirrorCaches(id: local.id) {
             let name = file.lastPathComponent
-            guard let marker = name.range(of: "-\(local.id)-") else { continue }
+            // A computer this account already has keeps this account's chat.
+            guard let marker = name.range(of: "-\(local.id)-"), !own.contains(where: { name.hasSuffix("-\($0).json") }) else { continue }
             let moved = file.deletingLastPathComponent().appending(path: name.replacingCharacters(in: marker, with: "-\(id)-"))
             do {
                 if FileManager.default.fileExists(atPath: moved.path()) { try FileManager.default.removeItem(at: moved) }
@@ -199,9 +200,11 @@ public extension SharedStore.Context {
         return unmoved
     }
 
-    private func merge(_ moving: [Computer]) -> Adoption {
+    /// This context has its own key, so the computers ask to be paired again; their chats and waiting messages come along.
+    private func merge(_ moving: [Computer], from local: Self, unmoved: inout [URL]) -> Adoption {
         let known = Set(computers.map(\.id))
         computers += moving.filter { !known.contains($0.id) }
+        unmoved = moveMirrorCaches(from: local, keeping: known)
         return Adoption(computers: moving.count, keys: .rescan)
     }
 }

@@ -33,7 +33,17 @@ function loadConfig(): Config {
   const cloud = (process.env.CODYNC_CLOUD_URL ?? file.cloudURL ?? '').trim()
   return {
     clerkPublishableKey: key.startsWith('pk_test_') || key.startsWith('pk_live_') ? key : null,
-    cloudURL: /^https:\/\//.test(cloud) ? cloud.replace(/\/$/, '') : null,
+    cloudURL: isCloudURL(cloud) ? cloud.replace(/\/$/, '') : null,
+  }
+}
+
+/** HTTPS; a development build also takes a local cloud on this computer (`npm run cloud:stack`), as the iPhone's debug build does. */
+function isCloudURL(raw: string) {
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || (!identity.releaseUpdates && url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname))
+  } catch {
+    return false
   }
 }
 

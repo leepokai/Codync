@@ -1,17 +1,50 @@
 //! The models an agent offers, read from a session it opens for that alone.
 
-use super::{probe_dir, start_with_env, text};
+use super::{Started, probe_dir, start_with_env, text};
+use crate::LockExt;
 use crate::agent::acp::Incoming;
+use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::OnceCell;
+
+/// Model lists being fetched, by agent: a settings screen asks for one from several places at once (the model
+/// picker, Approvals), and each would otherwise start the agent. An ask after one came fetches afresh.
+#[derive(Default)]
+pub struct InFlight(Mutex<HashMap<String, Slot>>);
+
+/// One fetch's answer, for every ask that came while it ran (a failure as its text).
+type Slot = Arc<OnceCell<Result<Value, String>>>;
+
+impl InFlight {
+    async fn get(&self, agent: &str, fetch: impl Future<Output = Result<Value>>) -> Result<Value> {
+        let slot = self.0.locked().entry(agent.to_owned()).or_default().clone();
+        let answer = slot
+            .get_or_init(|| async {
+                let answer = fetch.await.map_err(|e| format!("{e:#}"));
+                self.0.locked().remove(agent);
+                answer
+            })
+            .await;
+        answer.clone().map_err(anyhow::Error::msg)
+    }
+}
+
+/// [`models`], shared with the asks for the same agent (and account) meanwhile.
+pub async fn shared_models(hub: &Hub, backend: &str, account: Option<&str>) -> Result<Value> {
+    let key = account.map_or_else(|| backend.to_owned(), |id| format!("{backend}:{id}"));
+    hub.model_lists.get(&key, models(&hub.store, backend, account)).await
+}
 
 /// Discover the agent's advertised models in an isolated, prompt-free session.
 /// This uses the same credentials as actual bot sessions and never reads project files.
 pub async fn models(store: &Store, backend: &str, account: Option<&str>) -> Result<Value> {
     let extra_env = account.map(|id| crate::agent::account::env(id, backend)).transpose()?.unwrap_or_default();
-    let (acp, mut inbox, _, _) = start_with_env(store, backend, &extra_env).await?;
+    let Started { acp, mut inbox, .. } = start_with_env(store, backend, &extra_env).await?;
     let result = tokio::time::timeout(Duration::from_mins(1), async {
         let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
         tokio::pin!(request);
@@ -34,6 +67,8 @@ pub async fn models(store: &Store, backend: &str, account: Option<&str>) -> Resu
             Value::Null
         };
         let mut catalog = model_catalog(&session, &options);
+        catalog["modes"] =
+            crate::agent::modes::Modes::from_session(&session, backend).map_or(json!([]), |m| m.catalog());
         if backend != "cursor" {
             discover_options(&acp, &session, &mut catalog).await?;
         }

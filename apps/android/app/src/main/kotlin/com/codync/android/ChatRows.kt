@@ -349,7 +349,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             SendStatus.Sending -> Text(state.uploadProgress[send.nonce]?.let { "Uploading files · $it%" } ?: "Sending…",
                 style = Type.caption2, color = Palette.tertiary)
             SendStatus.Delivering -> Text("Delivered to the computer", style = Type.caption2, color = Palette.tertiary)
-            SendStatus.Waiting -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SendStatus.Waiting, SendStatus.Held -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Waiting for the computer to come online", style = Type.caption2, color = Palette.tertiary)
                 Box(Modifier.clickable(role = Role.Button) { store.cancelQueued(send) }.semantics { contentDescription = "Don't send" }) {
                     Symbol("xmark.circle", size = 14.dp, tint = Palette.tertiary)

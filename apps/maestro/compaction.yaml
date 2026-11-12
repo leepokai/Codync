@@ -1,0 +1,93 @@
+# A bot's Summarize long chats setting on the phones, in the Agent card of its details: once its agent has replied and
+# told its window, the menu has the three choices (Auto, the default, first) and Set a size, which lists sizes by 100K
+# up to what the window holds and Custom size… for one typed in; a size picked or typed shows on the pill and the host
+# keeps it, and so does a choice, which reopened details show again. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the flow
+# makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags bot-settings \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/instructions_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - bot-settings
+onFlowComplete:
+  - runScript:
+      file: compaction.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: compaction.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+# The agent's reply: by then the host knows the window.
+- extendedWaitUntil:
+    visible: "ok"
+    timeout: 20000
+# Not on the Settings page: on the Details page, where the details open.
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- assertNotVisible: "Summarize long chats"
+- tapOn: "Details"
+# Centered, so the pill under the label is on screen too (on Android the label alone can stop at the bottom edge).
+- scrollUntilVisible:
+    element: "Summarize long chats"
+    centerElement: true
+- tapOn: "Auto \\(default\\)"
+- assertVisible: "Early"
+- assertVisible: "Near the limit"
+- tapOn: "Set a size"
+- assertVisible: "900K"
+- tapOn: "100K"
+- assertVisible: "100K"
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "100000"
+- tapOn: "100K"
+- tapOn: "Set a size"
+- tapOn: "Custom size…"
+- assertVisible: "Custom size"
+- eraseText
+# Rounded to the nearest 10K.
+- inputText: "354"
+- tapOn: "Save"
+- assertVisible: "350K"
+- takeScreenshot: compaction-size
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "350000"
+- tapOn: "350K"
+- tapOn: "Early"
+- assertVisible: "Early"
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "early"
+# Reopened, the details read the choice back from the host.
+- tapOn: "Close details"
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Details"
+- scrollUntilVisible:
+    element: "Summarize long chats"
+    centerElement: true
+- tapOn: "Early"
+- tapOn: "Auto \\(default\\)"
+- assertVisible: "Auto \\(default\\)"
+- runScript:
+    file: compaction.js
+    env:
+      STORED: "off"

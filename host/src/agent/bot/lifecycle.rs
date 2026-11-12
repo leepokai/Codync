@@ -1,42 +1,73 @@
 //! Idle agents give their resources back. A session unused for [`IDLE`] is closed (a routine run's
-//! as soon as the run ends); once every session is idle, or a routine run ends with none other open,
-//! the agent stops with its process group.
-//! The next message starts the agent again and loads the session, so the conversation carries on.
-//! Agents that can't load a session keep everything: stopping them would lose the conversation.
+//! as soon as the run ends); once every session is idle, or a routine run ends with none other open
+//! or with its session left open (an agent that can't close one), the agent stops with everything it started.
+//! The next message starts the agent again and reopens the session, so the conversation carries on.
+//! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
+//! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
 
 use super::Actor;
+use super::background_work::background_work;
+use crate::analytics::Retired;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-/// Coming back costs a relaunch plus `session/load` (seconds), so ordinary pauses in a chat
+/// Coming back costs a relaunch plus reopening the session (seconds), so ordinary pauses in a chat
 /// stay warm.
 const IDLE: Duration = Duration::from_mins(30);
 /// How often an idle bot looks for something to give back.
 const CHECK_EVERY: Duration = Duration::from_mins(1);
+
+/// What a keeper restart does to an agent, whose grants went with the keeper that gave them.
+#[derive(Debug, PartialEq)]
+enum AfterKeeper {
+    /// It holds none.
+    Nothing,
+    /// It starts again before its next turn, resuming its session.
+    BeforeNextTurn,
+    /// It can't resume a session, so it starts fresh (its keys would fail anyway) once its turn ends,
+    AfterTurn,
+    /// or now, between turns.
+    Now,
+}
+
+fn after_keeper(holds_grants: bool, can_reopen: bool, in_turn: bool) -> AfterKeeper {
+    match (holds_grants, can_reopen, in_turn) {
+        (false, ..) => AfterKeeper::Nothing,
+        (true, true, _) => AfterKeeper::BeforeNextTurn,
+        (true, false, true) => AfterKeeper::AfterTurn,
+        (true, false, false) => AfterKeeper::Now,
+    }
+}
 
 #[derive(Debug, PartialEq)]
 enum Release {
     Nothing,
     /// These sessions; the agent keeps running the rest.
     Sessions(Vec<String>),
-    /// The agent process, with everything in its process group.
-    Agent,
+    /// The agent process, with everything it started (every process group in its session), and why.
+    Agent(Retired),
 }
 
 /// `used`: each live session's last use. Only an agent that can close sessions releases them one
-/// by one; any agent that can load them is stopped once all are idle.
+/// by one; any agent that can reopen them is stopped once all are idle, or while it holds a `spent`
+/// session ([`Actor::stop_spent`] stops it at a turn's end unless something runs detached, then this tries again).
+/// Sessions idle for `idle_for` count as idle: [`IDLE`], or none under memory pressure.
 fn plan(
     used: &HashMap<String, Instant>,
     started: Instant,
     can_close: bool,
+    spent: bool,
     now: Instant,
     idle_for: Duration,
 ) -> Release {
+    if spent {
+        return Release::Agent(Retired::SessionNotClosed);
+    }
     let mut idle: Vec<String> =
         used.iter().filter(|(_, at)| now.duration_since(**at) >= idle_for).map(|(sid, _)| sid.clone()).collect();
     if idle.len() == used.len() && now.duration_since(started) >= idle_for {
-        Release::Agent
+        Release::Agent(Retired::Idle)
     } else if can_close && !idle.is_empty() {
         idle.sort();
         Release::Sessions(idle)
@@ -70,27 +101,32 @@ impl Actor {
             return;
         }
         let Some(conn) = &self.conn else { return };
-        if !conn.sessions.load {
+        if conn.sessions.reopen.is_none() {
             return;
         }
-        let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now(), idle_for);
-        let leader = conn.acp.pid();
-        if release == Release::Nothing || background_work(leader).await {
+        let release = plan(&conn.loaded, conn.started, conn.sessions.close, conn.spent, Instant::now(), idle_for);
+        if release == Release::Nothing || background_work(&conn.acp).await {
             return;
         }
         match release {
-            Release::Agent => {
-                tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
-                if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
-                }
-            }
+            Release::Agent(reason) => self.retire(reason).await,
             Release::Sessions(sessions) => {
                 for sid in sessions {
                     self.close_session(&sid).await;
                 }
             }
             Release::Nothing => {}
+        }
+    }
+
+    /// A cloud computer's keeper started again (`Cmd::KeeperRestarted`), so the grants the agent started with are gone.
+    pub(super) async fn keeper_restarted(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
+            AfterKeeper::Nothing => {}
+            AfterKeeper::BeforeNextTurn => self.tools_changed = true,
+            AfterKeeper::AfterTurn => self.restart_after_turn = true,
+            AfterKeeper::Now => self.restart_agent().await,
         }
     }
 
@@ -107,27 +143,53 @@ impl Actor {
 
     /// A routine run's session is spent once the run is. When it was the only session open and nothing waits, the
     /// agent ran just for the run and stops with it, with everything it started; otherwise the session alone closes,
-    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
+    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`]. One the agent couldn't
+    /// close (Cursor can't) goes with the agent instead, once nothing runs or waits ([`Self::stop_spent`]): the main
+    /// chat reopens its own session on its next turn.
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
-        if !conn.sessions.load {
+        if conn.sessions.reopen.is_none() {
             return;
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
-        if alone && !background_work(conn.acp.pid()).await {
-            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
-            if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
-            }
-        } else {
-            self.close_reloadable(sid).await;
+        if alone && !background_work(&conn.acp).await {
+            self.retire(Retired::RoutineFinished).await;
+            return;
+        }
+        self.close_reopenable(sid).await;
+        if let Some(conn) = self.conn.as_mut()
+            && conn.loaded.contains_key(sid)
+        {
+            conn.spent = true;
         }
     }
 
-    /// Closes a session the agent can load again when it's next needed, like one a turn failed in (see
-    /// `acp::may_end_session`): the next turn loads it afresh instead of finding it dead.
-    pub(super) async fn close_reloadable(&mut self, sid: &str) {
-        if self.conn.as_ref().is_some_and(|c| c.sessions.close && c.sessions.load && c.loaded.contains_key(sid)) {
+    /// Stops an agent holding a spent session (`release_spent`) once nothing runs or waits, unless something runs
+    /// detached under it: then the idle check tries again.
+    pub(super) async fn stop_spent(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        if conn.spent && self.turn.is_none() && self.queue.is_empty() && !background_work(&conn.acp).await {
+            self.retire(Retired::SessionNotClosed).await;
+        }
+    }
+
+    /// Stops the agent with everything it started, to give that back; the next turn starts it again and reopens its
+    /// session.
+    async fn retire(&mut self, reason: Retired) {
+        let Some(conn) = self.conn.take() else { return };
+        tracing::info!(bot = %self.cfg.id, ?reason, "stopping the agent");
+        crate::analytics::agent_retired(&self.hub, &self.cfg.backend, reason);
+        conn.acp.kill().await;
+    }
+
+    /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
+    /// `acp::may_end_session`): the next turn reopens it instead of finding it dead.
+    pub(super) async fn close_reopenable(&mut self, sid: &str) {
+        if self
+            .conn
+            .as_ref()
+            .is_some_and(|c| c.sessions.close && c.sessions.reopen.is_some() && c.loaded.contains_key(sid))
+        {
             self.close_session(sid).await;
         }
     }
@@ -153,69 +215,6 @@ impl Actor {
     }
 }
 
-/// Whether something the agent started runs detached, in a session of its own, like a dev server
-/// from its shell tool. Stopping the agent would orphan it and lose track of it, so the agent
-/// stays. MCP servers stay in the agent's session and don't count, even in a process group of
-/// their own (Codex starts each one in its own group). Unsure counts as busy.
-// ponytail: a dev server keeps its agent (and memory) indefinitely; add a cap if that matters.
-#[cfg(unix)]
-async fn background_work(leader: Option<u32>) -> bool {
-    let Some(leader) = leader else { return true };
-    let listed = tokio::process::Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output().await;
-    let Ok(listed) = listed.inspect_err(|e| tracing::warn!(error = format!("{e:#}"), "couldn't list processes")) else {
-        return true;
-    };
-    if !listed.status.success() {
-        return true;
-    }
-    let processes: Vec<(u32, u32)> = String::from_utf8_lossy(&listed.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace().map(str::parse);
-            Some((fields.next()?.ok()?, fields.next()?.ok()?))
-        })
-        .collect();
-    detached_descendant(&processes, leader, session)
-}
-
-/// `pid`'s session, or `None` once it's gone.
-#[cfg(unix)]
-fn session(pid: u32) -> Option<i32> {
-    let pid = libc::pid_t::try_from(pid).ok()?;
-    // SAFETY: getsid only reads the process table.
-    let sid = unsafe { libc::getsid(pid) };
-    (sid >= 0).then_some(sid)
-}
-
-/// Windows has no process groups to tell a dev server from an MCP server, and stopping the agent
-/// ends its whole process tree there, so its agents are never released.
-#[cfg(windows)]
-#[allow(clippy::unused_async)] // the Unix check's signature
-async fn background_work(_leader: Option<u32>) -> bool {
-    true
-}
-
-/// `processes`: (pid, parent pid) rows; `session` finds a live process's session.
-#[cfg(any(unix, test))]
-fn detached_descendant(processes: &[(u32, u32)], leader: u32, session: impl Fn(u32) -> Option<i32>) -> bool {
-    let Some(own) = session(leader) else { return true };
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for &(pid, parent) in processes {
-        children.entry(parent).or_default().push(pid);
-    }
-    let mut stack = vec![leader];
-    while let Some(parent) = stack.pop() {
-        for &pid in children.get(&parent).into_iter().flatten() {
-            // One that exited since the listing holds nothing.
-            if session(pid).is_some_and(|sid| sid != own) {
-                return true;
-            }
-            stack.push(pid);
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,15 +227,16 @@ mod tests {
         let used =
             |rows: &[(&str, Instant)]| rows.iter().map(|(s, at)| ((*s).to_owned(), *at)).collect::<HashMap<_, _>>();
         assert_eq!(
-            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, now, IDLE),
+            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, false, now, IDLE),
             Release::Sessions(vec!["t1".into()])
         );
-        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, now, IDLE), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, now, IDLE), Release::Agent);
-        assert_eq!(plan(&used(&[]), started, true, now, IDLE), Release::Agent);
+        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, false, now, IDLE), Release::Nothing);
+        let idle = Release::Agent(Retired::Idle);
+        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, false, now, IDLE), idle);
+        assert_eq!(plan(&used(&[]), started, true, false, now, IDLE), idle);
         // A just-started agent isn't stopped before it had a chance to be used.
-        assert_eq!(plan(&used(&[]), now, true, now, IDLE), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", fresh)]), started, true, now, IDLE), Release::Nothing);
+        assert_eq!(plan(&used(&[]), now, true, false, now, IDLE), Release::Nothing);
+        assert_eq!(plan(&used(&[("main", fresh)]), started, true, false, now, IDLE), Release::Nothing);
     }
 
     #[test]
@@ -244,54 +244,26 @@ mod tests {
         let started = Instant::now();
         let now = started + Duration::from_secs(5);
         let used = HashMap::from([("main".to_owned(), now)]);
-        assert_eq!(plan(&used, started, true, now, IDLE), Release::Nothing, "a chat that just talked stays warm");
-        assert_eq!(plan(&used, started, true, now, Duration::ZERO), Release::Agent, "under pressure it does not");
+        assert_eq!(plan(&used, started, true, false, now, IDLE), Release::Nothing, "a chat that just talked stays warm");
+        assert_eq!(
+            plan(&used, started, true, false, now, Duration::ZERO),
+            Release::Agent(Retired::Idle),
+            "under pressure it does not"
+        );
     }
 
     #[test]
-    fn only_work_in_another_session_holds_the_agent() {
-        // 10 agent -> 11 codex -> 12 MCP server in a group of its own; all in the host's session 5.
-        let sessions: HashMap<u32, i32> = [(10, 5), (11, 5), (12, 5), (20, 20), (21, 20), (30, 30)].into();
-        let session = |pid| sessions.get(&pid).copied();
-        let agent = [(10, 1), (11, 10), (12, 11), (40, 1)];
-        assert!(!detached_descendant(&agent, 10, session));
-        // The shell tool runs `npm run dev` in a session of its own.
-        let mut busy = agent.to_vec();
-        busy.extend([(20, 11), (21, 20)]);
-        assert!(detached_descendant(&busy, 10, session));
-        // Someone else's process in another session isn't the agent's.
-        assert!(!detached_descendant(&[(10, 1), (30, 1)], 10, session));
-        // A child that exited since the listing holds nothing; an agent that can't be looked up is unsure.
-        assert!(!detached_descendant(&[(10, 1), (50, 10)], 10, session));
-        assert!(detached_descendant(&agent, 99, session));
+    fn a_spent_session_stops_the_agent_however_fresh_its_chat() {
+        let now = Instant::now();
+        let used = HashMap::from([("main".to_owned(), now), ("run".to_owned(), now)]);
+        assert_eq!(plan(&used, now, false, true, now, IDLE), Release::Agent(Retired::SessionNotClosed));
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_process_started_in_its_own_session_is_background_work() {
-        use std::process::Stdio;
-        let spawn = |script: &str| {
-            let mut command = tokio::process::Command::new("perl");
-            command.args(["-e", script]).stdin(Stdio::null()).kill_on_drop(true).process_group(0);
-            command.spawn().expect("perl runs")
-        };
-        let plain = spawn("my $pid = fork; if (!$pid) { sleep 30; exit } sleep 30");
-        // How Codex starts an MCP server.
-        let grouped = spawn("my $pid = fork; if (!$pid) { setpgrp; sleep 30; exit } sleep 30");
-        let detached = spawn("use POSIX (); my $pid = fork; if (!$pid) { POSIX::setsid(); sleep 30; exit } sleep 30");
-        // The children exist once perl has forked them: wait for that instead of a fixed pause,
-        // which a busy CI runner can outlast.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        while !background_work(detached.id()).await {
-            assert!(tokio::time::Instant::now() < deadline, "the detached child never showed up");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        assert!(!background_work(plain.id()).await);
-        assert!(!background_work(grouped.id()).await);
-        for child in [plain, grouped, detached] {
-            if let Some(pid) = child.id() {
-                let _ = std::process::Command::new("/bin/kill").args(["-KILL", "--", &format!("-{pid}")]).status();
-            }
-        }
+    #[test]
+    fn a_keeper_restart_restarts_only_agents_with_grants() {
+        assert_eq!(after_keeper(false, false, false), AfterKeeper::Nothing);
+        assert_eq!(after_keeper(true, true, true), AfterKeeper::BeforeNextTurn, "resumes its session");
+        assert_eq!(after_keeper(true, false, true), AfterKeeper::AfterTurn, "the running turn ends first");
+        assert_eq!(after_keeper(true, false, false), AfterKeeper::Now);
     }
 }

@@ -18,13 +18,15 @@ import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
 import { trNow } from '../lib/l10n.ts'
 
-/** How a client reaches a host API. Only loopback today: the computer's own host or an SSH tunnel. */
+/** How a client reaches a host API: loopback (the computer's own host or an SSH tunnel) or the relay (a cloud computer). */
 export type HostRoute = 'loopback' | 'direct' | 'relay'
 
 export class HostError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The computer isn't connected to the relay: a cloud computer asleep (the connection wakes it), or one that's off. */
+    readonly offline = false,
   ) {
     super(message)
   }
@@ -40,12 +42,16 @@ export class HostError extends Error {
 }
 
 export interface HostTransport {
+  /** How it reaches the host, shown in the thread header. */
+  readonly route?: HostRoute
   call(method: string, body: unknown, timeoutMs: number): Promise<unknown>
   /** Each element is one event's JSON (what SSE puts after `data:`). */
   stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void): () => void
 }
 
 export class LoopbackTransport implements HostTransport {
+  readonly route = 'loopback'
+
   constructor(
     readonly baseURL: string,
     private token: string,
@@ -67,6 +73,30 @@ export class LoopbackTransport implements HostTransport {
   }
 }
 
+/** An account computer through the relay's encrypted channel, which the main process keeps (`main/channel`). */
+export class ChannelTransport implements HostTransport {
+  readonly route = 'relay'
+
+  constructor(
+    readonly computerId: string,
+    private signKey: string,
+  ) {}
+
+  async call(method: string, body: unknown, timeoutMs: number) {
+    try {
+      return await window.codync.channel.call(this.computerId, this.signKey, method, body, timeoutMs)
+    } catch (e) {
+      throw channelError(e as CallError)
+    }
+  }
+
+  stream(path: string, onData: (line: string) => void, onEnd: (error: HostError | null) => void) {
+    return window.codync.channel.stream(this.computerId, this.signKey, path, onData, (error) => onEnd(error ? channelError(error) : null))
+  }
+}
+
+const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e.offline === true)
+
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
   /** `network` is null from hosts before the network view. */
@@ -86,6 +116,8 @@ export type HostEvent =
   | { type: 'accessRequests'; requests: AccessRequest[] }
   | { type: 'pairingRequests'; requests: PairingRequest[] }
   | { type: 'cloud'; cloud: CloudStatus }
+  /** The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on. */
+  | { type: 'name'; name: string }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
@@ -154,6 +186,8 @@ export function parseEvent(line: string): HostEvent | null {
       return { type, requests: (raw.requests as PairingRequest[]) ?? [] }
     case 'cloud':
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
+    case 'name':
+      return typeof raw.name === 'string' ? { type, name: raw.name } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
     case 'call': {

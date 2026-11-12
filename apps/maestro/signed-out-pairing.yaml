@@ -1,0 +1,39 @@
+# Signed out, a phone pairs with a computer in no account and connects only over Wi-Fi or Tailscale
+# (docs/plans/optional-sign-in.md). Needs a sandbox host in no account (`npm run dev` without `--cloud`) that the phone
+# can reach, a signed-out phone (`xcrun simctl keychain <device> reset` on a simulator), the link from
+# `codync-host pair --json`, and, while it runs, `codync-host access approve <code>` with the code the phone shows.
+# Pairing finishes setup, so it runs on its own, apart from `smoke`:
+#   maestro --device "<simulator udid>" test --include-tags signed-out-pairing -e PAIRING_URL="<link>" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - signed-out-pairing
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          clearState: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          clearState: true
+- tapOn: "Continue without an account"
+- tapOn: "Continue"
+- tapOn: "Pairing link or code"
+- inputText: ${PAIRING_URL}
+- tapOn: "Pair"
+- assertVisible: "If the computer asks, check it shows.*"
+# Up to the 90 seconds the computer has to answer.
+- extendedWaitUntil:
+    visible: "Settings"
+    timeout: 100000
+- tapOn: ".*connected"
+- tapOn: "Manage computers"
+- assertVisible: "Connection"
+- assertVisible: "Wi-Fi/Tailscale only"
+- assertNotVisible: "Add to account"

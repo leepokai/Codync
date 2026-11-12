@@ -6,6 +6,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.channels.Channel
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -26,7 +28,14 @@ class ChannelClosed(val code: Int) : IOException(when (code) {
     else -> "Connection to the computer ended."
 })
 
-internal class SocketRefused(val status: Int) : IOException("The connection was refused ($status).")
+/** The upgrade was answered with plain HTTP; `appFloor` is the cloud's reason when it asks this app to update. */
+internal class SocketRefused(val status: Int, val appFloor: String? = null) : IOException("The connection was refused ($status).")
+
+/** `{"error":{"code":"appUpdateRequired","message"}}`: the cloud's emergency floor for this app version. */
+private fun appFloor(response: Response): String? = runCatching {
+    val error = Json.parseToJsonElement(response.peekBody(16 * 1024).string()).jsonObject["error"]?.jsonObject
+    error?.text("message")?.takeIf { error.text("code") == "appUpdateRequired" }
+}.getOrNull()
 
 internal class OkHttpChannelSocket private constructor(client: OkHttpClient, request: Request) : ChannelSocket {
     private val opened = CompletableDeferred<Unit>()
@@ -58,7 +67,7 @@ internal class OkHttpChannelSocket private constructor(client: OkHttpClient, req
             opened.completeExceptionally(ChannelClosed(code))
         }
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            val failure = response?.let { SocketRefused(it.code) } ?: IOException("Can't reach the computer.", t)
+            val failure = response?.let { SocketRefused(it.code, appFloor(it)) } ?: IOException("Can't reach the computer.", t)
             opened.completeExceptionally(failure)
             incoming.close(failure)
         }

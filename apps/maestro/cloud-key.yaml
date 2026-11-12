@@ -1,0 +1,206 @@
+# Computers → Codync Cloud → "+" (New cloud computer): every provider with what it needs and its logo, the suggested name,
+# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row (its free plan
+# without a key) opens only InstaBox's key sheet with its free plan and its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
+# one closes the sheet with Boat picked and its hint shown; Boat's row's ⋯ (More) offers its key and Remove key, which works.
+# Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
+# branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
+# the phone signed in with `npm run phone-account` and pointed at it (iPhone:
+# SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
+# -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no
+# cloud computer, and BOAT_KEY, a key its Boat takes. An account saves at most 5 keys a minute: run the phones one after
+# another, or on accounts of their own.
+# Run it apart from `smoke`, whose welcome flow clears the sign-in.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags codync-cloud -e BOAT_KEY=<key> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - codync-cloud
+env:
+  REFUSED_KEY: boat_e2e_revoked_key_0000
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+# An account with no computer starts on first-run setup's install page, which it skips to reach the bots.
+- extendedWaitUntil:
+    visible: "(Install Codync.*|Skip|No bots yet|Manage computers)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Install Codync.*"
+    commands:
+      - tapOn: "Continue"
+      - extendedWaitUntil:
+          visible: "Skip"
+          timeout: 10000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header is named Computers too, and opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "Computers"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- extendedWaitUntil:
+    visible: "Codync Cloud"
+    timeout: 20000
+- scrollUntilVisible:
+    element: "New cloud computer"
+- tapOn: "New cloud computer"
+- extendedWaitUntil:
+    visible: "Name your cloud computer"
+    timeout: 10000
+# Keys an earlier run left go first, each from its row's ⋯ (More; only a provider with a key has one).
+- repeat:
+    while:
+      visible:
+        text: "More"
+        below: "Provider"
+    commands:
+      - tapOn:
+          text: "More"
+          below: "Provider"
+      - tapOn: "Remove key"
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          notVisible: "Remove key"
+          timeout: 15000
+
+# Every provider asks for a key (InstaBox points to its free plan), the suggested name stands in for an empty one, and
+# nothing can be created yet.
+- extendedWaitUntil:
+    visible: ".*Add a key first"
+    timeout: 10000
+- assertVisible: ".*Free sandbox available"
+- assertVisible: "Boat.*"
+- assertVisible: "InstaBox.*"
+- assertVisible: "Cloud computer"
+- assertVisible:
+    text: "Create"
+    enabled: false
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: "cloudProvider.boat"
+      - assertVisible:
+          id: "cloudProvider.instabox"
+
+# InstaBox's row opens InstaBox's key alone, with its free plan and its own steps (the command lines are one text; on
+# the iPhone they scroll sideways, wider than the screen, so the text is never all in view).
+- tapOn: "InstaBox.*"
+- extendedWaitUntil:
+    visible: "How to make a key"
+    timeout: 10000
+- assertVisible: "InstaBox API key"
+- assertNotVisible: "Boat API key"
+- assertVisible: "InstaBox's free plan includes one machine.*"
+- assertVisible: "Get a free sandbox"
+- tapOn: "How to make a key"
+- scrollUntilVisible:
+    element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
+    visibilityPercentage: 25
+- assertVisible: "(?s).*# The key reaches every machine in this workspace.*"
+- tapOn: "Close"
+- extendedWaitUntil:
+    notVisible: "How to make a key"
+    timeout: 10000
+
+# Boat's row opens Boat's key alone. Turned down: what to fix. The field sits right above How to make a key, below the
+# sheet's title, which has the same words.
+- tapOn: "Boat.*"
+- extendedWaitUntil:
+    visible: "How to make a key"
+    timeout: 10000
+- assertNotVisible: "InstaBox API key"
+- assertNotVisible: "Get a free sandbox"
+- tapOn:
+    text: "(Boat API key|boat_…)"
+    above: "How to make a key"
+- inputText: ${REFUSED_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "(This key wasn't accepted|The provider refused this key).*"
+    timeout: 15000
+
+# Kept: the sheet closes and Boat is picked, with only its hint. The field still holds the refused key: on Android a
+# tap puts the caret where it lands, so a double tap selects the key (one word) before erasing.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          text: "(Boat API key|boat_…)"
+          above: "How to make a key"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - doubleTapOn:
+          text: "(Boat API key|boat_…)"
+          above: "How to make a key"
+- eraseText
+- inputText: ${BOAT_KEY}
+- tapOn: "Save"
+- extendedWaitUntil:
+    notVisible: "How to make a key"
+    timeout: 15000
+- assertVisible: ${'.*' + BOAT_KEY.slice(0, BOAT_KEY.indexOf('_') + 1) + '…' + BOAT_KEY.slice(-4)}
+- assertVisible:
+    text: "Create"
+    enabled: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          id: "cloudProvider.boat"
+          selected: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          text: "Boat"
+          checked: true
+
+# Its row's ⋯ offers its key again and Remove key, which goes back to pasting one: nothing is left to create on.
+- tapOn:
+    text: "More"
+    below: "Provider"
+- extendedWaitUntil:
+    visible: "Remove key"
+    timeout: 10000
+- assertVisible: "Boat API key"
+- tapOn: "Remove key"
+- extendedWaitUntil:
+    visible: ".*Add a key first"
+    timeout: 15000
+- assertNotVisible: "Remove key"
+- assertVisible:
+    text: "Create"
+    enabled: false
+- tapOn: "Close"
+- extendedWaitUntil:
+    notVisible: "Name your cloud computer"
+    timeout: 10000

@@ -20,6 +20,7 @@ import { ThreadsCard } from './ThreadsCard'
 import { ComputerPanel } from '../bots/ComputerPanel'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
+import { DevServersSection } from './DevServersSection'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -72,6 +73,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
             <div key={tab} className="details-tab fade-in">
               {tab === 'details' ? (
                 <>
+                  {bot ? <DevServersSection bot={bot} /> : null}
                   <BotSettingsPanel botId={botId} part="often" />
                   {bot ? <ComputerUse bot={bot} /> : null}
                   <RoutinesView botId={botId} initialId={routineId} />

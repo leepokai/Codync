@@ -19,6 +19,8 @@ pub enum Cmd {
     RefreshTools,
     /// The computer is short of memory: an idle agent gives its memory back now, without waiting out its idle time.
     FreeMemory,
+    /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
+    KeeperRestarted,
     Routine(String),
     /// The user wrote in the bot's chat.
     Send {

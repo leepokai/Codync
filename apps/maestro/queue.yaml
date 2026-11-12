@@ -21,6 +21,8 @@ onFlowComplete:
     commands:
       - launchApp:
           appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
 - runFlow:
     when:
       platform: Android

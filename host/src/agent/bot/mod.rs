@@ -18,6 +18,7 @@
 
 mod approval_age;
 mod channel_input;
+mod background_work;
 mod cmd;
 mod compaction;
 mod fallback;
@@ -54,7 +55,8 @@ mod watchdog;
 
 pub use cmd::Cmd;
 use cmd::Queued;
-pub(crate) use launch::{launch_commands, select_model, start_agent, system_prompt};
+pub use compaction::{context_window, offers_threshold};
+pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 pub(crate) use results::recover_results;
 pub(crate) use tool_entry::diff_summary;
 
@@ -186,8 +188,9 @@ fn spawn_inner(hub: Arc<Hub>, base: BotConfig, resume: bool) -> BotHandle {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 struct SessionCaps {
-    /// `session/load`: resume a session after a restart.
-    load: bool,
+    /// The request that opens a session the agent isn't holding, when it can: `session/load`, whose replay is thrown
+    /// away as the host keeps the chat itself, or `session/resume` on an agent without it.
+    reopen: Option<&'static str>,
     /// `session/close`: an idle session can be released while the agent keeps running.
     close: bool,
     /// ACP `systemPrompt`: instructions on `session/new` and `load` that the agent keeps at system level.
@@ -219,15 +222,20 @@ pub(crate) enum Adapter {
     Other,
 }
 
+#[allow(clippy::struct_excessive_bools, reason = "independent facts about the agent process")]
 pub(crate) struct Conn {
     pub(crate) acp: Arc<Acp>,
     pub(crate) rx: mpsc::UnboundedReceiver<Incoming>,
     sessions: SessionCaps,
     pub(crate) adapter: Adapter,
+    /// An OpenCode older than 2, which never ends a turn its model refused: `start_first` keeps it as a last resort.
+    superseded: bool,
     /// Sessions already created or loaded in this process, and when each was last used.
     loaded: HashMap<String, Instant>,
     allocation_uncertain: bool,
     pending_models: HashMap<String, Value>,
+    /// A finished routine run's session it couldn't close is still open, with its MCP servers (`release_spent`).
+    spent: bool,
     started: Instant,
     /// A `session/new` or `session/load` is waiting for its answer. Still set when a routine's time limit cut it short:
     /// the agent may then open that session, tools and all, under an id the host never learns (`drop_unanswered`).
@@ -420,9 +428,10 @@ impl Actor {
         self.finish_turn(&done);
         match session {
             Some(sid) if routine => self.release_spent(&sid).await,
-            Some(sid) if failed => self.close_reloadable(&sid).await,
+            Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
+        self.stop_spent().await;
         self.next_in_queue(done_tx).await;
     }
 

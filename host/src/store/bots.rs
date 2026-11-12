@@ -133,6 +133,17 @@ impl Store {
             "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2",
             [format!("context.{id}.*"), format!("context.epoch.{id}.*")],
         )?;
+        // Its conversations as compaction tracks them, their summaries, its window and cache life
+        // (`agent::bot::compaction`).
+        c.execute(
+            "DELETE FROM kv WHERE k GLOB ?1 OR k GLOB ?2 OR k = ?3 OR k = ?4",
+            [
+                format!("compaction.{id}.*"),
+                format!("compaction.summary.{id}.*"),
+                format!("context.window.{id}"),
+                format!("cache.life.{id}"),
+            ],
+        )?;
         // Its artifacts' details (`chat::artifacts`).
         c.execute("DELETE FROM kv WHERE k GLOB ?1", [format!("artifact.{id}.*")])?;
         Ok(rev)
@@ -277,6 +288,7 @@ mod tests {
             catalog: None,
             shared_memory: None,
             harness_memory: false,
+            compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
             is_chief: false,
             chief_bot_id: None,
@@ -340,8 +352,15 @@ mod tests {
         s.kv_set("fallback.session.b1.codex", "s1").unwrap();
         s.kv_set("fallback.on.b1", "codex").unwrap();
         s.kv_set("fallback.on.b10", "codex").unwrap();
+        let compaction = ["compaction.b1.s1", "compaction.summary.b1.s1", "context.window.b1", "cache.life.b1"];
+        for k in compaction {
+            s.kv_set(k, "1").unwrap();
+        }
+        s.kv_set("context.window.b10", "1").unwrap();
         s.delete_bot("b1").unwrap();
         assert_eq!((s.kv_get("fallback.session.b1.codex"), s.kv_get("fallback.on.b1")), (None, None));
+        assert!(compaction.iter().all(|k| s.kv_get(k).is_none()), "its compaction records");
+        assert!(s.kv_get("context.window.b10").is_some(), "another bot's window");
         assert!(s.kv_get("fallback.on.b10").is_some(), "another bot's");
         assert!(s.insert_entry(&Lane::main("b1"), EntryKind::Notice, 3, &reply).is_err());
         s.save_bot(&cfg).unwrap();

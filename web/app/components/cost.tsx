@@ -14,7 +14,8 @@ export default function Cost() {
         <p className="text-[8rem] leading-none font-semibold tracking-tighter text-neutral-50 md:text-[12rem]">$0</p>
         <p className="mt-8 max-w-[34rem] text-lg leading-relaxed text-neutral-400">
           Codync is 100% free. No hidden fees, no paid tier, no locked features. Bring your own subscription: your
-          bots run on the Claude, ChatGPT or other agent plans you already pay for.
+          bots run on the Claude, ChatGPT or other agent plans you already pay for. Codync Cloud is free too: your
+          cloud computer runs on your own Boat or InstaBox account.
         </p>
         <Link href="/#compare" className="mt-8 font-medium text-neutral-200 underline underline-offset-4 hover:text-white">
           See how Codync compares with Grok Bot

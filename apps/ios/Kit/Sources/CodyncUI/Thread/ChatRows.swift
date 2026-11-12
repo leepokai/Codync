@@ -181,7 +181,7 @@ struct UserBubble: View {
             .font(.caption2.bold())
         case "cancelled":
             Text(L10n.tr("Not sent — stopped")).font(.caption2).foregroundStyle(Palette.tertiary)
-        case "waiting":
+        case "waiting", "held":
             HStack(spacing: 10) {
                 Text(L10n.tr("Waiting for the computer to come online")).foregroundStyle(Palette.tertiary)
                 Button(L10n.tr("Cancel"), systemImage: "xmark.circle") { model.cancelQueued(entry) }

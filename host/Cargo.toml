@@ -12,6 +12,8 @@ repository = "https://github.com/leepokai/Codync"
 # The memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
 [workspace]
 members = ["crates/memory", "crates/network"]
+# Patched dependencies (`[patch.crates-io]` below) build as they are, outside the workspace rules.
+exclude = ["vendor"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -70,6 +72,8 @@ sysinfo = { version = "0.38.4", default-features = false, features = ["system", 
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 resvg = { version = "0.49", default-features = false }
 zip = { version = "9.2.0", default-features = false, features = ["deflate"] }
+listeners = "0.6.1"
+mdns-sd = "0.21.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }
@@ -79,7 +83,7 @@ keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust",
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_System_SystemInformation"] }
 
 # rust-skills lint-* rules: all default groups plus pedantic, with the
 # library-oriented pedantic lints turned off for this binary crate.
@@ -127,3 +131,7 @@ incremental = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[patch.crates-io]
+# macOS answered QUIC handshakes from the wrong IPv4 address; see vendor/noq-udp/CODYNC.md.
+noq-udp = { path = "vendor/noq-udp" }

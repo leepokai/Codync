@@ -1,33 +1,23 @@
-//! Video: a PipeWire monitor stream encoded as H.264 and sent over GStreamer
-//! `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
+//! Video: a PipeWire monitor stream (or the X11 root window) encoded as H.264 and
+//! sent over GStreamer `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
+use crate::Helper;
+use crate::backend::Backend;
+pub use crate::capture::Capture;
+#[cfg(test)]
+use crate::capture::capture_source;
+use crate::clipboard;
 use crate::negotiation::ice_uri;
 use crate::portal::Display;
+use crate::rtp::{payloader, sender};
 use crate::video::{h264_format, h264_payload};
-use crate::{Helper, input};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use gst::prelude::*;
 use serde_json::{Value, json};
-use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::fd::IntoRawFd;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-
-/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
-/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
-fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
-    let src = gst::ElementFactory::make("pipewiresrc")
-        .property("fd", fd.into_raw_fd())
-        .property("path", node.to_string())
-        .property("do-timestamp", true)
-        .build()
-        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
-    if src.has_property("keepalive-time") {
-        // A still screen keeps sending frames now and then, so keyframe requests get answered.
-        src.set_property("keepalive-time", 1000i32);
-    }
-    Ok(src)
-}
+use tokio::sync::{mpsc, oneshot};
 
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
@@ -39,20 +29,25 @@ const ENCODERS: &[&str] = &[
     "openh264enc",
 ];
 const BITRATE_KBPS: u32 = 8000;
+/// x264 safety-net keyframe distance: 10 s at 60 fps, for viewers that never send a PLI.
+const KEYFRAME_INTERVAL_FRAMES: u32 = 600;
 
 pub struct Session {
     pub(super) pipeline: gst::Pipeline,
     pub(super) webrtc: gst::Element,
     /// The phone's candidates so far; `None` for a complete-SDP session.
     pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
+    /// Dropped with the session, which ends its input task once the input queued so far is done.
+    pub(super) _input: oneshot::Sender<()>,
 }
 
 impl Session {
     pub fn new(
         id: String,
         display: &Display,
-        fd: OwnedFd,
+        capture: Capture,
         helper: &Arc<Helper>,
+        backend: &Backend,
         config: &Value,
     ) -> Result<Self> {
         let payload = h264_payload(config["sdp"].as_str().context("missing offer")?)?;
@@ -60,13 +55,13 @@ impl Session {
         // Capture and keepalive timestamps use the system clock. pipewiresrc only gained a
         // switch for this (`provide-clock`) in PipeWire 1.6; Ubuntu 24.04 ships 1.0.
         pipeline.use_clock(Some(&gst::SystemClock::obtain()));
-        let src = capture_source(fd, display.node)?;
+        let fps = config["maxFramerate"].as_i64().unwrap_or(60).clamp(1, 60);
+        let src = capture.source(display, i32::try_from(fps)?)?;
         let convert = make("videoconvert")?;
         let crop = make("videocrop")?;
         let scale = make("videoscale")?;
         let size = make("capsfilter")?;
         let rate = make("videorate")?;
-        let fps = config["maxFramerate"].as_i64().unwrap_or(60).clamp(1, 60);
         rate.set_property("max-rate", i32::try_from(fps)?);
         rate.set_property("drop-only", true);
         let convert2 = make("videoconvert")?;
@@ -80,22 +75,8 @@ impl Session {
             .clamp(100_000, u64::from(BITRATE_KBPS) * 1000);
         let encoder = encoder(u32::try_from(bitrate / 1000)?)?;
         let parse = make("h264parse")?;
-        let pay = make("rtph264pay")?;
-        pay.set_property("config-interval", -1i32);
-        pay.set_property_from_str("aggregate-mode", "zero-latency");
-        pay.set_property("pt", u32::try_from(payload)?);
-        let rtp_caps = make("capsfilter")?;
-        rtp_caps.set_property(
-            "caps",
-            gst::Caps::builder("application/x-rtp")
-                .field("media", "video")
-                .field("encoding-name", "H264")
-                .field("payload", payload)
-                .field("clock-rate", 90000i32)
-                .build(),
-        );
-        let webrtc = make("webrtcbin")?;
-        webrtc.set_property_from_str("bundle-policy", "max-bundle");
+        let [pay, rtp_caps] = payloader(payload)?;
+        let webrtc = sender()?;
         if let Some(servers) = config["iceServers"].as_array() {
             for server in servers {
                 for url in server["urls"].as_array().context("missing ICE URLs")? {
@@ -120,8 +101,9 @@ impl Session {
         pipeline.add_many(chain)?;
         gst::Element::link_many(chain)?;
 
-        // Input from the phone, applied in order.
+        // Input from the phone, applied in order, only to what this stream shares.
         let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
+        let (input, mut ended) = oneshot::channel::<()>();
         let view = View {
             crop: crop.clone(),
             size: size.clone(),
@@ -132,19 +114,39 @@ impl Session {
             let helper = helper.clone();
             let channels = channels.clone();
             let display = display.clone();
+            let backend = backend.clone();
             tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
+                let mut open = true;
+                loop {
+                    let msg = tokio::select! {
+                        // The stream ended: no more input, but what it queued (a button release)
+                        // still applies, to the backend it shares or not at all.
+                        _ = &mut ended, if open => {
+                            open = false;
+                            rx.close();
+                            continue;
+                        }
+                        msg = rx.recv() => match msg {
+                            Some(msg) => msg,
+                            None => break,
+                        },
+                    };
                     let reply = match msg["type"].as_str() {
                         Some("view") => Some(view.apply(&msg)),
-                        Some("clipboard") => {
-                            set_clipboard(msg["text"].as_str().unwrap_or_default())
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg)
-                        }
-                        _ => match helper.portal().await {
-                            Ok(portal) => input::perform(&portal, &display, &msg)
+                        Some("clipboard") => match helper.x11_display(&backend).await {
+                            Ok(x11) => clipboard::set(
+                                msg["text"].as_str().unwrap_or_default(),
+                                x11.as_deref(),
+                            )
+                            .await
+                            .err()
+                            .as_ref()
+                            .map(error_msg),
+                            Err(error) => Some(error_msg(&error)),
+                        },
+                        _ => match helper.input_backend(&backend).await {
+                            Ok(portal) => portal
+                                .perform(&display, &msg)
                                 .await
                                 .err()
                                 .as_ref()
@@ -192,6 +194,7 @@ impl Session {
             pipeline,
             webrtc,
             incoming: trickle.then(Mutex::default),
+            _input: input,
         })
     }
 
@@ -282,33 +285,7 @@ fn send(channels: &Mutex<Vec<gst_webrtc::WebRTCDataChannel>>, msg: &Value) {
     }
 }
 
-/// Wayland first, then X11.
-async fn set_clipboard(text: &str) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-    for (cmd, args) in [
-        ("wl-copy", &[][..]),
-        ("xclip", &["-selection", "clipboard"][..]),
-    ] {
-        let Ok(mut child) = tokio::process::Command::new(cmd)
-            .args(args)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-        else {
-            continue;
-        };
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(text.as_bytes()).await?;
-        }
-        if child.wait().await?.success() {
-            return Ok(());
-        }
-    }
-    Err(anyhow!(
-        "Install wl-clipboard (or xclip) on this computer to paste from your phone."
-    ))
-}
-
-fn make(name: &str) -> Result<gst::Element> {
+pub(crate) fn make(name: &str) -> Result<gst::Element> {
     gst::ElementFactory::make(name)
         .build()
         .with_context(|| format!("GStreamer element {name} is missing"))
@@ -327,7 +304,9 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
             e.set_property_from_str("tune", "zerolatency");
             e.set_property_from_str("speed-preset", "veryfast");
             e.set_property("bitrate", bitrate_kbps);
-            e.set_property("key-int-max", 120u32);
+            // A screen keyframe is ~100x a delta frame. One every 120 frames (2 s at 60 fps) was a
+            // periodic burst that overflowed shallow links; NACK and the phone's PLI cover recovery.
+            e.set_property("key-int-max", KEYFRAME_INTERVAL_FRAMES);
         }
         "openh264enc" => e.set_property("bitrate", bitrate_kbps * 1000),
         _ => {
@@ -341,10 +320,13 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
 }
 
 /// One still for agents: `width`×`height` JPEG, base64.
-pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Result<String> {
+pub async fn screenshot(capture: Capture, d: &Display, width: u32, height: u32) -> Result<String> {
+    let source = match &capture {
+        Capture::PipeWire(_) => format!("pipewiresrc name=src path={} do-timestamp=true", d.node),
+        Capture::X11(_) => "ximagesrc name=src use-damage=false show-pointer=true".to_owned(),
+    };
     let desc = format!(
-        "pipewiresrc name=src path={} do-timestamp=true ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1",
-        d.node
+        "{source} ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1"
     );
     let pipeline = gst::parse::launch(&desc)?
         .downcast::<gst::Pipeline>()
@@ -352,7 +334,10 @@ pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Re
     let src = pipeline
         .by_name("src")
         .ok_or_else(|| anyhow!("no source"))?;
-    src.set_property("fd", fd.into_raw_fd());
+    match capture {
+        Capture::PipeWire(fd) => src.set_property("fd", fd.into_raw_fd()),
+        Capture::X11(name) => src.set_property("display-name", name),
+    }
     let sink = pipeline
         .by_name("sink")
         .ok_or_else(|| anyhow!("no sink"))?
@@ -393,6 +378,7 @@ mod tests {
             pipeline,
             webrtc,
             incoming: Some(Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         };
         let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\

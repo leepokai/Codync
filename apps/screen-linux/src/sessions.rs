@@ -85,6 +85,10 @@ impl Sessions {
         matches!(&*state, State::Live(session) if session.webrtc == *peer)
     }
 
+    pub(super) async fn ids(&self) -> Vec<String> {
+        self.0.lock().await.keys().cloned().collect()
+    }
+
     pub(super) async fn close_all(&self) {
         let slots = {
             let mut sessions = self.0.lock().await;
@@ -147,6 +151,7 @@ mod tests {
             pipeline: pipeline.clone(),
             webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
             incoming: Some(std::sync::Mutex::default()),
+            _input: tokio::sync::oneshot::channel().0,
         };
         (session, pipeline)
     }

@@ -12,7 +12,7 @@ Permissions are granted on the computer itself. In the desktop app, open **Setti
 During first setup, use the capsule above the content to switch between steps. On macOS, it contains **Codync Screen**, **Screen recording**, **Control apps**, and **GitHub Star**. Linux combines screen sharing and control; Windows shows computer control availability. The final GitHub Star invitation is optional: choose **Get started** to finish without starring. Permissions can be completed later in Settings.
 
 - **macOS:** press **Enable Codync Screen**. If macOS asks, allow Codync to run in the background in Login Items. Then allow **Screen recording** and **Control apps**. In System Settings, look for **Codync Screen**; depending on your macOS version, control is listed under **Accessibility** or **Device Control and Data Access**. Come back to Codync after granting, and let the helper restart if asked.
-- **Linux:** press **Choose screen and allow control**. The system's screen-sharing dialog asks you to pick a screen and allow mouse and keyboard access. If Codync Screen restarts, open Computer access again to share the screen once more.
+- **Linux:** press **Choose screen and allow control**. The system's screen-sharing dialog asks you to pick a screen and allow mouse and keyboard access. If Codync Screen restarts, open Computer access again to share the screen once more. On an X11 desktop without a screen-sharing dialog (Xfce over xrdp, for example), the same button shares the X display without asking anything more, and Codync remembers it across restarts.
 - **Windows:** bots can use apps without extra permissions. Viewing the screen from your phone isn't available on Windows yet.
 
 The iPhone app and the terminal UI show whether access is set up and point you to Computer access on the computer; they can't grant it.
@@ -96,6 +96,7 @@ While a bot uses the computer, the **Computer** button in its chat pulses. Tap i
 - **Linux with X11 or Sway:** the computer-use tools need libX11, libXi and libxkbcommon.
 - **Linux with GNOME, KDE or another Wayland desktop:** bots get a simpler set of tools that take screenshots and click and type on screen positions, using the screen you shared in Computer access.
 - **Linux remote screen:** Codync Screen needs glibc 2.39 or later, GStreamer 1.22 or later with the base, good and bad plugins, PipeWire, and xdg-desktop-portal. The install script, Homebrew and `codync-host update` put it next to the host.
+- **Linux X11 desktops without screen-sharing portals** (for example Xfce over xrdp): Codync Screen shares the X display directly. It needs GStreamer's `ximagesrc` (in the good plugins, `gstreamer1.0-plugins-good` on Debian and Ubuntu) and an X server with the XTest extension, which Xorg and xrdp have. X11 has no system permission prompt, so nothing is shared until you set it up in **Computer access** on the computer; that choice is kept in `~/.codync/screen-x11-consent` for that display, and for the new display a later xrdp login gets. On X11 any app on the display can see and control it, Codync included once it's set up. To stop sharing, delete that file, then turn remote screen off and on again.
 
 ## Saved sign-ins
 

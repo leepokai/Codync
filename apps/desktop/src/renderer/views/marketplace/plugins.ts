@@ -39,8 +39,8 @@ export class Plugins extends Observable {
     return this.after(market.importConnectors(await this.store.ready(), config))
   }
 
-  async finishConnectorSignIn(state: string, code: string | null, error: string | null) {
-    return this.after(market.finishConnectorSignIn(await this.store.ready(), state, code, error))
+  async finishConnectorSignIn(state: string, code: string | null, error: string | null, iss: string | null = null) {
+    return this.after(market.finishConnectorSignIn(await this.store.ready(), state, code, error, iss))
   }
 
   /**
@@ -63,28 +63,9 @@ export class Plugins extends Observable {
     await this.after(market.installSkill(await this.store.ready(), source))
   }
 
-  /** Adds a marketplace app as a connector with the values the user typed, and starts its sign-in. */
+  /** Adds a marketplace app with the values the user typed, and starts its sign-in. */
   async installApp(app: MarketApp, values: Record<string, string>) {
-    const value = (id: string) => values[id]?.trim() ?? ''
-    const headers: Record<string, string> = {}
-    const env: Record<string, string> = {}
-    let url = app.server.url ?? null
-    for (const field of app.fields) {
-      const typed = value(field.id)
-      if (field.url) url = typed || url
-      else if (field.header) headers[field.header] = typed
-      else if (field.env) env[field.env] = typed
-    }
-    const connector = await this.addConnector({
-      name: app.server.name || app.name,
-      description: app.description,
-      command: app.server.command ?? null,
-      args: app.server.args,
-      url,
-      env,
-      headers,
-      catalog: app.id,
-    })
+    const connector = await this.after(market.installMarketApp(await this.store.ready(), app.id, values))
     if (needsSignIn(connector)) await this.signIn(connector.id)
     return connector
   }
@@ -123,7 +104,7 @@ export class Plugins extends Observable {
       return false
     }
     const items = new URL(back).searchParams
-    await this.finishConnectorSignIn(items.get('state') ?? '', items.get('code'), items.get('error_description') ?? items.get('error'))
+    await this.finishConnectorSignIn(items.get('state') ?? '', items.get('code'), items.get('error_description') ?? items.get('error'), items.get('iss'))
     return true
   }
 }

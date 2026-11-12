@@ -215,7 +215,7 @@ impl N8n {
         self.generation.fetch_add(1, Ordering::SeqCst);
         self.stop_process().await;
         // A stopped instance has no MCP server: the bots lose the connector with it.
-        if let Err(e) = crate::market::remove_connector(store, CONNECTOR_ID) {
+        if let Err(e) = crate::market::remove_connector(store, CONNECTOR_ID).await {
             tracing::warn!(error = format!("{e:#}"), "removing the n8n connector");
         }
         *self.session.locked() = None;

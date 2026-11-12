@@ -71,7 +71,7 @@ fun AppStore.finishConnectorSignIn(uri: Uri) {
             val pending = withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).read() }
                 ?: throw IOException("No connector sign-in is pending for this account. Start sign-in again.")
             pending.validate(back, activated.computer?.id.orEmpty(), System.currentTimeMillis())
-            val response = hostQuery("connectorSignInFinish", body("state" to back.state, "code" to back.code, "error" to back.error), 60_000, generation)
+            val response = hostQuery("connectorSignInFinish", body("state" to back.state, "code" to back.code, "error" to back.error, "iss" to back.iss), 60_000, generation)
             val connector = WireJson.decodeFromJsonElement<InstalledConnector>(response.jsonObject.getValue("connector"))
             pending.requestId?.let { finishConnectionRequest(it, connectorId = connector.id, expectedGeneration = generation) }
             withContext(Dispatchers.IO) { ConnectorOAuthBook(directory).clear() }

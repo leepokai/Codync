@@ -106,6 +106,7 @@ pub enum Reply {
         cursor: Option<String>,
     },
     Skills,
+    Apps,
     Catalog,
     /// A catalog bot or team (its id) was created.
     CatalogAdded(String),
@@ -254,14 +255,16 @@ pub enum Tab {
     Teams,
     Agents,
     Connectors,
+    Apps,
     Skills,
 }
 
-pub const TABS: [(Tab, &str); 5] = [
+pub const TABS: [(Tab, &str); 6] = [
     (Tab::Bots, "Bots"),
     (Tab::Teams, "Teams"),
     (Tab::Agents, "Agents"),
     (Tab::Connectors, "Connectors"),
+    (Tab::Apps, "Apps"),
     (Tab::Skills, "Skills"),
 ];
 
@@ -273,6 +276,8 @@ pub struct Market {
     pub registry: Vec<Value>,
     pub next: Option<String>,
     pub skills: Option<Vec<Value>>,
+    /// The app catalogue; `None` while it loads.
+    pub apps: Option<Vec<Value>>,
     /// The host's ready-made bots and teams (`botCatalog`); empty on an older host.
     pub catalog: Value,
     /// Catalog bots and teams added while this sheet is open.
@@ -289,6 +294,8 @@ pub enum Row<'a> {
     Installed(&'a Value),
     Custom,
     Registry(&'a Value),
+    /// A catalogue app; it is a connector the host builds, and it is offered until installed.
+    App(&'a Value),
     OwnSkill(&'a Value),
     Skill(&'a Value),
     /// A ready-made bot from the catalog.
@@ -333,6 +340,8 @@ pub enum Submit {
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
+    /// A catalogue app and the sheet's values, as `installMarketApp` takes them.
+    App(Value),
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),

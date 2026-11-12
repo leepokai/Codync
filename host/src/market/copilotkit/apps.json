@@ -1,0 +1,498 @@
+{
+  "apps": [
+    {
+      "id": "parallel",
+      "name": "Parallel Search",
+      "tagline": "Public-web search and source extraction, free for light use.",
+      "description": "Searches the public web and pulls the passages that answer a question, with the sources they came from. The anonymous endpoint is rate-limited and takes no key; add the API-key entry instead when a bot needs to search a lot.",
+      "category": "research",
+      "creator": "Parallel",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://parallel.ai",
+      "featured": true,
+      "setup": "open",
+      "server": {
+        "name": "parallel",
+        "transport": "http",
+        "url": "https://search.parallel.ai/mcp"
+      },
+      "auth": {
+        "kind": "none"
+      },
+      "writeTools": [],
+      "readTools": [],
+      "fields": [],
+      "steps": [],
+      "docsUrl": "https://docs.parallel.ai/integrations/mcp/search-mcp",
+      "docsLabel": "Open the guide",
+      "prompts": [
+        {
+          "id": "prompt-news",
+          "text": "Search the public web for what changed in this release and summarize each source."
+        },
+        {
+          "id": "prompt-extract",
+          "text": "Extract the concrete numbers from these pages, with the URL each came from."
+        }
+      ]
+    },
+    {
+      "id": "parallel-authenticated",
+      "name": "Parallel Search (API key)",
+      "tagline": "Public-web search and extraction on this computer's Parallel API key.",
+      "description": "The same search and extraction as the anonymous entry, authenticated with a Parallel API key so a bot is not held to the free rate limit. The key stays on this computer and is sent as a bearer token.",
+      "category": "research",
+      "creator": "Parallel",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://parallel.ai",
+      "featured": false,
+      "setup": "key",
+      "server": {
+        "name": "parallel-authenticated",
+        "transport": "http",
+        "url": "https://search.parallel.ai/mcp"
+      },
+      "auth": {
+        "kind": "deployment-bearer"
+      },
+      "writeTools": [],
+      "readTools": [],
+      "fields": [
+        {
+          "id": "apiKey",
+          "label": "Parallel API key",
+          "header": "Authorization",
+          "template": "Bearer {apiKey}",
+          "url": false,
+          "placeholder": "Your Parallel API key",
+          "hint": "From the Parallel platform. Saved on this computer only.",
+          "required": true
+        }
+      ],
+      "steps": [],
+      "docsUrl": "https://docs.parallel.ai/integrations/mcp/search-mcp",
+      "docsLabel": "Get a key",
+      "prompts": [
+        {
+          "id": "prompt-brief",
+          "text": "Build a sourced brief on this question; keep every claim next to its URL."
+        }
+      ]
+    },
+    {
+      "id": "exa",
+      "name": "Exa Search",
+      "tagline": "Semantic public-web search and page reading, rate-limited without a key.",
+      "description": "Finds pages by meaning rather than keywords and reads them back, which suits questions a literal search misses. The anonymous endpoint is rate-limited; the API-key entry removes that limit.",
+      "category": "research",
+      "creator": "Exa",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://exa.ai",
+      "featured": true,
+      "setup": "open",
+      "server": {
+        "name": "exa",
+        "transport": "http",
+        "url": "https://mcp.exa.ai/mcp"
+      },
+      "auth": {
+        "kind": "none"
+      },
+      "writeTools": [],
+      "readTools": [
+        "web_search_exa",
+        "web_fetch_exa",
+        "web_search_advanced_exa"
+      ],
+      "fields": [],
+      "steps": [],
+      "docsUrl": "https://exa.ai/docs/reference/exa-mcp",
+      "docsLabel": "Open the guide",
+      "prompts": [
+        {
+          "id": "prompt-similar",
+          "text": "Find pages that argue the opposite of this article and list them."
+        },
+        {
+          "id": "prompt-read",
+          "text": "Read these links and list what each one claims, with quotes."
+        }
+      ]
+    },
+    {
+      "id": "exa-authenticated",
+      "name": "Exa Search (API key)",
+      "tagline": "Semantic public-web search on this computer's Exa API key.",
+      "description": "The same search and reading as the anonymous entry, authenticated with an Exa API key. Exa reads its key from an x-api-key header rather than an Authorization bearer, so the key is sent that way.",
+      "category": "research",
+      "creator": "Exa",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://exa.ai",
+      "featured": false,
+      "setup": "key",
+      "server": {
+        "name": "exa-authenticated",
+        "transport": "http",
+        "url": "https://mcp.exa.ai/mcp"
+      },
+      "auth": {
+        "kind": "deployment-bearer",
+        "header": "x-api-key"
+      },
+      "writeTools": [],
+      "readTools": [
+        "web_search_exa",
+        "web_fetch_exa",
+        "web_search_advanced_exa"
+      ],
+      "fields": [
+        {
+          "id": "apiKey",
+          "label": "Exa API key",
+          "header": "x-api-key",
+          "template": "{apiKey}",
+          "url": false,
+          "placeholder": "Your Exa API key",
+          "hint": "From the Exa dashboard. Saved on this computer only.",
+          "required": true
+        }
+      ],
+      "steps": [],
+      "docsUrl": "https://exa.ai/docs/reference/exa-mcp",
+      "docsLabel": "Get a key",
+      "prompts": [
+        {
+          "id": "prompt-deep",
+          "text": "Search deeply for primary sources on this, then read the three best."
+        }
+      ]
+    },
+    {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "tagline": "Public-web search, scraping and crawling, free for search and scrape.",
+      "description": "Searches, scrapes and maps public sites and turns pages into clean text a bot can work from. Crawls, agents and browser sessions start work at Firecrawl, which the reviewed write list covers; search, scrape and map only read.",
+      "category": "research",
+      "creator": "Firecrawl",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://firecrawl.dev",
+      "featured": true,
+      "setup": "open",
+      "server": {
+        "name": "firecrawl",
+        "transport": "http",
+        "url": "https://mcp.firecrawl.dev/v2/mcp"
+      },
+      "auth": {
+        "kind": "none"
+      },
+      "writeTools": [
+        "firecrawl_crawl",
+        "firecrawl_agent",
+        "firecrawl_interact",
+        "firecrawl_interact_stop",
+        "firecrawl_feedback",
+        "firecrawl_search_feedback"
+      ],
+      "readTools": [
+        "firecrawl_search",
+        "firecrawl_scrape",
+        "firecrawl_map",
+        "firecrawl_parse"
+      ],
+      "fields": [],
+      "steps": [],
+      "docsUrl": "https://docs.firecrawl.dev/mcp-server",
+      "docsLabel": "Open the guide",
+      "prompts": [
+        {
+          "id": "prompt-scrape",
+          "text": "Scrape this page and list its release dates with links."
+        },
+        {
+          "id": "prompt-map",
+          "text": "Map this documentation site and name the pages about authentication."
+        }
+      ]
+    },
+    {
+      "id": "firecrawl-authenticated",
+      "name": "Firecrawl (API key)",
+      "tagline": "Public-web scraping on this computer's Firecrawl API key.",
+      "description": "The same search, scraping and crawling as the anonymous entry, authenticated with a Firecrawl API key for higher limits and the write tools the free tier restricts. The key stays on this computer and is sent as a bearer token.",
+      "category": "research",
+      "creator": "Firecrawl",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://firecrawl.dev",
+      "featured": false,
+      "setup": "key",
+      "server": {
+        "name": "firecrawl-authenticated",
+        "transport": "http",
+        "url": "https://mcp.firecrawl.dev/v2/mcp"
+      },
+      "auth": {
+        "kind": "deployment-bearer"
+      },
+      "writeTools": [
+        "firecrawl_crawl",
+        "firecrawl_agent",
+        "firecrawl_interact",
+        "firecrawl_interact_stop",
+        "firecrawl_feedback",
+        "firecrawl_search_feedback"
+      ],
+      "readTools": [
+        "firecrawl_search",
+        "firecrawl_scrape",
+        "firecrawl_map",
+        "firecrawl_parse"
+      ],
+      "fields": [
+        {
+          "id": "apiKey",
+          "label": "Firecrawl API key",
+          "header": "Authorization",
+          "template": "Bearer {apiKey}",
+          "url": false,
+          "placeholder": "fc-…",
+          "hint": "From the Firecrawl dashboard. Saved on this computer only.",
+          "required": true
+        }
+      ],
+      "steps": [],
+      "docsUrl": "https://docs.firecrawl.dev/mcp-server",
+      "docsLabel": "Get a key",
+      "prompts": [
+        {
+          "id": "prompt-crawl",
+          "text": "Crawl this changelog and summarize every entry from the last release."
+        }
+      ]
+    },
+    {
+      "id": "google-drive",
+      "name": "Google Drive",
+      "tagline": "Files and documents in the Drive of whoever is asking.",
+      "description": "Searches, lists and reads the Drive of the signed-in person, so two people asking the same question get the answers their own accounts can see. Read-only: Docs, Sheets and Slides are exported as text, and nothing writes back. Google's MCP server is behind the Workspace Developer Preview Program, so a Google Cloud project must be enrolled before the connector answers.",
+      "category": "productivity",
+      "creator": "Google",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://drive.google.com",
+      "featured": true,
+      "setup": "link",
+      "server": {
+        "name": "google-drive",
+        "transport": "http",
+        "url": "https://drivemcp.googleapis.com/mcp/v1"
+      },
+      "auth": {
+        "kind": "user-oauth",
+        "client": "pasted",
+        "issuer": "https://accounts.google.com",
+        "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+        "tokenUrl": "https://oauth2.googleapis.com/token",
+        "revokeUrl": "https://oauth2.googleapis.com/revoke",
+        "scopes": [
+          "https://www.googleapis.com/auth/drive.readonly"
+        ],
+        "authorizationParams": {
+          "access_type": "offline",
+          "prompt": "consent"
+        }
+      },
+      "writeTools": [
+        "create_file",
+        "copy_file"
+      ],
+      "readTools": [
+        "search_files",
+        "list_recent_files",
+        "get_file_metadata",
+        "read_file_content"
+      ],
+      "fields": [
+        {
+          "id": "clientId",
+          "label": "OAuth client ID",
+          "url": false,
+          "placeholder": "…apps.googleusercontent.com",
+          "hint": "Google issues no pasted token: this app signs each person in, so it needs a client of yours. Create an OAuth client (type Web application) in Google Cloud console → APIs & Services → Credentials, enable the Drive API on the project, and add both redirect addresses from Codync's guide as allowed redirect URIs.",
+          "required": true
+        },
+        {
+          "id": "clientSecret",
+          "label": "OAuth client secret",
+          "url": false,
+          "placeholder": "GOCSPX-…",
+          "hint": "The client secret that goes with the ID. Saved on this computer only.",
+          "required": true
+        }
+      ],
+      "steps": [],
+      "docsUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+      "docsLabel": "Set up the OAuth client",
+      "prompts": [
+        {
+          "id": "prompt-find-doc",
+          "text": "Find the document about the launch plan and summarize its decisions."
+        },
+        {
+          "id": "prompt-recent",
+          "text": "Which of my files changed this week, and what are they about?"
+        }
+      ]
+    },
+    {
+      "id": "notion",
+      "name": "Notion",
+      "tagline": "Pages and databases of whoever is asking.",
+      "description": "Searches, fetches and queries the Notion pages and databases the signed-in person shares, and can create or update pages when asked. Access is chosen page by page on Notion's own consent screen: there is no read-only scope, so the reviewed write list is the barrier. Each connection registers Codync with Notion itself, so there is nothing to paste.",
+      "category": "productivity",
+      "creator": "Notion",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "website": "https://notion.com",
+      "featured": true,
+      "setup": "link",
+      "server": {
+        "name": "notion",
+        "transport": "http",
+        "url": "https://mcp.notion.com/mcp"
+      },
+      "auth": {
+        "kind": "user-oauth",
+        "client": "dynamic",
+        "issuer": "https://mcp.notion.com",
+        "authorizationUrl": "https://mcp.notion.com/authorize",
+        "tokenUrl": "https://mcp.notion.com/token",
+        "revokeUrl": "https://mcp.notion.com/token",
+        "registrationUrl": "https://mcp.notion.com/register"
+      },
+      "writeTools": [
+        "notion-convert-page-to-skill",
+        "notion-create-attachment",
+        "notion-create-comment",
+        "notion-create-database",
+        "notion-create-file-upload",
+        "notion-create-folder",
+        "notion-create-pages",
+        "notion-create-view",
+        "notion-duplicate-page",
+        "notion-move-pages",
+        "notion-update-data-source",
+        "notion-update-folder",
+        "notion-update-page",
+        "notion-update-view"
+      ],
+      "readTools": [
+        "notion-search",
+        "notion-connector-search",
+        "notion-memory-search",
+        "notion-get-tool-access",
+        "notion-get-self",
+        "notion-download-skill",
+        "notion-get-enabled-skills",
+        "notion-fetch",
+        "notion-get-file-download-urls",
+        "notion-list-private-pages",
+        "notion-list-shared-pages",
+        "notion-list-favorite-pages",
+        "notion-list-recent-pages",
+        "notion-list-page-backlinks",
+        "notion-view-version",
+        "notion-get-version-changes",
+        "notion-download-attachment",
+        "notion-get-comments",
+        "notion-get-suggested-edit",
+        "notion-get-teams",
+        "notion-get-groups",
+        "notion-get-users",
+        "notion-get-async-task",
+        "notion-query-data-sources",
+        "notion-query-multiple-data-sources",
+        "notion-query-meeting-notes",
+        "notion-search-agents",
+        "notion-query-sessions",
+        "notion-search-sessions",
+        "notion-get-session-status",
+        "notion-wait-session",
+        "notion-list-session-events",
+        "notion-read-session-event",
+        "notion-calendar-list-calendars",
+        "notion-calendar-list-events",
+        "notion-calendar-list-coworkers-events",
+        "notion-calendar-list-calendar-resources",
+        "notion-calendar-list-contacts"
+      ],
+      "fields": [],
+      "steps": [],
+      "docsUrl": "https://developers.notion.com/guides/mcp/build-mcp-client",
+      "docsLabel": "Open the guide",
+      "prompts": [
+        {
+          "id": "prompt-find",
+          "text": "Search Notion for the onboarding page and list what it still leaves open."
+        },
+        {
+          "id": "prompt-database",
+          "text": "Query this quarter's project database and group the items by owner."
+        }
+      ]
+    },
+    {
+      "id": "routines",
+      "name": "Routines",
+      "tagline": "Standing instructions a bot runs on a schedule.",
+      "description": "Codync's own routines, offered to bots as tools the same way a connector's tools are: create, update, pause and delete routines, their triggers and their goals. First-party and always on, so there is nothing to install and no key to hold. Codync keeps them in its own schedule, so a routine also runs while nobody is chatting.",
+      "category": "automation",
+      "creator": "OpenBot",
+      "version": "1.0.0",
+      "updated": "2026-11-12",
+      "featured": false,
+      "setup": "open",
+      "builtin": true,
+      "server": {
+        "name": "routines",
+        "transport": "builtin",
+        "url": null
+      },
+      "auth": {
+        "kind": "builtin"
+      },
+      "writeTools": [
+        "create_routine",
+        "update_routine",
+        "delete_routine",
+        "create_trigger",
+        "pause_trigger",
+        "resume_trigger",
+        "delete_trigger",
+        "create_goal",
+        "update_goal",
+        "run_goal",
+        "pause_goal",
+        "resume_goal",
+        "complete_goal"
+      ],
+      "readTools": [],
+      "fields": [],
+      "steps": [],
+      "docsUrl": "https://github.com/CopilotKit/OpenBot/blob/main/docs/routines.md",
+      "docsLabel": "Open the guide",
+      "prompts": [
+        {
+          "id": "prompt-weekly",
+          "text": "Make a routine that every Friday at 16:00 lists what slipped this week."
+        }
+      ]
+    }
+  ]
+}

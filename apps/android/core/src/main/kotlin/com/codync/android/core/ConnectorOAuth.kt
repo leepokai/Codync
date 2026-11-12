@@ -24,7 +24,7 @@ import kotlinx.serialization.Serializable
             .joinToString("") { "%02x".format(it) }
     }
 }
-data class OAuthReturn(val state: String, val code: String?, val error: String?) {
+data class OAuthReturn(val state: String, val code: String?, val error: String?, val iss: String? = null) {
     companion object {
         fun parse(value: String, scheme: String): OAuthReturn {
             require(value.length <= 16_384)
@@ -35,7 +35,7 @@ data class OAuthReturn(val state: String, val code: String?, val error: String?)
             val code = fields["code"]?.takeIf(String::isNotBlank)
             val error = fields["error_description"]?.takeIf(String::isNotBlank) ?: fields["error"]?.takeIf(String::isNotBlank)
             require(!state.isNullOrBlank() && state.length <= 2048 && (code != null) != (error != null))
-            return OAuthReturn(state, code, error)
+            return OAuthReturn(state, code, error, fields["iss"]?.takeIf(String::isNotBlank))
         }
     }
 }

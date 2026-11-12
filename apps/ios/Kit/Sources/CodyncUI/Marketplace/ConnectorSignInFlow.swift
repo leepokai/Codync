@@ -39,7 +39,8 @@ struct ConnectorSignInFlow: DynamicProperty {
         try await model.finishConnectorSignIn(
             state: value("state") ?? "",
             code: value("code"),
-            error: value("error_description") ?? value("error")
+            error: value("error_description") ?? value("error"),
+            iss: value("iss")
         )
         return true
     }

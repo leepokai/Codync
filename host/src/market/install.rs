@@ -109,7 +109,7 @@ fn fill_url(url: &str, variables: &Value, input: &dyn Fn(&str) -> Option<String>
 }
 
 /// Fills `{placeholder}` in a header template with the user's value, or uses it as-is.
-fn fill(template: Option<&str>, value: &str) -> String {
+pub(super) fn fill(template: Option<&str>, value: &str) -> String {
     match template {
         Some(t) if t.contains('{') && t.contains('}') => {
             let (head, rest) = t.split_once('{').unwrap_or((t, ""));
@@ -351,8 +351,12 @@ pub fn list_connectors(store: &crate::store::Store) -> Result<Value> {
     Ok(json!({"items": items}))
 }
 
-pub fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {
+/// Removes a connector, first asking its vendor to end the grant when it signed in with one.
+pub async fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {
     super::verify::clear_failure(store, id);
+    if let Some(c) = connectors(store)?.into_iter().find(|c| c.id == id) {
+        oauth::revoke(&c).await;
+    }
     update_connectors(store, |all| {
         all.retain(|c| c.id != id);
         Ok(())

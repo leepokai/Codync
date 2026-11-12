@@ -291,8 +291,8 @@ export const market = {
   importConnectors: async (c: HostClient, config: string) => (await c.call<{ items: InstalledConnector[] }>('importConnectors', { config }, s(60))).items,
   // `showsCode`: this app shows a device sign-in's code, so the host may answer with one.
   connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id, showsCode: true }, s(60)),
-  finishConnectorSignIn: async (c: HostClient, state: string, code: string | null, error: string | null) =>
-    (await c.call<{ connector: InstalledConnector }>('connectorSignInFinish', { state, code, error }, s(60))).connector,
+  finishConnectorSignIn: async (c: HostClient, state: string, code: string | null, error: string | null, iss: string | null = null) =>
+    (await c.call<{ connector: InstalledConnector }>('connectorSignInFinish', { state, code, error, iss }, s(60))).connector,
   removeConnector: (c: HostClient, id: string) => c.call('removeConnector', { id }),
   composioStatus: (c: HostClient) => c.call<ComposioStatus>('composioStatus'),
   /** Checks the key with Composio before keeping it; an empty key forgets Composio. */
@@ -312,6 +312,9 @@ export const market = {
   /** Adds the agent's bot with its look, instructions, skills and routines. */
   installAgent: async (c: HostClient, id: string) => (await c.call<{ bot: { id: string } }>('installAgent', { id }, s(120))).bot,
   marketApps: async (c: HostClient, search = '') => (await c.call<{ items: MarketApp[] }>('marketApps', { search })).items,
+  /** Installs a catalogue app with the sheet's values: the host builds the connector and its auth. */
+  installMarketApp: async (c: HostClient, id: string, values: Record<string, string>) =>
+    (await c.call<{ connector: InstalledConnector }>('installMarketApp', { id, values }, s(45))).connector,
   installSkill: (c: HostClient, source: string) => c.call('installSkill', { source }, s(60)),
   addSkill: (c: HostClient, name: string, description: string, instructions: string) => c.call('installSkill', { name, description, instructions }),
   removeSkill: (c: HostClient, id: string) => c.call('removeSkill', { id }),

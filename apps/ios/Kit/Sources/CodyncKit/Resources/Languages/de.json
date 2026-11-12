@@ -1893,6 +1893,7 @@
   "Creator": "Creator",
   "Origin": "Origin",
   "Reviewed by OpenBot": "Reviewed by OpenBot",
+  "Reviewed by CopilotKit": "Reviewed by CopilotKit",
   "Category": "Category",
   "Runs on {name}.": "Runs on {name}.",
   "Open the guide": "Open the guide",

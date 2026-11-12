@@ -1,4 +1,5 @@
-// One-off: counts the marketplace apps the host serves, and checks a sample entry's bridge fields.
+// One-off: lists the connector catalogue the host serves and checks the bridge fields that decide
+// how each entry installs. Start a debug host first (host/target/debug/codync-host.exe).
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -39,19 +40,28 @@ const call = async (method, body = {}) => {
 }
 
 const { items } = await call('marketApps')
-const figma = items.find((a) => a.id === 'figma')
-const airtable = items.find((a) => a.id === 'airtable')
+const exa = items.find((a) => a.id === 'exa-authenticated')
+const google = items.find((a) => a.id === 'google-drive')
+const notion = items.find((a) => a.id === 'notion')
+const routines = items.find((a) => a.id === 'routines')
 console.log('apps:', items.length)
 console.log('featured:', items.filter((a) => a.featured).map((a) => a.id).join(', '))
-console.log('first six:', items.slice(0, 6).map((a) => a.id).join(', '))
-console.log('figma:', figma && { setup: figma.setup, transport: figma.server.transport, url: figma.server.url, steps: figma.steps.length })
-console.log('airtable:', airtable && { setup: airtable.setup, transport: airtable.server.transport, command: airtable.server.command, fields: airtable.fields.length })
+console.log('exa key field:', exa && exa.fields.map((f) => `${f.header}:${f.template}`).join(', '))
+console.log('google:', google && { setup: google.setup, url: google.server.url, fields: google.fields.map((f) => f.id) })
+console.log('notion:', notion && { setup: notion.setup, fields: notion.fields.length, url: notion.server.url })
+console.log('routines:', routines && { setup: routines.setup, builtin: routines.builtin, installed: routines.installed })
 
 const failures = []
-if (items.length < 240) failures.push(`only ${items.length} apps`)
-if (!figma || figma.setup !== 'local' || figma.steps.length === 0) failures.push('figma local steps')
-if (!airtable || airtable.setup !== 'key' || airtable.fields.length === 0) failures.push('airtable key fields')
-if (items.some((a) => !a.server.name || !a.server.transport)) failures.push('app without server')
+if (items.length !== 9) failures.push(`${items.length} apps, expected the 9 CopilotKit connectors`)
+if (!items.some((a) => a.featured)) failures.push('no featured pick')
+if (items.some((a) => !a.name || !a.server.name || !a.server.transport)) failures.push('app without a server')
+if (items.some((a) => !a.builtin && !a.server.url)) failures.push('remote app without a URL')
+if (!exa || exa.setup !== 'key' || exa.fields[0]?.header !== 'x-api-key' || exa.fields[0]?.template !== '{apiKey}') {
+  failures.push('exa key field in its own header, unwrapped')
+}
+if (!google || google.setup !== 'link' || google.fields.length !== 2) failures.push('google asks for its own OAuth client')
+if (!notion || notion.setup !== 'link' || notion.fields.length !== 0) failures.push('notion registers itself')
+if (!routines || routines.builtin !== true || routines.installed !== true) failures.push('routines is always on')
 
 host.kill()
 // The host releases its SQLite file a moment after the process ends.

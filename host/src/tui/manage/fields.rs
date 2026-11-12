@@ -96,6 +96,9 @@ impl App {
                 );
             }
             Submit::Import => self.sheet("importConnectors", json!({"config": values["config"]}), Reply::FieldsSaved),
+            Submit::App(item) => {
+                self.sheet("installMarketApp", json!({"id": item["id"], "values": values}), Reply::FieldsSaved);
+            }
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }

@@ -231,6 +231,8 @@ async fn command(
 struct OAuthCallback {
     state: Option<String>,
     code: Option<String>,
+    /// The issuer the consent came back from (RFC 9207).
+    iss: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
 }
@@ -246,9 +248,14 @@ async fn oauth_callback(
         return StatusCode::FORBIDDEN.into_response();
     }
     let error = q.error_description.or(q.error);
-    let result =
-        market::oauth::finish(&hub.store, q.state.as_deref().unwrap_or_default(), q.code.as_deref(), error.as_deref())
-            .await;
+    let result = market::oauth::finish(
+        &hub.store,
+        q.state.as_deref().unwrap_or_default(),
+        q.code.as_deref(),
+        error.as_deref(),
+        q.iss.as_deref(),
+    )
+    .await;
     let (title, detail) = match &result {
         Ok(c) => (format!("{} is connected", c.name), "You can close this tab and go back to Codync.".to_owned()),
         Err(e) => ("Sign-in didn't finish".to_owned(), format!("{e:#}")),

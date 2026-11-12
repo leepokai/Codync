@@ -9,6 +9,11 @@
 //!   which the phone's sign-in sheet catches and hands back with `connectorSignInFinish`.
 //!
 //! The authorization code alone is useless: the PKCE verifier never leaves this host.
+//!
+//! A catalogue app (`market::copilotkit`) pins its vendor's endpoints, scopes and consent
+//! parameters in reviewed data, and `start` uses those instead of discovery. A vendor that cannot
+//! register apps itself (Google) takes the client the sheet was given; Notion registers itself at
+//! its pinned registration endpoint.
 
 mod device;
 mod discovery;
@@ -18,12 +23,13 @@ use discovery::{resource_metadata, server_metadata, split};
 
 use crate::LockExt;
 use crate::hub::Hub;
+use crate::market::copilotkit::App;
 use crate::market::{self, Connector};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -46,6 +52,27 @@ pub struct OAuth {
     pub redirect_uris: Vec<String>,
     #[serde(default)]
     pub token_endpoint: String,
+    /// The vendor's consent page, when the catalogue pins it instead of letting discovery name it.
+    #[serde(default)]
+    pub authorization_endpoint: String,
+    /// The vendor's revocation endpoint, if it has one.
+    #[serde(default)]
+    pub revoke_endpoint: Option<String>,
+    /// A pinned registration endpoint: the app registers itself there.
+    #[serde(default)]
+    pub registration_endpoint: Option<String>,
+    /// `dynamic` for a client this host registers itself; `pasted` for one the user created.
+    #[serde(default)]
+    pub client: Option<String>,
+    /// The issuer a consent must come back from (RFC 9207).
+    #[serde(default)]
+    pub issuer: Option<String>,
+    /// The scopes asked for. Empty is "the consent screen scopes it", not "no scope".
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// The vendor's own consent parameters, applied after the flow's own.
+    #[serde(default)]
+    pub authorization_params: BTreeMap<String, String>,
     #[serde(default)]
     pub access_token: String,
     #[serde(default)]
@@ -58,6 +85,30 @@ pub struct OAuth {
 impl OAuth {
     pub fn signed_in(&self) -> bool {
         !self.access_token.is_empty()
+    }
+
+    /// The client a pinned catalogue app signs in with, from its entry and the sheet's values.
+    pub fn from_pins(a: &App, input: &dyn Fn(&str) -> Option<String>) -> Result<Self> {
+        let auth = &a.auth;
+        let mut o = Self {
+            token_endpoint: auth.token_url.clone().unwrap_or_default(),
+            authorization_endpoint: auth.authorization_url.clone().unwrap_or_default(),
+            revoke_endpoint: auth.revoke_url.clone(),
+            registration_endpoint: auth.registration_url.clone(),
+            client: auth.client.clone(),
+            issuer: auth.issuer.clone(),
+            scopes: auth.scopes.clone(),
+            authorization_params: auth.authorization_params.clone(),
+            ..Self::default()
+        };
+        if auth.client.as_deref() == Some("pasted") {
+            o.client_id = input("clientId").ok_or_else(|| anyhow!("OAuth client ID is required"))?;
+            o.client_secret = input("clientSecret");
+            if o.client_secret.is_none() {
+                bail!("OAuth client secret is required");
+            }
+        }
+        Ok(o)
     }
 }
 
@@ -75,8 +126,15 @@ struct Pending {
     verifier: String,
     redirect_uri: String,
     resource: String,
+    /// The issuer the consent went to: an `iss` that comes back must be this one (RFC 9207).
+    issuer: String,
     started: Instant,
 }
+
+/// The six parameters that carry the flow's own security; a vendor's `authorizationParams` may not
+/// rewrite one (RFC 6749, PKCE).
+const RESERVED_PARAMS: &[&str] =
+    &["client_id", "redirect_uri", "response_type", "state", "code_challenge", "code_challenge_method"];
 
 static PENDING: Mutex<Option<HashMap<String, Pending>>> = Mutex::new(None);
 /// One refresh at a time: servers that rotate refresh tokens revoke the old one on use.
@@ -131,12 +189,27 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     let c = market::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("unknown connector"))?;
     let url = c.url.clone().ok_or_else(|| anyhow!("{} runs on this computer; it has nothing to sign in to", c.name))?;
 
-    let resource = resource_metadata(&url).await;
-    let issuer = resource["authorization_servers"][0]
-        .as_str()
-        .map_or_else(|| split(&url).map(|(origin, _)| origin), |s| Ok(s.trim_end_matches('/').to_owned()))?;
-    let meta = server_metadata(&issuer).await.with_context(|| format!("signing in to {}", c.name))?;
-    let token_endpoint = text(&meta["token_endpoint"]).ok_or_else(|| anyhow!("no token endpoint"))?;
+    // A catalogue app (`market::copilotkit`) pins its vendor's endpoints in reviewed data; every
+    // other server is asked how it signs in.
+    let mut oauth = c.oauth.clone().unwrap_or_default();
+    let pinned = !oauth.authorization_endpoint.is_empty() && !oauth.token_endpoint.is_empty();
+    let resource = if pinned { Value::Null } else { resource_metadata(&url).await };
+    let issuer = match oauth.issuer.clone() {
+        Some(issuer) => issuer,
+        None => resource["authorization_servers"][0]
+            .as_str()
+            .map_or_else(|| split(&url).map(|(origin, _)| origin), |s| Ok(s.trim_end_matches('/').to_owned()))?,
+    };
+    let meta = if pinned {
+        Value::Null
+    } else {
+        server_metadata(&issuer).await.with_context(|| format!("signing in to {}", c.name))?
+    };
+    let token_endpoint = if pinned {
+        oauth.token_endpoint.clone()
+    } else {
+        text(&meta["token_endpoint"]).ok_or_else(|| anyhow!("no token endpoint"))?
+    };
     if let Some(app) = device::app(&issuer, &url) {
         if !shows_code {
             bail!("Update Codync on this device to sign in to {}.", c.name);
@@ -151,7 +224,11 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
             .clone()
             .ok_or_else(|| anyhow!("The Codync cloud is off on this computer, so sign in from the computer itself."))?,
     };
-    let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
+    let authorize = if pinned {
+        oauth.authorization_endpoint.clone()
+    } else {
+        text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?
+    };
 
     // Register once with every redirect URI we might use; again if they changed.
     let wanted = callback_urls(store, hub.port);
@@ -160,35 +237,49 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     // A pre-registered application only needs the selected callback, rather than every possible device callback.
     let registered = !oauth.client_id.is_empty() && oauth.redirect_uris.contains(&redirect_uri);
     if !registered {
-        let register = text(&meta["registration_endpoint"]).ok_or_else(|| {
-            anyhow!(
-                "{} doesn't let new apps sign in on their own. Add it as a custom connector with a token header.",
-                c.name
-            )
-        })?;
-        let res = crate::http()
-            .post(&register)
-            .json(&json!({
-                "client_name": "Codync",
-                "redirect_uris": wanted,
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            }))
-            .timeout(TIMEOUT)
-            .send()
-            .await
-            .with_context(|| format!("registering with {}", c.name))?;
-        let status = res.status();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        oauth.client_id =
-            text(&v["client_id"]).ok_or_else(|| anyhow!("{} refused the registration ({status})", c.name))?;
-        oauth.client_secret = text(&v["client_secret"]);
-        oauth.redirect_uris = wanted;
+        if oauth.client.as_deref() == Some("pasted") {
+            // A client the user pasted (Google) is theirs, with these redirect URIs allowed at the vendor.
+            if oauth.client_id.is_empty() {
+                bail!("Add the OAuth client ID and secret for {} again.", c.name);
+            }
+            oauth.redirect_uris = wanted;
+        } else {
+            // A server that registers apps itself gets asked at its pinned (or discovered) endpoint.
+            let register = oauth
+                .registration_endpoint
+                .clone()
+                .or_else(|| text(&meta["registration_endpoint"]))
+                .ok_or_else(|| {
+                    anyhow!(
+                        "{} doesn't let new apps sign in on their own. Add it as a custom connector with a token header.",
+                        c.name
+                    )
+                })?;
+            let res = crate::http()
+                .post(&register)
+                .json(&json!({
+                    "client_name": "Codync",
+                    "redirect_uris": wanted,
+                    "grant_types": ["authorization_code", "refresh_token"],
+                    "response_types": ["code"],
+                    "token_endpoint_auth_method": "none",
+                }))
+                .timeout(TIMEOUT)
+                .send()
+                .await
+                .with_context(|| format!("registering with {}", c.name))?;
+            let status = res.status();
+            let v: Value = res.json().await.unwrap_or(Value::Null);
+            oauth.client_id =
+                text(&v["client_id"]).ok_or_else(|| anyhow!("{} refused the registration ({status})", c.name))?;
+            oauth.client_secret = text(&v["client_secret"]);
+            oauth.redirect_uris = wanted;
+        }
+    }
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();
-    update(store, id, Some(&url), |c| c.oauth = Some(oauth))?;
+    update(store, id, Some(&url), |c| c.oauth = Some(oauth.clone()))?;
 
     let verifier = crate::remote::crypto::b64(&crate::remote::crypto::random::<32>());
     let challenge = crate::remote::crypto::b64(&crate::remote::crypto::sha256(&[verifier.as_bytes()]));
@@ -203,10 +294,20 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
             .append_pair("code_challenge_method", "S256")
             .append_pair("state", &state)
             .append_pair("resource", &url);
-        let scopes: Vec<&str> =
-            resource["scopes_supported"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        let scopes: Vec<&str> = if oauth.scopes.is_empty() {
+            resource["scopes_supported"].as_array().into_iter().flatten().filter_map(Value::as_str).collect()
+        } else {
+            oauth.scopes.iter().map(String::as_str).collect()
+        };
         if !scopes.is_empty() {
             q.append_pair("scope", &scopes.join(" "));
+        }
+        // The vendor's own consent terms (Google's `offline`/`consent`), after the flow's own.
+        for (k, v) in &oauth.authorization_params {
+            if RESERVED_PARAMS.contains(&k.as_str()) {
+                bail!("{} sets {k}, which this sign-in already sets", c.name);
+            }
+            q.append_pair(k, v);
         }
     }
     let mut pending = PENDING.locked();
@@ -214,7 +315,14 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
     map.retain(|_, p| p.started.elapsed() < PENDING_FOR);
     map.insert(
         state,
-        Pending { connector: id.to_owned(), verifier, redirect_uri, resource: url, started: Instant::now() },
+        Pending {
+            connector: id.to_owned(),
+            verifier,
+            redirect_uri,
+            resource: url,
+            issuer,
+            started: Instant::now(),
+        },
     );
     let callback = match callback {
         Callback::Host => "host",
@@ -224,7 +332,13 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
 }
 
 /// Trades the code from the sign-in page for tokens.
-pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Option<&str>) -> Result<Connector> {
+pub async fn finish(
+    store: &Store,
+    state: &str,
+    code: Option<&str>,
+    error: Option<&str>,
+    iss: Option<&str>,
+) -> Result<Connector> {
     let p = PENDING
         .locked()
         .as_mut()
@@ -233,6 +347,12 @@ pub async fn finish(store: &Store, state: &str, code: Option<&str>, error: Optio
         .ok_or_else(|| anyhow!("This sign-in expired. Start it again."))?;
     if let Some(error) = error {
         bail!("Sign-in didn't finish: {error}");
+    }
+    // A consent that names where it came from must name the issuer it was sent to (RFC 9207).
+    if let Some(iss) = iss.filter(|i| !i.is_empty())
+        && p.issuer.trim_end_matches('/') != iss.trim_end_matches('/')
+    {
+        bail!("The sign-in came back from {iss}, not {}. Start it again from Codync.", p.issuer);
     }
     let code = code.ok_or_else(|| anyhow!("Sign-in didn't return a code"))?;
     let c = market::connectors(store)?
@@ -303,8 +423,9 @@ fn store_tokens(c: &mut Connector, v: &Value) {
     o.expires_at = v["expires_in"].as_u64().map(|s| now() + s);
 }
 
-/// Forgets a connector's tokens (keeps its registration).
-fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
+/// Forgets a connector's tokens (keeps its registration), revoking them at the vendor when it can.
+async fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
+    revoke(c).await;
     update(store, &c.id, c.url.as_deref(), |c| {
         if let Some(o) = &mut c.oauth {
             o.access_token.clear();
@@ -312,6 +433,28 @@ fn sign_out(store: &Store, c: &Connector) -> Result<Connector> {
             o.expires_at = None;
         }
     })
+}
+
+/// Asks the vendor to end the grant (RFC 7009). Best effort: a refusal still signs out here, since
+/// the tokens are dropped either way.
+pub(super) async fn revoke(c: &Connector) {
+    let Some(o) = &c.oauth else { return };
+    let Some(endpoint) = o.revoke_endpoint.as_deref().filter(|e| !e.is_empty()) else { return };
+    let (token, hint) = if o.access_token.is_empty() {
+        (o.refresh_token.clone().unwrap_or_default(), "refresh_token")
+    } else {
+        (o.access_token.clone(), "access_token")
+    };
+    if token.is_empty() {
+        return;
+    }
+    let mut form = vec![("token", token.as_str()), ("token_type_hint", hint), ("client_id", o.client_id.as_str())];
+    if let Some(secret) = &o.client_secret {
+        form.push(("client_secret", secret));
+    }
+    if let Err(error) = post_form(endpoint, &form).await {
+        tracing::warn!(connector = %c.id, error = format!("{error:#}"), "couldn't revoke the token");
+    }
 }
 
 /// Forgets a connector's tokens and its registration: the next sign-in registers again.
@@ -383,7 +526,7 @@ async fn fresh(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
 /// Trades the refresh token for a new access token. A server that can't answer now leaves the sign-in as is.
 async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) -> Result<OAuth> {
     let Some(refresh) = o.refresh_token.as_deref() else {
-        sign_out(store, c)?;
+        sign_out(store, c).await?;
         return Err(signed_out(c));
     };
     // The old token still works until it expires.
@@ -407,7 +550,7 @@ async fn renew(store: &Store, c: &Connector, url: &str, o: &OAuth, stale: bool) 
         Renewal::Renewed => Ok(update(store, &c.id, Some(url), |c| store_tokens(c, &v))?.oauth.unwrap_or_default()),
         Renewal::Retry => retry(),
         Renewal::Revoked => {
-            sign_out(store, c)?;
+            sign_out(store, c).await?;
             Err(signed_out(c))
         }
         Renewal::Unregistered => {

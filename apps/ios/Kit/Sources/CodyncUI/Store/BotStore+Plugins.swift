@@ -43,18 +43,9 @@ extension BotStore {
     /// Adds an app with the values typed. Its sheet runs the sign-in when the connector needs one.
     @discardableResult
     public func installApp(_ app: MarketApp, values: [String: String]) async throws -> InstalledConnector {
-        var headers: [String: String] = [:]
-        var env: [String: String] = [:]
-        var url = app.server.url
-        for field in app.fields {
-            let typed = values[field.id]?.trimmingCharacters(in: .whitespaces) ?? ""
-            if field.url { if !typed.isEmpty { url = typed } }
-            else if let header = field.header { headers[header] = typed }
-            else if let name = field.env { env[name] = typed }
-        }
-        return try await addConnector(name: app.server.name.isEmpty ? app.name : app.server.name,
-                                      command: app.server.command, url: url, env: env, headers: headers,
-                                      args: app.server.args, catalog: app.id, description: app.description)
+        let c = try await ready().installMarketApp(app.id, values: values)
+        await refreshPlugins()
+        return c
     }
 
     @discardableResult
@@ -83,8 +74,8 @@ extension BotStore {
         try await ready().connectorSignIn(id)
     }
 
-    public func finishConnectorSignIn(state: String, code: String?, error: String?) async throws {
-        try await ready().finishConnectorSignIn(state: state, code: code, error: error)
+    public func finishConnectorSignIn(state: String, code: String?, error: String?, iss: String?) async throws {
+        try await ready().finishConnectorSignIn(state: state, code: code, error: error, iss: iss)
         await refreshPlugins()
     }
 

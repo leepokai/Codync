@@ -23,6 +23,7 @@ pub mod bot_secrets;
 pub mod catalog;
 pub mod composio;
 pub mod connector_update;
+pub mod copilotkit;
 pub mod hermes;
 pub mod hermes_apps;
 pub mod login;
@@ -335,16 +336,20 @@ pub fn update_connectors<T>(
     Ok(result)
 }
 
-fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
+pub(crate) fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
-        if c.registry_name.is_none() {
+        if c.registry_name.is_none() && c.catalog.is_none() {
             // Recheck under the write lock: another install may have finished during OAuth discovery.
             ensure_name_available(&c.name, all)?;
         }
-        // A registry server is installed once: installing it again replaces it under the id the bots know.
-        if let Some(name) = c.registry_name.as_deref()
-            && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))
-        {
+        // A registry server, or a catalogue app, is installed once: installing it again replaces it
+        // under the id the bots know. Add after a failure is the way to repair one.
+        let existing = match (c.registry_name.as_deref(), c.catalog.as_deref()) {
+            (Some(name), _) => all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name)),
+            (None, Some(app)) => all.iter_mut().find(|x| x.catalog.as_deref() == Some(app)),
+            (None, None) => None,
+        };
+        if let Some(existing) = existing {
             c.id.clone_from(&existing.id);
             *existing = c;
             return Ok(existing.public());
@@ -367,7 +372,7 @@ fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
     Ok(())
 }
 
-fn unique_id(base: &str, taken: &[String]) -> String {
+pub(crate) fn unique_id(base: &str, taken: &[String]) -> String {
     let base = slug(base);
     let mut id = base.clone();
     let mut n = 2;

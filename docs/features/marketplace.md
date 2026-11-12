@@ -2,24 +2,45 @@
 
 The Extensions screen configures capabilities installed on one computer. Account membership does not install the same capability on every computer, so each computer has its own Extensions, opened from that computer and never switched inside: with several computers, from the Extensions button on its heading in the bot list (desktop and iPhone); on the desktop with one computer, from the sidebar footer; on the iPhone, also from its row in Manage computers.
 
-Under the open section, one line says where that section comes from: agents from the ACP registry, connectors from the MCP Registry, skills from Anthropic, and that they install on this computer. Credentials sits on the title row, beside the computer name, on the iPhone, Android and desktop, so the list can use the rest of the screen. The terminal has no Credentials control on this sheet. The desktop and iPhone installed count is labeled **Connectors & skills**, and opens a library with that same title. It includes connected apps (stored as connectors), but excludes agents; agents show their own installation status in the Agents section. The terminal already separates these categories and does not show a combined installed count.
+Under the open section, one line says where that section comes from: agents from the ACP registry, apps from CopilotKit's reviewed connector catalogue, connectors from the MCP Registry, skills from Anthropic, and that they install on this computer. Credentials sits on the title row, beside the computer name, on the iPhone, Android and desktop, so the list can use the rest of the screen. The terminal has no Credentials control on this sheet. The desktop and iPhone installed count is labeled **Connectors & skills**, and opens a library with that same title. It includes connected apps (stored as connectors), but excludes agents; agents show their own installation status in the Agents section. The terminal already separates these categories and does not show a combined installed count.
 
 | Capability | Implementation | Behavior |
 | --- | --- | --- |
+| Apps | `host/src/market/copilotkit/` (its `install.rs` is the bridge) | Browse the bundled app catalogue and install one as an MCP connector with its sign-in, key or nothing at all; the MCP Registry and custom connectors stay in the same Apps tab |
 | Agents | `host/src/agent/backends.rs`, `host/src/agent/registry.rs`, `host/src/agent/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
 | Connectors | `host/src/market/mod.rs`, `registry.rs`, `install.rs`, `custom.rs` | Discover MCP servers or add one manually; install per computer; on for every bot unless a bot turns it off |
 | Connected apps | `host/src/market/composio.rs` | Expose connected Composio apps as connectors |
 | Skills | `host/src/market/skills.rs`, `host/src/market/openbot/` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; the bundled OpenBot catalog installs offline, and anthropics/skills stays available; on for every bot unless a bot turns it off |
 
-The marketplace content under `host/src/market/openbot/` is generated from the OpenBot marketplace by
-`tools/import-openbot-catalog.mjs` and ships with the host: 27 agents, 92 skills (including the pstack
-pack) and 36 apps. Skills install from an embedded archive, so browsing works without a network; the
-attributions and licences are in `host/src/market/openbot/NOTICE.md`. Marketplace agents are bot
-profiles with a title, category, creator, version and the skills and routines they bring. Installing one
-creates the bot on the computer's defaults, turns on exactly the skills it brings and creates its
-routines (a catalog schedule becomes a cron trigger in the computer's time zone). The Apps tab groups
-apps by category, the Agents tab adds ready-made bots, coordinator teams and the agent CLIs, and the
-Skills tab adds the user's own skill, the OpenBot catalog and the Anthropic catalog.
+Two different catalogues ship with the host, and they are not mixed:
+
+- **Agents and skills**: `host/src/market/openbot/`, generated from the `nightly-labs/openbot` marketplace
+  by `tools/import-openbot-catalog.mjs`: 27 agents and 92 skills (including the pstack pack). Skills
+  install from an embedded archive, so browsing works without a network; attributions and licences are
+  in `host/src/market/openbot/NOTICE.md`.
+- **Apps**: `host/src/market/copilotkit/`, every connector of the `CopilotKit/OpenBot` catalogue,
+  regenerated with `tools/import-copilotkit-connectors.mjs` from `server/src/plugins/catalogue.ts` of
+  that checkout (MIT, see its `NOTICE.md`). The entries keep upstream's keys, titles, vendors, hosts and
+  paths, auth kinds, headers, OAuth endpoints and scopes, consent parameters, registration endpoint,
+  reviewed write/read tool lists and docs links, so an app authenticates here exactly as it does there.
+  Codync writes only the sheet: category, tagline, description, prompts, field labels. The module's
+  `install.rs` is the bridge that turns an entry into a connector.
+
+Marketplace agents are bot profiles with a title, category, creator, version and the skills and
+routines they bring. Installing one creates the bot on the computer's defaults, turns on exactly the
+skills it brings and creates its routines (a catalog schedule becomes a cron trigger in the computer's
+time zone). The Apps tab groups apps by category, the Agents tab adds ready-made bots, coordinator
+teams and the agent CLIs, and the Skills tab adds the user's own skill, the OpenBot catalog and the
+Anthropic catalog.
+
+An app installs with `installMarketApp {id, values}`: the host builds the connector from the entry, so
+a client never has to know which header or OAuth endpoint an app uses. `none` is a plain remote server,
+`deployment-bearer` sends the typed key in the entry's own header (Exa's `x-api-key`, wrapped in
+`Bearer ` only where the entry says so), `user-oauth` pins the vendor's endpoints, scopes and consent
+parameters on the connector and either takes the user's own OAuth client (Google issues no pasted
+token) or registers Codync at the entry's registration endpoint (Notion), and `builtin` (Routines)
+installs nothing: it is already on, so Add answers with its public shape. Installing an app again
+replaces the connector under the id its bots know, so Add after a failure repairs it.
 
 Composio Connect is featured in Connectors through the official MCP Registry
 (`io.github.ComposioHQ/composio`, `https://connect.composio.dev/mcp`). Install it
@@ -31,8 +52,8 @@ project keys (`ak_…`, sent as `x-api-key`), which the legacy Platform integrat
 setup have been removed from Extensions; existing connections and pending
 connection requests remain supported.
 All clients render the host's connector catalog and use its existing sign-in
-flow; Composio is installed from Connectors on every client. The terminal already
-has only Agents, Connectors and Skills tabs.
+flow; Composio is installed from Connectors on every client. The terminal has
+the same tabs.
 
 Install runs the CLI's own native installer where it has one, on Windows too (Claude Code, Codex, Grok, Qwen, Droid, Qoder, Cursor…, `Install` in `backends.rs`); CLIs published only on npm (Gemini, Cline, Auggie, Kilo…) install with `codync-host npm install -g <package>`, npm on the computer's own Node or else on Codync's. A CLI with its own ACP mode then runs as installed, without Node.js (except an OpenCode older than 2: the registry build runs in its place, [OpenCode](../upstream-agents/opencode.md)). Refreshing the agents re-reads the PATH a fresh login would get (the login shell's; on Windows the user's and machine's PATH from the registry), so a CLI found by an installer that just ran shows up without restarting the host. Many agents' ACP adapters run through `npx` (Claude, Codex, Gemini, Qwen…). On a computer without Node.js, the agent list marks each of them `node: "missing"` (only then is the field there; `added` once Codync's copy is in place) and they aren't available; Extensions shows one *Add Node.js* notice above the agents, each such agent reads *Needs Node.js*, and its setup sheet gets a Node.js step between Install and Sign in. Adding it (`agentSetup {step: "node"}`, a setup terminal running `codync-host node`) downloads the official Node.js of a pinned version (`VERSION` and SHA-256s in `node.rs`) once into `~/.codync/node/<version>`; npm installs with it go to `~/.codync/node/global`. Both folders come last on the agent search path, so the computer's own Node and CLIs always win, and nothing outside `~/.codync` changes. Linux builds of Node need glibc: on musl distros (Alpine) install Node.js yourself.
 
@@ -109,7 +130,7 @@ Picking a built-in command, or sending a message that is just one (`/fast`), run
 
 ## Sign-in for remote connectors (`host/src/market/oauth.rs`, discovery in `discovery.rs`)
 
-Installing a remote connector probes it: a 401 to `initialize`, or (with no headers given) protected-resource metadata naming an authorization server, for servers like Call2Me that only refuse tool calls, marks it `signedOut`, and bots don't get it until someone signs in. Sign-in follows the MCP authorization spec: protected-resource metadata → authorization-server metadata → dynamic client registration (both redirect URIs at once) → PKCE. Tokens stay on the computer and are refreshed on use (or after a 401); the refresh names the connector URL as `resource`, as the code exchange does. A refresh the token endpoint refuses with an OAuth `error` signs the connector out; `invalid_client` also drops the client registration, so the next sign-in registers again. A 5xx, 408 or 429, `temporarily_unavailable`, an answer that isn't an OAuth error (a proxy's page) or an unreachable server keeps the tokens: a token that hasn't expired yet is still used, otherwise the call fails with "Couldn't renew the sign-in to <name>. Try again in a moment." and the next one tries again.
+Installing a remote connector probes it: a 401 to `initialize`, or (with no headers given) protected-resource metadata naming an authorization server, for servers like Call2Me that only refuse tool calls, marks it `signedOut`, and bots don't get it until someone signs in. Sign-in follows the MCP authorization spec: protected-resource metadata → authorization-server metadata → dynamic client registration (both redirect URIs at once) → PKCE. A catalogue app (`market::copilotkit`) skips discovery: its vendor's endpoints, scopes, consent parameters and registration endpoint are pinned in reviewed data and never come from a caller, and an OAuth client the user pasted (Google) is used with the redirect URIs recorded against it instead of being registered. A consent that names its issuer (`iss`, RFC 9207) must name the one the sign-in was sent to, so a code cannot be finished at another server. Tokens stay on the computer and are refreshed on use (or after a 401); the refresh names the connector URL as `resource`, as the code exchange does. A refresh the token endpoint refuses with an OAuth `error` signs the connector out; `invalid_client` also drops the client registration, so the next sign-in registers again. Signing out and removing a connector also revoke the grant at the vendor (RFC 7009) when it publishes a revocation endpoint; the stored tokens are dropped either way. A 5xx, 408 or 429, `temporarily_unavailable`, an answer that isn't an OAuth error (a proxy's page) or an unreachable server keeps the tokens: a token that hasn't expired yet is still used, otherwise the call fails with "Couldn't renew the sign-in to <name>. Try again in a moment." and the next one tries again.
 
 | Where the user signs in | Redirect URI | Who finishes |
 | --- | --- | --- |

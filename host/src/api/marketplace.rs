@@ -196,6 +196,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             }
             updated
         }
+        "installMarketApp" => {
+            let before = connector_ids(&hub.store)?;
+            let c = market::copilotkit::install_app(&hub.store, str_arg(&b, "id")?, &b["values"]).await?;
+            enable_new(hub, Installed::Connectors, &before)?;
+            json!({"connector": c})
+        }
         "connectorSignIn" => {
             // The browser can only reach this host's loopback page when it runs on this computer.
             let callback = if matches!(caller, Caller::Local) {
@@ -206,8 +212,14 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             market::oauth::start(hub, str_arg(&b, "id")?, callback, b["showsCode"] == true).await?
         }
         "connectorSignInFinish" => {
-            let c = market::oauth::finish(&hub.store, str_arg(&b, "state")?, b["code"].as_str(), b["error"].as_str())
-                .await?;
+            let c = market::oauth::finish(
+                &hub.store,
+                str_arg(&b, "state")?,
+                b["code"].as_str(),
+                b["error"].as_str(),
+                b["iss"].as_str(),
+            )
+            .await?;
             json!({"connector": c.public()})
         }
         "connectorTarget" => {
@@ -218,7 +230,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let previous_native = crate::native_channels::snapshot(hub, id)?;
             match id.strip_prefix(market::composio::PREFIX) {
                 Some(toolkit) => market::composio::disconnect(&hub.store, toolkit).await?,
-                None => market::remove_connector(&hub.store, id)?,
+                None => market::remove_connector(&hub.store, id).await?,
             }
             crate::native_channels::changed(hub, previous_native)?;
             json!({})

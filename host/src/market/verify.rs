@@ -73,6 +73,10 @@ async fn verify_inner(store: &Store, id: &str, port: u16) -> Result<Value> {
         }
         bail!("Finish signing in before checking this connection.");
     }
+    // A builtin app (Routines) runs in this process and is never stored: it is always ready.
+    if super::copilotkit::apps().iter().any(|a| a.builtin && a.id == id) {
+        return Ok(json!({"status": "ready"}));
+    }
     let c = super::connectors(store)?.into_iter().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
     if crate::native_channels::is_native(&c) {
         return crate::native_channels::apps::verify(store, &c);

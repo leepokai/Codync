@@ -1888,6 +1888,7 @@
   "Creator": "Creador",
   "Origin": "Origen",
   "Reviewed by OpenBot": "Revisado por OpenBot",
+  "Reviewed by CopilotKit": "Revisado por CopilotKit",
   "Category": "Categoría",
   "Runs on {name}.": "Se ejecuta en {name}.",
   "Open the guide": "Abrir la guía",

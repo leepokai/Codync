@@ -31,19 +31,11 @@ internal suspend fun AppStore.addConnector(name: String, command: String?, url: 
 
 /** Adds a marketplace app with the values typed, then runs its browser sign-in when it wants one. */
 internal suspend fun AppStore.installApp(app: MarketApp, values: Map<String, String>): InstalledConnector {
-    val headers = mutableMapOf<String, String>()
-    val env = mutableMapOf<String, String>()
-    var url = app.server.url
-    for (field in app.fields) {
-        val typed = values[field.id]?.trim().orEmpty()
-        when {
-            field.url -> if (typed.isNotEmpty()) url = typed
-            field.header != null -> headers[field.header!!] = typed
-            field.env != null -> env[field.env!!] = typed
-        }
-    }
-    val connector = addConnector(app.server.name.ifEmpty { app.name }, app.server.command, url, env, headers,
-        args = app.server.args, catalog = app.id, description = app.description)
+    val response = hostCall("installMarketApp", buildJsonObject {
+        put("id", app.id); put("values", WireJson.encodeToJsonElement(values))
+    }, 45_000)
+    refreshPlugins()
+    val connector = WireJson.decodeFromJsonElement<InstalledConnector>(response.jsonObject.getValue("connector"))
     if (connector.needsSignIn) signInConnector(connector.id)
     return connector
 }

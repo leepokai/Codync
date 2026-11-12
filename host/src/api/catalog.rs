@@ -3,6 +3,7 @@
 use super::str_arg;
 use crate::hub::Hub;
 use crate::market::catalog::{self, TeamProfile};
+use crate::market::copilotkit;
 use crate::market::openbot;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -44,7 +45,15 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
         "marketApps" => {
             let installed = installed_apps(hub)?;
             let search = b["search"].as_str().unwrap_or_default();
-            let mut items = openbot::browse_apps(&installed, search);
+            let mut cards = copilotkit::browse_apps(&installed, search);
+            // The nightly catalogue only adds the apps the reviewed one doesn't cover.
+            let covered: Vec<&str> = copilotkit::apps().iter().map(|a| a.id.as_str()).collect();
+            cards.extend(
+                openbot::browse_apps(&installed, search)
+                    .into_iter()
+                    .filter(|a| !a["id"].as_str().is_some_and(|id| covered.contains(&id))),
+            );
+            let mut items = cards;
             items.extend(crate::native_channels::apps::browse(&hub.store, search)?);
             items.extend(crate::market::hermes_apps::browse(
                 &hub.store,
@@ -63,14 +72,16 @@ fn installed_agents(hub: &Arc<Hub>) -> Result<Vec<String>> {
     Ok(hub.store.bots()?.into_iter().filter(|b| !b.deleted).filter_map(|b| b.config.catalog).collect())
 }
 
-/// The marketplace apps a connector on this computer came from.
+/// The marketplace skills this computer has.
 fn installed_skills(hub: &Arc<Hub>) -> Vec<String> {
     let items = crate::market::list_skills(&hub.store);
     items["items"].as_array().into_iter().flatten().filter_map(|s| s["source"].as_str().map(str::to_owned)).collect()
 }
 
+/// The marketplace apps a connector on this computer came from, plus the always-on builtins.
 fn installed_apps(hub: &Arc<Hub>) -> Result<Vec<String>> {
-    Ok(crate::market::connectors(&hub.store)?.into_iter().filter_map(|c| c.catalog).collect())
+    let connectors = crate::market::connectors(&hub.store)?.into_iter().filter_map(|c| c.catalog).collect::<Vec<_>>();
+    Ok(copilotkit::installed(&connectors))
 }
 
 /// Creates the bot with the agent's instructions, look and skills, then its routines. All or nothing:

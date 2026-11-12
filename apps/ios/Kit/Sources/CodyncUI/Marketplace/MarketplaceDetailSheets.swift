@@ -224,6 +224,25 @@ struct AppSheet: View {
                              ? L10n.tr("{name} asks you to sign in to your own account in the browser.").replacingOccurrences(of: "{name}", with: app.name)
                              : L10n.tr("Nothing to fill in here."))
                             .font(.body).foregroundStyle(Palette.secondary)
+                        ForEach(app.fields) { field in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L10n.tr(field.label)).font(.caption).foregroundStyle(Palette.secondary)
+                                Group {
+                                    if field.url {
+                                        TextField(field.placeholder ?? field.label, text: Binding(
+                                            get: { values[field.id] ?? "" }, set: { values[field.id] = $0 }))
+                                    } else {
+                                        SecureField(field.placeholder ?? field.label, text: Binding(
+                                            get: { values[field.id] ?? "" }, set: { values[field.id] = $0 }))
+                                    }
+                                }
+                                .plainTextInput()
+                                if let hint = field.hint { Text(L10n.tr(hint)).font(.caption).foregroundStyle(Palette.secondary) }
+                            }
+                        }
+                        if !app.fields.isEmpty, let docs = app.docsUrl, let url = URL(string: docs) {
+                            Link(app.docsLabel ?? L10n.tr("Open the guide"), destination: url).font(.footnote)
+                        }
                     }
                 }
                 if !app.prompts.isEmpty {

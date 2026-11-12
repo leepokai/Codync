@@ -23,6 +23,7 @@ impl App {
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
         self.sheet("marketSkills", json!({}), Reply::Skills);
+        self.sheet("marketApps", json!({"search": ""}), Reply::Apps);
         self.sheet(
             "marketConnectors",
             json!({"search": "", "includeBundledApps":true}),
@@ -36,6 +37,7 @@ impl App {
             registry: vec![],
             next: None,
             skills: None,
+            apps: None,
             catalog: Value::Null,
             added: vec![],
             loading: true,
@@ -92,6 +94,18 @@ impl App {
                         .map(Row::Registry),
                 );
                 rows
+            }
+            Tab::Apps => {
+                let installed: Vec<String> =
+                    self.plugins.0.iter().filter_map(|c| c["catalog"].as_str()).map(str::to_owned).collect();
+                // A builtin stays listed (it is always on); the rest drop out once their connector exists.
+                m.apps
+                    .iter()
+                    .flatten()
+                    .filter(|v| v["builtin"] == true || !installed.contains(&s(v, "id")))
+                    .filter(|v| hit(v, &["name", "tagline"]))
+                    .map(Row::App)
+                    .collect()
             }
             Tab::Skills => {
                 let installed: Vec<String> = self.plugins.1.iter().map(|v| s(v, "id").to_lowercase()).collect();
@@ -198,6 +212,7 @@ impl App {
             SignIn(String),
             Custom,
             Install(Value),
+            App(Value),
             Skill(Value, bool),
             Catalog(Value, bool),
             None,
@@ -208,6 +223,7 @@ impl App {
             Some(Row::Installed(c)) if c["auth"] == "signedOut" => Act::SignIn(s(c, "id")),
             Some(Row::Custom) => Act::Custom,
             Some(Row::Registry(c)) => Act::Install((*c).clone()),
+            Some(Row::App(v)) => Act::App((*v).clone()),
             Some(Row::Skill(v)) => Act::Skill((*v).clone(), true),
             Some(Row::OwnSkill(v)) => Act::Skill((*v).clone(), false),
             Some(Row::Profile(v)) if !m.added.contains(&s(v, "id")) => Act::Catalog((*v).clone(), false),
@@ -288,6 +304,44 @@ impl App {
                 };
                 connector_inputs(&mut f);
                 super::super::connections::option_fields(&mut f);
+                self.overlays.push(Overlay::Market(m));
+                self.overlays.push(Overlay::Fields(Box::new(f)));
+                return None;
+            }
+            // The app's sheet: its key fields, then ↵ installs it (and starts any sign-in).
+            Act::App(item) => {
+                let fields = item["fields"].as_array().cloned().unwrap_or_default();
+                let mut note = s(&item, "tagline");
+                if item["builtin"] == true {
+                    note = tr("Always on, already part of {name}.").replace("{name}", &self.host);
+                }
+                if let Some(hint) = fields.iter().find_map(|f| f["hint"].as_str().filter(|h| !h.is_empty())) {
+                    note.push_str("\n\n");
+                    note.push_str(&tr(hint));
+                }
+                let inputs = fields
+                    .iter()
+                    .map(|f| Input {
+                        name: s(f, "id"),
+                        label: tr(&s(f, "label")).into_owned(),
+                        secret: true,
+                        required: f["required"] == true,
+                        multiline: false,
+                        placeholder: s(f, "placeholder"),
+                        ed: Editor::default(),
+                    })
+                    .collect();
+                let f = Fields {
+                    title: s(&item, "name"),
+                    note,
+                    choices: vec![],
+                    choice: 0,
+                    inputs,
+                    cursor: 0,
+                    error: None,
+                    saving: false,
+                    submit: Submit::App(item),
+                };
                 self.overlays.push(Overlay::Market(m));
                 self.overlays.push(Overlay::Fields(Box::new(f)));
                 return None;

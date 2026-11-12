@@ -188,6 +188,9 @@ impl App {
                     m.skills = Some(v["items"].as_array().cloned().unwrap_or_default());
                 }
             }
+            Reply::Apps => self.with_market(|_, m| {
+                m.apps = Some(v["items"].as_array().cloned().unwrap_or_default());
+            }),
             Reply::Catalog => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -237,6 +240,13 @@ impl App {
                 }
                 self.flash("Saved");
                 self.refresh_sheets();
+                // A connector that wants sign-in starts it right away, as the other clients do.
+                let connector = &v["connector"];
+                if connector["auth"] == "signedOut"
+                    && let Some(id) = connector["id"].as_str()
+                {
+                    self.sheet("connectorSignIn", json!({"id": id}), Reply::SignIn);
+                }
             }
             Reply::SignIn => {
                 let url = s(&v, "url");
@@ -363,6 +373,10 @@ impl App {
             }),
             Reply::Skills => self.with_market(|_, m| {
                 m.skills.get_or_insert_with(Vec::new);
+                m.error = Some(e);
+            }),
+            Reply::Apps => self.with_market(|_, m| {
+                m.apps.get_or_insert_with(Vec::new);
                 m.error = Some(e);
             }),
             Reply::CallEntries(call) => {

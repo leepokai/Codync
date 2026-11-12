@@ -183,6 +183,11 @@ private val WEEKDAYS = listOf("Sundays", "Mondays", "Tuesdays", "Wednesdays", "T
                     Text(if (app.setup == "link") tr("{name} asks you to sign in to your own account in the browser.").replace("{name}", app.name)
                         else tr("Nothing to fill in here."), style = Type.body, color = Palette.secondary)
                 }
+                for (field in app.fields) row {
+                    NotedInput(values[field.id].orEmpty(), { values = values + (field.id to it) },
+                        field.placeholder ?: field.label, field.hint, secret = !field.url)
+                }
+                if (app.fields.isNotEmpty()) app.docsUrl?.let { url -> row { WebLink(app.docsLabel ?: tr("Open the guide"), url, Type.footnote) } }
             }
             if (app.prompts.isNotEmpty()) CardSection("Try it") {
                 for (prompt in app.prompts) row {

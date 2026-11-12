@@ -363,9 +363,16 @@ public extension HostClient {
     }
 
     @discardableResult
-    func finishConnectorSignIn(state: String, code: String?, error: String?) async throws -> InstalledConnector {
-        struct Body: Encodable { var state: String; var code: String?; var error: String? }
-        let res: Installed = try await call("connectorSignInFinish", Body(state: state, code: code, error: error), timeout: 60)
+    func installMarketApp(_ id: String, values: [String: String]) async throws -> InstalledConnector {
+        struct Body: Encodable { var id: String; var values: [String: String] }
+        let res: Installed = try await call("installMarketApp", Body(id: id, values: values), timeout: 45)
+        return res.connector
+    }
+
+    @discardableResult
+    func finishConnectorSignIn(state: String, code: String?, error: String?, iss: String?) async throws -> InstalledConnector {
+        struct Body: Encodable { var state: String; var code: String?; var error: String?; var iss: String? }
+        let res: Installed = try await call("connectorSignInFinish", Body(state: state, code: code, error: error, iss: iss), timeout: 60)
         return res.connector
     }
 

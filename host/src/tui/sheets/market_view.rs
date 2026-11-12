@@ -1,4 +1,4 @@
-//! The Extensions sheet: three tabs, a search field, and the open tab's list.
+//! The Extensions sheet: a tab row, a search field, and the open tab's list.
 
 use super::{App, Buffer, Rect, centered, footer, frame_box, put, row, rput, s, theme, truncate, u, window};
 use crate::tui::l10n::tr;
@@ -26,6 +26,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         Tab::Bots | Tab::Teams => tr("Ready-made bots and coordinator teams install on {name}."),
         Tab::Agents => tr("Agents come from the ACP registry and install on {name}."),
         Tab::Connectors => tr("Connectors come from the official MCP Registry and install on {name}."),
+        Tab::Apps => tr("Apps are connectors CopilotKit reviewed; they install on {name}."),
         Tab::Skills => tr("Skills come from Anthropic and install on {name}."),
     };
     let source = source.replace("{name}", &app.host);
@@ -76,6 +77,11 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                 String::new(),
             ),
             Row::Registry(c) => ("↓", s(c, "title").into(), s(c, "description").into(), String::new()),
+            Row::App(v) => {
+                let on = v["installed"] == true || v["builtin"] == true;
+                let right = if on { tr("installed").into_owned() } else { String::new() };
+                (if on { "✓" } else { "↓" }, s(v, "name").into(), s(v, "tagline").into(), right)
+            }
             Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), tr("installed").into_owned()),
             Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
             Row::Profile(v) | Row::Team(v) => {
@@ -103,6 +109,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         Tab::Bots | Tab::Teams => tr("tab switch · ↵ add · esc close"),
         Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
         Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
+        Tab::Apps => tr("tab switch · ↵ details / add · ^r refresh · esc close"),
         Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
     };
     let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();

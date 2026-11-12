@@ -6,6 +6,17 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.47.0
+### zh-Hant
+- 應用程式分頁換成 CopilotKit 審核過的連接器目錄：Google Drive、Notion、Linear、Sentry、Exa、Firecrawl 等服務，各自保留原廠的授權方式。
+- 需要登入的應用程式在瀏覽器完成授權，金鑰型的應用程式則填入自己的金鑰；兩者都只留在你的電腦上。
+- 登入回來時會核對發出的服務，移除連接器時也會一併撤銷授權。
+
+### en-US
+- The Apps tab now lists CopilotKit's reviewed connector catalogue: Google Drive, Notion, Linear, Sentry, Exa, Firecrawl and more, each keeping the vendor's own sign-in or key.
+- Apps that need a sign-in finish it in the browser, and key apps take your own key; both stay on your computer.
+- A sign-in that comes back is checked against the service that issued it, and removing a connector revokes its grant.
+
 ## 2.39.0
 
 ### zh-Hant

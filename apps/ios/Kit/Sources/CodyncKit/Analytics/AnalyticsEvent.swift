@@ -58,6 +58,10 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case whatsNewShown
     /// A dev server opened, or its address copied; the host reports what it does itself.
     case devServerAction(DevServerUse)
+    /// Find in a conversation opened.
+    case conversationFindOpened
+    /// A search in the find bar settled: whether it found anything, never the text.
+    case conversationFindSearched(found: Bool)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -234,6 +238,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .reviewLinkOpened: "review_link_opened"
         case .whatsNewShown: "whats_new_shown"
         case .devServerAction: "dev_server_action"
+        case .conversationFindOpened: "conversation_find_opened"
+        case .conversationFindSearched: "conversation_find_searched"
         }
     }
 
@@ -249,7 +255,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInStarted(provider), let .signedIn(provider): return ["provider": .string(provider.rawValue)]
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
-             .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown: return [:]
+             .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened: return [:]
+        case let .conversationFindSearched(found): return ["found": .bool(found)]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .imagePreviewAction(action, from, outcome):
             var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]

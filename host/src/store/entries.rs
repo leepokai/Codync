@@ -283,6 +283,19 @@ impl Store {
         Ok(rows)
     }
 
+    /// The newest `limit` tool calls of the work done in `lane` after `after_seq`, newest first: what a handoff's
+    /// ledger reads. Not the bot's own bookkeeping (a message sent, a memory kept), nor turn `except_turn`'s calls.
+    pub fn tools_after(&self, lane: &Lane, after_seq: i64, except_turn: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND kind = 'tool'
+               AND (?3 IS NULL OR turn != ?3) AND json_extract(data, '$.bookkeeping') IS NOT 1
+             ORDER BY seq DESC LIMIT ?4"
+        ))?;
+        let rows = st.query_map(params![lane.chat, after_seq, except_turn, limit], row_entry)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The newest `kind` entry in `lane` after `after_seq`.
     pub fn last_of_kind(&self, lane: &Lane, kind: EntryKind, after_seq: i64) -> Option<Entry> {
         let c = self.db.locked();
@@ -411,6 +424,25 @@ mod tests {
         assert_eq!(ids(s.file_messages("b1", 10).unwrap()), kept, "the Library");
         assert_eq!(ids(s.history("b1", i64::MAX, 10).unwrap()), kept, "paging, handoffs and calls");
         assert_eq!(s.last_message("b1").unwrap().text, "ship it", "the roster");
+    }
+
+    #[test]
+    fn a_ledger_reads_the_work_of_the_turns_before_the_running_one() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let tool = |turn, data: Value| s.insert_entry(&main, EntryKind::Tool, turn, &data).unwrap();
+        let edit = tool(1, json!({"title": "Edit a.rs"}));
+        tool(1, json!({"title": "Edit MEMORY.md", "bookkeeping": true}));
+        let test = tool(2, json!({"title": "cargo test", "bookkeeping": false}));
+        s.insert_entry(&main, EntryKind::User, 3, &json!({"text": "Now the docs"})).unwrap();
+        tool(3, json!({"title": "Edit b.rs"}));
+        let ids = |rows: Vec<Entry>| rows.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        let read = |after, except, limit| ids(s.tools_after(&main, after, except, limit).unwrap());
+        let (edit_id, test_id) = (edit.id.as_str(), test.id.as_str());
+        assert_eq!(read(0, Some(3), 10), [test_id, edit_id], "newest first, no bookkeeping");
+        assert_eq!(read(0, Some(3), 1), [test_id], "the running turn's calls take no place in the limit");
+        assert_eq!(read(edit.seq, Some(3), 10), [test_id]);
+        assert_eq!(read(0, None, 10).len(), 3, "between turns nothing is left out");
     }
 
     #[test]

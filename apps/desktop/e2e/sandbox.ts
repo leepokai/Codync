@@ -10,6 +10,8 @@ import type { HostSnapshot } from '../src/shared/ipc.ts'
 const root = resolve(__dirname, '../../..')
 // A scripted agent whose turn waits until a steered message joins it (host/tests/fixtures/steer_agent.py).
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
+// A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
+const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
 
 /** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
 export function sandbox() {
@@ -62,6 +64,14 @@ export async function setPref(page: Page, key: string, value: unknown) {
 export async function steerBot(page: Page, name: string, seconds: number) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
     name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' steer ${seconds}`, connectors: [], skills: [], notify: false,
+  })
+  return bot
+}
+
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`. */
+export async function echoBot(page: Page, name: string) {
+  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, connectors: [], skills: [], notify: false,
   })
   return bot
 }

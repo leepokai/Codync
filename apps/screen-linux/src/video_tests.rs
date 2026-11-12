@@ -109,5 +109,5 @@ fn capture_encodes_as_eight_bit_420_before_webrtc_negotiates() {
 fn capture_source_builds_on_the_installed_pipewire() {
     gst::init().unwrap();
     let fd = std::fs::File::open("/dev/null").unwrap();
-    capture_source(fd.into(), 0).unwrap();
+    crate::portal::capture_source(fd.into(), 0).unwrap();
 }

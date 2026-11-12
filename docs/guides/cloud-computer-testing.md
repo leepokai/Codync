@@ -35,7 +35,10 @@ Everything a run creates is its own and goes away with it:
   the release (the real first-boot path: claim ticket, service, claim), and `CLOUD_HOST_ENV` gives its service
   `CODYNC_CLOUD_URL`, `CODYNC_ANALYTICS_ENV=dev` (its events say `env: dev`, outside every chart; Dev machines
   set it too) and, for the sleep steps,
-  a short `CODYNC_SLEEP_IDLE_SECS`.
+  a short `CODYNC_SLEEP_IDLE_SECS`. It replaces only `codync-host`: the screen helper (`codync-screen`) stays the
+  release's, from `install.sh`. To test a helper change, build it like the host (`apps/screen-linux`, on the build
+  machine below), copy it over `codync-screen` in the agents' user's `~/.local/bin` (as root, owned by
+  `codync-agent`), then restart that user's `codync-host` service.
 - **Linux build**: Boat machines are x86_64 and the Lima VM is arm64, so build on a Boat build machine (a
   stopped `codync-build` sandbox resumed for builds, a few cents an hour): copy `host/`, `packaging/`, the
   language catalogs and `docs/reference/fixtures/` in, `CODYNC_ENV=main cargo build --bin codync-host`, `strip`
@@ -118,7 +121,9 @@ InstaBox) pasted and shown as its hint; "+" → New cloud computer lists every p
 working key opens that provider's key sheet, and is picked once its key is saved; a computer's `⋯` opens its
 provider's key too) → a name → create → "Preparing your cloud
 computer…" → claimed, under that name → each app (desktop included) gets access by itself → chat with a bot on it, and create and
-set up bots there from each app; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
+set up bots there from each app; its screen from each app (phones: **Screen** in Manage computers and a chat's
+**Computer**; desktop: **Screen** on its sidebar heading) shows its Xfce desktop and takes clicks and typing, and a bot
+with *Use the computer* works there; on the desktop, hide the window → the channel closes and the computer can sleep; idle → "Sleeping · wakes when you
 message" → send → it wakes and answers; an app with a newer `minHost` → "Your cloud computer is updating…" →
 back; `APP_FLOOR_*` → *Update this app*; delete snapshots (awake: done; asleep: refused; preparing: off); *Rename…* → the card, the account's
 computers and the computer's own name follow, in the other apps already connected to it too; a second one on the

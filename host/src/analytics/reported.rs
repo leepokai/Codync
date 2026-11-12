@@ -84,6 +84,12 @@ pub enum Reported {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ImageFailure>,
     },
+    /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
+    ConversationFindOpened,
+    ConversationFindSearched {
+        /// Whether the search found anything; never the text searched for.
+        found: bool,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -530,6 +536,11 @@ mod tests {
                 json!({"event": "image_preview_action", "app": "desktop", "action": "download", "from": "viewer",
                     "outcome": "failed", "error": "transfer"}),
                 Event::ImagePreviewAction,
+            ),
+            (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
+            (
+                json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
+                Event::ConversationFindSearched,
             ),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (

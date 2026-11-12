@@ -26,14 +26,20 @@ public struct ThreadView: View {
     /// The chat stays on the newest message until the reader scrolls away.
     @State var following = true
     @State var loadingEarlier = false
+    /// Find in the conversation; nil while its bar is closed.
+    @State var find: ConversationFind?
+    /// Bumped to bring the shown match's message into view (a new text, a step).
+    @State var findReveal = 0
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var bot: Bot? { model.bots[botId] }
 
-    /// The messages (each platform's own `transcript`, in its `ThreadView+` file) and the
-    /// composer, without the platform's top chrome.
+    /// The messages, the composer and the find bar, without the platform's top chrome.
     private var chat: some View {
-        transcript
+        let items = chatItems
+        let matches = find.map { ConversationFind.matches(in: Self.findable(items), query: $0.query) } ?? []
+        let shown = find?.index(in: matches).map { matches[$0] }
+        return transcript(items, shown: shown)
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 6) {
@@ -54,15 +60,64 @@ public struct ThreadView: View {
         }
         // Grok Bot's call: a bar floating over the chat, which stays readable and usable.
         .overlay(alignment: .top) {
-            if calling {
-                CallView(botId: botId, isSpeaking: $callSpeaking, interrupt: $interruptCall) {
-                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = false }
+            VStack(spacing: 8) {
+                if calling {
+                    CallView(botId: botId, isSpeaking: $callSpeaking, interrupt: $interruptCall) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = false }
+                    }
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                    .padding(.top, 4)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                if let open = find {
+                    // Not `Binding($find)`: its force unwrap crashes when the closing bar's binding updates once more.
+                    let binding = Binding { find ?? open } set: { if find != nil { find = $0 } }
+                    FindBar(find: binding, matches: matches, step: { stepFind($0, in: matches) }, close: { closeFind(in: matches) })
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.top, 4)
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: calling)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: find == nil)
+        // A new text shows its first match; it counts as searched once typing pauses.
+        .onChange(of: find?.query) { findReveal += 1 }
+        // The first match found is held, so earlier messages with matches loading above don't move it.
+        .onChange(of: find?.shown == nil && !matches.isEmpty) { find?.pin(matches) }
+        .task(id: find?.query) {
+            try? await Task.sleep(for: .milliseconds(700))
+            if !Task.isCancelled { reportFind(found: !matches.isEmpty) }
+        }
+    }
+
+    // MARK: find
+
+    /// The text find searches: each message's own words, not separators, notices or exchanges.
+    static func findable(_ items: [ChatItem]) -> [(id: String, text: String)] {
+        items.compactMap { item in
+            guard case let .entry(e, _) = item.kind, e.kind == "user" || e.kind == "agent", let text = e.data.text else { return nil }
+            return (item.id, text)
+        }
+    }
+
+    func openFind() {
+        guard find == nil else { return }
+        Analytics.shared.capture(.conversationFindOpened)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = ConversationFind() }
+    }
+
+    private func stepFind(_ forward: Bool, in matches: [ConversationFind.Match]) {
+        find?.step(forward: forward, in: matches)
+        findReveal += 1
+        reportFind(found: !matches.isEmpty)
+    }
+
+    /// Closing clears the highlight with the bar.
+    private func closeFind(in matches: [ConversationFind.Match]) {
+        reportFind(found: !matches.isEmpty)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = nil }
+    }
+
+    private func reportFind(found: Bool) {
+        if let event = find?.searched(found: found) { Analytics.shared.capture(event) }
     }
 
     var conversation: some View {
@@ -350,10 +405,14 @@ extension ThreadView {
     /// iPhone's messages: all this device has, earlier ones from the computer as the reader
     /// scrolls up; the chat follows the newest message until they scroll away, and a reply is
     /// revealed steadily as it's written.
-    var transcript: some View {
-        // What voice calls carried shows in each call's conversation, not in the chat.
-        // Messages waiting behind the bot's work show above the composer instead.
-        let items = ChatItem.build(model.chat(botId).hidingCalls().hidingQueue(working: busy))
+    /// What voice calls carried shows in each call's conversation, not in the chat.
+    /// Messages waiting behind the bot's work show above the composer instead.
+    var chatItems: [ChatItem] {
+        ChatItem.build(model.chat(botId).hidingCalls().hidingQueue(working: busy))
+    }
+
+    /// `shown`: the find's current match, whose message is highlighted and brought into view.
+    func transcript(_ items: [ChatItem], shown: ConversationFind.Match?) -> some View {
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {
@@ -370,7 +429,13 @@ extension ThreadView {
                 if bot.isGroup { GroupIntroCard(group: bot).padding(.top, 40) } else { IntroCard(bot: bot).padding(.top, 40) }
             })
         }
-        rows += items.map { item in ConversationRow(item.id, isUserMessage: item.isUserMessage) { row(item) } }
+        rows += items.map { item in
+            ConversationRow(item.id, isUserMessage: item.isUserMessage) {
+                row(item)
+                    .background(shown?.id == item.id ? Palette.attention.opacity(0.18) : .clear)
+                    .accessibilityAddTraits(shown?.id == item.id ? .isSelected : [])
+            }
+        }
         // Offline, "working" is only what the computer last said; don't show it as live.
         if let bot, working {
             rows.append(ConversationRow("working") {
@@ -381,7 +446,8 @@ extension ThreadView {
             })
         }
         // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
-        return ConversationList(rows: rows, following: $following, nearTop: { showEarlier() }, refresh: {
+        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) }
+        return ConversationList(rows: rows, following: $following, reveal: reveal, nearTop: { showEarlier() }, refresh: {
             model.restartStream()
             _ = try? await model.ready()
         })
@@ -414,6 +480,9 @@ extension ThreadView {
                         Button(action: openDetails) { connectionSubtitle }
                             .buttonStyle(.plain)
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L10n.tr("Find in conversation"), systemImage: "magnifyingglass", action: openFind)
                 }
                 if model.screen != nil {
                     ToolbarItem(placement: .topBarTrailing) { computerButton }

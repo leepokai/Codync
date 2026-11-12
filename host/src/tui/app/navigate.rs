@@ -24,6 +24,7 @@ impl App {
 
     pub(super) fn start_typing(&mut self) {
         if self.selected.is_some() {
+            self.close_find();
             self.typing = true;
             self.chat_page = true;
             self.focus = Focus::Chat;

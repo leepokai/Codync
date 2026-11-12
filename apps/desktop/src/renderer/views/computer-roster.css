@@ -67,8 +67,8 @@
   color: var(--attention);
 }
 
-/* A computer's own Extensions, always beside its heading. */
-.computer-roster-extensions {
+/* A computer's own Screen and Extensions, always beside its heading. */
+.computer-roster-action {
   flex: none;
 }
 

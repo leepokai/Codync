@@ -1,7 +1,5 @@
 package com.codync.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -174,22 +172,6 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     }
 }
 
-/** The menu a message opens on long press: copy, reply quoting it, what the agent did, and a voice-note bubble's download. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?,
-    download: MenuItem? = null) = buildList {
-    add(MenuItem("Copy", icon = "square.on.square") {
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
-    })
-    if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
-    if (download != null) add(download)
-    if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
-}
-
-internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "✅")
-
-private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReactions, entry.reactions) { emoji ->
-    store.command("react", body("entryId" to entry.id, "emoji" to emoji), "react:" + entry.id)
-}
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
@@ -197,12 +179,13 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val menu = MessageMenu.of(entry, store, reply, trace = null)
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
+        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
         if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
-                messageMenu(context, entry, reply, null)
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
+                menu.items(listOf(textCopyItem(context, entry.text)))
             }) { UserText(entry.text, quote) }
         SendStatusLine(entry.status)
     }
@@ -270,30 +253,33 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val files = entry.files
     val artifact = entry.artifact
     val voiceNote = entry.voiceNote
+    val menu = MessageMenu.of(entry, store, reply, openTrace)
+    val textMenu = { menu.items(listOf(textCopyItem(context, entry.text))) }
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note
         // instead plays inside its bubble, over the message it captions.
-        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = reactionPick(entry, store),
-            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) { messageMenu(context, entry, reply, openTrace) })
+        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,
+            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }, items = textMenu))
         else if (voiceNote != null) {
             val player = rememberSharedAudio(entry, voiceNote, store)
             val download = state.fileDownloads[voiceNote.id]
             val busy = download is FileDownloadState.Downloading
             val save = { if (busy) store.cancelFile(voiceNote.id) else store.saveFile(entry.id, entry.botId, voiceNote) }
+            val voiceMenu = MessageMenu.of(entry, store, reply, openTrace, MenuItem(if (busy) "Cancel download" else "Download",
+                icon = if (busy) "xmark" else "arrow.down.to.line", action = save))
             Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-                .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() },
+                .contextActions(reactions = voiceMenu.reactions, onClick = { focus.clearFocus() },
                     preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) }) {
-                    messageMenu(context, entry, reply, openTrace, MenuItem(if (busy) "Cancel download" else "Download",
-                        icon = if (busy) "xmark" else "arrow.down.to.line", action = save))
+                    voiceMenu.items(listOf(textCopyItem(context, entry.text)))
                 }) { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false) }
         }
-        else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }) { messageMenu(context, entry, reply, openTrace) },
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (file in files) FileDownloadCard(entry, file, state, store)
+        // Each card holds its own menu: a picture's copies the picture.
+        else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (file in files) FileDownloadCard(entry, file, menu, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace)
-            }) { AgentText(entry.text, selectable = false) }
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
+            AgentText(entry.text, selectable = false)
+        }
     }
 }
 
@@ -374,7 +360,8 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 /** A routine's line in the main chat: tapping it opens Routines on that routine; a failed run the user can run again
  *  has a retry button. */
 @Composable internal fun RoutineNotice(entry: Entry, retrying: Boolean, retry: () -> Unit, open: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
         Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)

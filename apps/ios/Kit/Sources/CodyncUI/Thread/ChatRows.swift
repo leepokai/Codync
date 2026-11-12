@@ -122,7 +122,7 @@ struct UserBubble: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             if let attachments = entry.data.attachments, !attachments.isEmpty {
-                AttachmentList(attachments: attachments, botId: entry.botId)
+                AttachmentList(attachments: attachments, botId: entry.botId, menu: menu)
             }
             if !(entry.data.text ?? "").isEmpty || entry.data.replyTo != nil { text }
                 status
@@ -144,11 +144,12 @@ struct UserBubble: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .contextActions(reactions: model.reactionPick(entry)) {
-                    var items = [MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) }]
-                    if let reply { items.append(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply)) }
-                    return items
-                }
+                .contextActions(reactions: menu.reactions) { menu.items(copy: menu.textCopy) }
+    }
+
+    private var menu: MessageMenu {
+        MessageMenu(entry: entry, reactions: model.reactionPick(entry),
+                    actions: reply.map { [MenuItem("Reply", icon: "arrowshape.turn.up.left", action: $0)] } ?? [])
     }
 
     @ViewBuilder private var status: some View {
@@ -192,39 +193,42 @@ struct AgentBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Group {
-                if let artifact = entry.data.artifact {
-                    ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
-                } else if let voiceNote = entry.data.voiceNoteFile {
-                    VoiceNoteBubble(entry: entry, file: voiceNote)
-                } else if let files = entry.data.files, !files.isEmpty {
-                    ForEach(files) { file in FileDownloadCard(entry: entry, file: file) }
-                } else {
-                    MarkdownText(entry.data.text ?? "").equatable()
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            if entry.data.artifact == nil, let voiceNote = entry.data.voiceNoteFile {
+                VoiceNoteBubble(entry: entry, file: voiceNote)
+                    .contextActions(reactions: menu.reactions) { menu.items(copy: menu.textCopy) }
+            } else if entry.data.artifact == nil, let files = entry.data.files, !files.isEmpty {
+                // Each card has the menu, its picture's copy items in Copy's place.
+                ForEach(files) { file in FileDownloadCard(entry: entry, file: file, menu: menu) }
+            } else {
+                Group {
+                    if let artifact = entry.data.artifact {
+                        ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
+                    } else {
+                        MarkdownText(entry.data.text ?? "").equatable()
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
                 }
+                .contextActions(reactions: menu.reactions) { menu.items(copy: menu.textCopy) }
             }
-                .contextActions(reactions: model.reactionPick(entry)) {
-                    var items = [
-                        MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) },
-                        MenuItem("Show what it did", icon: "list.bullet", action: openTrace),
-                    ]
-                    if let reply { items.insert(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply), at: 1) }
-                    if let voiceNote = entry.data.voiceNoteFile { items.insert(downloadItem(voiceNote), at: items.count - 1) }
-                    return items
-                }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
+    }
+
+    private var menu: MessageMenu {
+        var actions = [MenuItem("Show what it did", icon: "list.bullet", action: openTrace)]
+        if let reply { actions.insert(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply), at: 0) }
+        if let voiceNote = entry.data.voiceNoteFile { actions.append(downloadItem(voiceNote)) }
+        return MessageMenu(entry: entry, reactions: model.reactionPick(entry), actions: actions)
     }
 
     /// A voice-note bubble's Download row: the player's own action, on the menu.
     private func downloadItem(_ file: SharedFile) -> MenuItem {
         let downloading = model.fileDownloads.isDownloading(file.id)
         return MenuItem(downloading ? "Cancel download" : "Download", icon: "arrow.down.to.line") {
-            model.fileDownloads.toggle(client: model.client, entry: entry, file: file)
+            model.fileDownloads.toggle(client: model.client, entryId: entry.id, botId: entry.botId, file: file)
         }
     }
 }

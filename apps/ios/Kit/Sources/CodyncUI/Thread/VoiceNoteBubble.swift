@@ -48,6 +48,6 @@ struct VoiceNoteBubble: View {
     }
 
     private func download() {
-        model.fileDownloads.toggle(client: model.client, entry: entry, file: file)
+        Motion.animate { model.fileDownloads.toggle(client: model.client, entryId: entry.id, botId: entry.botId, file: file) }
     }
 }

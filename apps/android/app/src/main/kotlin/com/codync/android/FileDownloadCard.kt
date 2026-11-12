@@ -25,14 +25,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,54 +46,56 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** A file a bot shared, as iOS `FileDownloadCard`: an image shows itself (tap for full size), a voice note plays, then its
- *  name and size, and a button to download (or cancel). One accessibility element: `<name>, <caption>` plus the actions. */
-@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, state: AppState, store: AppStore) {
+ *  name and size, and a button to download (or cancel). Holding it opens its message's `menu`; an image's copies the
+ *  picture or its name. */
+@Composable internal fun FileDownloadCard(entry: Entry, file: SharedFile, menu: MessageMenu, state: AppState, store: AppStore) {
+    val context = LocalContext.current
+    val focus = LocalFocusManager.current
     var viewing by remember { mutableStateOf(false) }
     val player = if (file.showsAsAudio) rememberSharedAudio(entry, file, store) else null
     val scope = rememberCoroutineScope()
     val translate = translator()
-    val download = state.fileDownloads[file.id]
-    val busy = download is FileDownloadState.Downloading
-    val caption = detail(file, download, player, translate)
+    val caption = detail(file, state.fileDownloads[file.id], player, translate)
     val play = { player?.let { scope.launch { it.toggle() } }; Unit }
-    val save = { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file) }
-    val view = if (file.showsAsImage) ({ viewing = true }) else null
-    Column(Modifier.fillMaxWidth().clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent)
-        .clearAndSetSemantics {
-            contentDescription = "${file.name}, $caption"
-            audioSeek(player)
-            customActions = listOfNotNull(
-                player?.let { audio -> CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true } },
-                CustomAccessibilityAction(translate(if (busy) "Cancel download" else "Download")) { save(); true },
-                view?.let { open -> CustomAccessibilityAction(translate("View")) { open(); true } })
-            onClick(label = when {
-                view != null -> translate("View")
-                player != null -> translate(if (player.phase == AudioPhase.Playing) "Pause" else "Play")
-                else -> translate(if (busy) "Cancel download" else "Download")
-            }) { (view ?: player?.let { play } ?: save)(); true }
-        }.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }) {
+        menu.items(if (file.showsAsImage) imageCopyItems(store, file.imageSource(entry.id, store)) else listOf(textCopyItem(context, entry.text)))
+    }.clip(RoundedRectangle(16.dp)).background(Palette.bubbleAgent).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (file.showsAsImage) SharedImage(file, entry.id, 720, state, store, Modifier.sizeIn(maxHeight = 280.dp)
-            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true })
-        FileRow(file, download, player, caption, save, play)
+            .clip(RoundedRectangle(10.dp)).plainButton { viewing = true }.semantics { contentDescription = file.name })
+        FileRow(entry, file, player, caption, play, state, store)
     }
-
-    SharedImageSheet(file.takeIf { viewing }, entry.id, state, store) { viewing = false }
+    SharedImageSheet(file.takeIf { viewing }, entry, menu, state, store) { viewing = false }
 }
 
-@Composable private fun FileRow(file: SharedFile, download: FileDownloadState?, audio: SharedAudio?, caption: String,
-    save: () -> Unit, play: () -> Unit) {
+@Composable private fun FileRow(entry: Entry, file: SharedFile, audio: SharedAudio?, caption: String, play: () -> Unit,
+    state: AppState, store: AppStore) {
+    val translate = translator()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (audio != null) SharedAudioButton(audio, play) else Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
+        if (audio != null) SharedAudioButton(audio, play, Modifier.semantics(mergeDescendants = true) {
+            contentDescription = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")
+            audioSeek(audio)
+        }) else Symbol(AttachmentIcon.symbol(file.name), size = 24.dp, tint = Palette.secondary)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(caption, style = Type.caption2, color = if (audio?.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
             if (audio != null && audio.duration > 0.0) AudioProgress(audio)
         }
-        Box(Modifier.size(48.dp).plainButton(action = save), contentAlignment = Alignment.Center) {
-            Symbol(if (download is FileDownloadState.Downloading) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
-        }
+        DownloadButton(entry, file, state, store)
     }
 }
+
+/** A shared file's download button, on its card and in its viewer: downloads (again after a failure or a save), or cancels
+ *  the download under way. In the image viewer (`inViewer`) its end is reported. */
+@Composable internal fun DownloadButton(entry: Entry, file: SharedFile, state: AppState, store: AppStore, inViewer: Boolean = false) {
+    val busy = state.fileDownloads[file.id] is FileDownloadState.Downloading
+    Box(Modifier.size(36.dp).plainButton { if (busy) store.cancelFile(file.id) else store.saveFile(entry.id, entry.botId, file, if (inViewer) ::reportViewerDownload else null) }
+        .semantics { contentDescription = (if (busy) "Cancel download " else "Download ") + file.name }, contentAlignment = Alignment.Center) {
+        Symbol(if (busy) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)
+    }
+}
+
+/** How a download from the image viewer ended. */
+private fun reportViewerDownload(error: ImageError?) = Analytics.capture(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error))
 
 /** The progress bar of a playing voice note, filled left to right, read again about four times a second while it
  *  plays; as wide as [modifier] lets it, the whole row by default. Tap or drag it to move there: its 48 dp touch strip

@@ -221,8 +221,8 @@ private class MediaSound(private val manager: AudioManager, private val player: 
 
 /** A voice note's play/pause/loading, in place of its file icon: a 48 dp target over the icon's 24 dp slot, so the
  *  name lines up with the other file cards. */
-@Composable internal fun SharedAudioButton(audio: SharedAudio, tapped: () -> Unit) {
-    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+@Composable internal fun SharedAudioButton(audio: SharedAudio, tapped: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.size(24.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(48.dp).plainButton(action = tapped), contentAlignment = Alignment.Center) {
             when (audio.phase) {
                 AudioPhase.Loading -> Spinner(24.dp, color = Palette.text)

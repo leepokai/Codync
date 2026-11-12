@@ -11,10 +11,16 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ### zh-Hant
 - 新增「將有新動態的機器人移到最前面」：在電腦的設定裡開啟後，有新訊息（你的訊息、bot 的回覆或 routine 執行）的 bot 會自動排到列表最上面。
 - 在對話中尋找：點聊天右上角的放大鏡，輸入文字就會顯示有幾個符合項目，用上、下箭頭在它們之間移動，目前的訊息會被標示出來。搜尋的是已載入的訊息。
+- 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
+- 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
+- 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
 
 ### en-US
 - New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
 - Find in a conversation: tap the magnifying glass at the top right of a chat and type. The bar shows how many matches there are, the arrows move between them, and the message with the current match is highlighted. It searches the messages loaded so far.
+- Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
+- Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
+- Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
 
 ## 2.44.1
 ### zh-Hant

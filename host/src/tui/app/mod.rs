@@ -289,6 +289,13 @@ impl App {
         self.lane(id).into_iter().rev().find(|e| e.pending())
     }
 
+    /// The newest pending card of one kind: F-keys answer the choice card and y/a/n/N the approval, even when a
+    /// card of the other kind came after it.
+    pub fn pending_of(&self, kind: Kind) -> Option<&Entry> {
+        let id = self.selected.as_ref()?;
+        self.lane(id).into_iter().rev().find(|e| e.kind == kind && e.pending())
+    }
+
     /// The message the composer replies to, in the selected chat.
     pub fn replying_to(&self) -> Option<&Entry> {
         let (id, reply) = (self.selected.as_ref()?, self.reply.as_ref()?);

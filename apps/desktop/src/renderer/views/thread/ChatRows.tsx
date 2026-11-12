@@ -18,6 +18,7 @@ import { messageCopyItems, type MessageMenu } from './use-image-actions'
 import { callLength, relativeTime } from './chat-items'
 import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
+import { DecisionCard } from './DecisionCard'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
 import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
@@ -66,6 +67,7 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
         </VStack>
       )
     default:
+      if (entry.kind === 'notice' && entry.data.decision) return <div className="chat-row group-start"><LiveDecision entry={entry} /></div>
       if (entry.data.connectionRequest) return <div className="chat-row group-start"><ConnectionRequestCard entry={entry} /></div>
       if (entry.data.handoff) return <div className="chat-row notice"><HandoffNotice entry={entry} card={entry.data.handoff} /></div>
       if (entry.data.agentSwitch) return <div className="chat-row notice"><AgentSwitchNotice entry={entry} carried={entry.data.agentSwitch.carried} /></div>
@@ -77,6 +79,12 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
 function LivePermission({ entry }: { entry: Entry }) {
   const store = useLiveStore()
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
+}
+
+/** The user's press on a choice card is on its way to the computer. */
+function LiveDecision({ entry }: { entry: Entry }) {
+  const store = useLiveStore()
+  return <DecisionCard entry={entry} answering={store.answering.get(entry.id) ?? null} respond={(option) => store.decide(entry, option)} />
 }
 
 /** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */

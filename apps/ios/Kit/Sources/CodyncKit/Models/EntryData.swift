@@ -33,6 +33,11 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var diffs: [FileDiff]?
     public var locations: [Location]?
     public var options: [PermissionOption]?
+    /// Additive notice card (its `status` is a `DecisionStatus`). Permission options retain their existing object format.
+    public var decision: Bool?
+    public var question: String?
+    public var choices: [String]?
+    public var recommended: Int?
     public var selected: String?
     public var command: String?
     public var detail: String?
@@ -174,3 +179,13 @@ public struct Attachment: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+
+/// A choice card's (`request_decision`) lifecycle, as the host writes it in `status`.
+public enum DecisionStatus: String, Sendable {
+    case pending, answered, expired
+}
+
+public extension EntryData {
+    /// A choice card's status; nil for a value this app doesn't know.
+    var decisionStatus: DecisionStatus? { status.flatMap(DecisionStatus.init(rawValue:)) }
+}

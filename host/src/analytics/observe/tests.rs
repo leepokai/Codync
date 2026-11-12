@@ -202,6 +202,21 @@ fn connectors_skills_and_agents() {
 }
 
 #[test]
+fn decision_events_are_reported_only_by_the_actor_after_delivery() {
+    assert_eq!(
+        props(
+            "chatCall",
+            &json!({"botId": "b", "name": "request_decision", "arguments": {
+            "question": "Ship now or wait?", "options": ["Ship", "Wait"], "recommended": "Wait" }})
+        ),
+        None,
+        "API entry is not card publication"
+    );
+    assert_eq!(props("chatCall", &json!({"name": "request_decision"})).map(|(_, p)| p["options"].clone()), None);
+    assert_eq!(props("respondDecision", &json!({"entryId": "e", "option": "Ship"})), None);
+}
+
+#[test]
 fn a_bot_edit_names_the_settings_it_changes() {
     let stored: BotConfig =
         serde_json::from_value(json!({"id": "b1", "name": "Ada", "backend": "codex", "cwd": "/tmp", "model": "gpt-5"}))

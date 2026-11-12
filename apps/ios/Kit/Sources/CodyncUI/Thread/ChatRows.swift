@@ -50,7 +50,11 @@ struct ChatRow: View {
             }
             .padding(.top, 12)
         default:
-            if let request = entry.data.connectionRequest {
+            if entry.kind == "notice", entry.data.decision == true {
+                DecisionCard(entry: entry, answering: model.answering[entry.id]) { option in
+                    model.decide(entry, option: option)
+                }.padding(.top, 12)
+            } else if let request = entry.data.connectionRequest {
                 ConnectionRequestCard(entry: entry, request: request).padding(.top, 12)
             } else if let card = entry.data.handoff {
                 HandoffCardRow(entry: entry, card: card).padding(.top, 10)

@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,6 +33,13 @@ data class Entry(
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
     val status: String? get() = data.text("status")
+    val isDecision: Boolean get() = kind == "notice" && data["decision"]?.jsonPrimitive?.booleanOrNull == true
+    /** A choice card's status; null for a value this app doesn't know. */
+    val decisionStatus: DecisionStatus? get() = DecisionStatus.entries.firstOrNull { it.wire == status }
+    /** A choice card's options, in order. */
+    val choices: List<String> get() = (data["choices"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    /** The index of a choice card's suggested option. */
+    val recommended: Int? get() = (data["recommended"] as? JsonPrimitive)?.intOrNull
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     /** The voice note playing at the top of this reply's bubble: only a host that flagged it and whose one file is a
@@ -97,10 +106,12 @@ private data class EntryFields(
     val final: Boolean? = null, val title: String? = null, val command: String? = null,
     val detail: String? = null, val output: String? = null, val author: String? = null,
     val options: List<PermissionChoice>? = null, val reactions: List<String>? = null,
+    val decision: Boolean? = null, val question: String? = null,
+    val choices: List<String>? = null, val recommended: Int? = null,
     val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
     val callSeconds: Long? = null,
 )
-@Serializable private data class PermissionChoice(val optionId: String, val name: String, val kind: String)
+@Serializable internal data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 /** A quoted message: its entry, who wrote it (`user` or a bot id) and its text, cut short by the computer; `artifact` when it
  *  quotes an artifact card (the message is about that artifact). */
 @Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null)
@@ -215,3 +226,6 @@ data class MirrorSnapshot(
     val screen: JsonObject? = null,
     val icons: Map<String, CustomIcon> = emptyMap(),
 )
+
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+enum class DecisionStatus(val wire: String) { Pending("pending"), Answered("answered"), Expired("expired") }

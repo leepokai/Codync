@@ -286,6 +286,16 @@ export class BotStore extends BotSync {
     })
   }
 
+  /** Presses one of a choice card's options (`request_decision`): the choice is the bot's answer and the user's
+   *  next message, both from the computer. */
+  decide(entry: Entry, option: string) {
+    this.answer(entry, option, async (c) => {
+      await c.call('respondDecision', { entryId: entry.id, option })
+      // The card's own update follows on the events stream; hold the spinner until then.
+      await sleep(2000)
+    })
+  }
+
   /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
   steer(entry: Entry) {
     this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))

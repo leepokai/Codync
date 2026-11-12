@@ -518,7 +518,7 @@ async fn message_turns_have_no_resume_marker_and_restart_expires_both_notices() 
     // A new store connection applies the same startup cleanup to the
     // persisted queued and running notices, without replaying a prompt.
     let store = Store::open(&f.dir.join("test.db")).unwrap();
-    assert_eq!(store.expire_pending().unwrap(), 4);
+    assert_eq!(store.expire_pending().unwrap().closed, 4);
     for receipt in [&running, &queued] {
         assert!(f.notices(receipt).iter().all(|e| e.data["status"] == "failed"
             && e.data["text"].as_str().unwrap().contains("Interrupted by host restart")));

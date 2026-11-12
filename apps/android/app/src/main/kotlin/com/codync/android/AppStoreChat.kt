@@ -256,6 +256,11 @@ fun AppStore.respond(entry: Entry, option: String?) = action("permission:" + ent
     delay(2_000)
 }
 
+fun AppStore.decide(entry: Entry, option: String) = action("decision:" + entry.id) {
+    ready().call("respondDecision", body("entryId" to entry.id, "option" to option))
+    delay(2_000)
+}
+
 /** A queued message goes now: into the running turn when the agent can take it, else as the next turn (the host decides). */
 internal fun AppStore.steer(entry: Entry) = command("steer", body("botId" to entry.botId, "entryId" to entry.id), "steer:" + entry.id)
 

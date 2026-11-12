@@ -43,7 +43,7 @@ The host listens on `0.0.0.0:19222`. The local API (`/api/*`, `/events`, termina
 
 ## Limitations on a headless server
 
-- **Remote screen and the `computer` tool don't work.** They need a desktop session (portals + GStreamer, `apps/screen-linux/`). The feature turns itself on only while a graphical session is running, so on a server it stays off and nothing else is affected.
+- **Remote screen and the `computer` tool need a display.** They run on a desktop session (portals) or a plain X server, a virtual one included (`Xvfb`, with `DISPLAY` in the host's service environment), through GStreamer (`apps/screen-linux/`; packages in [remote screen](../features/remote-screen.md#cloud-computers)). The feature turns itself on only while a display is running, so on a server without one it stays off and nothing else is affected. Codync Cloud computers get such a display by themselves.
 - **No desktop app.** The Linux desktop app (`codync`, AppImage/deb/tar.gz) needs a graphical session; it uses the installed `codync-host`. On a server, use the phone, the desktop app on another computer over SSH, or `codync-host tui`.
 - **Keep-awake is a no-op.** The host tries `systemd-inhibit` while a bot works; VMs don't sleep, and failure only logs a warning.
 - **One of the account's computers.** A VM pairs like any other computer; the phones show it beside the rest, under its own heading.

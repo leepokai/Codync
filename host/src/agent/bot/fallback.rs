@@ -10,16 +10,23 @@ pub(super) use park::resume_step;
 use super::{Actor, Done, NoticeStyle};
 use crate::LockExt;
 use crate::agent::fallback::{self, Reason, carry, rest};
+use crate::analytics::Carried;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-/// Longest handoff a chat line carries for the apps to unfold.
+/// What a chat line carries of a handoff for the apps to unfold, in bytes (`carry::excerpt`).
 const LINE_CARRIED: usize = 8_000;
 /// Chat messages read for a recap or a catch-up.
 const READ: i64 = 120;
 /// Tool calls a takeover lists, the latest ones.
 const TOOLS_LISTED: usize = 40;
+
+/// The context window agent `account` last reported in `bot`'s own chat, in tokens (`note_agent_window`). Deleted with
+/// the bot's other `fallback.` records.
+fn agent_window_key(bot: &str, account: &str) -> String {
+    format!("fallback.window.{bot}.{account}")
+}
 
 /// What a turn needs to start again on the next agent.
 #[derive(Clone)]
@@ -36,8 +43,9 @@ pub(super) struct Relay {
     attempt: Option<Attempt>,
     /// Agents (their `rest::account`) this turn already failed on.
     tried: Vec<String>,
-    /// Agents (their `rest::account`) that lack their step's model: skipped until the bot's settings change.
-    no_model: Vec<String>,
+    /// Agents (their `rest::account`) that can't run their step as set up (no such model or mode): skipped, and the
+    /// turn moves on, without resting them.
+    skipped: Vec<String>,
     /// Agents this turn left signed out, in order, whose sign-in cards are in the chat. When no agent can answer, the
     /// first one's card holds the turn's messages.
     signed_out: Vec<String>,
@@ -74,7 +82,7 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
 
 impl Actor {
     /// The step of the agent the bot is on (its own: 0).
-    fn step(&self) -> Option<usize> {
+    pub(super) fn step(&self) -> Option<usize> {
         fallback::step_of(&self.base, &self.cfg.backend)
     }
 
@@ -84,7 +92,7 @@ impl Actor {
         (0..fallback::steps(&self.base)).find(|&s| {
             let account = fallback::account(&self.base, s);
             !self.relay.tried.contains(&account)
-                && !self.relay.no_model.contains(&account)
+                && !self.relay.skipped.contains(&account)
                 && rest::get(&self.hub.store, &account, now).is_none()
         })
     }
@@ -150,7 +158,7 @@ impl Actor {
             && let Some(id) = self.relay.line.take()
             && let Some(mut line) = self.hub.store.entry(&id)
         {
-            line.data["agentSwitch"]["carried"] = crate::agent::acp::truncate(text, LINE_CARRIED).into();
+            line.data["agentSwitch"]["carried"] = carry::excerpt(text, LINE_CARRIED).into();
             self.hub.set_entry(&id, &line.data);
         }
         self.relay.carried = text;
@@ -205,34 +213,101 @@ impl Actor {
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
     /// replies count, never from before the user last started a new session.
     fn recap(&self, from: &str, from_session: Option<&str>) -> Option<String> {
-        let bot = &self.base.id;
-        let main = Lane::main(bot);
-        let fresh: i64 = self.hub.store.kv_get(&park::fresh_key(bot)).and_then(|v| v.parse().ok()).unwrap_or(0);
-        let current = self.relay.attempt.as_ref().map(|a| a.entries.as_slice()).unwrap_or_default();
-        let messages = |after: i64| -> Option<Vec<Entry>> {
-            let mut entries = self.hub.store.messages_after(&main, after.max(fresh), READ).ok()?;
-            entries.retain(|e| !current.contains(&e.id));
-            Some(entries)
+        let (kind, room, text) = if self.session_fresh {
+            let room = self.agent_window().map(carry::room);
+            (Carried::Recap, room, self.recap_text(from, from_session, room)?)
+        } else {
+            // A catch-up isn't sized to the agent's window.
+            (Carried::CatchUp, None, self.catch_up_text()?)
         };
-        if !self.session_fresh {
-            let left = self.hub.store.kv_get(&park::left_key(bot, &self.cfg.backend)).and_then(|v| v.parse().ok());
-            return carry::catch_up(&carry::said(&messages(left.unwrap_or(i64::MAX))?));
-        }
-        let entries = messages(0)?;
+        crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, kind, text.len(), room.is_some());
+        Some(text)
+    }
+
+    /// The main chat's last entry when the user last started a new session: no agent hears what came before it.
+    fn fresh(&self) -> i64 {
+        self.hub.store.kv_get(&park::fresh_key(&self.base.id)).and_then(|v| v.parse().ok()).unwrap_or(0)
+    }
+
+    /// The main chat's messages after `after`, without the running turn's own.
+    fn main_messages(&self, after: i64) -> Option<Vec<Entry>> {
+        let current = self.relay.attempt.as_ref().map(|a| a.entries.as_slice()).unwrap_or_default();
+        let mut entries = self.hub.store.messages_after(&Lane::main(&self.base.id), after, READ).ok()?;
+        entries.retain(|e| !current.contains(&e.id));
+        Some(entries)
+    }
+
+    /// For an agent back in the session it had: what was said, and what the other agents did, since it left.
+    fn catch_up_text(&self) -> Option<String> {
+        let left =
+            self.hub.store.kv_get(&park::left_key(&self.base.id, &self.cfg.backend)).and_then(|v| v.parse().ok());
+        let since = left.unwrap_or(i64::MAX).max(self.fresh());
+        let ledger = self.ledger(since);
+        carry::catch_up(&carry::said(&self.main_messages(since)?), ledger.as_deref())
+    }
+
+    /// For an agent in a new session: the conversation so far with agent `from` (in its session `from_session`),
+    /// within `room` bytes.
+    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>) -> Option<String> {
+        let bot = &self.base.id;
+        let fresh = self.fresh();
+        let entries = self.main_messages(fresh)?;
         let said = carry::said(&entries);
         if said.is_empty() {
             return None;
         }
-        // The open plan, if it's as recent as the messages repeated.
-        let oldest = entries.first().map_or(0, |e| e.seq);
+        // The open plan and the ledger, as far back as the messages read.
+        let oldest = entries.first().map_or(0, |e| e.seq).max(fresh);
+        let from = fallback::name(from);
         let summary = from_session.and_then(|s| self.hub.store.kv_get(&crate::chat::handoff::summary_key(bot, s)));
         let plan = self
             .hub
             .store
-            .last_of_kind(&main, EntryKind::Plan, oldest.max(fresh))
+            .last_of_kind(&Lane::main(bot), EntryKind::Plan, oldest)
             .map(|e| crate::chat::handoff::plan_text(&e.data));
-        let bookmark = entries.last().map(|e| e.id.as_str());
-        Some(carry::recap(&fallback::name(from), summary.as_deref(), &said, plan.as_deref(), bookmark))
+        let ledger = self.ledger(oldest);
+        let recap = carry::Recap {
+            from: &from,
+            summary: summary.as_deref(),
+            said: &said,
+            plan: plan.as_deref(),
+            bookmark: entries.last().map(|e| e.id.as_str()),
+            ledger: ledger.as_deref(),
+            room,
+        };
+        Some(recap.text())
+    }
+
+    /// The ledger of what agents did in the main chat after `after`, before this turn (`carry::ledger`).
+    fn ledger(&self, after: i64) -> Option<String> {
+        let bot = &self.base.id;
+        // This turn's own calls go with the takeover (`so_far`). A room's turns are numbered apart from the main
+        // chat's, and their calls aren't in it.
+        let running = self.turn.filter(|_| self.lane.chat == *bot);
+        let tools = self.hub.store.tools_after(&Lane::main(bot), after, running, carry::ledger::READS);
+        let tools = tools.unwrap_or_else(|error| {
+            tracing::warn!(bot = %bot, error = format!("{error:#}"), "couldn't read the tool calls for a handoff");
+            Vec::new()
+        });
+        carry::ledger::Ledger::of(&tools, &self.hub.dev_servers.active(bot)).render()
+    }
+
+    /// The window this agent last reported in the bot's own chat, in tokens.
+    fn agent_window(&self) -> Option<u64> {
+        let key = agent_window_key(&self.base.id, &rest::account(&self.cfg));
+        self.hub.store.kv_get(&key).and_then(|v| v.parse().ok())
+    }
+
+    /// Keeps the window this agent reports, in tokens: what a recap for it may fill a share of (`carry::room`). The
+    /// agent's last, so a model changed since counts from its next turn.
+    pub(super) fn note_agent_window(&self, size: u64) {
+        if size == 0 || self.agent_window() == Some(size) {
+            return;
+        }
+        let key = agent_window_key(&self.base.id, &rest::account(&self.cfg));
+        if let Err(error) = self.hub.store.kv_set(&key, &size.to_string()) {
+            tracing::warn!(bot = %self.base.id, error = format!("{error:#}"), "couldn't record the agent's window");
+        }
     }
 
     /// What the failing attempt did: its tool calls, the messages it sent, its last words.
@@ -272,8 +347,8 @@ impl Actor {
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &account);
             }
-            if reason == Reason::ModelMissing {
-                self.relay.no_model.push(account.clone());
+            if matches!(reason, Reason::ModelMissing | Reason::ModeMissing) {
+                self.relay.skipped.push(account.clone());
             }
             self.relay.tried.push(account);
             let failed = start_error.as_ref().unwrap_or(error);
@@ -407,8 +482,8 @@ impl Actor {
     /// idle bot off an agent it no longer uses.
     pub(super) async fn settle_chain(&mut self, old: &BotConfig) {
         self.forget_changed(old);
-        // A model the agent lacked may be one the bot no longer asks for.
-        self.relay.no_model.clear();
+        // A model or mode the agent lacked may be one the bot no longer asks for.
+        self.relay.skipped.clear();
         if self.step().is_none() && self.turn.is_none() {
             let from = self.cfg.clone();
             self.idle_relay();

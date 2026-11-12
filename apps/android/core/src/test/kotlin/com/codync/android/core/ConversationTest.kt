@@ -77,6 +77,19 @@ class ConversationTest {
         assertFalse(Entry("n", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("status", "queued") }).isQueued)
     }
 
+    @Test fun `a flagged sound plays in its reply's bubble, anything else keeps its card`() {
+        val note = SharedFile("f1", "note.m4a", 1000, "a".repeat(64), playsInChat = true)
+        fun carrying(flag: Boolean? = true, file: SharedFile = note) = Entry("v", 1, "b", rev = 1, kind = "agent", data = buildJsonObject {
+            put("text", "Here is the plan."); put("final", true); flag?.let { put("voiceNote", it) }
+            putJsonArray("files") { addJsonObject { put("id", file.id); put("name", file.name); put("size", file.size); put("sha256", file.sha256); if (file.playsInChat) put("playsInChat", true) } }
+        })
+        assertEquals(note, carrying().voiceNote)
+        assertNull(carrying(flag = null).voiceNote)
+        assertNull(carrying(file = SharedFile("f2", "plan.pdf", 1000, "a".repeat(64))).voiceNote)
+        // An older computer doesn't stamp it: the plain file card, whatever the name says.
+        assertNull(carrying(file = note.copy(playsInChat = false)).voiceNote)
+    }
+
     @Test fun `malformed known events fail before a checkpoint while unknown events are ignored`() {
         assertFails<IllegalArgumentException> { MirrorEvent.decode(buildJsonObject { put("type", "entry"); put("entry", buildJsonObject { put("id", "broken") }) }) }
         assertEquals(MirrorEvent.Ignored, MirrorEvent.decode(buildJsonObject { put("type", "future"); put("rev", 999) }))

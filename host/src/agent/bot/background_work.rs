@@ -21,16 +21,7 @@ async fn detached_work(leader: Option<u32>) -> bool {
     else {
         return true;
     };
-    detached_descendant(&processes, leader, session)
-}
-
-/// `pid`'s session, or `None` once it's gone.
-#[cfg(unix)]
-fn session(pid: u32) -> Option<i32> {
-    let pid = libc::pid_t::try_from(pid).ok()?;
-    // SAFETY: getsid only reads the process table.
-    let sid = unsafe { libc::getsid(pid) };
-    (sid >= 0).then_some(sid)
+    detached_descendant(&processes, leader, process::session)
 }
 
 /// Windows has no sessions to tell a dev server from an MCP server, and stopping the agent ends everything in its

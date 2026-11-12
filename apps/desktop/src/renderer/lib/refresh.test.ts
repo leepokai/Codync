@@ -106,6 +106,81 @@ test('an unresponsive host cannot leave manual refresh spinning forever', async 
   store.retire()
 })
 
+test("another device's auto order switch shows here", async () => {
+  let send!: (event: object) => void
+  const ready = deferred()
+  const store = sync({
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [], autoOrder: false }),
+    stream: (_path, onData) => { send = (event) => onData(JSON.stringify(event)); ready.resolve(); return () => {} },
+  })
+  store.start()
+  await ready.promise
+  assert.equal(store.hello?.autoOrder, false)
+  send({ type: 'autoOrder', enabled: true })
+  assert.equal(store.hello?.autoOrder, true)
+  store.retire()
+})
+
+/** A store over the cache another app version left: "gone" and "kept" from the computer and a message that didn't send, with each events stream it opens. */
+function syncOverStaleCache() {
+  const entry = (id: string, seq: number, rev: number, data = {}) => ({ id, seq, botId: 'b1', rev, kind: 'agent', turn: 1, data, createdAt: 1, updatedAt: 1 })
+  storage.set('codync-mirror-local-test', JSON.stringify({ stamp: 'older/2.0.0', hostId: 'h1', rev: 77, bots: [],
+    entries: [entry('gone', 1, 70), entry('kept', 2, 77), entry('local-x', 3, 0, { status: 'failed' })] }))
+  const streams: { path: string; send: (event: object) => void }[] = []
+  let opened = deferred()
+  const store = sync({
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [] }),
+    stream: (path, onData) => { streams.push({ path, send: (event) => onData(JSON.stringify(event)) }); opened.resolve(); return () => {} },
+  })
+  const nextStream = async () => { await opened.promise; opened = deferred(); return streams[streams.length - 1] }
+  return { store, nextStream, kept: { type: 'entry', entry: entry('kept', 2, 77) }, ids: () => store.allEntries('b1').map((e) => e.id) }
+}
+
+test('a new version refetches underneath the cached chat', async () => {
+  const { store, nextStream, kept, ids } = syncOverStaleCache()
+  store.start()
+  const stream = await nextStream()
+  assert.match(stream.path, /since=0&/)
+  stream.send({ type: 'hello', hostId: 'h1', rev: 80, catchUp: 3 })
+  stream.send({ type: 'bot', bot: { id: 'b1', name: 'Bot', rev: 1 } })
+  stream.send(kept)
+  assert.deepEqual(ids(), ['gone', 'kept', 'local-x'], 'the chat keeps what it showed until the catch-up has all arrived')
+  assert.equal(store.canLoadOlder('b1'), false)
+  stream.send({ type: 'somethingNew' })
+  assert.deepEqual(ids(), ['kept', 'local-x'], 'an event this app has no use for counts too')
+  assert.equal(store.canLoadOlder('b1'), true)
+  store.retire()
+})
+
+test('a refetch the link cut short starts over', async () => {
+  const { store, nextStream, kept, ids } = syncOverStaleCache()
+  const savedStamp = () => { store.saveCache(); return JSON.parse(storage.get('codync-mirror-local-test')!).stamp }
+  store.start()
+  const first = await nextStream()
+  first.send({ type: 'hello', hostId: 'h1', rev: 80, catchUp: 3 })
+  first.send(kept)
+  assert.equal(savedStamp(), '')
+  store.restartStream()
+  const second = await nextStream()
+  assert.match(second.path, /since=0&/)
+  assert.deepEqual(ids(), ['gone', 'kept', 'local-x'])
+  second.send({ type: 'hello', hostId: 'h1', rev: 80 })
+  assert.deepEqual(ids(), ['local-x'], "a host that doesn't say how long its catch-up is: the held entries go at its hello")
+  assert.equal(savedStamp(), '2.29.0/2.29.0')
+  store.retire()
+})
+
+test("an unreadable event fetches everything again; the stream it ended doesn't finish that refetch", async () => {
+  const { store, nextStream, ids } = syncOverStaleCache()
+  store.start()
+  const first = await nextStream()
+  first.send({ type: 'hello', hostId: 'h1', rev: 80, catchUp: 1 })
+  first.send({ type: 'entry' })
+  await nextStream()
+  assert.deepEqual(ids(), ['gone', 'kept', 'local-x'])
+  store.retire()
+})
+
 test('a pairing answer the host never got brings the question back', async () => {
   const app = new AppModel(false)
   const store = { isLoopback: true, computer: { id: 'mac' }, pairingRequests: [{ requestId: 'r1' }],

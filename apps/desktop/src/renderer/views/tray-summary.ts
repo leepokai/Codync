@@ -7,7 +7,7 @@ import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
 import { botsTemplate, presenceTitle, roleTitle } from '../lib/network-copy'
 import { useModels } from '../lib/observable'
-import { resetLine, resolvedLanguage, translate } from '../lib/l10n'
+import { resetLine, resolvedLanguage, systemLanguage, translate } from '../lib/l10n'
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
@@ -127,7 +127,6 @@ function symbolIcons(): TraySummary['symbols'] {
 }
 
 /** The menu's language: the app's setting, else the system's. */
-const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
 const tr = (text: string) => translate(text, prefs.appLanguage.get(), systemLanguage())
 
 /** "home · Owner" and "desk · Online · 3 bots" per network; null on hosts without networks. */

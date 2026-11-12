@@ -1,0 +1,78 @@
+# Both phones, already paired to the isolated dev host, with the app language set to English.
+# Use the existing Maestro lock/harness (docs/guides/test-stack.md), tags smoke,decision,
+# HOST_PORT/HOST_TOKEN and TEAM_AGENT (absolute fixture path). No production endpoint or clearState.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - decision
+onFlowComplete:
+  - runScript:
+      file: decision.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: decision.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- assertVisible: "Needs your choice"
+- tapOn:
+    id: decision-expand
+- assertVisible: ".*Fifth line matters.*"
+- tapOn:
+    id: decision-option-1
+- assertNotVisible:
+    id: decision-option-1
+- assertVisible:
+    id: decision-outcome
+- runScript:
+    file: decision.js
+    env:
+      VERIFY: answered
+      EXPECTED_CHOICE: "4"
+      EXPECTED_REPLIES: "1"
+- runScript:
+    file: decision.js
+    env:
+      SEND: "ASK Second choice?|Left|Right"
+- assertVisible: "Second choice?"
+- runScript:
+    file: decision.js
+    env:
+      REMOTE: Right
+- assertNotVisible:
+    id: decision-option-1
+- runScript:
+    file: decision.js
+    env:
+      VERIFY: answered
+      EXPECTED_CHOICE: Right
+      EXPECTED_REPLIES: "2"
+- runScript:
+    file: decision.js
+    env:
+      SEND: "ASK Expired choice?|Left|Right"
+- assertVisible: "Expired choice?"
+- runScript:
+    file: decision.js
+    env:
+      STOP: "true"
+- assertNotVisible:
+    id: decision-option-1
+- assertVisible: "No answer — the bot moved on"
+- runScript:
+    file: decision.js
+    env:
+      VERIFY: expired
+      EXPECTED_REPLIES: "2"

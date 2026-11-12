@@ -205,3 +205,16 @@ fn catalogs_preserve_names_and_substitute_captured_values_once() {
         assert_eq!(translate_with(&format!("{{hint}} isn't set up on this computer. {hint}"), table), expected);
     }
 }
+
+#[test]
+fn host_schedule_sentences_match_their_catalog_templates() {
+    assert_eq!(
+        translate_with("Every day at 09:00, 18:00 · Europe/Rome", &super::IT),
+        "Ogni giorno alle 09:00, 18:00 · Europe/Rome"
+    );
+    assert_eq!(
+        translate_with("Every Monday at 09:00 · Europe/Rome", &super::IT),
+        "Ogni lunedì alle 09:00 · Europe/Rome"
+    );
+    assert_eq!(translate_with("When a webhook fires", &super::IT), "Quando arriva un webhook");
+}

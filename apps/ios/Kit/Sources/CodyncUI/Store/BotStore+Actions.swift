@@ -156,6 +156,13 @@ extension BotStore {
         }
     }
 
+    public func decide(_ entry: Entry, option: String) {
+        answer(entry, option) {
+            try await $0.respondDecision(entryId: entry.id, option: option)
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
     /// Views register only while visible in an active scene. Multiple windows may
     /// read the same conversation without unregistering each other.
     func setReading(_ token: UUID, botId: String, active: Bool) {
@@ -291,6 +298,14 @@ extension BotStore {
         guard ids != roster.map(\.id) else { return }
         for (position, id) in ids.enumerated() { bots[id]?.position = position }
         perform(replay: true) { try await $0.reorderBots(ids) }
+    }
+
+    /// Whether a bot with a new message moves to the top of this computer's roster.
+    public var autoOrder: Bool { hello?.autoOrder ?? false }
+
+    public func setAutoOrder(_ on: Bool) {
+        hello?.autoOrder = on
+        Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
     }
 
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
@@ -440,7 +455,8 @@ extension BotStore {
     }
 
     public func loadOlder(_ botId: String) async {
-        guard let client, !historyComplete.contains(botId) else { return }
+        // Held while everything is fetched again, like `canLoadOlder`.
+        guard let client, refetched == nil, !historyComplete.contains(botId) else { return }
         let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }

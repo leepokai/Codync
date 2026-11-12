@@ -139,6 +139,8 @@ public final class BotStore {
     @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
+    /// While everything is fetched again (`refetchAll`): the entries the computer has sent since it began.
+    var refetched: Set<String>?
     /// Events stayed undecodable after the rewind.
     var unreadable = false
     /// This app's marketing version, compared with the host's `minApp`.
@@ -293,8 +295,9 @@ public final class BotStore {
     /// against a late response.
     public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
+    /// Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go.
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        refetched == nil && !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.

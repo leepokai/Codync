@@ -49,6 +49,10 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -317,13 +321,18 @@ val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
 @Composable fun ValueRow(label: String, value: String, modifier: Modifier = Modifier, detail: String? = null) =
     ValueRow(label, modifier, detail) { Text(tr(value), style = Type.body, color = Palette.secondary) }
 
-/** A search box: the replacement for `.searchable`. */
-@Composable fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, prompt: String = "Search") {
+/** A search box: the replacement for `.searchable`. [onSearch] runs on the keyboard's search key; [autoFocus] puts the
+ *  cursor in it as it appears. */
+@Composable fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, prompt: String = "Search",
+    autoFocus: Boolean = false, onSearch: (() -> Unit)? = null) {
     val clear = tr("Clear search")
+    val focus = remember { FocusRequester() }
+    if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol("magnifyingglass", size = 19.dp, tint = Palette.secondary)
-        PlainTextField(text, onChange, Modifier.weight(1f), prompt, singleLine = true, imeAction = ImeAction.Search)
+        PlainTextField(text, onChange, Modifier.weight(1f).focusRequester(focus), prompt, singleLine = true, imeAction = ImeAction.Search,
+            actions = if (onSearch != null) KeyboardActions(onSearch = { onSearch() }) else KeyboardActions.Default)
         if (text.isNotEmpty()) Box(Modifier.clickable(role = Role.Button) { onChange("") }.semantics { contentDescription = clear }) {
             Symbol("xmark.circle.fill", size = 18.dp, tint = Palette.tertiary)
         }

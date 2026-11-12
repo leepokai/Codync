@@ -10,18 +10,21 @@ import type { HostSnapshot } from '../src/shared/ipc.ts'
 const root = resolve(__dirname, '../../..')
 // A scripted agent whose turn waits until a steered message joins it (host/tests/fixtures/steer_agent.py).
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
+// A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
+const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
 
-/** This worktree's sandbox: its name, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
+/** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
 export function sandbox() {
   const name = sandboxName(basename(root))
-  const record = join(homedir(), SANDBOX_PREFIX + name, 'sandbox.json')
+  const home = join(homedir(), SANDBOX_PREFIX + name)
+  const record = join(home, 'sandbox.json')
   let port: number
   try {
     port = (JSON.parse(readFileSync(record, 'utf8')) as { port: number }).port
   } catch {
     throw new Error(`No sandbox for ${root}: run \`npm run dev -- --cdp\` in apps/desktop first.`)
   }
-  return { name, port, cdp: port + 10000 }
+  return { name, home, port, cdp: port + 10000 }
 }
 
 /** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */
@@ -61,6 +64,14 @@ export async function setPref(page: Page, key: string, value: unknown) {
 export async function steerBot(page: Page, name: string, seconds: number) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
     name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' steer ${seconds}`, connectors: [], skills: [], notify: false,
+  })
+  return bot
+}
+
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`. */
+export async function echoBot(page: Page, name: string) {
+  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, connectors: [], skills: [], notify: false,
   })
   return bot
 }

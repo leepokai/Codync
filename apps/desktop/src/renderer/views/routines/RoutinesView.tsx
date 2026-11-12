@@ -5,7 +5,7 @@ import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
-import { errorText, isActiveRun, runLabel, type Routine, type RoutineListing, type RoutineRun } from './routine'
+import { errorText, isActiveRun, runLabel, scheduleLine, type Routine, type RoutineListing, type RoutineRun } from './routine'
 import { RoutineEditorView } from './RoutineEditorView'
 import './routines.css'
 import { useTr } from '../../lib/use-language'
@@ -91,7 +91,7 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
     if (routine.lastError) return tr('Schedule needs attention')
     const last = runs.find((r) => r.routineId === routine.id)
     if (last && ['failed', 'interrupted'].includes(last.status)) return tr('Last run {status}').replaceAll('{status}', () => runLabel(last).toLowerCase())
-    return routine.triggerDescriptions.join(' · ')
+    return scheduleLine(routine, tr)
   }
 
   const onSaved = (target: EditorTarget, saved: Routine | null) => {

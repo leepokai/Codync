@@ -2,8 +2,6 @@ package com.codync.android
 
 import androidx.test.platform.app.InstrumentationRegistry
 import com.codync.android.core.*
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -36,13 +34,10 @@ class DraftBookTest {
         val draft = ComposerDraft("bot", text = "Send once")
         val book = DraftBook(root, computer)
         book.save(listOf(draft))
-        val pending = PendingSend(draft.nonce, "bot", text = draft.text, createdAt = 1)
-        assertTrue(book.recover(MirrorSnapshot(pending = listOf(pending))).isEmpty())
+        assertTrue(book.recover(setOf(draft.nonce)).isEmpty())
         assertTrue(DraftBook(root, computer).read().isEmpty())
         book.save(listOf(draft))
-        val confirmed = Entry("entry", 1, "bot", rev = 1, kind = "user",
-            data = buildJsonObject { put("clientNonce", draft.nonce); put("text", draft.text) })
-        assertTrue(book.recover(MirrorSnapshot(entries = listOf(confirmed))).isEmpty())
+        assertEquals(listOf(draft), book.recover(setOf("another")))
     }
 
     @Test fun rejectedOversizedOrForeignAttachmentWritesRetainThePreviousDraft() {

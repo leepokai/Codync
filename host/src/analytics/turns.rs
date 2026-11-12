@@ -85,6 +85,41 @@ pub fn agent_fell_back(hub: &Hub, agent: &str, reason: crate::agent::fallback::R
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
 }
 
+/// What an agent taking over the main chat was told first (`handoff_carried`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Carried {
+    /// A new session: the conversation so far.
+    Recap,
+    /// A session it had before: what happened since it left.
+    CatchUp,
+}
+
+/// `handoff_carried`: `agent` took over a bot's chat and was told `bytes` of it first (never the text).
+/// `window_known`: a recap sized to the agent's window; a catch-up never is.
+pub fn handoff_carried(hub: &Hub, agent: &str, kind: Carried, bytes: usize, window_known: bool) {
+    let p = json!({"agent": agent, "kind": kind, "bytes": bytes, "window_known": window_known});
+    capture(hub, Event::HandoffCarried, p.as_object().cloned().unwrap_or_default());
+}
+
+/// Why a bot's agent stopped between turns (`agent_retired`); the next message starts it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Retired {
+    /// Every session sat unused for 30 minutes.
+    Idle,
+    /// A routine run ended with no other session open.
+    RoutineFinished,
+    /// A routine run ended and the agent couldn't close its session, which holds MCP servers (Cursor can't close one).
+    SessionNotClosed,
+}
+
+/// `agent_retired`: a bot's `agent` stopped to give back its processes, and why.
+pub fn agent_retired(hub: &Hub, agent: &str, reason: Retired) {
+    let p = json!({"agent": agent, "reason": reason});
+    capture(hub, Event::AgentRetired, p.as_object().cloned().unwrap_or_default());
+}
+
 /// `context_compacted`: Codync started summarizing a bot's chat, at the end of a turn or while it rested, and at
 /// which of the user's thresholds.
 pub fn context_compacted(hub: &Hub, agent: &str, idle: bool, threshold: codync_mem::compaction::Threshold) {
@@ -126,6 +161,7 @@ fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::
             FailureKind::Timeout => "timeout",
             FailureKind::Exited => "exited",
             FailureKind::NoModel => "no_model",
+            FailureKind::ModeMissing => "mode_missing",
         };
         return (kind, None);
     }

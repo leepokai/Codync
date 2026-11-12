@@ -231,6 +231,7 @@ impl Actor {
         if let Some(&(used, size)) = self.conn.as_ref().and_then(|conn| conn.usage.get(&sid)) {
             c.usage(used, size);
             self.note_window(size);
+            self.note_agent_window(size);
         }
         // The compaction turn itself is no turn of the conversation: it neither counts nor resets the idle clock.
         if compacting.is_some() {

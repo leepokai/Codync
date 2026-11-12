@@ -1,5 +1,5 @@
 {
-  "minApp": "2.36.0",
+  "minApp": "2.45.1",
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",
@@ -214,6 +214,7 @@
     "event:icons.type": "string",
     "hello": "object",
     "hello.analytics": "bool",
+    "hello.autoOrder": "bool",
     "hello.boxKey": "string",
     "hello.canJoinAccount": "bool",
     "hello.canUpdate": "bool",
@@ -230,6 +231,7 @@
     "hello.name": "string",
     "hello.os": "string",
     "hello.rev": "number",
+    "hello.schema": "number",
     "hello.signKey": "string",
     "hello.version": "string"
   }

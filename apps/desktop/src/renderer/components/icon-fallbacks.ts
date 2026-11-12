@@ -134,6 +134,7 @@ const map: Record<string, IconNode> = {
   'minus.circle': L.CircleMinus,
   'music.note': L.Music,
   network: L.Network,
+  'pause.circle': L.CirclePause,
   pencil: L.Pencil,
   person: L.User,
   'person.2': L.Users,

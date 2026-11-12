@@ -2,7 +2,13 @@ Each bot has one chat that keeps going. You send it work, it replies, and everyt
 
 ## What the chat shows
 
-The chat shows your messages, the bot's messages, approval cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
+The chat shows your messages, the bot's messages, approval cards, choice cards and short notices. A bot's message arrives complete; nothing streams in word by word. A bot can send several messages in one turn.
+
+## Choice cards
+
+When your bot needs you to pick a way forward, it can show a question with two to twelve buttons. On **iPhone**, **Android** and **Desktop**, tap the option you want. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options. Your choice appears as your message and the bot continues its current work.
+
+On an older app, the question and numbered options appear as text. Reply with the full option or its number. If an option itself is a number, the exact option text takes priority. Sending a different message moves the bot on from the question. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
 
 While the bot works, a line under the last message shows what it's doing and for how long. It reads **Typing…** while the bot writes you a message.
 
@@ -51,13 +57,26 @@ Use the **+** button left of the message box.
 
 A message can be files only. Each file can be up to 100 MB. The files are saved on the computer, in an `uploads` folder in the bot's personal workspace, or in Codync's data folder for a bot that works in a project folder. The agent gets your message with the path of each file and reads them with its own tools.
 
-Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. To save a file:
+Bots can send files back when you ask, such as a report or a build. Each one shows as a card with its name and size and a download action. An image up to 20 MB also shows the picture itself in the iPhone, Android and desktop apps; tap or click it to see it full size. On desktop, image previews fit the whole picture inside a larger panel that adjusts to your window. This also applies to images you send. In the full-size picture, the copy button puts the picture itself on the clipboard, and for a file a bot sent, the download button next to the close button saves it. You can zoom up to 8x:
+
+- **Desktop:** pinch on the trackpad (or hold Ctrl and scroll) to zoom, drag to move the picture, and double-click to zoom in or back out. **+** and **-** zoom too, and **0** fits the picture again. Right-click a picture, in the chat or full size, for the message's usual menu, where **Copy** becomes **Copy image** and **Copy name**.
+- **iPhone:** pinch to zoom, drag to move the picture, and double-tap to zoom in or back out. Touch and hold a picture, in the chat or full size, for the message's usual menu, where **Copy** becomes **Copy image** and **Copy name**.
+
+A voice note or other sound file (MP3, M4A, WAV or AAC) up to 20 MB has a play button in place of its icon in the same apps. It spins while the sound loads; then the card shows the time played and its length over a progress bar. If the sound can't be played, the card says **Couldn't play** and the next tap tries again. With VoiceOver or TalkBack, each card is one item, with play and download among its actions.
+
+To save a file:
 
 - **Desktop:** saves through the system Save dialog.
 - **iPhone:** opens the share sheet, including Save to Files.
 - **Terminal UI:** pick the message (`v`), then `f` saves it to Downloads.
 
 Codync keeps its own copy of each shared file, so it stays downloadable even if the bot later changes or deletes the original. Bots share files only in their own chat, not in group chats or routine runs.
+
+A bot can also speak a message: its voice note then plays at the top of that message's bubble, with the text under it, instead of coming as a card of its own. The player works like a voice note's card: tap play, then the progress bar and the time played sit beside the button on one row; tap or drag the bar to jump to another point (on desktop, a click anywhere else on the player plays or pauses), and tap again if it says **Couldn't play**. To save the sound, pick Download in the message's menu (press and hold on the phones, right-click on desktop). The terminal UI shows the file's line with the text under it.
+
+Playback errors use your app's language, with a tap-to-retry hint on phones and a
+click-to-retry hint on desktop. On iPhone, playing a note after a call or dictation
+uses normal playback audio rather than retaining the recording settings.
 
 A report or a tracker you'll come back to can come as an [artifact](/docs/artifacts) instead: a page that opens from its card. Everything made or shared in a chat is also in its [Library](/docs/artifacts#the-library).
 
@@ -107,6 +126,18 @@ While you reply, the box shows the quote above it and reads "Reply…". The bot 
 - **Terminal UI:** pick a message (`v`), then `1`…`6`.
 
 The quick reactions are 👍 ❤️ 😂 🎉 👀 ✅. Tap your reaction again to take it back. In a bot's own chat, the bot isn't told about your reactions. Bots react now and then too, and their reactions show with their avatars.
+
+## Finding text in a chat
+
+On the desktop, press ⌘F (Ctrl+F on Windows and Linux) to search the open chat. Matches are highlighted as you type and the bar shows which one you're on. Enter or ⌘G goes to the next match, Shift+Enter or ⇧⌘G to the previous one, and Esc closes the bar.
+
+On the iPhone and Android, tap the magnifying glass at the top right of a chat. The bar shows how many matches there are and which one you're on; the arrows (or the keyboard's search key) move between them, and the message holding the current match is highlighted. Close the bar with ✕.
+
+In the terminal UI, press `/` or Ctrl+F in a chat. Type to search, Enter or ↓ goes to the next match, ↑ to the previous one, and Esc closes the bar.
+
+Find searches the messages the chat has loaded, so scroll up (or use **Load earlier messages** on the desktop) to reach older ones.
+
+Searching your bots moved to ⌘K (Ctrl+K). ⌘F still opens it when no chat is open.
 
 ## Commands
 

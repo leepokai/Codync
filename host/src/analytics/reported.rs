@@ -74,6 +74,22 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
+    /// A picture opened full size (desktop).
+    ImagePreviewOpened,
+    ImagePreviewAction {
+        action: ImageAction,
+        from: ImageFrom,
+        outcome: ImageOutcome,
+        /// Why a copy or download failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<ImageFailure>,
+    },
+    /// Find in a conversation opened (desktop ⌘F, terminal `/` or ^f).
+    ConversationFindOpened,
+    ConversationFindSearched {
+        /// Whether the search found anything; never the text searched for.
+        found: bool,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -125,6 +141,12 @@ pub enum Reported {
     CloudSnapshotsDeleted {
         outcome: CloudDeleteOutcome,
         provider: CloudProvider,
+    },
+    VoiceNotePlayed {
+        outcome: VoiceNoteOutcome,
+        /// Which step broke, when it failed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<VoiceNoteFailure>,
     },
     KofiInviteShown,
     KofiInviteAnswered {
@@ -190,6 +212,50 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    #[serde(other)]
+    Other,
+}
+
+/// What was done in the full-size picture viewer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageAction {
+    Zoom,
+    CopyImage,
+    CopyName,
+    Download,
+    #[serde(other)]
+    Other,
+}
+
+/// Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFrom {
+    Viewer,
+    Menu,
+    #[serde(other)]
+    Other,
+}
+
+/// How a picture action ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOutcome {
+    Done,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageFailure {
+    Unavailable,
+    Convert,
+    Clipboard,
+    Transfer,
     #[serde(other)]
     Other,
 }
@@ -359,6 +425,26 @@ pub enum DevServerAction {
     Other,
 }
 
+/// Whether a voice note started from its beginning, or couldn't play.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNoteOutcome {
+    Played,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// Which step of a voice note's play failed: fetching or opening it, or starting it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceNoteFailure {
+    Load,
+    Playback,
+    #[serde(other)]
+    Other,
+}
+
 /// Why a computer couldn't be added to the account.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -466,7 +552,27 @@ mod tests {
             ),
             (json!({"event": "link_opened", "app": "desktop", "link": "install_command"}), Event::LinkOpened),
             (json!({"event": "dev_server_action", "app": "desktop", "action": "open"}), Event::DevServerAction),
+            (json!({"event": "voice_note_played", "app": "desktop", "outcome": "played"}), Event::VoiceNotePlayed),
+            (
+                json!({"event": "voice_note_played", "app": "desktop", "outcome": "failed", "error": "load"}),
+                Event::VoiceNotePlayed,
+            ),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image", "from": "menu", "outcome": "done"}),
+                Event::ImagePreviewAction,
+            ),
+            (
+                json!({"event": "image_preview_action", "app": "desktop", "action": "download", "from": "viewer",
+                    "outcome": "failed", "error": "transfer"}),
+                Event::ImagePreviewAction,
+            ),
+            (json!({"event": "conversation_find_opened", "app": "desktop"}), Event::ConversationFindOpened),
+            (
+                json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
+                Event::ConversationFindSearched,
+            ),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,

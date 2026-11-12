@@ -5,6 +5,7 @@ import com.codync.android.core.*
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -38,6 +39,7 @@ class AppStore internal constructor(
     internal val screenTakeovers = Mutex()
     internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
+    internal val imageCopies = CopyRequests()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
     val state = mutableState.asStateFlow()
     internal val feed = TaskFeed(local.directory, computer.id)
@@ -74,6 +76,19 @@ class AppStore internal constructor(
     internal var pluginsRefreshAgain = false
     /** The host version an undecodable event already made the mirror fetch everything again for. */
     internal var rewoundFor: String? = null
+    /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
+    internal val residents = ResidentBots()
+    /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
+    internal val windows = ConcurrentHashMap<String, Int>()
+    /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */
+    internal val floors = ConcurrentHashMap<String, Long>()
+    /** Residency applied by the last snapshot, so a history page can skip a repeat read when this chat's window is already loaded. */
+    @Volatile internal var published: Residency? = null
+    /** One mirror read applied at a time, so an older snapshot cannot cover a newer resident set. */
+    private val refreshes = Mutex()
+
+    /** How much of each chat the next snapshot loads. Never every row: the phone's heap is fixed. */
+    internal fun residency(): Residency = Residency(residents.full(state.value.selectedBot), windows = windows.toMap())
 
     /** Opens the mirror and the drafts this phone keeps for the computer; nothing connects yet. */
     internal suspend fun open() {
@@ -81,8 +96,10 @@ class AppStore internal constructor(
         withContext(Dispatchers.IO) {
             database = MirrorDatabase(application, local.directory, id)
             database?.recoverInterrupted()
-            val snapshot = requireNotNull(database).snapshot()
-            val restored = book.recover(snapshot)
+            val mirror = requireNotNull(database)
+            // Only pending sends and the drafts' message ids matter here; refresh() right after loads the rows to show.
+            val pending = mirror.snapshot(Residency(emptySet(), preview = 0)).pending
+            val restored = book.recover(pending.mapTo(mutableSetOf()) { it.nonce } + mirror.confirmedNonces(book.read()))
             savedDrafts = restored.associateBy { it.botId }
             mutableState.update { it.copy(drafts = restored.associateBy { draft -> draft.botId }) }
         }
@@ -122,6 +139,7 @@ class AppStore internal constructor(
         pluginsRefreshAgain = false
         rewoundFor = null
         draftWriter = null; draftBook = null; savedDrafts = emptyMap()
+        published = null; windows.clear(); floors.clear()
         withContext(Dispatchers.IO) { feed.clear(); database?.close(); database = null }
     }
 
@@ -156,8 +174,22 @@ class AppStore internal constructor(
     }
 
     internal suspend fun refresh() {
+        if (database == null) return
+        refreshes.withLock { publishSnapshot() }
+    }
+
+    private suspend fun publishSnapshot() {
         val mirror = database ?: return
-        val snapshot = withContext(Dispatchers.IO) { mirror.snapshot() }
+        val wanted = residency()
+        val snapshot = withContext(Dispatchers.IO) { mirror.snapshot(wanted) }
+        // Updated in place, never emptied, so a page loading meanwhile doesn't read a chat as having no oldest row.
+        val oldest = snapshot.entries.groupBy { it.botId }.mapValues { (_, rows) -> rows.minOf { it.seq } }
+        floors.keys.retainAll(oldest.keys)
+        floors.putAll(oldest)
+        published = wanted
+        // Rows the window no longer reaches are paged back from the phone again, even after the host had nothing older.
+        val open = state.value.selectedBot
+        val stranded = open != null && state.value.historyEnd[open] == HistoryEnd.Complete && floors[open]?.let { withContext(Dispatchers.IO) { mirror.hasOlder(open, it) } } == true
         val retainedDraftFiles = state.value.drafts.values.flatMap { it.files }.map { it.path }.toSet()
         val retired = state.value.pending.filter { old -> snapshot.pending.none { it.nonce == old.nonce } }.flatMap { it.files }.filter { it.path !in retainedDraftFiles }
         withContext(Dispatchers.IO) { retired.forEach(attachments::discard) }
@@ -166,6 +198,7 @@ class AppStore internal constructor(
         mirrorBots = snapshot.bots
         mutableState.update { current -> current.copy(bots = withMoves(snapshot.bots, pendingSectionMoves), entries = withRemovals(snapshot.entries, pendingRemovals),
             pending = snapshot.pending, usage = snapshot.usage, screen = screen, mirrorRevision = snapshot.rev, icons = snapshot.icons,
+            historyEnd = if (stranded) current.historyEnd - open!! else current.historyEnd,
             selectedBot = current.selectedBot?.takeIf { id -> snapshot.bots.any { it.id == id } }) }
         if (voiceBinding != null && snapshot.bots.none { it.id == voiceBinding?.botId && !it.deleted }) endVoice("Voice chat ended because its bot was removed.")
         if (PushPreferences.tasks(application)) {

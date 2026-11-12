@@ -2,6 +2,18 @@
 
 How a bot's work turns into what the user reads, copied from Grok Bot.
 
+## Choice cards
+
+When the user should pick among a few ways forward, a bot sends a card instead of listing them: `request_decision {question, options, recommended?}` on its `chat` server (two to twelve different options). The card shows the question and a button per option, the suggested one marked, in the bot's chat on the phone, the computer and the terminal UI; clients that don't draw the card yet still show its text (the question, the options, and the suggestion).
+
+The card is a `notice` entry with optional additive data: `decision: true`, `question`, `choices` (strings), `recommended` (an index or null), `status` `pending`/`answered`/`expired`, and `selected`. `text` always holds the full question, numbered choices and suggestion. It does not reuse permission `options`, whose elements remain objects for older phone decoders. Older clients already render notices; their ordinary text reply can answer with an exact option or its one-based number. Exact labels take priority, including numeric labels. Attachments, quoted replies and other text are ordinary messages; another message expires the waiting card.
+
+The bot shows as needing the user and sends the usual response-needed notification. The call waits up to 270 seconds, with a 290-second budget through the chat MCP HTTP bridge. A card expires when its call stops waiting, its turn ends, the user stops, or the host restarts. Successful answers and expiry clear the waiting state unless a permission card still waits.
+
+MCP clients can cancel a pending call with `notifications/cancelled` and its exact JSON-RPC `requestId` on the same server process. The bridge aborts that request; closing the HTTP wait drops the choice receiver, which the actor's periodic cleanup expires. Unknown, completed, or differently typed IDs are ignored. Closing the MCP process's stdin ends that process and its pending requests. Neither path is a command to stop the bot or choose a default. Cancellation that arrives after an answer was delivered does not undo it. `decision_cancellation_e2e` checks these transport and card-state expectations through actual stdio and HTTP, separately from the 270-second deadline tests.
+
+A press (`respondDecision {entryId, option}`, the option's full text) answers the live call with `{choice}`. The actor records exactly one user message in the same turn (`from: decision`); it never queues another turn. Text replies reuse their existing user entry. API success requires delivery to the live waiter, so a stale card cannot claim success. Room turns, routines, bot requests and other injected turns ask in a message instead. The actor reports `decision_asked` after publication and `decision_answered` after delivery. Terminal keys F1–F12 reach all choices; keys 1–9 also select the first nine by position.
+
 ## Markdown links
 
 Markdown links in bot replies are underlined on desktop and iPhone so they remain
@@ -13,7 +25,7 @@ it has no pointer tooltip or link-opening action.
 ## Messages are sent, not streamed
 
 - Every bot gets the built-in `chat` MCP server (`codync-host mcp chat`,
-  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?}`. In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
+  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?, text?}` (`text`: the message a voice note plays in, [file attachments](file-attachments.md#a-voice-note-inside-its-message)). In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
   `final: true`. A turn can send several.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to
@@ -119,6 +131,12 @@ once the turn ends, its last message's `↳ N steps` line counts them the same w
   go of a full sweep (`PullToRefresh.swift`) reconnects to the computer while the chat waits just
   below the turning arrow, then eases back. A pull that isn't full refreshes nothing. The desktop
   reconnects from the computer menu instead.
+- Android: the phone stores each chat on disk and holds only a window of it in memory: the newest
+  300 messages of the open chat and the 5 opened last, the newest 30 rows of every other chat.
+  Earlier messages load once the top of the chat is on screen: rows the phone already stored come
+  first, then a page from the computer, and the window grows by 200 messages each time. It stops at
+  3,000 messages or a per-chat memory budget (tool-heavy chats sooner); the iPhone pages to the
+  first message. `apps/maestro/history.yaml` scrolls a long chat back to its first message on both phones.
 - The terminal UI lists the same messages; its steps line goes under the turn's last message.
 
 - Electron keeps the activity row mounted during its 0.42 s exit and animates its height,

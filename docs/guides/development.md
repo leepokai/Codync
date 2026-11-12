@@ -63,13 +63,13 @@ successful restart; stop that host in its terminal and retry. Hosts attached usi
 `CODYNC_PORT` are managed manually.
 
 On SIGTERM the host stops its bots without waiting for open SSE or WebSocket
-connections. ACP adapters run in separate process groups. Stopping an adapter
-closes its stdin and gives its group 10 seconds to exit by itself, so a Claude
-Code CLI can finish saving a refreshed login. What is still left in the group
+connections. ACP adapters run in sessions of their own. Stopping an adapter
+closes its stdin and gives it 10 seconds to exit by itself, so a Claude
+Code CLI can finish saving a refreshed login. What is still left in its session
 after that ends from its leaves up: a process whose children have all ended gets
 3 seconds to finish by itself (a `PyInstaller` launcher removes its unpacked
-folder then), and after at most 15 seconds the rest is killed
-(`host/src/agent/process.rs`). The host waits for this before it exits; launchd
+folder then), and after at most 15 seconds the rest is killed, every process
+group in the session, an MCP server's of its own too (`host/src/agent/process.rs`). The host waits for this before it exits; launchd
 gives it 40 seconds (`ExitTimeOut`), and `codync-host install` and `stop` wait as
 long for the old host.
 Processes that detach into their own sessions and unrelated hosts using other

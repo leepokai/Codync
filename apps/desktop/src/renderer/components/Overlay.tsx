@@ -38,6 +38,10 @@ export function usePresence(open: boolean, exitMs = 300, animateOnMount = true) 
 export const DismissContext = createContext<() => void>(() => {})
 export const useDismiss = () => useContext(DismissContext)
 
+/** Typing in a field that takes every key for something else (the remote screen's keyboard while you control it):
+ * Escape and Tab are that field's, not the modal's. */
+const capturesKeys = (e: KeyboardEvent) => e.target instanceof Element && e.target.closest('[data-captures-keys]') !== null
+
 /** Layers in the order they opened: Escape goes to the newest one still live (not inert under the modal on top). */
 const stack: { id: number; layer: RefObject<HTMLElement | null> }[] = []
 let nextLayer = 0
@@ -49,7 +53,7 @@ export function useEscape(active: boolean, onEscape: () => void, layer: RefObjec
     const id = ++nextLayer
     stack.push({ id, layer })
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
+      if (e.key === 'Escape' && !capturesKeys(e) && stack.findLast((entry) => !entry.layer.current?.inert)?.id === id) {
         e.preventDefault()
         e.stopPropagation()
         handler.current()
@@ -99,7 +103,7 @@ function useModalFocus(open: boolean, mounted: boolean, layer: RefObject<HTMLEle
     syncModals()
     // Tab cycles inside the top modal instead of leaving the page.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || node.inert) return
+      if (e.key !== 'Tab' || node.inert || capturesKeys(e)) return
       const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0 && !el.closest('[inert]'))
       const first = items[0]
       const last = items[items.length - 1]
@@ -149,7 +153,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
   return createPortal(
     <DismissContext.Provider value={onClose}>
       <ModalTitleContext.Provider value={titleId}>
-        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId}>
+        <div ref={layer} className={`modal-card ${shown ? 'shown' : ''}`} role="dialog" aria-modal aria-labelledby={titleId} onContextMenu={(e) => e.stopPropagation()}>
           <div className="modal-dim" onClick={dismissOnDim ? onClose : undefined} />
           <div className="modal-content" data-modal-card tabIndex={-1} style={{ width, height, maxHeight }}>
             {open ? children : last.current}
@@ -290,7 +294,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen, tabIndex }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void
@@ -301,6 +305,8 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
   buttonRef?: RefObject<HTMLButtonElement | null>
   /** Set when the button opens a menu: whether that menu is open. */
   menuOpen?: boolean
+  /** -1 for a pointer-only button whose action its container offers to the keyboard. */
+  tabIndex?: number
 }) {
   const tr = useTr()
   const label = tr(title)
@@ -315,6 +321,7 @@ export function IconButtonBase({ title, icon, onClick, selected = false, size = 
       aria-expanded={menuOpen}
       disabled={disabled}
       onClick={onClick}
+      tabIndex={tabIndex}
     >
       <Icon name={icon} size={size / 2} weight="medium" />
     </button>

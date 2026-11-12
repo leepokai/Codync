@@ -11,8 +11,8 @@ code is in `host/src/dev_servers/`.
 ## Why the host runs them
 
 A program started through an agent's shell tool is a descendant of the agent. On Windows the agent's job ends
-everything in it. On macOS and Linux the host kills the agent's process group, so a program in that group goes too, and
-one that detached into its own session survives with nobody tracking it. Taking the tree down with the agent is
+everything in it. On macOS and Linux the agent leads a session of its own and the host kills every process group in it, so a program
+in that session goes too, and one that detached into a session of its own survives with nobody tracking it. Taking the tree down with the agent is
 deliberate, and stays right for what an agent starts itself. So that such a server isn't lost, `background_work` keeps
 the agent running while it sees one, with its helpers and memory.
 
@@ -71,7 +71,7 @@ No guessing what counts as a dev server: **one that listens gets its port shown*
 only its status.
 
 - `dev_servers/ports.rs` reads TCP listeners with the [`listeners`](https://crates.io/crates/listeners) crate and keeps
-  those in the server's tree (`Process::members`: its process group on Unix, its job on Windows).
+  those in the server's tree (`Process::members`: its session on Unix, its job on Windows).
 - `dev_servers/scan.rs` reads them every second for a server's first 30 s, then every 10 s, and tells clients only of
   changes. A server with no port after 5 s counts as running.
 - The host works out the addresses, so clients don't: `local` works on the computer, `remote` from other devices. A

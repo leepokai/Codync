@@ -51,9 +51,11 @@ Codex currently reports its rate limits and overloads as ordinary reply text, so
 
 When a fallback takes a turn over, it hears what it needs before the turn's messages:
 
-- If it hasn't worked in this chat before: a recap of the conversation (the latest summary, the most recent messages and any open plan).
-- If it has: a catch-up of what was said since it last answered. Each agent keeps its own session, so coming back resumes it.
+- If it hasn't worked in this chat before: a recap of the conversation (the latest summary, the most recent messages and any open plan; once that agent has worked in this bot, also what you said before them), with a list of the files the agents before it changed, the commands they ran and the dev servers still running.
+- If it has: a catch-up of what was said since it last answered, with the same list for what the other agents did meanwhile. Each agent keeps its own session, so coming back resumes it.
 - If agents already failed during this turn: which one stopped and why, what each of them did (tool calls, messages, last note), and a reminder to check what's done before redoing any step.
+
+Once Codync knows the agent's context window, the recap takes at most a tenth of it (about 20,000 tokens at most). It lists file paths and command lines, not their contents, so the agent reads a file again before changing it. Rules you want every agent to follow belong in the bot's [memory](/docs/memory), which each agent gets in full.
 
 **New session** (in the bot's menu) clears every agent's session, and none of them is told what was said before.
 

@@ -1,13 +1,15 @@
 use super::*;
-use serde_json::json;
+use crate::store::EntryKind;
+use serde_json::{Value, json};
 
-fn entry(seq: i64, kind: &str, data: Value) -> Entry {
+/// A tool call, newest first when listed by falling `seq`.
+fn tool(seq: i64, data: Value) -> Entry {
     Entry {
         id: format!("e{seq}"),
         seq,
         bot_id: "b".into(),
         rev: seq,
-        kind: kind.into(),
+        kind: EntryKind::Tool.as_str().into(),
         turn: seq,
         data,
         created_at: 1_790_000_000_000,
@@ -15,157 +17,111 @@ fn entry(seq: i64, kind: &str, data: Value) -> Entry {
     }
 }
 
-fn scratch(name: &str, body: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("codync-ledger-{}-{name}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let file = dir.join("file.txt");
-    std::fs::write(&file, body).unwrap();
-    file
+fn edit(seq: i64, status: &str, path: &str, is_new: bool) -> Entry {
+    tool(
+        seq,
+        json!({"title": format!("Edit {path}"), "toolKind": "edit", "status": status,
+            "diffs": [{"path": path, "isNew": is_new, "patch": "+secret contents"}]}),
+    )
+}
+
+fn run(seq: i64, status: &str, line: &str) -> Entry {
+    tool(seq, json!({"title": line, "toolKind": "execute", "status": status, "output": "secret output"}))
 }
 
 #[test]
-fn the_users_rules_are_quoted_and_their_orders_are_not_kept_as_facts() {
-    let entries = [
-        entry(1, EntryKind::User.as_str(), json!({"text": "Check the build"})),
-        entry(2, EntryKind::User.as_str(), json!({"text": "不要改 src/auth.rs，只动测试"})),
-        entry(3, EntryKind::Agent.as_str(), json!({"text": "Never touch the lockfile", "final": true})),
-        entry(4, EntryKind::User.as_str(), json!({"text": "Always run cargo fmt first"})),
+fn only_finished_edits_count_and_a_file_made_here_stays_new() {
+    let tools = [
+        edit(5, "completed", "/repo/src/a.rs", false),
+        edit(4, "failed", "/repo/src/refused.rs", false),
+        edit(3, "pending", "/repo/src/proposed.rs", true),
+        edit(2, "completed", "/repo/src/a.rs", true),
+        edit(1, "completed", "/repo/src/b.rs", false),
+        tool(0, json!({"title": "Read /repo/src/c.rs", "toolKind": "read", "status": "completed"})),
     ];
-    let rules = constraints(&entries);
-    assert_eq!(rules.len(), 2, "the bot's own words and a plain order are no rules: {rules:?}");
-    assert!(rules[0].contains("Always run cargo fmt first"), "newest first: {rules:?}");
-    assert!(rules[1].contains("不要改 src/auth.rs"), "verbatim, in the user's own words: {rules:?}");
-}
-
-#[test]
-fn paths_addresses_and_ids_the_user_named_are_kept_once_in_order() {
-    let entries = [
-        entry(
-            1,
-            EntryKind::User.as_str(),
-            json!({"text": "请看一下 https://github.com/leepokai/Codync/pull/415 和 src/auth.rs，还有 src/auth.rs"}),
-        ),
-        entry(2, EntryKind::User.as_str(), json!({"text": "再看 docs/features/agent-fallback.md"})),
-    ];
-    let found = references(&entries);
+    let ledger = Ledger::of(&tools, &[]);
     assert_eq!(
-        found,
-        ["docs/features/agent-fallback.md", "https://github.com/leepokai/Codync/pull/415", "src/auth.rs"],
-        "newest message first, each kept once"
+        ledger.files,
+        [
+            Changed { path: "/repo/src/a.rs".into(), change: Change::Created },
+            Changed { path: "/repo/src/b.rs".into(), change: Change::Modified },
+        ],
+        "newest first, each once; a refused or proposed edit and a read changed nothing"
     );
 }
 
 #[test]
-fn files_keep_their_reason_size_and_hash() {
-    let changed = scratch("changed", "hello");
-    let created = scratch("created", "");
-    let entries = [
-        entry(
-            1,
-            EntryKind::Tool.as_str(),
-            json!({"title": "Read notes/plan.md", "toolKind": "read", "locations": [{"path": "notes/plan.md"}]}),
-        ),
-        entry(
-            2,
-            EntryKind::Tool.as_str(),
-            json!({"title": "Edit a.rs", "toolKind": "edit", "diffs": [
-                {"path": changed.to_string_lossy(), "isNew": false, "patch": "+x"}
-            ]}),
-        ),
-        entry(
-            3,
-            EntryKind::Tool.as_str(),
-            json!({"title": "Write b.rs", "toolKind": "edit", "diffs": [
-                {"path": created.to_string_lossy(), "isNew": true, "patch": "+y"}
-            ]}),
-        ),
+fn commands_are_listed_once_as_they_last_ended_with_failures_first() {
+    let tools = [
+        run(5, "completed", "cargo fmt"),
+        run(4, "in_progress", "npm run dev"),
+        run(3, "failed", "cargo test"),
+        run(2, "completed", "cargo fmt"),
+        run(1, "failed", "cargo fmt"),
+        tool(0, json!({"title": "Read a.rs", "toolKind": "read", "status": "completed"})),
     ];
-    let files = files(&entries);
-    let reasons: Vec<(&str, &str)> = files.iter().map(|f| (f.why, f.path.as_str())).collect();
-    assert_eq!(reasons[0].0, "created", "{files:?}");
-    assert_eq!(reasons[1].0, "modified");
-    assert_eq!(reasons[2].0, "read");
-    let changed_entry = &files[1];
-    let bytes = std::fs::read(&changed).unwrap();
-    assert_eq!(changed_entry.bytes, Some(bytes.len() as u64));
-    let hash = changed_entry.sha256.clone().expect("a hash");
-    assert_eq!(hash.len(), 64, "sha256 in hex: {hash}");
-    assert_eq!(files[2].bytes, None, "a file it never saw is unknown, not guessed");
-    assert!(describe_file(changed_entry).contains("B, sha256 "));
+    let ledger = Ledger::of(&tools, &[]);
+    let listed: Vec<(&str, Ended)> = ledger.commands.iter().map(|c| (c.line.as_str(), c.ended)).collect();
+    assert_eq!(
+        listed,
+        [("cargo test", Ended::Failed), ("cargo fmt", Ended::Completed), ("npm run dev", Ended::Unfinished)],
+        "the newest run of a line is how it stands"
+    );
 }
 
 #[test]
-fn commands_keep_the_exit_status_their_output_ends_with() {
-    let entries = [
-        entry(
-            1,
-            EntryKind::Tool.as_str(),
-            json!({"title": "cargo test", "toolKind": "execute", "output": "ok\n\n[exit code: 1]"}),
-        ),
-        entry(2, EntryKind::Tool.as_str(), json!({"title": "ls", "toolKind": "execute", "output": "a.txt"})),
-        entry(3, EntryKind::Tool.as_str(), json!({"title": "cat a.txt", "toolKind": "read"})),
-        entry(
-            4,
-            EntryKind::Tool.as_str(),
-            json!({"title": "npm test", "toolKind": "terminal", "output": "Process exited with code 2"}),
-        ),
+fn a_command_of_several_lines_is_one_line_with_its_own_ending() {
+    let tools = [
+        run(2, "failed", "cat > config.py <<'EOF'\nAPI_URL = 1\nEOF"),
+        run(1, "completed", "cat > config.py  <<'EOF'\n  API_URL = 1\nEOF\n"),
     ];
-    let commands = commands(&entries);
-    assert_eq!(commands.len(), 3, "the shell calls; the read isn't one: {commands:?}");
-    assert_eq!(commands[0].status, Some(2), "newest first");
-    assert_eq!(commands[2].status, Some(1));
-    assert_eq!(commands[1].status, None, "a command whose output says nothing of its status");
-    assert_eq!(exit_status("ok"), None);
-    assert_eq!(exit_status("exit status 0"), Some(0));
+    let text = Ledger::of(&tools, &[]).render().expect("a ledger");
+    assert!(
+        text.contains("failed ones first:\n- cat > config.py <<'EOF' API_URL = 1 EOF (failed)\n</ledger>"),
+        "{text}"
+    );
 }
 
 #[test]
-fn what_waits_for_the_user_is_named() {
-    let entries = [
-        entry(1, EntryKind::Permission.as_str(), json!({"title": "Run npm test", "status": "pending"})),
-        entry(2, EntryKind::Permission.as_str(), json!({"title": "Edit a.rs", "status": "answered"})),
-    ];
-    assert_eq!(waiting(&entries), ["approval: Run npm test"]);
+fn running_dev_servers_are_named_with_their_ports() {
+    let servers = [("web".to_owned(), vec![5173]), ("api".to_owned(), vec![]), ("both".to_owned(), vec![3000, 3001])];
+    assert_eq!(
+        Ledger::of(&[], &servers).running,
+        ["dev server web on port 5173", "dev server api", "dev server both on ports 3000, 3001"]
+    );
 }
 
 #[test]
-fn the_ledger_reads_as_sections_and_names_what_the_budget_left_out() {
-    let file = scratch("budget", "0123456789");
-    let ledger = Ledger {
-        constraints: vec!["always run the tests".into()],
-        references: vec!["src/auth.rs".into()],
-        files: vec![Touched {
-            path: file.to_string_lossy().into_owned(),
-            bytes: Some(10),
-            sha256: Some("a".repeat(64)),
-            why: "modified",
-        }],
-        commands: vec![Command { line: "cargo test".into(), status: Some(1) }],
-        running: vec!["dev server web on port 5173".into()],
-        waiting: vec!["approval: Run npm test".into()],
-    };
-    let full = render(&ledger, 6_000);
-    for piece in [
-        "<ledger>",
-        "always run the tests",
-        "src/auth.rs",
-        "(modified, 10 B, sha256 aaaaaaaaaaaa)",
-        "`cargo test` (exit 1)",
-        "dev server web on port 5173",
-        "approval: Run npm test",
+fn the_ledger_is_an_index_with_what_it_leaves_out_counted() {
+    let mut tools: Vec<Entry> =
+        (0..14).rev().map(|i| edit(100 + i, "completed", &format!("/repo/f{i}.rs"), false)).collect();
+    tools.push(run(1, "failed", "cargo test"));
+    let text = Ledger::of(&tools, &[("web".to_owned(), vec![5173])]).render().expect("a ledger");
+    assert!(text.starts_with("<ledger>\n") && text.ends_with("\n</ledger>"), "{text}");
+    for line in [
+        "Files changed, newest first:\n- /repo/f13.rs (modified)",
+        "- /repo/f4.rs (modified)\n- and 4 more",
+        "Commands run, failed ones first:\n- cargo test (failed)",
+        "Running now:\n- dev server web on port 5173",
     ] {
-        assert!(full.contains(piece), "{piece} is in the ledger: {full}");
+        assert!(text.contains(line), "{line} is in the ledger: {text}");
     }
-    assert!(!full.contains("Omitted due to budget"), "a generous budget drops nothing");
-    // A tight one keeps what fits and names the rest: nothing is dropped quietly.
-    let tight = render(&ledger, 420);
-    assert!(tight.contains("Omitted due to budget:"), "{tight}");
-    assert!(tight.contains("Omitted due to budget:"), "nothing is dropped quietly: {tight}");
-    assert!(tight.contains("Omitted due to budget:"), "{tight}");
-    assert!(tight.chars().count() < 2_000, "the tight ledger stays small: {}", tight.chars().count());
+    assert!(!text.contains("/repo/f3.rs"), "past ten files the rest is counted: {text}");
+    assert!(!text.contains("secret"), "paths and lines only, never a diff or an output: {text}");
+    assert!(text.len() < 2_500, "it stays small: {}", text.len());
 }
 
 #[test]
-fn an_empty_ledger_adds_nothing() {
-    assert_eq!(render(&Ledger::default(), 1_000), "");
+fn a_long_path_or_line_is_cut() {
+    let long = format!("/repo/{}.rs", "x".repeat(400));
+    let text = Ledger::of(&[edit(2, "completed", &long, false), run(1, "completed", &"y".repeat(400))], &[])
+        .render()
+        .expect("a ledger");
+    assert!(text.lines().all(|line| line.chars().count() < 300), "{text}");
+}
+
+#[test]
+fn nothing_left_behind_adds_nothing() {
+    let read = tool(1, json!({"title": "Read a.rs", "toolKind": "read", "status": "completed"}));
+    assert_eq!(Ledger::of(&[read], &[]).render(), None);
 }

@@ -29,8 +29,8 @@ pub use lifecycle::{
 pub use observe::{answered, failed, observe_call};
 pub use reported::track;
 pub use turns::{
-    Retired, Steer, TurnOutcome, TurnSource, agent_fell_back, agent_retired, context_compacted, message_steered,
-    turn_finished,
+    Carried, Retired, Steer, TurnOutcome, TurnSource, agent_fell_back, agent_retired, context_compacted,
+    handoff_carried, message_steered, turn_finished,
 };
 
 const KV_ENABLED: &str = "analytics_enabled";

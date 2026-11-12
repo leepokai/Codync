@@ -87,10 +87,11 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
   or model forgets its session.
 - **What the next agent hears**, before the turn's messages (`fallback::carry`), decided once its session is up. Only
   the user's messages and the bot's replies count:
-  - a new session (also when its parked session won't load): a recap of the chat — the turn's ledger (below), the
-    last summary of the session it takes over from, as many messages as the new model's window holds, the open plan and
-    a `search_history` bookmark;
-  - a session it had: a catch-up of what was said since it left (an agent that never started keeps its mark);
+  - a new session (also when its parked session won't load): a recap of the chat (the last summary of the session it
+    takes over from, the latest messages, the open plan, the ledger below, a `search_history` bookmark), sized to
+    the agent's window once that is known;
+  - a session it had: a catch-up of what was said since it left, with the ledger of what the other agents did
+    meanwhile (an agent that never started keeps its mark);
   - and when agents failed this turn: who stopped last and why, then each failed agent's tool calls, the messages it
     sent and its last note, with "check what's already done before you redo any step". It follows a handoff the user
     approved, which waits for the next turn if this one can't start at all.
@@ -105,28 +106,37 @@ turn keeps its number, messages, routine run, room turn or bot request; permissi
 
 ## The handover ledger
 
-The recap starts with a ledger of what the last turn left behind, gathered by rule from the chat alone — no model call,
-so it always runs and costs nothing (`fallback::carry::ledger`):
+A recap and a catch-up carry a ledger of what the agents before left behind, read by rule from the chat's tool calls:
+no model call, so it always runs and costs nothing (`fallback::carry::ledger`). It covers the same stretch of the chat
+as the messages read (after the last new session; for a catch-up, since the agent left), without the running turn's
+own calls, which the takeover lists, and without the bot's own bookkeeping (a message sent, a memory kept):
 
-- **What the user asked for**, the newest messages that carry a rule (a prohibition, an order, a preference; Chinese
-  and English markers), quoted in their own words.
-- **Paths, addresses and ids** the user named.
-- **Files the turn touched**, with what each call did (`created`, `modified`, `read`), the file's size now and the
-  SHA-256 of its bytes (a file gone or outside the bot's folders reads "unknown", never guessed).
-- **Commands the turn ran**, with the exit status their output ends with (`[exit code: 1]`,
-  `Process exited with code 2`), or that it didn't report one.
-- **Running now**: the bot's dev servers and its routines that are on.
-- **Waiting for the user**: approvals still pending.
+- **Files changed**, newest first, each once: `created` or `modified`, from edits that completed. A refused or failed
+  edit changed nothing, and a file only read isn't listed.
+- **Commands run**, failed ones first, each line once as its newest call ended (`failed`, `didn't finish`); a
+  command of several lines is listed on one.
+- **Running now**: the [dev servers](dev-servers.md) Codync runs for the bot that run or are starting, with their
+  ports. What an agent started through its own shell ends with that agent, so it isn't listed.
 
-The ledger is capped, and so is the rest: the recap takes the new model's window when its agent reports one (about
-three characters a token, a quarter kept for the turn itself), and otherwise about a quarter of a 128k window. Whatever
-doesn't fit is **named, not dropped**: messages the recap leaves out say how many and point at `search_history`, and the
-ledger ends with `Omitted due to budget: N …` and a line per item it couldn't show. The next agent then knows what it
-hasn't seen and can read it again.
+It is an **index, not the contents**: paths and command lines only, never a diff or an output, at most 10 files, 6
+commands and 6 servers, the rest counted ("and 4 more"). The next agent reads a file before changing it and
+`search_history` for what was said.
 
-The idea of a manifest a fresh agent picks up comes from [oh-my-hermes](https://github.com/mutouann/oh-my-hermes)
-(MIT): its handoff lists the files and commands a task touched so the next agent doesn't start from nothing. This is an
-independent implementation of that idea for Codync's rules (no code copied).
+What the user asked for is not gathered here. Standing rules reach every session through the bot's
+[memory](context-and-memory.md), which every new session gets whichever agent runs it, and what was said in this chat
+comes from the user's own messages:
+
+- **The latest 12 messages** in full (2,000 bytes each), as before.
+- **The user's earlier messages**, theirs only and cut to 900 bytes (about 300 tokens: 300 CJK characters), as far back as they fit. The bot's earlier
+  replies stay in the history; a line says when not everything is repeated.
+
+**How much it takes.** A recap may fill a tenth of the next agent's window, and never more than 20,000 tokens: a
+model with a wider window reads further back itself. The window is the one that agent last reported when a turn of the
+bot's own chat ended (`kv` `fallback.window.<bot>.<agent>`); an agent that never finished one there gets the latest 12
+messages alone. A catch-up isn't sized: it repeats at most 20 messages. Tokens are
+counted as three bytes each, which holds for CJK text (a character is three bytes and about a token) and errs on the
+small side for Latin text. The summary, the plan and the ledger always go; the messages share what they leave, and the
+newest message always goes.
 
 ## The bot sets its own
 
@@ -148,7 +158,8 @@ iPhone, Android, desktop and terminal show the same things:
   and a ⋯ menu (Move up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its
   fallbacks" switch. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
-  on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told. Moving past a
+  on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told (past 8,000 bytes,
+  its start and its end: the messages in the middle are in the chat). Moving past a
   signed-out agent also posts its sign-in card (`connectionRequest` kind `agent`), whose Sign in opens the agent's
   sign-in sheet. A failure with
   `addFallback` offers **Add a fallback**, which opens the Agent card.
@@ -165,4 +176,5 @@ All additive (no `minApp` change):
   reason} | null` and `resting: [{agent, until, reason}]` (agent bots only).
 - Method: `switchBack {botId}`.
 - Notices: `agentSwitch: {from, to, back, reason, resetsAt, carried}`; failure notices' `addFallback: true`.
-- Analytics: `agent_fell_back {agent, reason}`; `turn_finished` once per agent the turn ran on.
+- Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap
+  or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished` once per agent the turn ran on.

@@ -293,6 +293,14 @@ extension BotStore {
         perform(replay: true) { try await $0.reorderBots(ids) }
     }
 
+    /// Whether a bot with a new message moves to the top of this computer's roster.
+    public var autoOrder: Bool { hello?.autoOrder ?? false }
+
+    public func setAutoOrder(_ on: Bool) {
+        hello?.autoOrder = on
+        Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
+    }
+
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
     public func move(_ botId: String, by offset: Int) {
         guard let bot = bots[botId] else { return }

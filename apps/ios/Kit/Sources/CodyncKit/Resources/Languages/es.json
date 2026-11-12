@@ -2003,5 +2003,8 @@
   "Hand back to bots": "Devolver a los bots",
   "Copy from computer": "Copiar desde la computadora",
   "Keyboard for the remote screen": "Teclado para la pantalla remota",
-  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "No se pudo conectar con la pantalla remota. Revisa la conexión de la computadora e inténtalo de nuevo."
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "No se pudo conectar con la pantalla remota. Revisa la conexión de la computadora e inténtalo de nuevo.",
+  "Move active bots to the top": "Mover los bots activos arriba",
+  "Active bots move to the top": "Los bots activos suben arriba",
+  "Bots keep the order you set": "Los bots mantienen el orden que elegiste"
 }

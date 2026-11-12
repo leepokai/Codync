@@ -42,9 +42,8 @@ pub fn said(entries: &[Entry]) -> Vec<Said> {
         .iter()
         .filter_map(|e| {
             let user = e.kind == EntryKind::User.as_str();
-            let reply = e.kind == EntryKind::Agent.as_str() && e.data["final"] == true;
             let text = message_text(&e.data);
-            (user || reply)
+            e.is_message()
                 .then(|| Said { user, date: crate::chat::memory::ymd(e.created_at), text })
                 .filter(|s| !s.text.trim().is_empty())
         })

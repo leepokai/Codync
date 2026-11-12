@@ -2003,5 +2003,8 @@
   "Hand back to bots": "ボットに戻す",
   "Copy from computer": "コンピューターからコピー",
   "Keyboard for the remote screen": "リモート画面のキーボード",
-  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピューターの接続を確認して、もう一度お試しください。"
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "リモート画面に接続できませんでした。コンピューターの接続を確認して、もう一度お試しください。",
+  "Move active bots to the top": "動きのあったボットを上に移動",
+  "Active bots move to the top": "動きのあったボットが上に移動します",
+  "Bots keep the order you set": "ボットは設定した順序のままです"
 }

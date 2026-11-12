@@ -6,6 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.45.1
+### zh-Hant
+- 新增「將有新動態的機器人移到最前面」：在電腦的設定裡開啟後，有新訊息（你的訊息、bot 的回覆或 routine 執行）的 bot 會自動排到列表最上面。
+
+### en-US
+- New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
+
 ## 2.44.1
 ### zh-Hant
 - 有重要更新時，更新後第一次開啟 Codync 會跳出「新功能」視窗，列出這個版本改了什麼。一般的更新不會顯示。

@@ -15,7 +15,7 @@ const QUOTE_BYTES: usize = 500;
 pub fn quote(store: &Store, chat: &str, id: &str) -> Result<Value> {
     let e = store.entry(id).filter(|e| e.bot_id == chat).ok_or_else(|| anyhow!("unknown message"))?;
     let user = e.kind == EntryKind::User.as_str();
-    ensure!(user || (e.kind == EntryKind::Agent.as_str() && e.data["final"] == true), "only messages take replies");
+    ensure!(e.is_message(), "only messages take replies");
     let author = if user { "user" } else { e.data["author"].as_str().unwrap_or(chat) };
     let mut quote =
         json!({"id": e.id, "author": author, "text": acp::truncate(message_text(&e.data).trim(), QUOTE_BYTES)});

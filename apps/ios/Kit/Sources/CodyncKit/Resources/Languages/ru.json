@@ -2003,5 +2003,8 @@
   "Hand back to bots": "Вернуть ботам",
   "Copy from computer": "Скопировать с компьютера",
   "Keyboard for the remote screen": "Клавиатура для удалённого экрана",
-  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Не удалось подключиться к удалённому экрану. Проверьте подключение компьютера и попробуйте снова."
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Не удалось подключиться к удалённому экрану. Проверьте подключение компьютера и попробуйте снова.",
+  "Move active bots to the top": "Перемещать активных ботов наверх",
+  "Active bots move to the top": "Активные боты перемещаются наверх",
+  "Bots keep the order you set": "Боты сохраняют заданный вами порядок"
 }

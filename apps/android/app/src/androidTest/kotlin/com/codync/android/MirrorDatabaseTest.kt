@@ -107,21 +107,48 @@ class MirrorDatabaseTest {
     }
 
     @Test fun incompatibleCacheAndDatabaseReplacementRewindSafely() {
-        assertFalse(mirror.setStamp("old", "2.4/2.4"))
+        assertFalse(mirror.setStamp("old", "schema 7"))
         mirror.apply(MirrorEvent.EntryChanged(entry(9)))
         mirror.save(PendingSend("unsent", "bot", text = "message", createdAt = 1))
         mirror.finishHistory("bot")
-        assertFalse(mirror.setStamp("old", "2.4/2.4"))
+        assertFalse(mirror.setStamp("old", "schema 7"))
         assertEquals(1, mirror.snapshot().entries.size)
         // The new host removed "message": the catch-up from 0 brings only what it still has.
-        assertTrue(mirror.setStamp("old", "2.5/2.4"))
+        assertTrue(mirror.setStamp("old", "schema 8"))
         assertEquals(0, mirror.snapshot().rev)
         assertFalse(mirror.historyComplete("bot"))
         assertEquals("unsent", mirror.snapshot().pending.single().nonce)
         mirror.apply(MirrorEvent.EntryChanged(Entry("kept", 2, "bot", rev = 10, kind = "user", data = buildJsonObject { put("text", "kept") })))
         assertEquals(listOf("kept"), mirror.snapshot().entries.map { it.id })
-        assertTrue(mirror.setStamp("new", "2.5/2.4"))
+        assertTrue(mirror.setStamp("new", "schema 8"))
         assertEquals(0, mirror.snapshot().rev)
+        assertTrue(mirror.snapshot().entries.isEmpty())
+    }
+
+    @Test fun aNewVersionReadsTheBotsAgainAndKeepsTheConversation() {
+        mirror.setStamp("host", "schema 8")
+        mirror.apply(MirrorEvent.EntryChanged(entry(9)))
+        assertTrue(mirror.rosterStale("2.4/2.4"))
+        mirror.receiveRoster(listOf(Bot("bot", "Bot", rev = 2)), "2.4/2.4")
+        assertFalse(mirror.rosterStale("2.4/2.4"))
+        // The cursor stays: a catch-up from the start onto the rows held could leave a gap.
+        assertEquals(9, mirror.revision())
+        assertTrue(mirror.rosterStale("2.5/2.4"))
+        assertFalse(mirror.setStamp("host", "schema 8"))
+        assertEquals(1, mirror.snapshot().entries.size)
+    }
+
+    @Test fun aStampFromBeforeTheSchemaKeepsTheConversationOnTheSameHostVersion() {
+        mirror.setStamp("host", "2.45.0/2.45.0")
+        mirror.apply(MirrorEvent.EntryChanged(entry(9)))
+        assertFalse(mirror.setStamp("host", "schema 8", hostVersion = "2.45.0"))
+        assertEquals(1, mirror.snapshot().entries.size)
+        // Stamped with the schema from here on, a new host version alone keeps it too.
+        assertFalse(mirror.setStamp("host", "schema 8", hostVersion = "2.45.1"))
+        // Synced with another host version, whose schema is unknown.
+        mirror.setStamp("host", "2.45.0/2.44.0")
+        mirror.apply(MirrorEvent.EntryChanged(entry(9)))
+        assertTrue(mirror.setStamp("host", "schema 8", hostVersion = "2.45.0"))
         assertTrue(mirror.snapshot().entries.isEmpty())
     }
 
@@ -190,10 +217,10 @@ class MirrorDatabaseTest {
     }
 
     @Test fun aCatchUpFromTheStartKeepsEveryRowWhateverItsOrder() {
-        mirror.setStamp("host", "build/1")
+        mirror.setStamp("host", "schema 7")
         mirror.apply((10L..20L).map { MirrorEvent.EntryChanged(chat("bot", it)) })
-        // A new app or host version fetches the conversation again from rev 0, and a send's reply lands before the catch-up.
-        assertTrue(mirror.setStamp("host", "build/2"))
+        // A host with another store schema fetches the conversation again from rev 0, and a send's reply lands before the catch-up.
+        assertTrue(mirror.setStamp("host", "schema 8"))
         mirror.receive(listOf(chat("bot", 30)))
         mirror.apply(MirrorEvent.Hello("host", 40, JsonObject(emptyMap()), null))
         // Sorted by rev, so an older row edited later arrives after a newer one.

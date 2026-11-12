@@ -231,6 +231,7 @@
     "hello.name": "string",
     "hello.os": "string",
     "hello.rev": "number",
+    "hello.schema": "number",
     "hello.signKey": "string",
     "hello.version": "string"
   }

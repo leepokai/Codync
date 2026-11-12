@@ -14,6 +14,8 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
 - 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
 - bot 要你選擇時，聊天中會出現可點選的選項卡。選項會送回正在進行的工作，已回答或過期的卡片不會重複送出。
+- 更新 App 或電腦上的 Codync 之後，聊天不再先清空再重新載入：原本的訊息會留在畫面上，背景更新完成後才替換。
+- 聊天裡的 routine 紀錄改為置中顯示。
 
 ### en-US
 - New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
@@ -22,6 +24,8 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
 - Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
 - When your bot needs a choice, tap an option in its chat card. Your answer continues the current work; answered or expired cards cannot send another choice.
+- After an update of the app or of Codync on your computer, a chat no longer empties and loads again: its messages stay on screen while they refresh underneath.
+- A routine's line in the chat is centered.
 
 ## 2.44.1
 ### zh-Hant

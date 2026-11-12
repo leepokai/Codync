@@ -3,6 +3,10 @@
 // marketplace catalogs. Run it from the repository root with the OpenBot checkout as the argument:
 //
 //   node tools/import-openbot-catalog.mjs ../openbot-nightly
+//   node tools/import-openbot-catalog.mjs ../openbot-nightly --apps-only
+//
+// `--apps-only` refreshes only the connector catalog (host/src/market/openbot/apps.json), in the
+// plugin catalog's own order and with its featured picks, leaving agents and skills untouched.
 //
 // The output is committed. Re-running is safe: the generated folders are replaced.
 import { execFileSync } from 'node:child_process'
@@ -11,9 +15,13 @@ import { join, resolve } from 'node:path'
 
 const source = resolve(process.argv[2] ?? '')
 if (!process.argv[2]) {
-    console.error('usage: node tools/import-openbot-catalog.mjs <openbot checkout>')
+    console.error('usage: node tools/import-openbot-catalog.mjs <openbot checkout> [--apps-only]')
     process.exit(1)
 }
+
+// `--apps-only` refreshes the connector catalog without touching agents, skills or the embedded
+// skill archive, so a connectors-only change stays reviewable on its own.
+const appsOnly = process.argv.slice(3).includes('--apps-only')
 
 const out = resolve('host/src/market/openbot')
 const production = join(source, 'marketplace', 'production-catalog')
@@ -48,13 +56,15 @@ const catalog = JSON.parse(readFileSync(catalogFile, 'utf8'))
 const catalogUpdated = statSync(catalogFile).mtime.toISOString().slice(0, 10)
 
 // MARK: skills
-rmSync(join(out, 'skills'), { recursive: true, force: true })
-mkdirSync(join(out, 'skills'), { recursive: true })
+if (!appsOnly) {
+    rmSync(join(out, 'skills'), { recursive: true, force: true })
+    mkdirSync(join(out, 'skills'), { recursive: true })
+}
 
 /** The instructions of a SKILL.md without its front matter, for the details sheet. */
 const body = (md) => md.replace(/^---[\s\S]*?\n---\n/, '').trim()
 
-const skills = catalog.skills.map((skill) => {
+const skills = appsOnly ? [] : catalog.skills.map((skill) => {
     const dir = join(production, 'skills', skill.slug)
     const copy = join(out, 'skills', skillId(skill.slug))
     cpSync(dir, copy, { recursive: true })
@@ -73,7 +83,7 @@ const skills = catalog.skills.map((skill) => {
 // The pstack pack ships 52 skills, each prefixed as OpenBot prefixes them.
 const pstack = join(production, 'bundles', 'pstack')
 const pstackChildren = []
-for (const dir of readdirSync(join(pstack, 'skills'))) {
+if (!appsOnly) for (const dir of readdirSync(join(pstack, 'skills'))) {
     const id = `pstack-${skillId(dir)}`
     cpSync(join(pstack, 'skills', dir), join(out, 'skills', id), { recursive: true })
     const md = readFileSync(join(pstack, 'skills', dir, 'SKILL.md'), 'utf8')
@@ -89,8 +99,10 @@ for (const dir of readdirSync(join(pstack, 'skills'))) {
         body: body(md),
     })
 }
-cpSync(join(pstack, 'LICENSE'), join(out, 'skills', 'pstack-poteto-mode', 'LICENSE'))
-cpSync(join(pstack, 'NOTICE.md'), join(out, 'skills', 'pstack-poteto-mode', 'NOTICE.md'))
+if (!appsOnly) {
+    cpSync(join(pstack, 'LICENSE'), join(out, 'skills', 'pstack-poteto-mode', 'LICENSE'))
+    cpSync(join(pstack, 'NOTICE.md'), join(out, 'skills', 'pstack-poteto-mode', 'NOTICE.md'))
+}
 
 const packs = catalog.packs.map((pack) => ({
     id: pack.slug,
@@ -101,7 +113,7 @@ const packs = catalog.packs.map((pack) => ({
 }))
 
 // MARK: agents
-const agents = catalog.agents.map((agent) => ({
+const agents = appsOnly ? [] : catalog.agents.map((agent) => ({
     id: agent.slug,
     name: agent.name,
     title: agent.title,
@@ -123,7 +135,7 @@ const agents = catalog.agents.map((agent) => ({
 }))
 
 // A Codync-native extra: OpenBot's workflow playbook, wired to Codync's routine canvas and tools.
-agents.push({
+if (!appsOnly) agents.push({
     id: 'workflow-builder',
     name: 'Workflow Builder',
     title: 'A trigger, ordered steps and a result, drawn on the canvas as it is built',
@@ -143,7 +155,16 @@ agents.push({
 // A local server signed in before each start; OpenBot's plugin schema has no field for this.
 const LOGINS = { 'proton-pass': ['pass-cli', 'login'] }
 const apps = []
-for (const slug of readdirSync(plugins)) {
+// The plugin catalog's own order and featured picks, so the most important connectors come first.
+const pluginCatalog = JSON.parse(readFileSync(join(source, 'marketplace', 'plugin-catalog', 'catalog.json'), 'utf8'))
+const order = Array.isArray(pluginCatalog.order) ? pluginCatalog.order : []
+const featured = new Set(Array.isArray(pluginCatalog.featured) ? pluginCatalog.featured : [])
+const rank = (slug) => {
+    const index = order.indexOf(slug)
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index
+}
+const pluginSlugs = [...readdirSync(plugins)].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+for (const slug of pluginSlugs) {
     const plugin = JSON.parse(readFileSync(join(plugins, slug, 'plugin.json'), 'utf8'))
     const pluginUpdated = statSync(join(plugins, slug, 'plugin.json')).mtime.toISOString().slice(0, 10)
     const app = plugin.apps?.[0]
@@ -161,7 +182,7 @@ for (const slug of readdirSync(plugins)) {
         updated: pluginUpdated,
         icon: plugin.iconUrl,
         website: plugin.websiteUrl,
-        featured: ['aave', 'canva', 'notion', 'figma'].includes(plugin.slug),
+        featured: featured.has(plugin.slug),
         setup,
         server: {
             name: app.server.name,
@@ -190,9 +211,12 @@ for (const slug of readdirSync(plugins)) {
 
 mkdirSync(out, { recursive: true })
 // The host embeds this archive: a packaged binary has no source folders beside it.
-execFileSync('tar', ['-czf', join(out, 'skills.tar.gz'), '-C', out, 'skills'])
-writeFileSync(join(out, 'skills.json'), JSON.stringify({ skills, packs }, null, 2) + '\n')
-writeFileSync(join(out, 'agents.json'), JSON.stringify({ agents }, null, 2) + '\n')
+if (!appsOnly) {
+    execFileSync('tar', ['-czf', join(out, 'skills.tar.gz'), '-C', out, 'skills'])
+    writeFileSync(join(out, 'skills.json'), JSON.stringify({ skills, packs }, null, 2) + '\n')
+    writeFileSync(join(out, 'agents.json'), JSON.stringify({ agents }, null, 2) + '\n')
+}
 writeFileSync(join(out, 'apps.json'), JSON.stringify({ apps }, null, 2) + '\n')
 
 console.log(`wrote ${agents.length} agents, ${skills.length} skills and ${apps.length} apps to ${out}`)
+

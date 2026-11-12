@@ -264,6 +264,8 @@ public struct Hello: Codable, Sendable {
     public var latestVersion: String?
     /// The computer could join an account: a signed-in phone may offer to add it (`HostClient.joinAccount`).
     public var canJoinAccount: Bool?
+    /// A bot with a new message moves to the top of the roster (missing from older hosts).
+    public var autoOrder: Bool?
 }
 
 public struct RecentWorkspace: Codable, Sendable, Identifiable {

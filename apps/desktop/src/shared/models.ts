@@ -542,6 +542,8 @@ export interface Hello {
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
+  autoOrder?: boolean
 }
 
 export interface PairingInfo {

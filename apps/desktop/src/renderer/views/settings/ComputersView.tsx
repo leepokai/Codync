@@ -263,6 +263,12 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
                   : []),
               ]
             : []),
+          // Hosts before 2.45.1 have no automatic order.
+          online && store.autoOrder != null ? (
+            <Switch key="auto-order" className="settings-appear" on={store.autoOrder} onChange={(on) => void run(() => store.setAutoOrder(on))}>
+              Move active bots to the top
+            </Switch>
+          ) : null,
           // On macOS and Windows this computer's Codync is this app: its version and update are on the Updates page.
           // Kept while an update asked from here restarts the computer: its spinner says it's updating.
           (online || store.isUpdating) && store.hello && !(store === app.local && window.codync.platform !== 'linux')

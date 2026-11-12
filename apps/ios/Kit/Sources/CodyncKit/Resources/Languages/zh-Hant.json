@@ -2006,5 +2006,8 @@
   "Hand back to bots": "交還給 Bot",
   "Copy from computer": "從電腦複製",
   "Keyboard for the remote screen": "遠端螢幕的鍵盤",
-  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "無法連線到遠端螢幕。請檢查電腦的網路連線後再試一次。"
+  "Couldn't connect to the remote screen. Check the computer's connection and try again.": "無法連線到遠端螢幕。請檢查電腦的網路連線後再試一次。",
+  "Move active bots to the top": "將有新動態的機器人移到最前面",
+  "Active bots move to the top": "有新動態的機器人會移到最前面",
+  "Bots keep the order you set": "機器人維持你設定的順序"
 }

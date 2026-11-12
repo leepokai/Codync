@@ -2,6 +2,7 @@
 
 mod analytics;
 mod approvals;
+mod auto_order;
 mod bot;
 mod editor;
 mod events;
@@ -163,6 +164,8 @@ pub struct App {
     pub hint: Option<(String, Instant)>,
     /// Whether this computer shares usage analytics (`None`: before the first `hello`).
     pub analytics: Option<bool>,
+    /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
+    pub auto_order: Option<bool>,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
     kofi: kofi::Invite,
@@ -237,6 +240,7 @@ impl App {
             floors: HashMap::new(),
             hint: None,
             analytics: None,
+            auto_order: None,
             seen: analytics::Seen::default(),
             kofi: kofi::Invite::load(),
         }

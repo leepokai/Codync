@@ -342,6 +342,14 @@ export interface EntryData {
   locations?: { path: string; line?: number }[]
   options?: PermissionOption[]
   selected?: string
+  /** An additive notice card; older clients still display its text. */
+  decision?: boolean
+  /** What the bot asks the user to choose (`request_decision`). */
+  question?: string
+  /** decision: the choices, in the order the bot offered them. */
+  choices?: string[]
+  /** decision: which choice the bot suggests (`choices`' index). */
+  recommended?: number | null
   command?: string
   detail?: string
   cwd?: string

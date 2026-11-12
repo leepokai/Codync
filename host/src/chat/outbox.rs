@@ -22,7 +22,11 @@ publish_artifact(path, title). It shows as a card in your chat and in its Librar
 publish_artifact(path, artifact: its id); never make a second artifact for the same thing. list_artifacts shows your artifacts and where each one's HTML is. \
 Reactions are rare: react(emoji) only where a person would (❤️ to thanks, 👍 to a plain OK, 🎉 to big news, 😂 to a real joke), \
 never to a question or a request. When a message needs no words, the reaction is the whole reply; when it needs neither, \
-end your turn by replying exactly \"(pass)\".";
+end your turn by replying exactly \"(pass)\". {decision}";
+/// What a bot is told about asking the user to choose, filled into [`INSTRUCTIONS`].
+pub fn instructions() -> String {
+    INSTRUCTIONS.replace("{decision}", crate::chat::decision::INSTRUCTIONS)
+}
 
 /// Longest message accepted, in bytes.
 const MAX_MESSAGE_BYTES: usize = 32 * 1024;
@@ -44,7 +48,7 @@ pub fn tools() -> Value {
         "description": "Share one regular file with the user in your own chat. Any file type, including empty files, up to 100 MiB. The host saves an immutable copy. Paths are absolute or relative to your working directory. A successful response means the file message was published; do not repeat it.",
         "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string", "description": "Optional display filename, without folders."}}, "required": ["path"]},
         "annotations": {"readOnlyHint": false, "idempotentHint": false},
-    }])
+    }, crate::chat::decision::tool()])
 }
 
 pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
@@ -56,6 +60,10 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             (args["emoji"].as_str().unwrap_or_default().to_owned(), args["to"].as_str().map(str::to_owned));
         deliver(hub, bot, |reply| Cmd::React { emoji, to, reply }).await?;
         return Ok(json!({"reacted": true}));
+    }
+    if name == crate::chat::decision::TOOL {
+        let cfg = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
+        return crate::chat::decision::ask(hub, &cfg, args).await;
     }
     if name != "send_message" {
         bail!("unknown chat tool: {name}");

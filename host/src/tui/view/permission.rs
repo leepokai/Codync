@@ -4,6 +4,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Click, Entry, tilde};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::style::{spin, theme};
@@ -33,6 +34,90 @@ fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
             k
         })
         .collect()
+}
+
+/// A bot's choice card (`request_decision`): its question heads it, then a button per option, the suggested one marked.
+pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
+    let t = theme();
+    let answering = app.answering.get(&e.id);
+    let question = e.data["question"].as_str().unwrap_or("Choose one");
+    let bw = width.saturating_sub(1).max(20);
+    let inner = bw.saturating_sub(4);
+    card_head(out, &format!(" ◆ {} asks ", truncate(&b.name, inner.saturating_sub(10))), bw);
+    for l in md::wrap(&[Span::styled(question.to_owned(), t.secondary)], inner, &[], &[]) {
+        card_row(out, l.spans, inner);
+    }
+    card_row(out, vec![], inner);
+    let recommended = e.data["recommended"].as_u64().and_then(|i| usize::try_from(i).ok());
+    for (i, option) in e.choices().iter().enumerate() {
+        let number = format!("F{}", i + 1);
+        let key = format!(" {} ", if answering == Some(option) { spin(app) } else { number.as_str() });
+        let suggested = recommended == Some(i);
+        let label = if suggested { format!("{option} · {} ", tr("Suggested")) } else { format!("{option} ") };
+        let style = if answering.is_some_and(|a| a != option) {
+            t.dim.patch(t.btn)
+        } else if suggested || i == 0 {
+            t.btn_primary
+        } else {
+            t.text.patch(t.btn)
+        };
+        let content = [Span::styled(key, style.add_modifier(Modifier::BOLD)), Span::styled(label, style)];
+        for line in md::wrap(&content, inner, &[], &[]) {
+            let li = out.lines.len();
+            card_row(out, line.spans, inner);
+            out.buttons.push((li, 3, u(inner), Click::Option { entry: e.id.clone(), option: option.clone() }));
+        }
+    }
+    card_foot(out, bw);
+}
+
+/// The head line of a card, in the approval card's amber box.
+fn card_head(out: &mut Built, head: &str, bw: usize) {
+    let t = theme();
+    let side = bw.saturating_sub(w(head) + 3);
+    out.lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled("╭─", t.amber),
+        Span::styled(head.to_owned(), t.amber.add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}╮", "─".repeat(side)), t.amber),
+    ]));
+}
+
+/// One line inside a card.
+fn card_row(out: &mut Built, content: Vec<Span<'static>>, inner: usize) {
+    let t = theme();
+    let used: usize = content.iter().map(|s| w(&s.content)).sum();
+    let mut spans = vec![Span::raw(" "), Span::styled("│ ", t.amber)];
+    spans.extend(content);
+    spans.push(Span::raw(" ".repeat(inner.saturating_sub(used))));
+    spans.push(Span::styled(" │", t.amber));
+    out.lines.push(Line::from(spans));
+}
+
+/// The card's last line.
+fn card_foot(out: &mut Built, bw: usize) {
+    let t = theme();
+    out.lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(format!("╰{}╯", "─".repeat(bw.saturating_sub(2))), t.amber),
+    ]));
+}
+
+/// A choice card's line once it is decided: what the user picked, or that it went before they did.
+pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
+    let t = theme();
+    let question = e.data["question"].as_str().unwrap_or("Choose one");
+    let (g, gs, what) = match (e.data["status"].as_str(), e.data["selected"].as_str()) {
+        (Some("answered"), Some(chosen)) => ("✓", t.green, chosen.to_owned()),
+        (Some("expired"), _) => ("·", t.dim, "Expired".to_owned()),
+        _ => ("·", t.dim, "No answer".to_owned()),
+    };
+    out.lines.push(Line::from(vec![
+        Span::styled(format!(" {g} "), gs),
+        Span::styled(what, t.secondary),
+        Span::styled(format!(" · {}", truncate(question, 60)), t.dim),
+        Span::styled(format!(" · {}", clock(e.created_at)), t.dim),
+    ]));
 }
 
 pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {

@@ -33,6 +33,11 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var diffs: [FileDiff]?
     public var locations: [Location]?
     public var options: [PermissionOption]?
+    /// Additive notice card. Permission options retain their existing object format.
+    public var decision: Bool?
+    public var question: String?
+    public var choices: [String]?
+    public var recommended: Int?
     public var selected: String?
     public var command: String?
     public var detail: String?

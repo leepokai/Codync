@@ -39,6 +39,17 @@
   flex: 1;
 }
 
+/* A choice card: the question, one button per option, and what was picked. */
+.decision-card-question {
+  white-space: pre-wrap;
+}
+.decision-option {
+  gap: 10px;
+}
+.decision-card-more {
+  align-self: flex-start;
+}
+
 .code-box {
   background: var(--code-background);
   border-radius: 8px;

@@ -315,6 +315,7 @@ impl Store {
             let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
                       AND json_extract(data, '$.status') IN ('queued', 'sent'))",
@@ -323,7 +324,11 @@ impl Store {
         };
         for id in &ids {
             if let Some(mut e) = self.entry(id) {
-                let status = if e.kind == EntryKind::Notice.as_str() {
+                let status = if e.kind == EntryKind::Notice.as_str() && e.data["decision"] == true {
+                    let text = e.data["text"].as_str().unwrap_or_default();
+                    e.data["text"] = format!("{text}\n\nNo answer — the host restarted.").into();
+                    "expired"
+                } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
                     e.data["text"] = format!(
                         "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
@@ -423,6 +428,19 @@ mod tests {
         assert_eq!(s.expire_pending().unwrap(), 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
         assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+    }
+
+    #[test]
+    fn restart_expires_choice_notices_but_keeps_answered_choices() {
+        let s = temp_store();
+        let card = |status| serde_json::json!({"decision":true,"text":"Choose?\n1. A\n2. B","choices":["A","B"],"status":status});
+        let pending = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("pending")).unwrap();
+        let answered = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("answered")).unwrap();
+        assert_eq!(s.expire_pending().unwrap(), 1);
+        assert_eq!(s.entry(&pending.id).unwrap().data["status"], "expired");
+        assert!(s.entry(&pending.id).unwrap().data["text"].as_str().unwrap().contains("host restarted"));
+        assert_eq!(s.entry(&answered.id).unwrap().data["status"], "answered");
+        assert_eq!(s.expire_pending().unwrap(), 0);
     }
 
     #[test]

@@ -31,6 +31,7 @@ data class Entry(
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
     val status: String? get() = data.text("status")
+    val isDecision: Boolean get() = kind == "notice" && data["decision"]?.jsonPrimitive?.booleanOrNull == true
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
@@ -93,6 +94,8 @@ private data class EntryFields(
     val final: Boolean? = null, val title: String? = null, val command: String? = null,
     val detail: String? = null, val output: String? = null, val author: String? = null,
     val options: List<PermissionChoice>? = null, val reactions: List<String>? = null,
+    val decision: Boolean? = null, val question: String? = null,
+    val choices: List<String>? = null, val recommended: Int? = null,
     val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
     val callSeconds: Long? = null,
 )

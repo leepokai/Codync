@@ -98,11 +98,23 @@ impl App {
             return;
         }
         self.answering.insert(entry.to_owned(), option.to_owned());
-        self.call(
-            "respondPermission",
-            json!({"entryId": entry, "optionId": option}),
-            After::Answered(entry.to_owned()),
-        );
+        // A choice card answers with the option's text, an approval with its id.
+        let choice = self.is_decision(entry);
+        let (method, args) = if choice {
+            ("respondDecision", json!({"entryId": entry, "option": option}))
+        } else {
+            ("respondPermission", json!({"entryId": entry, "optionId": option}))
+        };
+        self.call(method, args, After::Answered(entry.to_owned()));
+    }
+
+    /// Whether `entry` is a choice card (`request_decision`): it answers with an option's text, not its id.
+    fn is_decision(&self, entry: &str) -> bool {
+        self.entries
+            .values()
+            .flat_map(|entries| entries.values())
+            .find(|e| e.id == entry)
+            .is_some_and(|e| e.kind == super::model::Kind::Decision)
     }
 
     pub(super) fn answer_kind(&mut self, key: char) {

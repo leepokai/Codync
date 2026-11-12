@@ -156,6 +156,13 @@ extension BotStore {
         }
     }
 
+    public func decide(_ entry: Entry, option: String) {
+        answer(entry, option) {
+            try await $0.respondDecision(entryId: entry.id, option: option)
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
     /// Views register only while visible in an active scene. Multiple windows may
     /// read the same conversation without unregistering each other.
     func setReading(_ token: UUID, botId: String, active: Bool) {

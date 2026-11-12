@@ -44,6 +44,9 @@ public final class ScreenSession {
     private var connectionTimer: Task<Void, Never>?
     private var generation = 0
     private var recoveryAttempts = 0
+    /// The last `view` asked for, sent again whenever an input channel opens: one asked for before it
+    /// was open (a viewer that just appeared) or before a reconnect would otherwise be lost.
+    @ObservationIgnored private var requestedView: [String: Any]?
     private static let maxRecoveryAttempts = 3
 
     static let factory: RTCPeerConnectionFactory = {
@@ -314,12 +317,20 @@ public final class ScreenSession {
         var msg: [String: Any] = ["type": "view", "long": max(pixels.width, pixels.height), "short": min(pixels.width, pixels.height)]
         if let display { msg["display"] = display.id }
         if let crop { msg["crop"] = [crop.minX, crop.minY, crop.width, crop.height] }
+        requestedView = msg
         send(msg)
     }
 
     public func switchDisplay(_ d: ScreenDisplay) {
         display = d
+        requestedView?["display"] = d.id
+        requestedView?["crop"] = nil
         send(["type": "view", "display": d.id])
+    }
+
+    fileprivate func inputOpened(generation: Int) {
+        guard generation == self.generation, phase != .closed, let requestedView else { return }
+        send(requestedView)
     }
 
     public func pushClipboard(_ text: String) {
@@ -378,7 +389,12 @@ private final class PeerEvents: NSObject, RTCPeerConnectionDelegate, RTCDataChan
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
-    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
+    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        guard dataChannel.readyState == .open else { return }
+        let owner = owner
+        let generation = generation
+        Task { @MainActor in owner.value?.inputOpened(generation: generation) }
+    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         let owner = owner

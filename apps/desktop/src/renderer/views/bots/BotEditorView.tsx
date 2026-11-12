@@ -9,6 +9,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
 import { AgentModelPicker } from './AgentModelPicker'
@@ -250,7 +251,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             <SwitchRow
               title="Use the computer"
               detail={
-                store.screen.platform !== 'windows' && !(store.screen.enabled && store.screen.connected && store.screen.capture && store.screen.input)
+                !controlReady(store.screen)
                   ? 'Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first.'
                   : store.screen.enabled
                   ? 'Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.'

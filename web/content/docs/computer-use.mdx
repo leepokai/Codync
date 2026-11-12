@@ -57,8 +57,8 @@ You have control as soon as it opens, and bots can still look. The mouse and key
 computer: clicks, double-clicks, drags, scrolling, shortcuts, and typing in any language, input methods included.
 On a Mac, ⌘ acts as Ctrl on a Linux or Windows computer, so ⌘C and ⌘V copy and paste there. Pasting sends your
 clipboard first; when that computer copies text, **Copy from computer** appears at the top. **Hand back to bots**
-gives control back without closing, **Displays** picks a display when there's more than one, and closing the sheet
-ends the session.
+gives control back without closing (your choice holds when the screen reconnects), **Displays** picks a display when
+there's more than one, and closing the sheet ends the session.
 
 ### How the screen travels
 
@@ -69,11 +69,23 @@ ends the session.
 - With updated iPhone and computer builds, an established screen connection can continue through a temporary chat reconnection. Setup failures reconnect with a fresh screen session.
 - Revoking the phone's access or turning off remote screen stops the picture and input.
 
+## A bot's computer
+
+Each bot runs on one computer. The **Computer** tab in its details (click or tap the bot's name at the top of the
+chat) shows that computer: its name, whether it's connected, and a live picture of its screen, so you can watch the
+bot work without opening anything else. Click or tap the picture to open the full screen: you watch first if that bot
+is using the computer, and choose **Take over** to control it. A cloud computer that's asleep wakes when you look,
+and the picture shows "Waking the computer…" until it's ready.
+
+The picture streams only while the tab is open, and stops while the full screen is open. On the desktop app, the
+computer the app runs on has no picture: its screen is the one in front of you. The terminal UI's **Computer** page (press `O`
+on the bot) shows the computer and **Use the computer**, without a picture.
+
 ## Let a bot use the computer
 
 Turn on **Use the computer** for the bot. It's off by default.
 
-- **Desktop app and iPhone:** open the bot's details (click or tap the bot's name at the top of the chat) and find **Use the computer** under **Computer** on the **Details** tab.
+- **Desktop app, iPhone and Android:** open the bot's details (click or tap the bot's name at the top of the chat) and find **Use the computer** on the **Computer** tab.
 - **Terminal UI:** press `e` on the bot and toggle **Use computer**. The form also shows whether computer access is ready.
 
 On macOS and Linux, remote screen must be on for bots to use the computer. On Windows it's always available.

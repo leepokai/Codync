@@ -42,11 +42,11 @@ mod tests {
 
     fn session() -> Session {
         gst::init().unwrap();
-        Session {
-            pipeline: gst::Pipeline::new(),
-            webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(std::sync::Mutex::default()),
-        }
+        Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            Some(std::sync::Mutex::default()),
+        )
     }
 
     #[tokio::test]

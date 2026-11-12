@@ -29,6 +29,15 @@ pub(super) fn status(screen: &Value, online: bool) -> &'static str {
     "Computer access ready"
 }
 
+/// Bots can use the computer: Windows says so itself; elsewhere Codync Screen runs with both grants (the apps'
+/// `controlReady`).
+pub(in crate::tui) fn ready(screen: &Value) -> bool {
+    if screen["platform"] == "windows" {
+        return screen["computerUse"] == true;
+    }
+    ["enabled", "connected", "capture", "input"].iter().all(|k| screen[*k] == true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -45,5 +54,16 @@ mod tests {
         assert_eq!(status(&state, true), "Computer access ready");
         state["platform"] = "windows".into();
         assert_eq!(status(&state, true), "Control ready; remote viewing unavailable");
+    }
+
+    #[test]
+    fn bots_can_use_the_computer_once_every_grant_is_in() {
+        let mut state = json!({"enabled":true,"connected":true,"capture":true,"input":false});
+        assert!(!ready(&state));
+        state["input"] = true.into();
+        assert!(ready(&state));
+        let windows = json!({"platform":"windows","enabled":false,"computerUse":true});
+        assert!(ready(&windows));
+        assert!(!ready(&json!({"platform":"windows","computerUse":false})));
     }
 }

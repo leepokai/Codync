@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The details sheet's pages, as on the desktop inspector.
 enum DetailsTab: Hashable {
-    case details, library, memory, settings
+    case details, computer, library, memory, settings
 }
 
 /// What to open the details sheet on.
@@ -16,8 +16,8 @@ struct DetailsRequest: Identifiable {
     var botId: String?
 }
 
-/// A bot's details (Grok Bot's): who it is, then its details, library, memory and settings. Settings save
-/// as you edit.
+/// A bot's details (Grok Bot's): who it is, then its details, computer, library, memory and settings.
+/// Settings save as you edit.
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
@@ -46,8 +46,8 @@ struct BotDetailsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if let bot { identity(bot) }
-                TabChoice(selection: $tab, options: [(.details, "Details")] + (model.hasLibrary ? [(.library, "Library")] : [])
-                    + [(.memory, "Memory"), (.settings, "Settings")])
+                TabChoice(selection: $tab, options: [(.details, "Details"), (.computer, "Computer")]
+                    + (model.hasLibrary ? [(.library, "Library")] : []) + [(.memory, "Memory"), (.settings, "Settings")])
                     .padding(.top, 18)
                 page.padding(.top, 20)
                     .environment(\.cardStyle, .outlined)
@@ -126,21 +126,10 @@ struct BotDetailsView: View {
                 if let draft = Binding($draft) {
                     BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .often)
                 }
-                if let screen = model.screen, let bot {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.tr("Computer"))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Palette.text)
-                            .padding(.leading, 2)
-                        SwitchRow("Use the computer",
-                                  detail: screen.controlReady == true ? nil : "On that computer, open Codync → Settings → Computer access to set it up first.",
-                                  isOn: Binding(get: { bot.computer }, set: { model.setComputer(bot, $0) }))
-                            .disabled(model.isOffline)
-                            .outlinedCard()
-                    }
-                }
                 RoutinesView(botId: botId, initialId: routineId)
             }
+        case .computer:
+            BotComputerPage(botId: botId)
         case .library:
             LibraryView(botId: botId, openArtifact: openArtifact)
         case .memory:

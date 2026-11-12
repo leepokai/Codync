@@ -7,6 +7,7 @@ export type Screen =
   | 'chat'
   | 'trace'
   | 'bot_details'
+  | 'bot_computer'
   | 'memory'
   | 'routines'
   | 'marketplace'

@@ -13,7 +13,7 @@ base64 = "0.22"
 dirs = "7"
 futures-util = "0.3"
 gst = { package = "gstreamer", version = "0.25" }
-gst-app = { package = "gstreamer-app", version = "0.25" }
+gst-app = { package = "gstreamer-app", version = "0.25", features = ["v1_20"] }
 gst-sdp = { package = "gstreamer-sdp", version = "0.25" }
 gst-webrtc = { package = "gstreamer-webrtc", version = "0.25", features = ["v1_22"] }
 serde = { version = "1", features = ["derive"] }

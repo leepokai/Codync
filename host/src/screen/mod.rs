@@ -70,8 +70,8 @@ const KV_ENABLED: &str = "screen_enabled";
 
 #[derive(Default)]
 struct Control {
-    /// The phone took over: bots may only look.
-    user: bool,
+    /// The device that took over (its key): bots may only look while it has a screen session.
+    user: Option<String>,
     /// The bot using the computer, and when it last did.
     agent: Option<(String, Instant)>,
 }
@@ -203,7 +203,7 @@ impl Screen {
             "capture": st.capture,
             "input": st.input,
             "displays": st.displays,
-            "userControl": c.user,
+            "userControl": c.user.is_some(),
             "agentBot": c.active_agent(),
             "computerUse": self.computer_use(),
             "viewers": viewers,

@@ -2,11 +2,11 @@
 //! blocking thread (X requests and drag pauses block).
 
 use super::X11;
-use super::keymap::{Bound, HOLD, Keymap, Stroke};
+use super::keymap::{Bound, Keymap, Stroke};
 use crate::backend::Display;
 use crate::input::{Button, DRAG_STEP, Event, Point, Press, ScrollUnit, char_keysym, drag_path};
 use anyhow::{Context, Result};
-use std::sync::{Arc, PoisonError};
+use std::sync::PoisonError;
 use std::time::Instant;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -196,19 +196,7 @@ impl X11 {
     /// Clears spare keys once apps have read them, so the map ends up as it was. ponytail: a
     /// binding younger than `HOLD` when the helper exits stays; clear on exit if a restarted
     /// helper ever runs short of spare keys.
-    pub(super) fn sweep_spares(self: &Arc<Self>) {
-        let x = self.clone();
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(HOLD);
-                if let Err(error) = x.clear_spares() {
-                    tracing::debug!(error = format!("{error:#}"), "can't clear spare keys");
-                }
-            }
-        });
-    }
-
-    fn clear_spares(&self) -> Result<()> {
+    pub(super) fn clear_spares(&self) -> Result<()> {
         let mut state = self.input.lock().unwrap_or_else(PoisonError::into_inner);
         let codes = state.spares.expired(Instant::now());
         if codes.is_empty() {

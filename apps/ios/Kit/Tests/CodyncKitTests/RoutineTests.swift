@@ -69,6 +69,11 @@ import Testing
     #expect(Routine.timeoutText("3600", locale: Locale(identifier: "it")) == "1 ora")
 }
 
+@Test func hostScheduleSentencesMatchTheirCatalogTemplates() {
+    #expect(L10n.tr("Every day at 09:00, 18:00 · Europe/Rome", preference: .it) == "Ogni giorno alle 09:00, 18:00 · Europe/Rome")
+    #expect(L10n.tr("Every Monday at 09:00 · Europe/Rome", preference: .it) == "Ogni lunedì alle 09:00 · Europe/Rome")
+}
+
 @Test func timeZoneSearchIsFuzzyAndRanksWordStartsFirst() {
     let zones = ["America/New_York", "Asia/Taipei", "Asia/Tokyo", "Europe/Berlin", "America/Argentina/Buenos_Aires"]
     #expect(TimeZones.search("taipei", in: zones) == ["Asia/Taipei"])

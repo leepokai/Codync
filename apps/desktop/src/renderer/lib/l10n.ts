@@ -165,9 +165,19 @@ function savedLanguage(): AppLanguage {
   }
 }
 
+/** The computer's language tag (`en-GB`); `en` outside a window. */
+export const systemLanguage = () => (typeof navigator === 'undefined' ? 'en' : navigator.language)
+
+/** The `Intl` locale for dates and units: the system's own (with its region) when the app shows that language, else the chosen one. */
+export function intlLocale(preference: AppLanguage, system: string): string {
+  const language = resolvedLanguage(preference, system)
+  if (language === resolvedLanguage('system', system)) return system
+  return language === 'zh' ? 'zh-Hans' : language
+}
+
 /** Translates for the language saved in Settings, outside a component (stores, engines, helpers). */
 export function trNow(text: string): string {
-  return translate(text, savedLanguage(), typeof navigator === 'undefined' ? 'en' : navigator.language)
+  return translate(text, savedLanguage(), systemLanguage())
 }
 
 /** "resets 3h 20m" / "resets in 2d 6h". Compact times become "3小时20分后重置". */

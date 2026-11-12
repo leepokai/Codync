@@ -41,7 +41,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
 
   return (
     <CardSection footer={<SchedulePreview preview={preview} error={error} />}>
-      <LabeledRow key="Repeat" label={tr('Repeat')}>
+      <LabeledRow key="Repeat" label="Repeat">
         <ChipChoice label="Repeat" selection={repeat} options={repeatChoices} onChange={choose} />
       </LabeledRow>
       {repeat === 'weekly' ? (
@@ -54,7 +54,7 @@ export function RoutineScheduleFields({ schedule, update, preview, error }: {
           <ChoicePicker selection={schedule.minute} options={minutes} onChange={(minute) => update({ minute })} fill="var(--field)" />
         </LabeledRow>
       ) : repeat === 'custom' ? (
-        <LabeledRow key="Cron" label={tr('Cron')} top>
+        <LabeledRow key="Cron" label="Cron" top>
           <VStack gap={6} grow>
             <input
               className="schedule-input routine-cron-input"

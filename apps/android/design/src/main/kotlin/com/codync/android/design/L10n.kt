@@ -27,6 +27,9 @@ enum class AppLanguage(val stored: String, val title: String) {
         return entries.firstOrNull { it != System && it.stored == base } ?: En
     }
 
+    /** The BCP 47 tag of this language's catalog and formats (`Zh` is Simplified). */
+    val tag: String get() = if (this == Zh) "zh-Hans" else stored
+
     fun usesChinese(systemIsChinese: Boolean): Boolean = this == Zh || this == ZhHant || (this == System && systemIsChinese)
 
     fun resolvedScript(systemTag: String): ChineseScript? = when (resolved(systemTag)) {
@@ -148,10 +151,11 @@ val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 
 @Composable fun tr(text: String): String = translator()(text)
 
-/** The app language as a [java.util.Locale], for dates and units (`Zh` is simplified Chinese). */
+/** The app language as a [java.util.Locale], for dates and units: the system's own (with its region) when the app shows that language. */
 @Composable fun appLocale(): java.util.Locale {
-    val language = LocalAppLanguage.current.resolved(LocalSystemTag.current)
-    return java.util.Locale.forLanguageTag(if (language == AppLanguage.Zh) "zh-Hans" else language.stored)
+    val system = LocalSystemTag.current
+    val language = LocalAppLanguage.current.resolved(system)
+    return java.util.Locale.forLanguageTag(if (language == AppLanguage.System.resolved(system)) system else language.tag)
 }
 
 /** [tr] as a function, for code that translates outside composition (a template filled in later). */

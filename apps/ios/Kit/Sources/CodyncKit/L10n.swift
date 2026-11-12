@@ -81,13 +81,11 @@ public enum AppLanguage: String, CaseIterable, Sendable, Identifiable, Hashable 
 
     /// The locale SwiftUI should use so dates and string lookups follow the choice.
     public static func locale(preference: AppLanguage, systemIsChinese: Bool) -> Locale {
-        switch preference {
-        case .zh: return Locale(identifier: "zh-Hans")
-        case .zhHant: return Locale(identifier: "zh-Hant")
-        case .en, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it: return Locale(identifier: preference.rawValue)
-        case .system:
-            return Locale(identifier: resolved(preference: .system).catalogName)
-        }
+        // The system's own language keeps its region (en-GB dates); another choice formats in that language.
+        let system = Locale.autoupdatingCurrent
+        let language = resolved(preference: preference)
+        return language == resolved(preference: .system, languages: [system.identifier])
+            ? system : Locale(identifier: language.catalogName)
     }
 
     /// What the language menu shows for this choice. Names of languages stay in that language.

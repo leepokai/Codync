@@ -159,4 +159,7 @@ export function durationText(text: string, locale = 'en') {
   return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(amount)
 }
 
+/** When it runs: each schedule line through `tr`, joined. */
+export const scheduleLine = (routine: Routine, tr: (text: string) => string) => routine.triggerDescriptions.map((line) => tr(line)).join(' · ')
+
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

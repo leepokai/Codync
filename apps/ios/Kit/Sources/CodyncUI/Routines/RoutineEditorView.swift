@@ -31,7 +31,7 @@ struct RoutineEditorView: View {
     private var options: [(String, String)] {
         var values = [("cron", "Schedule"), ("webhook", "Webhook")]
         if let routine, keepsOriginal {
-            values.insert(("keep", routine.triggerDescriptions.map { L10n.tr($0) }.joined(separator: " · ")), at: 0)
+            values.insert(("keep", routine.scheduleLine), at: 0)
         }
         return values
     }

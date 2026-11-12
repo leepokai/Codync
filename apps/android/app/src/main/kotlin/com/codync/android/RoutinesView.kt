@@ -50,6 +50,7 @@ import com.codync.android.core.RoutineDraft
 import com.codync.android.core.RoutineScheduleDraft
 import com.codync.android.core.RoutineSchedulePreview
 import com.codync.android.core.RoutineWebhook
+import com.codync.android.core.TimeoutUnit
 import com.codync.android.core.canEdit
 import com.codync.android.core.routineRepeats
 import com.codync.android.design.*
@@ -149,7 +150,7 @@ import kotlinx.coroutines.launch
     val canSave = draft.name.isNotBlank() && draft.instruction.isNotBlank() && online && !busy && loaded && checked == draft.schedule && previewError == null
     val translate = translator()
     val options = buildList {
-        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.triggerDescriptions.joinToString(" · ") { translate(it) })
+        if (routine != null && routine.keepsOriginal && routine.triggers.isNotEmpty()) add("keep" to routine.scheduleLine(translate))
         add("cron" to "Schedule"); add("webhook" to "Webhook")
     }
     Column(Modifier.fillMaxSize().background(Palette.background)) {
@@ -201,7 +202,7 @@ import kotlinx.coroutines.launch
                     Text(tr("Run settings"), style = Type.subheadline, color = Palette.secondary)
                     Symbol("chevron.down", Modifier.rotate(turn), size = 11.dp, tint = Palette.secondary)
                     Spacer(Modifier.weight(1f))
-                    if (!advanced) Text(tr("Timeout {time}").replace("{time}", timeoutWords(draft.timeoutSeconds, appLocale())), style = Type.subheadline, color = Palette.tertiary)
+                    if (!advanced) Text(tr("Timeout {time}").replace("{time}", timeoutWords(draft, appLocale())), style = Type.subheadline, color = Palette.tertiary)
                 }
                 AnimatedVisibility(advanced, enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
                     exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
@@ -245,15 +246,11 @@ import kotlinx.coroutines.launch
     }
 }
 
-/** Whole hours, else whole minutes, else seconds, in `locale`. Anything else stays as typed plus "s". */
-private fun timeoutWords(secondsText: String, locale: Locale): String {
-    val seconds = secondsText.toLongOrNull() ?: return "${secondsText}s"
-    val (amount, unit) = when {
-        seconds > 0L && seconds % 3600L == 0L -> seconds / 3600L to MeasureUnit.HOUR
-        seconds > 0L && seconds % 60L == 0L -> seconds / 60L to MeasureUnit.MINUTE
-        else -> seconds to MeasureUnit.SECOND
-    }
-    return MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE).format(Measure(java.lang.Long.valueOf(amount), unit))
+/** [RoutineDraft.timeoutParts] in words in `locale`; anything else stays as typed plus "s". */
+private fun timeoutWords(draft: RoutineDraft, locale: Locale): String {
+    val (amount, unit) = draft.timeoutParts ?: return "${draft.timeoutSeconds}s"
+    val measure = when (unit) { TimeoutUnit.Hour -> MeasureUnit.HOUR; TimeoutUnit.Minute -> MeasureUnit.MINUTE; TimeoutUnit.Second -> MeasureUnit.SECOND }
+    return MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE).format(Measure(amount, measure))
 }
 
 private fun Int.twoDigits() = toString().padStart(2, '0')

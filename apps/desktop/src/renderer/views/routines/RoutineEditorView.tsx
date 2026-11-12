@@ -5,7 +5,7 @@ import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, scheduleLine, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
@@ -148,7 +148,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
           <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
-        return <Note icon="sparkles" title={routine?.triggerDescriptions.map((line) => tr(line)).join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
+        return <Note icon="sparkles" title={routine ? scheduleLine(routine, tr) : ''} detail={tr('Set up by the bot. Pick Schedule or Webhook to replace it.')} />
     }
   }
 
@@ -192,7 +192,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             {advanced ? (
               <div className="routine-fade">
                 <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
-                  <LabeledRow label={tr('Timeout')}>
+                  <LabeledRow label="Timeout">
                     <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
                     <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>

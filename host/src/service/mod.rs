@@ -129,6 +129,24 @@ fn run(cmd: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// A service's own arguments besides `serve --port <port>`: a `--bind 127.0.0.1` someone added
+/// to the plist, unit or Run key themselves. Every update rewrites that line, so it has to carry
+/// them over; dropping them silently moved a host kept on loopback onto every interface.
+fn extra_args(args: &[String]) -> Vec<String> {
+    let mut kept = Vec::new();
+    let mut after_port = false;
+    for arg in args {
+        if after_port {
+            after_port = false;
+        } else if arg == "--port" {
+            after_port = true;
+        } else if arg != "serve" && !arg.starts_with("--port=") {
+            kept.push(arg.clone());
+        }
+    }
+    kept
+}
+
 /// Holds a sleep inhibitor while any bot is working.
 #[derive(Default)]
 pub struct KeepAwake(Option<Child>);
@@ -352,6 +370,17 @@ mod tests {
 
     fn read(f: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn an_update_keeps_the_arguments_it_did_not_write() {
+        let installed: Vec<String> =
+            ["serve", "--port", "19222", "--bind", "127.0.0.1"].iter().map(|s| (*s).to_owned()).collect();
+        assert_eq!(extra_args(&installed), ["--bind", "127.0.0.1"]);
+        let joined: Vec<String> = ["serve", "--port=19222", "--bind=::1"].iter().map(|s| (*s).to_owned()).collect();
+        assert_eq!(extra_args(&joined), ["--bind=::1"]);
+        let bare: Vec<String> = ["serve"].iter().map(|s| (*s).to_owned()).collect();
+        assert_eq!(extra_args(&bare), Vec::<String>::new());
     }
 
     #[test]

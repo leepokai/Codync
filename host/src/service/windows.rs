@@ -70,8 +70,12 @@ pub fn install(port: u16) -> Result<()> {
     let supervisor = current_exe().context("locating the codync-host binary")?.with_file_name(SUPERVISOR);
     ensure!(supervisor.is_file(), "{} is missing; reinstall Codync", supervisor.display());
     std::fs::create_dir_all(data_dir()).context("creating the data directory")?;
+    // The Run key may carry arguments someone added themselves (`--bind 127.0.0.1`); an update
+    // rewrites that line, so read them before overwriting it.
+    let carried = configured().map_or_else(|_| Vec::new(), |(_, args)| super::extra_args(&args));
+    let carried = if carried.is_empty() { String::new() } else { format!(" {}", carried.join(" ")) };
     stop()?;
-    let command = format!("\"{}\" serve --port {port}", supervisor.display());
+    let command = format!("\"{}\" serve --port {port}{carried}", supervisor.display());
     run("reg", &["add", RUN_KEY, "/v", VALUE, "/t", "REG_SZ", "/d", &command, "/f"])?;
     start()
 }
@@ -103,6 +107,13 @@ fn parse_run_value(query: &str) -> Option<(PathBuf, Vec<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_arguments_someone_added() {
+        let query = "\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n    CodyncHost    REG_SZ    \"C:\\Program Files\\Codync\\codync-hostw.exe\" serve --port 19222 --bind 127.0.0.1\r\n\r\n";
+        let (_, args) = parse_run_value(query).unwrap();
+        assert_eq!(crate::service::extra_args(&args), ["--bind", "127.0.0.1"]);
+    }
 
     #[test]
     fn reads_the_run_value() {

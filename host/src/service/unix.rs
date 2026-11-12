@@ -86,6 +86,46 @@ fn systemd_quote(s: &str, exec: bool) -> String {
     format!("\"{}\"", if exec { s.replace('$', "$$") } else { s })
 }
 
+/// The arguments an installed agent was given besides `serve --port <port>`: someone's own
+/// `--bind 127.0.0.1`, which `install` has to write back instead of dropping on an update.
+fn launchd_extra_args(file: &Path) -> Vec<String> {
+    let Ok(output) =
+        Command::new("/usr/bin/plutil").args(["-extract", "ProgramArguments", "json", "-o", "-"]).arg(file).output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    launchd_arguments(&output.stdout).map_or_else(Vec::new, |argv| extra_from_launchd(&argv))
+}
+
+/// `ProgramArguments` without its first word, the executable `install` writes itself: leaving it in
+/// would write `/Users/me/codync-host` back as an argument of its own.
+fn extra_from_launchd(argv: &[String]) -> Vec<String> {
+    super::extra_args(argv.get(1..).unwrap_or_default())
+}
+
+/// `["/Users/me/codync-host","serve","--port","19222"]` → its parts.
+fn launchd_arguments(json: &[u8]) -> Option<Vec<String>> {
+    serde_json::from_slice(json).ok()
+}
+
+/// The same for an installed unit, whose `ExecStart` is one shell-quoted line.
+fn systemd_extra_args(file: &Path) -> Vec<String> {
+    let Ok(unit) = std::fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    let Some(command) = unit.lines().find_map(|line| line.strip_prefix("ExecStart=")) else {
+        return Vec::new();
+    };
+    let Some(args) = shlex::split(command) else {
+        return Vec::new();
+    };
+    let unescaped: Vec<String> = args.iter().skip(1).map(|arg| arg.replace("%%", "%").replace("$$", "$")).collect();
+    super::extra_args(&unescaped)
+}
+
 /// Installs and starts the host as a per-user background service. The current
 /// PATH is captured so the service finds `npx`, `claude`, `codex`, …
 pub fn install(port: u16) -> Result<()> {
@@ -95,13 +135,18 @@ pub fn install(port: u16) -> Result<()> {
     let log = data_dir().join("host.log");
     std::fs::create_dir_all(data_dir()).context("creating the data directory")?;
     if cfg!(target_os = "macos") {
+        let file = launchd_plist();
+        // Carry over what someone added to the installed agent themselves (`--bind 127.0.0.1`):
+        // every update rewrites this line, and dropping them quietly reopened the host.
+        let extra: String =
+            launchd_extra_args(&file).iter().map(|arg| format!("<string>{}</string>", xml_escape(arg))).collect();
         let plist = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key><string>{LABEL}</string>
-  <key>ProgramArguments</key><array><string>{exe}</string><string>serve</string><string>--port</string><string>{port}</string></array>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>serve</string><string>--port</string><string>{port}</string>{extra}</array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string><key>CODYNC_HOME</key><string>{data}</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -113,12 +158,12 @@ pub fn install(port: u16) -> Result<()> {
 </plist>
 "#,
             exe = xml_escape(&exe),
+            extra = extra,
             path = xml_escape(&path),
             data = xml_escape(&data_dir().to_string_lossy()),
             log = xml_escape(&log.to_string_lossy()),
             exit = super::HOST_EXIT.as_secs(),
         );
-        let file = launchd_plist();
         create_parent(&file)?;
         let uid = current_uid();
         // Not loaded yet is the normal case here.
@@ -128,13 +173,16 @@ pub fn install(port: u16) -> Result<()> {
         std::fs::write(&file, plist).with_context(|| format!("writing {}", file.display()))?;
         run("launchctl", &["bootstrap", &format!("gui/{uid}"), &file.to_string_lossy()])?;
     } else {
+        let file = systemd_unit();
+        let extra: String =
+            systemd_extra_args(&file).iter().map(|arg| format!(" {}", systemd_quote(arg, true))).collect();
         let unit = format!(
-            "[Unit]\nDescription=Codync host\nAfter=network-online.target\n\n[Service]\nExecStart={exe} serve --port {port}\nEnvironment={path}\nEnvironment={data}\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n",
+            "[Unit]\nDescription=Codync host\nAfter=network-online.target\n\n[Service]\nExecStart={exe} serve --port {port}{extra}\nEnvironment={path}\nEnvironment={data}\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n",
             exe = systemd_quote(&exe, true),
+            extra = extra,
             path = systemd_quote(&format!("PATH={path}"), false),
             data = systemd_quote(&format!("CODYNC_HOME={}", data_dir().display()), false),
         );
-        let file = systemd_unit();
         create_parent(&file)?;
         std::fs::write(&file, unit).with_context(|| format!("writing {}", file.display()))?;
         run("systemctl", &["--user", "daemon-reload"])?;
@@ -176,7 +224,17 @@ fn current_uid() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::systemd_quote;
+    use super::*;
+
+    #[test]
+    fn reads_the_agent_arguments() {
+        let json = br#"["/Users/me/codync-host","serve","--port","19222","--bind","127.0.0.1"]"#;
+        let argv = launchd_arguments(json).unwrap();
+        assert_eq!(argv.first().map(String::as_str), Some("/Users/me/codync-host"));
+        // The executable is the agent's first word, not one of the arguments to carry over.
+        assert_eq!(extra_from_launchd(&argv), ["--bind", "127.0.0.1"]);
+        assert!(!extra_from_launchd(&argv).iter().any(|arg| arg.contains("codync-host")));
+    }
 
     #[test]
     fn unit_values_stay_one_word() {

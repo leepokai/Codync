@@ -68,6 +68,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // What a client's copy of the conversation was synced under; it holds across versions.
+                "schema": crate::store::SCHEMA,
                 // Whether `installHostUpdate` can update this computer, from here or a phone.
                 "canUpdate": tokio::task::spawn_blocking(crate::update::installable).await?,
                 // The latest release, so a phone can say whether this computer is current (null: unknown).
@@ -81,6 +83,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
+                "autoOrder": hub.auto_order(),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
                 // don't send, so they aren't told to.
                 "joinAccount": false,
@@ -222,6 +226,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "reportError" => {
             crate::analytics::errors::report(hub, &b)?;
             json!({})
+        }
+        "setAutoOrder" => {
+            hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
+            json!({"enabled": hub.auto_order()})
         }
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;

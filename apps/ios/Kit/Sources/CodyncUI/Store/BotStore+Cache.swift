@@ -59,7 +59,9 @@ extension BotStore {
                 + list.filter { $0.id.hasPrefix("local-") && ["sending", "waiting", "held", "delivering", "failed"].contains($0.data.status) }
         }
         let cachedBots = bots.values.map { bot in var bot = bot; bot.customIcon = nil; return bot }
-        let cache = Cache(stamp: "\(Self.appBuild)/\(hello?.version ?? "")", hostId: hostId, rev: rev, bots: cachedBots, entries: kept, icons: icons)
+        // Saved partway through a refetch, the cache says so: the next launch begins it again.
+        let stamp = refetched == nil ? "\(Self.appBuild)/\(hello?.version ?? "")" : ""
+        let cache = Cache(stamp: stamp, hostId: hostId, rev: rev, bots: cachedBots, entries: kept, icons: icons)
         if let data = try? JSONEncoder().encode(cache) {
             try? data.write(to: cacheURL, options: .atomic)
         }

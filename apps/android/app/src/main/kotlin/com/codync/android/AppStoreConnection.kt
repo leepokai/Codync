@@ -103,26 +103,7 @@ fun AppStore.connect() {
                                 val hello = active.call("hello").jsonObject
                                 // This phone's picks (color, route, push) may have changed during those calls.
                                 changeComputer { current -> if (current.id == fromHost.id) fromHost.keepingDevicePicks(current) else current }
-                                val dropped = withContext(Dispatchers.IO) {
-                                    val mirror = requireNotNull(database)
-                                    val changed = mirror.setStamp(requireNotNull(hello["hostId"]?.jsonPrimitive?.content),
-                                        BuildConfig.VERSION_NAME + "/" + hello["version"]?.jsonPrimitive?.content)
-                                    mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
-                                        hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), requireNotNull(iconEpoch))
-                                    changed
-                                }
-                                // Dropped chats page their earlier messages again.
-                                mutableState.update { it.copy(historyEnd = if (dropped) emptyMap() else it.historyEnd) }
-                                noteHello(hello)
-                                // The event catch-up is ordered by revision; bot revisions can
-                                // follow hundreds of historical entries. Load the current roster
-                                // without moving the event cursor before consuming that stream.
-                                if (state.value.bots.isEmpty()) {
-                                    val roster = HostClient.bots(active)
-                                    if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Initial roster: ${roster.size} bots")
-                                    withContext(Dispatchers.IO) { requireNotNull(database).receive(roster) }
-                                }
-                                mutableState.update { it.copy(rosterLoaded = true) }
+                                adoptHello(active, hello, requireNotNull(iconEpoch))
                                 refresh()
                                 backoff = 1_000
                                 reconcileMailbox(active)
@@ -158,6 +139,34 @@ fun AppStore.connect() {
     }
 }
 
+/** What the conversation held was synced under: the host's store schema, or its version before it sent one. */
+internal fun conversationStamp(hello: JsonObject): String = hello.text("schema")?.let { "schema $it" } ?: hello.text("version").orEmpty()
+
+/** A new link's hello: the mirror lets go of what another host database or store schema left, and holds the current bots. */
+private suspend fun AppStore.adoptHello(active: EncryptedChannel, hello: JsonObject, iconEpoch: Long) {
+    val mirror = requireNotNull(database)
+    val hostVersion = hello.text("version")
+    val versions = BuildConfig.VERSION_NAME + "/" + hostVersion.orEmpty()
+    val dropped = withContext(Dispatchers.IO) {
+        val changed = mirror.setStamp(requireNotNull(hello.text("hostId")), conversationStamp(hello), hostVersion)
+        mirror.applyIconReply(MirrorEvent.Icons(hello["icons"]?.let(::decodeCustomIcons).orEmpty(),
+            hello["iconsRevision"]?.jsonPrimitive?.longOrNull ?: 0), iconEpoch)
+        changed
+    }
+    // Dropped chats page their earlier messages again.
+    mutableState.update { it.copy(historyEnd = if (dropped) emptyMap() else it.historyEnd) }
+    noteHello(hello)
+    // The event catch-up is ordered by revision; bot revisions can follow hundreds of historical entries. Load the
+    // current roster without moving the event cursor before consuming that stream. After an app or host update
+    // the bots held are read again; the conversation stays.
+    if (state.value.bots.isEmpty() || withContext(Dispatchers.IO) { mirror.rosterStale(versions) }) {
+        val roster = HostClient.bots(active)
+        if (BuildConfig.DEBUG) android.util.Log.d("CodyncSync", "Roster: ${roster.size} bots")
+        withContext(Dispatchers.IO) { mirror.receiveRoster(roster, versions) }
+    }
+    mutableState.update { it.copy(rosterLoaded = true) }
+}
+
 /** Drain available catch-up in bounded transactions, without delaying a lone live event. */
 private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Long): Unit = coroutineScope {
     val source = active.events(cursor).produceIn(this)
@@ -179,6 +188,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveArtifacts(batch)
             receiveNetwork(batch)
             batch.filterIsInstance<MirrorEvent.Name>().lastOrNull()?.let { setHostName(it.name) }
+            batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
             if (resync) throw Resync()

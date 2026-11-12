@@ -57,6 +57,7 @@ impl App {
             Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
+            Action::AutoOrder => self.toggle_auto_order(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
             Action::Appearance(mode) => match super::super::appearance::select(mode) {
                 Ok(()) => self.flash(&format!("Appearance: {}", mode.name())),

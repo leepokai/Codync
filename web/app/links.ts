@@ -21,7 +21,7 @@ export const CHINA_COMMUNITY = "/wechat";
 export const WECHAT_QR = "/wechat-group.png";
 export const LARK_QR = "/lark-group.png";
 // The join link inside the Lark group's permanent QR code.
-export const LARK_JOIN = "https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=210q827f-a135-4b31-8be0-d4baf5lgh4cj&qr_code=true";
+export const LARK_JOIN = "https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=bb2ibae9-710a-4d4a-96a5-e69d85ktg60s&qr_code=true";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";

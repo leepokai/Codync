@@ -4,6 +4,8 @@ import type { HostClient } from '../client/host-client'
 import { trNow } from '../lib/l10n.ts'
 
 export type DownloadState = { kind: 'downloading'; received: number } | { kind: 'saved' } | { kind: 'failed'; message: string }
+/** How a save ended: `cancelled` also covers one that never started (already running, or the store retired). */
+export type DownloadOutcome = 'saved' | 'failed' | 'cancelled'
 interface Job { cancelled: boolean; handle: string | null }
 
 /** Scoped to one computer store; retiring it cannot save a file into another account. */
@@ -26,8 +28,14 @@ export class FileDownloads {
 
   retire() { this.retired = true; for (const id of this.jobs.keys()) this.cancel(id) }
 
-  async save(client: HostClient | null, entryId: string, file: SharedFile) {
-    if (this.retired || this.jobs.has(file.id)) return
+  /** The download button: cancels the file's download under way, else starts one. */
+  toggle(client: HostClient | null, entryId: string, file: SharedFile) {
+    if (this.jobs.has(file.id)) this.cancel(file.id)
+    else void this.save(client, entryId, file)
+  }
+
+  async save(client: HostClient | null, entryId: string, file: SharedFile): Promise<DownloadOutcome> {
+    if (this.retired || this.jobs.has(file.id)) return 'cancelled'
     const job: Job = { cancelled: false, handle: null }
     const alive = () => !job.cancelled && !this.retired
     this.jobs.set(file.id, job)
@@ -37,24 +45,28 @@ export class FileDownloads {
       validateSharedFile(file)
       if (!client) throw new Error(trNow('Connect to this computer to download the file'))
       job.handle = await window.codync.files.begin(file)
-      if (!job.handle || !alive()) return
+      if (!job.handle || !alive()) return 'cancelled'
       let offset = 0
       // The empty file still performs an authenticated read and verifies its digest.
       do {
         const chunk = await client.readFile(entryId, file.id, offset)
-        if (!alive()) return
+        if (!alive()) return 'cancelled'
         const bytes = decodeFileChunk(chunk, file.size, offset)
         if (bytes.length) await window.codync.files.write(job.handle, offset, bytes)
-        if (!alive()) return
+        if (!alive()) return 'cancelled'
         offset += bytes.length
         this.states.set(file.id, { kind: 'downloading', received: offset })
         this.changed()
       } while (offset < file.size)
-      if (!alive()) return
+      if (!alive()) return 'cancelled'
       await window.codync.files.finish(job.handle)
-      if (alive()) this.states.set(file.id, { kind: 'saved' })
+      if (!alive()) return 'cancelled'
+      this.states.set(file.id, { kind: 'saved' })
+      return 'saved'
     } catch (error) {
-      if (alive()) this.states.set(file.id, { kind: 'failed', message: error instanceof Error ? error.message : String(error) })
+      if (!alive()) return 'cancelled'
+      this.states.set(file.id, { kind: 'failed', message: error instanceof Error ? error.message : String(error) })
+      return 'failed'
     } finally {
       if (job.handle) await window.codync.files.cancel(job.handle).catch(console.error)
       if (this.jobs.get(file.id) === job) {

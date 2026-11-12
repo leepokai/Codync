@@ -114,6 +114,7 @@ impl Actor {
         self.turn.is_none()
             && self.queue.is_empty()
             && self.perms.is_empty()
+            && self.asked.is_empty()
             && self.active_request.is_none()
             && self.active_group.is_none()
             && self.active_routine.is_none()

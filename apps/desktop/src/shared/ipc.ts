@@ -81,7 +81,7 @@ export interface TraySummary {
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
-  /** The menu bar is a system menu, so the main process translates its labels from this. */
+  /** The tray and the application menu are system menus, so the main process translates their labels from this. */
   language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 
@@ -100,6 +100,10 @@ export type WindowCommand =
   | { kind: 'networkSettings' }
   | { kind: 'newBot' }
   | { kind: 'search' }
+  /** ⌘F: the find bar over the open conversation. */
+  | { kind: 'find' }
+  /** ⌘G / ⇧⌘G: the next or previous match of the open find bar. */
+  | { kind: 'findStep'; forward: boolean }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
   | { kind: 'refresh' }
@@ -264,6 +268,8 @@ export interface CodyncBridge {
     reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
+    /** The remote screen keyboard took or lost focus: while it has it, shortcuts go to the other computer, not the menu. */
+    remoteKeyboard(on: boolean): void
     /** Files picked in the system dialog: name and bytes. */
     pickFiles(): Promise<PickedFile[]>
     /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */

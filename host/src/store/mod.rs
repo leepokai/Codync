@@ -18,6 +18,7 @@ pub use model::{
     AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
     message_text, run_session_key,
 };
+pub use schema::SCHEMA;
 
 use crate::LockExt;
 use anyhow::Result;

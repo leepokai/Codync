@@ -24,6 +24,10 @@ pub enum Event {
     StarPromptAnswered,
     LinkOpened,
     ScreenViewed,
+    ImagePreviewOpened,
+    ImagePreviewAction,
+    ConversationFindOpened,
+    ConversationFindSearched,
     BotCreated,
     BotUpdated,
     BotsReordered,
@@ -37,6 +41,8 @@ pub enum Event {
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
     AgentFellBack,
+    /// An agent taking over a bot's chat was told what came before (`agent::fallback::carry`).
+    HandoffCarried,
     /// A bot's agent stopped to give back what it held (`agent::bot::lifecycle`).
     AgentRetired,
     /// Codync started summarizing a bot's chat (`agent::bot::compaction`).
@@ -44,6 +50,12 @@ pub enum Event {
     UsageReadFailed,
     SessionReset,
     PermissionAnswered,
+    DecisionAsked,
+    DecisionAnswered,
+    /// A choice card stopped waiting unanswered (`reason`: `chat::decision::Expiry`).
+    DecisionExpired,
+    /// The user's choice was saved but its tool call had already stopped waiting.
+    DecisionFailed,
     ReactionAdded,
     HandoffAnswered,
     RoutineSaved,
@@ -66,6 +78,8 @@ pub enum Event {
     /// A desktop window's crashed page loaded again, or crashed too often and stays down.
     WindowRecovery,
     RemoteScreenOpened,
+    /// A viewer's screen session ended (`screen::watch_viewer`).
+    RemoteScreenFinished,
     ScreenTakenOver,
     ConnectorInstalled,
     ConnectorsImported,
@@ -78,6 +92,10 @@ pub enum Event {
     SkillWritten,
     /// A bot's `publish_artifact`.
     ArtifactPublished,
+    /// A bot's `send_file` with text: a message that carries a voice note.
+    VoiceNoteSent,
+    /// A voice note played from its start, or failed to (`outcome`).
+    VoiceNotePlayed,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
@@ -145,6 +163,10 @@ impl Event {
             Self::StarPromptAnswered => "star_prompt_answered",
             Self::LinkOpened => "link_opened",
             Self::ScreenViewed => "screen_viewed",
+            Self::ImagePreviewOpened => "image_preview_opened",
+            Self::ImagePreviewAction => "image_preview_action",
+            Self::ConversationFindOpened => "conversation_find_opened",
+            Self::ConversationFindSearched => "conversation_find_searched",
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
@@ -156,11 +178,16 @@ impl Event {
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",
+            Self::HandoffCarried => "handoff_carried",
             Self::AgentRetired => "agent_retired",
             Self::ContextCompacted => "context_compacted",
             Self::UsageReadFailed => "usage_read_failed",
             Self::SessionReset => "session_reset",
             Self::PermissionAnswered => "permission_answered",
+            Self::DecisionAsked => "decision_asked",
+            Self::DecisionAnswered => "decision_answered",
+            Self::DecisionExpired => "decision_expired",
+            Self::DecisionFailed => "decision_failed",
             Self::ReactionAdded => "reaction_added",
             Self::HandoffAnswered => "handoff_answered",
             Self::RoutineSaved => "routine_saved",
@@ -177,6 +204,7 @@ impl Event {
             Self::VoiceCallQuality => "voice_call_quality",
             Self::WindowRecovery => "window_recovery",
             Self::RemoteScreenOpened => "remote_screen_opened",
+            Self::RemoteScreenFinished => "remote_screen_finished",
             Self::ScreenTakenOver => "screen_taken_over",
             Self::ConnectorInstalled => "connector_installed",
             Self::ConnectorsImported => "connectors_imported",
@@ -188,6 +216,8 @@ impl Event {
             Self::SkillRemoved => "skill_removed",
             Self::SkillWritten => "skill_written",
             Self::ArtifactPublished => "artifact_published",
+            Self::VoiceNoteSent => "voice_note_sent",
+            Self::VoiceNotePlayed => "voice_note_played",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",

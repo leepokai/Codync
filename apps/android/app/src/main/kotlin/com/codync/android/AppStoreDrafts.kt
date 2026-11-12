@@ -113,8 +113,8 @@ fun AppStore.removeFile(file: OutgoingFile) = action("remove:" + file.path) { wi
 suspend fun AppStore.attachment(botId: String, file: Attachment): File =
     cachedFile(file.id, file.size) { files, destination -> files.download(botId, file, destination) }
 
-/** A picture a bot shared (iOS `sharedFileData`): checked against its SHA-256 on its way into the same cache. */
-suspend fun AppStore.sharedImage(entryId: String, file: SharedFile): File = cachedFile(file.id, file.size) { files, destination ->
+/** A picture or sound a bot shared (iOS `sharedFileData`): checked against its SHA-256 on its way into the same cache. */
+suspend fun AppStore.sharedFile(entryId: String, file: SharedFile): File = cachedFile(file.id, file.size) { files, destination ->
     val folder = withContext(Dispatchers.IO) { attachments.shareFolder() }
     val saved = files.downloadShared(entryId, file, folder)
     withContext(Dispatchers.IO) { try { saved.copyTo(destination, overwrite = true) } finally { folder.deleteRecursively() } }

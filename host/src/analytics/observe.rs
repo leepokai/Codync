@@ -29,12 +29,13 @@ const FIXED: [(&str, Event, &str, &str); 14] = [
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 5] = [
+const SETTINGS: [(&str, &str); 6] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
     ("setAssistants", "cloud_assistants"),
+    ("setAutoOrder", "auto_order"),
 ];
 
 /// The event an API call stands for, with its properties, read before the call runs.
@@ -167,6 +168,8 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if update { "update" } else { "new" }).into());
             Event::ArtifactPublished
         }
+        // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
+        "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
         "agentSetup" | "agentAuthenticate" => {
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
@@ -174,6 +177,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
+        // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
         // Never the computer's name, the connector's address or the invite.
         "networkCreate" | "networkJoin" => {

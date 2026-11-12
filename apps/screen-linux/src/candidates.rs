@@ -128,7 +128,9 @@ mod tests {
         gst::init().unwrap();
         let (out, events) = mpsc::unbounded_channel();
         let helper = Arc::new(Helper {
-            portal: Arc::new(AsyncMutex::new(None)),
+            backend: Arc::new(AsyncMutex::new(None)),
+            portals: std::sync::atomic::AtomicBool::new(true),
+            held: std::sync::Mutex::default(),
             last_status: AsyncMutex::new(None),
             sessions: crate::sessions::Sessions::default(),
             out,

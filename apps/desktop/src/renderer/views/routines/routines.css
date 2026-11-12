@@ -60,7 +60,7 @@ textarea.routine-input {
   min-width: 0;
 }
 .routine-form-body {
-  padding: 12px 20px 8px;
+  padding: 12px 20px 20px;
 }
 .routine-editor-footer {
   flex: none;
@@ -118,7 +118,10 @@ textarea.routine-input {
 /* The editor's groups (CardSection, LabeledRow): denser rows, labels in one column. */
 .routine-form .card-row {
   min-height: 48px;
-  padding: 6px 16px;
+  padding: 10px 16px;
+}
+.routine-form .card-section {
+  gap: 16px;
 }
 .labeled-row {
   gap: 12px;
@@ -183,12 +186,12 @@ textarea.routine-input {
   font-variant-numeric: tabular-nums;
 }
 .routine-cron-hint {
-  white-space: pre;
   padding-left: 10px;
 }
-/* What the host read from the schedule, under the group. */
+/* What the host read from the schedule, under the group: the sentence, then the next run. */
 .schedule-preview {
   min-height: 1.3em;
+  padding: 4px 2px 0;
 }
 /* A trigger with no fields here (a new webhook, one the bot set up). */
 .routine-note {

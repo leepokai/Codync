@@ -29,6 +29,15 @@ const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND 
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
 
+/// What `expire_pending` closed out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Expired {
+    /// Every card and send it closed.
+    pub closed: usize,
+    /// The choice cards among them.
+    pub decisions: usize,
+}
+
 impl Store {
     pub fn insert_entry(&self, lane: &Lane, kind: EntryKind, turn: i64, data: &Value) -> Result<Entry> {
         let c = self.db.locked();
@@ -283,6 +292,19 @@ impl Store {
         Ok(rows)
     }
 
+    /// The newest `limit` tool calls of the work done in `lane` after `after_seq`, newest first: what a handoff's
+    /// ledger reads. Not the bot's own bookkeeping (a message sent, a memory kept), nor turn `except_turn`'s calls.
+    pub fn tools_after(&self, lane: &Lane, after_seq: i64, except_turn: Option<i64>, limit: i64) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND seq > ?2 AND {NOT_REMOVED} AND kind = 'tool'
+               AND (?3 IS NULL OR turn != ?3) AND json_extract(data, '$.bookkeeping') IS NOT 1
+             ORDER BY seq DESC LIMIT ?4"
+        ))?;
+        let rows = st.query_map(params![lane.chat, after_seq, except_turn, limit], row_entry)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// The newest `kind` entry in `lane` after `after_seq`.
     pub fn last_of_kind(&self, lane: &Lane, kind: EntryKind, after_seq: i64) -> Option<Entry> {
         let c = self.db.locked();
@@ -308,22 +330,29 @@ impl Store {
         logged("last spoke", n).unwrap_or(0)
     }
 
-    /// Permission cards left `pending` (and sends left `queued`) by a crash or restart
+    /// Permission and choice cards left `pending` (and sends left `queued`) by a crash or restart
     /// can never be honored; returns how many were closed out.
-    pub fn expire_pending(&self) -> Result<usize> {
+    pub fn expire_pending(&self) -> Result<Expired> {
         let ids: Vec<String> = {
             let c = self.db.locked();
             let mut st = c.prepare(
                 "SELECT id FROM entries WHERE (kind = 'permission' AND json_extract(data, '$.status') = 'pending')
+                  OR (kind = 'notice' AND json_extract(data, '$.decision') = 1 AND json_extract(data, '$.status') = 'pending')
                   OR (kind = 'user' AND json_extract(data, '$.status') = 'queued')
                   OR (kind = 'notice' AND json_extract(data, '$.delegationId') IS NOT NULL
                       AND json_extract(data, '$.status') IN ('queued', 'sent'))",
             )?;
             st.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
         };
+        let mut decisions = 0;
         for id in &ids {
             if let Some(mut e) = self.entry(id) {
-                let status = if e.kind == EntryKind::Notice.as_str() {
+                let status = if crate::chat::decision::is_card(&e) {
+                    crate::chat::decision::mark_expired(&mut e.data, crate::chat::decision::Expiry::Restart.text());
+                    self.update_entry(id, &e.data)?;
+                    decisions += 1;
+                    continue;
+                } else if e.kind == EntryKind::Notice.as_str() {
                     let heading = e.data["heading"].as_str().unwrap_or("Bot request");
                     e.data["text"] = format!(
                         "{heading}\nInterrupted by host restart. Partial work may have happened; check before retrying."
@@ -347,7 +376,7 @@ impl Store {
                 self.update_entry(id, &e.data)?;
             }
         }
-        Ok(ids.len())
+        Ok(Expired { closed: ids.len(), decisions })
     }
 }
 
@@ -414,15 +443,47 @@ mod tests {
     }
 
     #[test]
+    fn a_ledger_reads_the_work_of_the_turns_before_the_running_one() {
+        let s = temp_store();
+        let main = Lane::main("b1");
+        let tool = |turn, data: Value| s.insert_entry(&main, EntryKind::Tool, turn, &data).unwrap();
+        let edit = tool(1, json!({"title": "Edit a.rs"}));
+        tool(1, json!({"title": "Edit MEMORY.md", "bookkeeping": true}));
+        let test = tool(2, json!({"title": "cargo test", "bookkeeping": false}));
+        s.insert_entry(&main, EntryKind::User, 3, &json!({"text": "Now the docs"})).unwrap();
+        tool(3, json!({"title": "Edit b.rs"}));
+        let ids = |rows: Vec<Entry>| rows.into_iter().map(|e| e.id).collect::<Vec<_>>();
+        let read = |after, except, limit| ids(s.tools_after(&main, after, except, limit).unwrap());
+        let (edit_id, test_id) = (edit.id.as_str(), test.id.as_str());
+        assert_eq!(read(0, Some(3), 10), [test_id, edit_id], "newest first, no bookkeeping");
+        assert_eq!(read(0, Some(3), 1), [test_id], "the running turn's calls take no place in the limit");
+        assert_eq!(read(edit.seq, Some(3), 10), [test_id]);
+        assert_eq!(read(0, None, 10).len(), 3, "between turns nothing is left out");
+    }
+
+    #[test]
     fn restart_expires_pending_cards_and_queued_sends() {
         let s = temp_store();
         s.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &serde_json::json!({"status": "pending"})).unwrap();
         let q =
             s.insert_entry(&Lane::main("b1"), EntryKind::User, 2, &serde_json::json!({"status": "queued"})).unwrap();
         s.insert_entry(&Lane::main("b1"), EntryKind::User, 1, &serde_json::json!({"status": "sent"})).unwrap();
-        assert_eq!(s.expire_pending().unwrap(), 2);
+        assert_eq!(s.expire_pending().unwrap().closed, 2);
         assert_eq!(s.entry(&q.id).unwrap().data["status"], "failed");
-        assert_eq!(s.expire_pending().unwrap(), 0, "idempotent");
+        assert_eq!(s.expire_pending().unwrap().closed, 0, "idempotent");
+    }
+
+    #[test]
+    fn restart_expires_choice_notices_but_keeps_answered_choices() {
+        let s = temp_store();
+        let card = |status| serde_json::json!({"decision":true,"text":"Choose?\n1. A\n2. B","choices":["A","B"],"status":status});
+        let pending = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("pending")).unwrap();
+        let answered = s.insert_entry(&Lane::main("b"), EntryKind::Notice, 1, &card("answered")).unwrap();
+        assert_eq!(s.expire_pending().unwrap(), Expired { closed: 1, decisions: 1 }, "counted for analytics");
+        assert_eq!(s.entry(&pending.id).unwrap().data["status"], "expired");
+        assert!(s.entry(&pending.id).unwrap().data["text"].as_str().unwrap().contains("host restarted"));
+        assert_eq!(s.entry(&answered.id).unwrap().data["status"], "answered");
+        assert_eq!(s.expire_pending().unwrap().closed, 0);
     }
 
     #[test]

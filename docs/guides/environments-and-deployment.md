@@ -97,6 +97,9 @@ The repository is public, so its whole history counts as published. Last scan: 2
 | `0007_cloud_machines.sql` | 2026-11-09 | 2026-11-09 | dev not recorded, main `0000055e-0001fe5a-0000511e-b86080df83e6b9cbcbf226d32764ed40` (also before `0008` and `0009`) |
 | `0008_app_versions.sql` | 2026-11-09 | 2026-11-09 | as `0007` |
 | `0009_cloud_credentials.sql` | 2026-11-09 | 2026-11-09 | as `0007` |
+| `0010_cloud_analytics.sql` | 2026-11-10 | 2026-11-11 | dev not recorded, main `0000056e-0000efb2-00005120-aea6bef89bac4652c5b06937eba57a47` |
+
+`0010` adds `cloud_machines.analytics`, whether a cloud computer's owner shares usage analytics (additive). On main, right after the 2.44.1 merge, the counts were unchanged (6 cloud machines, 3938 devices, 4728 computers) with a clean `foreign_key_check`; after `deploy:main`, `POST /v1/host/analytics` and `/v1/host/sleep` answered 401 without a host signature.
 
 `0007`–`0009` add Codync Cloud: the `cloud_machines`, `cloud_credentials` and `host_releases` tables, and `devices.app_version`, `min_host` and `app_seen_at`; all additive (`0009` rebuilds only the new `cloud_machines`). On main, right after the 2.43.1 merge, the counts were unchanged (3803 devices, 4570 computers, 828 grants, 1130 access requests) with a clean `foreign_key_check`. The main Worker got its own `CLOUD_SECRET_KEYS` (copy in `.env.production`) before `deploy:main`; every new route then answered 401 without credentials.
 

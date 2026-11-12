@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { draftOf, isChat, isReplyable, normalizeBot, quoteOf, type Entry } from './models.ts'
+import { draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Entry, type SharedFile } from './models.ts'
 
 test('a bot keeps its Fast mode through the settings draft', () => {
   const bot = normalizeBot({ id: 'b', backend: 'codex', fastMode: true })
@@ -63,4 +63,14 @@ test('a quote names who wrote it and falls back to file names', () => {
   assert.equal(quoteOf(message('agent', { text: 'yo', final: true })).author, 'b')
   assert.equal(quoteOf(message('user', { text: '', attachments: [{ id: 'a', name: 'a.png', size: 1 }, { id: 'c', name: 'c.pdf', size: 1 }] })).text, 'a.png, c.pdf')
   assert.equal(quoteOf(message('user', { text: 'x'.repeat(900) })).text.length, 500)
+})
+
+test("a message's voice note plays in its bubble only when the computer marks its sound playable", () => {
+  const file = (name: string, playsInChat?: boolean): SharedFile => ({ id: 'f1', name, size: 1000, sha256: 'a'.repeat(64), playsInChat })
+  const note = file('note.m4a', true)
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [note] }), note)
+  assert.equal(voiceNoteOf({ text: 'note.m4a (1000 bytes)', files: [note] }), undefined)
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [file('plan.pdf', false)] }), undefined)
+  // An older computer doesn't mark it: the plain file card, whatever the name says.
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [file('note.m4a')] }), undefined)
 })

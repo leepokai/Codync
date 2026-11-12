@@ -20,6 +20,7 @@ qwen-code 0.26.5.
 | Cursor | [cursor.md](cursor.md) |
 | CodeBuddy and WorkBuddy | [codebuddy-workbuddy.md](codebuddy-workbuddy.md) |
 | Antigravity | [antigravity.md](antigravity.md) |
+| DeepSeek Harness | [deepseek-harness.md](deepseek-harness.md) |
 | Grok Build | [grok-build.md](grok-build.md) |
 | Hermes | [hermes.md](hermes.md) |
 | Kilo | [kilo.md](kilo.md) |

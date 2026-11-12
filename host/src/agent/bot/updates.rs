@@ -254,6 +254,7 @@ impl Actor {
 
     /// A Codync card whose tool stopped waiting (it timed out, or its call was dropped) expires, buttons and all.
     pub(super) async fn expire_abandoned(&mut self) {
+        self.expire_abandoned_decisions();
         let gone: Vec<String> = self
             .perms
             .iter()
@@ -286,7 +287,7 @@ impl Actor {
             e.data["selected"] = option_id.into();
             self.hub.set_entry(entry_id, &e.data);
         }
-        if self.perms.is_empty() && self.turn.is_some() {
+        if self.perms.is_empty() && self.asked.is_empty() && self.turn.is_some() {
             self.hub.set_runtime(&self.cfg.id, |r| {
                 r.status = BotStatus::Working;
                 r.activity = "Continuing…".into();
@@ -308,11 +309,17 @@ impl Actor {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
-        self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
-            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        self.record_sent(turn, json!({"text": text, "final": true}), text)?;
+        self.set_activity("Working…");
+        Ok(())
+    }
+
+    /// Saves a message the agent sent the user this turn (`send_message`, a voice note) and counts it as the turn's
+    /// reply, so what the agent writes as its reply stays in the trace.
+    pub(super) fn record_sent(&mut self, turn: i64, data: Value, text: String) -> anyhow::Result<()> {
+        self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.last_text = None;
-        self.set_activity("Working…");
         Ok(())
     }
 

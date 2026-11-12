@@ -90,6 +90,10 @@ host answers and sends it once the host is up.
 | Event | Sent by | When | Properties |
 |---|---|---|---|
 | `screen_viewed` | host `track` (desktop, TUI), iOS, Android | A screen, sheet or tab is shown | `screen` (see *Screens*) |
+| `image_preview_opened` | host `track` (desktop), iOS, Android | A picture in a chat or the Library opens full size | — |
+| `image_preview_action` | host `track` (desktop), iOS, Android | Something is done to a picture: zoomed in the full-size viewer (at most one `zoom` per opening), copied, or downloaded in the viewer (`download` is reported when it ends; a cancel reports nothing; a `copy_image` overtaken by a newer one before it finished reports nothing) | `action` (`zoom`/`copy_image`/`copy_name`/`download`), `from` (`viewer`: done inside the full-size viewer; `menu`: Copy image or Copy name from a picture's menu in a chat or the Library), `outcome` (`done`/`failed`), when failed `error` (`unavailable`: the picture's bytes weren't there; `convert`: it couldn't be turned into an image for the clipboard; `clipboard`: the clipboard refused it; `transfer`: a download broke); never the picture or its name |
+| `conversation_find_opened` | host `track` (desktop, TUI), iOS, Android | The find bar opens in a conversation (desktop ⌘F, the phones' magnifying glass, the terminal's `/` or ^f) | — |
+| `conversation_find_searched` | host `track` (desktop, TUI), iOS, Android | A search in the find bar settles, at most once per searched text: typing paused (desktop and phones), a step to another match, or the bar closing (phones and terminal) | `found` (whether anything matched; never the text searched for) |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
@@ -100,8 +104,9 @@ host answers and sends it once the host is up.
 | `message_steered` | host | *Send now* on a queued message (`steer`), once its outcome is known | `agent`, `how` (`joined` the running turn / `next` turn, the turn ended first / `interrupted` the user's turn / `moved_up` behind other work / `failed`, it waits) |
 | `queued_message_removed` | host | *Remove* on a queued message (`unqueue`) | — |
 | `turn_stopped` | host | `stop` | — |
-| `turn_finished` | host | An agent's turn ends: once per agent it ran on, so a turn that fell back once and then answered sends a `failed` and a `done` | `agent`, `outcome` (`done`/`stopped`/`failed`/`needs_setup`/`incomplete`; `needs_setup` is a failure whose `error` is `sign_in` or `not_installed`: the user has a step to take, nothing broke), `stop_reason`, `source` (`user`/`routine`/`group`/`bot`/`host`: the lead opening a call), `seconds`; when failed or needs_setup, `error` (`not_installed`/`timeout`/`exited`/`no_model`/`sign_in`/`agent_error`/`io`/`other`) and, for `agent_error`, `rpc_code` and `agent_reason` (the adapter's own category, else one the host reads from the message, which is never sent: `session_ended`/`rate_limit`/`quota`/`overloaded`/`context`/`model`/`network`/`provider`/`unknown`) |
-| `agent_fell_back` | host | A turn moves on to the bot's next agent ([agent fallbacks](../features/agent-fallback.md)) | `agent` (the one that couldn't answer), `reason` (`usageLimit`/`outOfCredits`/`rateLimited`/`overloaded`/`signedOut`/`notStarting`/`modelMissing`) |
+| `turn_finished` | host | An agent's turn ends: once per agent it ran on, so a turn that fell back once and then answered sends a `failed` and a `done` | `agent`, `outcome` (`done`/`stopped`/`failed`/`needs_setup`/`incomplete`; `needs_setup` is a failure whose `error` is `sign_in` or `not_installed`: the user has a step to take, nothing broke), `stop_reason`, `source` (`user`/`routine`/`group`/`bot`/`host`: the lead opening a call), `seconds`; when failed or needs_setup, `error` (`not_installed`/`timeout`/`exited`/`no_model`/`mode_missing`/`sign_in`/`agent_error`/`io`/`other`) and, for `agent_error`, `rpc_code` and `agent_reason` (the adapter's own category, else one the host reads from the message, which is never sent: `session_ended`/`rate_limit`/`quota`/`overloaded`/`context`/`model`/`network`/`provider`/`unknown`) |
+| `agent_fell_back` | host | A turn moves on to the bot's next agent ([agent fallbacks](../features/agent-fallback.md)) | `agent` (the one that couldn't answer), `reason` (`usageLimit`/`outOfCredits`/`rateLimited`/`overloaded`/`signedOut`/`notStarting`/`modelMissing`/`modeMissing`) |
+| `handoff_carried` | host | An agent taking over a bot's chat is told what came before ([the handover ledger](../features/agent-fallback.md#the-handover-ledger)) | `agent` (the one taking over), `kind` (`recap`: a new session / `catch_up`: a session it had), `bytes` (the size of what it was told, never the text), `window_known` (whether a recap was sized to the agent's window; always `false` for a catch-up) |
 | `agent_retired` | host | A bot's agent stops between turns to give back its processes (`agent/bot/lifecycle.rs`); the next message starts it again | `agent`, `reason` (`idle`: every session unused for 30 minutes; `routine_finished`: a routine run ended with no other session open; `session_not_closed`: a routine run ended and the agent couldn't close its session) |
 | `context_compacted` | host | Codync starts summarizing a bot's chat ([context and memory](../features/context-and-memory.md)) | `agent`, `when` (`turn_end`/`idle`), `threshold` (the bot's Summarize long chats: `early`/`nearLimit`/`tokens`) |
 | `usage_read_failed` | host | Reading an agent's usage stopped, once per failing run, for the readers that start the agent's server or read a CLI's JSON report ([usage limits](../features/usage-limits.md#failures)) | `agent`, `stage` (`start`/`session`/`no_command`/`prompt`/`timeout`/`parse`: the agent's report changed format) |
@@ -122,6 +127,7 @@ host answers and sends it once the host is up.
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
 | `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
+| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
@@ -132,15 +138,21 @@ host answers and sends it once the host is up.
 | `skill_removed` | host | `removeSkill` | — |
 | `skill_written` | host | A bot's `save_skill` (`chatCall`) | `change` (`new`/`update`) |
 | `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
+| `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |
+| `voice_note_played` | host `track` (desktop), iOS, Android | A voice note's play button starts it from its beginning (not a resume) | `outcome` (`played`/`failed`), `error` when failed (`load`: fetching or opening it; `playback`: starting it), never which note |
 | `credential_saved` | host | A key, login or vault is saved (clearing one isn't) | `kind` (`login`/`onepassword`/`connector`/`composio`/`voice`/`agent_env`) |
 | `agent_setup_started` | host | `agentSetup` (an agent's install or sign-in terminal) | `agent` |
 | `agent_signed_in` | host | `agentAuthenticate` | `agent` |
 | `reach_account_answered` | host `track` (desktop) | The ask before *Reach from anywhere* turns on for a computer in no account ended | `outcome` (`added`/`own_relay`/`cancelled`/`failed`), `error` on `failed` (`unreachable`: the cloud couldn't be reached; `refused`: it refused; `host`: the host failed) |
-| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
+| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`auto_order` (a bot with a new message moves to the top)/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
 | `host_update_installed` | host | `installHostUpdate` | — |
 | `network_joined` | host | `networkCreate` / `networkJoin`: the computer is in a network of the user's computers | `via` (`create`/`invite`), never a name, invite or connector address |
 | `network_changed` | host | `networkInvite` / `networkPromote` / `networkRemove` / `networkRecover` / `setNetworkRules` / `networkLeave` | `action` (`invite`/`promote`/`remove`/`recover`/`rules`/`leave`), never a computer's name, the invite, the recovery code or a rule |
 | `network_failed` | host | A network step failed: a saved network didn't start with the host, a bot's letter to another computer didn't go (refused, or no such computer; one queued for a computer that's away isn't a failure), a request's outcome didn't go back, a letter from another computer couldn't be taken in, or a `network*` call failed | `stage` (`start`/`send`/`reply`/`receive`/`action`); for `action`, the call's own `via` or `action` as on `network_joined` / `network_changed`; never the error's text, a name or an address |
+| `decision_asked` | host | The actor saved and published a choice card | `options`: how many it offered; never the question or its options |
+| `decision_answered` | host | The actor delivered a choice to its live waiter, once | `via`: `button` or `text`; never which option |
+| `decision_expired` | host | A choice card stopped waiting unanswered, once per card | `reason`: `timeout`, `cancelled` (the agent cancelled its call), `stopped`, `turn_ended`, `other_message` (the user wrote something else) or `restart`; never the question or its options |
+| `decision_failed` | host | The user's choice was saved but its call had already stopped waiting, so the bot never got it | none |
 
 ## Screens
 
@@ -162,7 +174,7 @@ host answers and sends it once the host is up.
 | `account` | account sheet | account panel | — |
 | `pairing` | pair a computer after setup (first run: `onboarding_step_viewed`) | pair a phone | pair overlay |
 | `voice_settings` | voice chat settings | voice chat settings | — |
-| `remote_screen` | remote screen | — | — |
+| `remote_screen` | remote screen | another computer's screen (sheet) | — |
 | `computer_access` | — | computer access | — |
 | `help` | — | — | keys overlay |
 | `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |

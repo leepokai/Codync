@@ -19,13 +19,27 @@ extension BotStore {
                     try await Task.sleep(for: hostUpdateOffer() == .updating ? Self.updatingRecheck : Self.mismatchRecheck)
                     continue
                 }
+                // A refetch the link cut short starts over: only one whole catch-up says what the computer still has.
+                if refetched != nil { refetchAll() }
                 requestedSince = rev
                 windowFloors = [:]
+                var catchUpLeft = 0
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
                     backoff = 1
                     apply(event)
+                    // An event that restarted the stream leaves the refetch to the new one.
+                    guard !Task.isCancelled else { return }
+                    if case let .hello(_, _, _, _, _, catchUp) = event {
+                        // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
+                        catchUpLeft = catchUp ?? 0
+                    } else if catchUpLeft > 0 {
+                        catchUpLeft -= 1
+                    } else {
+                        continue
+                    }
+                    if catchUpLeft == 0 { finishRefetch() }
                 }
             } catch is CancellationError {
                 return
@@ -71,7 +85,8 @@ extension BotStore {
     private func noteHostVersion(_ new: HostVersion) {
         let cached = cacheStamp.map { $0 != "\(Self.appBuild)/\(new.version)" } ?? false
         if cached || (hostVersion.map { $0.version != new.version } ?? false) {
-            // A different host version or app build: data may carry new fields, so fetch it all again.
+            // A different host version or app build: data may carry new fields, so fetch it all again,
+            // underneath what's shown.
             refetchAll()
             rewound = false
             unreadable = false
@@ -86,7 +101,7 @@ extension BotStore {
         switch event {
         case let .icons(icons, revision):
             applyIcons(icons, revision: revision)
-        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork, _):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -136,10 +151,14 @@ extension BotStore {
             network = view
         case let .name(name):
             hello?.name = name
+        case let .autoOrder(on):
+            hello?.autoOrder = on
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:
             restartEvents()
+        case .skipped:
+            break
         case let .undecodable(type):
             // Never skip past data we couldn't read: rewind once and fetch everything again.
             log.error("undecodable \(type) event")
@@ -169,17 +188,26 @@ extension BotStore {
         historyComplete = []
         windowFloors = [:]
         screen = nil
+        refetched = nil
         saveCache()
     }
 
-    /// Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so
-    /// the ones held now go too: an older one kept would hide the gap from `loadOlder`, which
-    /// pages from the oldest one held. Messages still sending stay.
+    /// Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the
+    /// catch-up has all arrived (`finishRefetch`).
     private func refetchAll() {
         rev = 0
-        entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") } }
-            .filter { !$0.value.isEmpty }
+        refetched = []
         historyComplete = []
+    }
+
+    /// The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
+    /// ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the
+    /// oldest one held. Messages still sending stay.
+    private func finishRefetch() {
+        guard let kept = refetched else { return }
+        refetched = nil
+        entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") || kept.contains($0.id) } }
+            .filter { !$0.value.isEmpty }
     }
 
     /// Resubscribes from the current `rev` on the same link.
@@ -214,6 +242,7 @@ extension BotStore {
     }
 
     func upsert(_ e: Entry) {
+        refetched?.insert(e.id)
         var list = entries[e.botId] ?? []
         if let i = list.firstIndex(where: { $0.id == e.id }) {
             // A late API response mustn't undo a newer SSE update.

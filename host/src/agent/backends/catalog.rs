@@ -5,7 +5,8 @@ use super::{Harness, Install, SignInCheck};
 
 /// What an installed CLI too old for its ACP mode prints when started in it, by harness id.
 pub const OUTDATED: &[(&str, &str)] = &[
-    // DeepSeek Harness 0.1.0 has only its `web` and `headless` profiles.
+    // DeepSeek Harness 0.1.0 has only its `web` and `headless` profiles (no upstream issue: later releases
+    // have `acp`; docs/upstream-agents/deepseek-harness.md).
     ("dsh", "profile acp does not exist"),
 ];
 

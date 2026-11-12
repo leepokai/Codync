@@ -185,6 +185,18 @@ pub fn exit_reason(backend: &str, stderr_tail: &str) -> Option<String> {
     }
 }
 
+/// `e` from `backend`'s agent, with why it quit (`exit_reason`) when it went away during the request.
+pub async fn explain_exit(
+    backend: &str,
+    e: anyhow::Error,
+    inbox: &mut tokio::sync::mpsc::UnboundedReceiver<acp::Incoming>,
+) -> anyhow::Error {
+    match acp::exit_tail(&e, inbox).await.and_then(|tail| exit_reason(backend, &tail)) {
+        Some(why) => e.context(why),
+        None => e,
+    }
+}
+
 pub fn is_known(id: &str) -> bool {
     harness(id).is_some() || registry::agent(id).is_some()
 }

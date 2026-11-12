@@ -77,13 +77,7 @@ pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &st
                 acp.hold(std::mem::take(&mut grants));
                 return Ok(Started { acp, inbox: rx, init, cmd });
             }
-            Ok(Err(e)) => {
-                let why = acp::exit_tail(&e, &mut rx).await.and_then(|tail| backends::exit_reason(backend, &tail));
-                last = Some(match why {
-                    Some(why) => e.context(why),
-                    None => e,
-                });
-            }
+            Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
             Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
         }
         acp.kill().await;

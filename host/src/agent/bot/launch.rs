@@ -197,12 +197,9 @@ pub(crate) async fn start_agent(
     let init = match init {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => {
-            let why = acp::exit_tail(&e, &mut rx).await.and_then(|tail| backends::exit_reason(backend, &tail));
+            let e = backends::explain_exit(backend, e, &mut rx).await;
             acp.kill().await;
-            return Err(match why {
-                Some(why) => e.context(why),
-                None => e,
-            });
+            return Err(e);
         }
         Err(_) => {
             acp.kill().await;
@@ -274,6 +271,19 @@ mod tests {
         assert!(!superseded(&init("OpenCode", "dev")));
         assert!(!superseded(&init("Kilo", "1.0.0")));
         assert!(!superseded(&json!({})));
+    }
+
+    #[tokio::test]
+    async fn an_outdated_agent_that_quits_at_start_is_told_to_update() {
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let command = format!(
+            r#"{python} -c "import sys; sys.stderr.write('Error: profile acp does not exist\n'); sys.exit(1)""#
+        );
+        let Err(e) = start_agent("dsh", &command, env!("CARGO_MANIFEST_DIR"), &[], Duration::from_secs(10)).await
+        else {
+            panic!("the agent quit, so it can't start");
+        };
+        assert!(format!("{e:#}").contains("too old to run in Codync"), "{e:#}");
     }
 
     /// Starts each candidate as an agent answering `initialize` as the OpenCode version its command names ("broken"

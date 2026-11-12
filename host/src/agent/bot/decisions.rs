@@ -14,11 +14,17 @@ use tokio::sync::oneshot;
 
 pub(super) struct Asked {
     reply: oneshot::Sender<Result<Value>>,
-    at: Instant,
+    deadline: Instant,
 }
 
 impl Actor {
-    pub(super) fn ask(&mut self, data: Value, started_at: i64, reply: oneshot::Sender<Result<Value>>) {
+    pub(super) fn ask(
+        &mut self,
+        data: Value,
+        started_at: i64,
+        deadline: Instant,
+        reply: oneshot::Sender<Result<Value>>,
+    ) {
         self.expire_abandoned_decisions();
         if reply.is_closed() {
             return;
@@ -55,7 +61,7 @@ impl Actor {
             Event::DecisionAsked,
             Map::from_iter([("options".into(), decision::choices(&card).len().into())]),
         );
-        self.asked.insert(card.id, Asked { reply, at: Instant::now() });
+        self.asked.insert(card.id, Asked { reply, deadline });
     }
 
     pub(super) fn expire_abandoned_decisions(&mut self) {
@@ -66,8 +72,8 @@ impl Actor {
         for id in gone {
             let Some(asked) = self.asked.remove(&id) else { continue };
             decision::expire(&self.hub, &id);
-            // The call's own timeout drops it at WAIT; anything earlier is the agent cancelling.
-            let why = if asked.at.elapsed() >= decision::WAIT { Expiry::Timeout } else { Expiry::Cancelled };
+            // The call's own timeout drops it at its deadline; anything earlier is the agent cancelling.
+            let why = if Instant::now() >= asked.deadline { Expiry::Timeout } else { Expiry::Cancelled };
             why.capture(&self.hub);
         }
         self.continue_after_decision();

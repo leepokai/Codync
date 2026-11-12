@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fmt::Write;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const TOOL: &str = "request_decision";
 pub(crate) const WAIT: Duration = Duration::from_secs(270);
@@ -114,8 +114,10 @@ pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     ensure!(rt.lane.is_some_and(|lane| lane.chat == cfg.id), "request_decision works only in your own chat");
     let started_at = rt.started_at.ok_or_else(|| anyhow!("no running turn is waiting"))?;
     let (reply, answered) = tokio::sync::oneshot::channel();
-    hub.send_cmd(&cfg.id, Cmd::Ask { data: card_data(args)?, started_at, reply })?;
-    tokio::time::timeout(WAIT, answered)
+    // The actor reads the same deadline, so a call dropped by this timeout is reported as one.
+    let deadline = Instant::now() + WAIT;
+    hub.send_cmd(&cfg.id, Cmd::Ask { data: card_data(args)?, started_at, deadline, reply })?;
+    tokio::time::timeout_at(deadline.into(), answered)
         .await
         .map_err(|_| anyhow!("the card expired after four and a half minutes without an answer"))?
         .map_err(|_| anyhow!("the turn is no longer waiting for this choice"))?

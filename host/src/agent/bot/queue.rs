@@ -45,7 +45,7 @@ impl Actor {
             Cmd::SendToUser { text, reply } => {
                 let _ = reply.send(self.send_to_user(text));
             }
-            Cmd::Ask { data, started_at, reply } => self.ask(data, started_at, reply),
+            Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
             Cmd::Decision { entry_id, choice, reply } => {
                 if !reply.is_closed() {
                     let answer = self.decided(&entry_id, &choice, None);

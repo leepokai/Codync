@@ -74,6 +74,8 @@ pub enum Cmd {
     Ask {
         data: Value,
         started_at: i64,
+        /// When the call's own timeout gives up (`chat::decision::WAIT` from its start).
+        deadline: std::time::Instant,
         reply: tokio::sync::oneshot::Sender<Result<Value>>,
     },
     /// The user pressed one of a card's options (`respondDecision`).

@@ -8,7 +8,7 @@ impl Hub {
     /// Interrupts one bot's running turn (a group's room turns, for a group).
     pub fn stop_bot(self: &std::sync::Arc<Self>, bot: &str) -> Result<()> {
         match self.store.bot(bot)? {
-            Some(row) if row.config.is_group() => self.groups.stop(self, bot),
+            Some(row) if row.config.is_group() => crate::chat::group::stop(self, bot),
             // The terminal answers to its own interrupt, not to us.
             Some(row) if crate::external::is_external(&row.config) => {}
             _ => self.send_cmd(bot, Cmd::Stop)?,

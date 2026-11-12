@@ -1,10 +1,10 @@
 //! Creating, changing and deleting bots.
 
-use super::{Hub, patch, sections, validate};
+use super::{Hub, copy_name, sections, skill_updates, validate};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::store::BotConfig;
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -164,7 +164,7 @@ impl Hub {
             tracing::warn!(bot = id, error = format!("{error:#}"), "couldn't forget a deleted bot's secrets");
         }
         self.team.cancel_bot(id);
-        self.groups.stop(self, id);
+        crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
         self.runtime.locked().remove(id);

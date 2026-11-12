@@ -3,6 +3,7 @@ import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { isInternalEntry } from './entry-visibility.ts'
 export { isInternalEntry } from './entry-visibility.ts'
+import { normalizeDevServer, type DevServer } from './dev-servers.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -69,6 +70,8 @@ export interface Bot {
   agentStep: AgentStep | null
   /** Agents of its chain (its own included) resting now; one whose `until` passed isn't. */
   resting: Resting[]
+  /** What it keeps running (`dev-servers.ts`). */
+  devServers: DevServer[]
   pinned: boolean
   /** The computer's lead bot, which the host makes: first in the roster, never deleted, hidden or pinned. */
   lead: boolean
@@ -113,6 +116,10 @@ export interface Bot {
   harnessMemory: boolean | null
   /** The harness keeps one memory for all its sessions that Codync can't turn off (Hermes Agent, Gemini CLI): every bot on it shares it. */
   harnessMemoryShared: boolean
+  /** When Codync summarizes the chat ahead of time; null where it doesn't (an agent it can't ask, an older host). */
+  compaction: CompactionThreshold | null
+  /** The sizes the chat's window allows; null until its agent has told the window. */
+  compactionTokens: CompactionSizes | null
   /** Moves whenever memory changes, so an open memory screen fetches it again. */
   memoryRev: number
   /** Chief of Staff coordinator role (INIC-04). */
@@ -160,6 +167,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
+    devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,
@@ -185,6 +193,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     sharedMemory: raw.sharedMemory ?? raw.managedWorkspace ?? false,
     harnessMemory: raw.harnessMemory ?? null,
     harnessMemoryShared: raw.harnessMemoryShared ?? false,
+    compaction: raw.compaction ?? null,
+    compactionTokens: raw.compactionTokens ?? null,
     memoryRev: raw.memoryRev ?? 0,
     isChief: raw.isChief ?? false,
     chiefBotId: raw.chiefBotId ?? null,
@@ -313,6 +323,17 @@ export interface BotMessage {
   detail?: string
   /** The peer's name when it is on another of the user's computers (its id is `name@computer`). */
   peerName?: string
+}
+
+/** When Codync summarizes a bot's chat ahead of time: a preset, or at a size in tokens. */
+export type CompactionThreshold = 'early' | 'nearLimit' | 'off' | number
+
+/** The sizes a chat's window allows: `min`..`max` by `step` tokens, and the few a menu lists. */
+export interface CompactionSizes {
+  min: number
+  max: number
+  step: number
+  presets: number[]
 }
 
 /** "Earlier context was summarized": the harness's summary, when it gave one. */
@@ -591,10 +612,23 @@ export interface UsageProvider {
   source: string
   updatedAt: number
   status?: 'unsupported' | 'unavailable' | string
+  /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
+  registry?: string
+}
+
+/** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
+export interface UsageService {
+  id: string
+  name: string
+  shown: boolean
+  /** The agent's ACP registry id, which its logo goes by. */
+  registry?: string
 }
 
 export interface Usage {
   providers: UsageProvider[]
+  /** Absent from a host older than the chooser. */
+  services?: UsageService[]
 }
 
 export interface Backend {
@@ -760,6 +794,24 @@ export interface AccessRequest {
   expiresAt?: number | null
 }
 
+/** A signed-in phone that scanned a computer in no account, waiting to be let in (loopback `pairingRequests`). */
+export interface PairingRequest {
+  requestId: string
+  deviceName: string
+  platform?: string | null
+  /** The phone's account, which the computer can join. */
+  email?: string | null
+  /** The 6 digits the phone shows too. */
+  code: string
+  /** The phone is signed in and the Codync cloud is on, so the computer can join its account. */
+  canJoin?: boolean | null
+  /** The computer can stay out of an account: the phone then connects only over Wi-Fi or Tailscale. */
+  phoneOnly?: boolean | null
+  /** The phones that lose access if the computer joins. */
+  removes?: string[] | null
+  expiresAt?: number | null
+}
+
 /** A device the host authorized (loopback `devices`). */
 export interface AuthorizedDevice {
   key: string
@@ -889,6 +941,8 @@ export interface BotDraft {
   isChief?: boolean
   chiefBotId?: string | null
   customIcon?: import('./custom-icons').CustomIcon
+  /** Left out where the bot has none: the host keeps what it has. */
+  compaction?: CompactionThreshold
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -933,6 +987,7 @@ export function draftOf(bot: Bot): BotDraft {
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     isChief: bot.isChief,
     chiefBotId: bot.chiefBotId ?? null,
+    compaction: bot.compaction ?? undefined,
   }
 }
 

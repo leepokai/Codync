@@ -558,7 +558,7 @@ mod tests {
                 lease_until: None,
                 created_at: 0,
                 last_seen_at: None,
-                account: None,
+                account: crate::store::DeviceAccount::Unrecorded,
             })
             .unwrap();
         let (event, p) = observe_call(&hub, &phone, "respondPermission", &answer).unwrap();

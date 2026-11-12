@@ -211,18 +211,13 @@ mod tests {
 
     /// The events `report` queued on a throwaway host.
     fn queued(report: impl FnOnce(&Hub)) -> Vec<Value> {
-        use crate::LockExt as _;
         let dir = std::env::temp_dir().join(format!("codync-cloud-event-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
         let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
         let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
         report(&hub);
-        let mut rx = hub.analytics.rx.locked().take().unwrap();
-        let mut sent = Vec::new();
-        while let Ok(super::super::Msg::Event(event)) = rx.try_recv() {
-            sent.push(event);
-        }
+        let sent = hub.store.pending_analytics().unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         sent
     }

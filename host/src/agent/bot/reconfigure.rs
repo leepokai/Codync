@@ -24,7 +24,7 @@ impl Actor {
         // The harness reads its own memory's switch when it starts: an agent that can resume its session
         // restarts into it, one that can't starts afresh.
         let memory_changed = own_memory::kept(&cfg) != own_memory::kept(&self.cfg);
-        let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.load);
+        let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
         let account_changed = cfg.account != self.cfg.account;
         let restart = account_changed
             || cfg.backend != self.cfg.backend
@@ -39,11 +39,19 @@ impl Actor {
             || memory_changed;
         // Live sessions switch before their next turn (see `fast_mode`).
         let fast_changed = cfg.fast_mode != self.cfg.fast_mode;
+        let mode_changed = cfg.mode != self.cfg.mode;
+        let threshold_changed = cfg.compaction != self.cfg.compaction;
         // Name, description and skill changes reach the agent as a profile update
         // on the next message (see `context`).
         self.cfg = cfg;
+        if threshold_changed {
+            self.threshold_changed();
+        }
         if fast_changed {
             self.fast_mode_changed();
+        }
+        if mode_changed {
+            self.mode_changed();
         }
         if memory_changed {
             // Claude Code's notes come or go on the memory screen.

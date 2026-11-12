@@ -1,11 +1,11 @@
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactElement, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { reduceMotion } from '../lib/theme'
 import { afterExit } from '../lib/exit-delay'
 import { stackModals } from '../lib/modal-stack'
 import { useTr } from '../lib/use-language'
 import { Icon } from './Icon'
-import { HStack, VStack } from './Stack'
+import { VStack } from './Stack'
 import { Text } from './Text'
 import './overlay.css'
 
@@ -164,6 +164,7 @@ export function Sheet({ open, onClose, width, height, maxHeight, dismissOnDim = 
 export interface DialogAction {
   title: string
   destructive?: boolean
+  disabled?: boolean
   action: () => void
 }
 
@@ -214,6 +215,7 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
             <button
               key={a.title}
               className={`dialog-button ${a.destructive ? 'destructive' : 'prominent'}`}
+              disabled={a.disabled}
               onClick={() => {
                 onClose()
                 a.action()
@@ -229,191 +231,24 @@ export function Dialog({ open, title, message, actions, cancel = 'Cancel', onCan
   )
 }
 
-/** One row in a Codync menu: an action, or a choice when `selected` is set. */
-export interface MenuItem {
-  title: string
-  /** Secondary context below the main label. */
-  detail?: string
-  icon?: string
-  /** A picture in the icon's place (an agent's logo). */
-  leading?: ReactNode
-  selected?: boolean
-  destructive?: boolean
-  divider?: boolean
-  /** The title is a name the user gave (a section): shown as typed, never translated. */
-  verbatim?: boolean
-  /** Picking it leaves the menu open, for choices made several at a time (iOS `.menuActionDismissBehavior(.disabled)`). */
-  keepsOpen?: boolean
-  action: () => void
-}
-
-/** A row of emoji above a message's menu (Slack's quick reactions). */
-export interface ReactionPick {
-  emoji: string[]
-  chosen: string[]
-  toggle: (emoji: string) => void
-}
-
-export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick; dismiss?: () => void; size?: number }) {
-  const tr = useTr()
-  return (
-    <HStack align="stretch">
-      {pick.emoji.map((emoji) => {
-        const chosen = pick.chosen.includes(emoji)
-        return (
-          <button
-            key={emoji}
-            className={`reaction-button ${chosen ? 'chosen' : ''}`}
-            style={{ width: size, height: size, borderRadius: size * 0.28 }}
-            title={chosen ? tr('Remove {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
-            aria-label={chosen ? tr('Remove reaction {emoji}').replaceAll('{emoji}', () => emoji) : tr('React {emoji}').replaceAll('{emoji}', () => emoji)}
-            onClick={() => {
-              dismiss?.()
-              pick.toggle(emoji)
-            }}
-          >
-            <Text size={14}>{emoji}</Text>
-          </button>
-        )
-      })}
-    </HStack>
-  )
-}
-
-/** The floating panel of menu rows. */
-export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number; search?: { value: string; onChange: (v: string) => void; placeholder?: string } }) {
-  const tr = useTr()
-  const [highlight, setHighlight] = useState(-1)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.isComposing) return
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length > 0) {
-        e.preventDefault()
-        setHighlight((h) => h < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : (h + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
-      } else if (e.key === 'Enter' && highlight >= 0 && items[highlight]) {
-        e.preventDefault()
-        if (!items[highlight]?.keepsOpen) dismiss()
-        items[highlight]?.action()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [items, highlight, dismiss])
-  return (
-    <div className={`menu-panel ${search ? 'has-header' : ''}`} role="menu" style={{ maxHeight }}>
-      {search ? <div className="menu-search"><input aria-label={search.placeholder ?? 'Search'} value={search.value} placeholder={search.placeholder ?? 'Search'} autoFocus onChange={(e) => { setHighlight(-1); search.onChange(e.target.value) }} /></div> : null}
-      <div className="menu-rows">
-      {reactions ? (
-        <div className={items.length ? 'menu-reactions' : undefined}>
-          <ReactionStrip pick={reactions} dismiss={dismiss} />
-        </div>
-      ) : null}
-      {items.map((item, i) => (
-        <div key={`${item.title}-${i}`} role="none">
-          {item.divider ? <div className="menu-divider" role="separator" /> : null}
-          <button
-            className={`menu-row ${item.destructive ? 'destructive' : ''} ${highlight === i ? 'highlight' : ''}`}
-            role={item.selected === undefined ? 'menuitem' : 'menuitemradio'}
-            aria-checked={item.selected}
-            title={item.verbatim ? item.title : tr(item.title)}
-            onMouseEnter={() => setHighlight(i)}
-            onClick={() => {
-              if (!item.keepsOpen) dismiss()
-              item.action()
-            }}
-          >
-            {item.leading || item.icon ? (
-              <span className="menu-icon">
-                {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
-              </span>
-            ) : null}
-            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
-              <span>{item.verbatim ? item.title : tr(item.title)}</span>
-              {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
-            </span>
-            {item.selected !== undefined ? (
-              <span className={`check-slot${item.selected ? ' on' : ''}`}>
-                <Icon name="checkmark" size={10} weight="semibold" />
-              </span>
-            ) : null}
-          </button>
-        </div>
-      ))}
-      </div>
-    </div>
-  )
-}
-
-/**
- * Where a panel opens beside `rect`: below it or above (whichever has more room), aligned to the
- * anchor's leading or trailing edge and kept on screen. `room` is the height available.
- */
-export function anchorPlacement(rect: DOMRect) {
-  const W = window.innerWidth
-  const H = window.innerHeight
-  const roomBelow = Math.max(0, H - rect.bottom - 14)
-  const roomAbove = Math.max(0, rect.top - 14)
-  const below = roomBelow >= roomAbove
-  const leading = rect.left + rect.width / 2 < W * 0.6
-  const width = Math.min(320, W - 16)
-  const inset = Math.max(8, W - width - 8)
-  const style: React.CSSProperties = {
-    [below ? 'top' : 'bottom']: below ? rect.bottom + 6 : H - rect.top + 6,
-    ...(leading ? { left: Math.min(Math.max(8, rect.left), inset) } : { right: Math.min(Math.max(8, W - rect.right), inset) }),
-    transformOrigin: `${below ? 'top' : 'bottom'} ${leading ? 'left' : 'right'}`,
-  }
-  return { style, width, room: below ? roomBelow : roomAbove }
-}
-
-/**
- * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
- * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
- */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, search }: {
-  open: boolean
-  onClose: () => void
-  anchor?: RefObject<HTMLElement | null>
-  point?: { x: number; y: number } | null
-  items: () => MenuItem[]
-  reactions?: ReactionPick
-  search?: { value: string; onChange: (v: string) => void; placeholder?: string }
+/** A `Dialog`'s text box, focused as it opens: Return, once the IME has finished composing, runs `onSubmit`. */
+export function DialogField({ value, onChange, onSubmit, placeholder, label, inputMode }: {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  placeholder: string
+  label: string
+  inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
 }) {
-  const { mounted, shown } = usePresence(open, 120)
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  const frozen = useRef<MenuItem[]>([])
-  const layer = useRef<HTMLDivElement>(null)
-  if (open) frozen.current = items()
-  useLayoutEffect(() => {
-    if (!open) return
-    if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
-    else if (anchor?.current) setRect(anchor.current.getBoundingClientRect())
-  }, [open, point, anchor])
-  useEscape(open, onClose, layer)
-  if (!mounted || !rect) return null
-  const { style, width, room } = anchorPlacement(rect)
-  return createPortal(
-    <div className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className={`anchored-panel t-dropdown ${shown ? "is-open" : ""}`} style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} search={search} />
-      </div>
-    </div>,
-    document.body,
+  return (
+    <input className="dialog-field" data-autofocus value={value} placeholder={placeholder} aria-label={label} inputMode={inputMode} spellCheck={false}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
+        e.preventDefault()
+        onSubmit()
+      }} />
   )
-}
-
-/** Right-click opens a Codync menu at the pointer (kit's `.contextActions`). */
-export function useContextMenu() {
-  const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
-  return {
-    point,
-    open: point !== null,
-    onContextMenu: (e: React.MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setPoint({ x: e.clientX, y: e.clientY })
-    },
-    close: () => setPoint(null),
-  }
 }
 
 /** A sheet's content: a full-height column on the page color, usually a ModalHeader and a body. */

@@ -31,7 +31,7 @@ pub(super) async fn collect_with(store: &Store, env: &[(String, String)]) -> Opt
 }
 
 async fn acp_usage(store: &Store, env: &[(String, String)]) -> Option<Vec<Window>> {
-    let Ok((acp, mut inbox, _init, _)) = auth::start_registry(store, "claude", env).await else {
+    let Ok(auth::Started { acp, mut inbox, .. }) = auth::start_registry(store, "claude", env).await else {
         return None;
     };
     let result = async {

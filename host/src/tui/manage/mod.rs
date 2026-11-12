@@ -11,6 +11,7 @@ mod analytics;
 mod bot_chat;
 mod catalog;
 pub(in crate::tui) mod computer;
+mod dev_servers;
 pub(in crate::tui) mod documents;
 mod fields;
 mod flow;
@@ -27,20 +28,23 @@ mod network_setup;
 mod pages;
 mod replies;
 mod routines;
+mod scroll;
 mod skill;
 mod threads;
 mod when;
 
 pub use analytics::AnalyticsSheet;
+pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
 pub use documents::{DocumentReply, DocumentSheet};
 pub use fields::{handoff_fields, protected_fill_fields, voice_decision_fields};
 pub use flow::{FlowSheet, FlowStage, Target};
 pub use library::{ArtifactTitles, LibraryItem};
-pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
+pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
 pub use network_rules::{RuleField, RuleForm};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
+pub use scroll::Scroll;
 pub use skill::SkillSheet;
 pub use when::complete_zone;
 
@@ -61,6 +65,8 @@ pub enum Reply {
     McpTools(mcp_tools::McpReply),
     N8n(n8n::N8nReply),
     Documents(DocumentReply),
+    /// A dev server's log, by the server's id.
+    DevServerLogs(String),
     Memory(String),
     MemorySaved(String),
     /// A note the bot's memory sheet has open.

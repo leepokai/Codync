@@ -128,9 +128,9 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, turn: &Turn, asked: &m
         let group = group(hub, group_id)?;
         let members = members(hub, &group);
         let since_user = since_last_user_message(hub, lane)?;
-        let mut speakers =
-            if round == 0 { responders(&members, &since_user) } else { cited(&members, &since_user, &asked) };
-        if round == 0 && speakers.len() == members.len() && members.len() > 1 {
+        let since_late = turn.late.map(|seq| hub.store.messages_after(lane, seq - 1, HISTORY_LINES)).transpose()?;
+        let mut speakers = speakers(&members, &since_user, since_late.as_deref(), round, asked);
+        if since_late.is_none() && round == 0 && speakers.len() == members.len() && members.len() > 1 {
             let candidates: Vec<crate::chat::decider::BotCandidate> = members
                 .iter()
                 .map(|m| crate::chat::decider::BotCandidate {
@@ -163,13 +163,8 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, turn: &Turn, asked: &m
                 crate::chat::decider::RoutingDecision::AllMembers => {}
             }
         }
-        // Each round starts one member later, so the same bot doesn't always speak first.
-        if !speakers.is_empty() {
-            let offset = round % speakers.len();
-            speakers.rotate_left(offset);
-        }
         let mut spoke = 0;
-        for member in speakers(&members, &since_user, since_late.as_deref(), round, asked) {
+        for member in speakers {
             if !hub.groups.current(lane, turn.epoch) {
                 return Ok(());
             }

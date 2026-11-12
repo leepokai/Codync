@@ -326,7 +326,7 @@ async fn authenticate_profile(store: &Store, backend: &str, name: Option<String>
     if backend == "antigravity" {
         configure_personal_auth(&path)?;
     }
-    let (acp, mut inbox, initialize, _) = auth::start_with_env(store, backend, &env).await?;
+    let auth::Started { acp, mut inbox, init: initialize, .. } = auth::start_with_env(store, backend, &env).await?;
     pending.acp = Some(acp.clone());
     // Antigravity keeps its own personal-OAuth method; other harnesses use the first browser
     // method they advertise, or their CLI when they advertise none.
@@ -465,7 +465,7 @@ pub async fn delete(store: &Store, id: &str) -> Result<()> {
 /// Signs the computer's own (default) account out, without touching isolated accounts.
 pub async fn sign_out(store: &Store, backend: &str) -> Result<()> {
     let outcome = if let Ok(command) = backends::sign_out_command(backend).await {
-        let env = auth::launch_env(store, backend, None).unwrap_or_default();
+        let env = auth::launch_env(store, backend, None).map(|(env, _grants)| env).unwrap_or_default();
         run_login_command(&command, &env, Duration::from_secs(30)).await
     } else {
         backends::remove_credentials(backend);

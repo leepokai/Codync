@@ -12,6 +12,7 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 const SLOT: &str = "voice";
+const ELEVENLABS: &str = "https://api.elevenlabs.io";
 
 #[derive(Default, Serialize, Deserialize)]
 struct Keys {
@@ -19,6 +20,8 @@ struct Keys {
     openai: String,
     #[serde(default)]
     gemini: String,
+    #[serde(default)]
+    elevenlabs: String,
 }
 
 impl Keys {
@@ -26,6 +29,7 @@ impl Keys {
         match p {
             Provider::OpenAi => &self.openai,
             Provider::Gemini => &self.gemini,
+            Provider::ElevenLabs => &self.elevenlabs,
         }
     }
 
@@ -33,6 +37,7 @@ impl Keys {
         match p {
             Provider::OpenAi => self.openai = key,
             Provider::Gemini => self.gemini = key,
+            Provider::ElevenLabs => self.elevenlabs = key,
         }
     }
 }
@@ -54,7 +59,14 @@ impl Provider {
         match self {
             Self::OpenAi => OPENAI,
             Self::Gemini => GEMINI,
+            Self::ElevenLabs => ELEVENLABS,
         }
+    }
+
+    /// The keeper holds this provider's key on a Codync Cloud computer. `ElevenLabs` is read and sent by
+    /// the host itself (its voices and speech go through its own requests), so its key stays in the vault.
+    fn kept(self, store: &Store) -> bool {
+        is_managed(store) && self != Self::ElevenLabs
     }
 
     /// The keeper's record for this provider's `key`.
@@ -62,6 +74,7 @@ impl Provider {
         match self {
             Self::OpenAi => Record::bearer(OPENAI, key),
             Self::Gemini => Record::google_key(GEMINI, key),
+            Self::ElevenLabs => Record::header(ELEVENLABS, "xi-api-key", key.to_owned()),
         }
     }
 }
@@ -72,19 +85,53 @@ pub(super) struct Access {
     key: Option<String>,
 }
 
+/// One client for every provider request. It never follows a redirect: the key would go along with it.
+fn client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+        // Only fails without system CA certificates (bare containers).
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("TLS setup failed: install the ca-certificates package")
+    });
+    &CLIENT
+}
+
 impl Access {
-    /// Straight to the provider with `key`.
-    pub(super) fn direct(p: Provider, key: &str) -> Self {
-        Self { base: p.base().to_owned(), key: Some(key.to_owned()) }
+    /// Straight to the provider with `key`. `OpenAI` goes to the compatible server on this computer when
+    /// `CODYNC_OPENAI_BASE_URL` names one.
+    pub(super) fn direct(p: Provider, key: &str) -> Result<Self> {
+        let base = match p {
+            Provider::OpenAi => super::endpoint::openai_url(super::endpoint::openai_base()?.as_ref(), ""),
+            _ => p.base().to_owned(),
+        };
+        Ok(Self { base, key: Some(key.to_owned()) })
+    }
+
+    /// A fixture server standing in for the provider.
+    #[cfg(test)]
+    pub(super) fn direct_at(base: &str, key: &str) -> Self {
+        Self { base: base.to_owned(), key: Some(key.to_owned()) }
+    }
+
+    /// The key itself, for the requests the host builds on its own (`ElevenLabs`).
+    pub(super) fn secret(&self) -> Result<&str> {
+        self.key.as_deref().ok_or_else(|| anyhow!("This provider's key is held by the Codync Cloud keeper."))
+    }
+
+    /// Tells one connection from another without the key: the same text for the same key and server.
+    pub(super) fn identity(&self) -> String {
+        format!("{}|{}", self.base, self.key.as_deref().unwrap_or("keeper"))
     }
 
     /// A request to `path` on the provider (`/v1/models`).
     pub(super) fn request(&self, p: Provider, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let req = crate::http().request(method, format!("{}{path}", self.base));
+        let req = client().request(method, format!("{}{path}", self.base));
         match (&self.key, p) {
             (None, _) => req,
             (Some(key), Provider::OpenAi) => req.bearer_auth(key),
             (Some(key), Provider::Gemini) => req.header("x-goog-api-key", key),
+            (Some(key), Provider::ElevenLabs) => req.header("xi-api-key", key),
         }
     }
 }
@@ -95,7 +142,7 @@ fn missing(p: Provider) -> anyhow::Error {
 
 /// Whether `p` has a key here.
 pub(super) fn configured(store: &Store, p: Provider) -> Result<bool> {
-    if is_managed(store) {
+    if p.kept(store) {
         return client::has(store, &slot(p));
     }
     Ok(!load(store)?.get(p).is_empty())
@@ -103,7 +150,7 @@ pub(super) fn configured(store: &Store, p: Provider) -> Result<bool> {
 
 /// How to reach `p` with the key saved here.
 pub(super) fn access(store: &Store, p: Provider) -> Result<Access> {
-    if is_managed(store) {
+    if p.kept(store) {
         if !client::has(store, &slot(p))? {
             return Err(missing(p));
         }
@@ -112,13 +159,13 @@ pub(super) fn access(store: &Store, p: Provider) -> Result<Access> {
     let keys = load(store)?;
     match keys.get(p) {
         "" => Err(missing(p)),
-        key => Ok(Access::direct(p, key)),
+        key => Access::direct(p, key),
     }
 }
 
 /// Keeps `key` for `p`; an empty one removes it.
 pub(super) fn save(store: &Store, p: Provider, key: &str) -> Result<()> {
-    if is_managed(store) {
+    if p.kept(store) {
         if key.is_empty() {
             return client::delete(store, &slot(p));
         }

@@ -22,7 +22,9 @@ import { newestHealthNotices } from './health-notices'
 import { BotConversationView, BotMessageRow } from './BotConversation'
 import { CallConversationView, CallLineRow } from '../call/CallRows'
 import { hidingCalls } from '@shared/calls'
+import { devServerSummary } from '@shared/dev-servers'
 import { ChatRow, TimeSeparator } from './ChatRows'
+import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
@@ -42,6 +44,8 @@ import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
+import { KofiInviteCard } from './KofiInvite'
+import { useKofiInviteAt } from '../../lib/use-kofi-invite'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
@@ -129,6 +133,12 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
     if (!wide) setCompactDetails((c) => !c)
     else setShowSettings((s) => !s)
   }, [wide])
+  const devServers = devServerSummary(bot?.devServers ?? [])
+  // The title's port leads to its row, whichever page the inspector was left on.
+  const openFromTitle = useCallback(() => {
+    if (devServers.kind !== 'none') setDetailsTab('details')
+    toggleDetails()
+  }, [devServers.kind, toggleDetails])
 
   useEffect(
     () =>
@@ -215,10 +225,11 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             ) : null}
           </div>
           {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}
-          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={toggleDetails} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
+          <button className={`title-pill ${calling ? 'hidden-by-call' : ''}`} inert={calling} onClick={openFromTitle} aria-label={tr('{name}, view details').replaceAll('{name}', () => bot?.name ?? tr('Conversation'))} title="View conversation details">
             <HStack as="span" gap={7}>
               {bot ? isGroup(bot) ? <GroupAvatar members={store.members(bot)} size={22} /> : <BotAvatar bot={bot} size={22} /> : null}
               <Text size="body" weight="medium" tone="text" truncate>{bot?.name ?? ''}</Text>
+              <DevServerTitle summary={devServers} />
               {/* Grok Bot's hint on hover: the pill opens the details. */}
               <span className="title-pill-chevron">
                 <Icon name="chevron.right" size={10} weight="semibold" color="var(--secondary)" />
@@ -357,6 +368,7 @@ function ConnectionSubtitle() {
   const connecting = store.shownConnection.kind === 'connecting'
   const symbol = store.connection.kind !== 'online' ? 'wifi.slash' : store.hostRoute === 'relay' ? 'cloud' : store.hostRoute === 'direct' ? 'wifi' : store.hostRoute === 'loopback' ? 'desktopcomputer' : 'network'
   const description = (() => {
+    if (store.isAsleep) return 'Sleeping · wakes when you message'
     switch (store.shownConnection.kind) {
       case 'connecting':
         return 'Connecting'
@@ -368,6 +380,7 @@ function ConnectionSubtitle() {
       case 'unpaired':
         return 'Not paired'
     }
+    if (store.isCloudUpdating) return 'Updating…'
     if (store.mismatch) return 'Needs update'
     return store.hostRoute === 'relay' ? connectedThrough(store.computer.cloud) : store.hostRoute === 'direct' ? tr('Connected over Wi-Fi or Tailscale') : store.hostRoute === 'loopback' ? tr('Connected locally') : 'Connected'
   })()
@@ -375,7 +388,7 @@ function ConnectionSubtitle() {
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
     </HStack>
   )
 }
@@ -395,6 +408,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
   const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
   const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
+  const kofiAt = useKofiInviteAt(botId, all)
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -496,6 +510,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openFor
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openForward={openForward} openFile={openFile} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openApp={openApp} openArtifact={openArtifact} openCall={openCall} openThread={openThread} onBranch={onBranch} />
+              {item.id === kofiAt ? <KofiInviteCard /> : null}
             </div>
           ))}
           {bot ? <SharedWorkspaceNotice bot={bot} /> : null}

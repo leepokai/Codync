@@ -150,6 +150,7 @@ impl App {
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
             Overlay::Thread(sheet) => self.thread_key(*sheet, k),
             Overlay::Threads(list) => self.threads_key(*list, k),
+            Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
             Overlay::Flow(f) => self.flow_key(f, k),
@@ -165,9 +166,19 @@ impl App {
             Overlay::Beliefs(s) => self.beliefs_key(s, k),
             Overlay::Proposals(s) => self.proposals_key(s, k),
             Overlay::Always(s) => self.always_key(s, k),
+            Overlay::WhatsNew(s) => s.key(k),
+            // A phone that scanned the code waits for this computer to let it in.
+            o @ Overlay::Pair(_)
+                if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>
+            {
+                self.decide_pairing(k.code);
+                // Answering the last question closes a sheet opened only for it.
+                (!(matches!(o, Overlay::Pair(PairCode::QuestionOnly)) && self.pairing_requests.is_empty())).then_some(o)
+            }
             // A new code: after a failure, or in place of the one shown.
+            o @ Overlay::Pair(PairCode::QuestionOnly) if k.code == KeyCode::Char('r') => Some(o),
             Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
-                self.call("pairing", json!({}), After::Pairing);
+                self.request_pairing_code();
                 Some(Overlay::Pair(PairCode::Loading))
             }
             Overlay::LeadAgent(scroll) => {
@@ -180,18 +191,8 @@ impl App {
                     _ => Some(Overlay::LeadAgent(scroll.min(max))),
                 }
             }
-            Overlay::Usage(scroll) => {
-                let (_, height) = crossterm::terminal::size().unwrap_or((80, 24));
-                let max = super::super::view::usage_scroll_max(self, height);
-                match k.code {
-                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P') => None,
-                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::Usage((scroll + 1).min(max))),
-                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::Usage(scroll.saturating_sub(1))),
-                    KeyCode::PageDown | KeyCode::Char(' ') => Some(Overlay::Usage((scroll + 10).min(max))),
-                    KeyCode::PageUp => Some(Overlay::Usage(scroll.saturating_sub(10))),
-                    _ => Some(Overlay::Usage(scroll)),
-                }
-            }
+            Overlay::Usage(scroll) => self.usage_key(scroll, k),
+            Overlay::UsageChooser { row, moving } => self.usage_chooser_key(row, moving, k),
             o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None

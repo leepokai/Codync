@@ -269,7 +269,7 @@ pub fn pairing_url(q: &PairingQr) -> String {
     url
 }
 
-fn read_settings(settings: &Path) -> Result<Option<Value>> {
+pub(crate) fn read_settings(settings: &Path) -> Result<Option<Value>> {
     match std::fs::read_to_string(settings) {
         Ok(text) => Ok(Some(serde_json::from_str(&text).context("parsing Claude settings")?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -277,7 +277,7 @@ fn read_settings(settings: &Path) -> Result<Option<Value>> {
     }
 }
 
-fn write_settings(settings: &Path, v: &Value) -> Result<()> {
+pub(crate) fn write_settings(settings: &Path, v: &Value) -> Result<()> {
     create_parent(settings)?;
     std::fs::write(settings, serde_json::to_string_pretty(v)? + "\n")
         .with_context(|| format!("writing {}", settings.display()))

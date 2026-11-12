@@ -15,7 +15,7 @@ use super::new_bot::new_bot_view;
 use super::pair::pair;
 use super::set_cursor;
 use super::style::{rgb, theme};
-use super::usage::usage;
+use super::usage::{usage, usage_chooser};
 
 pub(super) fn overlays(f: &mut Frame<'_>, app: &mut App) {
     if app.overlays.is_empty() {
@@ -134,7 +134,8 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Form(form) => form_view(buf, area, app, form),
         Overlay::Group(g) => group_view(buf, area, app, g),
         Overlay::Usage(scroll) => usage(buf, area, app, *scroll),
-        Overlay::Pair(code) => pair(buf, area, code),
+        Overlay::UsageChooser { row, .. } => usage_chooser(buf, area, app, *row),
+        Overlay::Pair(code) => pair(buf, area, app, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::Documents(sheet) => super::super::sheets::documents(buf, area, app, sheet),
         Overlay::Computer(sheet) => super::super::sheets::computer(buf, area, sheet),
@@ -143,6 +144,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Thread(t) => super::thread::thread(buf, area, app, t),
         Overlay::Threads(l) => super::thread::threads(buf, area, app, l),
+        Overlay::DevServers(sheet) => super::dev_servers::dev_servers(buf, area, app, sheet),
         Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
         Overlay::Flow(f) => super::super::sheets::flow(buf, area, app, f),
@@ -158,6 +160,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Beliefs(s) => super::beliefs::beliefs(buf, area, s),
         Overlay::Proposals(s) => super::proposals::proposals(buf, area, s),
         Overlay::Always(s) => super::rules::always(buf, area, s),
+        Overlay::WhatsNew(s) => super::whats_new::whats_new(buf, area, s),
     }
 }
 

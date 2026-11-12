@@ -454,6 +454,7 @@ impl App {
                             self.open_thread(&bot, &root);
                         }
                     }
+                    Some(Click::DevServers) => self.open_dev_servers(),
                     None => {
                         if self.overlays.is_empty() {
                             if self.hits.trace.contains(at) {

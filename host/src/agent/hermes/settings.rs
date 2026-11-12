@@ -224,7 +224,7 @@ pub(crate) async fn api(hub: &Arc<Hub>, method: &str, body: &Value) -> Result<Va
             Ok(installation) => {
                 let mut view = json!({"available":true,"root":installation.root,"python":installation.python});
                 let metadata = async {
-                    let mut env = crate::agent::auth::env(&hub.store, "hermes", Some(bot))?;
+                    let (mut env, _grants) = crate::agent::auth::env(&hub.store, "hermes", Some(bot))?;
                     if let Some(account) = row.config.account.as_deref() {
                         for (key, value) in crate::agent::account::env(account, "hermes")? {
                             env.retain(|(saved, _)| saved != &key);

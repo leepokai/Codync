@@ -228,7 +228,7 @@ fn collect_values(options: &Value, out: &mut Vec<Value>) {
 
 const KV_HIDDEN: &str = "models.hidden";
 
-fn hidden_map(store: &Store) -> std::collections::HashMap<String, Vec<String>> {
+fn hidden_map(store: &Store) -> HashMap<String, Vec<String>> {
     store.kv_read(KV_HIDDEN).ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
 }
 

@@ -1,10 +1,12 @@
 //! Composio execution shares the immutable MCP policy and receipt boundary.
 use super::{
-    Config, Connection, Context, Duration, PREFIX, Result, Store, Value, bail, checked_slug, config, connections, json,
-    post, text, tool,
+    Api, Config, Connection, PREFIX, Result, Store, Value, bail, checked_slug, config, connections, json, post, text,
+    tool,
 };
 use crate::{LockExt, hub::Hub};
+use anyhow::Context;
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 
 fn identity(c: &Config, app: &Connection) -> Result<String> {
     let digest = Sha256::digest(serde_json::to_vec(&json!({"key":c.key,"user":c.user_id,
@@ -32,7 +34,7 @@ pub(crate) async fn prepare(hub: &Hub, bot: &str, args: &Value, rpc_id: &Value) 
     }
     let c = config(&hub.store)?;
     let slug = checked_slug(args["slug"].as_str().unwrap_or_default())?;
-    let tool = tool(&c.key, slug).await?;
+    let tool = tool(&Api::of(&hub.store, &c)?, slug).await?;
     let toolkit = tool["toolkit"]["slug"].as_str().context("Tool has no toolkit identity.")?;
     let app = c
         .connections
@@ -81,7 +83,8 @@ pub(crate) async fn dispatch(hub: &Hub, id: &str, expected: &str) -> Result<Valu
     let path = format!("/tools/execute/{slug}");
     let body =
         json!({"user_id":c.user_id,"connected_account_id":app.id,"arguments":request.message["params"]["arguments"]});
-    let execution = post(&c.key, &path, &body);
+    let api = Api::of(&hub.store, &c)?;
+    let execution = post(&api, &path, &body);
     let monitor = async {
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;

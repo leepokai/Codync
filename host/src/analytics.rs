@@ -46,6 +46,7 @@ const BATCH_URL: &str = "https://us.i.posthog.com/batch/";
 const FLUSH_EVERY: Duration = Duration::from_secs(30);
 /// Unsent events kept while offline; the oldest go first.
 const MAX_PENDING: usize = 500;
+
 /// Where a network of the user's computers failed (`network_failed`'s `stage`); a failed
 /// `network*` call is `action` (`observe::failed`).
 #[derive(Clone, Copy, Debug)]
@@ -341,11 +342,7 @@ mod tests {
             capture(&hub, Event::AppOpened, Map::new());
         }
 
-        let mut rx = hub.analytics.rx.locked().take().unwrap();
-        let mut sent = Vec::new();
-        while let Ok(Msg::Event(event)) = rx.try_recv() {
-            sent.push(event);
-        }
+        let sent = hub.store.pending_analytics().unwrap();
         assert_eq!(
             sent.iter().map(|e| (e["event"].as_str().unwrap(), e["distinct_id"].as_str().unwrap())).collect::<Vec<_>>(),
             [("$identify", "user_1"), ("app_opened", "user_1"), ("app_opened", "user_2")]

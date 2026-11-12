@@ -304,7 +304,7 @@ async fn registers_webhooks_and_runs_public_deliveries_once() {
         ],
         "a redelivery reuses its run; a wrong key is dropped; a busy routine is retried later"
     );
-    let runs = hub.routines.list(&bot_id)["runs"].as_array().unwrap().clone();
+    let runs = hub.routines.list(&bot_id, |_| false)["runs"].as_array().unwrap().clone();
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0]["event"], json!({"text": "deploy failed"}));
     assert_eq!(runs[0]["deliveryId"], "d1");

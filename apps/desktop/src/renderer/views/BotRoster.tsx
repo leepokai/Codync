@@ -14,7 +14,7 @@ import type { useComputerRoster } from '../store/computer-roster'
 import { StoreContext, useApp } from '../store/context'
 import { BotRow } from './BotRow'
 import { ComputerHeadingLabel, ComputerRosterSection } from './ComputerRosterSection'
-import { UpdateNeededCard } from './UpdateNeededCard'
+import { AppFloorCard, UpdateNeededCard } from './UpdateNeededCard'
 import { RosterControls, RosterPreview } from './RosterControls'
 import { RosterSection } from './RosterSection'
 import { RosterStops } from '../store/roster-query'
@@ -298,6 +298,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
   const activeItems = roster.allItems.filter((i) => ['working', 'needsInput'].includes(i.bot.status) && i.store.connection.kind === 'online')
   return (
     <>
+      {compact ? null : <AppFloorCard />}
       {!compact ? <RosterControls {...roster} attention={roster.allItems.filter((i) => ['needsInput', 'error'].includes(i.bot.status)).length}
         active={activeItems.length} stopAll={() => new Set(activeItems.map((i) => i.store)).forEach((store) => store.stopAll())} /> : null}
       {!roster.items.length && roster.allItems.length ? <div className="roster-empty">No bots match these filters <button onClick={() => { roster.setQuery(''); roster.setFilter('all') }}>Clear filters</button></div> : null}

@@ -102,8 +102,6 @@ can be traced from the events around it:
 - **codync.dev** counts page views, time on page, scrolling, load speed and clicks on download
   and outbound links without cookies, through its own `/e` path ([website](../reference/analytics-events.md#website)).
 
-## Event properties
-
 ### Persistent delivery and onboarding on Windows/Android
 
 The host persists events in SQLite before delivery, bounded to the newest 500

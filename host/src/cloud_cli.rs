@@ -1,8 +1,10 @@
-//! `codync-host cloud`: the relay this computer uses, its registration token and account approval.
+//! `codync-host cloud`: the relay this computer uses, its registration token, its account and account approval.
 
-use crate::local_call;
-use anyhow::Result;
-use serde_json::json;
+use crate::local_api::{local_call, local_call_for};
+use anyhow::{Result, bail};
+use serde_json::{Value, json};
+use std::io::IsTerminal as _;
+use std::time::Duration;
 
 #[derive(clap::Args)]
 #[allow(clippy::struct_excessive_bools, reason = "independent command-line flags")]
@@ -13,6 +15,10 @@ pub struct CloudArgs {
     enable: bool,
     #[arg(long)]
     disable: bool,
+    /// Take this computer out of its Codync account (asks first). Every device paired with it
+    /// loses access and pairs again with a new code.
+    #[arg(long, conflicts_with = "disable")]
+    leave: bool,
     /// How devices on this computer's account get in: `code` (compare the 6-digit code,
     /// the default) or `auto` (no check: anyone who gets into the account, or controls
     /// the cloud, can then add a device).
@@ -20,7 +26,7 @@ pub struct CloudArgs {
     approval: Option<String>,
     /// Whether the cloud assistant (ChatGPT, Claude…) you connect to Codync through
     /// mcp.codync.dev may message this computer's bots: `on` or `off` (the default). Its calls
-    /// reach this computer through the cloud unencrypted.
+    /// reach this computer through the cloud unencrypted. `on` needs this computer in a Codync account.
     #[arg(long, value_parser = ["on", "off"])]
     assistants: Option<String>,
     /// Cloud base URL for this computer. `https://…`, or `http://127.0.0.1` / `localhost` for a relay on this machine.
@@ -37,14 +43,14 @@ pub struct CloudArgs {
 
 /// `codync-host cloud`: shows or changes the cloud this computer uses.
 pub async fn run(args: CloudArgs) -> Result<()> {
-    let CloudArgs { port, enable, disable, approval, assistants, url, clear_url, token } = args;
+    let CloudArgs { port, enable, disable, leave, approval, assistants, url, clear_url, token } = args;
     let mut status = None;
     if clear_url {
         status = Some(local_call(port, "setCloudUrl", json!({ "url": "" })).await?);
     } else if let Some(url) = url {
         let mut body = json!({ "url": url });
         if token {
-            let token = crate::secret_prompt::read("Relay token: ")?;
+            let token = crate::prompt::read_secret("Relay token: ")?;
             // An empty answer would clear the saved token; `--clear-url` is the way to forget it.
             if token.is_empty() {
                 anyhow::bail!("No relay token was given.");
@@ -53,21 +59,25 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         }
         status = Some(local_call(port, "setCloudUrl", body).await?);
     }
+    // Before the account settings, so a refused one doesn't keep the cloud from turning on.
+    if enable || disable {
+        status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
+    }
+    if leave {
+        status = Some(leave_account(port).await?);
+    }
     if let Some(approval) = approval {
         status = Some(local_call(port, "setApproval", json!({ "approval": approval })).await?);
     }
     if let Some(assistants) = assistants {
         status = Some(local_call(port, "setAssistants", json!({ "enabled": assistants == "on" })).await?);
     }
-    if enable || disable {
-        status = Some(local_call(port, "setCloud", json!({"enabled": !disable})).await?);
-    }
     let status = match status {
         Some(status) => status,
         None => local_call(port, "cloudStatus", json!({})).await?,
     };
     let text = |k: &str| status[k].as_str().unwrap_or("-").to_owned();
-    let owner = status["owner"]["email"].as_str().or(status["owner"]["userId"].as_str()).unwrap_or("none");
+    let owner = owner(&status).unwrap_or("none");
     println!(
         "enabled:    {}\nurl:        {}\nrelay:      {}\ntoken:      {}\nregistered: {}\nconnected:  {}\naccount:    {owner}\napproval:   {}\nassistants: {}\nlast error: {}",
         status["enabled"],
@@ -80,6 +90,9 @@ pub async fn run(args: CloudArgs) -> Result<()> {
         if status["assistants"] == true { "on" } else { "off" },
         text("lastError"),
     );
+    if let Some(hint) = account_hint(&status) {
+        println!("\n{hint}");
+    }
     Ok(())
 }
 

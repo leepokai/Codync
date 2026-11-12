@@ -1,8 +1,8 @@
-//! The bot's ACP sessions: starting its agent, new/load, routine runs' sessions.
+//! The bot's ACP sessions: starting its agent, new/reopen, routine runs' sessions.
 
 use super::fast_mode::Listing;
-use super::launch::{claude_meta, launch_commands, select_model, start_agent, system_prompt};
-use super::{Actor, Conn, Instructions};
+use super::launch::{claude_meta, launch_commands, select_model, start_agent, start_first, system_prompt};
+use super::{Actor, Adapter, Conn, Instructions, codex_names, pi_tools};
 use crate::agent::acp::{self, Incoming};
 use crate::agent::own_memory;
 use crate::agent::registry::Candidate;
@@ -115,6 +115,22 @@ impl Actor {
         params
     }
 
+    /// What the turn's session calls Codync's MCP servers that it knows by another name.
+    pub(super) fn renamed(&self) -> &codex_names::Renamed {
+        static NONE: codex_names::Renamed = codex_names::Renamed::new();
+        let sid = self.turn_session.as_ref();
+        self.conn.as_ref().zip(sid).and_then(|(c, sid)| c.renamed.get(sid)).unwrap_or(&NONE)
+    }
+
+    /// A folder saved for the bot's agent (`setAgentEnv`) as `key`, such as where its own config is (`CODEX_HOME`).
+    fn saved_env(&self, key: &str) -> Option<std::path::PathBuf> {
+        let saved = crate::agent::auth::saved_value(&self.hub.store, &self.cfg.backend, key).unwrap_or_else(|e| {
+            tracing::warn!(error = format!("{e:#}"), "couldn't read the agent's saved environment");
+            None
+        });
+        saved.map(Into::into)
+    }
+
     /// ACP connectors, team collaboration, and optional team management and computer control.
     pub(super) fn mcp_servers(&self) -> Result<Value> {
         let Ok(exe) = std::env::current_exe() else {
@@ -155,17 +171,18 @@ impl Actor {
     async fn start_candidate(
         &self,
         candidate: Candidate,
-        env: &[(String, String)],
+        mut env: Vec<(String, String)>,
         budget: Duration,
         progress: impl Fn(&str),
     ) -> Result<Conn> {
         let mut command = [candidate.resolve(progress).await?.acp()];
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
-        let mut env = env.to_vec();
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
-        start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
+        let conn = start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
-        })
+        })?;
+        self.hub.dev_servers.agent_started(&self.cfg.id, &conn.acp, &self.cfg.backend, &command[0]);
+        Ok(conn)
     }
 
     /// `ensure_session` for the turn: a routine run's setup must end by its time limit, and setup cut short
@@ -184,23 +201,31 @@ impl Actor {
     async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
         // A cancelled allocation may have started tools without returning a session ID.
         // Resumable agents can be replaced without losing their confirmed conversations.
-        if self.conn.as_ref().is_some_and(|conn| conn.allocation_uncertain && conn.sessions.load)
+        if self.conn.as_ref().is_some_and(|conn| conn.allocation_uncertain && conn.sessions.reopen.is_some())
             && let Some(conn) = self.conn.take()
         {
             conn.acp.kill().await;
         }
         if !self.cfg.connectors.is_empty()
-            || self.hub.store.kv_read(&format!("agent-env:{}", self.cfg.backend))?.is_some()
+            || crate::market::vault::saved(&self.hub.store, &format!("agent-env:{}", self.cfg.backend))?
         {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
         // An agent that can't resume keeps its session; its next new session gets the new tools.
         if std::mem::take(&mut self.tools_changed)
-            && self.conn.as_ref().is_some_and(|c| c.sessions.load)
+            && self.conn.as_ref().is_some_and(|c| c.sessions.reopen.is_some())
             && let Some(c) = self.conn.take()
         {
             c.acp.kill().await;
         }
+        let mut servers = self.mcp_servers()?;
+        // pi gets its servers when it starts (`pi_tools`), so they take pi's names before that.
+        let pi = self.cfg.backend == "pi";
+        let mut renamed = if pi {
+            pi_tools::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("PI_CODING_AGENT_DIR")).await
+        } else {
+            codex_names::Renamed::new()
+        };
         if self.conn.is_none() {
             let (hub, id) = (self.hub.clone(), self.cfg.id.clone());
             let progress = move |msg: &str| {
@@ -212,7 +237,8 @@ impl Actor {
                 None => (launch_commands(&self.cfg)?, None),
             };
             // Keys saved from an "environment variable" sign-in, what the harness needs to start, and the account's.
-            let mut env = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, Some(&self.cfg.id))?;
+            let (mut env, grants) =
+                crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, Some(&self.cfg.id))?;
             if let Some(ref account_id) = self.cfg.account {
                 let acc_env = crate::agent::account::env(account_id, &self.cfg.backend)?;
                 for (k, v) in acc_env {
@@ -224,6 +250,9 @@ impl Actor {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
                 env.push(("CODEX_CONFIG".into(), config.to_string()));
+            }
+            if pi {
+                env.extend(pi_tools::env(&servers).await?);
             }
             if let Some(settings) = hermes_settings {
                 // The installation and the complete route are one opening snapshot. Account
@@ -246,26 +275,19 @@ impl Actor {
                     crate::service::data_dir().join("hermes-child-slots").join(key).to_string_lossy().into_owned(),
                 ));
             }
-            let mut last_err = None;
-            let count = candidates.len();
-            for (i, candidate) in candidates.into_iter().enumerate() {
-                let fallback_left = i + 1 < count;
+            let conn = start_first(candidates, &env, |candidate, env, fallback_left| {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
-                match self.start_candidate(candidate, &env, budget, &progress).await {
-                    Ok(conn) => {
-                        self.hub.health.set_agent(&self.cfg.id, conn.acp.pid());
-                        self.conn = Some(conn);
-                        break;
-                    }
-                    Err(e) => last_err = Some(e),
-                }
-            }
-            if self.conn.is_none() {
-                return Err(last_err.unwrap_or_else(|| anyhow!("agent failed to start")));
-            }
+                self.start_candidate(candidate, env, budget, &progress)
+            })
+            .await?;
+            self.hub.health.set_agent(&self.cfg.id, conn.acp.pid());
+            conn.acp.hold(grants);
+            self.conn = Some(conn);
         }
-        let servers = self.mcp_servers()?;
+        if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {
+            renamed = codex_names::avoid_clashes(&mut servers, &self.cfg.cwd, self.saved_env("CODEX_HOME")).await;
+        }
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         // Claude gets the frozen instructions as its system prompt. When a compaction
         // re-rendered them, loading the session again swaps the prompt in (the adapter
@@ -284,11 +306,11 @@ impl Actor {
                 self.turn_session = Some(sid);
                 return Ok(());
             }
-            if !conn.sessions.load {
+            let Some(reopen) = conn.sessions.reopen else {
                 tracing::info!(bot = %self.cfg.id, "the agent can't resume sessions; starting a fresh one");
                 self.set_session(slot, None);
                 return Box::pin(self.ensure_session(slot)).await;
-            }
+            };
             self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Resuming session…".into());
             let mut params = self.session_params(&servers, Some(&sid));
             if let Some(s) = &snapshot {
@@ -297,7 +319,7 @@ impl Actor {
             if instructions == Instructions::SystemPrompt {
                 params["systemPrompt"] = system_prompt(&self.snapshot(&sid).await?.system);
             }
-            let res = self.session_request("session/load", params).await;
+            let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
             // The agent replays history as session/update before answering; drop it.
             while let Ok(inc) = conn.rx.try_recv() {
@@ -310,6 +332,7 @@ impl Actor {
                     // A resumed session can come back on the agent's last-used model (Cursor
                     // keeps one for all its sessions), so the bot's own is set again.
                     conn.loaded.insert(sid.clone(), Instant::now());
+                    conn.renamed.insert(sid.clone(), renamed);
                     conn.allocation_uncertain = false;
                     if res.get("configOptions").is_some() || res.get("models").is_some() {
                         conn.pending_models.insert(sid.clone(), res.clone());
@@ -326,7 +349,7 @@ impl Actor {
                     return Ok(());
                 }
                 Err(e) => {
-                    tracing::warn!(bot = %self.cfg.id, error = format!("{e:#}"), "session/load failed; starting fresh");
+                    tracing::warn!(bot = %self.cfg.id, method = reopen, error = format!("{e:#}"), "couldn't reopen the session; starting fresh");
                 }
             }
         }
@@ -351,6 +374,7 @@ impl Actor {
             .ok_or_else(|| anyhow!("agent returned no sessionId"))?
             .to_owned();
         conn.loaded.insert(sid.clone(), Instant::now());
+        conn.renamed.insert(sid.clone(), renamed);
         conn.allocation_uncertain = false;
         conn.pending_models.insert(sid.clone(), res);
         self.set_session(slot, Some(&sid));
@@ -386,8 +410,8 @@ impl Actor {
     /// A hung request stops the agent so it cannot hold the bot indefinitely.
     pub(super) async fn request_with_timeout(&mut self, method: &str, params: Value) -> Result<Value> {
         let conn = self.conn.as_mut().ok_or_else(|| anyhow!("agent not running"))?;
-        // Only `session/new` and `session/load` open a session (see `drop_unanswered`).
-        conn.opening = matches!(method, "session/new" | "session/load");
+        // Only `session/new`, `session/load` and `session/resume` open a session (see `drop_unanswered`).
+        conn.opening = matches!(method, "session/new" | "session/load" | "session/resume");
         let answered = tokio::time::timeout(SESSION_TIMEOUT, conn.acp.request(method, params)).await;
         conn.opening = false;
         if let Ok(result) = answered {
@@ -423,7 +447,7 @@ impl Actor {
         if !std::mem::take(&mut conn.opening) {
             return;
         }
-        if !conn.sessions.load {
+        if conn.sessions.reopen.is_none() {
             // The agent keeps the session it may still open; the run's retry allocates another one rather than
             // waiting for a reset this agent can't offer.
             conn.allocation_uncertain = false;
@@ -446,5 +470,5 @@ impl Actor {
     }
 }
 
-/// How long `session/new` and `session/load` may take.
+/// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);

@@ -21,19 +21,19 @@ fn hermes_environment_overrides_reuse_rotating_provider_credentials_without_copy
     save_env(&store, "hermes", None, json!({"OPENROUTER_API_KEY":"rotated-provider-key"}).as_object().unwrap())
         .unwrap();
     for (bot, backend) in [("ssh-bot", "ssh"), ("docker-bot", "docker")] {
-        let environment: BTreeMap<_, _> = launch_env(&store, "hermes", Some(bot)).unwrap().into_iter().collect();
+        let environment: BTreeMap<_, _> = launch_env(&store, "hermes", Some(bot)).unwrap().0.into_iter().collect();
         assert_eq!(environment["OPENROUTER_API_KEY"], "rotated-provider-key");
         assert_eq!(environment["TERMINAL_ENV"], backend);
     }
     save_env(&store, "hermes", Some("ssh-bot"), json!({"OPENROUTER_API_KEY":"explicit-bot-key"}).as_object().unwrap())
         .unwrap();
     assert_eq!(
-        env(&store, "hermes", Some("ssh-bot")).unwrap().into_iter().collect::<BTreeMap<_, _>>()["OPENROUTER_API_KEY"],
+        env(&store, "hermes", Some("ssh-bot")).unwrap().0.into_iter().collect::<BTreeMap<_, _>>()["OPENROUTER_API_KEY"],
         "explicit-bot-key"
     );
     save_env(&store, "hermes", Some("ssh-bot"), json!({"OPENROUTER_API_KEY":""}).as_object().unwrap()).unwrap();
     assert_eq!(
-        env(&store, "hermes", Some("ssh-bot")).unwrap().into_iter().collect::<BTreeMap<_, _>>()["OPENROUTER_API_KEY"],
+        env(&store, "hermes", Some("ssh-bot")).unwrap().0.into_iter().collect::<BTreeMap<_, _>>()["OPENROUTER_API_KEY"],
         "rotated-provider-key"
     );
 }

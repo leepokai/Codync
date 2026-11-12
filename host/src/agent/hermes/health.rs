@@ -17,7 +17,7 @@ fn revision_matches(saved: Option<&settings::Saved>, expected: &str) -> Result<(
 }
 
 fn connection_env(hub: &Hub, bot: &BotConfig) -> Result<Vec<(String, String)>> {
-    let mut env = crate::agent::auth::launch_env(&hub.store, "hermes", Some(&bot.id))?;
+    let (mut env, _grants) = crate::agent::auth::launch_env(&hub.store, "hermes", Some(&bot.id))?;
     if let Some(account) = bot.account.as_deref() {
         for (key, value) in crate::agent::account::env(account, "hermes")? {
             env.retain(|(saved, _)| saved != &key);

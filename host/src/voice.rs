@@ -15,17 +15,18 @@ pub(crate) mod synthesis;
 mod transcript;
 pub(crate) mod transcription;
 pub use transcription::transcribe;
+mod keys;
 
-use crate::market::vault;
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use endpoint::{openai_base, openai_http, openai_url, realtime_url};
+use endpoint::{openai_base, realtime_url};
+use keys::Access;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const SLOT: &str = "voice";
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Speech to text: keep the speaker's language and script, and coding terms as written.
 const TRANSCRIBE_HINT: &str = "Keep the speaker's language and script. Keep code, file and product names as written.";
@@ -108,7 +109,7 @@ fn defaults(store: &Store, p: Provider) -> Defaults {
 pub async fn refresh_loop(hub: std::sync::Arc<crate::hub::Hub>) {
     loop {
         for p in Provider::ALL {
-            if load(&hub.store).is_ok_and(|keys| !keys.get(p).is_empty())
+            if keys::configured(&hub.store, p).unwrap_or(false)
                 && let Err(e) = models(&hub.store, p).await
             {
                 tracing::info!(
@@ -120,51 +121,6 @@ pub async fn refresh_loop(hub: std::sync::Arc<crate::hub::Hub>) {
         }
         tokio::time::sleep(REFRESH_EVERY).await;
     }
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct Keys {
-    #[serde(default)]
-    openai: String,
-    #[serde(default)]
-    gemini: String,
-    #[serde(default)]
-    elevenlabs: String,
-}
-
-impl Keys {
-    fn get(&self, p: Provider) -> &str {
-        match p {
-            Provider::OpenAi => &self.openai,
-            Provider::Gemini => &self.gemini,
-            Provider::ElevenLabs => &self.elevenlabs,
-        }
-    }
-
-    fn set(&mut self, p: Provider, key: String) {
-        match p {
-            Provider::OpenAi => self.openai = key,
-            Provider::Gemini => self.gemini = key,
-            Provider::ElevenLabs => self.elevenlabs = key,
-        }
-    }
-}
-
-fn load(store: &Store) -> Result<Keys> {
-    Ok(vault::read(store, SLOT)?
-        .filter(|s| !s.is_empty())
-        .map(|s| serde_json::from_str(&s))
-        .transpose()?
-        .unwrap_or_default())
-}
-
-fn key(store: &Store, p: Provider) -> Result<String> {
-    let keys = load(store)?;
-    let key = keys.get(p);
-    if key.is_empty() {
-        bail!("No {} key on this computer. Add one in the call settings.", p.name());
-    }
-    Ok(key.to_owned())
 }
 
 /// Model ids and voices go into provider requests: letters, digits, `-`, `.`, `_`.
@@ -196,15 +152,16 @@ async fn send(p: Provider, req: reqwest::RequestBuilder) -> Result<Value> {
 
 /// A credential for one call's audio session: an `OpenAI` client secret (10 minutes)
 /// or a one-use Gemini ephemeral token.
-async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String> {
+async fn mint(p: Provider, access: &Access, model: &str, voice: &str) -> Result<String> {
     let v = match p {
         Provider::OpenAi => {
             let body = json!({
                 "expires_after": {"anchor": "created_at", "seconds": 600},
                 "session": {"type": "realtime", "model": model, "audio": {"output": {"voice": voice}}},
             });
-            let url = realtime_url(openai_base()?.as_ref())?;
-            send(p, openai_http()?.post(url).bearer_auth(key).json(&body)).await?
+            // A compatible server on this computer has no Realtime credential minting.
+            realtime_url(openai_base()?.as_ref())?;
+            send(p, access.request(p, Method::POST, "/v1/realtime/client_secrets").json(&body)).await?
         }
         Provider::Gemini => {
             let now = chrono::Utc::now();
@@ -213,14 +170,7 @@ async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String
                 "expireTime": (now + chrono::Duration::minutes(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 "newSessionExpireTime": (now + chrono::Duration::minutes(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             });
-            send(
-                p,
-                crate::http()
-                    .post("https://generativelanguage.googleapis.com/v1alpha/auth_tokens")
-                    .header("x-goog-api-key", key)
-                    .json(&body),
-            )
-            .await?
+            send(p, access.request(p, Method::POST, "/v1alpha/auth_tokens").json(&body)).await?
         }
         Provider::ElevenLabs => bail!("{} doesn't hold live calls. Choose Speech mode.", p.name()),
     };
@@ -238,14 +188,13 @@ async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String
 
 /// Which providers have a key here, with their default models.
 pub fn status(store: &Store) -> Result<Value> {
-    let keys = load(store)?;
-    let providers: Vec<Value> = Provider::ALL
+    let providers = Provider::ALL
         .iter()
         .map(|&p| {
             let defaults = defaults(store, p);
-            json!({"provider": p.id(), "configured": !keys.get(p).is_empty(), "defaults": defaults})
+            Ok(json!({"provider": p.id(), "configured": keys::configured(store, p)?, "defaults": defaults}))
         })
-        .collect();
+        .collect::<Result<Vec<Value>>>()?;
     Ok(json!({"providers": providers}))
 }
 
@@ -253,7 +202,7 @@ pub fn status(store: &Store) -> Result<Value> {
 pub async fn voices(store: &Store, p: Provider) -> Result<Value> {
     match p {
         Provider::ElevenLabs => {
-            let voices: Vec<Value> = elevenlabs::voices(&key(store, p)?)
+            let voices: Vec<Value> = elevenlabs::voices(keys::access(store, p)?.secret()?)
                 .await?
                 .into_iter()
                 .map(|(id, name)| json!({"id": id, "name": name}))
@@ -272,27 +221,20 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
         if p == Provider::ElevenLabs {
             elevenlabs::check(key).await?;
         } else {
-            let voice = match p {
-                Provider::OpenAi => "marin",
-                Provider::Gemini => "Kore",
-                Provider::ElevenLabs => unreachable!(),
-            };
-            if p == Provider::OpenAi
-                && let Some(base) = openai_base()?
-            {
+            let access = Access::direct(p, key)?;
+            if p == Provider::OpenAi && openai_base()?.is_some() {
                 // Compatible speech servers may not implement Realtime credential minting.
-                send(p, openai_http()?.get(openai_url(Some(&base), "/v1/models")).bearer_auth(key)).await?;
+                send(p, access.request(p, Method::GET, "/v1/models")).await?;
             } else {
-                mint(p, key, &defaults(store, p).realtime, voice).await?;
+                let voice = match p {
+                    Provider::OpenAi => "marin",
+                    _ => "Kore",
+                };
+                mint(p, &access, &defaults(store, p).realtime, voice).await?;
             }
         }
     }
-    {
-        let _guard = store.connector_lock.lock().map_err(|_| anyhow!("credential storage is busy"))?;
-        let mut keys = load(store)?;
-        keys.set(p, key.to_owned());
-        vault::write(store, SLOT, &serde_json::to_string(&keys)?)?;
-    }
+    keys::save(store, p, key)?;
     if !key.is_empty() {
         // A new key may see newer models; the daily refresh would only get there tomorrow.
         let _ = models(store, p).await;
@@ -305,18 +247,18 @@ pub async fn session(store: &Store, p: Provider, model: &str, voice: &str) -> Re
     if !p.live() {
         bail!("{} doesn't hold live calls. Choose Speech mode.", p.name());
     }
-    let key = key(store, p)?;
-    Ok(json!({"credential": mint(p, &key, checked(model)?, checked(voice)?).await?}))
+    let access = keys::access(store, p)?;
+    Ok(json!({"credential": mint(p, &access, checked(model)?, checked(voice)?).await?}))
 }
 
 /// Models the key can use, from the provider's own list: realtime (conversation),
 /// transcribe (speech to text) and speech (text to speech).
 pub async fn models(store: &Store, p: Provider) -> Result<Value> {
-    let key = key(store, p)?;
+    let access = keys::access(store, p)?;
     let entries: Vec<Model> = match p {
         Provider::OpenAi => {
             let base = openai_base()?;
-            let v = send(p, openai_http()?.get(openai_url(base.as_ref(), "/v1/models")).bearer_auth(&key)).await?;
+            let v = send(p, access.request(p, Method::GET, "/v1/models")).await?;
             v["data"]
                 .as_array()
                 .into_iter()
@@ -333,10 +275,7 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 .collect()
         }
         Provider::Gemini => {
-            let req = crate::http()
-                .get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")
-                .header("x-goog-api-key", &key);
-            let v = send(p, req).await?;
+            let v = send(p, access.request(p, Method::GET, "/v1beta/models?pageSize=1000")).await?;
             v["models"]
                 .as_array()
                 .into_iter()
@@ -352,7 +291,7 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 })
                 .collect()
         }
-        Provider::ElevenLabs => elevenlabs::models(&key).await?,
+        Provider::ElevenLabs => elevenlabs::models(access.secret()?).await?,
     };
     let (realtime, transcribe, speech) = classify(p, &entries);
     let fallback = p.fallback();
@@ -484,7 +423,7 @@ fn names_hint(names: &[String]) -> String {
 
 /// Text to speech for one stretch of a reply: `{audio: base64, format: "aac" | "wav" | "mp3"}`.
 pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &str) -> Result<Value> {
-    let key = key(store, p)?;
+    let access = keys::access(store, p)?;
     let (model, voice) = (checked(model)?, checked(voice)?);
     if text.trim().is_empty() || text.len() > 4000 {
         bail!("text must be 1–4000 bytes");
@@ -492,12 +431,10 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
     match p {
         Provider::OpenAi => {
             // A local server answers WAV (no AAC encoder needed); the phone plays both.
-            let base = openai_base()?;
-            let format = if base.is_some() { "wav" } else { "aac" };
+            let format = if openai_base()?.is_some() { "wav" } else { "aac" };
             let body = json!({"model": model, "voice": voice, "input": text, "response_format": format});
-            let res = openai_http()?
-                .post(openai_url(base.as_ref(), "/v1/audio/speech"))
-                .bearer_auth(&key)
+            let res = access
+                .request(p, Method::POST, "/v1/audio/speech")
                 .json(&body)
                 .timeout(TIMEOUT * 4)
                 .send()
@@ -519,7 +456,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
                     "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
                 },
             });
-            let v = send(p, gemini_generate(&key, model).json(&body)).await?;
+            let v = send(p, gemini_generate(&access, model).json(&body)).await?;
             let pcm = v["candidates"][0]["content"]["parts"]
                 .as_array()
                 .into_iter()
@@ -530,16 +467,15 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
             Ok(json!({"audio": STANDARD.encode(wav(&pcm, 24_000)), "format": "wav"}))
         }
         Provider::ElevenLabs => {
-            let bytes = elevenlabs::speech(&key, model, voice, text).await?;
+            let bytes = elevenlabs::speech(access.secret()?, model, voice, text).await?;
             Ok(json!({"audio": STANDARD.encode(bytes), "format": "mp3"}))
         }
     }
 }
 
-fn gemini_generate(key: &str, model: &str) -> reqwest::RequestBuilder {
-    crate::http()
-        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"))
-        .header("x-goog-api-key", key)
+fn gemini_generate(access: &Access, model: &str) -> reqwest::RequestBuilder {
+    access
+        .request(Provider::Gemini, Method::POST, &format!("/v1beta/models/{model}:generateContent"))
         .timeout(TIMEOUT * 4)
 }
 

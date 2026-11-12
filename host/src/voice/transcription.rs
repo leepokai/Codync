@@ -1,12 +1,11 @@
 //! Shared host transcription for calls and messaging attachments.
 
-use super::{
-    Provider, STANDARD, TRANSCRIBE_HINT, checked, defaults, gemini_generate, key, load, names_hint, openai_base,
-    openai_http, openai_url, send, spoken_names,
-};
+use super::keys::{self, Access};
+use super::{Provider, STANDARD, TRANSCRIBE_HINT, checked, defaults, gemini_generate, names_hint, send, spoken_names};
 use crate::store::Store;
 use anyhow::{Context, Result, anyhow, ensure};
 use base64::Engine as _;
+use reqwest::Method;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use std::collections::VecDeque;
@@ -55,30 +54,18 @@ fn cache_key(context: &[&str], audio: &[u8]) -> String {
 }
 
 struct SpeechRequest {
-    credential: String,
+    /// The provider's server (this computer's compatible one, when set) and the key it takes.
+    access: Access,
     names: Vec<String>,
-    endpoint: Option<reqwest::Url>,
 }
 
 impl SpeechRequest {
-    fn new(store: &Store, provider: Provider, credential: String) -> Result<Self> {
-        Ok(Self {
-            credential,
-            names: spoken_names(store),
-            endpoint: if matches!(provider, Provider::OpenAi) { openai_base()? } else { None },
-        })
+    fn new(store: &Store, provider: Provider) -> Result<Self> {
+        Ok(Self { access: keys::access(store, provider)?, names: spoken_names(store) })
     }
 
     fn cache_key(&self, provider: Provider, model: &str, audio: &[u8]) -> String {
-        let endpoint = self.endpoint.as_ref().map_or(
-            match provider {
-                Provider::OpenAi => "https://api.openai.com",
-                Provider::Gemini => "https://generativelanguage.googleapis.com",
-                Provider::ElevenLabs => "https://api.elevenlabs.io",
-            },
-            reqwest::Url::as_str,
-        );
-        cache_key(&[provider.id(), model, &self.credential, endpoint, &names_hint(&self.names)], audio)
+        cache_key(&[provider.id(), model, &self.access.identity(), &names_hint(&self.names)], audio)
     }
 }
 
@@ -87,15 +74,14 @@ impl SpeechRequest {
 pub(crate) async fn note(store: &Store, bytes: &[u8]) -> Result<String> {
     ensure!(!bytes.is_empty() && bytes.len() <= MAX_NOTE_BYTES, "Voice notes must contain 1 byte to 20 MiB");
     let container = Container::sniff(bytes).context("The attachment is not a recognized audio container")?;
-    let keys = load(store)?;
     let provider = Provider::ALL
         .into_iter()
-        .find(|p| !keys.get(*p).is_empty())
+        .find(|p| keys::configured(store, *p).unwrap_or(false))
         .context("Configure a speech provider in Codync call settings to transcribe voice notes")?;
     let model = defaults(store, provider).transcribe;
     // Equal audio is reusable only within the same provider connection and spelling context.
     // Keep credentials and endpoint details out of the cache itself and out of logs.
-    let request = SpeechRequest::new(store, provider, keys.get(provider).to_owned())?;
+    let request = SpeechRequest::new(store, provider)?;
     let cached = memo(request.cache_key(provider, &model, bytes)).await;
     let text = cached
         .get_or_try_init(|| async {
@@ -114,7 +100,7 @@ pub(crate) async fn note(store: &Store, bytes: &[u8]) -> Result<String> {
 pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) -> Result<Value> {
     ensure!(audio.len() <= MAX_NOTE_BYTES.div_ceil(3) * 4, "Audio exceeds 20 MiB");
     let wav = STANDARD.decode(audio).map_err(|_| anyhow!("audio must be base64"))?;
-    let request = SpeechRequest::new(store, p, key(store, p)?)?;
+    let request = SpeechRequest::new(store, p)?;
     transcribe_bytes(p, model, &wav, Container::Wav, &request).await
 }
 
@@ -159,9 +145,9 @@ async fn transcribe_bytes(
             );
             body.extend_from_slice(wav);
             body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-            let req = openai_http()?
-                .post(openai_url(request.endpoint.as_ref(), "/v1/audio/transcriptions"))
-                .bearer_auth(&request.credential)
+            let req = request
+                .access
+                .request(p, Method::POST, "/v1/audio/transcriptions")
                 .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
                 .body(body);
             send(p, req).await?["text"].as_str().unwrap_or_default().to_owned()
@@ -172,7 +158,7 @@ async fn transcribe_bytes(
                 {"text": format!("Transcribe this audio exactly as spoken. {TRANSCRIBE_HINT} {} Reply with the transcript only; reply with nothing if there is no speech.", names_hint(names))},
                 {"inlineData": {"mimeType": mime, "data": audio}},
             ]}]});
-            let v = send(p, gemini_generate(&request.credential, model).json(&body)).await?;
+            let v = send(p, gemini_generate(&request.access, model).json(&body)).await?;
             v["candidates"][0]["content"]["parts"]
                 .as_array()
                 .into_iter()
@@ -181,7 +167,7 @@ async fn transcribe_bytes(
                 .collect::<String>()
         }
         Provider::ElevenLabs => {
-            super::elevenlabs::transcribe(&request.credential, model, wav.to_vec(), extension, mime).await?
+            super::elevenlabs::transcribe(request.access.secret()?, model, wav.to_vec(), extension, mime).await?
         }
     };
     Ok(json!({"text": text.trim()}))
@@ -247,9 +233,8 @@ mod tests {
             stream.get_mut().write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).as_bytes()).await.unwrap();
         });
         let request = SpeechRequest {
-            credential: "fixture-only-key".into(),
+            access: Access::direct_at(endpoint.as_str().trim_end_matches('/'), "fixture-only-key"),
             names: vec!["Captured Bot".into()],
-            endpoint: Some(endpoint),
         };
         let operation = async {
             let result = transcribe_bytes(Provider::OpenAi, "fixture-model", b"OggSfixture", Container::Ogg, &request)

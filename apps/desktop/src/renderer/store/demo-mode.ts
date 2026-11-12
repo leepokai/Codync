@@ -1,5 +1,6 @@
 import { DEMO_SNAPSHOT, DemoTransport } from '../demo/demo-transport'
 import { FakeHost } from '../demo/fake-host'
+import { macBook } from '../demo/story'
 import { Observable } from '../lib/observable'
 import { analytics } from './analytics'
 import { AppModel } from './app-model'
@@ -18,7 +19,7 @@ class DemoMode extends Observable {
 
   enter() {
     if (this.model) return
-    const host = new FakeHost(window.codync.appVersion)
+    const host = new FakeHost(window.codync.appVersion, macBook)
     const model = new AppModel(true, { transport: () => new DemoTransport(host), snapshot: DEMO_SNAPSHOT })
     // Nothing the person does in the demo is counted.
     analytics.setQuiet(true)

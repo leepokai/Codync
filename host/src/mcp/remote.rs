@@ -177,7 +177,7 @@ pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
 
 /// The older transport's POST endpoint (on the connector's own origin) and what it may reach.
 struct Legacy {
-    endpoint: String,
+    endpoint: Endpoint,
     policy: Policy,
 }
 
@@ -191,6 +191,49 @@ struct Remote {
     target_url: std::sync::Mutex<Option<String>>,
 }
 
+/// Where messages go on the older transport: a URL, or, on a Codync Cloud computer, a path under each exchange's
+/// fresh grant from its keeper (the host's `base`), whose grants don't outlive a long session.
+enum Endpoint {
+    Url(String),
+    UnderGrant(String),
+}
+
+impl Endpoint {
+    /// The endpoint the server named (`path`) on the stream opened at `url`.
+    fn named(url: &str, base: Option<&str>, path: &str) -> Result<Self> {
+        let stream = reqwest::Url::parse(url)?;
+        let endpoint = stream.join(path)?;
+        if endpoint.origin() != stream.origin() || !endpoint.username().is_empty() || endpoint.password().is_some() {
+            anyhow::bail!("the legacy MCP endpoint must use the connector's origin");
+        }
+        let joined = endpoint.to_string();
+        Ok(match base {
+            // The keeper sends a grant to the connector's origin: an absolute path goes right under the grant.
+            Some(_) if path.starts_with('/') && !path.starts_with("//") => Self::UnderGrant(path.to_owned()),
+            Some(base) => {
+                joined.strip_prefix(base).map_or_else(|| Self::Url(joined.clone()), |p| Self::UnderGrant(p.to_owned()))
+            }
+            None => Self::Url(joined),
+        })
+    }
+
+    fn url(&self, base: Option<&str>) -> Result<String> {
+        match (self, base) {
+            (Self::Url(url), _) => Ok(url.clone()),
+            (Self::UnderGrant(path), Some(base)) => Ok(format!("{base}{path}")),
+            (Self::UnderGrant(_), None) => anyhow::bail!("the Codync host no longer gives this connector a grant"),
+        }
+    }
+}
+
+/// Where to send, the headers to send, (a cloud computer) the keeper's grant the URL is under, and what the URL may reach.
+struct Target {
+    url: String,
+    headers: reqwest::header::HeaderMap,
+    base: Option<String>,
+    policy: Policy,
+}
+
 impl Remote {
     async fn check(&self) -> Result<()> {
         if self.approval.is_some() && self.cancellation.cancelled(&self.request_id) {
@@ -202,9 +245,10 @@ impl Remote {
         }
         Ok(())
     }
-    /// The connector's URL, headers with a fresh sign-in token (`stale` forces a refresh), and
-    /// what that URL may reach.
-    async fn target(&self, stale: bool) -> Result<(String, reqwest::header::HeaderMap, Policy)> {
+
+    /// The connector's URL, headers with a fresh sign-in token (`stale` forces a refresh), what that
+    /// URL may reach, and (a cloud computer) the keeper's grant it is under.
+    async fn target(&self, stale: bool) -> Result<Target> {
         let res = client()
             .post(format!("http://127.0.0.1:{}/api/connectorTarget", self.port))
             .bearer_auth(&self.token)
@@ -227,19 +271,24 @@ impl Remote {
         }
         let url = target["url"].as_str().ok_or_else(|| anyhow::anyhow!("connector has no URL"))?.to_owned();
         let mut bound = self.target_url.locked();
-        if bound.as_ref().is_some_and(|previous| previous != &url) {
+        // A cloud computer's grant URL changes with each exchange; the connector's own URL must not.
+        let identity = target["base"].as_str().map_or(url.as_str(), |_| "");
+        if !identity.is_empty() && bound.as_ref().is_some_and(|previous| previous != identity) {
             anyhow::bail!("connector URL changed; restart its MCP session before sending more requests");
         }
-        *bound = Some(url.clone());
+        if !identity.is_empty() {
+            *bound = Some(identity.to_owned());
+        }
         let policy = if target["public"] == true { Policy::Public } else { Policy::UserChosen };
-        Ok((url, headers, policy))
+        let base = target["base"].as_str().map(str::to_owned);
+        Ok(Target { url, headers, base, policy })
     }
 
     /// Sends one message over streamable HTTP; returns what the server answered (JSON, or
     /// the events of an SSE stream). None: the server doesn't speak streamable HTTP.
     async fn forward(&self, msg: &Value, session: &mut Option<String>) -> Result<Option<Vec<Value>>> {
         for stale in [false, true] {
-            let (url, headers, policy) = self.target(stale).await?;
+            let Target { url, headers, policy, .. } = self.target(stale).await?;
             let mut req = crate::egress::client(policy, &url)
                 .await?
                 .post(&url)
@@ -298,7 +347,7 @@ impl Remote {
     /// (sent to `tx`); returns the URL messages are posted to and the task reading the stream.
     async fn open_legacy(&self, tx: mpsc::Sender<Value>) -> Result<(Legacy, tokio::task::JoinHandle<()>)> {
         for stale in [false, true] {
-            let (url, headers, policy) = self.target(stale).await?;
+            let Target { url, headers, base, policy } = self.target(stale).await?;
             let res = crate::egress::client(policy, &url)
                 .await?
                 .get(&url)
@@ -318,16 +367,7 @@ impl Remote {
                 let event =
                     events.next().await?.ok_or_else(|| anyhow::anyhow!("{url} closed before naming its endpoint"))?;
                 if event.lines().any(|l| l.trim() == "event: endpoint" || l.trim() == "event:endpoint") {
-                    let path = sse_text(&event);
-                    let base = reqwest::Url::parse(&url)?;
-                    let endpoint = base.join(path.trim())?;
-                    if endpoint.origin() != base.origin()
-                        || !endpoint.username().is_empty()
-                        || endpoint.password().is_some()
-                    {
-                        anyhow::bail!("the legacy MCP endpoint must use the connector's origin");
-                    }
-                    break endpoint.to_string();
+                    break Endpoint::named(&url, base.as_deref(), sse_text(&event).trim())?;
                 }
             };
             let connector = self.connector.clone();
@@ -354,13 +394,13 @@ impl Remote {
     /// Posts one message on the older transport. Answers normally arrive on the stream;
     /// a server that answers in the body is heard too.
     async fn post_legacy(&self, legacy: &Legacy, msg: &Value) -> Result<Vec<Value>> {
-        let endpoint = legacy.endpoint.as_str();
         for stale in [false, true] {
-            let (_, headers, _) = self.target(stale).await?;
+            let Target { headers, base, .. } = self.target(stale).await?;
             self.check().await?;
-            let res = crate::egress::client(legacy.policy, endpoint)
+            let endpoint = legacy.endpoint.url(base.as_deref())?;
+            let res = crate::egress::client(legacy.policy, &endpoint)
                 .await?
-                .post(endpoint)
+                .post(&endpoint)
                 .headers(headers)
                 .json(msg)
                 .timeout(Duration::from_mins(1))

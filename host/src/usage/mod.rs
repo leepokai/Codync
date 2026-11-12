@@ -1,48 +1,57 @@
 //! Subscription usage, read on the host.
 //!
 //! Claude: `claude -p /usage`, the status line, and the ACP rate-limit event.
-//! Codex: the newest rollout's `rate_limits`. The other agents Codync runs are
+//! Codex: the CLI's live account rate limits (the newest rollout when it can't answer). The other agents Codync runs are
 //! read the same way when they can report locally: `omp usage`, `amp usage`,
-//! `kiro-cli /usage`, `gemini /usage`, a `kimi` screen, Antigravity's language
-//! server, OpenCode's console usage endpoint, Vibe's session logs, and the
-//! `JetBrains` IDE quota file.
+//! `hermes usage`, `auggie account status`, `kilo profile`, `kiro-cli /usage`, `gemini /usage`, a `kimi`
+//! screen, Antigravity's ACP `/usage` command or its IDE's language server, Copilot's
+//! headless server, Grok's ACP billing extension, OpenCode's console usage endpoint, Vibe's session logs,
+//! and the `JetBrains` IDE quota file. Which of them get read and shown: [`services`].
+//! Failures: [`reading`].
 //!
-//! Cursor has no local report. The host reads the token the Cursor app saved
-//! and asks `cursor.com/api/usage-summary`. That is the only provider call, and
-//! the token is never logged.
+//! Cursor's saved CLI or app login reads the dashboard service's weekly unified
+//! allowance, or the website's usage summary for legacy monthly plans. These are
+//! the only provider requests, and the token is never logged.
 
+mod acp_read;
 mod amp;
 mod antigravity;
+mod auggie;
 mod claude;
 mod codex;
 mod command;
+mod copilot;
 mod cursor;
 mod gemini;
 mod grok;
+mod hermes;
 mod junie;
+mod kilo;
 mod kimi;
 mod kiro;
 mod omp;
 mod opencode;
+mod reading;
+mod services;
 mod vibe;
 
 pub use claude::{ingest_claude_rate_limit, ingest_statusline};
+pub(crate) use command::strip_ansi;
+pub use services::{bots_changed, set_order, set_shown};
 
 use crate::LockExt;
 use crate::hub::Hub;
-use serde::{Deserialize, Serialize};
+use futures::stream::{FuturesUnordered, StreamExt};
+use serde::Serialize;
+use services::{Reader, Service};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
 
 const POLL_EVERY: Duration = Duration::from_mins(5);
-/// The last reading, so the counters are on screen while a fresh probe runs.
-const KV_USAGE: &str = "usage.cache";
-/// The timer and several clients can ask for a reading at once: one probe owns it.
-static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-/// When the last probe finished. A client that waited for the one in flight
-/// gets its result instead of starting another probe right away.
-static LAST_REFRESH: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+/// How long a forced refresh holds up whoever asked. A slower reader lands through `usage` events.
+const REFRESH_WAIT: Duration = Duration::from_mins(1);
 /// Usage of a plan above which background work (dreaming, the lead's check-ins) waits.
 const HEADROOM_PERCENT: f64 = 75.0;
 
@@ -57,16 +66,22 @@ fn over_headroom(windows: &[Window]) -> bool {
 }
 
 /// Everything the apps show about limits (wire shape of the `usage` event).
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
 pub struct Usage {
     pub providers: Vec<Provider>,
+    /// The agents the user can choose among in the Usage screen.
+    pub services: Vec<Service>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Provider {
+    /// The agent's id, or `<agent>:<account>` for one of its isolated accounts.
     pub id: String,
     pub name: String,
+    /// The agent's ACP registry id, which its logo goes by. Without one, its `id`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry: Option<&'static str>,
     pub windows: Vec<Window>,
     /// Where the numbers came from: `claude` (CLI), `statusline`, `agent`, `sessions`,
     /// or a short phrase for the other agents.
@@ -77,7 +92,7 @@ pub struct Provider {
     pub status: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Window {
     pub id: String,
@@ -107,235 +122,173 @@ impl Window {
 }
 
 impl Usage {
+    /// What the apps get: without the readings of the agents the user doesn't show.
+    pub fn visible(&self) -> Self {
+        let hidden = |id: &str| self.services.iter().any(|service| service.id == id && !service.shown);
+        let rank = |id: &str| self.services.iter().position(|service| service.id == id).unwrap_or(usize::MAX);
+        let mut providers: Vec<Provider> =
+            self.providers.iter().filter(|provider| !hidden(&provider.id)).cloned().collect();
+        providers.sort_by_key(|provider| rank(&provider.id));
+        Self { providers, services: self.services.clone() }
+    }
+
     /// One window at a time, for Claude's status line and rate-limit events.
     /// The provider's other windows stay.
-    fn merge(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
+    fn merge(&mut self, id: &str, name: &str, source: &str, new: Vec<Window>) {
         let mut windows = self.providers.iter().find(|p| p.id == id).map(|p| p.windows.clone()).unwrap_or_default();
         windows.retain(|w| !new.iter().any(|n| n.id == w.id));
         windows.extend(new);
         windows.sort_by(|a, b| a.id.cmp(&b.id));
         self.providers.retain(|p| p.id != id);
-        self.providers.push(Provider {
-            id: id.into(),
-            name: name.into(),
-            windows,
-            source: source.into(),
-            updated_at: crate::store::now_ms(),
-            status: None,
-        });
+        self.providers.push(Provider::new(id, name, source, windows));
         self.providers.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
     /// A probe's full reading. Windows it no longer reports are dropped, and an
     /// empty reading removes the provider.
-    fn replace(&mut self, id: &str, name: &str, source: &'static str, new: Vec<Window>) {
+    fn replace(&mut self, id: &str, name: &str, source: &str, new: Vec<Window>) {
         self.providers.retain(|p| p.id != id);
         if new.is_empty() {
             return;
         }
         let mut windows = new;
         windows.sort_by(|a, b| a.id.cmp(&b.id));
-        self.providers.push(Provider {
-            id: id.into(),
-            name: name.into(),
-            windows,
-            source: source.into(),
-            updated_at: crate::store::now_ms(),
-            status: None,
-        });
+        self.providers.push(Provider::new(id, name, source, windows));
         self.providers.sort_by(|a, b| a.id.cmp(&b.id));
     }
 }
 
-pub(super) fn merge(hub: &Hub, id: &str, name: &str, source: &'static str, windows: Vec<Window>) {
-    let mut usage = hub.usage.locked().clone();
-    usage.merge(id, name, source, windows);
-    hub.set_usage(usage);
+impl Provider {
+    fn new(id: &str, name: &str, source: &str, windows: Vec<Window>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            registry: services::registry(services::base_id(id)),
+            windows,
+            source: source.into(),
+            updated_at: crate::store::now_ms(),
+            status: None,
+        }
+    }
+}
+
+pub(super) fn merge(hub: &Hub, id: &str, name: &str, source: &str, windows: Vec<Window>) {
+    hub.update_usage(|usage| usage.merge(id, name, source, windows));
 }
 
 pub async fn poll(hub: Arc<Hub>) {
     loop {
-        refresh(&hub).await;
-        tokio::time::sleep(POLL_EVERY).await;
+        read_all(&hub).await;
+        let next = tokio::time::Instant::now() + POLL_EVERY;
+        // An agent that just became wanted (a new bot's, one the user turned on) reads right away.
+        while tokio::time::timeout_at(next, hub.usage_wake.notified()).await.is_ok() {
+            read(&hub, readers(&hub, services::unread_readers).await).await;
+        }
     }
 }
 
-/// The last reading saved on this computer, so a restart shows the counters
-/// immediately instead of waiting a minute for the first probe.
-pub fn load(store: &crate::store::Store) -> Usage {
-    store.kv_read(KV_USAGE).ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
-}
-
-pub fn save(store: &crate::store::Store, usage: &Usage) {
-    if let Ok(raw) = serde_json::to_string(usage) {
-        let _ = store.kv_set(KV_USAGE, &raw);
+/// A forced read for a caller that's waiting, which gets what has landed by [`REFRESH_WAIT`].
+pub async fn refresh(hub: &Arc<Hub>) {
+    let reading = tokio::spawn({
+        let hub = hub.clone();
+        async move { read_all(&hub).await }
+    });
+    // Past the wait the reading carries on by itself.
+    if let Ok(Err(error)) = timeout(REFRESH_WAIT, reading).await {
+        tracing::warn!(%error, "a usage refresh failed");
     }
 }
 
-pub async fn refresh(hub: &Hub) {
-    // The timer and several clients can request a refresh together. One probe
-    // owns the work; the others wait for it and then receive its result, so a
-    // manual refresh never answers with a half-filled list.
-    let Ok(_refresh) = REFRESH.try_lock() else {
-        let _done = REFRESH.lock().await;
-        return;
+async fn read_all(hub: &Arc<Hub>) {
+    let wanted = |hub: &Hub| {
+        services::sync(hub);
+        services::wanted_readers(&hub.store)
     };
-    if LAST_REFRESH.locked().is_some_and(|last| last.elapsed() < Duration::from_secs(2)) {
-        return;
-    }
-    // Antigravity's adapters report per account; the language server below fills a base reading when they can't.
-    antigravity::refresh(hub).await;
+    let readers = readers(hub, wanted).await;
+    read(hub, readers).await;
+    account_reports(hub).await;
+}
+
+/// The readers `pick` names, away from the async workers: it goes to the database and the disk.
+async fn readers(hub: &Arc<Hub>, pick: fn(&Hub) -> Vec<&'static Reader>) -> Vec<&'static Reader> {
+    let hub = hub.clone();
+    tokio::task::spawn_blocking(move || pick(&hub)).await.unwrap_or_else(|error| {
+        tracing::warn!(%error, "couldn't list the agents to read");
+        Vec::new()
+    })
+}
+
+/// Each reading lands as it comes in: a slow agent doesn't hold back the others.
+async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
     if crate::agent::backends::agent_checks_off() {
         return;
     }
-    let (
-        codex,
-        claude,
-        omp_windows,
-        amp_windows,
-        kiro_windows,
-        kimi_windows,
-        antigravity,
-        opencode,
-        vibe_notes,
-        junie,
-        cursor_windows,
-        gemini_windows,
-        grok_windows,
-    ) = tokio::join!(
-        codex::collect(),
-        claude::collect(&hub.store),
-        omp::collect(),
-        amp::collect(),
-        kiro::collect(),
-        tokio::task::spawn_blocking(kimi::collect),
-        antigravity::collect(),
-        opencode::collect(),
-        tokio::task::spawn_blocking(vibe::collect),
-        tokio::task::spawn_blocking(junie::collect),
-        cursor::collect(),
-        gemini::collect(),
-        grok::collect(),
-    );
+    let signed_out = signed_out_agents().await;
+    // A signed-out CLI can leave local history behind (OpenCode's database). That is not a plan
+    // this account can spend, so it must not become a bar.
+    hub.update_usage(|usage| usage.providers.retain(|p| !signed_out.contains(services::base_id(&p.id))));
+    let mut readings: FuturesUnordered<_> = readers
+        .into_iter()
+        .filter(|reader| !signed_out.contains(reader.id))
+        .map(|reader| async move { (reader, (reader.read)(hub).await) })
+        .collect();
+    while let Some((reader, windows)) = readings.next().await {
+        apply(hub, windows, reader.id, reader.name, reader.source);
+    }
+}
+
+/// The agents installed here whose CLI says it is signed out.
+async fn signed_out_agents() -> HashSet<String> {
     let backends = tokio::task::spawn_blocking(crate::agent::backends::list).await.unwrap_or_default();
-    let signed_out: std::collections::HashSet<&str> =
-        backends.iter().filter(|b| b["signedIn"].as_bool() == Some(false)).filter_map(|b| b["id"].as_str()).collect();
-    // Everything collected lands in one copy: clients see the whole list change at once,
-    // not provider by provider as probes finish.
-    let mut next = hub.usage.locked().clone();
-    // A signed-out CLI can leave local history behind (OpenCode's database). That
-    // is not a plan this account can spend, so it must not become a bar.
-    next.providers.retain(|p| !signed_out_base(&signed_out, &p.id));
-    apply(&mut next, &signed_out, codex, "codex", "Codex", "codex");
-    apply(&mut next, &signed_out, claude, "claude", "Claude", "claude");
-    apply(&mut next, &signed_out, omp_windows, "omp", "oh-my-pi", "omp usage");
-    apply(&mut next, &signed_out, amp_windows, "amp", "Amp", "amp usage");
-    apply(&mut next, &signed_out, kiro_windows, "kiro", "Kiro CLI", "kiro-cli");
-    apply(&mut next, &signed_out, joined(kimi_windows), "kimi", "Kimi Code", "kimi");
-    apply(&mut next, &signed_out, antigravity, "antigravity", "Google Antigravity", "antigravity");
-    apply(&mut next, &signed_out, opencode, "opencode", "OpenCode", "opencode usage");
-    apply(&mut next, &signed_out, joined(vibe_notes), "vibe", "Mistral Vibe", "vibe logs");
-    apply(&mut next, &signed_out, joined(junie), "junie", "Junie", "JetBrains IDE");
-    apply(&mut next, &signed_out, cursor_windows, "cursor", "Cursor", "Cursor");
-    apply(&mut next, &signed_out, gemini_windows, "gemini", "Gemini CLI", "gemini /usage");
-    apply(&mut next, &signed_out, grok_windows, "grok", "Grok", "grok billing");
-    account_reports(hub, &mut next, &signed_out).await;
-    ensure_connected(&mut next, &backends);
-    hub.set_usage(next);
-    *LAST_REFRESH.locked() = Some(std::time::Instant::now());
+    backends
+        .iter()
+        .filter(|b| b["signedIn"].as_bool() == Some(false))
+        .filter_map(|b| b["id"].as_str().map(str::to_owned))
+        .collect()
 }
 
 /// The plan windows of each isolated account, under the agent's name and its place: "Codex 2".
-async fn account_reports(hub: &Hub, usage: &mut Usage, signed_out: &std::collections::HashSet<&str>) {
+async fn account_reports(hub: &Hub) {
+    if crate::agent::backends::agent_checks_off() {
+        return;
+    }
     let Ok(accounts) = crate::agent::account::list(None) else { return };
+    let signed_out = signed_out_agents().await;
+    let wanted: HashSet<&str> = services::wanted_readers(&hub.store).iter().map(|reader| reader.id).collect();
     let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut ids = Vec::new();
     for account in &accounts {
-        if signed_out.contains(account.backend.as_str()) {
+        let backend = account.backend.as_str();
+        if signed_out.contains(backend) || !wanted.contains(backend) {
             continue;
         }
-        let Some(label) = crate::agent::backends::harness(&account.backend).map(|h| h.name) else {
-            continue;
-        };
-        let ordinal = seen.entry(account.backend.as_str()).or_insert(1);
+        let Some(label) = crate::agent::backends::harness(backend).map(|h| h.name) else { continue };
+        let ordinal = seen.entry(backend).or_insert(1);
         *ordinal += 1;
         let name = format!("{label} {ordinal}");
-        let Ok(env) = crate::agent::account::env(&account.id, &account.backend) else { continue };
-        tracing::info!(account = %account.id, backend = %account.backend, "probing an isolated account");
-        let windows = match account.backend.as_str() {
+        let Ok(env) = crate::agent::account::env(&account.id, backend) else { continue };
+        let windows = match backend {
             "codex" => timeout(Duration::from_secs(15), codex::collect_with(&env)).await.ok().flatten(),
             "claude" => timeout(Duration::from_secs(45), claude::collect_with(&hub.store, &env)).await.ok().flatten(),
             _ => None,
         };
-        tracing::info!(account = %account.id, windows = windows.as_ref().map_or(0, Vec::len), "isolated account probed");
+        let id = format!("{backend}:{}", account.id);
+        ids.push(id.clone());
         if let Some(windows) = windows {
-            let id = format!("{}:{}", account.backend, account.id);
-            usage.replace(&id, &name, "account", windows);
+            hub.update_usage(|usage| usage.replace(&id, &name, "account", windows));
         }
     }
+    // An account that was removed leaves no bar behind.
+    hub.update_usage(|usage| usage.providers.retain(|p| p.source != "account" || ids.contains(&p.id)));
 }
 
-/// A connected agent that couldn't report is still shown, with its status, so
-/// its counters don't silently disappear from the sidebar and Settings.
-fn ensure_connected(usage: &mut Usage, connected: &[serde_json::Value]) {
-    let mut wanted: Vec<(String, String)> = Vec::new();
-    for backend in connected {
-        if backend["installed"] != true || backend["signedIn"] != true {
-            continue;
-        }
-        let Some(id) = backend["id"].as_str() else { continue };
-        let Some(name) = reported_name(id) else { continue };
-        wanted.push((id.to_owned(), name.to_owned()));
-    }
-    // Gemini (Antigravity) and Gemini CLI are the same Google account: when the
-    // plan is already reported, a second "unavailable" row only adds noise.
-    let gemini_covered = usage.providers.iter().any(|p| p.id == "antigravity" && !p.windows.is_empty());
-    let wanted: Vec<(String, String)> =
-        wanted.into_iter().filter(|(id, _)| !(gemini_covered && id == "gemini")).collect();
-    let ids: Vec<&str> = wanted.iter().map(|(id, _)| id.as_str()).collect();
-    let before = usage.providers.len();
-    usage.providers.retain(|p| p.source != "agent" || ids.contains(&p.id.as_str()));
-    let mut changed = usage.providers.len() != before;
-    for (id, name) in wanted {
-        if usage.providers.iter().any(|p| p.id == id) {
-            continue;
-        }
-        usage.providers.push(Provider {
-            id,
-            name,
-            windows: Vec::new(),
-            source: "agent".into(),
-            updated_at: crate::store::now_ms(),
-            status: Some("unavailable".into()),
-        });
-        changed = true;
-    }
-    if changed {
-        usage.providers.sort_by(|a, b| a.id.cmp(&b.id));
-    }
+fn iso_ms(text: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
 }
 
-/// The agents whose plan limits Codync can read, by backend id.
-fn reported_name(id: &str) -> Option<&'static str> {
-    Some(match id {
-        "claude" => "Claude",
-        "codex" => "Codex",
-        "grok" => "Grok",
-        "gemini" => "Gemini CLI",
-        "antigravity" => "Gemini",
-        "cursor" => "Cursor",
-        "opencode" => "OpenCode",
-        "kimi" => "Kimi Code",
-        "amp" => "Amp",
-        "kiro" => "Kiro CLI",
-        "omp" => "oh-my-pi",
-        "vibe" => "Mistral Vibe",
-        "junie" => "Junie",
-        _ => return None,
-    })
-}
-
-fn joined(result: Result<Option<Vec<Window>>, tokio::task::JoinError>) -> Option<Vec<Window>> {
-    result.ok().flatten()
+/// A window id made from its label.
+fn slug(label: &str) -> String {
+    label.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect()
 }
 
 pub(super) fn finite_i64(n: f64) -> Option<i64> {
@@ -352,37 +305,15 @@ pub(super) fn finite_i64(n: f64) -> Option<i64> {
     Some(rounded as i64)
 }
 
-fn signed_out_base(signed_out: &std::collections::HashSet<&str>, id: &str) -> bool {
-    signed_out.contains(id.split(':').next().unwrap_or(id))
-}
-
-fn apply(
-    usage: &mut Usage,
-    signed_out: &std::collections::HashSet<&str>,
-    windows: Option<Vec<Window>>,
-    id: &'static str,
-    name: &'static str,
-    source: &'static str,
-) {
+fn apply(hub: &Hub, windows: Option<Vec<Window>>, id: &str, name: &str, source: &str) {
     let Some(windows) = windows else { return };
-    if signed_out_base(signed_out, id) {
-        return;
-    }
-    usage.replace(id, name, source, windows);
+    hub.update_usage(|usage| usage.replace(id, name, source, windows));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
-
-    #[test]
-    fn a_signed_out_backend_keeps_its_local_history_off_the_bars() {
-        let signed_out = std::collections::HashSet::from(["opencode"]);
-        assert!(signed_out_base(&signed_out, "opencode"));
-        assert!(signed_out_base(&signed_out, "opencode:work"));
-        assert!(!signed_out_base(&signed_out, "claude"));
-    }
 
     #[test]
     fn merge_replaces_only_matching_windows() {
@@ -426,24 +357,37 @@ mod tests {
     }
 
     #[test]
+    fn the_apps_get_only_what_the_user_shows() {
+        let window = Window::new("weekly", "Weekly", 10.0, None);
+        let provider = |id| Provider { windows: vec![window.clone()], ..Provider::new(id, id, "test", Vec::new()) };
+        let usage = Usage {
+            providers: vec![provider("claude"), provider("cursor"), provider("codex")],
+            services: vec![
+                Service { id: "claude", name: "Claude", registry: None, shown: true },
+                Service { id: "cursor", name: "Cursor", registry: None, shown: false },
+            ],
+        };
+        let visible = usage.visible();
+        let ids: Vec<_> = visible.providers.iter().map(|p| p.id.as_str()).collect();
+        // A reading with no row yet (a status line before the first sync) isn't lost.
+        assert_eq!(ids, ["claude", "codex"]);
+        assert_eq!(visible.services.len(), 2, "the chooser still lists the hidden one");
+    }
+
+    #[test]
+    fn a_reading_names_the_registry_id_its_logo_goes_by() {
+        let mut u = Usage::default();
+        u.replace("copilot", "GitHub Copilot", "test", vec![Window::note("plan", "Plan", "Unlimited")]);
+        u.replace("hermes", "Hermes Agent", "test", vec![Window::note("plan", "Plan", "Unlimited")]);
+        let value = serde_json::to_value(&u).unwrap();
+        assert_eq!(value["providers"][0]["registry"], "github-copilot-cli");
+        assert!(value["providers"][1].get("registry").is_none(), "no registry entry: clients use the id");
+    }
+
+    #[test]
     fn a_note_does_not_count_as_the_plan_running_out() {
         let note = Window { percent: 99.0, ..Window::note("cost", "Cost today", "$9") };
         assert!(!over_headroom(&[note]));
         assert!(over_headroom(&[Window::new("five_hour", "5-hour", 80.0, None)]));
-    }
-
-    #[test]
-    fn a_saved_reading_comes_back_after_a_restart() {
-        let store = crate::store::tests::temp_store();
-        let mut usage = Usage::default();
-        usage.replace(
-            "grok",
-            "Grok",
-            "grok billing",
-            vec![Window::new("grok", "Weekly", 42.0, Some(1_794_096_000_000))],
-        );
-        save(&store, &usage);
-        assert_eq!(load(&store), usage);
-        assert_eq!(load(&crate::store::tests::temp_store()), Usage::default(), "another computer starts empty");
     }
 }

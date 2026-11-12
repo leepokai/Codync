@@ -1,7 +1,7 @@
 //! Custom connectors: a command line or a URL the user describes and names.
 
-use super::{Connector, add_connector, connectors, ensure_name_available, oauth, unique_id};
-use anyhow::{Result, anyhow, bail};
+use super::{Connector, add_connector, connectors, discovery, ensure_name_available, oauth, unique_id};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -11,7 +11,17 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
         b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
     let all = connectors(store)?;
     ensure_name_available(name, &all)?;
-    let c = custom(name, b, &all).await?;
+    let mut c = custom(name, b, &all).await?;
+    c.catalog = b["catalog"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+    // A catalog app may need its local server signed in before it starts (Proton Pass).
+    if let Some(app) = c.catalog.as_deref().and_then(|id| super::openbot::apps().iter().find(|a| a.id == id))
+        && c.command.is_some()
+        && app.server.command == c.command
+    {
+        c.login.clone_from(&app.server.login);
+    }
+    super::hermes_apps::configure_connector(&mut c);
+    crate::native_channels::prepare_connector(&mut c)?;
     add_connector(store, c)
 }
 
@@ -26,8 +36,10 @@ pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<C
         name: name.to_owned(),
         description: b["description"].as_str().unwrap_or_default().to_owned(),
         registry_name: None,
+        catalog: None,
         command: None,
         args: vec![],
+        login: vec![],
         env: map(&b["env"]),
         url: None,
         headers: map(&b["headers"]),
@@ -36,11 +48,9 @@ pub(super) async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<C
     let url =
         ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
     if let Some(url) = url {
-        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
-        if !url.starts_with("https://") && !local {
-            bail!("remote connectors need an https URL");
-        }
-        if oauth::required(url, &c.headers).await {
+        // https anywhere; plain http only on this computer or its network.
+        crate::egress::check(c.egress(), url).await?;
+        if discovery::required(c.egress(), url, &c.headers).await {
             c.oauth = Some(oauth::OAuth::default());
         }
         c.url = Some(url.to_owned());

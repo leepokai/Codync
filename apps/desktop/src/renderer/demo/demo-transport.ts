@@ -1,6 +1,6 @@
 import type { CallError, HostSnapshot } from '@shared/ipc'
 import { HostError, type HostTransport } from '../client/host-client'
-import { COMPUTER_ID } from './story'
+import { macBook } from './story'
 import { FakeHost } from './fake-host'
 
 /**
@@ -28,7 +28,7 @@ export class DemoTransport implements HostTransport {
 /** What the app believes about its host while in demo mode: a running one, with the demo's computer. */
 export const DEMO_SNAPSHOT: HostSnapshot = {
   state: { kind: 'running' },
-  local: { computerId: COMPUTER_ID, baseURL: 'http://demo.invalid', token: 'demo' },
+  local: { computerId: macBook.id, baseURL: 'http://demo.invalid', token: 'demo' },
   dev: false,
   logPath: '',
 }

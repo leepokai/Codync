@@ -64,8 +64,15 @@ export function ReactionStrip({ pick, dismiss, size = 26 }: { pick: ReactionPick
   )
 }
 
+/** A field pinned above a menu's rows that filters them (the caller owns the query). */
+export interface MenuSearch {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}
+
 /** The floating panel of menu rows. */
-export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number }) {
+export function MenuPanel({ items, reactions, dismiss, maxHeight, search }: { items: MenuItem[]; reactions?: ReactionPick; dismiss: () => void; maxHeight?: number; search?: MenuSearch }) {
   const tr = useTr()
   const [highlight, setHighlight] = useState(-1)
   const [opened, setOpened] = useState<MenuItem | null>(null)
@@ -89,9 +96,10 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
   }, [opened])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (e.isComposing) return
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length > 0) {
         e.preventDefault()
-        setHighlight((h) => (h + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length)
+        setHighlight((h) => h < 0 ? (e.key === 'ArrowDown' ? 0 : rows.length - 1) : (h + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length)
       } else if (e.key === 'Enter' && highlight >= 0 && rows[highlight]) {
         e.preventDefault()
         pick(rows[highlight])
@@ -104,7 +112,9 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
     return () => window.removeEventListener('keydown', onKey)
   }, [rows, highlight, dismiss, opened])
   return (
-    <div ref={panel} className="menu-panel" role="menu" style={{ maxHeight }}>
+    <div ref={panel} className={`menu-panel ${search ? 'has-header' : ''}`} role="menu" style={{ maxHeight }}>
+      {search ? <div className="menu-search"><input aria-label={search.placeholder ?? 'Search'} value={search.value} placeholder={search.placeholder ?? 'Search'} autoFocus onChange={(e) => { setHighlight(-1); search.onChange(e.target.value) }} /></div> : null}
+      <div className="menu-rows">
       {reactions && !opened ? (
         <div className={items.length ? 'menu-reactions' : undefined}>
           <ReactionStrip pick={reactions} dismiss={dismiss} />
@@ -142,6 +152,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
           </button>
         </div>
       ))}
+      </div>
     </div>
   )
 }
@@ -171,13 +182,14 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, search }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
   items: () => MenuItem[]
   reactions?: ReactionPick
+  search?: MenuSearch
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
@@ -194,8 +206,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+      <div className={`anchored-panel t-dropdown ${shown ? "is-open" : ""}`} style={{ ...style, maxWidth: width }}>
+        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} search={search} />
       </div>
     </div>,
     document.body,

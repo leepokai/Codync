@@ -244,7 +244,11 @@ mod tests {
         let started = Instant::now();
         let now = started + Duration::from_secs(5);
         let used = HashMap::from([("main".to_owned(), now)]);
-        assert_eq!(plan(&used, started, true, false, now, IDLE), Release::Nothing, "a chat that just talked stays warm");
+        assert_eq!(
+            plan(&used, started, true, false, now, IDLE),
+            Release::Nothing,
+            "a chat that just talked stays warm"
+        );
         assert_eq!(
             plan(&used, started, true, false, now, Duration::ZERO),
             Release::Agent(Retired::Idle),

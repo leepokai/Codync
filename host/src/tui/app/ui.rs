@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DocumentSheet, Fields, FlowSheet, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet, ThreadSheet, ThreadsSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, DocumentSheet, Fields, FlowSheet, Library, Market,
+    MemorySheet, NetworkSheet, RoutineForm, RoutineList, SkillSheet, ThreadSheet, ThreadsSheet,
 };
-use super::{Editor, Mark};
+use super::{Editor, Mark, WhatsNew};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
@@ -202,6 +202,7 @@ pub enum Field {
     SelfFallbacks,
     Folder,
     Approvals,
+    Compaction,
     Notify,
     Computer,
     Team,
@@ -213,7 +214,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 26] = [
+pub const FIELDS: [Field; 27] = [
     Field::Name,
     Field::Instructions,
     Field::Check,
@@ -229,6 +230,7 @@ pub const FIELDS: [Field; 26] = [
     Field::Fast,
     Field::Fallbacks,
     Field::SelfFallbacks,
+    Field::Compaction,
     Field::Folder,
     Field::Approvals,
     Field::Notify,
@@ -279,6 +281,12 @@ pub struct Form {
     /// `None`: the host has no per-bot network switches.
     pub offered_to_network: Option<bool>,
     pub reachable_by_assistants: Option<bool>,
+    /// `None`: Codync doesn't summarize this agent's chats.
+    pub compaction: Option<codync_mem::compaction::Threshold>,
+    /// `None` until the agent has told its window.
+    pub compaction_sizes: Option<codync_mem::compaction::Sizes>,
+    /// The digits of a size being typed, in thousands of tokens.
+    pub compaction_typed: String,
     pub color: usize,
     pub shape: usize,
     pub connectors: Vec<Toggle>,
@@ -376,8 +384,13 @@ pub struct GroupForm {
 
 /// The pair-a-phone sheet's code: on its way, shown (its pairing link), or why none came.
 pub enum PairCode {
+    /// Opened for a phone asking: only the question shows, and no code is issued, which would wake the relay.
+    QuestionOnly,
     Loading,
-    Ready(String),
+    Ready {
+        url: String,
+        short_code: Option<String>,
+    },
     Failed(String),
 }
 
@@ -399,6 +412,12 @@ pub enum Overlay {
     Group(GroupForm),
     /// How far its list is scrolled.
     Usage(usize),
+    /// Which agents' limits show: the row under the cursor, and whether a move is on its way to the host (the next waits
+    /// for its answer).
+    UsageChooser {
+        row: usize,
+        moving: bool,
+    },
     Pair(PairCode),
     Memory(MemorySheet),
     Documents(Box<DocumentSheet>),
@@ -408,6 +427,8 @@ pub enum Overlay {
     Thread(Box<ThreadSheet>),
     /// The selected chat's threads.
     Threads(Box<ThreadsSheet>),
+    /// A bot's dev servers.
+    DevServers(DevServersSheet),
     Routines(RoutineList),
     Flow(Box<FlowSheet>),
     Routine(Box<RoutineForm>),
@@ -422,6 +443,7 @@ pub enum Overlay {
     Rules(Box<super::rules::RulesSheet>),
     /// "Always allow" on a card: the rule to keep, to edit.
     Always(Box<super::always::AlwaysSheet>),
+    WhatsNew(WhatsNew),
 }
 
 pub struct Toast {
@@ -446,6 +468,8 @@ pub enum Click {
     BotChat(String),
     /// A line's thread chip (root entry id): opens that thread.
     Thread(String),
+    /// The port in the chat's header: opens the bot's dev servers.
+    DevServers,
 }
 
 #[derive(Default)]

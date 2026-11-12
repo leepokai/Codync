@@ -18,13 +18,13 @@ mod cli;
 mod cloud_cli;
 mod compat;
 mod computer;
+mod dev_servers;
 mod diagnostics;
 mod discord;
 mod doctor;
 mod documents;
 mod egress;
 mod enterprise;
-mod dev_servers;
 mod environment;
 mod external;
 mod github;
@@ -49,7 +49,6 @@ mod remote;
 mod research;
 mod routines;
 mod screen;
-mod secret_prompt;
 mod send_cli;
 mod sentinel;
 mod service;
@@ -518,7 +517,7 @@ async fn main() -> Result<()> {
             } else if status {
                 update::status()?
             } else if check {
-                update::check()?
+                update::check().await?
             } else if !worker && service::installed() {
                 tokio::task::spawn_blocking(move || update::spawn_worker(port, force, target.as_deref())).await??;
                 update::status()?

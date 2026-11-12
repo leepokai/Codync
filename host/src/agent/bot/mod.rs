@@ -17,9 +17,10 @@
 //! from a session of its own (see `session`).
 
 mod approval_age;
-mod channel_input;
 mod background_work;
+mod channel_input;
 mod cmd;
+mod codex_names;
 mod compaction;
 mod fallback;
 mod fast_mode;
@@ -27,9 +28,11 @@ mod files;
 mod launch;
 mod lifecycle;
 mod model_override;
+mod modes;
 mod native_revocation;
 mod outcome;
 pub(crate) mod pause;
+mod pi_tools;
 mod proactive;
 #[cfg(test)]
 mod proactive_tests;
@@ -245,6 +248,11 @@ pub(crate) struct Conn {
     /// Each live session's config options, as the agent last listed them: a step's model switch reads the
     /// model option's id from here.
     config_options: HashMap<String, Value>,
+    /// Each live session's modes, as the agent last listed them, and the sessions already switched to the bot's.
+    modes: HashMap<String, crate::agent::modes::Modes>,
+    mode_set: HashSet<String>,
+    /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
+    renamed: HashMap<String, codex_names::Renamed>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
     /// Each session's context use and window size at its last `usage_update`.

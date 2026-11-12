@@ -9,7 +9,7 @@ use crate::screen::Screen;
 use crate::service;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, Store};
 use crate::usage::Usage;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -20,9 +20,9 @@ use tokio::sync::{broadcast, watch};
 
 mod sections;
 
+mod bots;
 mod documents;
 pub mod flows;
-mod bots;
 mod groups;
 mod lead;
 mod order;

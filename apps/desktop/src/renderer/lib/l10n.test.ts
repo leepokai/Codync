@@ -158,14 +158,14 @@ test('each supported locale follows regional system tags and explicit choices wi
     assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
     assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
   }
-  assert.equal(new Set(appLanguages).size, 12)
+  assert.equal(new Set(appLanguages).size, 13)
   assert.equal(resolvedLanguage('system', 'nl-NL'), 'en')
   assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
 })
 
 
 test('Brazilian Portuguese follows Portuguese regions and keeps its native menu name', () => {
-  assert.deepEqual(appLanguages.slice(-4), ['es', 'pt-BR', 'ru', 'ar', 'it'])
+  assert.deepEqual(appLanguages.slice(-5), ['es', 'pt-BR', 'ru', 'ar', 'it'])
   assert.equal(languageTitle('pt-BR', 'en', 'en'), 'Português (Brasil)')
   for (const tag of ['pt', 'pt-BR', 'pt_BR.UTF-8', 'pt-PT', 'pt-AO', 'pt-MZ', 'PT_cv.UTF-8']) {
     assert.equal(resolvedLanguage('system', tag), 'pt-BR', tag)

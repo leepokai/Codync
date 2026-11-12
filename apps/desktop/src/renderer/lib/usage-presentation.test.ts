@@ -3,9 +3,9 @@ import { test } from 'node:test'
 import { providerRegistry, usageStatus, windowTitle } from './usage-presentation.ts'
 
 test('isolated Antigravity accounts keep the provider icon', () => {
-  assert.equal(providerRegistry('antigravity:acc_one'), 'antigravity-acp')
-  assert.equal(providerRegistry('antigravity:acc_two'), 'antigravity-acp')
-  assert.equal(providerRegistry('future:account'), 'future')
+  assert.equal(providerRegistry({ id: 'antigravity:acc_one' }), 'antigravity-acp')
+  assert.equal(providerRegistry({ id: 'antigravity:acc_two' }), 'antigravity-acp')
+  assert.equal(providerRegistry({ id: 'future:account' }), 'future')
 })
 
 test('model groups survive quota title formatting', () => {

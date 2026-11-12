@@ -1,9 +1,9 @@
 import type { Usage, UsageProvider, UsageWindow } from '@shared/models'
 
-/** Account report IDs are distinct; their icon still belongs to the agent. */
-export function providerRegistry(id: string) {
+/** The host names the agent's logo; else account report IDs are distinct, but their icon still belongs to the agent. */
+export function providerRegistry({ id, registry }: Pick<UsageProvider, 'id' | 'registry'>) {
   const backend = id.split(':')[0]
-  return ['claude', 'codex', 'antigravity'].includes(backend) ? `${backend}-acp` : backend
+  return registry ?? (['claude', 'codex', 'antigravity'].includes(backend) ? `${backend}-acp` : backend)
 }
 
 export function windowTitle(window: UsageWindow) {

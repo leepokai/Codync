@@ -61,7 +61,9 @@ pub(super) async fn request(
     body: Option<&Value>,
 ) -> Result<Value> {
     let url = reqwest::Url::parse_with_params(&format!("{}{path}", api.base), query)?;
-    let mut req = crate::http().request(method.clone(), url).timeout(TIMEOUT);
+    // Never follow a redirect: the key header would go along with it.
+    let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(TIMEOUT).build()?;
+    let mut req = client.request(method.clone(), url);
     if let Some(key) = &api.key {
         req = req.header("x-api-key", key);
     }

@@ -40,7 +40,8 @@ pub(crate) async fn start_with_env(store: &Store, backend: &str, extra_env: &[(S
 
 /// [`start`], with `extra` added to the agent's environment.
 pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &str)]) -> Result<Started> {
-    let extra: Vec<(String, String)> = extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
+    let extra: Vec<(String, String)> =
+        extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())).collect();
     start_with_env(store, backend, &extra).await
 }
 

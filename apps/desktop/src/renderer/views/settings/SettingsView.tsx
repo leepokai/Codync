@@ -21,7 +21,7 @@ import { UpdateButton, useUpdates } from '../UpdateButton'
 import { ComputersView } from './ComputersView'
 import { NetworkView } from './NetworkView'
 import { errorText, isMac, thisMac } from './parts'
-import { UsageLimits } from './UsageLimits'
+import { UsageSection } from './UsageLimits'
 import { ThemePaletteSection } from './ThemePaletteSection'
 import { EnterpriseSection } from './EnterpriseSection'
 import { DiagnosticsButton } from './DiagnosticsButton'
@@ -299,7 +299,7 @@ function UsageLimitsList() {
   const app = useApp()
   const stores = app.computers.flatMap((c) => app.store(c.id) ?? [])
   const [refreshing, setRefreshing] = useState(false)
-  const withUsage = stores.filter((s) => s.usage.providers.length > 0)
+  const withUsage = stores.filter((s) => s.usage.providers.length > 0 || s.usage.services?.length)
   const refresh = async () => {
     if (refreshing) return
     setRefreshing(true)
@@ -327,16 +327,20 @@ function UsageLimitsList() {
   return (
     <VStack gap={14}>
       {header}
-      {withUsage.flatMap((store) => [
-        stores.length > 1 ? (
-          <HStack key={`${store.computer.id}-label`} gap={6} className="settings-usage-computer">
-            <ComputerBadge computer={store.computer} size={16} />
-            {store.hostName}
-          </HStack>
-        ) : null,
-        <UsageLimits key={store.computer.id} usage={store.usage} />,
-        <WeekSummaryView key={`${store.computer.id}-week`} store={store} />,
-      ])}
+      {withUsage.map((store) => (
+        <Fragment key={store.computer.id}>
+          <UsageSection
+            title={<>
+              <ComputerBadge computer={store.computer} size={16} />
+              {store.hostName}
+            </>}
+            usage={store.usage}
+            onShown={(id, shown) => void store.setUsageShown(id, shown).catch((e: unknown) => app.setError(errorText(e)))}
+            onOrder={(ids) => store.setUsageOrder(ids).catch((e: unknown) => app.setError(errorText(e)))}
+          />
+          <WeekSummaryView store={store} />
+        </Fragment>
+      ))}
     </VStack>
   )
 }

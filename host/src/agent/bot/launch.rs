@@ -7,7 +7,7 @@ use crate::agent::registry::{Candidate, Cmd};
 use crate::store::BotConfig;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// ACP's `systemPrompt`: the bot's instructions added to the agent's own.
@@ -228,6 +228,9 @@ pub(crate) async fn start_agent(command: &str, cwd: &str, env: &[(String, String
         opening: false,
         fast_options: HashMap::new(),
         config_options: HashMap::new(),
+        modes: HashMap::new(),
+        mode_set: HashSet::new(),
+        renamed: HashMap::new(),
         reports_compaction: false,
         usage: HashMap::new(),
     })

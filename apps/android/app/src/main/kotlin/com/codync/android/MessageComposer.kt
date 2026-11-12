@@ -285,8 +285,3 @@ internal fun clipOffersFiles(mimeTypes: List<String>): Boolean =
 
 private fun ClipDescription.mimeTypes(): List<String> = (0 until mimeTypeCount).map(::getMimeType)
 
-fun formatBytes(size: Long): String = when {
-    size >= 1024 * 1024 -> "%.1f MB".format(size / (1024.0 * 1024))
-    size >= 1024 -> "%.0f KB".format(size / 1024.0)
-    else -> "$size bytes"
-}

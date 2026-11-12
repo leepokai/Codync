@@ -1,7 +1,5 @@
 package com.codync.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -34,6 +32,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -43,9 +42,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +58,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -111,6 +114,10 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
     return out
 }
 
+/** The text find searches (iOS `ThreadView.findable`): each message's own words, not separators, notices or exchanges. */
+internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
+    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to it.entry.text } }
+
 /** A chat's time separator: Today 3:27 AM. */
 @Composable internal fun TimeSeparator(at: Long) {
     Text(RelativeTime.separator(at, tr("Today"), tr("Yesterday")), Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), style = Type.footnote,
@@ -140,7 +147,9 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
                 store.respond(entry, it)
             }
         }
-        else -> if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
+        else -> if (entry.isDecision) Box(Modifier.padding(top = 12.dp)) {
+            DecisionCard(entry, answering = "decision:" + entry.id in state.busy) { store.decide(entry, it) }
+        } else if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
         } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
             // A fresh conversation starts at the left, as on the iPhone.
@@ -165,33 +174,19 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     }
 }
 
-/** The menu a message opens on long press: copy, reply quoting it, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?) = buildList {
-    add(MenuItem("Copy", icon = "square.on.square") {
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
-    })
-    if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
-    if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
-}
-
-internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "✅")
-
-private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReactions, entry.reactions) { emoji ->
-    store.command("react", body("entryId" to entry.id, "emoji" to emoji), "react:" + entry.id)
-}
-
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
 @Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val menu = MessageMenu.of(entry, store, reply, trace = null)
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
+        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
         if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
-                messageMenu(context, entry, reply, null)
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
+                menu.items(listOf(textCopyItem(context, entry.text)))
             }) { UserText(entry.text, quote) }
         SendStatusLine(entry.status)
     }
@@ -258,17 +253,67 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val focus = LocalFocusManager.current
     val files = entry.files
     val artifact = entry.artifact
+    val voiceNote = entry.voiceNote
+    val menu = MessageMenu.of(entry, store, reply, openTrace)
+    val textMenu = { menu.items(listOf(textCopyItem(context, entry.text))) }
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // An artifact card or a message with files is that: the text is only the computer's fallback.
-        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = reactionPick(entry, store),
-            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) { messageMenu(context, entry, reply, openTrace) })
-        else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }) { messageMenu(context, entry, reply, openTrace) },
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (file in files) FileDownloadCard(entry, file, state, store)
+        // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note
+        // instead plays inside its bubble, over the message it captions.
+        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,
+            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }, items = textMenu))
+        else if (voiceNote != null) {
+            val player = rememberSharedAudio(entry, voiceNote, store)
+            val download = state.fileDownloads[voiceNote.id]
+            val busy = download is FileDownloadState.Downloading
+            val save = { store.toggleFile(entry.id, entry.botId, voiceNote) }
+            // Its Download follows Copy, as on desktop and iPhone.
+            val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
+            Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+                .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
+                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) },
+                    items = { menu.items(listOf(textCopyItem(context, entry.text), downloadItem)) })) {
+                VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false)
+            }
+        }
+        // Each card holds its own menu: a picture's copies the picture.
+        else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (file in files) FileDownloadCard(entry, file, menu, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace)
-            }) { AgentText(entry.text, selectable = false) }
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
+            AgentText(entry.text, selectable = false)
+        }
+    }
+}
+
+/**
+ * A reply carrying a voice note, as a messaging app shows one with a caption: the player at the top of its bubble,
+ * the message under it. The player row is one element — "Voice note, <caption>" — with the card's play and download
+ * actions; download has no button here, the bubble's menu and those actions carry it.
+ */
+@Composable private fun VoiceNoteMessage(text: String, file: SharedFile, audio: SharedAudio, download: FileDownloadState?,
+    save: () -> Unit, selectable: Boolean) {
+    val scope = rememberCoroutineScope()
+    val translate = translator()
+    val busy = download is FileDownloadState.Downloading
+    val caption = detail(file, download, audio, translate)
+    val play = { scope.launch { audio.toggle() }; Unit }
+    Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = "${translate("Voice note")}, $caption"
+            audioSeek(audio)
+            customActions = listOf(
+                CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true },
+                CustomAccessibilityAction(translate(if (busy) "Cancel download" else "Download")) { save(); true })
+            onClick(label = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true }
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SharedAudioButton(audio, play)
+            if (audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
+            // Steady digits, so the bar's end doesn't move as the clock runs.
+            Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
+                color = if (audio.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
+        }
+        if (text.isNotEmpty()) MarkdownText(text, selectable)
     }
 }
 
@@ -317,7 +362,8 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 /** A routine's line in the main chat: tapping it opens Routines on that routine; a failed run the user can run again
  *  has a retry button. */
 @Composable internal fun RoutineNotice(entry: Entry, retrying: Boolean, retry: () -> Unit, open: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
         Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)

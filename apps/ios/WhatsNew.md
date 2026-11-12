@@ -6,12 +6,37 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.45.0
+## 2.46.0
 ### zh-Hant
 - 在 bot 的選單裡可以「標為未讀」：未讀徽章和數量會回來，而且在每台裝置上都會保留，直到你重新打開聊天、標為已讀或在聊天裡傳送訊息。
 
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
+
+## 2.45.1
+### zh-Hant
+- 新增「將有新動態的機器人移到最前面」：在電腦的設定裡開啟後，有新訊息（你的訊息、bot 的回覆或 routine 執行）的 bot 會自動排到列表最上面。
+- 在對話中尋找：點聊天右上角的放大鏡，輸入文字就會顯示有幾個符合項目，用上、下箭頭在它們之間移動，目前的訊息會被標示出來。搜尋的是已載入的訊息。
+- 全尺寸看圖可以雙指縮放（最多 8 倍）、放大後拖動，點兩下放大或還原。
+- 看圖頁頂部新增「複製圖片」按鈕，會把圖片本身放進剪貼簿；bot 分享的圖片在關閉按鈕旁也能直接下載。
+- 長按聊天裡的圖片，選單中的「複製」改為「複製圖片」和「複製名稱」；看圖時長按圖片也能使用回應和回覆。
+- bot 要你選擇時，聊天中會出現可點選的選項卡。選項會送回正在進行的工作，已回答或過期的卡片不會重複送出。
+- 更新 App 或電腦上的 Codync 之後，聊天不再先清空再重新載入：原本的訊息會留在畫面上，背景更新完成後才替換。
+- 聊天裡的 routine 紀錄改為置中顯示。
+- bot 可以傳語音訊息了：語音會在那則訊息的泡泡最上方直接播放，文字接在下面。
+- bot 傳來的音訊檔（MP3、M4A、WAV、AAC，20 MB 以內）可以直接在聊天裡播放：點播放鍵，進度列會顯示播放到哪，拖動或點一下進度列就能跳到別的位置。
+
+### en-US
+- New "Move active bots to the top": turn it on in a computer's settings and a bot with a new message (yours, its reply, or a routine run) moves to the top of the list.
+- Find in a conversation: tap the magnifying glass at the top right of a chat and type. The bar shows how many matches there are, the arrows move between them, and the message with the current match is highlighted. It searches the messages loaded so far.
+- Pinch to zoom a full-size picture up to 8x, drag it once zoomed in, or double-tap to zoom in and back.
+- Copy image in the viewer puts the picture itself on the clipboard; a picture a bot shared also has Download by the close button.
+- Holding a picture in the chat offers Copy image and Copy name in place of Copy; in the viewer, holding it also offers reactions and Reply.
+- When your bot needs a choice, tap an option in its chat card. Your answer continues the current work; answered or expired cards cannot send another choice.
+- After an update of the app or of Codync on your computer, a chat no longer empties and loads again: its messages stay on screen while they refresh underneath.
+- A routine's line in the chat is centered.
+- Bots can now send voice notes: the note plays at the top of its message's bubble, with the text under it.
+- Sound files a bot sends (MP3, M4A, WAV or AAC, up to 20 MB) play right in the chat: tap play, and drag or tap the progress bar to jump to another point.
 
 ## 2.44.1
 ### zh-Hant

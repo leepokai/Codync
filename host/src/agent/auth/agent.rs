@@ -77,33 +77,12 @@ pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &st
                 acp.hold(std::mem::take(&mut grants));
                 return Ok(Started { acp, inbox: rx, init, cmd });
             }
-            Ok(Err(e)) => {
-                let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
-                    Incoming::Closed { stderr_tail } => stderr_reason(&stderr_tail),
-                    _ => None,
-                });
-                last = Some(match why {
-                    Some(why) => e.context(why),
-                    None => e,
-                });
-            }
+            Ok(Err(e)) => last = Some(backends::explain_exit(backend, e, &mut rx).await),
             Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
         }
         acp.kill().await;
     }
     Err(last.unwrap_or_else(|| anyhow!("couldn't start the agent")))
-}
-
-/// The stderr line that says why the agent quit: an error line, else the last one that isn't a pretty-printed Node
-/// error's closing brace.
-fn stderr_reason(stderr_tail: &str) -> Option<String> {
-    let lines: Vec<&str> = stderr_tail.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
-    lines
-        .iter()
-        .rev()
-        .find(|line| line.contains("Error"))
-        .or_else(|| lines.iter().rev().find(|line| !matches!(**line, "}" | "{" | "}," | "]" | "[")))
-        .map(|line| (*line).to_owned())
 }
 
 /// Lets the agent sign itself in (it usually opens a browser on this computer).
@@ -152,17 +131,5 @@ async fn sign_in(acp: &Acp, inbox: &mut mpsc::UnboundedReceiver<Incoming>, metho
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stderr_reason_skips_a_closing_brace() {
-        let tail = "Error: Cannot find module '../dist/codebuddy'\nRequire stack:\n- /cli/bin/codebuddy\n  code: 'MODULE_NOT_FOUND'\n}\n";
-        assert_eq!(stderr_reason(tail).as_deref(), Some("Error: Cannot find module '../dist/codebuddy'"));
-        assert_eq!(stderr_reason("agent said no\n").as_deref(), Some("agent said no"));
     }
 }

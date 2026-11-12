@@ -110,3 +110,21 @@ fn names_never_carry_path_or_drive_syntax() {
     }
     assert_eq!(name(".hidden").unwrap(), ".hidden");
 }
+
+#[test]
+fn snapshots_stamp_plays_in_chat_for_small_sounds_only() {
+    let temp = Temp::new();
+    let root = temp.0.join("snapshots");
+    for (name, plays) in
+        [("note.M4A", true), ("clip.mp3", true), ("a.wav", true), ("b.aac", true), ("report.pdf", false)]
+    {
+        std::fs::write(temp.0.join(name), [1, 2, 3]).unwrap();
+        let saved = snapshot(&root, &temp.0, name, None, &AtomicBool::new(false)).unwrap();
+        assert_eq!(saved.meta.plays_in_chat, plays, "{name}");
+        assert_eq!(serde_json::to_value(&saved.meta).unwrap()["playsInChat"], plays);
+    }
+    assert!(!plays_in_chat("big.m4a", PLAYABLE_BYTES + 1));
+    let old: SharedFile =
+        serde_json::from_value(serde_json::json!({"id": "f", "name": "a.m4a", "size": 1, "sha256": ""})).unwrap();
+    assert!(!old.plays_in_chat, "a file from an older host stays a plain card");
+}

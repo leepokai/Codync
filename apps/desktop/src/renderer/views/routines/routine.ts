@@ -150,14 +150,16 @@ export const compiledCron = (preview: RoutineSchedulePreview | null) => {
 }
 
 /** A timeout in seconds as people say it ("1 hour", "30 minutes", "90 seconds"); other text as typed. */
-export function durationText(text: string) {
+export function durationText(text: string, locale = 'en') {
   const value = text.trim()
   if (!/^\d+$/.test(value) || Number(value) === 0) return `${value}s`
   const seconds = Number(value)
-  const count = (amount: number, unit: string) => `${amount} ${unit}${amount === 1 ? '' : 's'}`
-  if (seconds % 3600 === 0) return count(seconds / 3600, 'hour')
-  if (seconds % 60 === 0) return count(seconds / 60, 'minute')
-  return count(seconds, 'second')
+  const unit = seconds % 3600 === 0 ? 'hour' : seconds % 60 === 0 ? 'minute' : 'second'
+  const amount = unit === 'hour' ? seconds / 3600 : unit === 'minute' ? seconds / 60 : seconds
+  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(amount)
 }
+
+/** When it runs: each schedule line through `tr`, joined. */
+export const scheduleLine = (routine: Routine, tr: (text: string) => string) => routine.triggerDescriptions.map((line) => tr(line)).join(' · ')
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

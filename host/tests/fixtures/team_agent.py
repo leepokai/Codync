@@ -8,6 +8,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+# ACP and MCP carry UTF-8 JSON even when Windows' console code page is not UTF-8.
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
+
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -27,7 +31,7 @@ def update(value):
 def mcp_call(server_name, tool, arguments):
     server = next(s for s in servers if s["name"] == server_name)
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
-                          stdout=subprocess.PIPE, text=True) as mcp:
+                          stdout=subprocess.PIPE, encoding="utf-8") as mcp:
         def rpc(identifier, method, params):
             mcp.stdin.write(json.dumps({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params}) + "\n")
             mcp.stdin.flush()
@@ -38,7 +42,7 @@ def mcp_call(server_name, tool, arguments):
         tools = rpc(2, "tools/list", {})
         assert any(t["name"] == tool for t in tools["result"]["tools"])
         if server_name == "team":
-            assert {t["name"] for t in tools["result"]["tools"]} == {"list_bots", "message_bot"}
+            assert {"list_bots", "message_bot"} <= {t["name"] for t in tools["result"]["tools"]}
             roster = rpc(3, "tools/call", {"name": "list_bots", "arguments": {}})
             assert any(b["id"] == arguments["botId"] for b in json.loads(roster["result"]["content"][0]["text"])["bots"])
         response = rpc(4, "tools/call", {"name": tool, "arguments": arguments})
@@ -63,6 +67,11 @@ def prompt(request):
     text = request["params"]["prompt"][0]["text"]
     with open("prompts.jsonl", "a") as log:
         log.write(json.dumps(text) + "\n")
+    if "ROOM_DECISION" in text and "[Group chat" in text:
+        response = mcp_call("chat", "request_decision", {"question": "Which way?", "options": ["Left", "Right"]})
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Refused: " + response["content"][0]["text"]}})
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
     if REPLIES_END in text:
         # Replies to requests this bot sent: relay what they said (whatever words they carry),
         # or pass on a chain the peer handed back.
@@ -120,7 +129,34 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith(("MANAGE ", "CHAT ")):
+    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ")):
+        # ASK <question>|<option>|<option>[|<recommended>]: one card, and its answer as this turn's reply.
+        command, body = text.split("\n\n")[-1].split(" ", 1)
+        if command == "ASK_AFTER_MESSAGE":
+            sent = mcp_call("chat", "send_message", {"text": "Here are your choices"})
+            assert not sent.get("isError"), sent
+        if command == "ASK_PERMISSION":
+            send({"id": "permission", "method": "session/request_permission", "params": {
+                "sessionId": "session", "toolCall": {"toolCallId": "edit", "title": "Edit a file"},
+                "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
+            }})
+        fields = body.split("|")
+        arguments = {"question": fields[0], "options": fields[1:-1] if len(fields) > 3 else fields[1:]}
+        if len(fields) > 3:
+            arguments["recommended"] = fields[-1]
+        response = mcp_call("chat", "request_decision", arguments)
+        if command == "ASK_AFTER_MESSAGE" and not response.get("isError"):
+            reacted = mcp_call("chat", "react", {"emoji": "👍"})
+            assert not reacted.get("isError"), reacted
+        reply = ("Refused: " if response.get("isError") else "Asked: ") + response["content"][0]["text"]
+        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
+        while command == "ASK_HOLD" and not pathlib.Path("release").exists() and not cancel.wait(0.01):
+            pass
+        while command == "ASK_PERMISSION" and not cancel.is_set() and not permission.wait(0.01):
+            pass
+        send({"id": request["id"], "result": {"stopReason": "end_turn"}})
+        return
+    if text.split("\n\n")[-1].startswith(("MANAGE ", "TEAM ", "CHAT ")):
         helper, tool, arguments = text.split("\n\n")[-1].split(" ", 2)
         response = mcp_call(helper.lower(), tool, json.loads(arguments))
         reply = ("Refused: " if response.get("isError") else "Done: ") + response["content"][0]["text"]
@@ -130,8 +166,13 @@ def prompt(request):
     if text.split("\n\n")[-1].startswith("CHAT_TWICE "):
         # Two calls at once, as an agent's parallel tool calls are.
         _, tool, arguments = text.split("\n\n")[-1].split(" ", 2)
+        def parallel_call(_):
+            response = mcp_call("chat", tool, json.loads(arguments))
+            if tool == "request_decision" and response.get("isError"):
+                pathlib.Path("second-decision-refused").write_text("refused", encoding="utf-8")
+            return response
         with ThreadPoolExecutor(2) as pool:
-            responses = pool.map(lambda _: mcp_call("chat", tool, json.loads(arguments)), range(2))
+            responses = pool.map(parallel_call, range(2))
             reply = " | ".join(response["content"][0]["text"] for response in responses)
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
@@ -151,10 +192,12 @@ def prompt(request):
             "sessionId": "session", "toolCall": {"toolCallId": "edit", "title": "Edit a file"},
             "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
         }})
-        while not cancel.is_set() and not permission.wait(0.01):
-            pass
     while "BLOCK" in text and not pathlib.Path("release").exists() and not cancel.wait(0.01):
         pass
+    if "PERMISSION" in text:
+        # The answer is this turn's, once the user's card is answered (or it is cancelled).
+        while not cancel.is_set() and not permission.wait(0.01):
+            pass
     if text.startswith("[Group chat") or "\n[Group chat" in text:
         while "BLOCK" in text and not pathlib.Path("release").exists() and not cancel.wait(0.01):
             pass

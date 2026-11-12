@@ -27,9 +27,12 @@ import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
+import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
+import { FindBar } from './FindBar'
+import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
@@ -204,6 +207,8 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  // Find in the open conversation (⌘F).
+  const find = useFindBar(app.selection ? refKey(app.selection) : null)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
@@ -236,6 +241,7 @@ function ChatSplitView() {
   const shown = new Set(computerSelection(app.computers.map((c) => c.id), hidden).shown)
   const onlineStores = stores.filter((s) => shown.has(s.computer.id) && s.connection.kind === 'online' && !s.mismatch)
   const selectedStore = app.selectedStore
+  const screenStore = app.screenComputer ? (app.store(app.screenComputer) ?? null) : null
   const createStore = creating ? app.store(creating.computerId) : null
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
@@ -255,6 +261,8 @@ function ChatSplitView() {
       window.codync.app.onCommand((c) => {
         if (c.kind === 'newBot' && onlineStores.length) create('bot')
         if (c.kind === 'search') setSearching(true)
+        // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
+        if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {
@@ -427,6 +435,7 @@ function ChatSplitView() {
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
+        {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}
       </main>
 
       {showAccount ? (
@@ -481,6 +490,9 @@ function ChatSplitView() {
       </Sheet>
       <Sheet open={settings !== null} onClose={() => setSettings(null)} width={Math.min(800, windowSize.width - 80)} height={Math.min(620, sheetHeight)}>
         {settings ? <SettingsView page={settings} setPage={setSettings} /> : null}
+      </Sheet>
+      <Sheet open={screenStore !== null} onClose={() => app.openScreen(null)} width={windowSize.width - 48} height={sheetHeight}>
+        {screenStore ? <ScreenViewer key={screenStore.computer.id} store={screenStore} /> : null}
       </Sheet>
       <Dialog
         open={confirmDelete !== null}

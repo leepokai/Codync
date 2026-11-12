@@ -124,9 +124,30 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
     }
+    /** A picture in a chat or the Library opened full size. Never the picture or its name. */
+    data object ImagePreviewOpened : AnalyticsEvent("image_preview_opened")
+    /**
+     * Something done to a picture (at most one `zoom` per opening), where from, and how it went: `error` is set only when it
+     * failed. Never the picture or its name.
+     */
+    data class ImagePreviewAction(val action: ImageAction, val from: ImageFrom, val error: ImageError? = null) : AnalyticsEvent("image_preview_action") {
+        override val properties get() = mapOf("action" to action.json, "from" to from.json,
+            "outcome" to JsonPrimitive(if (error == null) "done" else "failed")) + listOfNotNull(error?.let { "error" to it.json })
+    }
     /** A dev server opened, or its address copied; the host reports what it does itself. */
     data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
         override val properties get() = mapOf("action" to use.json)
+    }
+    /** A voice note started from its beginning, or which step broke ([failure]); never which note. */
+    data class VoiceNotePlayed(val failure: VoiceNoteFailure?) : AnalyticsEvent("voice_note_played") {
+        override val properties get() =
+            mapOf("outcome" to JsonPrimitive(if (failure == null) "played" else "failed")) + listOfNotNull(failure?.let { "error" to it.json })
+    }
+    /** Find in a conversation opened (iOS `conversationFindOpened`). */
+    data object ConversationFindOpened : AnalyticsEvent("conversation_find_opened")
+    /** A search in the find bar settled: whether it found anything, never the text (iOS `conversationFindSearched`). */
+    data class ConversationFindSearched(val found: Boolean) : AnalyticsEvent("conversation_find_searched") {
+        override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
 }
 
@@ -276,11 +297,24 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
 }
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
+internal enum class VoiceNoteFailure(override val wire: String) : CatalogValue { Load("load"), Playback("playback") }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),
     /** A provider's speech-to-text and text-to-speech (`CloudSpeechEngine`), not its realtime model. */
     Cloud("cloud"),
+}
+
+internal enum class ImageAction(override val wire: String) : CatalogValue {
+    Zoom("zoom"), CopyImage("copy_image"), CopyName("copy_name"), Download("download"),
+}
+
+/** Where a picture action was done: the full-size viewer, or a picture's long-press menu in a chat or the Library. */
+internal enum class ImageFrom(override val wire: String) : CatalogValue { Viewer("viewer"), Menu("menu") }
+
+/** Why a picture action failed: its file isn't there, couldn't be read, the clipboard refused it, or a download failed. */
+internal enum class ImageError(override val wire: String) : CatalogValue {
+    Unavailable("unavailable"), Convert("convert"), Clipboard("clipboard"), Transfer("transfer")
 }
 
 /** `screen_viewed` values (the catalog's *Screens* table, iOS/Android column). */

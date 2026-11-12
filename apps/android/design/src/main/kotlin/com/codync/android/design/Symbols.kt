@@ -129,6 +129,7 @@ import androidx.annotation.DrawableRes
     "option" -> R.drawable.sf_option
     "paintbrush" -> R.drawable.sf_paintbrush
     "paintpalette" -> R.drawable.sf_paintpalette
+    "pause.circle" -> R.drawable.sf_pause_circle
     "pause.fill" -> R.drawable.sf_pause_fill
     "pencil" -> R.drawable.sf_pencil
     "person.2" -> R.drawable.sf_person_2

@@ -22,7 +22,7 @@ Each agent can appear once, and the bot's own agent isn't offered. The info butt
 
 In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
 
-Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A mode only the bot's own agent has (Claude Code's Plan, say) doesn't carry over: a fallback without it doesn't take the turn, and the chat says why.
+Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A fallback without the bot's mode (Claude Code's Plan, say) works in its own closest mode that is no less careful, such as Codex's Read-only, and the chat says which. A fallback with no mode that careful, or one that won't switch to it, doesn't take the turn: the next one does.
 
 > **Note:** A fallback that runs on an API key instead of a subscription costs money with that provider.
 
@@ -40,6 +40,7 @@ The agent it leaves then rests: every bot on the computer skips it for a while, 
 | is signed out | it's signed in again (Codync also looks again after an hour, or after 10 minutes for an agent it doesn't know by name) |
 | couldn't start | 5 minutes have passed |
 | doesn't have this bot's model | you change the bot's settings (this one is about the bot's setup, so only this bot skips that step) |
+| doesn't have this bot's mode | you change the bot's settings (likewise only this bot) |
 
 A rest also ends early when any turn on that agent finishes normally. **Switch back** ends the rest of the bot's own agent.
 
@@ -51,9 +52,11 @@ Codex currently reports its rate limits and overloads as ordinary reply text, so
 
 When a fallback takes a turn over, it hears what it needs before the turn's messages:
 
-- If it hasn't worked in this chat before: a recap of the conversation (the latest summary, the most recent messages and any open plan).
-- If it has: a catch-up of what was said since it last answered. Each agent keeps its own session, so coming back resumes it.
+- If it hasn't worked in this chat before: a recap of the conversation (the latest summary, the most recent messages and any open plan; once that agent has worked in this bot, also what you said before them), with a list of the files the agents before it changed, the commands they ran and the dev servers still running.
+- If it has: a catch-up of what was said since it last answered, with the same list for what the other agents did meanwhile. Each agent keeps its own session, so coming back resumes it.
 - If agents already failed during this turn: which one stopped and why, what each of them did (tool calls, messages, last note), and a reminder to check what's done before redoing any step.
+
+Once Codync knows the agent's context window, the recap takes at most a tenth of it (about 20,000 tokens at most). It lists file paths and command lines, not their contents, so the agent reads a file again before changing it. Rules you want every agent to follow belong in the bot's [memory](/docs/memory), which each agent gets in full.
 
 **New session** (in the bot's menu) clears every agent's session, and none of them is told what was said before.
 

@@ -74,6 +74,10 @@ fn settings_routines_screen_and_devices() {
         Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
     );
     assert_eq!(
+        setting("setAutoOrder", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("auto_order"), json!(true)))
+    );
+    assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
     );
@@ -157,6 +161,13 @@ fn connectors_skills_and_agents() {
     );
     assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
     assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+    let sent =
+        |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "send_file", "arguments": arguments}));
+    assert_eq!(
+        sent(json!({"path": "/secret/note.m4a", "text": "never sent"})),
+        Some((Event::VoiceNoteSent, json!({"client": "local"})))
+    );
+    assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -188,6 +199,21 @@ fn connectors_skills_and_agents() {
         (event, Value::Object(p)),
         (Event::ConnectorInstalled, json!({"connector": "composio", "client": "local"}))
     );
+}
+
+#[test]
+fn decision_events_are_reported_only_by_the_actor_after_delivery() {
+    assert_eq!(
+        props(
+            "chatCall",
+            &json!({"botId": "b", "name": "request_decision", "arguments": {
+            "question": "Ship now or wait?", "options": ["Ship", "Wait"], "recommended": "Wait" }})
+        ),
+        None,
+        "API entry is not card publication"
+    );
+    assert_eq!(props("chatCall", &json!({"name": "request_decision"})).map(|(_, p)| p["options"].clone()), None);
+    assert_eq!(props("respondDecision", &json!({"entryId": "e", "option": "Ship"})), None);
 }
 
 #[test]

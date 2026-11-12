@@ -2,8 +2,9 @@ import Foundation
 
 public enum HostEvent: Sendable {
     case icons([String: CustomIcon], revision: Int64)
-    /// The stream's first event; `network` is nil from hosts before the network view.
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
+    /// The stream's first event; `network` is nil from hosts before the network view. `catchUp` events follow
+    /// before the live ones (nil from hosts before 2.32.0).
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?, catchUp: Int?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
@@ -18,6 +19,8 @@ public enum HostEvent: Sendable {
     /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
     case name(String)
     case resync
+    /// One this app has no use for.
+    case skipped
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -62,7 +65,8 @@ public struct HostClient: Sendable {
 
     /// Catch-up since `since`, then live updates.
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
-        map(transport.stream(.events(since: since, client: client)), Self.parseEvent)
+        // One this app has no use for still counts toward the catch-up `hello` announced.
+        map(transport.stream(.events(since: since, client: client))) { Self.parseEvent($0) ?? .skipped }
     }
 
     /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
@@ -99,6 +103,7 @@ public struct HostClient: Sendable {
             var type: String
             var hostId: String?
             var rev: Int64?
+            var catchUp: Int?
         }
         struct BotWrap: Decodable { var bot: Bot }
         struct StubWrap: Decodable { var bot: BotStub }
@@ -117,7 +122,7 @@ public struct HostClient: Sendable {
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
             let network = (try? d.decode(NetworkWrap.self, from: data))?.network
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network, catchUp: env.catchUp)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -289,6 +294,11 @@ public extension HostClient {
         return out
     }
 
+    /// Whether a bot with a new message moves to the top of the roster.
+    func setAutoOrder(_ enabled: Bool) async throws {
+        let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
+    }
+
     /// The user makes this bot the lead, in place of the one before.
     func setLead(_ botId: String) async throws {
         let _: Empty = try await self.call("setLead", ["botId": botId])
@@ -368,6 +378,10 @@ public extension HostClient {
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
+    }
+
+    func respondDecision(entryId: String, option: String) async throws {
+        let _: Empty = try await call("respondDecision", ["entryId": entryId, "option": option])
     }
 
     /// Push tickets are bound to this device's key; `pushKey` lets the host seal notification text (§6.7).

@@ -163,7 +163,7 @@ export interface Fallback {
   modelOptions: Record<string, string>
 }
 
-/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing */
+/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing · modeMissing */
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
@@ -246,13 +246,29 @@ export interface Attachment {
   size: number
 }
 
-export interface SharedFile extends Attachment { sha256: string }
+export interface SharedFile extends Attachment {
+  sha256: string
+  /** A sound the chat plays in place, as the host stamps it; missing (an older host) means a plain file card. */
+  playsInChat?: boolean
+}
 
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
-/** A shared image small enough to show in the chat (the whole file is fetched for it). */
-export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= 20 * 1024 * 1024
+export const isAudioName = (name: string) => ['mp3', 'm4a', 'wav', 'aac'].includes(name.split('.').pop()?.toLowerCase() ?? '')
+
+/** The largest shared image a chat fetches whole to show. */
+const INLINE_BYTES = 20 * 1024 * 1024
+
+/** A shared image small enough to show in the chat. */
+export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= INLINE_BYTES
+
+
+/** The voice note playing at the top of a message's bubble; none when its files show as their own cards. */
+export const voiceNoteOf = (data: EntryData) => {
+  const file = data.voiceNote ? data.files?.[0] : undefined
+  return file?.playsInChat ? file : undefined
+}
 
 export interface ConnectionRequest {
   [key: string]: unknown
@@ -306,6 +322,9 @@ export interface AgentSwitch {
   carried: string | null
 }
 
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+export type DecisionStatus = 'pending' | 'answered' | 'expired'
+
 export interface EntryData {
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage
@@ -345,6 +364,14 @@ export interface EntryData {
   locations?: { path: string; line?: number }[]
   options?: PermissionOption[]
   selected?: string
+  /** An additive notice card; older clients still display its text. Its `status` is a `DecisionStatus`. */
+  decision?: boolean
+  /** What the bot asks the user to choose (`request_decision`). */
+  question?: string
+  /** decision: the choices, in the order the bot offered them. */
+  choices?: string[]
+  /** decision: which choice the bot suggests (`choices`' index). */
+  recommended?: number | null
   command?: string
   detail?: string
   cwd?: string
@@ -359,6 +386,8 @@ export interface EntryData {
   botReactions?: BotReaction[]
   attachments?: Attachment[]
   files?: SharedFile[]
+  /** agent: `files` holds the voice note of this message, which plays at the top of its bubble. */
+  voiceNote?: boolean
   /** agent: an artifact the bot published (or updated) in this turn. */
   artifact?: ArtifactCard
   callSeconds?: number
@@ -545,6 +574,8 @@ export interface Hello {
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
+  autoOrder?: boolean
 }
 
 export interface PairingInfo {

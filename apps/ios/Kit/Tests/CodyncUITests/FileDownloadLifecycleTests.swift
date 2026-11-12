@@ -173,3 +173,35 @@ private func downloadEventually(_ condition: @MainActor () async -> Bool) async 
     let staleRemoved = await downloadEventually { !FileManager.default.fileExists(atPath: stale.url.path) }
     #expect(staleRemoved)
 }
+
+@MainActor @Test func aDownloadReportsItsOutcomeWhenItEndsButNotWhenCancelled() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let downloads = FileDownloads(writer: ControlledDownloadWriter(directory: directory, pauseCompletedFile: false))
+    defer { downloads.retire() }
+    var outcomes: [AnalyticsEvent.ImageOutcome] = []
+    let entry = fileEntry()
+
+    // No computer to download from: failed, as a transfer.
+    downloads.save(client: nil, entryId: entry.id, botId: entry.botId, file: emptyFile("offline")) { outcomes.append($0) }
+    #expect(outcomes == [.failed(.transfer)])
+
+    // Saved: done, once the file is there.
+    outcomes = []
+    downloads.save(client: HostClient(transport: ControlledFileRead()), entryId: entry.id, botId: entry.botId,
+                   file: emptyFile("saved")) { outcomes.append($0) }
+    #expect(await downloadEventually { !outcomes.isEmpty })
+    #expect(outcomes == [.done])
+    downloads.dismissExport()
+
+    // Cancelled: nothing.
+    outcomes = []
+    let transport = ControlledFileRead(delayFirstRead: true)
+    downloads.save(client: HostClient(transport: transport), entryId: entry.id, botId: entry.botId,
+                   file: emptyFile("cancelled")) { outcomes.append($0) }
+    #expect(await downloadEventually { await transport.readPending })
+    downloads.cancel("cancelled")
+    await transport.releaseRead()
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(outcomes.isEmpty)
+}

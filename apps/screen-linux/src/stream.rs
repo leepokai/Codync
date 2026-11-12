@@ -1,33 +1,16 @@
-//! Video: a PipeWire monitor stream encoded as H.264 and sent over GStreamer
-//! `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
+//! Video: a display's capture source (PipeWire or X11, see `backend.rs`) encoded as H.264
+//! and sent over GStreamer `webrtcbin` with negotiated trickle ICE, plus one-off JPEG stills.
 
+use crate::backend::{Backend, Display};
 use crate::negotiation::ice_uri;
-use crate::portal::Display;
 use crate::video::{h264_format, h264_payload};
 use crate::{Helper, input};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine as _;
 use gst::prelude::*;
 use serde_json::{Value, json};
-use std::os::fd::{IntoRawFd, OwnedFd};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-
-/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
-/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
-fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
-    let src = gst::ElementFactory::make("pipewiresrc")
-        .property("fd", fd.into_raw_fd())
-        .property("path", node.to_string())
-        .property("do-timestamp", true)
-        .build()
-        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
-    if src.has_property("keepalive-time") {
-        // A still screen keeps sending frames now and then, so keyframe requests get answered.
-        src.set_property("keepalive-time", 1000i32);
-    }
-    Ok(src)
-}
 
 /// Hardware encoders first; x264 is the always-there fallback.
 const ENCODERS: &[&str] = &[
@@ -51,7 +34,7 @@ impl Session {
     pub fn new(
         id: String,
         display: &Display,
-        fd: OwnedFd,
+        src: &gst::Element,
         helper: &Arc<Helper>,
         config: &Value,
     ) -> Result<Self> {
@@ -60,7 +43,6 @@ impl Session {
         // Capture and keepalive timestamps use the system clock. pipewiresrc only gained a
         // switch for this (`provide-clock`) in PipeWire 1.6; Ubuntu 24.04 ships 1.0.
         pipeline.use_clock(Some(&gst::SystemClock::obtain()));
-        let src = capture_source(fd, display.node)?;
         let convert = make("videoconvert")?;
         let crop = make("videocrop")?;
         let scale = make("videoscale")?;
@@ -114,7 +96,7 @@ impl Session {
             }
         }
         let chain = [
-            &src, &convert, &crop, &scale, &size, &rate, &convert2, &format, &queue, &encoder,
+            src, &convert, &crop, &scale, &size, &rate, &convert2, &format, &queue, &encoder,
             &parse, &pay, &rtp_caps, &webrtc,
         ];
         pipeline.add_many(chain)?;
@@ -134,23 +116,14 @@ impl Session {
             let display = display.clone();
             tokio::spawn(async move {
                 while let Some(msg) = rx.recv().await {
-                    let reply = match msg["type"].as_str() {
-                        Some("view") => Some(view.apply(&msg)),
-                        Some("clipboard") => {
-                            set_clipboard(msg["text"].as_str().unwrap_or_default())
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg)
-                        }
-                        _ => match helper.portal().await {
-                            Ok(portal) => input::perform(&portal, &display, &msg)
-                                .await
-                                .err()
-                                .as_ref()
-                                .map(error_msg),
-                            Err(error) => Some(error_msg(&error)),
-                        },
+                    let reply = if msg["type"] == "view" {
+                        Some(view.apply(&msg))
+                    } else {
+                        apply(&helper, &display, &msg)
+                            .await
+                            .err()
+                            .as_ref()
+                            .map(error_msg)
                     };
                     if let Some(reply) = reply {
                         send(&channels, &reply);
@@ -269,6 +242,17 @@ fn to_i32(v: f64) -> i32 {
     v.round() as i32
 }
 
+/// A clipboard or input message from the phone, on the current backend.
+async fn apply(helper: &Helper, display: &Display, msg: &Value) -> Result<()> {
+    let backend = helper.backend().await?;
+    if msg["type"] == "clipboard" {
+        return set_clipboard(&backend, msg["text"].as_str().unwrap_or_default()).await;
+    }
+    helper
+        .input(&backend, display, input::Event::parse(msg)?)
+        .await
+}
+
 fn error_msg(e: &anyhow::Error) -> Value {
     json!({"type": "error", "message": format!("{e:#}")})
 }
@@ -283,13 +267,14 @@ fn send(channels: &Mutex<Vec<gst_webrtc::WebRTCDataChannel>>, msg: &Value) {
 }
 
 /// Wayland first, then X11.
-async fn set_clipboard(text: &str) -> Result<()> {
+async fn set_clipboard(backend: &Backend, text: &str) -> Result<()> {
     use tokio::io::AsyncWriteExt;
     for (cmd, args) in [
         ("wl-copy", &[][..]),
         ("xclip", &["-selection", "clipboard"][..]),
     ] {
-        let Ok(mut child) = tokio::process::Command::new(cmd)
+        let Ok(mut child) = backend
+            .command(cmd)
             .args(args)
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -341,19 +326,17 @@ fn encoder(bitrate_kbps: u32) -> Result<gst::Element> {
 }
 
 /// One still for agents: `width`×`height` JPEG, base64.
-pub async fn screenshot(fd: OwnedFd, d: &Display, width: u32, height: u32) -> Result<String> {
-    let desc = format!(
-        "pipewiresrc name=src path={} do-timestamp=true ! videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1",
-        d.node
-    );
-    let pipeline = gst::parse::launch(&desc)?
-        .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow!("bad pipeline"))?;
-    let src = pipeline
-        .by_name("src")
-        .ok_or_else(|| anyhow!("no source"))?;
-    src.set_property("fd", fd.into_raw_fd());
-    let sink = pipeline
+pub async fn screenshot(src: gst::Element, width: u32, height: u32) -> Result<String> {
+    let still = gst::parse::bin_from_description(
+        &format!(
+            "videoconvert ! videoscale ! video/x-raw,width={width},height={height} ! jpegenc quality=80 ! appsink name=sink max-buffers=1"
+        ),
+        true,
+    )?;
+    let pipeline = gst::Pipeline::new();
+    pipeline.add_many([&src, still.upcast_ref()])?;
+    src.link(&still)?;
+    let sink = still
         .by_name("sink")
         .ok_or_else(|| anyhow!("no sink"))?
         .downcast::<gst_app::AppSink>()

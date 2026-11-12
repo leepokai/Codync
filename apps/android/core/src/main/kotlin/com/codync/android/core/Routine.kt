@@ -17,6 +17,9 @@ import java.time.format.FormatStyle
 ) {
     val keepsOriginal: Boolean get() = triggers.size != 1 || triggers.single()["type"]?.jsonPrimitive?.content !in listOf("cron", "webhook")
     val hasWebhook: Boolean get() = triggers.any { it["type"]?.jsonPrimitive?.content in listOf("webhook", "event") }
+
+    /** When it runs: each schedule line through `tr`, joined. */
+    fun scheduleLine(tr: (String) -> String = { it }): String = triggerDescriptions.joinToString(" · ", transform = tr)
 }
 
 @Serializable data class RoutineRun(
@@ -41,12 +44,13 @@ import java.time.format.FormatStyle
 }
 
 @Serializable data class RoutineListing(val routines: List<Routine>, val runs: List<RoutineRun>) {
-    fun summary(routine: Routine): String {
-        runs.firstOrNull { it.routineId == routine.id && it.isActive }?.let { return it.label }
-        if (routine.lastError != null) return "Schedule needs attention"
+    /** The row's second line, in `tr`'s language: what's happening now, else when it runs. */
+    fun summary(routine: Routine, tr: (String) -> String = { it }): String {
+        runs.firstOrNull { it.routineId == routine.id && it.isActive }?.let { return tr(it.label) }
+        if (routine.lastError != null) return tr("Schedule needs attention")
         runs.firstOrNull { it.routineId == routine.id }?.takeIf { it.status in listOf("failed", "interrupted") }
-            ?.let { return "Last run ${it.label.lowercase()}" }
-        return routine.triggerDescriptions.joinToString(" · ")
+            ?.let { return tr("Last run {status}").replace("{status}", tr(it.label).lowercase()) }
+        return routine.scheduleLine(tr)
     }
 }
 
@@ -92,17 +96,18 @@ val routineRepeats = listOf("hourly" to "Hourly", "daily" to "Daily", "weekdays"
 
 @Serializable data class RoutineWebhook(val url: String? = null, val needsAccount: Boolean = false, val localUrl: String, val key: String, val connected: Boolean)
 
+enum class TimeoutUnit { Hour, Minute, Second }
+
 data class RoutineDraft(val id: String? = null, val name: String = "", val instruction: String = "",
     val schedule: RoutineScheduleDraft = RoutineScheduleDraft(), val timeoutSeconds: String = "3600") {
-    /** The timeout in words: whole hours, else whole minutes, else seconds; anything else as typed. */
-    val timeoutText: String get() {
-        val seconds = timeoutSeconds.toLongOrNull() ?: return "${timeoutSeconds}s"
-        val (amount, unit) = when {
-            seconds > 0 && seconds % 3600 == 0L -> seconds / 3600 to "hour"
-            seconds > 0 && seconds % 60 == 0L -> seconds / 60 to "minute"
-            else -> seconds to "second"
+    /** The timeout as whole hours, else whole minutes, else seconds; null when it isn't a number (shown as typed). */
+    val timeoutParts: Pair<Long, TimeoutUnit>? get() {
+        val seconds = timeoutSeconds.toLongOrNull() ?: return null
+        return when {
+            seconds > 0 && seconds % 3600 == 0L -> seconds / 3600 to TimeoutUnit.Hour
+            seconds > 0 && seconds % 60 == 0L -> seconds / 60 to TimeoutUnit.Minute
+            else -> seconds to TimeoutUnit.Second
         }
-        return "$amount $unit${if (amount == 1L) "" else "s"}"
     }
 
     fun body(botId: String): JsonObject = buildJsonObject {

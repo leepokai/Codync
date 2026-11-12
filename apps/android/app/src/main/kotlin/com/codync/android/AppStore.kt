@@ -39,6 +39,7 @@ class AppStore internal constructor(
     internal val screenTakeovers = Mutex()
     internal val attachments = AttachmentFiles(application, local.directory)
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
+    internal val imageCopies = CopyRequests()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
     internal val reads = ReadMarks(::action)
     val state = mutableState.asStateFlow()

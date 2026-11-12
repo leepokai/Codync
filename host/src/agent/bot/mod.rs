@@ -20,6 +20,7 @@ mod background_work;
 mod cmd;
 mod codex_names;
 mod compaction;
+mod decisions;
 mod fallback;
 mod fast_mode;
 mod files;
@@ -129,6 +130,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         joined: false,
         files: files::FileShares::default(),
         perms: HashMap::new(),
+        asked: HashMap::new(),
         stop_requested: false,
         cancel_deadline: None,
         exit_tail: None,
@@ -324,6 +326,8 @@ struct Actor {
     files: files::FileShares,
     /// permission entry id -> who waits for the answer
     perms: HashMap<String, updates::Answer>,
+    /// Decision card id -> the live tool call waiting for this turn's choice.
+    asked: HashMap<String, decisions::Asked>,
     stop_requested: bool,
     /// A cancelled turn still running past this stops its agent process.
     cancel_deadline: Option<Instant>,

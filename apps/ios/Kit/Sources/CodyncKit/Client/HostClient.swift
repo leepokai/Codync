@@ -380,6 +380,10 @@ public extension HostClient {
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
     }
 
+    func respondDecision(entryId: String, option: String) async throws {
+        let _: Empty = try await call("respondDecision", ["entryId": entryId, "option": option])
+    }
+
     /// Push tickets are bound to this device's key; `pushKey` lets the host seal notification text (§6.7).
     func registerDevice(ticket: String, relay: String, name: String, pushKey: String?, ctx: String) async throws {
         struct Body: Encodable { var ticket: String; var relay: String; var name: String; var pushKey: String?; var ctx: String }

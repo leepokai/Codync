@@ -175,6 +175,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
+        // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
         // Never the computer's name, the connector's address or the invite.
         "networkCreate" | "networkJoin" => {

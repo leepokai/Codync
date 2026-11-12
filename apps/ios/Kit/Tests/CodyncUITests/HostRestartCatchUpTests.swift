@@ -36,9 +36,10 @@ func aRestartedHostCatchesTheIPhoneUpOnlyOnWhatIsNew() async throws {
     let synced = store.rev
     try write(dir, "synced", "\(synced)")
 
-    // The host restarts under the open store, which reconnects from its rev with nothing to fetch.
+    // The host restarts under the open store, which reconnects from its rev with nothing to fetch. `caughtUp` still
+    // holds from the first sync, so the new stream's own catch-up says when it's done.
     _ = try await handoff(dir, "restarted")
-    #expect(await wait { await log.subscriptions.count == 2 && store.caughtUp })
+    #expect(await wait { await log.subscriptions.dropFirst().first?.complete == true })
     let reconnect = await log.subscriptions
     #expect(reconnect.map { $0.since } == [0, synced])
     #expect(reconnect.last?.entries == [])
@@ -54,7 +55,8 @@ func aRestartedHostCatchesTheIPhoneUpOnlyOnWhatIsNew() async throws {
     let reopened = try #require(await log.subscriptions.first)
     #expect(reopened.since == synced)
     #expect(reopened.entries.sorted() == sent.sorted())
-    #expect(sent.allSatisfy { id in store.bots.keys.contains { store.chat($0).contains { $0.id == id } } })
+    // The log notes each event before the store applies it.
+    #expect(await wait { sent.allSatisfy { id in store.bots.keys.contains { store.chat($0).contains { $0.id == id } } } })
     await expectOnlyRelay(log)
 }
 

@@ -1531,6 +1531,7 @@
   "After five quiet minutes or eight messages, or once memory is nearly full, the bot reads what you said since its last run and updates its memory.": "Dopo cinque minuti di inattività o otto messaggi, o quando la memoria è quasi piena, il bot legge quello che hai detto dall'ultima esecuzione e aggiorna la sua memoria.",
   "Allow once": "Consenti una volta",
   "Allow the microphone for Codync in Settings to talk to your bots.": "Consenti il microfono a Codync in Impostazioni per parlare con i tuoi bot.",
+  "Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.": "Siri e Dettatura sono disattivati su questo Mac. Attiva Dettatura in Impostazioni di Sistema → Tastiera, oppure scegli OpenAI o Gemini per la voce.",
   "Allowed once": "Consentito una volta",
   "Always allow": "Consenti sempre",
   "Always allowed": "Consentito sempre",

@@ -28,7 +28,9 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
   const online = store.connection.kind === 'online'
   const available = online && screenAvailable(screen)
   const [paused, setPaused] = useState(false)
-  const session = useScreenSession(store, available && !paused)
+  // The display picked from Displays, for the session a pause or an outage starts next.
+  const picked = useRef<number | null>(null)
+  const session = useScreenSession(store, available && !paused, picked)
   const [interactive, setInteractive] = useState(false)
   const tookOver = useRef(false)
   /** Whether the user wants the controls: at first unless this opened to watch a bot, then what they last chose. */
@@ -84,7 +86,10 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
       ) : null}
       {displays.length > 1 ? (
         <DropdownMenu className="icon-button screen-viewer-menu" title={tr('Displays')} items={() => displays.map((d) => ({
-          title: d.name, icon: 'display', verbatim: true, selected: d.id === session.display.id, action: () => session.switchDisplay(d),
+          title: d.name, icon: 'display', verbatim: true, selected: d.id === session.display.id, action: () => {
+            picked.current = d.id
+            session.switchDisplay(d)
+          },
         }))}>
           <Icon name="display.2" size={14} weight="medium" />
         </DropdownMenu>

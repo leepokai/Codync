@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useModel } from '../../lib/observable'
-import { mainDisplay, type ScreenComputer } from '../../lib/screen-state'
+import { displayToShow, type ScreenComputer } from '../../lib/screen-state'
 import type { BotStore } from '../../store/bot-store'
 import { ScreenSession } from '../../store/screen-session'
 
@@ -10,15 +10,16 @@ export function screenComputer(store: BotStore): ScreenComputer {
   return { screen: store.screen, asleep: store.isAsleep, connection: kind === 'online' ? 'online' : kind === 'connecting' ? 'connecting' : 'offline' }
 }
 
-/** One session while the screen can be watched; it closes when this does or the screen goes away. */
-export function useScreenSession(store: BotStore, available: boolean) {
+/** One session while the screen can be watched; it closes when this does or the screen goes away. A new one shows
+ * the display `picked` names (the viewer's choice, kept across sessions), else the main one. */
+export function useScreenSession(store: BotStore, available: boolean, picked?: React.RefObject<number | null>) {
   const [session, setSession] = useState<ScreenSession | null>(null)
   useEffect(() => {
     if (!available) return
     let live: ScreenSession | null = null
     let cancelled = false
     void store.ready().then((client) => {
-      const display = store.screen && mainDisplay(store.screen)
+      const display = store.screen && displayToShow(store.screen, picked?.current ?? null)
       if (cancelled || !display) return
       live = new ScreenSession(client, store.hostRoute === 'relay', display)
       setSession(live)

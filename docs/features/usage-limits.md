@@ -36,6 +36,12 @@ Adding an agent is one row in `READERS` (`usage/services.rs`). The reader's `id`
 
 The readers checked only against source fail closed: anything unexpected is no reading, never a wrong number. Check one against a real login when a computer has it.
 
+### Claude's rate-limit event
+
+The Claude adapter passes the Agent SDK's `rate_limit_info` through whole, in `usage_update._meta["_claude/rateLimit"]`. Its own `utilization` comes only with a warning or a refusal. A limit that is merely `allowed` has it in `unifiedWindows` (`five_hour`, `seven_day`, `seven_day_overage_included`), which the host reads too; the limit the event is about wins over its entry there. Claude Code marks that field internal and the SDK's types leave it out, so it can go away: an event without it reads as before. `seven_day_overage_included` reads into the `/usage` report's **Weekly · Fable** row (`seven_day_fable`): Claude Code's own name for that kind is "Fable limit", and the event names no model, so the name is fixed in the host.
+
+On a computer where Claude runs on a `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), this is the only reading: that token only runs models, so `claude -p /usage` reports no plan limits. The limits then show after a bot's first turn, and only the windows the event lists.
+
 ### An agent's own slash command
 
 `usage/acp_read.rs` runs an ACP slash command that the adapter answers itself. Antigravity's `/usage` is one: its ACP server handles it with no LLM and asks Google with its own login, so the host never touches that login.

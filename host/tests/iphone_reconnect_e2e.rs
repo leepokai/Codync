@@ -39,7 +39,7 @@ async fn a_restarted_host_catches_the_iphone_up_only_on_what_is_new() {
     std::fs::create_dir_all(&dir).unwrap();
     let pairing = host.call("pairing", json!({})).await;
     std::fs::write(dir.join("pairing"), pairing["pairingUrl"].as_str().unwrap()).unwrap();
-    let mut phone = phone_tests(&simulator, &dir);
+    let mut phone = Phone::start(&simulator, &dir);
 
     approve_pairing(&host, &mut phone).await;
     handoff(&mut phone, &dir, "synced").await;
@@ -56,7 +56,7 @@ async fn a_restarted_host_catches_the_iphone_up_only_on_what_is_new() {
     .await;
     std::fs::write(dir.join("sent"), sent.join(",")).unwrap();
 
-    let status = tokio::task::spawn_blocking(move || phone.wait()).await.unwrap().unwrap();
+    let status = tokio::task::spawn_blocking(move || phone.0.wait()).await.unwrap().unwrap();
     no_overflow(&host.home);
     assert!(status.success(), "the phone's test failed: see the xcodebuild output above");
 }
@@ -164,9 +164,9 @@ fn now_ms() -> i64 {
 }
 
 /// Lets the simulator in: a computer in no account asks before a phone pairs.
-async fn approve_pairing(host: &Host, phone: &mut Child) {
+async fn approve_pairing(host: &Host, phone: &mut Phone) {
     common::eventually("the phone asks to pair", Duration::from_mins(10), async || {
-        assert!(phone.try_wait().unwrap().is_none(), "the phone's test ended before pairing");
+        assert!(phone.0.try_wait().unwrap().is_none(), "the phone's test ended before pairing");
         let requests = host.call("pairingRequests", json!({})).await;
         let Some(request) = requests["requests"].as_array().and_then(|r| r.first()).cloned() else { return false };
         host.call("decidePairing", json!({"requestId": request["requestId"], "approve": true, "join": false})).await;
@@ -176,24 +176,38 @@ async fn approve_pairing(host: &Host, phone: &mut Child) {
 }
 
 /// The Swift side, running until it finishes; the build before it is part of the wait for its first step.
-fn phone_tests(simulator: &str, dir: &Path) -> Child {
-    let kit = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../apps/ios/Kit");
-    Command::new("xcodebuild")
-        .current_dir(&kit)
-        .args(["test", "-scheme", "CodyncKit-Package", "-derivedDataPath", "../../../build/dd"])
-        .args(["-destination", &format!("platform=iOS Simulator,id={simulator}")])
-        .arg("-only-testing:CodyncUITests/aRestartedHostCatchesTheIPhoneUpOnlyOnWhatIsNew()")
-        .env("TEST_RUNNER_CODYNC_RESTART_DIR", dir)
-        .stdout(Stdio::inherit())
-        .spawn()
-        .expect("run xcodebuild")
+/// Stopped when dropped, so a failure on the host's side doesn't leave it running.
+struct Phone(Child);
+
+impl Phone {
+    fn start(simulator: &str, dir: &Path) -> Self {
+        let kit = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../apps/ios/Kit");
+        let child = Command::new("xcodebuild")
+            .current_dir(&kit)
+            .args(["test", "-scheme", "CodyncKit-Package", "-derivedDataPath", "../../../build/dd"])
+            .args(["-destination", &format!("platform=iOS Simulator,id={simulator}")])
+            .arg("-only-testing:CodyncUITests/aRestartedHostCatchesTheIPhoneUpOnlyOnWhatIsNew()")
+            .env("TEST_RUNNER_CODYNC_RESTART_DIR", dir)
+            .stdout(Stdio::inherit())
+            .spawn()
+            .expect("run xcodebuild");
+        Self(child)
+    }
+}
+
+impl Drop for Phone {
+    fn drop(&mut self) {
+        if !matches!(self.0.try_wait(), Ok(Some(_))) {
+            common::stop(&mut self.0);
+        }
+    }
 }
 
 /// Waits for the phone's `name` file; the phone's test ending first fails at once.
-async fn handoff(phone: &mut Child, dir: &Path, name: &str) {
+async fn handoff(phone: &mut Phone, dir: &Path, name: &str) {
     let file = dir.join(name);
     common::eventually(&format!("the phone writes {name}"), Duration::from_mins(10), async || {
-        assert!(phone.try_wait().unwrap().is_none(), "the phone's test ended before writing {name}");
+        assert!(phone.0.try_wait().unwrap().is_none(), "the phone's test ended before writing {name}");
         file.exists()
     })
     .await;

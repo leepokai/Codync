@@ -80,7 +80,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           <HStack gap={6} className="request-card-trailing">
             {busy ? <Spinner /> : null}
             <Button disabled={busy || ((isSecret || isLogin) && !value)} onClick={() => void connect()}>
-              {isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect'}
+              {tr(isAgent ? 'Sign in' : isLogin ? 'Save' : 'Connect')}
             </Button>
           </HStack>
         ) : (

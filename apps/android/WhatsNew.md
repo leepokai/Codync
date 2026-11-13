@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.46.2
+### zh-Hant
+- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
+
+### en-US
+- Leaving a chat while a voice note is loading no longer lets it start playing afterward.
+
 ## 2.46.1
 ### zh-Hant
 - bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。

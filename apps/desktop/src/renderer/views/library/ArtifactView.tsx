@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Artifact } from '@shared/artifacts'
 import { DropdownMenu, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -19,8 +19,9 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
   const tr = useTr()
   const store = useStore()
   const back = useRef<HTMLDivElement>(null)
+  const focusLayer = useCallback(() => back.current?.focus({ preventScroll: true }), [])
   // Take focus when the artifact opens: Escape and Tab then act on the artifact, not on the chat it covers.
-  useEffect(() => { back.current?.focus({ preventScroll: true }) }, [])
+  useEffect(() => { focusLayer() }, [focusLayer])
   const [error, setError] = useState<string | null>(null)
   const artifact = store.artifacts.byId.get(artifactId)
   const html = store.artifacts.html.get(artifactId)
@@ -48,7 +49,7 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
             </DropdownMenu>
           ) : null}
         </div>
-        {artifact ? <ArtifactTitle artifact={artifact} onError={setError} /> : null}
+        {artifact ? <ArtifactTitle artifact={artifact} onError={setError} onDone={focusLayer} /> : null}
       </div>
       <div className="artifact-body">
         {html ? (
@@ -75,10 +76,18 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
 }
 
 /** The artifact's name in the top pill; clicking it edits the name in place. */
-function ArtifactTitle({ artifact, onError }: { artifact: Artifact; onError: (message: string | null) => void }) {
+function ArtifactTitle({ artifact, onError, onDone }: { artifact: Artifact; onError: (message: string | null) => void; onDone: () => void }) {
   const tr = useTr()
   const store = useStore()
   const [editing, setEditing] = useState(false)
+  // The name field holds the focus and goes away when the rename ends, saved or canceled with Escape. If the
+  // focus then fell out of the artifact (the page body), take it back: the next Escape must still close the
+  // artifact. A click into the message box or another control keeps the focus it just took.
+  const wasEditing = useRef(false)
+  useEffect(() => {
+    if (wasEditing.current && !editing && (!document.activeElement || document.activeElement === document.body)) onDone()
+    wasEditing.current = editing
+  }, [editing, onDone])
   if (editing) {
     return (
       <TitleField

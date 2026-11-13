@@ -2034,6 +2034,7 @@
   "Paused. Click to continue.": "En pausa. Haz clic para continuar.",
   "Paused. Tap to continue.": "En pausa. Toca para continuar.",
   "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "Tu ordenador en la nube se está actualizando a Codync {minimum} o superior; esta aplicación se reconectará al terminar.",
+  "Your cloud computer is updating…": "Tu ordenador en la nube se está actualizando…",
   "Updating Codync on {host}. This takes a few minutes.": "Actualizando Codync en {host}. Tarda unos minutos.",
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "La aplicación de este ordenador debe ser {minimum} o superior (lo exige {host}).",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync en {host} es {version}; ese ordenador necesita Codync {minimum} o superior.",

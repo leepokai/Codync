@@ -9,7 +9,7 @@ import Testing
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
     let computer = Computer(id: UUID().uuidString, name: "Mac", signKey: "test")
     let fake = FakeRemote(.ready(.direct))
-    await fake.setHello(#"{"hostId":"h1","name":"Mac","version":"\#(VersionMismatch.minHost)","os":"macos","backends":[],"rev":10}"#)
+    await fake.setHello(#"{"hostId":"h1","name":"Mac","version":"\#(VersionMismatch.minHost)","schema":8,"os":"macos","backends":[],"rev":10}"#)
     let store = BotStore(computer: computer, storage: storage) { _ in fake }
     defer { store.retire() }
     let bot = try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"gone","name":"Deleted while offline","rev":9}"#.utf8))
@@ -19,7 +19,7 @@ import Testing
     store.selection = bot.id
     store.setComposerDraft("draft", for: bot.id)
     store.rev = 9
-    store.hostVersion = HostVersion(version: "2.11.1", minApp: nil)
+    store.cacheStamp = "1:schema 7"
     let task = Task { await store.runEvents(HostClient(transport: fake)) }
     defer { task.cancel() }
     for _ in 0..<200 {

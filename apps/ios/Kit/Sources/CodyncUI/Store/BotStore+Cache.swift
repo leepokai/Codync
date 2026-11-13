@@ -3,7 +3,7 @@ import Foundation
 
 extension BotStore {
     private struct Cache: Codable {
-        /// App build + host version that wrote the cache; any change means refetch everything.
+        /// What the copy was synced under (`syncStamp`); another stamp means refetch everything.
         var stamp: String?
         var hostId: String?
         var rev: Int64
@@ -12,7 +12,14 @@ extension BotStore {
         var icons: [String: CustomIcon]?
     }
 
-    static let appBuild = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    /// Raise when the app starts to need a field the rows it cached may lack.
+    static let mirrorFormat = 1
+
+    /// The mirror format and the host's store schema (its version on a host that sends none): updates of the app
+    /// or the host that keep both keep the copy and its cursor.
+    static func syncStamp(_ hello: Hello) -> String {
+        "\(mirrorFormat):\(hello.schema.map { "schema \($0)" } ?? hello.version)"
+    }
 
     /// Per app, context and computer (`SharedStore.Context.erase()` removes a context's files).
     private var cacheURL: URL {
@@ -20,8 +27,8 @@ extension BotStore {
     }
 
     func loadCache() {
-        // A cache from another app build still shows at once; the stamp mismatch makes the next
-        // hello fetch everything again underneath it.
+        // A cache synced under another stamp still shows at once; the next hello fetches everything
+        // again underneath it.
         guard let data = try? Data(contentsOf: cacheURL),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         cacheStamp = cache.stamp ?? ""
@@ -60,7 +67,7 @@ extension BotStore {
         }
         let cachedBots = bots.values.map { bot in var bot = bot; bot.customIcon = nil; return bot }
         // Saved partway through a refetch, the cache says so: the next launch begins it again.
-        let stamp = refetched == nil ? "\(Self.appBuild)/\(hello?.version ?? "")" : ""
+        let stamp = refetched == nil ? cacheStamp ?? "" : ""
         let cache = Cache(stamp: stamp, hostId: hostId, rev: rev, bots: cachedBots, entries: kept, icons: icons)
         if let data = try? JSONEncoder().encode(cache) {
             try? data.write(to: cacheURL, options: .atomic)

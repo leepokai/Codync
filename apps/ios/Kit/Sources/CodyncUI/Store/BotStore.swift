@@ -155,6 +155,7 @@ public final class BotStore {
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { AccountApproval, PairingInfo } from '@shared/models'
 import { newSSHProfile, type SSHProfile } from '@shared/ssh'
-import { Button, CardSection, IconButton, Reveal, Switch } from '../../components/Controls'
+import { Button, CardSection, IconButton, Reveal, Spinner, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { Dialog, ModalHeader, Sheet, useDismiss } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -17,7 +17,7 @@ import { ComputerBadge } from '../ComputerBadge'
 import { PairingCode } from '../PairingCode'
 import { AuthorizedDevicesSection } from './AuthorizedDevicesSection'
 import { ComputersUsedSection } from './ComputersUsedSection'
-import { leavingRemovesText, withJoinRemoves } from '../../lib/account-copy'
+import { leavingRemovesText, spacedCode, withJoinRemoves } from '../../lib/account-copy'
 import { useJoinRemoves, useLeaveRemoves } from '../use-join-removes'
 import { cloudStatusLine } from '../../lib/relay-copy'
 import { CodyncCloudSection } from './CodyncCloudSection'
@@ -47,8 +47,9 @@ export function ComputersView() {
   // A computer this app reaches (an SSH one) can name what goes; any other gets the general warning.
   const removingNames = useLeaveRemoves(managed.find((store) => store.computer.id === removing?.computerId) ?? null, removing !== null)
   // Every computer in the account but this one, the SSH computers too: their cards above are about managing them.
-  // Account computers this app isn't using (iOS `accountOnly`): the ones it uses have their own card or section.
-  const others = cloud.computers.filter((c) => !app.store(c.computerId))
+  // Account computers this app doesn't manage (iOS `accountOnly`): this one and the SSH ones have their own card or
+  // section; one reached through the relay stays here, with Open.
+  const others = cloud.computers.filter((c) => !app.store(c.computerId)?.isLoopback)
   const addSSH = (host: string) => setEditing({ profile: { ...newSSHProfile(window.codync.hostPort), host }, isNew: true })
 
   return (
@@ -323,13 +324,24 @@ function ManagedComputerCard({ store, ssh: overSSH, nested = false }: { store: B
 }
 
 /**
- * An account computer this app isn't authorized on, or one it uses under an earlier identity (`olderCopy`). An
- * offline one can be removed: a computer that was reset or given away never comes back under that identity. A
- * cloud computer says where it runs, sleeping isn't offline, and it is deleted in its own section instead.
+ * An account computer this app reaches through the relay once it's approved there (Open), asks for access to
+ * (with the code the computer shows), or uses under an earlier identity (`olderCopy`). An offline one can be
+ * removed: a computer that was reset or given away never comes back under that identity. A cloud computer says
+ * where it runs, asks for access by itself, sleeping isn't offline, and it is deleted in its own section instead.
  */
 function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: CloudComputer; olderCopy: boolean; onRemove: () => void }) {
   const tr = useTr()
+  const app = useApp()
+  const dismiss = useDismiss()
+  const access = useModel(app.accountComputers)
+  const asking = access.asking.get(computer.computerId)
+  const store = app.store(computer.computerId)
   const status = accountComputerStatus(computer, olderCopy)
+  const open = () => {
+    const bot = store?.roster[0]
+    if (bot) app.select({ computerId: computer.computerId, botId: bot.id })
+    dismiss()
+  }
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
@@ -342,9 +354,23 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
           <Text size="caption" tone={status.error ? 'danger' : olderCopy ? 'tertiary' : 'secondary'}>{tr(status.text)}</Text>
         </div>
         <Spacer />
+        {store && !store.isLoopback ? <Button onClick={open}>{tr('Open')}</Button>
+          : asking ? <Button onClick={() => access.cancel(computer.computerId)}>{tr('Cancel request')}</Button>
+          : computer.online && !computer.cloud && !olderCopy && computer.access !== 'granted' ? <Button onClick={() => void access.ask(computer)}>{tr('Ask for access')}</Button>
+          : null}
         {/* A cloud computer goes with Delete cloud computer, in its own section. */}
         {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
+      <Reveal show={asking !== undefined}>
+        <div className="settings-row">
+          {asking?.code ? (
+            <VStack grow className="settings-stack">
+              <Text as="div" size={28} weight="semibold" mono tone="text" className="selectable" aria-label={`Code ${asking.code.split('').join(' ')}`}>{spacedCode(asking.code)}</Text>
+              <Text size="caption" tone="secondary">{tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")}</Text>
+            </VStack>
+          ) : <Spinner />}
+        </div>
+      </Reveal>
     </div>
   )
 }

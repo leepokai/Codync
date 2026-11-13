@@ -39,6 +39,15 @@ export interface CallError {
   offline?: boolean
 }
 
+/** An account computer to ask for access: its ID and pinned signing key, which the code is derived from. */
+export interface AccessComputer {
+  computerId: string
+  signKey: string
+}
+
+/** How an access request ended (`approved`, `denied`, `cancelled`, `expired`), or why it couldn't be made. */
+export type AccessResult = { ok: true; value: { status: string } } | { ok: false; error: { status: number; code: string; message: string | null } }
+
 /** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
 export interface TrayImage {
   x1: string
@@ -236,8 +245,13 @@ export interface CodyncBridge {
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
-    /** Asks a Codync Cloud computer for this device's access and waits for its answer (it approves by itself). */
-    requestAccess(computerId: string): Promise<{ ok: true; value: { status: string } } | { ok: false; error: { status: number; code: string; message: string | null } }>
+    /**
+     * Asks the computer for this device's access and waits for its decision. `onCode` gets the 6-digit code once
+     * the computer shows it too (a Codync Cloud computer approves by itself, so nobody compares it).
+     */
+    requestAccess(computer: AccessComputer, onCode?: (code: string) => void): Promise<AccessResult>
+    /** Withdraws the computer's request still waiting here; `requestAccess` then ends `cancelled`. */
+    cancelAccess(computerId: string): void
   }
   updates: {
     state(): Promise<UpdateState>

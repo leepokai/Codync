@@ -10,7 +10,14 @@ import { RelayChannel, unreachable, type ChannelError, type Socket } from './rel
 // (`host-proxy.ts`), carried by one `RelayChannel` per computer.
 
 const channels = new Map<string, RelayChannel>()
+/** Open streams by `<window>:<id>`, so a crashed page's can be found. */
 const streams = new Map<string, () => void>()
+
+function closeStream(key: string) {
+  const stop = streams.get(key)
+  streams.delete(key)
+  stop?.()
+}
 
 function closeAll() {
   for (const stop of streams.values()) stop()
@@ -57,19 +64,20 @@ function subscription(path: string): { sub: 'events' | 'term'; body: unknown } |
 }
 
 function openStream(account: AccountService, sender: WebContents, id: string, computerId: string, signKey: string, path: string) {
+  const key = `${sender.id}:${id}`
   const send = (channel: string, payload: unknown) => {
     if (!sender.isDestroyed()) sender.send(channel, id, payload)
   }
   const end = (error: ChannelError | null) => {
-    if (!streams.delete(id)) return
+    if (!streams.delete(key)) return
     send('host:stream:end', error)
   }
   const sub = subscription(path)
   if (!sub) return send('host:stream:end', { status: 404, message: 'Not found' })
   let stop: (() => void) | null = null
-  streams.set(id, () => stop?.())
+  streams.set(key, () => stop?.())
   channelFor(account, computerId, signKey).then((channel) => {
-    if (!streams.has(id)) return
+    if (!streams.has(key)) return
     stop = channel.subscribe(sub.sub, sub.body, (event) => send('host:stream:data', JSON.stringify(event)), end)
   }, (error: ChannelError) => end(error))
 }
@@ -85,10 +93,10 @@ export function registerChannels(account: AccountService) {
     }
   })
   ipcMain.on('channel:stream:open', (e, id: string, computerId: string, signKey: string, path: string) => openStream(account, e.sender, id, computerId, signKey, path))
-  ipcMain.on('channel:stream:close', (_e, id: string) => {
-    const stop = streams.get(id)
-    streams.delete(id)
-    stop?.()
+  ipcMain.on('channel:stream:close', (e, id: string) => closeStream(`${e.sender.id}:${id}`))
+  // A crashed page never says its streams went (a page that unloads closes its own, preload/index.ts).
+  app.on('render-process-gone', (_e, contents) => {
+    for (const key of [...streams.keys()]) if (key.startsWith(`${contents.id}:`)) closeStream(key)
   })
   onAttention((on) => {
     for (const channel of channels.values()) channel.setAttended(on)

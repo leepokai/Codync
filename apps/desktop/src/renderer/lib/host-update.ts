@@ -27,7 +27,7 @@ export const updateNeededText = {
     if (m.kind === 'updateApp') return trNow('Update this app')
     return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
   },
-  detail(m: VersionMismatch, host: string, _hostVersion: string | null | undefined, os: string | null | undefined, instructions = true, cloud = false) {
+  detail(m: VersionMismatch, host: string, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
       return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
         .replaceAll('{host}', () => host)

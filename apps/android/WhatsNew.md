@@ -7,6 +7,13 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.46.2
+### zh-Hant
+- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
+
+### en-US
+- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
+
 ## 2.46.1
 ### zh-Hant
 - bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。

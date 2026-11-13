@@ -35,6 +35,8 @@ reason to lock someone out.
 | Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
+Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
+
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
 

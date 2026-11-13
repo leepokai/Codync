@@ -2037,5 +2037,6 @@
   "Updating Codync on {host}. This takes a few minutes.": "Обновляем Codync на {host}. Это займёт несколько минут.",
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "Приложение на этом компьютере должно быть {minimum} или новее (требование {host}).",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync на {host} — {version}; этому компьютеру нужен Codync {minimum} или новее.",
-  "{host} needs Codync {version} or newer.": "{host} требует Codync {version} или новее."
+  "{host} needs Codync {version} or newer.": "{host} требует Codync {version} или новее.",
+  "This app needs to be {minimum} or newer ({host} requires it).": "Это приложение должно быть версии {minimum} или новее (требование {host})."
 }

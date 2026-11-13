@@ -2037,5 +2037,6 @@
   "Updating Codync on {host}. This takes a few minutes.": "Atualizando o Codync em {host}. Leva alguns minutos.",
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "O aplicativo deste computador precisa ser {minimum} ou mais recente (exigido por {host}).",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync em {host} é {version}; esse computador precisa de Codync {minimum} ou mais recente.",
-  "{host} needs Codync {version} or newer.": "{host} precisa de Codync {version} ou mais recente."
+  "{host} needs Codync {version} or newer.": "{host} precisa de Codync {version} ou mais recente.",
+  "This app needs to be {minimum} or newer ({host} requires it).": "Este aplicativo precisa ser {minimum} ou mais recente (exigido por {host})."
 }

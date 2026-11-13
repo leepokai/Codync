@@ -2037,5 +2037,6 @@
   "Updating Codync on {host}. This takes a few minutes.": "{host} の Codync を更新しています。数分かかります。",
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "このコンピューターのアプリを {minimum} 以降に更新してください（{host} の要件）。",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "{host} の Codync は {version} です。そのコンピューターの Codync を {minimum} 以降に更新してください。",
-  "{host} needs Codync {version} or newer.": "{host} には Codync {version} 以降が必要です。"
+  "{host} needs Codync {version} or newer.": "{host} には Codync {version} 以降が必要です。",
+  "This app needs to be {minimum} or newer ({host} requires it).": "このアプリを {minimum} 以降に更新してください（{host} の要件）。"
 }

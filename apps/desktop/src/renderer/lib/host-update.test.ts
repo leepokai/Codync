@@ -48,11 +48,11 @@ test('a computer too old for this app, or an update that did not take, is a prob
 })
 test('the Chinese notice names which side has to update', (t) => {
   testLanguage(t, 'zh-Hans')
-  const app = updateNeededText.detail({ kind: 'updateApp', minimum: '2.45.1' }, 'Mac', null, 'macos')
+  const app = updateNeededText.detail({ kind: 'updateApp', minimum: '2.45.1' }, 'Mac', 'macos')
   assert.equal(app, '本机这个 App 需要升级到 2.45.1 或更高版本（Mac 的要求）。')
-  const host = updateNeededText.detail({ kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, 'Mac', '2.20.0', 'linux')
+  const host = updateNeededText.detail({ kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, 'Mac', 'linux')
   assert.ok(host.startsWith('Mac 上的 Codync 是 2.20.0；需要把那台电脑上的 Codync 升级到 2.26.0 或更高版本。'), host)
-  const cloud = updateNeededText.detail({ kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, 'Cloud', '2.20.0', 'linux', true, true)
+  const cloud = updateNeededText.detail({ kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, 'Cloud', 'linux', true, true)
   assert.equal(cloud, '你的云端电脑正在升级到 Codync 2.26.0 或更高版本；完成后这个 App 会自动重连。')
   assert.equal(hostVersionLine('2.20.0', null, { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, { kind: 'available', last: null }, 'Mac', 'linux').detail[0],
     'Mac 需要 Codync 2.26.0 或更高版本。')

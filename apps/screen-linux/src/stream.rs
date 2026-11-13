@@ -28,9 +28,26 @@ pub struct Session {
     pub(super) webrtc: gst::Element,
     /// The phone's candidates so far; `None` for a complete-SDP session.
     pub(super) incoming: Option<Mutex<crate::candidates::Candidates>>,
+    /// Applies the viewer's messages (`spawn_messages`); None in a bare session.
+    pub(super) task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Session {
+    /// A session around `pipeline` and `webrtc` with nothing applying messages, for tests.
+    #[cfg(test)]
+    pub(crate) fn bare(
+        pipeline: gst::Pipeline,
+        webrtc: gst::Element,
+        incoming: Option<Mutex<crate::candidates::Candidates>>,
+    ) -> Self {
+        Self {
+            pipeline,
+            webrtc,
+            incoming,
+            task: None,
+        }
+    }
+
     pub fn new(
         id: String,
         display: &Display,
@@ -103,9 +120,9 @@ impl Session {
         gst::Element::link_many(chain)?;
 
         // Input from the phone, applied in order.
-        let (tx, mut rx) = mpsc::unbounded_channel::<Incoming>();
+        let (tx, rx) = mpsc::unbounded_channel::<Incoming>();
         observe_frame(&convert, tx.downgrade())?;
-        let mut view = View {
+        let view = View {
             // Weak: the pipeline holds this task's sender, through webrtcbin's data channels.
             pipeline: pipeline.downgrade(),
             src: src.clone(),
@@ -118,39 +135,7 @@ impl Session {
             fit: None,
         };
         let channels: Arc<Mutex<Vec<gst_webrtc::WebRTCDataChannel>>> = Arc::default();
-        {
-            let helper = helper.clone();
-            let channels = channels.clone();
-            let owner = id.clone();
-            tokio::spawn(async move {
-                while let Some(incoming) = rx.recv().await {
-                    let msg = match incoming {
-                        Incoming::Frame(frame) => {
-                            view.frame = Some(frame);
-                            view.resize();
-                            continue;
-                        }
-                        Incoming::Viewer(msg) => msg,
-                    };
-                    let reply = if msg["type"] == "view" {
-                        Some(
-                            view.view(&helper, &msg)
-                                .await
-                                .unwrap_or_else(|e| error_msg(&e)),
-                        )
-                    } else {
-                        apply(&helper, &view.display, &owner, &msg)
-                            .await
-                            .err()
-                            .as_ref()
-                            .map(error_msg)
-                    };
-                    if let Some(reply) = reply {
-                        send(&channels, &reply);
-                    }
-                }
-            });
-        }
+        let task = spawn_messages(helper.clone(), id.clone(), view, channels.clone(), rx);
         webrtc.connect("on-data-channel", false, {
             let channels = channels.clone();
             move |values| {
@@ -185,6 +170,7 @@ impl Session {
             pipeline,
             webrtc,
             incoming: trickle.then(Mutex::default),
+            task: Some(task),
         })
     }
 
@@ -193,10 +179,53 @@ impl Session {
     }
 }
 
+/// Applies the viewer's messages in order. Its data channels' handlers hold its sender and it
+/// holds the channels, so it never ends by itself: it stops with its session, letting go of them
+/// and of the capture source.
+fn spawn_messages(
+    helper: Arc<Helper>,
+    owner: String,
+    mut view: View,
+    channels: Arc<Mutex<Vec<gst_webrtc::WebRTCDataChannel>>>,
+    mut rx: mpsc::UnboundedReceiver<Incoming>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(incoming) = rx.recv().await {
+            let msg = match incoming {
+                Incoming::Frame(frame) => {
+                    view.frame = Some(frame);
+                    view.resize();
+                    continue;
+                }
+                Incoming::Viewer(msg) => msg,
+            };
+            let reply = if msg["type"] == "view" {
+                Some(
+                    view.view(&helper, &msg)
+                        .await
+                        .unwrap_or_else(|e| error_msg(&e)),
+                )
+            } else {
+                apply(&helper, &view.display, &owner, &msg)
+                    .await
+                    .err()
+                    .as_ref()
+                    .map(error_msg)
+            };
+            if let Some(reply) = reply {
+                send(&channels, &reply);
+            }
+        }
+    })
+}
+
 impl Drop for Session {
     fn drop(&mut self) {
         // Negotiation failure must stop capture too, before the session enters the helper's map.
         let _ = self.pipeline.set_state(gst::State::Null);
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
@@ -477,6 +506,30 @@ mod tests {
     use crate::candidates::Candidate;
 
     #[tokio::test]
+    async fn a_dropped_session_stops_its_message_task() {
+        gst::init().unwrap();
+        let held = Arc::new(());
+        let mut session = Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            None,
+        );
+        let guard = held.clone();
+        session.task = Some(tokio::spawn(async move {
+            std::future::pending::<()>().await;
+            drop(guard);
+        }));
+        drop(session);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while Arc::strong_count(&held) > 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the task lets go of what it holds");
+    }
+
+    #[tokio::test]
     async fn trickle_answer_does_not_wait_for_candidate_gathering() {
         gst::init().unwrap();
         let pipeline = gst::parse::launch(
@@ -490,11 +543,7 @@ mod tests {
         .unwrap();
         let webrtc = pipeline.by_name("peer").unwrap();
         pipeline.set_state(gst::State::Ready).unwrap();
-        let session = Session {
-            pipeline,
-            webrtc,
-            incoming: Some(Mutex::default()),
-        };
+        let session = Session::bare(pipeline, webrtc, Some(Mutex::default()));
         let offer = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n\
             m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\n\
             a=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=setup:actpass\r\n\

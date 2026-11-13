@@ -2,10 +2,10 @@ import { hasLibrary } from '@shared/artifacts'
 import { isGroup, isWorking, type Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
-import { IconButton, RowLabel, Switch, TabChoice } from '../../components/Controls'
+import { IconButton, TabChoice } from '../../components/Controls'
 import { LeadAgentBadge } from '../../components/LeadAgentBadge'
 import { Icon } from '../../components/Icon'
-import { HStack, VStack } from '../../components/Stack'
+import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
@@ -14,22 +14,25 @@ import { MemoryCard } from '../bots/MemoryView'
 import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { DevServersSection } from './DevServersSection'
+import { ComputerTab } from './ComputerTab'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
 import { useTr } from '../../lib/use-language'
 
 
-export type DetailsTab = 'details' | 'library' | 'memory' | 'settings'
+export type DetailsTab = 'details' | 'computer' | 'library' | 'memory' | 'settings'
 
 const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'details', label: 'Details' },
+  { id: 'computer', label: 'Computer' },
   { id: 'library', label: 'Library' },
   { id: 'memory', label: 'Memory' },
   { id: 'settings', label: 'Settings' },
 ]
 
-/** The inspector beside a conversation (Grok Bot's): who the bot is, then its details, library, memory and settings. */
+/** The inspector beside a conversation (Grok Bot's): who the bot is, then its details, its computer, library, memory and
+ * settings. */
 export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArtifact, share, close }: {
   botId: string
   routineId: string | null
@@ -63,9 +66,10 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
                 <>
                   {bot ? <DevServersSection bot={bot} /> : null}
                   <BotSettingsPanel botId={botId} part="often" />
-                  {bot ? <ComputerUse bot={bot} /> : null}
                   <RoutinesView botId={botId} initialId={routineId} />
                 </>
+              ) : tab === 'computer' ? (
+                bot ? <ComputerTab bot={bot} /> : null
               ) : tab === 'library' ? (
                 <LibraryView botId={botId} openArtifact={openArtifact} />
               ) : tab === 'memory' ? (
@@ -101,26 +105,6 @@ function Identity({ bot }: { bot: Bot }) {
         )}
       </span>
     </div>
-  )
-}
-
-/** Whether this bot may use the computer, switched right here (also in Settings). */
-function ComputerUse({ bot }: { bot: Bot }) {
-  const tr = useTr()
-  const store = useStore()
-  const screen = store.screen
-  if (!screen) return null
-  const ready = screen.platform === 'windows' || (screen.enabled && screen.connected && screen.capture && screen.input)
-  return (
-    <section className="details-section">
-      <Text className="details-section-title">{tr(`Computer`)}</Text>
-      <div className="outlined-card details-switch">
-        <RowLabel grow label="Use the computer" detail={ready ? null : 'On that computer, open Codync → Settings → Computer access to set it up first.'} />
-        <HStack as="span" align="stretch" className="details-switch-control">
-          <Switch label="Use the computer" on={bot.computer} disabled={store.isOffline} onChange={(on) => store.setComputer(bot, on)} />
-        </HStack>
-      </div>
-    </section>
   )
 }
 

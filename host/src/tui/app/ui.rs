@@ -356,6 +356,8 @@ pub enum Overlay {
     DevServers(DevServersSheet),
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
+    /// A bot's Computer page, by the bot's id.
+    Computer(String),
     Library(Library),
     Gear(Gear),
     Market(Box<Market>),

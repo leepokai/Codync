@@ -136,11 +136,11 @@ mod tests {
             out,
             rt: tokio::runtime::Handle::current(),
         });
-        let session = Session {
-            pipeline: gst::Pipeline::new(),
-            webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(Mutex::default()),
-        };
+        let session = Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            Some(Mutex::default()),
+        );
         (helper, events, session)
     }
 

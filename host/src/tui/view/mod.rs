@@ -11,7 +11,7 @@ mod analytics;
 mod bot_chat;
 mod buffer;
 mod chat;
-mod computer_access;
+pub(super) mod computer_access;
 mod dev_servers;
 mod fallbacks;
 mod forms;

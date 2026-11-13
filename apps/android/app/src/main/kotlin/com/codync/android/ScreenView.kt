@@ -64,6 +64,9 @@ import com.codync.android.design.*
     var zoomed by remember { mutableStateOf(false) }
     var resetToken by remember { mutableIntStateOf(0) }
     var tookOver by remember { mutableStateOf(false) }
+    /** Whether the user wants the controls: at first unless watching a bot (look first; otherwise take the
+     *  screen, bots may still look), then what they last chose, kept when the app comes back to the front. */
+    var wanted by remember { mutableStateOf(watching == null) }
     val portrait = LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE
 
     fun setInteractive(on: Boolean) {
@@ -82,8 +85,7 @@ import com.codync.android.design.*
         val d = display ?: current.mainDisplay ?: return
         display = d
         session = ScreenSession(store, d).also { it.start() }
-        // Watching a bot: look first. Otherwise take the screen (bots may still look).
-        setInteractive(watching == null)
+        setInteractive(wanted)
     }
     fun stop() {
         session?.close()
@@ -96,7 +98,12 @@ import com.codync.android.design.*
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { stop() }
     DisposableEffect(Unit) { onDispose { stop() } }
     LaunchedEffect(screen?.available) { if (screen?.available == true && session == null) start() }
-    LaunchedEffect(screen?.input) { if (screen?.input != true) setInteractive(false) }
+    // Control comes and goes with the computer (a restarted helper, its permission): the user's choice comes back with it.
+    LaunchedEffect(screen?.input) { setInteractive(session != null && wanted) }
+    // Back live after a failure or a long outage, the host may have handed control back to the bots when this
+    // phone's last session went: ask again.
+    val live = session?.phase == ScreenSession.Phase.Live
+    LaunchedEffect(live) { if (live && tookOver && state.screen?.userControl == false) store.screenTakeover(true) }
     BackHandler(onBack = close)
     FullScreenWindow()
     KeyboardDismissal(keyboard) { keyboard = false }
@@ -111,7 +118,7 @@ import com.codync.android.design.*
                 toggleMode = { mode = if (mode == TouchMode.Trackpad) TouchMode.Direct else TouchMode.Trackpad },
                 fit = { resetToken += 1 },
                 pick = { d -> display = d; session?.switchDisplay(d); resetToken += 1 },
-                takeOver = { setInteractive(!interactive) })
+                takeOver = { wanted = !interactive; setInteractive(wanted) })
             AnimatedVisibility(showBar, Modifier.align(Alignment.BottomCenter).imePadding().onSizeChanged { bar.intValue = it.height },
                 enter = slideInVertically(Motion.layoutOffset) { it } + fadeIn(Motion.fade()),
                 exit = slideOutVertically(Motion.layoutOffset) { it } + fadeOut(Motion.fade())) {
@@ -174,12 +181,7 @@ import com.codync.android.design.*
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OverlayButton("Close", "xmark", action = close)
         AnimatedVisibility(agent != null && !interactive, Modifier.weight(1f, fill = false), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-            Row(Modifier.clip(CircleShape).frost(20.dp, MATERIAL).padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Symbol("cursorarrow.motionlines", size = 14.dp, tint = Color.White)
-                Text("${agent?.name.orEmpty()} is using the computer", style = Type.caption.medium, color = Color.White,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            AgentAtScreen(agent?.name.orEmpty())
         }
         Spacer(Modifier.weight(1f))
         // An explicit rotation works even with the phone's auto-rotate off.
@@ -232,34 +234,61 @@ private fun rotate(activity: android.app.Activity) {
 }
 
 @Composable private fun BoxScope.Status(session: ScreenSession, screen: ScreenState) {
-    when (val phase = session.phase) {
-        ScreenSession.Phase.Connecting -> Notice(null, "Connecting to the screen…")
-        ScreenSession.Phase.Reconnecting -> Notice(null, "Reconnecting…")
-        is ScreenSession.Phase.Failed -> Notice("exclamationmark.triangle", phase.message) { session.start() }
+    when (session.phase) {
         ScreenSession.Phase.Live, ScreenSession.Phase.Closed -> {
             val text = if (!screen.input) "View only. To allow control, open Codync → Settings → Computer access on the computer." else session.lastError
             if (text != null) Text(tr(text), Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp)
                 .padding(horizontal = 16.dp).clip(RoundedCornerShape(if (screen.input) 8.dp else 12.dp)).frost(20.dp, MATERIAL)
                 .padding(if (screen.input) 8.dp else 12.dp), style = Type.caption, color = Color.White)
         }
+        else -> SessionNotice(session)
     }
 }
 
-@Composable private fun BoxScope.Unavailable(state: AppState) {
+/** The session while it isn't live: connecting, reconnecting, or failed with a retry. */
+@Composable internal fun BoxScope.SessionNotice(session: ScreenSession, compact: Boolean = false) {
+    when (val phase = session.phase) {
+        ScreenSession.Phase.Connecting -> Notice(null, "Connecting to the screen…", compact)
+        ScreenSession.Phase.Reconnecting -> Notice(null, "Reconnecting…", compact)
+        is ScreenSession.Phase.Failed -> Notice("exclamationmark.triangle", phase.message, compact) { session.start() }
+        ScreenSession.Phase.Live, ScreenSession.Phase.Closed -> Unit
+    }
+}
+
+/** "{name} is using the computer", over the screen (iOS `AgentAtScreen`). */
+@Composable internal fun AgentAtScreen(name: String) {
+    Row(Modifier.clip(CircleShape).frost(20.dp, MATERIAL).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Symbol("cursorarrow.motionlines", size = 14.dp, tint = Color.White)
+        Text(tr("{name} is using the computer").replace("{name}", name), style = Type.caption.medium, color = Color.White,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable internal fun BoxScope.Unavailable(state: AppState, compact: Boolean = false) {
+    val (icon, text) = unavailableNotice(state)
+    Notice(icon, text, compact)
+}
+
+/** Why there's no screen to show, as an icon (null: a spinner) and a line, in the order iPhone and desktop check: a cloud
+ * computer waking (connecting wakes it), still connecting, offline, too old, or not allowed. */
+internal fun unavailableNotice(state: AppState): Pair<String?, String> {
     val screen = state.screen
-    when {
-        state.connection !is LinkState.Ready -> Notice("wifi.slash", "This computer is offline.")
-        screen == null -> Notice("arrow.down.circle", "Update Codync on your computer to use its screen from here.")
-        else -> Notice("lock.display", screen.accessGuidance)
+    return when {
+        state.isAsleep -> null to "Waking the computer…"
+        state.connection is LinkState.Connecting -> null to "Connecting to the screen…"
+        state.connection !is LinkState.Ready -> "wifi.slash" to "This computer is offline."
+        screen == null -> "arrow.down.circle" to "Update Codync on your computer to use its screen from here."
+        else -> "lock.display" to screen.accessGuidance
     }
 }
 
-/** A centered icon (or a spinner), a line and an optional retry. */
-@Composable private fun BoxScope.Notice(icon: String?, text: String, retry: (() -> Unit)? = null) {
-    Column(Modifier.align(Alignment.Center).widthIn(max = 420.dp).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (icon != null) Symbol(icon, size = 40.dp, tint = Palette.secondary) else Spinner(22.dp)
-        Text(tr(text), style = Type.callout, color = Palette.secondary, textAlign = TextAlign.Center)
+/** A centered icon (or a spinner), a line and an optional retry; [compact] in a small picture (a bot's Computer tab). */
+@Composable internal fun BoxScope.Notice(icon: String?, text: String, compact: Boolean = false, retry: (() -> Unit)? = null) {
+    Column(Modifier.align(Alignment.Center).widthIn(max = 420.dp).padding(if (compact) 16.dp else 32.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp)) {
+        if (icon != null) Symbol(icon, size = if (compact) 28.dp else 40.dp, tint = Palette.secondary) else Spinner(22.dp)
+        Text(tr(text), style = if (compact) Type.footnote else Type.callout, color = Palette.secondary, textAlign = TextAlign.Center)
         if (retry != null) SecondaryButton(retry) { Symbol("arrow.clockwise", size = 20.dp, contentDescription = "Try again") }
     }
 }

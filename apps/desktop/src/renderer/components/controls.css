@@ -172,9 +172,13 @@
   border-radius: var(--radius-l);
 }
 
+/* Labels too long for the width scroll sideways (from the first tab) rather than spill past both edges. As a scroll
+   box in a column it would otherwise shrink to nothing under a long page. */
 .tab-choice {
   display: flex;
-  justify-content: center;
+  flex-shrink: 0;
+  justify-content: safe center;
+  overflow-x: auto;
   gap: 2px;
 }
 .tab-choice-option {

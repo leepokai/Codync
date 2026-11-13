@@ -164,9 +164,10 @@ impl Screen {
     pub(super) fn remove_session(&self, session: &str) -> bool {
         let mut sessions = self.sessions.locked();
         let removed = self.end_viewers(&mut sessions, |id, _| id == session);
-        if sessions.is_empty() {
-            // Nobody is watching: hand control back to the bots.
-            self.control.locked().user = false;
+        // The device that took over has gone (another may still be watching, view only): control goes back to the bots.
+        let mut control = self.control.locked();
+        if control.user.as_ref().is_some_and(|owner| !sessions.values().any(|v| &v.owner == owner)) {
+            control.user = None;
         }
         removed
     }
@@ -196,8 +197,9 @@ impl Screen {
         self.ended.locked().remove(session)
     }
 
-    pub fn takeover(&self, on: bool) {
-        self.control.locked().user = on;
+    /// `owner` (a device key) takes the screen from the bots, or hands it back.
+    pub fn takeover(&self, owner: &str, on: bool) {
+        self.control.locked().user = on.then(|| owner.to_owned());
         self.emit();
     }
 
@@ -316,5 +318,28 @@ mod tests {
         );
         *screen.enabled.locked() = Some(false);
         assert!(screen.prepare("phone", IceConfig::default(), false).is_err());
+    }
+
+    #[test]
+    fn control_goes_back_to_the_bots_when_the_device_that_took_over_leaves() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let (tx, _) = mpsc::unbounded_channel();
+        *screen.link.locked() =
+            Some(Arc::new(Link { id: 1, tx, pending: Mutex::default(), next_id: AtomicI64::new(1) }));
+        let session = |owner: &str| {
+            screen.prepare(owner, IceConfig::default(), false).unwrap()["session"].as_str().unwrap().to_owned()
+        };
+        let watching = session("desktop");
+        let phone = session("phone");
+        screen.takeover("phone", true);
+        assert!(screen.remove_session(&phone));
+        assert_eq!(screen.state()["userControl"], false, "a view-only picture elsewhere keeps no takeover alive");
+        screen.takeover("desktop", true);
+        let again = session("desktop");
+        assert!(screen.remove_session(&watching));
+        assert_eq!(screen.state()["userControl"], true, "its other session still has the screen");
+        assert!(screen.remove_session(&again));
+        assert_eq!(screen.state()["userControl"], false);
     }
 }

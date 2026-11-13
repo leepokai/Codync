@@ -6,28 +6,31 @@ import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { fill } from '../../lib/fill'
 import { useModel } from '../../lib/observable'
-import { mainDisplay, screenAvailable, screenGuidance } from '../../lib/screen-state'
+import { screenAvailable, screenNotice, type ScreenNotice } from '../../lib/screen-state'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { BotStore } from '../../store/bot-store'
-import { ScreenSession } from '../../store/screen-session'
+import type { ScreenSession } from '../../store/screen-session'
 import { useScreenInput } from './use-screen-input'
+import { screenComputer, useScreenSession, useVideo, useViewSize } from './use-screen-session'
 import './screen-viewer.css'
 
 /**
  * Another computer's screen in a sheet over the window (the iPhone's `ScreenView`): the picture, and the mouse and
- * keyboard over it once you take over from the bots.
+ * keyboard over it once you take over from the bots. Opened to watch a bot (`watching`), it starts by looking.
  */
-export function ScreenViewer({ store }: { store: BotStore }) {
+export function ScreenViewer({ store, watching }: { store: BotStore; watching: string | null }) {
   const tr = useTr()
   useModel(store)
   useScreenViewed('remote_screen')
   const screen = store.screen
   const online = store.connection.kind === 'online'
   const available = online && screenAvailable(screen)
-  const session = useModel(useSession(store, available))
+  const session = useScreenSession(store, available)
   const [interactive, setInteractive] = useState(false)
   const tookOver = useRef(false)
+  /** Whether the user wants the controls: at first unless this opened to watch a bot, then what they last chose. */
+  const wanted = useRef(!watching)
   const stage = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const keys = useRef<HTMLTextAreaElement>(null)
@@ -43,12 +46,15 @@ export function ScreenViewer({ store }: { store: BotStore }) {
     tookOver.current = allowed
     store.screenTakeover(allowed)
   }
-  useEffect(() => {
-    if (session) control(true)
-  }, [session])
+  const choose = (on: boolean) => {
+    wanted.current = on
+    control(on)
+  }
+  // Each session (a new one replaces it after an outage) and control allowed again bring the user's choice back.
   useEffect(() => {
     if (!canControl) control(false)
-  }, [canControl])
+    else if (session) control(wanted.current)
+  }, [session, canControl])
   // Back live after a failure or a long outage, the host may have handed control back to the bots when its last
   // viewer went: ask again.
   const live = session?.phase.kind === 'live'
@@ -59,9 +65,7 @@ export function ScreenViewer({ store }: { store: BotStore }) {
     if (tookOver.current) store.screenTakeover(false)
   }, [store])
 
-  useEffect(() => {
-    if (video.current) video.current.srcObject = session?.video ?? null
-  }, [session?.video])
+  useVideo(video, session)
   useViewSize(stage, session)
 
   const agent = screen?.agentBot ? store.bots.get(screen.agentBot) : null
@@ -82,7 +86,7 @@ export function ScreenViewer({ store }: { store: BotStore }) {
           <Icon name="display.2" size={14} weight="medium" />
         </DropdownMenu>
       ) : null}
-      <IconButton title={interactive ? 'Hand back to bots' : 'Take over'} icon={interactive ? 'hand.raised.slash' : 'hand.raised'} selected={interactive} disabled={!canControl} onClick={() => control(!interactive)} />
+      <IconButton title={interactive ? 'Hand back to bots' : 'Take over'} icon={interactive ? 'hand.raised.slash' : 'hand.raised'} selected={interactive} disabled={!canControl} onClick={() => choose(!interactive)} />
     </>
   ) : null
 
@@ -99,79 +103,20 @@ export function ScreenViewer({ store }: { store: BotStore }) {
   )
 }
 
-/** One session while the screen can be watched; it closes when this does or the screen goes away. */
-function useSession(store: BotStore, available: boolean) {
-  const [session, setSession] = useState<ScreenSession | null>(null)
-  useEffect(() => {
-    if (!available) return
-    let live: ScreenSession | null = null
-    let cancelled = false
-    void store.ready().then((client) => {
-      const display = store.screen && mainDisplay(store.screen)
-      if (cancelled || !display) return
-      live = new ScreenSession(client, store.hostRoute === 'relay', display)
-      setSession(live)
-      void live.start()
-    }, () => {})
-    return () => {
-      cancelled = true
-      live?.close()
-      setSession(null)
-    }
-  }, [store, available])
-  return session
-}
-
-/** Tells the computer how big the picture is shown, so it sends no more pixels than that. */
-function useViewSize(stage: React.RefObject<HTMLDivElement | null>, session: ScreenSession | null) {
-  const live = session?.phase.kind === 'live'
-  useEffect(() => {
-    const area = stage.current
-    if (!area || !session || !live) return
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const report = () => {
-      const scale = window.devicePixelRatio || 1
-      const w = area.clientWidth * scale
-      const h = area.clientHeight * scale
-      session.view(Math.max(w, h), Math.min(w, h))
-    }
-    const observer = new ResizeObserver(() => {
-      clearTimeout(timer)
-      timer = setTimeout(report, 200)
-    })
-    observer.observe(area)
-    report()
-    return () => {
-      clearTimeout(timer)
-      observer.disconnect()
-    }
-  }, [stage, session, live])
-}
-
 function ScreenStatus({ store, session, available, canControl }: { store: BotStore; session: ScreenSession | null; available: boolean; canControl: boolean }) {
   const tr = useTr()
-  const screen = store.screen
-  if (!available) {
-    const [icon, text] = store.connection.kind !== 'online'
-      ? ['wifi.slash', tr('This computer is offline.')]
-      : !screen
-        ? ['arrow.down.circle', tr('Update Codync on your computer to use its screen from here.')]
-        : ['lock.display', screenGuidance(screen, tr)]
-    return <Notice icon={icon} text={text} />
-  }
-  const phase = session?.phase
-  if (!session || !phase || phase.kind === 'connecting') return <Notice text={tr('Connecting to the screen…')} />
-  if (phase.kind === 'reconnecting') return <Notice text={tr('Reconnecting…')} />
-  if (phase.kind === 'failed') return <Notice icon="exclamationmark.triangle" text={tr(phase.message)} retry={() => void session.start()} />
-  const note = !canControl ? tr('View only. To allow control, open Codync → Settings → Computer access on the computer.') : session.lastError ? tr(session.lastError) : null
+  const notice = screenNotice(screenComputer(store), session, available, tr)
+  if (notice) return <Notice {...notice} />
+  const note = !canControl ? tr('View only. To allow control, open Codync → Settings → Computer access on the computer.') : session?.lastError ? tr(session.lastError) : null
   return note ? <Text className="screen-viewer-note" size="caption" tone="secondary">{note}</Text> : null
 }
 
-function Notice({ icon, text, retry }: { icon?: string; text: string; retry?: () => void }) {
+/** What shows instead of the picture; `compact` in a small picture (the bot details' Computer tab). */
+export function Notice({ icon, text, retry, compact = false }: ScreenNotice & { compact?: boolean }) {
   return (
-    <VStack gap={12} className="screen-viewer-notice">
-      {icon ? <Icon name={icon} size={28} color="var(--secondary)" /> : <Spinner size={22} />}
-      <Text size="callout" tone="secondary">{text}</Text>
+    <VStack gap={compact ? 8 : 12} className={`screen-viewer-notice${compact ? ' compact' : ''}`}>
+      {icon ? <Icon name={icon} size={compact ? 20 : 28} color="var(--secondary)" /> : <Spinner size={compact ? 18 : 22} />}
+      <Text size={compact ? 'caption' : 'callout'} tone="secondary">{text}</Text>
       {retry ? <Button kind="secondary" onClick={retry} title="Try again"><Icon name="arrow.clockwise" size={13} /></Button> : null}
     </VStack>
   )

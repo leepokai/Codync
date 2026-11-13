@@ -41,11 +41,6 @@ impl App {
             (KeyCode::Char('B'), _) if self.bots.get(&bot).is_some_and(|b| b.agent_step.is_some()) => {
                 self.call("switchBack", json!({"botId": bot}), After::Nothing);
             }
-            // Use the computer, on the Details page above the routines.
-            (KeyCode::Char('u'), _) if !self.screen.is_null() => {
-                let on = self.bots.get(&bot).is_some_and(|b| b.computer);
-                self.call("updateBot", json!({"id": bot, "computer": !on}), After::Nothing);
-            }
             (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {

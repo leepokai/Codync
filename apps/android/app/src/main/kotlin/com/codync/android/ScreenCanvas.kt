@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,10 +95,7 @@ import kotlin.math.hypot
 
     Box(modifier.fillMaxSize().background(Color.Black).clipToBounds()
         .onSizeChanged { control.setViewSize(ScreenSize(it.width / density.toDouble(), it.height / density.toDouble())) }) {
-        AndroidView({ context -> ScreenVideoView(context).also { session.sink = it } }, Modifier.fillMaxSize(),
-            onRelease = { session.sink = null; it.release() }) { view ->
-            view.place(frame.x * density, frame.y * density, frame.width * density, frame.height * density)
-        }
+        ScreenVideo(session, frame, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().pointerInput(control) {
             screenGestures(control) { haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
         })
@@ -112,6 +110,17 @@ import kotlin.math.hypot
         }, if (composing) Modifier.align(Alignment.BottomCenter).padding(16.dp).widthIn(min = 80.dp).heightIn(min = 40.dp)
             else Modifier.align(Alignment.TopStart).size(1.dp)) { field ->
             field.showsSoftKeyboard = keyboard
+        }
+    }
+}
+
+/** The session's video: its whole stream drawn at [frame] (view points), what falls outside clipped. */
+@Composable internal fun ScreenVideo(session: ScreenSession, frame: ScreenRect, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current.density
+    key(session) {
+        AndroidView({ context -> ScreenVideoView(context).also { session.sink = it } }, modifier,
+            onRelease = { session.sink = null; it.release() }) { view ->
+            view.place(frame.x * density, frame.y * density, frame.width * density, frame.height * density)
         }
     }
 }

@@ -45,6 +45,11 @@ impl Actor {
             let _ = reply.send(Err(anyhow!("a decision is already waiting: ask one question at a time")));
             return;
         }
+        // A choice needs the user just like an approval, even if saving the goal's end fails.
+        if let Some(step) = self.goal_step.as_mut() {
+            step.stopped = Some(crate::chat::goal::Stopped::NeedsUser);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), crate::chat::goal::Stopped::NeedsUser);
+        }
         self.close_seg();
         let Some(card) = self.add(EntryKind::Notice, self.turn.unwrap_or(0), data) else {
             let _ = reply.send(Err(anyhow!("couldn't save the card")));

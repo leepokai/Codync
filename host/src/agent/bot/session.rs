@@ -332,7 +332,7 @@ impl Actor {
 
     /// A routine's time limit cut a session request short. An agent that can resume stops, so a session it might
     /// still open goes with its process; one that can't keeps running rather than lose the sessions it has.
-    async fn drop_unanswered(&mut self) {
+    pub(super) async fn drop_unanswered(&mut self) {
         let Some(conn) = self.conn.as_mut() else { return };
         if !std::mem::take(&mut conn.opening) {
             return;

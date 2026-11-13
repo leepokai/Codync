@@ -175,6 +175,15 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('stop', { botId }), true)
   }
 
+  async setGoal(botId: string, goal: string, maxTurns: number, maxMinutes: number) {
+    // A lost reply may already have started the work. Replaying would create a new goal and reset its budget.
+    await this.withLink((c) => c.call('setGoal', { botId, goal, maxTurns, maxMinutes }))
+  }
+
+  async stopGoal(botId: string) {
+    await this.withLink((c) => c.call('stopGoal', { botId }))
+  }
+
   /** Back to the bot's own agent from a fallback: now if it's idle, else from its next turn. The host posts the chat line. */
   switchBack(botId: string) {
     this.perform((c) => c.call('switchBack', { botId }), true)

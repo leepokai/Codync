@@ -234,6 +234,11 @@ impl Actor {
 
     /// Posts an approval card in the turn's lane and tells the user it needs them.
     fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
+        // Requiring approval ends automatic work even if persisting that end fails.
+        if let Some(step) = self.goal_step.as_mut() {
+            step.stopped = Some(crate::chat::goal::Stopped::NeedsUser);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), crate::chat::goal::Stopped::NeedsUser);
+        }
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
         if let Some(e) = self.add(EntryKind::Permission, turn, data) {

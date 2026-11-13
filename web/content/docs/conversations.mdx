@@ -20,6 +20,25 @@ Everything else the agent did (its narration, thinking, tool calls, diffs and pl
 - **Desktop:** hover a bot message and choose **More message actions**, then **Show what it did**, or right-click the message.
 - **Terminal UI:** `t` opens the trace pane, `T` opens it full screen, and `o` shows the last turn's steps.
 
+## Conversation goals on desktop
+
+Open the conversation details and enter a **Goal**, **Maximum turns** and
+**Maximum minutes**, then choose **Start goal**. The bot starts immediately and
+continues automatically until it reports completion, needs you, fails or reaches
+a limit. The goal above the composer shows progress and **Stop goal**.
+
+Sending a message from any client stops automatic continuation. Approval cards
+also stop it; answering a card does not silently restart the goal. Setting a new
+goal replaces the old one. The host checks reported subscription usage before
+each step; agents without usage readings still obey turn and time limits.
+An unfinished goal stops when the host restarts; start it explicitly again after
+checking the previous work. A connection error does not automatically repeat a
+goal action: reconnect and check its current state before starting another goal.
+
+Goal controls require a host with goal support. Phone and terminal clients show
+the notices and can stop the bot or send a message; dedicated goal controls are
+currently available on desktop.
+
 ## Sending messages
 
 Type in the box at the bottom and send.

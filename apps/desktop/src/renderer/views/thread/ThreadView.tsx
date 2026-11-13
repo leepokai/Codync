@@ -22,6 +22,7 @@ import { DevServerTitle } from './DevServersSection'
 import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
+import { GoalBanner } from './GoalSection'
 import { QueuedMessages } from './QueuedMessages'
 import { fill } from '../../lib/fill.ts'
 import { outsideQueue } from './queued-messages'
@@ -207,6 +208,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
             // The artifact over the chat has its own box (two would both take the voice shortcut).
             <>
               <QueuedMessages botId={botId} />
+              {bot ? <GoalBanner bot={bot} /> : null}
               <Composer
                 botId={botId}
                 reply={replyTo}

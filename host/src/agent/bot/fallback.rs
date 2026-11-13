@@ -330,6 +330,10 @@ impl Actor {
     /// The turn failed with `error`: when it may move on and another agent can take it, starts it again there.
     /// Whether the turn is handled (running again, or its failure reported).
     pub(super) async fn fall_back(&mut self, error: &anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
+        // A goal stops on its first error; switching agents would bypass its budget.
+        if self.goal_step.is_some() {
+            return false;
+        }
         if self.stop_requested || self.routine_timed_out || self.compacting.is_some() || self.turn.is_none() {
             return false;
         }

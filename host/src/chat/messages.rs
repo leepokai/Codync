@@ -10,6 +10,7 @@ use std::sync::Arc;
 /// Posts `data` (the message's text and what it carries) as the user's newest message in `cfg`'s chat and hands it
 /// on: to the bot's agent, or to a group's members.
 pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
+    crate::chat::goal::user_spoke(hub, &cfg.id)?;
     // A group has no agent of its own to queue behind: its message is simply sent.
     data["status"] = (if cfg.is_group() { "sent" } else { "queued" }).into();
     let lane = Lane::main(&cfg.id);

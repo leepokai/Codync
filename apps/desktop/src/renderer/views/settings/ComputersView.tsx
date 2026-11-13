@@ -342,7 +342,7 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
     if (bot) app.select({ computerId: computer.computerId, botId: bot.id })
     dismiss()
   }
-  // The row is often last on the page: keep it in view while its reveal unfolds and when the code replaces the spinner.
+  // The row is often last on the page: keep it in view while its reveal unfolds.
   const card = useRef<HTMLDivElement>(null)
   const isAsking = asking !== undefined
   useEffect(() => {
@@ -355,7 +355,7 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
     return () => observer.disconnect()
   }, [isAsking])
   return (
-    <div ref={card} className="settings-card settings-appear">
+    <div ref={card} className="settings-card settings-appear settings-access">
       <div className="settings-row">
         <span className={olderCopy ? 'settings-off' : undefined}>
           <ComputerBadge computer={{ id: computer.computerId, name: computer.name, signKey: computer.signKey, urls: [], device: computer.device ?? null }} size={22} />
@@ -373,14 +373,13 @@ function AccountComputerRow({ computer, olderCopy, onRemove }: { computer: Cloud
         {/* A cloud computer goes with Delete cloud computer, in its own section. */}
         {computer.online || computer.cloud ? null : <IconButton title="Remove from account" icon="trash" onClick={onRemove} />}
       </div>
+      {/* At its final height from the first frame: the spinner holds the code's line until the code arrives. */}
       <Reveal show={isAsking}>
-        <div className="settings-row">
-          {asking?.code ? (
-            <VStack grow className="settings-stack">
-              <Text as="div" size={28} weight="semibold" mono tone="text" className="selectable" aria-label={`Code ${asking.code.split('').join(' ')}`}>{spacedCode(asking.code)}</Text>
-              <Text size="caption" tone="secondary">{tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")}</Text>
-            </VStack>
-          ) : <Spinner />}
+        <div className="settings-stack settings-access-code">
+          <Text as="div" size={28} weight="semibold" mono tone="text" className="selectable" aria-label={asking?.code ? `Code ${asking.code.split('').join(' ')}` : undefined}>
+            {asking?.code ? spacedCode(asking.code) : <Spinner />}
+          </Text>
+          <Text size="caption" tone="secondary">{tr("Approve only if the computer shows exactly this code. If it doesn't, deny it there: someone may be trying to get in.")}</Text>
         </div>
       </Reveal>
     </div>

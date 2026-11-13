@@ -91,6 +91,13 @@
   gap: 1px;
   min-width: 0;
 }
+/* An account computer's access code: the space above it opens with its reveal instead of before it. */
+.settings-access {
+  gap: 0;
+}
+.settings-access-code {
+  padding-top: 8px;
+}
 .settings-field {
   flex: 1;
   min-width: 0;

@@ -165,7 +165,7 @@ Phases, file-level steps, tests and risks: [require sign-in](../plans/require-si
 | 7 | One-click host install over SSH, then the app asks about **Add to account** | Built (2.41.0) |
 | 8 | Honor the 15-minute lease when the relay drops | Not built: account devices are refused until the cloud state syncs again |
 | 9 | The renames above, in every client | Not built |
-| 10 | Desktop apps as devices (encrypted channel), so one computer can use another's bots | Built (2.43.0) |
+| 10 | Desktop apps as devices (encrypted channel), so one computer can use another's bots | Built |
 | 11 | [Optional sign-in](../plans/optional-sign-in.md): signed-out phones, computers in no account, the relay only within an account | Built (2.41.0); the relay check is off on the main cloud until the release steps run |
 
 ## Prior art (checked 2026-11-02)

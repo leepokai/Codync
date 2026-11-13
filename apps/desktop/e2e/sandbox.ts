@@ -99,6 +99,13 @@ export function api<T>(page: Page, method: string, body: unknown): Promise<T> {
     const host = (window as unknown as { codync: { host: Host } }).codync.host
     const local = (await host.snapshot()).local
     if (!local) throw new Error('The sandbox host has not answered yet.')
-    return host.call(local.baseURL, local.token, method, body, 30_000)
+    try {
+      return await host.call(local.baseURL, local.token, method, body, 30_000)
+    } catch (error) {
+      // The bridge rejects with a plain `{ status, message }`; across `page.evaluate` that object would
+      // read as "Object", so keep the host's own words.
+      const message = (error as { message?: unknown }).message
+      throw new Error(typeof message === 'string' ? message : String(error))
+    }
   }, [method, body] as const) as Promise<T>
 }

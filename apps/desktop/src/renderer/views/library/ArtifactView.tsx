@@ -82,11 +82,17 @@ function ArtifactTitle({ artifact, onError, onDone }: { artifact: Artifact; onEr
   const [editing, setEditing] = useState(false)
   // The name field holds the focus and goes away when the rename ends, saved or canceled with Escape. If the
   // focus then fell out of the artifact (the page body), take it back: the next Escape must still close the
-  // artifact. A click into the message box or another control keeps the focus it just took.
+  // artifact. Decide on the next frame, so a click into the message box or another control has taken its own
+  // focus first; only a focus that is still on the page body falls back to the artifact.
   const wasEditing = useRef(false)
   useEffect(() => {
-    if (wasEditing.current && !editing && (!document.activeElement || document.activeElement === document.body)) onDone()
+    const was = wasEditing.current
     wasEditing.current = editing
+    if (!was || editing) return
+    const frame = requestAnimationFrame(() => {
+      if (!document.activeElement || document.activeElement === document.body) onDone()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [editing, onDone])
   if (editing) {
     return (

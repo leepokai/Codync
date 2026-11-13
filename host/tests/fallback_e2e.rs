@@ -147,6 +147,55 @@ async fn a_bounded_handoff_names_each_item_it_could_not_expand() {
 }
 
 #[tokio::test]
+async fn a_resumed_session_bounds_its_catch_up_and_discloses_each_manifest_item() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"Resumed", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // Once this agent has reported a 100k-token window, resuming its session gets the same 60_000-byte handoff.
+    std::fs::write(folder.join("primary.window"), "").unwrap();
+    host.reply(&bot, "Start").await;
+    let paths: Vec<_> = (0..24).map(|i| format!("resume_{i}_{}.txt", "x".repeat(90))).collect();
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&paths).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, &format!("Never lose this constraint {}", "a".repeat(70_000))).await;
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    host.call("switchBack", json!({"botId":bot})).await;
+    host.reply(&bot, "Continue").await;
+
+    let prompt = last_prompt(&host, &bot, "primary");
+    let from = prompt.find("<catch_up>").unwrap();
+    let end = prompt[from..].find("</catch_up>").unwrap() + from + "</catch_up>".len();
+    let catch_up = &prompt[from..end];
+    assert!(catch_up.len() <= 60_000, "{} bytes", catch_up.len());
+    assert!(
+        catch_up.contains("Omitted due to budget/collection limit") && catch_up.contains("search_history"),
+        "{catch_up}"
+    );
+    let disclosure = catch_up.split("Omitted due to budget/collection limit:").nth(1).unwrap_or("");
+    for index in 0..24 {
+        let prefix = format!("resume_{index}_");
+        let expanded = catch_up.contains(&format!("File this turn: {prefix}"));
+        let omitted = disclosure.lines().find(|line| line.contains(&prefix));
+        assert!(expanded || omitted.is_some(), "file {index} must be expanded or itemized: {catch_up}");
+        if let Some(label) = omitted {
+            assert!(
+                label.contains(" B") && (label.contains("collection limit") || label.contains("context budget")),
+                "an omitted file must name its size and reason: {label}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;
     let bot =

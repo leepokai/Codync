@@ -132,6 +132,8 @@ fn omitted_file_labels_keep_the_complete_path() {
     let path = format!("src/{}/file.rs", "a".repeat(120));
     let file = Touched { path: path.clone(), bytes: Some(1), sha256: None, why: "modified", unavailable: None };
     assert_eq!(render::file_label(&file), format!("{path} (1 B; modified)"));
+    let file = Touched { unavailable: Some("hash skipped: 64 MiB limit"), ..file };
+    assert_eq!(render::file_label(&file), format!("{path} (1 B; modified; hash skipped: 64 MiB limit)"));
 }
 
 #[test]

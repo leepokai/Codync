@@ -7,7 +7,8 @@ const CLOSE: &str = "\n</ledger>";
 
 pub fn file_label(file: &Touched) -> String {
     let bytes = file.bytes.map_or_else(|| "unknown bytes".into(), |n| format!("{n} B"));
-    format!("{} ({bytes}; {})", file.path, file.why)
+    let unavailable = file.unavailable.map_or(String::new(), |why| format!("; {why}"));
+    format!("{} ({bytes}; {}{unavailable})", file.path, file.why)
 }
 
 fn rows(ledger: &Ledger) -> Vec<(String, String)> {

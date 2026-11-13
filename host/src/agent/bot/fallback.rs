@@ -224,12 +224,11 @@ impl Actor {
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
     /// replies count, never from before the user last started a new session.
     async fn recap(&self, from: &str, from_session: Option<&str>) -> anyhow::Result<Option<String>> {
-        let (kind, room, text) = if self.session_fresh {
-            let room = self.agent_window().map(carry::room);
-            (Carried::Recap, room, self.recap_text(from, from_session, room).await?)
+        let room = self.agent_window().map(carry::room);
+        let (kind, text) = if self.session_fresh {
+            (Carried::Recap, self.recap_text(from, from_session, room).await?)
         } else {
-            // A catch-up isn't sized to the agent's window.
-            (Carried::CatchUp, None, self.catch_up_text())
+            (Carried::CatchUp, self.catch_up_text(room).await?)
         };
         let Some(text) = text else { return Ok(None) };
         crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, kind, text.len(), room.is_some());
@@ -250,12 +249,15 @@ impl Actor {
     }
 
     /// For an agent back in the session it had: what was said, and what the other agents did, since it left.
-    fn catch_up_text(&self) -> Option<String> {
+    async fn catch_up_text(&self, room: Option<usize>) -> anyhow::Result<Option<String>> {
         let left =
             self.hub.store.kv_get(&park::left_key(&self.base.id, &self.cfg.backend)).and_then(|v| v.parse().ok());
         let since = left.unwrap_or(i64::MAX).max(self.fresh());
+        let Some(entries) = self.main_messages(since) else { return Ok(None) };
+        let current = self.relay.attempt.as_ref().map(|a| a.entries.clone()).unwrap_or_default();
         let ledger = self.ledger(since);
-        carry::catch_up(&carry::said(&self.main_messages(since)?), ledger.as_deref())
+        let manifest = carry::ledger::build(self.hub.clone(), self.cfg.clone(), self.fresh(), current).await;
+        carry::catch_up(&carry::said(&entries), ledger.as_deref(), Some(&manifest), room)
     }
 
     /// For an agent in a new session: the conversation so far with agent `from` (in its session `from_session`),
@@ -294,6 +296,7 @@ impl Actor {
             ledger: index.as_deref(),
             manifest: Some(&manifest),
             room,
+            catching_up: false,
         };
         recap.text().map(Some)
     }

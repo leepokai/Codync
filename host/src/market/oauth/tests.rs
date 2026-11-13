@@ -197,3 +197,49 @@ async fn the_token_is_saved_only_while_the_connector_is_unchanged() {
     assert_eq!(left[0].url.as_deref(), Some("https://other.example/mcp"));
     assert!(left[0].oauth.is_none(), "the replacement got the token");
 }
+
+/// A registration endpoint that accepts only the loopback redirect URI, as servers that follow
+/// the native app rule do (issue #440), and repeats its reason for anything else.
+async fn loopback_only_registration() -> String {
+    use axum::{Json, Router, http::StatusCode, routing};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let router = Router::new().route(
+        "/register",
+        routing::post(|body: String| async move {
+            let v: Value = serde_json::from_str(&body).unwrap();
+            let uris = v["redirect_uris"].as_array().unwrap();
+            if uris.len() == 1 && uris[0].as_str().unwrap().starts_with("http://127.0.0.1:") {
+                (StatusCode::CREATED, Json(json!({"client_id": "loopback-only"})))
+            } else {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "invalid_redirect_uri",
+                        "error_description": "One or more redirect URIs are invalid"
+                    })),
+                )
+            }
+        }),
+    );
+    let endpoint = format!("http://{}/register", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    endpoint
+}
+
+#[tokio::test]
+async fn a_server_that_only_takes_the_loopback_uri_still_signs_in_here() {
+    let endpoint = loopback_only_registration().await;
+    let loopback = loopback_uri(19222);
+    let wanted = vec![loopback.clone(), "https://cloud.example/v1/oauth/callback".to_owned()];
+
+    let (client_id, secret, registered) =
+        register_client(&endpoint, wanted.clone(), loopback.clone(), false).await.unwrap();
+    assert_eq!(client_id, "loopback-only");
+    assert!(secret.is_none());
+    assert_eq!(registered, vec![loopback.clone()], "the client is registered for the URI it uses");
+
+    let err = register_client(&endpoint, wanted, loopback, true).await.unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("sign-in from the computer"), "{text}");
+    assert!(text.contains("One or more redirect URIs are invalid"), "the server's reason is shown: {text}");
+}

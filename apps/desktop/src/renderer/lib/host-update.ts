@@ -29,13 +29,13 @@ export const updateNeededText = {
   },
   detail(m: VersionMismatch, host: string, _hostVersion: string | null | undefined, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
-      return trNow('{host} needs this app to be {minimum} or newer.')
+      return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
         .replaceAll('{host}', () => host)
         .replaceAll('{minimum}', () => m.minimum)
     }
     if (cloud) return trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.')
       .replaceAll('{minimum}', () => m.minimum)
-    const needs = trNow('Codync on {host} is {version}; this app needs {minimum} or newer.')
+    const needs = trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.')
       .replaceAll('{host}', () => host)
       .replaceAll('{version}', () => m.version)
       .replaceAll('{minimum}', () => m.minimum)
@@ -78,13 +78,9 @@ export function hostVersionLine(version: string, latest: string | null | undefin
   if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
   const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
   const available = latest && isBelow(version, latest) ? latest : null
-  const due = minimum ? trNow('This app needs {version} or newer.').replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
+  const due = minimum ? trNow('{host} needs Codync {version} or newer.').replaceAll('{host}', () => host).replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
   if (!due) return line(latest ? [trNow('Up to date')] : [])
   if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
   if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: trNow('Try again') })
   return line([due], minimum !== null, { kind: 'button', title: trNow('Update') })
 }
-
-
-
-

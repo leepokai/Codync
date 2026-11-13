@@ -87,15 +87,17 @@ leaves the user's computers. A recording that never gets louder than -45 dBFS is
 text without reaching the server (Whisper writes "Thank you." for silence), and Whisper's
 markers for what isn't speech (`[BLANK_AUDIO]`, `(upbeat music)`) are taken out, keeping every other
 bracket and parenthetical as spoken. No key, no minutes, and it never waits on the keyring.
-Each request to the server gets the host's two minutes (a big model on a slow CPU answers in over a
-minute a piece), and the apps wait that out before calling the piece failed, as the desktop app
-does when linking.
+Each request to the server, its name lookup included, gets the host's two minutes (a big model on a
+slow CPU answers in over a minute a piece), and the apps wait that out before calling the piece
+failed, as the desktop app does when linking.
 `setSpeechServer {url, model}` → `{ready, message, server}` links the server, with the model to ask
 it for when it serves several (Speaches answers 422 without one), once it transcribes a second of
 silence (the error says why not) or, with an empty `url`, unlinks it; only the computer
-itself may call it, so the desktop app's **This computer** card in Voice chat settings has the
-address field and shows the linked address; the phones and other computers' apps show only whether
-one is linked (**Linked** / **Not linked**) and how to link one, in a card under that computer's name;
+itself may call it, so the desktop app's **This computer** card in Voice chat settings, shown there
+whichever dictation engine is picked, has the address field and shows the linked address
+(`local-dictation-model.ts` asks and links; the view renders it); the phones and other computers'
+apps show only whether one is linked (**Linked** / **Not linked**) and how to link one, in a card
+under that computer's name while that engine is picked (`LocalDictationStatus` / `LocalDictationModel`);
 the host's `message` names the computer too, since a phone shows it. `localDictation` →
 `{ready, message, server}` says whether one is linked, with its address (`server`) only for the
 computer itself (hosts before it answer "unknown method", and

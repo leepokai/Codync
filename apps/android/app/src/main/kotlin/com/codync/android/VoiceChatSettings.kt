@@ -206,19 +206,13 @@ import kotlinx.coroutines.launch
 @Composable private fun LocalDictationSettings(state: AppState, store: AppStore) {
     val host = state.hostName
     val online = state.actualConnection is LinkState.Ready
-    /** null while the computer hasn't answered yet. */
-    var local by remember(online) { mutableStateOf<LocalDictation?>(null) }
-    var error by remember(online) { mutableStateOf<String?>(null) }
-    LaunchedEffect(online) {
-        if (!online) { error = "Not connected to $host."; return@LaunchedEffect }
-        try { local = store.localDictation() } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failed: Exception) { error = failed.message ?: "Couldn't reach $host." }
-    }
+    val model = remember(online) { LocalDictationModel(host) { store.localDictation() } }
+    LaunchedEffect(online) { model.load(online) }
     val body = tr("Your speech model transcribes what you say. Codync sends the audio only to the speech server you link " +
         "on your computer or your own network, so it never leaves your computers.")
-    val note = (local?.takeUnless { it.ready }?.reason() ?: error)?.let { " ${tr(it)}" }.orEmpty()
+    val note = (model.local?.takeUnless { it.ready }?.reason() ?: model.error)?.let { " ${tr(it)}" }.orEmpty()
     CardSection(DictationEngine.Local.title(host), footer = body + note,
         modifier = Modifier.animateContentSize(Motion.layoutSize)) {
-        local?.let { row { ValueRow("Speech server", if (it.ready) "Linked" else "Not linked") } }
+        model.local?.let { row { ValueRow("Speech server", if (it.ready) "Linked" else "Not linked") } }
     }
 }

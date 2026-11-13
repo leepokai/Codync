@@ -12,6 +12,7 @@ import { useApp, useStore } from '../../store/context'
 import { useScreenViewed } from '../../store/analytics'
 import { errorText, liveClient } from './parts'
 import * as voice from './voice-settings'
+import { LocalDictationModel } from './local-dictation-model'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
 import { useTr } from '../../lib/use-language'
 import { fill } from '../../lib/fill.ts'
@@ -33,7 +34,9 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
   const [dictationEngine] = usePref(voice.dictationEngine)
   /** Dictation on another provider than calls still needs that provider's key and speech-to-text model. */
   const dictationProvider = voice.isVoiceProvider(dictationEngine) && dictationEngine !== provider ? dictationEngine : null
-  const dictationLocal = dictationEngine === 'local'
+  const store = useStore()
+  // On the computer itself, where a speech server is linked, its card shows before it's picked beside the mic.
+  const showsLocal = dictationEngine === 'local' || store.client?.transport instanceof LoopbackTransport
   const [mode, setMode] = usePref(voice.mode(provider ?? 'openai'))
   // Closing hands a running call to a different engine picked here.
   useEffect(() => () => voiceSettingsClosed.ring(), [])
@@ -80,7 +83,7 @@ export function VoiceChatSettingsView({ showsHeader = true }: { showsHeader?: bo
           </CardSection>
           {provider ? <ProviderVoiceSettings key={provider} provider={provider} /> : null}
           {dictationProvider ? <ProviderVoiceSettings key={`dictation-${dictationProvider}`} provider={dictationProvider} dictationOnly /> : null}
-          {dictationLocal ? <LocalDictationSettings /> : null}
+          {showsLocal ? <LocalDictationSettings /> : null}
         </CardForm>
       </div>
     </SheetPage>
@@ -345,51 +348,20 @@ function LocalDictationSettings() {
   const store = useStore()
   useModel(store)
   const online = store.connection.kind === 'online'
-  /** The computer's answer while it hasn't given one yet. */
-  const [local, setLocal] = useState<voice.LocalDictation | null>(null)
-  const [note, setNote] = useState<string | null>(null)
+  const dictation = useModel(useMemo(() => new LocalDictationModel(() => liveClient(store), () => store.hostName), [store]))
+  const { local, note, busy, failure } = dictation
   const [url, setUrl] = useState('')
   const [model, setModel] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
   const canLink = store.client?.transport instanceof LoopbackTransport
 
-  const show = (l: voice.LocalDictation) => {
-    setLocal(l)
-    setNote(l.ready ? null : l.message)
-  }
+  useEffect(() => void dictation.load(), [dictation, online])
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const client = liveClient(store)
-      if (!client) return setNote(tr('Not connected to {name}.').replaceAll('{name}', () => store.hostName))
-      try {
-        const l = await voice.localDictation(client)
-        if (!cancelled) show(l)
-      } catch (e) {
-        if (!cancelled) setNote(errorText(e))
-      }
-    })()
-    return () => void (cancelled = true)
-  }, [online])
-
-  /** The computer tries a transcription on the address (with `chosen` model, if any) before it keeps it; an empty one unlinks. */
-  const link = (address: string, chosen = '') => {
-    const client = liveClient(store)
-    if (busy || !client) return
-    setBusy(true)
-    setFailure(null)
-    voice
-      .setSpeechServer(client, address, chosen)
-      .then((l) => {
-        show(l)
-        setUrl('')
-        setModel('')
-      })
-      .catch((e: unknown) => setFailure(errorText(e)))
-      .finally(() => setBusy(false))
-  }
+  const link = (address: string, chosen = '') =>
+    void dictation.link(address, chosen).then((linked) => {
+      if (!linked) return
+      setUrl('')
+      setModel('')
+    })
   const submit = () => url.trim() && link(url.trim(), model.trim())
 
   // Where the link field shows, it already says what to do; elsewhere the host says where to link one.

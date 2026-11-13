@@ -358,36 +358,23 @@ private struct ProviderVoiceSettings: View {
 /// that computer, so the phone shows no address. The check runs again when the computer (re)connects.
 private struct LocalDictationSettings: View {
     @Environment(BotStore.self) private var store
-    /// The computer's answer while it hasn't given one yet.
-    @State private var local: LocalDictation?
-    @State private var error: String?
+    @State private var status = LocalDictationStatus()
 
     private var footer: String {
         var text = L10n.tr("Your speech model transcribes what you say. Codync sends the audio only to the speech server you link on your computer or your own network, so it never leaves your computers.")
-        if let local, !local.ready { text += " " + L10n.tr(local.reason) }
-        if let error { text += " " + L10n.tr(error) }
+        if let local = status.local, !local.ready { text += " " + L10n.tr(local.reason) }
+        if let error = status.error { text += " " + L10n.tr(error) }
         return text
     }
 
     var body: some View {
         CardSection(store.hostName, footer: footer) {
-            if let local {
+            if let local = status.local {
                 ValueRow("Speech server", value: local.ready ? "Linked" : "Not linked")
             }
         }
 
         Color.clear.frame(height: 0)
-            .task(id: store.connection == .online) {
-                guard let client = store.client else {
-                    error = "Not connected to \(store.hostName)."
-                    return
-                }
-                do {
-                    local = try await client.localDictation()
-                    error = nil
-                } catch {
-                    self.error = error.localizedDescription
-                }
-            }
+            .task(id: store.connection == .online) { await status.load(on: store) }
     }
 }

@@ -34,7 +34,7 @@ enum SpeechFailure {
     OffNetwork,
     /// Nothing answered at the address.
     Unreachable,
-    /// The server took longer than `TIMEOUT`.
+    /// The server, or the name lookup before it, took longer than `TIMEOUT`.
     TimedOut,
     /// The server serves several models and none was given.
     NeedsModel,
@@ -132,8 +132,15 @@ pub async fn transcribe(store: &Store, wav: &[u8]) -> Result<Value> {
     Ok(json!({"text": spoken(&text)}))
 }
 
-/// One transcription request to the server at `url`; its transcript, or why it gave none.
+/// One transcription request to the server at `url`, name lookup and reply included, within
+/// `TIMEOUT`; its transcript, or why it gave none.
 async fn post(store: &Store, url: &str, model: &str, wav: &[u8]) -> Result<String> {
+    tokio::time::timeout(TIMEOUT, request(store, url, model, wav)).await.unwrap_or_else(|_| {
+        Err(SpeechFailure::TimedOut.error(format!("The speech server at {url} took over two minutes to answer.")))
+    })
+}
+
+async fn request(store: &Store, url: &str, model: &str, wav: &[u8]) -> Result<String> {
     let parsed =
         Url::parse(url).map_err(|_| SpeechFailure::BadAddress.error(format!("`{url}` isn't a web address")))?;
     let client = pinned(&parsed).await?;
@@ -143,20 +150,17 @@ async fn post(store: &Store, url: &str, model: &str, wav: &[u8]) -> Result<Strin
         fields.push(("model", model));
     }
     let (boundary, body) = multipart(&fields, wav);
+    let unreachable = |e: reqwest::Error| {
+        SpeechFailure::Unreachable
+            .error(format!("The speech server at {url} isn't answering ({e}). Check that it's running."))
+    };
     let res = client
         .post(parsed)
         .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
         .body(body)
         .send()
         .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                SpeechFailure::TimedOut.error(format!("The speech server at {url} took over two minutes to answer."))
-            } else {
-                SpeechFailure::Unreachable
-                    .error(format!("The speech server at {url} isn't answering. Check that it's running."))
-            }
-        })?;
+        .map_err(unreachable)?;
     if res.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY && model.is_empty() {
         return Err(SpeechFailure::NeedsModel
             .error(format!("The speech server at {url} needs a model: enter the one it serves.")));
@@ -165,10 +169,12 @@ async fn post(store: &Store, url: &str, model: &str, wav: &[u8]) -> Result<Strin
         let why = format!("The speech server at {url} answered {}. Check its address and model.", res.status());
         return Err(SpeechFailure::Refused.error(why));
     }
-    let v: Value = res.json().await.unwrap_or_default();
-    v["text"].as_str().map(str::to_owned).ok_or_else(|| {
-        SpeechFailure::NoTranscript.error(format!("The speech server at {url} didn't answer with a transcript."))
-    })
+    let reply = res.bytes().await.map_err(unreachable)?;
+    let no_transcript = |why: String| {
+        SpeechFailure::NoTranscript.error(format!("The speech server at {url} didn't answer with a transcript{why}."))
+    };
+    let v: Value = serde_json::from_slice(&reply).map_err(|e| no_transcript(format!(" ({e})")))?;
+    v["text"].as_str().map(str::to_owned).ok_or_else(|| no_transcript(String::new()))
 }
 
 /// A client that reaches `url`'s host only at the addresses checked here: each on this computer or
@@ -191,7 +197,6 @@ async fn pinned(url: &Url) -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(TIMEOUT)
         .resolve_to_addrs(host, &addrs)
         .build()?)
 }

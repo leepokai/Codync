@@ -3,6 +3,7 @@ package com.codync.android
 import android.content.ContextWrapper
 import com.codync.android.core.DictationEngine
 import com.codync.android.core.DictationText
+import com.codync.android.core.LocalDictation
 import com.codync.android.core.MicSource
 import com.codync.android.core.VoiceProvider
 import java.io.IOException
@@ -142,6 +143,26 @@ class DictationTest {
             assertEquals(listOf<DictationEngine>(DictationEngine.Local), seen)
             assertEquals("Fix the bug in the parser", box)
         }
+    }
+
+    @Test fun `the speech server check says the computer's answer, or why it couldn't ask`() = runBlocking {
+        var answer: suspend () -> LocalDictation = { LocalDictation(ready = true) }
+        var asked = 0
+        val model = LocalDictationModel("Kitchen iMac") { asked++; answer() }
+        model.load(online = false)
+        assertEquals("Not connected to Kitchen iMac.", model.error)
+        assertNull(model.local)
+        assertEquals(0, asked)
+        model.load(online = true)
+        assertEquals(true, model.local?.ready)
+        assertNull(model.error)
+        answer = { LocalDictation(ready = false, message = "Link a speech server in Codync on your computer.") }
+        model.load(online = true)
+        assertEquals("Link a speech server in Codync on your computer.", model.local?.reason())
+        answer = { throw IOException("The computer is offline.") }
+        model.load(online = true)
+        assertEquals("The computer is offline.", model.error)
+        assertNull(model.local)
     }
 
     @Test fun `an unreachable computer says why`() {

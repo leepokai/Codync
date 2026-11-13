@@ -10,7 +10,11 @@ pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Res
     let name =
         b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
     let all = connectors(store)?;
-    ensure_name_available(name, &all)?;
+    // A catalogue app installs once and replaces itself under the id the bots know (the connector
+    // takes its `catalog` below); a custom connector can't take an installed name.
+    if b["catalog"].as_str().is_none_or(str::is_empty) {
+        ensure_name_available(name, &all)?;
+    }
     let mut c = custom(name, b, &all).await?;
     c.catalog = b["catalog"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
     // A catalog app may need its local server signed in before it starts (Proton Pass).

@@ -73,10 +73,10 @@ struct ComposioSection: View {
                     }
                 }
                 if let error = catalog.error {
-                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                    Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                 }
                 if status?.configured == true {
-                    Button("Composio settings", systemImage: "key") { withAnimation(Motion.layout) { settingUp = true } }
+                    Button(L10n.tr("Composio settings"), systemImage: "key") { withAnimation(Motion.layout) { settingUp = true } }
                         .labelStyle(.titleAndIcon)
                         .buttonStyle(.plain)
                         .font(.footnote)
@@ -122,14 +122,16 @@ struct ComposioKeySheet: View {
     @State private var saving = false
     @State private var error: String?
 
+    private var typed: String { key.trimmingCharacters(in: .whitespaces) }
+
     var body: some View {
         VStack(spacing: 0) {
             ModalHeader("Composio") {
                 if saving {
                     Spinner()
                 } else {
-                    IconButton("Save", systemImage: "checkmark") { save(key) }
-                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
+                    IconButton("Save", systemImage: "checkmark") { save(typed) }
+                        .disabled(typed.isEmpty)
                 }
             }
             form
@@ -143,21 +145,27 @@ struct ComposioKeySheet: View {
                 "Composio API key",
                 footer: "Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on \(model.hostName)."
             ) {
-                SecureField("API key", text: $key, prompt: Text(status?.configured == true ? "Saved (paste to replace)" : "ak_…"))
-                    .plainTextInput()
+                Group {
+                    if status?.configured == true {
+                        SecureField(L10n.tr("Saved (paste to replace)"), text: $key)
+                    } else {
+                        SecureField("ak_…", text: $key)
+                    }
+                }
+                .plainTextInput()
                 if let url = URL(string: status?.keyUrl ?? "https://platform.composio.dev") {
                     WebLink("Get a key from Composio", url: url).font(.footnote)
                 }
             }
             if status?.configured == true {
                 CardSection(footer: "Bots lose the apps you connected until you add a key again.") {
-                    Button("Remove key", role: .destructive) { save("") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.danger)
+                    Button(L10n.tr("Remove key")) { save("") }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(saving)
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
             }
         }
         .textFieldStyle(.plain)

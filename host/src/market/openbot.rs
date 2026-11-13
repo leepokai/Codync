@@ -205,6 +205,39 @@ pub fn apps() -> &'static [App] {
     &APPS.apps
 }
 
+/// Installs catalog app `id` with the values the user typed: its fields fill its server's URL,
+/// headers or environment, and the result is added as a custom connector.
+pub async fn install_app(store: &crate::store::Store, id: &str, values: &Value) -> Result<Value> {
+    let a = apps().iter().find(|a| a.id == id).ok_or_else(|| anyhow!("Unknown app"))?;
+    let typed = |field: &Field| values[&field.id].as_str().unwrap_or_default().trim().to_owned();
+    let mut url = a.server.url.clone();
+    let mut headers = serde_json::Map::new();
+    let mut env = serde_json::Map::new();
+    for field in &a.fields {
+        let value = typed(field);
+        if field.url {
+            if !value.is_empty() {
+                url = Some(value);
+            }
+        } else if let Some(header) = &field.header {
+            headers.insert(header.clone(), Value::String(value));
+        } else if let Some(name) = &field.env {
+            env.insert(name.clone(), Value::String(value));
+        }
+    }
+    let body = json!({
+        "name": if a.server.name.is_empty() { &a.name } else { &a.server.name },
+        "command": a.server.command,
+        "args": a.server.args,
+        "env": env,
+        "headers": headers,
+        "url": url,
+        "catalog": a.id,
+        "description": a.description,
+    });
+    super::custom::add_custom_connector(store, &body).await
+}
+
 /// The catalog agents `search` and `category` keep, with whether the computer has each one.
 pub fn browse_agents(installed: &[String], search: &str, category: &str) -> Vec<Value> {
     let query = search.trim().to_lowercase();

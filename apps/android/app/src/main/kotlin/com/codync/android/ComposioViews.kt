@@ -64,7 +64,7 @@ internal class ComposioState(private val store: AppStore) {
 
 /** The Composio apps under the MCP Registry: the key row until it's set up, then the paged apps. */
 internal fun LazyListScope.composio(state: AppState, composio: ComposioState, query: String) {
-    item(key = "composio:title") { MarketSection("Apps") {} }
+    item(key = "composio:title") { MarketSection("Composio") {} }
     when {
         composio.status?.configured != true -> item(key = "composio:setup") {
             MarketRow("Composio", "Gmail, Slack, GitHub, Notion and 1,000 more apps", added = false,

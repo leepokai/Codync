@@ -146,12 +146,13 @@ export function ComposioKeySheet({ status, done, onError }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const save = async (key: string) => {
+  const save = async (value: string) => {
     const client = store.client
     if (!client) return
     setSaving(true)
+    setError(null)
     try {
-      done(await market.setComposioKey(client, key))
+      done(await market.setComposioKey(client, value.trim()))
       dismiss()
     } catch (e) {
       setError(errorText(e))
@@ -346,59 +347,3 @@ export function ComposioConnectSheet({ app, requestId, done }: { app: ComposioAp
     </SheetPage>
   )
 }
-
-/**
- * Paste (or remove) the Composio API key; the host checks it with Composio first.
- * The key stays on the computer.
- */
-export function ComposioKeySheet({ status, done }: { status: ComposioStatus | null; done: (status: ComposioStatus) => void }) {
-  const tr = useTr()
-  const store = useStore()
-  const dismiss = useDismiss()
-  const [key, setKey] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const save = async (value: string) => {
-    const client = store.client
-    if (!client) return
-    setSaving(true)
-    setError(null)
-    try {
-      done(await market.setComposioKey(client, value.trim()))
-      dismiss()
-    } catch (e) {
-      setError(errorText(e))
-    }
-    setSaving(false)
-  }
-
-  return (
-    <SheetPage>
-      <ModalHeader
-        title="Composio"
-        trailing={saving
-          ? <Spinner />
-          : <IconButton title="Save" icon="checkmark" disabled={!key.trim()} onClick={() => void save(key)} />}
-      />
-      <CardForm>
-        <CardSection
-          title={tr('Composio API key')}
-          footer={tr(`Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on {name}.`).replaceAll('{name}', store.hostName)}
-        >
-          <Field label={tr(status?.configured ? 'Saved (paste to replace)' : 'API key')} value={key} secret placeholder="ak_…" onChange={setKey} />
-          <WebLink url={status?.keyUrl || 'https://platform.composio.dev'} title={tr('Get a key from Composio')} className="small" />
-        </CardSection>
-        {status?.configured ? (
-          <CardSection footer={tr('Bots lose the apps you connected until you add a key again.')}>
-            <div>
-              <Button kind="secondary" disabled={saving} onClick={() => void save('')}>{tr('Remove key')}</Button>
-            </div>
-          </CardSection>
-        ) : null}
-        {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
-      </CardForm>
-    </SheetPage>
-  )
-}
-

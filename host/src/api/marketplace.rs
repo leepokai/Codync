@@ -198,7 +198,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "installMarketApp" => {
             let before = connector_ids(&hub.store)?;
-            let c = market::copilotkit::install_app(&hub.store, str_arg(&b, "id")?, &b["values"]).await?;
+            let c = market::install_app(&hub.store, str_arg(&b, "id")?, &b["values"]).await?;
             enable_new(hub, Installed::Connectors, &before)?;
             json!({"connector": c})
         }

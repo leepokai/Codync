@@ -2028,5 +2028,9 @@
   "Active bots move to the top": "Bots ativos vão para o topo",
   "Bots keep the order you set": "Os bots mantêm a ordem que você definiu",
   "Waking the computer…": "Despertando o computador…",
-  "Open the screen": "Abrir a tela"
+  "Open the screen": "Abrir a tela",
+  "Click to see the screen": "Clique para ver a tela",
+  "Tap to see the screen": "Toque para ver a tela",
+  "Paused. Click to continue.": "Pausado. Clique para continuar.",
+  "Paused. Tap to continue.": "Pausado. Toque para continuar."
 }

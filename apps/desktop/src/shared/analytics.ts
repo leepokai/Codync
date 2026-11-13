@@ -66,6 +66,7 @@ export type AnalyticsEvent =
   | { event: 'voice_note_played'; outcome: 'played' }
   | { event: 'voice_note_played'; outcome: 'failed'; error: 'load' | 'playback' }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'remote_screen_paused'; screen: 'bot_computer' | 'remote_screen' }
   | { event: 'image_preview_opened' }
   | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
   | { event: 'conversation_find_opened' }

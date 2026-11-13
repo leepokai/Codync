@@ -62,3 +62,9 @@ export function screenNotice(
   if (phase.kind === 'failed') return { icon: 'exclamationmark.triangle', text: tr(phase.message), retry: () => void session.start() }
   return null
 }
+
+/** How long a computer's screen streams with nobody touching the app before it pauses (it resumes on a click). */
+export const SCREEN_IDLE_MS = 5 * 60_000
+
+/** Whether a screen last touched at `touched` (ms) has gone untouched long enough by `now` to pause. */
+export const untouchedTooLong = (touched: number, now: number) => now - touched >= SCREEN_IDLE_MS

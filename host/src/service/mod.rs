@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 mod addresses;
 pub use addresses::{addresses, interface_addresses, public_addresses};
+pub mod bind;
 
 #[cfg(unix)]
 mod unix;

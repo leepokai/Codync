@@ -4,6 +4,7 @@
 
 use super::{current_exe, data_dir, run, wait_for_host_exit};
 use anyhow::{Context, Result, bail, ensure};
+use std::fmt::Write as _;
 use std::os::windows::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -71,11 +72,14 @@ pub fn install(port: u16) -> Result<()> {
     ensure!(supervisor.is_file(), "{} is missing; reinstall Codync", supervisor.display());
     std::fs::create_dir_all(data_dir()).context("creating the data directory")?;
     // The Run key may carry arguments someone added themselves (`--bind 127.0.0.1`); an update
-    // rewrites that line, so read them before overwriting it.
+    // rewrites that line, so read them before overwriting it. Each word is quoted as Windows
+    // expects, so an argument that holds a space survives the round trip.
     let carried = configured().map_or_else(|_| Vec::new(), |(_, args)| super::extra_args(&args));
-    let carried = if carried.is_empty() { String::new() } else { format!(" {}", carried.join(" ")) };
     stop()?;
-    let command = format!("\"{}\" serve --port {port}{carried}", supervisor.display());
+    let mut command = format!("\"{}\" serve --port {port}", supervisor.display());
+    for arg in &carried {
+        let _ = write!(command, " {}", quote_arg(arg));
+    }
     run("reg", &["add", RUN_KEY, "/v", VALUE, "/t", "REG_SZ", "/d", &command, "/f"])?;
     start()
 }
@@ -101,7 +105,92 @@ fn configured() -> Result<(PathBuf, Vec<String>)> {
 fn parse_run_value(query: &str) -> Option<(PathBuf, Vec<String>)> {
     let value = query.lines().find_map(|line| Some(line.split_once("REG_SZ")?.1.trim()))?;
     let (program, args) = value.strip_prefix('"')?.split_once('"')?;
-    Some((program.into(), args.split_whitespace().map(str::to_owned).collect()))
+    Some((program.into(), split_args(args)))
+}
+
+/// The words of a command line, split the way Windows splits one for the process it starts
+/// (`CommandLineToArgvW`): a quote groups words, and backslashes before a quote escape it.
+/// A plain `split_whitespace` would cut an argument that holds a space into two.
+fn split_args(line: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    let mut started = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                started = true;
+            }
+            '\\' => {
+                let mut count = 1;
+                while chars.peek() == Some(&'\\') {
+                    chars.next();
+                    count += 1;
+                }
+                if chars.peek() == Some(&'"') {
+                    // 2n backslashes and a quote: n backslashes, then the quote toggles quoting.
+                    // 2n+1: n backslashes, then a literal quote.
+                    for _ in 0..count / 2 {
+                        word.push('\\');
+                    }
+                    if count % 2 == 1 {
+                        word.push('"');
+                        chars.next();
+                    }
+                } else {
+                    for _ in 0..count {
+                        word.push('\\');
+                    }
+                }
+                started = true;
+            }
+            ' ' | '\t' if !quoted => {
+                if started {
+                    args.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            c => {
+                word.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        args.push(word);
+    }
+    args
+}
+
+/// One word, quoted so [`split_args`] reads it back unchanged.
+fn quote_arg(arg: &str) -> String {
+    let plain = |c: char| !matches!(c, ' ' | '\t' | '"');
+    if !arg.is_empty() && arg.chars().all(plain) {
+        return arg.to_owned();
+    }
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let mut slashes = 0;
+    for c in arg.chars() {
+        match c {
+            '\\' => slashes += 1,
+            '"' => {
+                out.extend(std::iter::repeat_n('\\', slashes * 2 + 1));
+                out.push('"');
+                slashes = 0;
+            }
+            c => {
+                out.extend(std::iter::repeat_n('\\', slashes));
+                out.push(c);
+                slashes = 0;
+            }
+        }
+    }
+    out.extend(std::iter::repeat_n('\\', slashes * 2));
+    out.push('"');
+    out
 }
 
 #[cfg(test)]
@@ -121,5 +210,34 @@ mod tests {
         let (program, args) = parse_run_value(query).unwrap();
         assert_eq!(program, PathBuf::from("C:\\Program Files\\Codync\\codync-hostw.exe"));
         assert_eq!(args, ["serve", "--port", "19222"]);
+    }
+
+    #[test]
+    fn keeps_an_argument_that_holds_a_space() {
+        let query = "\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\r\n    CodyncHost    REG_SZ    \"C:\\Program Files\\Codync\\codync-hostw.exe\" serve --port 19222 --name \"My Bot\"\r\n\r\n";
+        let (_, args) = parse_run_value(query).unwrap();
+        assert_eq!(crate::service::extra_args(&args), ["--name", "My Bot"]);
+    }
+
+    #[test]
+    fn writes_back_the_words_it_read() {
+        let carried = ["--bind", "127.0.0.1", "--name", "My Bot", "C:\\a b\\", "quote\"inside", ""];
+        let mut line = String::new();
+        for arg in &carried {
+            let _ = write!(line, " {}", quote_arg(arg));
+        }
+        assert_eq!(split_args(&line), carried);
+    }
+
+    #[test]
+    fn splits_a_line_like_windows() {
+        assert_eq!(split_args(" serve --port 19222"), ["serve", "--port", "19222"]);
+        assert_eq!(split_args(r#" a "b c" d "#), ["a", "b c", "d"]);
+        assert_eq!(split_args(r#"a "" b"#), ["a", "", "b"]);
+        assert_eq!(split_args(r"C:\dir\file"), [r"C:\dir\file"]);
+        // Two backslashes before the closing quote: one backslash, then the quote ends the word.
+        assert_eq!(split_args(r#""C:\a b\\" x"#), [r"C:\a b\", "x"]);
+        // A trailing run with no quote after it stays as written.
+        assert_eq!(split_args(r"a\\ b"), [r"a\\", "b"]);
     }
 }

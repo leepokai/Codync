@@ -1528,6 +1528,7 @@
   "Starting codync-host…": "正在启动 codync-host…",
   "Couldn't install codync-host on {name}.": "无法在 {name} 上安装 codync-host。",
   "codync-host isn't installed on {name}.": "{name} 上还没有安装 codync-host。",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "在 {name} 上安装 Codync 应用并打开一次：它自带 codync-host。",
   "To keep codync-host running on {name} after you log out, run this there:": "要让 codync-host 在你退出登录后继续在 {name} 上运行，请在那里运行：",
   "Copy command": "复制命令",
   "Delete account": "删除账户",

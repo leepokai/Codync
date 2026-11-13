@@ -1528,6 +1528,7 @@
   "Starting codync-host…": "codync-host 시작 중…",
   "Couldn't install codync-host on {name}.": "{name}에 codync-host를 설치하지 못했습니다.",
   "codync-host isn't installed on {name}.": "{name}에 codync-host가 설치되지 않았습니다.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "{name}에 Codync 앱을 설치하고 한 번 여세요. codync-host가 함께 설치됩니다.",
   "To keep codync-host running on {name} after you log out, run this there:": "로그아웃한 뒤에도 {name}에서 codync-host가 계속 실행되게 하려면 해당 컴퓨터에서 다음을 실행하세요:",
   "Copy command": "명령 복사",
   "Delete account": "계정 삭제",

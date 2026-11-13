@@ -1528,6 +1528,7 @@
   "Starting codync-host…": "Démarrage de codync-host…",
   "Couldn't install codync-host on {name}.": "Impossible d’installer codync-host sur {name}.",
   "codync-host isn't installed on {name}.": "codync-host n’est pas installé sur {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Installez l’app Codync sur {name} et ouvrez-la une fois : elle apporte codync-host.",
   "To keep codync-host running on {name} after you log out, run this there:": "Pour que codync-host continue de tourner sur {name} après votre déconnexion, exécutez ceci là-bas :",
   "Copy command": "Copier la commande",
   "Delete account": "Supprimer le compte",

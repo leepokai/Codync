@@ -180,7 +180,7 @@ private struct ProviderVoiceSettings: View {
 
     private var footer: String? {
         guard hasKey else { return L10n.fill(L10n.tr("Add a key to choose from {name}'s models."), ["name": provider.name]) }
-        return dictationOnly ? "For dictation in the message box." : nil
+        return dictationOnly ? L10n.tr("For dictation in the message box.") : nil
     }
 
     /// The key is on the computer: say so, and offer test / replace / remove.

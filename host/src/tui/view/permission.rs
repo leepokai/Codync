@@ -4,7 +4,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 
 use super::super::app::{App, Bot, Click, Entry, tilde};
-use super::super::l10n::tr;
+use super::super::l10n::{fill, tr};
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::style::{spin, theme};
@@ -20,6 +20,18 @@ fn option_label(name: &str, kind: &str) -> String {
         "allow_always" => "Always allow",
         "reject_once" => "Deny",
         "reject_always" => "Never",
+        _ => return name.to_owned(),
+    };
+    tr(label).into_owned()
+}
+
+/// What a decided card says was answered, in the outcome words the other apps use; an agent's own option keeps its name.
+fn outcome_label(name: &str, kind: &str) -> String {
+    let label = match kind {
+        "allow_once" => "Allowed once",
+        "allow_always" => "Always allowed",
+        "reject_once" => "Denied",
+        "reject_always" => "Never allowed",
         _ => return name.to_owned(),
     };
     tr(label).into_owned()
@@ -142,7 +154,9 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     let bw = width.saturating_sub(1).max(20);
     let inner = bw.saturating_sub(4);
     let title = e.data["title"].as_str().unwrap_or("Use a tool");
-    let head = format!(" ◆ {} wants to: {} ", b.name, truncate(title, inner.saturating_sub(w(&b.name) + 14)));
+    let template = tr("{name} wants to: {title}");
+    let room = inner.saturating_sub(w(&fill(&template, &[("name", &b.name), ("title", "")])) + 4);
+    let head = format!(" ◆ {} ", fill(&template, &[("name", &b.name), ("title", &truncate(title, room))]));
     card_head(out, &head, bw);
     if let Some(cmd) = e.data["command"].as_str().filter(|c| !c.is_empty()) {
         for (i, l) in md::wrap(&[Span::styled(cmd.to_owned(), t.bold)], inner.saturating_sub(2), &[], &[])
@@ -155,7 +169,10 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
             card_row(out, c, inner);
         }
         let cwd = tilde(e.data["cwd"].as_str().unwrap_or(&b.cwd), home);
-        card_row(out, vec![Span::styled(format!("  in {}", truncate(&cwd, inner.saturating_sub(5))), t.dim)], inner);
+        let template = tr("in {path}");
+        let room = inner.saturating_sub(w(&fill(&template, &[("path", "")])) + 2);
+        let row = fill(&template, &[("path", &truncate(&cwd, room))]);
+        card_row(out, vec![Span::styled(format!("  {row}"), t.dim)], inner);
     }
     for d in e.data["diffs"].as_array().into_iter().flatten().take(3) {
         let path = tilde(d["path"].as_str().unwrap_or_default(), home);
@@ -234,9 +251,9 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
         used += bw_;
     }
     if !line.is_empty() {
-        let hint = "N reject + say why";
-        if used + w(hint) + 3 <= inner {
-            line.push(Span::raw(" ".repeat(inner - used - w(hint))));
+        let hint = tr("N reject + say why").into_owned();
+        if used + w(&hint) + 3 <= inner {
+            line.push(Span::raw(" ".repeat(inner - used - w(&hint))));
             line.push(Span::styled(hint, t.dim));
         }
         flush(out, &mut line, &mut used, &mut pending);
@@ -251,10 +268,10 @@ pub(super) fn decided_line(out: &mut Built, e: &Entry) {
     let chosen = sel.and_then(|s| e.options().into_iter().find(|o| o.0 == s));
     let (g, gs, what) = match (e.data["status"].as_str(), chosen) {
         (Some("answered"), Some((_, name, kind))) if kind.starts_with("allow") => {
-            ("✓", t.green, option_label(&name, &kind))
+            ("✓", t.green, outcome_label(&name, &kind))
         }
-        (Some("answered"), Some((_, name, kind))) => ("×", t.red, option_label(&name, &kind)),
-        (Some("expired"), _) => ("·", t.dim, "Expired".to_owned()),
+        (Some("answered"), Some((_, name, kind))) => ("×", t.red, outcome_label(&name, &kind)),
+        (Some("expired"), _) => ("·", t.dim, tr("Expired — the agent moved on").into_owned()),
         _ => ("·", t.dim, tr("Cancelled").into_owned()),
     };
     out.lines.push(Line::from(vec![
@@ -274,5 +291,13 @@ mod tests {
         let o = |k: &str| (String::new(), String::new(), k.to_owned());
         let keys = option_keys(&[o("allow_once"), o("allow_always"), o("reject_once"), o("reject_always")]);
         assert_eq!(keys, ["y", "a", "n", "4"]);
+    }
+
+    #[test]
+    fn labels_keep_an_agents_own_option_name() {
+        assert_eq!(option_label("Custom", "other"), "Custom");
+        assert_eq!(outcome_label("Custom", "other"), "Custom");
+        assert_eq!(option_label("x", "reject_once"), tr("Deny"));
+        assert_eq!(outcome_label("x", "reject_once"), tr("Denied"));
     }
 }

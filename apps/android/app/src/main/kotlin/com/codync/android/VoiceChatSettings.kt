@@ -161,7 +161,7 @@ import kotlinx.coroutines.launch
         }
     }
 
-    CardSection(provider.title, footer = if (!hasKey) tr("Add a key to choose from {name}'s models.").replace("{name}", provider.title) else if (dictationOnly) "For dictation in the message box." else null,
+    CardSection(provider.title, footer = if (!hasKey) tr("Add a key to choose from {name}'s models.").replace("{name}", provider.title) else if (dictationOnly) tr("For dictation in the message box.") else null,
         modifier = Modifier.animateContentSize(Motion.layoutSize)) {
         if (saved != null || result != null) row {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

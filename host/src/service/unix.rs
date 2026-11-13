@@ -2,6 +2,7 @@
 
 use super::{create_parent, current_exe, data_dir, home, run, wait_for_host_exit};
 use anyhow::{Context, Result, bail};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -138,8 +139,10 @@ pub fn install(port: u16) -> Result<()> {
         let file = launchd_plist();
         // Carry over what someone added to the installed agent themselves (`--bind 127.0.0.1`):
         // every update rewrites this line, and dropping them quietly reopened the host.
-        let extra: String =
-            launchd_extra_args(&file).iter().map(|arg| format!("<string>{}</string>", xml_escape(arg))).collect();
+        let mut extra = String::new();
+        for arg in launchd_extra_args(&file) {
+            write!(extra, "<string>{}</string>", xml_escape(&arg)).expect("writing to a String cannot fail");
+        }
         let plist = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -174,8 +177,10 @@ pub fn install(port: u16) -> Result<()> {
         run("launchctl", &["bootstrap", &format!("gui/{uid}"), &file.to_string_lossy()])?;
     } else {
         let file = systemd_unit();
-        let extra: String =
-            systemd_extra_args(&file).iter().map(|arg| format!(" {}", systemd_quote(arg, true))).collect();
+        let mut extra = String::new();
+        for arg in systemd_extra_args(&file) {
+            write!(extra, " {}", systemd_quote(&arg, true)).expect("writing to a String cannot fail");
+        }
         let unit = format!(
             "[Unit]\nDescription=Codync host\nAfter=network-online.target\n\n[Service]\nExecStart={exe} serve --port {port}{extra}\nEnvironment={path}\nEnvironment={data}\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n",
             exe = systemd_quote(&exe, true),

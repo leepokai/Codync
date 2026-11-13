@@ -17,6 +17,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - The Apps tab now lists CopilotKit's reviewed connector catalogue: Google Drive, Notion, Linear, Sentry, Exa, Firecrawl and more, each keeping the vendor's own sign-in or key.
 - Apps that need a sign-in finish it in the browser, and key apps take your own key; both stay on your computer.
 - A sign-in that comes back is checked against the service that issued it, and removing a connector revokes its grant.
+- The Apps tab also browses more than 1,000 apps through Composio: paste a Platform API key once, on your computer, and each app connects with its own sign-in.
 
 ## 2.39.0
 

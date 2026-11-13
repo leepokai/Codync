@@ -21,9 +21,10 @@ pub enum Via {
 }
 
 /// `host_started`, once per start of the host; `service`: run by launchd, systemd or Windows' runner.
-pub fn host_started(hub: &Hub, service: bool) {
+/// `loopback`: listening on this computer only (`install --bind 127.0.0.1`).
+pub fn host_started(hub: &Hub, service: bool, loopback: bool) {
     let version = env!("CARGO_PKG_VERSION");
-    let p = started(hub.store.kv_get(KV_STARTED).as_deref(), version, service);
+    let p = started(hub.store.kv_get(KV_STARTED).as_deref(), version, service, loopback);
     if let Err(e) = hub.store.kv_set(KV_STARTED, version) {
         tracing::warn!(error = format!("{e:#}"), "couldn't save the version this host started as");
     }
@@ -32,13 +33,14 @@ pub fn host_started(hub: &Hub, service: bool) {
 
 /// `host_started`'s properties, from the version the host last started as (`None`: a host
 /// from before this was kept, which is neither new nor known to have changed).
-fn started(last: Option<&str>, version: &str, service: bool) -> Map<String, Value> {
+fn started(last: Option<&str>, version: &str, service: bool, loopback: bool) -> Map<String, Value> {
     let mut p = Map::new();
     p.insert("first_run".into(), (last == Some("")).into());
     if let Some(from) = last.filter(|v| !v.is_empty() && *v != version) {
         p.insert("updated_from".into(), from.into());
     }
     p.insert("service".into(), service.into());
+    p.insert("loopback".into(), loopback.into());
     p
 }
 
@@ -213,11 +215,19 @@ mod tests {
 
     #[test]
     fn a_start_says_whether_it_is_new_or_updated() {
-        let p = |last, service| Value::Object(started(last, "2.20.0", service));
-        assert_eq!(p(Some(""), true), json!({"first_run": true, "service": true}));
-        assert_eq!(p(Some("2.19.3"), false), json!({"first_run": false, "updated_from": "2.19.3", "service": false}));
-        assert_eq!(p(Some("2.20.0"), true), json!({"first_run": false, "service": true}));
-        assert_eq!(p(None, true), json!({"first_run": false, "service": true}), "a host from before this was kept");
+        let p = |last, service| Value::Object(started(last, "2.20.0", service, false));
+        assert_eq!(p(Some(""), true), json!({"first_run": true, "service": true, "loopback": false}));
+        assert_eq!(
+            p(Some("2.19.3"), false),
+            json!({"first_run": false, "updated_from": "2.19.3", "service": false, "loopback": false})
+        );
+        assert_eq!(p(Some("2.20.0"), true), json!({"first_run": false, "service": true, "loopback": false}));
+        assert_eq!(
+            p(None, true),
+            json!({"first_run": false, "service": true, "loopback": false}),
+            "a host from before this was kept"
+        );
+        assert_eq!(started(None, "2.20.0", true, true)["loopback"], json!(true));
     }
 
     /// The events `report` queued on a throwaway host.

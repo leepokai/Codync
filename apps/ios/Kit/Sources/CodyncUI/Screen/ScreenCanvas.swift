@@ -427,7 +427,11 @@ struct ScreenCanvasView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ScreenCanvas {
         let canvas = ScreenCanvas()
-        canvas.send = { [weak session] in session?.send($0) }
+        // Typing counts as touching the app: keys never reach the window as touches.
+        canvas.send = { [weak session] in
+            Touches.touched()
+            session?.send($0)
+        }
         canvas.requestView = { [weak session] crop, pixels in session?.view(crop: crop, pixels: pixels) }
         return canvas
     }

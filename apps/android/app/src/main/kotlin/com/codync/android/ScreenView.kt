@@ -38,6 +38,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusTarget
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.core.view.WindowCompat
@@ -67,6 +70,8 @@ import com.codync.android.design.*
     /** Whether the user wants the controls: at first unless watching a bot (look first; otherwise take the
      *  screen, bots may still look), then what they last chose, kept when the app comes back to the front. */
     var wanted by remember { mutableStateOf(watching == null) }
+    /** Nobody touched the app for a while: the session closed until the user taps to continue (not by itself). */
+    var paused by remember { mutableStateOf(false) }
     val portrait = LocalConfiguration.current.orientation != Configuration.ORIENTATION_LANDSCAPE
 
     fun setInteractive(on: Boolean) {
@@ -81,7 +86,7 @@ import com.codync.android.design.*
     /** Also runs when the screen becomes available after opening. */
     fun start() {
         val current = state.screen
-        if (session != null || current == null || !current.available) return
+        if (paused || session != null || current == null || !current.available) return
         val d = display ?: current.mainDisplay ?: return
         display = d
         session = ScreenSession(store, d).also { it.start() }
@@ -104,6 +109,11 @@ import com.codync.android.design.*
     // phone's last session went: ask again.
     val live = session?.phase == ScreenSession.Phase.Live
     LaunchedEffect(live) { if (live && tookOver && state.screen?.userControl == false) store.screenTakeover(true) }
+    // Paused like the background: the bots get the computer back, the user's Take over choice comes back on continuing.
+    // The stage takes the keyboard field's focus first: left to itself, it would land on a text field behind the viewer and
+    // open the keyboard there.
+    val stage = remember { FocusRequester() }
+    PauseWhenIdle(session, AnalyticsScreen.RemoteScreen) { stage.requestFocus(); stop(); paused = true }
     BackHandler(onBack = close)
     FullScreenWindow()
     KeyboardDismissal(keyboard) { keyboard = false }
@@ -112,7 +122,7 @@ import com.codync.android.design.*
         val bar = remember { mutableIntStateOf(0) }
         val barHeight = with(LocalDensity.current) { bar.intValue.toDp() }
         val showBar = keyboard && interactive
-        GlassStage(Modifier.fillMaxSize().background(Color.Black), chrome = {
+        GlassStage(Modifier.fillMaxSize().background(Color.Black).focusRequester(stage).focusTarget(), chrome = {
             TopBar(state, session, display, agent, interactive, mode, keyboard, zoomed, close,
                 toggleKeyboard = { keyboard = !keyboard },
                 toggleMode = { mode = if (mode == TouchMode.Trackpad) TouchMode.Direct else TouchMode.Trackpad },
@@ -127,13 +137,15 @@ import com.codync.android.design.*
         }) {
             val s = session
             val d = display
+            val resumable = paused && screen?.available == true
             if (s != null && d != null && screen?.available == true) {
                 // Portrait: the screen moves above the keyboard. Landscape: the keyboard overlays it,
                 // since shrinking there would leave the screen too small.
                 ScreenCanvas(s, d, mode, interactive, keyboard, armed, { armed = it }, { zoomed = it }, resetToken,
                     if (portrait) Modifier.imePadding().padding(bottom = if (showBar) barHeight else 0.dp) else Modifier)
                 Status(s, screen)
-            } else Unavailable(state)
+            } else if (!resumable) Unavailable(state)
+            PlayNotice(ScreenPrompt.Paused.takeIf { resumable }) { paused = false; start() }
         }
     }
 }
@@ -262,6 +274,16 @@ private fun rotate(activity: android.app.Activity) {
         Symbol("cursorarrow.motionlines", size = 14.dp, tint = Color.White)
         Text(tr("{name} is using the computer").replace("{name}", name), style = Type.caption.medium, color = Color.White,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The picture before it streams or once it paused: `play.circle` and [prompt]'s line, the whole area one button. Fades
+ * in and out with [prompt] (null: hidden). */
+@Composable internal fun BoxScope.PlayNotice(prompt: ScreenPrompt?, compact: Boolean = false, play: () -> Unit) {
+    var shown by remember { mutableStateOf(prompt) }
+    if (prompt != null) shown = prompt
+    AnimatedVisibility(prompt != null, Modifier.matchParentSize(), enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
+        Box(Modifier.fillMaxSize().plainButton(action = play)) { shown?.let { Notice("play.circle", it.text, compact) } }
     }
 }
 

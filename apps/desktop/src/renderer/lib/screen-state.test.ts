@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ScreenState } from '@shared/models'
 import type { ScreenPhase } from '../store/screen-session.ts'
-import { controlReady, mainDisplay, screenAvailable, screenGuidance, screenNotice } from './screen-state.ts'
+import { SCREEN_IDLE_MS, controlReady, mainDisplay, untouchedTooLong, screenAvailable, screenGuidance, screenNotice } from './screen-state.ts'
 
 const ready: ScreenState = {
   enabled: true, connected: true, platform: 'linux', capture: true, input: true, userControl: false, agentBot: null, computerUse: true, viewers: 0,
@@ -44,4 +44,9 @@ test('the picture says what keeps it away, a sleeping cloud computer first', () 
   assert.deepEqual(screenNotice(awake, session({ kind: 'reconnecting' }), true, same), { text: 'Reconnecting…' })
   assert.equal(screenNotice(awake, session({ kind: 'failed', message: 'No route' }), true, same)?.text, 'No route')
   assert.equal(screenNotice(awake, session({ kind: 'live' }), true, same), null)
+})
+
+test('a screen pauses once nobody has touched the app for the idle time', () => {
+  assert.equal(untouchedTooLong(1_000, 1_000 + SCREEN_IDLE_MS - 1), false)
+  assert.equal(untouchedTooLong(1_000, 1_000 + SCREEN_IDLE_MS), true)
 })

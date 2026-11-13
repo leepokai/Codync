@@ -102,8 +102,9 @@ import kotlin.math.hypot
         // Hidden while idle; while an IME composes, the field shows above the bottom edge so its marked text is visible.
         AndroidView({ context ->
             KeyProxyField(context).apply {
-                onText = control::typed
-                onKey = control::pressKey
+                // The keyboard is its own window: its keys count as touching the app.
+                onText = { AppTouches.touched(); control.typed(it) }
+                onKey = { key, modifiers -> AppTouches.touched(); control.pressKey(key, modifiers) }
                 onComposingChanged = { composing = it }
                 post { requestFocus() }
             }

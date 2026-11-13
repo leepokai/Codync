@@ -2028,5 +2028,9 @@
   "Active bots move to the top": "有新动态的机器人会移到最前面",
   "Bots keep the order you set": "机器人保持你设置的顺序",
   "Waking the computer…": "正在唤醒电脑…",
-  "Open the screen": "打开屏幕"
+  "Open the screen": "打开屏幕",
+  "Click to see the screen": "点按查看画面",
+  "Tap to see the screen": "轻点查看画面",
+  "Paused. Click to continue.": "已暂停，点按继续",
+  "Paused. Tap to continue.": "已暂停，轻点继续"
 }

@@ -8,7 +8,7 @@ import { attach, openGeneralSettings } from './sandbox.ts'
 // screen is on and allows control (an SSH computer on the Lima VM `codync-linux`, its host started with DISPLAY on an
 // Xvfb display), its sidebar heading's Screen button opens the viewer, which takes over from the bots and keeps Escape
 // and Tab; Hand back gives Escape to the sheet again, and the computer's Settings card opens the viewer as well. A bot
-// on it shows that screen live, view only, on its details' Computer tab while the window shows, and the picture opens
+// on it shows that screen live, view only, on its details' Computer tab once clicked and while the window shows, and the picture opens
 // the viewer, taking over while that bot isn't using the computer; a bot on this computer has the tab without a picture.
 // With CODYNC_E2E_SCREEN_RESTART set to a command that restarts that computer's screen helper (`limactl shell
 // codync-linux pkill -x codync-screen`: its host starts it again), Hand back and Take over each hold through the new
@@ -63,6 +63,11 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     test.skip((await section.locator('.bot-row').count()) === 0, `Needs a bot on ${name}.`)
     const details = await openComputerTab(page, section)
     const picture = details.locator('.computer-tab-screen')
+    // Nothing streams until asked.
+    const start = picture.getByRole('button', { name: 'Click to see the screen' })
+    await expect(start).toBeVisible({ timeout: 30_000 })
+    await expect(picture.locator('video')).toBeHidden()
+    await start.click()
     await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
     // Opened from a bot that's using the computer, the viewer watches first; otherwise it takes over.
     const bot = await details.locator('.details-name').innerText()
@@ -77,7 +82,7 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     await viewer.getByRole('button', { name: 'Close' }).click()
     await expect(viewer).toHaveCount(0)
     await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
-    // A hidden window (closed to the background, minimized) lets the picture go too, and gets it back when shown.
+    // A hidden window (closed to the background, minimized) lets the picture go too, and asks again when shown.
     const showWindow = (shown: boolean) => page.evaluate((shown) => {
       if (shown) Reflect.deleteProperty(document, 'visibilityState')
       else Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
@@ -86,7 +91,8 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     await showWindow(false)
     await expect(picture.locator('video')).toBeHidden()
     await showWindow(true)
-    await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
+    await expect(start).toBeVisible()
+    await expect(picture.locator('video')).toBeHidden()
     await details.getByRole('tab', { name: 'Details', exact: true }).click()
   } finally {
     await browser.close()

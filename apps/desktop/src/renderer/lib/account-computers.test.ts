@@ -19,17 +19,21 @@ registerHooks({ resolve(specifier, context, nextResolve) {
 } })
 
 const cancelled: string[] = []
-/** The main process's request: `showCode` as the computer shows it, `end` with how it ended. */
+/** The main process's request: `showCode` as the computer shows it, `end` with how it ended, `fail` as the IPC rejects. */
 let showCode!: (code: string) => void
 let end!: (result: AccessResult) => void
+let fail!: (error: Error) => void
+let requests = 0
 Object.assign(globalThis, {
   localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
   window: { addEventListener() {}, codync: {
     appVersion: '2.38.0',
     cloud: {
-      requestAccess: (_computer: unknown, onCode: (code: string) => void) => new Promise<AccessResult>((resolve) => {
+      requestAccess: (_computer: unknown, onCode: (code: string) => void) => new Promise<AccessResult>((resolve, reject) => {
+        requests += 1
         showCode = onCode
         end = resolve
+        fail = reject
       }),
       cancelAccess: (computerId: string) => cancelled.push(computerId),
     },
@@ -85,5 +89,19 @@ test("a code still on its way when the request was withdrawn doesn't count", asy
   access.cancel('studio')
   lateCode('111111')
   assert.deepEqual(events, [])
+  end({ ok: true, value: { status: 'cancelled' } })
+})
+
+test('a request whose IPC fails shows why and can be asked again', async () => {
+  const errors: (string | null)[] = []
+  const access = new AccountComputers({ setError: (e: string | null) => errors.push(e) } as unknown as AppModel)
+  const asking = access.ask(studio)
+  fail(new Error('The app closed the request.'))
+  await asking
+  assert.equal(access.asking.has('studio'), false)
+  assert.deepEqual(errors, ['The app closed the request.'])
+  const before = requests
+  void access.ask(studio)
+  assert.equal(requests, before + 1)
   end({ ok: true, value: { status: 'cancelled' } })
 })

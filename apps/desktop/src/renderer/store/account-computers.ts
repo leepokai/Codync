@@ -32,10 +32,11 @@ export class AccountComputers extends Observable {
       asking.code = code
       analytics.track({ event: 'access_requested' })
       this.changed()
-    })
+    }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))))
     // Withdrawn here: `cancel` already counted it.
     if (this.asking.get(id) !== asking) return
     this.set(id, null)
+    if (result instanceof Error) return this.app.setError(result.message)
     if (!result.ok) return this.app.setError(new CloudError(result.error.status, result.error.code, result.error.message).message)
     if (result.value.status === 'approved') return void this.app.cloud.refresh()
     const reason: AccessFailure = result.value.status === 'denied' ? 'denied' : result.value.status === 'cancelled' ? 'cancelled' : 'expired'

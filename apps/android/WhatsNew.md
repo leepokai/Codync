@@ -14,13 +14,13 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
 
-## 2.46.0
+## 2.46.1
 ### zh-Hant
-- bot 詳細資料新增「電腦」分頁：顯示 bot 所在的電腦和連線狀態，以及那臺電腦螢幕的即時小畫面，可以看著 bot 操作；點一下畫面就開啟完整螢幕，需要時可以接手。「使用電腦」開關也移到這個分頁。
-- 睡著的雲電腦在你查看時會自動喚醒，畫面上會顯示「正在喚醒電腦…」直到準備好。
-- 修正雲端電腦的螢幕同時被多處開啟時，整個桌面可能凍結的問題。
+- bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。
+- 遠端畫面在 5 分鐘沒有碰 App 後會自動暫停以節省流量，點一下就能繼續，原本的「接手控制」或「交還給 Bot」都會保留。
+- 權限核准卡片與連線請求卡片現在會跟著 app 的語言顯示。
 
 ### en-US
-- Bot details have a new Computer tab: the computer the bot runs on, its connection, and a small live picture of its screen, so you can watch the bot work. Tap the picture to open the full screen and take over. The Use the computer switch moved here.
-- A cloud computer that's asleep wakes when you look, and the picture shows "Waking the computer…" until it's ready.
-- Fixed a cloud computer's desktop freezing when its screen was open in more than one place at once.
+- The Computer tab in bot details starts its picture when you tap it, instead of connecting as soon as it opens.
+- A computer's screen pauses after 5 minutes without you touching the app, to save data. Tap to continue; your Take over or Hand back to bots choice stays.
+- Approval and connection request cards now follow the app's language.

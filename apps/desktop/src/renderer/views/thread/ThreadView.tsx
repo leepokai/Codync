@@ -290,7 +290,7 @@ function ConnectionSubtitle() {
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? spoken : store.connectionLabel}</Text>
     </HStack>
   )
 }

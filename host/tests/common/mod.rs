@@ -19,6 +19,7 @@ fn test_cloud_key() -> String {
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
 /// picked here is only free for a moment; when something else takes it before the host binds, the
 /// host exits and this starts it again on another one.
+#[allow(dead_code, reason = "tests on `host::Host` start it through `serve_with`")]
 pub async fn serve(home: &Path) -> (Child, String) {
     serve_with(home, &[]).await
 }
@@ -27,7 +28,8 @@ pub async fn serve(home: &Path) -> (Child, String) {
 pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child, String) {
     let deadline = Instant::now() + Duration::from_secs(30);
     let _ = std::fs::create_dir_all(home);
-    let log = home.join("host-stderr.log");
+    // The host logs to stdout (`tracing`) and panics to stderr: both go to one file.
+    let log = home.join("host.log");
     let mut last = String::new();
     loop {
         let port = std::net::TcpListener::bind("127.0.0.1:0").expect("free port").local_addr().expect("port").port();
@@ -43,8 +45,8 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
             // And the computer's credential store: its key goes with `home`, so no test can leave one behind.
             .env("CODYNC_VAULT", "folder")
             .envs(env.iter().copied())
-            .stdout(Stdio::null())
-            .stderr(std::fs::File::create(&log).map_or_else(|_| Stdio::null(), Stdio::from))
+            .stdout(output(&log))
+            .stderr(output(&log))
             .spawn()
             .expect("start the host");
         while child.try_wait().expect("host state").is_none() {
@@ -57,6 +59,11 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
         }
         assert!(Instant::now() < deadline, "{}", not_started(&log, &last));
     }
+}
+
+/// The end of `log` a test host appends to; nowhere when it can't be opened.
+fn output(log: &Path) -> Stdio {
+    std::fs::OpenOptions::new().create(true).append(true).open(log).map_or_else(|_| Stdio::null(), Stdio::from)
 }
 
 /// Why a test host didn't answer: the last readiness check's error and the end of the host's log.

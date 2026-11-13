@@ -220,7 +220,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
 
   const dimmed = hasKey ? 'settings-dimmable' : 'settings-dimmable dimmed'
   let footer: string | null = null
-  if (!hasKey) footer = `Add a key to choose from ${info.name}'s models.`
+  if (!hasKey) footer = fill(tr("Add a key to choose from {name}'s models."), { name: info.name })
   else if (dictationOnly) footer = tr('For dictation in the message box.')
   const keyArea = (
     <VStack key="key" gap={8}>

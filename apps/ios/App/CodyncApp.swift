@@ -41,6 +41,8 @@ struct CodyncApp: App {
                 .environment(updates)
                 .tint(Palette.accent)
                 .background(AppearanceWindow(appearance: appearance).frame(width: 0, height: 0))
+                // A computer's screen pauses after a while with nobody touching the app.
+                .recordsTouches()
                 .environment(\.locale, AppLanguage.locale(
                     preference: AppLanguage(rawValue: appLanguageRaw) ?? .system,
                     systemIsChinese: AppLanguage.systemIsChinese()))

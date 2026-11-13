@@ -61,6 +61,8 @@ When a client needs data or behavior the host doesn't offer, add a host method o
 
 `api/` and `remote/channel.rs` share dispatch and caller checks. `hub.rs` coordinates actors and event publication; `store/` persists mutations and the global revision. Clients catch up from `rev`, then follow events. Duplicate sends are identified by `clientNonce`.
 
+A relay link whose channel is busy (still sending a long catch-up) waits for room instead of closing; only one that stays unread for `LINK_STALL` closes (4008), and the device reconnects from its cursor.
+
 `agent/bot/` serializes each bot's turns and owns its ACP process. Its chat and group turns use its main session; each routine run has one of its own. Group turns are queued on member bots; the group itself has no harness. See [groups and replies](../features/groups-and-replies.md), [collaboration](../features/bot-collaboration.md) and [context/memory](../features/context-and-memory.md).
 
 ## Client state and routing

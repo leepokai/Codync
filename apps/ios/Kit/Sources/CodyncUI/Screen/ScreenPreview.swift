@@ -2,9 +2,9 @@ import CodyncKit
 import SwiftUI
 
 /// A small live picture of the computer's screen, for the bot details' Computer page. View only: it never
-/// takes over or sends input. It streams only while it shows, the app is in front and no full viewer is
-/// open (one stream from this phone at a time). Tapping it opens the viewer over the details, which come
-/// back when it closes.
+/// takes over or sends input. It connects only once tapped, again on each visit, and pauses when nobody touches the
+/// app for a while. It streams only while it shows, the app is in front and no full viewer is open (one stream from
+/// this phone at a time). Tapping the picture opens the viewer over the details, which come back when it closes.
 struct ScreenPreview: View {
     /// The bot whose details show it: the viewer watches it when it's the one using the computer.
     let botId: String
@@ -14,10 +14,14 @@ struct ScreenPreview: View {
     @State private var session: ScreenSession?
     @State private var size = CGSize.zero
     @State private var viewer: ScreenRequest?
+    @State private var pause = ScreenPause(.botComputer)
 
     private var streams: Bool {
-        scenePhase == .active && viewer == nil && model.screenRequest == nil && model.connection == .online && model.screen?.available == true
+        pause.state == .watching && scenePhase == .active && viewer == nil && model.screenRequest == nil && model.connection == .online && model.screen?.available == true
     }
+
+    /// The idle pause counts while the picture is live (`streams` keeps it to the app in front).
+    private var idleCounts: Bool { session?.phase == .live }
 
     var body: some View {
         Color.black
@@ -29,7 +33,12 @@ struct ScreenPreview: View {
             .environment(\.screenNoticeCompact, true)
             .onAppear(perform: update)
             .onChange(of: streams) { update() }
-            .onDisappear(perform: stop)
+            .task(id: idleCounts) { if idleCounts { await pause.pauseWhenIdle() } }
+            .onChange(of: scenePhase) { _, phase in if phase == .background { pause.reset() } }
+            .onDisappear {
+                stop()
+                pause.reset()
+            }
             .codyncOverlay(isPresented: Binding(get: { viewer != nil }, set: { if !$0 { viewer = nil } })) { close in
                 ScreenView(watching: viewer?.watching, close: close)
             }
@@ -38,6 +47,8 @@ struct ScreenPreview: View {
     @ViewBuilder private var picture: some View {
         if let notice = ScreenNotice(model) {
             notice
+        } else if let prompt = ScreenNotice(pause) {
+            prompt
         } else if let session {
             if let notice = ScreenNotice(session) { notice } else { live(session) }
         }

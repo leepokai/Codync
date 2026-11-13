@@ -47,6 +47,9 @@ public enum AnalyticsEvent: Equatable, Sendable {
     /// never), reconnects, the first phase stuck too long, why it failed.
     case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
     case screenViewed(Screen)
+    /// A computer's screen stopped streaming after a while with nobody touching the app: the bot details' picture
+    /// (`botComputer`) or the full viewer (`remoteScreen`).
+    case remoteScreenPaused(Screen)
     /// A picture in a chat or the Library opened full size.
     case imagePreviewOpened
     /// Something done in the full-size viewer, or a picture copied from a message's menu; at most one `zoom` per opening.
@@ -235,6 +238,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceCallStarted: "voice_call_started"
         case .voiceCallQuality: "voice_call_quality"
         case .screenViewed: "screen_viewed"
+        case .remoteScreenPaused: "remote_screen_paused"
         case .imagePreviewOpened: "image_preview_opened"
         case .imagePreviewAction: "image_preview_action"
         case .reviewRequested: "review_requested"
@@ -298,7 +302,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .voiceNotePlayed(failure):
             guard let failure else { return ["outcome": .string("played")] }
             return ["outcome": .string("failed"), "error": .string(failure.rawValue)]
-        case let .screenViewed(screen): return ["screen": .string(screen.rawValue)]
+        case let .screenViewed(screen), let .remoteScreenPaused(screen): return ["screen": .string(screen.rawValue)]
         }
     }
 }

@@ -1,0 +1,45 @@
+# Both phones, already paired to the isolated dev host, showing Simplified Chinese: the iPhone gets it from the
+# launch argument below; set the Android app's locale first with
+# `adb shell cmd locale set-app-locales com.pokai.Codync.android.dev --locales zh-CN` (`--locales ""` resets it).
+# Env: HOST_PORT, HOST_TOKEN and FAKE_AGENT (absolute path to host/tests/fake_agent.py). No production endpoint or clearState.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - permission
+onFlowComplete:
+  - runScript:
+      file: permission-language.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: permission-language.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+            "-AppleLanguages": "(zh-Hans)"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- runScript:
+    file: permission-language.js
+    env:
+      SEND: "true"
+- extendedWaitUntil:
+    visible: "想要修改文件"
+    timeout: 20000
+# What the agent wrote stays as it wrote it; Codync's own words follow the app language.
+- assertVisible: "Edit a.txt"
+- assertVisible: ".*运行于.*"
+- assertVisible: "允许一次"
+- assertVisible: "始终允许"
+- tapOn: "拒绝"
+- assertVisible: "已拒绝"
+- assertNotVisible: "允许一次"

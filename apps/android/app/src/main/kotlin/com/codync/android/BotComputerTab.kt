@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.codync.android.core.Bot
@@ -44,8 +45,8 @@ import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
 
 /**
- * The computer the bot lives on (iOS `BotComputerTab`): how it's connected, a live, view-only look at its screen (tap it to
- * open the screen) and whether the bot may use it.
+ * The computer the bot lives on (iOS `BotComputerTab`): how it's connected, a view-only look at its screen once tapped (tap
+ * the live picture to open the screen) and whether the bot may use it.
  */
 @Composable internal fun BotComputerTab(bot: Bot, state: AppState, store: AppStore, uses: Boolean, online: Boolean, change: (Boolean) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotComputer))
@@ -80,22 +81,26 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /**
- * The computer's main display, live and view only, while this tab shows with the app in front. It lets go while the full
- * viewer has the screen (one stream from this phone at a time). Tapping it opens that viewer: watching, when this bot is
- * the one using the computer.
+ * The computer's main display, live and view only, once tapped and while this tab shows with the app in front; it pauses
+ * when nobody touches the app for a while. It lets go while the full viewer has the screen (one stream from this phone at a
+ * time). Tapping the live picture opens that viewer: watching, when this bot is the one using the computer.
  */
 @Composable private fun ScreenPreview(bot: Bot, state: AppState, store: AppStore) {
     val screen = state.screen
     val display = screen?.mainDisplay
     val inFront = LocalLifecycleOwner.current.lifecycle.currentStateAsState().value.isAtLeast(Lifecycle.State.STARTED)
     val available = state.connection is LinkState.Ready && screen?.available == true && display != null
-    val watch = available && inFront && state.screenRequest == null
+    // Nothing streams until the picture is tapped; back from the background, it waits for a tap again.
+    var prompt by remember { mutableStateOf<ScreenPrompt?>(ScreenPrompt.Start) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { prompt = ScreenPrompt.Start }
+    val watch = available && inFront && state.screenRequest == null && prompt == null
     var session by remember { mutableStateOf<ScreenSession?>(null) }
     DisposableEffect(watch, display?.id) {
         val next = display?.takeIf { watch }?.let { ScreenSession(store, it).also(ScreenSession::start) }
         session = next
         onDispose { next?.close(); session = null }
     }
+    PauseWhenIdle(session, AnalyticsScreen.BotComputer) { prompt = ScreenPrompt.Paused }
     val live = session?.phase == ScreenSession.Phase.Live
     val agent = screen?.agentBot?.let { id -> state.bots.firstOrNull { it.id == id } }
     val label = tr("Open the screen")
@@ -114,10 +119,11 @@ import com.kyant.shapes.RoundedRectangle
                     LaunchedEffect(s, view) { s.view(null, ScreenSize(view.width * density, view.height * density)) }
                     SessionNotice(s, compact = true)
                 }
-                // The full viewer has the screen, or the app is in the background.
+                // Waiting for a tap (below); or the full viewer has the screen, or the app is in the background.
                 available -> Unit
                 else -> Unavailable(state, compact = true)
             }
+            PlayNotice(prompt.takeIf { available }, compact = true) { prompt = null }
             AnimatedVisibility(live && agent != null, Modifier.align(Alignment.TopStart).padding(8.dp),
                 enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
                 AgentAtScreen(agent?.name.orEmpty())

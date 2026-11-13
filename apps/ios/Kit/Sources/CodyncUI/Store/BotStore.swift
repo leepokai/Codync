@@ -161,6 +161,7 @@ public final class BotStore {
     /// Chats whose last open never reached the host.
     @ObservationIgnored var unsentOpens: Set<String> = []
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.

@@ -124,6 +124,11 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
     }
+    /** A computer's screen stopped streaming after a while with nobody touching the app: the bot details' picture
+     * ([AnalyticsScreen.BotComputer]) or the full viewer ([AnalyticsScreen.RemoteScreen]). */
+    data class RemoteScreenPaused(val screen: AnalyticsScreen) : AnalyticsEvent("remote_screen_paused") {
+        override val properties get() = mapOf("screen" to screen.json)
+    }
     /** A picture in a chat or the Library opened full size. Never the picture or its name. */
     data object ImagePreviewOpened : AnalyticsEvent("image_preview_opened")
     /**

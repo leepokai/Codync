@@ -86,9 +86,10 @@ enum Sub {
     Serve {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
-        /// Address to bind. Defaults to all interfaces so the phone can reach it over Tailscale/LAN.
-        #[arg(long, default_value = "0.0.0.0")]
-        bind: String,
+        /// Address to bind for this run. Defaults to the one `install --bind` saved, else all
+        /// interfaces so the phone can reach it over Tailscale/LAN.
+        #[arg(long)]
+        bind: Option<std::net::IpAddr>,
     },
     /// Show a one-time pairing QR code for the Codync iOS app (the host must be running).
     Pair {
@@ -132,6 +133,10 @@ enum Sub {
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
+        /// Address the service listens on, kept through updates: `127.0.0.1` (this computer
+        /// and the relay only) or `0.0.0.0` (every interface, the default). Omitted: unchanged.
+        #[arg(long)]
+        bind: Option<std::net::IpAddr>,
     },
     /// Stop and remove the background service.
     Uninstall,
@@ -354,8 +359,8 @@ async fn main() -> Result<()> {
     // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let cli = Cli::parse();
-    match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
-        Sub::Serve { port, bind } => serve(&bind, port).await,
+    match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: None }) {
+        Sub::Serve { port, bind } => serve(bind, port).await,
         Sub::Pair { port, json } => pair_cli::pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
         Sub::Send(args) => send_cli::run(args).await,
@@ -385,8 +390,11 @@ async fn main() -> Result<()> {
         Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
-        Sub::Install { port } => {
+        Sub::Install { port, bind } => {
             open_store()?;
+            if let Some(addr) = bind {
+                service::bind::save(addr)?;
+            }
             // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so
             // the line stays the user's; usage still comes from `claude -p /usage` and ACP.
             if cfg!(unix)
@@ -466,8 +474,9 @@ async fn main() -> Result<()> {
                 .send()
                 .await
                 .is_ok_and(|r| r.status().is_success());
+            let bind = service::bind::load().map_or_else(|e| format!("{e:#}"), |addr| addr.to_string());
             println!(
-                "installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}",
+                "installed: {}\nrunning:   {running}\nport:      {port}\nbind:      {bind}\ndata:      {}",
                 service::installed(),
                 service::data_dir().display()
             );
@@ -514,9 +523,13 @@ fn cap_log() {
     }
 }
 
-async fn serve(bind: &str, port: u16) -> Result<()> {
+async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     let _instance_lock = tokio::task::spawn_blocking(service::lock_host).await??;
     tokio::task::spawn_blocking(service::capture_binary_identity).await??;
+    let bind = match bind {
+        Some(addr) => addr,
+        None => tokio::task::spawn_blocking(service::bind::load).await??,
+    };
     let listener =
         tokio::net::TcpListener::bind((bind, port)).await.with_context(|| format!("binding {bind}:{port}"))?;
     cap_log();
@@ -535,9 +548,9 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
     network::start(&hub).await;
-    analytics::host_started(&hub, service::started_by_service());
+    analytics::host_started(&hub, service::started_by_service(), bind.is_loopback());
     let agent_checks = background::start(&hub);
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), %bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.
     let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     // SSE/WebSocket clients can stay connected forever. Stop agents immediately

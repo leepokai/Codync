@@ -5,6 +5,10 @@
   "Add Widget": "Agregar widget",
   "Add a Codync widget": "Agregar un widget Codync",
   "Add a widget": "Agregar un widget",
+  "Add a key to choose from {name}'s models.": "Añade una clave para elegir entre los modelos de {name}.",
+  "{name} wants to: {title}": "{name} quiere: {title}",
+  "in {path}": "en {path}",
+  "N reject + say why": "N rechazar + decir por qué",
   "Add account": "Agregar cuenta",
   "Appearance": "Apariencia",
   "App language": "Idioma de la app",
@@ -2028,5 +2032,9 @@
   "Active bots move to the top": "Los bots activos suben arriba",
   "Bots keep the order you set": "Los bots mantienen el orden que elegiste",
   "Waking the computer…": "Activando el ordenador…",
-  "Open the screen": "Abrir la pantalla"
+  "Open the screen": "Abrir la pantalla",
+  "Click to see the screen": "Haz clic para ver la pantalla",
+  "Tap to see the screen": "Toca para ver la pantalla",
+  "Paused. Click to continue.": "En pausa. Haz clic para continuar.",
+  "Paused. Tap to continue.": "En pausa. Toca para continuar."
 }

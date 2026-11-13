@@ -403,7 +403,7 @@ export class ComputerRelay extends DurableObject<Env> {
     }
   }
 
-  /** Fixed 10 s window per device link: ≤ 200 messages and ≤ 8 MiB (§7.6). */
+  /** Fixed 10 s window per device link: ≤ 200 messages and ≤ 12 MiB (§7.6). */
   private charge(link: string, bytes: number, now: number): boolean {
     let r = this.rates.get(link);
     if (!r || now - r.start >= RATE_WINDOW_MS) {

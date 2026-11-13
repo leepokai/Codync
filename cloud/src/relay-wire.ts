@@ -8,7 +8,8 @@ export const PAIRING_TTL_MS = 120_000;
 export const PAIRING_MAX_MESSAGES = 16;
 export const RATE_WINDOW_MS = 10_000;
 export const RATE_MAX_MESSAGES = 200;
-export const RATE_MAX_BYTES = 8 * 1024 * 1024;
+// One message at the host's 8 MiB cap for an approved device (a 5 MiB icon) is ~10.7 MiB of sealed base64url frames.
+export const RATE_MAX_BYTES = 12 * 1024 * 1024;
 export const MBOX_MAX_BLOB = 64 * 1024;
 export const MBOX_PER_DEVICE = 50;
 export const MBOX_PER_COMPUTER = 500;

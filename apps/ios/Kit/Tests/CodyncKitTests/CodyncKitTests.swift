@@ -33,6 +33,13 @@ import Testing
     #expect(s.available && s.agentBot == "b1" && s.mainDisplay?.width == 1512 && !s.userControl)
 }
 
+@Test func parsesAutoOrderEvents() {
+    guard case .autoOrder(true) = HostClient.parseEvent(Data(#"{"type":"autoOrder","enabled":true}"#.utf8)) else {
+        Issue.record("autoOrder"); return
+    }
+    #expect(HostClient.parseEvent(Data(#"{"type":"autoOrder"}"#.utf8)) == nil)
+}
+
 @Test func screenViewportMapsAndZooms() {
     // A 16:10 display in a wider landscape phone view: letterboxed left and right.
     var v = ScreenViewport(display: CGSize(width: 1600, height: 1000), view: CGSize(width: 800, height: 400))

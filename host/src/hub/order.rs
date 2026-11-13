@@ -34,8 +34,11 @@ impl Hub {
         self.store.kv_get(AUTO_ORDER).as_deref() == Some("1")
     }
 
+    /// Apps connected now hear the switch as an `autoOrder` event, the others in their next `hello`.
     pub fn set_auto_order(&self, on: bool) -> Result<()> {
-        if on { self.store.kv_set(AUTO_ORDER, "1") } else { self.store.kv_delete(AUTO_ORDER) }
+        if on { self.store.kv_set(AUTO_ORDER, "1") } else { self.store.kv_delete(AUTO_ORDER) }?;
+        let _ = self.events.send(serde_json::json!({"type": "autoOrder", "enabled": on}));
+        Ok(())
     }
 
     /// With automatic order on, puts the chat `entry` is in on top of the roster when `entry` is a message
@@ -128,8 +131,15 @@ mod tests {
         say("c", EntryKind::User, serde_json::json!({"text": "hi"}));
         assert!(position("a") < position("c"), "off: the dragged order stays");
 
+        let mut events = hub.events.subscribe();
         hub.set_auto_order(true).unwrap();
         assert!(hub.auto_order());
+        let heard = std::iter::from_fn(|| events.try_recv().ok()).find(|e| e["type"] == "autoOrder");
+        assert_eq!(
+            heard,
+            Some(serde_json::json!({"type": "autoOrder", "enabled": true})),
+            "connected apps hear the switch"
+        );
         say("c", EntryKind::User, serde_json::json!({"text": "hi"}));
         assert!(position("c") < position("a") && position("a") < position("b"), "a message puts the bot on top");
         say("b", EntryKind::Agent, serde_json::json!({"text": "working", "final": false}));

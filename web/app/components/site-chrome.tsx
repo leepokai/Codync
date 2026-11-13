@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Coffee, DiscordLogo, GithubLogo, WechatLogo } from "@phosphor-icons/react/ssr";
+import { Coffee, DiscordLogo, GithubLogo, TelegramLogo } from "@phosphor-icons/react/ssr";
 import DownloadButton from "./download-button";
 import { rivals } from "../compare/rivals";
 import { CHINA_COMMUNITY, DISCORD, EMAIL, GITHUB, KO_FI } from "../links";
@@ -47,14 +47,14 @@ export function SiteHeader() {
           >
             <DiscordLogo size={20} />
           </a>
-          <Link
+          <a
             href={CHINA_COMMUNITY}
-            aria-label="WeChat and Lark community for users in China"
-            title="微信 / Lark 中国用户交流群"
+            aria-label="Telegram community for users in China"
+            title="Telegram 中国用户交流群"
             className="hidden rounded-full p-2 text-neutral-400 transition hover:text-neutral-100 sm:block"
           >
-            <WechatLogo size={20} />
-          </Link>
+            <TelegramLogo size={20} />
+          </a>
           <a
             href={GITHUB}
             aria-label="Codync on GitHub"
@@ -88,7 +88,7 @@ const footerColumns: { title: string; links: [label: string, href: string][] }[]
     links: [
       ["GitHub", GITHUB],
       ["Discord", DISCORD],
-      ["WeChat / Lark (China)", CHINA_COMMUNITY],
+      ["Telegram (China)", CHINA_COMMUNITY],
       ["Ko-fi", KO_FI],
       ["Contact", `mailto:${EMAIL}`],
     ],

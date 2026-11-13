@@ -5,6 +5,10 @@
   "Add Widget": "Ajouter un widget",
   "Add a Codync widget": "Ajouter un widget Codync",
   "Add a widget": "Ajouter un widget",
+  "Add a key to choose from {name}'s models.": "Ajoutez une clé pour choisir parmi les modèles de {name}.",
+  "{name} wants to: {title}": "{name} veut : {title}",
+  "in {path}": "dans {path}",
+  "N reject + say why": "N refuser + dire pourquoi",
   "Add account": "Ajouter un compte",
   "Appearance": "Apparence",
   "App language": "Langue de l’app",
@@ -2022,5 +2026,11 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Impossible de se connecter à l’écran distant. Vérifiez la connexion de l’ordinateur et réessayez.",
   "Move active bots to the top": "Placer les bots actifs en haut",
   "Active bots move to the top": "Les bots actifs passent en haut",
-  "Bots keep the order you set": "Les bots gardent l'ordre que vous avez choisi"
+  "Bots keep the order you set": "Les bots gardent l'ordre que vous avez choisi",
+  "Waking the computer…": "Réveil de l’ordinateur…",
+  "Open the screen": "Ouvrir l’écran",
+  "Click to see the screen": "Cliquez pour voir l’écran",
+  "Tap to see the screen": "Touchez pour voir l’écran",
+  "Paused. Click to continue.": "En pause. Cliquez pour continuer.",
+  "Paused. Tap to continue.": "En pause. Touchez pour continuer."
 }

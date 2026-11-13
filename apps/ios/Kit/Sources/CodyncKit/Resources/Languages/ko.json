@@ -5,6 +5,10 @@
   "Add Widget": "위젯 추가",
   "Add a Codync widget": "Codync 위젯 추가",
   "Add a widget": "위젯 추가",
+  "Add a key to choose from {name}'s models.": "키를 추가하면 {name} 모델을 선택할 수 있어요.",
+  "{name} wants to: {title}": "{name}이(가) 하려는 작업: {title}",
+  "in {path}": "위치: {path}",
+  "N reject + say why": "N 거부 + 이유 말하기",
   "Add account": "계정 추가",
   "Appearance": "모양",
   "App language": "앱 언어",
@@ -2022,5 +2026,11 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "원격 화면에 연결할 수 없습니다. 컴퓨터의 연결을 확인하고 다시 시도하세요.",
   "Move active bots to the top": "활동한 봇을 맨 위로 이동",
   "Active bots move to the top": "활동한 봇이 맨 위로 이동합니다",
-  "Bots keep the order you set": "봇이 설정한 순서를 유지합니다"
+  "Bots keep the order you set": "봇이 설정한 순서를 유지합니다",
+  "Waking the computer…": "컴퓨터를 깨우는 중…",
+  "Open the screen": "화면 열기",
+  "Click to see the screen": "클릭하여 화면 보기",
+  "Tap to see the screen": "탭하여 화면 보기",
+  "Paused. Click to continue.": "일시 정지됨. 클릭하여 계속하기.",
+  "Paused. Tap to continue.": "일시 정지됨. 탭하여 계속하기."
 }

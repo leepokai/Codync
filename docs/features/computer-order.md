@@ -50,7 +50,7 @@ stay put and a new bot appears at the top of its band. Hidden bots keep their po
 they return.
 
 **Move active bots to the top** (a switch per computer, off by default; `setAutoOrder`, read from
-`hello.autoOrder`, kept in the host's `kv`): while on, a message the roster preview shows (the
+`hello.autoOrder`, kept in the host's `kv`; apps connected when it's switched hear an `autoOrder` event, so every device's switch shows it): while on, a message the roster preview shows (the
 user's, or an agent's finished reply, so conversations and routine runs alike) gives its chat a
 position above every other bot (`Hub::order_on_message`). Clients sort as before, so the bot rises to
 the top of its band and section. Dragging still works; the bot's next message moves it again. Phones

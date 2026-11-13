@@ -79,20 +79,24 @@ extension BotStore {
         iconsRevision = -1
         hello = h
         applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
+        noteSyncStamp(Self.syncStamp(h))
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
     }
 
+    /// A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed:
+    /// fetch it all again, underneath what's shown.
+    private func noteSyncStamp(_ stamp: String) {
+        if let cacheStamp, cacheStamp != stamp { refetchAll() }
+        cacheStamp = stamp
+    }
+
     private func noteHostVersion(_ new: HostVersion) {
-        let cached = cacheStamp.map { $0 != "\(Self.appBuild)/\(new.version)" } ?? false
-        if cached || (hostVersion.map { $0.version != new.version } ?? false) {
-            // A different host version or app build: data may carry new fields, so fetch it all again,
-            // underneath what's shown.
-            refetchAll()
+        if let hostVersion, hostVersion.version != new.version {
+            // Another host: its update is done, and what the last one sent no longer says anything.
             rewound = false
             unreadable = false
             hostUpdate = nil
         }
-        cacheStamp = nil
         // An update notice may appear or go away with it.
         if new != hostVersion { Motion.animate { hostVersion = new } }
     }
@@ -151,6 +155,8 @@ extension BotStore {
             network = view
         case let .name(name):
             hello?.name = name
+        case let .autoOrder(on):
+            hello?.autoOrder = on
         case let .artifact(artifact):
             artifacts.upsert(artifact)
         case .resync:

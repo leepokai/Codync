@@ -57,6 +57,10 @@
   "Add a Codync widget": "Aggiungi un widget Codync",
   "Add a fallback": "Aggiungi un agente di riserva",
   "Add a widget": "Aggiungi un widget",
+  "Add a key to choose from {name}'s models.": "Aggiungi una chiave per scegliere tra i modelli di {name}.",
+  "{name} wants to: {title}": "{name} vuole: {title}",
+  "in {path}": "in {path}",
+  "N reject + say why": "N rifiuta + spiega perché",
   "Add account": "Aggiungi account",
   "Add connector": "Aggiungi connettore",
   "Add fallback": "Aggiungi agente di riserva",
@@ -2022,5 +2026,11 @@
   "Couldn't connect to the remote screen. Check the computer's connection and try again.": "Impossibile connettersi allo schermo remoto. Controlla la connessione del computer e riprova.",
   "Move active bots to the top": "Sposta in alto i bot attivi",
   "Active bots move to the top": "I bot attivi salgono in alto",
-  "Bots keep the order you set": "I bot mantengono l'ordine che hai scelto"
+  "Bots keep the order you set": "I bot mantengono l'ordine che hai scelto",
+  "Waking the computer…": "Riattivazione del computer…",
+  "Open the screen": "Apri lo schermo",
+  "Click to see the screen": "Fai clic per vedere lo schermo",
+  "Tap to see the screen": "Tocca per vedere lo schermo",
+  "Paused. Click to continue.": "In pausa. Fai clic per continuare.",
+  "Paused. Tap to continue.": "In pausa. Tocca per continuare."
 }

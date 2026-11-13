@@ -31,14 +31,15 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
-import com.codync.android.core.ScreenState
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
 import java.io.IOException
 import kotlinx.coroutines.delay
 
 /** The details sheet's pages, as on the desktop inspector (iOS `BotDetailsView.Tab`). */
-internal enum class DetailsTab(val title: String) { Details("Details"), Library("Library"), Memory("Memory"), Settings("Settings") }
+internal enum class DetailsTab(val title: String) {
+    Details("Details"), Computer("Computer"), Library("Library"), Memory("Memory"), Settings("Settings")
+}
 
 /**
  * What to open the details sheet on (iOS `DetailsRequest`): a page, a routine's editor on the Details page, or another bot's
@@ -47,7 +48,7 @@ internal enum class DetailsTab(val title: String) { Details("Details"), Library(
 internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null)
 
 /**
- * A bot's details (iOS `BotDetailsView`): who it is, then its details, library and settings. Settings save as you edit.
+ * A bot's details (iOS `BotDetailsView`): who it is, then its details, computer, library and settings. Settings save as you edit.
  * `openArtifact`: an artifact picked in the Library, for the chat's viewer.
  */
 @Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openArtifact: (OpenArtifact) -> Unit) {
@@ -72,7 +73,7 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
         delay(600)
         store.saveSettings(draft) { error -> if (shown.value) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
+    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Computer, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
     Box(Modifier.fillMaxSize().background(Palette.background)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -84,10 +85,10 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
                         DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
                             if (bot.devServers.isNotEmpty()) DevServersSection(bot, store)
                             BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often, error = saveError)
-                            state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
                             RoutinesView(bot, state, store, routineId)
                             LaunchedEffect(Unit) { routineId = null }
                         }
+                        DetailsTab.Computer -> BotComputerTab(bot, state, store, draft.computer, online) { on -> draft = draft.copy(computer = on) }
                         DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
                         DetailsTab.Memory -> MemoryCard(bot.id, state, store)
                         DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely, error = saveError)
@@ -118,14 +119,6 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
             AgentIcon(agentRegistry(state, bot.backend), 13.dp)
             Text(backendName(state, bot.backend) + bot.model?.let { " · $it" }.orEmpty(), style = Type.footnote, color = Palette.secondary)
         }
-    }
-}
-
-/** "Use the computer", saved with the rest of the draft, so a save of the other settings never sends it back. */
-@Composable private fun ComputerCard(screen: ScreenState, on: Boolean, online: Boolean, change: (Boolean) -> Unit) = CardSection("Computer") {
-    row {
-        SwitchRow("Use the computer", if (screen.controlReady) null else "On that computer, open Codync → Settings → Computer access to set it up first.",
-            on, change, enabled = online)
     }
 }
 

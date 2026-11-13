@@ -35,6 +35,7 @@ MAP = {
     "arrow.turn.down.right": "subdirectory_arrow_right",
     "arrow.up": "arrow_upward",
     "arrow.up.doc.on.clipboard": "content_paste_go",
+    "arrow.up.left.and.arrow.down.right": "open_in_full",
     "arrow.up.right": "arrow_outward",
     "arrowshape.turn.up.left": "reply",
     "battery.100percent": "battery_full_alt",

@@ -163,6 +163,7 @@ const bridge: CodyncBridge = {
     reportError: (report) => ipcRenderer.send('app:reportError', report),
     openExternal: (url) => ipcRenderer.send('app:openExternal', url),
     copy: (text) => ipcRenderer.send('app:copy', text),
+    remoteKeyboard: (on) => ipcRenderer.send('app:remoteKeyboard', on),
     pickFiles: () => ipcRenderer.invoke('app:pickFiles'),
     pickExport: () => ipcRenderer.invoke('app:pickExport'),
     readClipboardFiles: () => ipcRenderer.invoke('app:clipboardFiles'),

@@ -39,7 +39,7 @@ host answers and sends it once the host is up.
 | `app_opened` | host `track` (desktop, TUI), iOS, Android | Desktop: each launch, once the host answers. TUI: each start. Phones: each return to the foreground. | desktop `at_login` (opened by the login item); phones `notifications` (`allowed`/`denied`/`not_asked`), `widgets` (count on the Home Screen) |
 | `window_opened` | host `track` (desktop) | The chat window is shown after being hidden (tray, dock, shortcut, second launch). A long-running menu bar app opens it many times per launch. | — |
 | `window_recovery` | host `track` (desktop) | A window's page crashed (`RendererGone` in error tracking): it loaded again, or crashed too often and stays down | `outcome` (`reloaded`/`gave_up`) |
-| `host_started` | host | Each start of the host process | `first_run` (the first start of a new install; `open_store` marks a new host id with an empty `analytics_version`), `updated_from` (the previous version, when it changed), `service` (started by launchd, systemd or the Windows runner: `XPC_SERVICE_NAME`, `SYSTEMD_EXEC_PID`, `CODYNC_SERVICE`) |
+| `host_started` | host | Each start of the host process | `first_run` (the first start of a new install; `open_store` marks a new host id with an empty `analytics_version`), `updated_from` (the previous version, when it changed), `service` (started by launchd, systemd or the Windows runner: `XPC_SERVICE_NAME`, `SYSTEMD_EXEC_PID`, `CODYNC_SERVICE`), `loopback` (listening on this computer only: `install --bind 127.0.0.1`) |
 | `host_setup_failed` | desktop main | The desktop app couldn't get a working host | `stage` (`missing_binary`/`install`/`verify`/`not_responding`/`environment`) |
 | `onboarding_step_viewed` | iOS, Android | An onboarding screen appears. `welcome` is also the sign-in screen, so it's sent again after each sign-out: count persons, or the first one per person, for first runs | `step` (`welcome`/`choose`/`install`/`scan`; `choose`: the account has computers, ask one or pair a new one) |
 | `onboarding_completed` | host `track` (desktop), iOS, Android | Once per setup. Desktop: the first run's welcome is finished (by signing in, in a build with accounts). Phones: the first-run screens are finished and the tabs appear (a computer reached, or skipped). | desktop `signed_in`; phones `via` (`paired`: by its code; `account`: approved after asking; `skipped`) |
@@ -126,8 +126,9 @@ host answers and sends it once the host is up.
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
 | `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
-| `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included) | — |
-| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
+| `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included; the bot details' Computer tab picture counts too, once per click on Click/Tap to see the screen or on continuing after a pause; opening the tab alone sends nothing) | — |
+| `remote_screen_paused` | host `track` (desktop), iOS, Android | A computer's screen stops streaming after 5 minutes with nobody touching the app | `screen` (`bot_computer`: the bot details' picture, `remote_screen`: the full viewer) |
+| `remote_screen_finished` | host | A viewer's screen session ends (closed, expired, revoked, Remote screen turned off, the helper restarting; any client; the Computer tab picture's sessions included) | `platform` (the viewer's), `outcome` (`connected`/`not_connected`: the helper answered but the picture never arrived/`failed`: the helper couldn't answer/`abandoned`: reserved, never offered), `relay` (TURN servers handed out), `seconds` (from `screenPrepare`) |
 | `screen_taken_over` | host | `screenTakeover` (taking control, not handing it back) | — |
 | `connector_installed` | host | `installConnector`; a Composio app once its connection is `active` | `connector` (catalog name, `composio` or `custom`) |
 | `connectors_imported` | host | `importConnectors` | `count` |
@@ -165,6 +166,7 @@ host answers and sends it once the host is up.
 | `chat` | a conversation opened | a conversation opened | a conversation opened |
 | `trace` | full conversation | full conversation | full trace |
 | `bot_details` | bot details | details panel | settings page |
+| `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
 | `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | routines overlay |
 | `marketplace` | extensions | extensions | marketplace overlay |
@@ -201,7 +203,7 @@ codync.dev counts visits without cookies or anything stored on the visitor's dev
 (posthog-js `cookieless_mode: 'always'`, which needs the project's *cookieless server hash mode*;
 without it PostHog drops these events): `$pageview`, `$pageleave` (time on page and scroll depth), `$web_vitals` (load speed, without attribution), `download_clicked` (`platform`:
 `mac`/`windows`/`linux`/`ios`; `linux` counts the Linux download links (x86_64 and arm64) and copies of the install command; the Homebrew `mac` is a copy of its command),
-`link_opened` (`link`: `issues`, `github`, `discord`, `lark`, `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, `cloud_new`, the homepage's "New" link to the Codync Cloud card, and `lark_qr` / `wechat_qr`, the QR code downloads on the China community page). One document-level click listener in `web/app/analytics.tsx` matches each
+`link_opened` (`link`: `issues`, `github`, `discord`, `telegram` (the China community group), `product_hunt`, `ko_fi`, `demo`, `android_test`, which is the Google Play button that opens the Android tester sign-up form, and `cloud_new`, the homepage's "New" link to the Codync Cloud card). One document-level click listener in `web/app/analytics.tsx` matches each
 link's `href` against its `links` table, so a new link needs a row there to be counted; the film counts as `demo` when focus moves
 into its frame. Events go through the site's own `/e` path, which `web/vercel.json` rewrites to
 PostHog, so content blockers don't drop them; only Vercel has the rewrite, so `next dev` on a LAN

@@ -553,6 +553,8 @@ export interface Hello {
   hostId: string
   name: string
   version: string
+  /** The host's store schema, which the mirror's rows were synced under (absent from older hosts). */
+  schema?: number
   os: string
   device?: string
   home?: string

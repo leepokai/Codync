@@ -106,22 +106,63 @@ test('an unresponsive host cannot leave manual refresh spinning forever', async 
   store.retire()
 })
 
-/** A store over the cache another app version left: "gone" and "kept" from the computer and a message that didn't send, with each events stream it opens. */
-function syncOverStaleCache() {
+test("another device's auto order switch shows here", async () => {
+  let send!: (event: object) => void
+  const ready = deferred()
+  const store = sync({
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [], autoOrder: false }),
+    stream: (_path, onData) => { send = (event) => onData(JSON.stringify(event)); ready.resolve(); return () => {} },
+  })
+  store.start()
+  await ready.promise
+  assert.equal(store.hello?.autoOrder, false)
+  send({ type: 'autoOrder', enabled: true })
+  assert.equal(store.hello?.autoOrder, true)
+  store.retire()
+})
+
+/**
+ * A store over a cache synced under `stamp` (by default, one an older app left): "gone" and "kept" from the
+ * computer and a message that didn't send, with each events stream it opens.
+ */
+function syncOverStaleCache(stamp = 'older/2.0.0', hello: object = {}) {
   const entry = (id: string, seq: number, rev: number, data = {}) => ({ id, seq, botId: 'b1', rev, kind: 'agent', turn: 1, data, createdAt: 1, updatedAt: 1 })
-  storage.set('codync-mirror-local-test', JSON.stringify({ stamp: 'older/2.0.0', hostId: 'h1', rev: 77, bots: [],
+  storage.set('codync-mirror-local-test', JSON.stringify({ stamp, hostId: 'h1', rev: 77, bots: [],
     entries: [entry('gone', 1, 70), entry('kept', 2, 77), entry('local-x', 3, 0, { status: 'failed' })] }))
   const streams: { path: string; send: (event: object) => void }[] = []
   let opened = deferred()
   const store = sync({
-    call: async () => ({ version: '2.29.0', name: 'Test', backends: [] }),
+    call: async () => ({ version: '2.29.0', name: 'Test', backends: [], ...hello }),
     stream: (path, onData) => { streams.push({ path, send: (event) => onData(JSON.stringify(event)) }); opened.resolve(); return () => {} },
   })
   const nextStream = async () => { await opened.promise; opened = deferred(); return streams[streams.length - 1] }
   return { store, nextStream, kept: { type: 'entry', entry: entry('kept', 2, 77) }, ids: () => store.allEntries('b1').map((e) => e.id) }
 }
 
-test('a new version refetches underneath the cached chat', async () => {
+test('an app update keeps the cursor of a copy synced under the same host schema', async () => {
+  const { store, nextStream } = syncOverStaleCache('1:schema 8', { version: '2.30.0', schema: 8 })
+  store.start()
+  assert.match((await nextStream()).path, /since=77&/)
+  store.retire()
+})
+
+test('a host that sends no schema keeps the cursor only within its version', async () => {
+  for (const [stamp, since] of [['1:2.29.0', 77], ['1:2.28.0', 0]] as const) {
+    const { store, nextStream } = syncOverStaleCache(stamp)
+    store.start()
+    assert.match((await nextStream()).path, new RegExp(`since=${since}&`), stamp)
+    store.retire()
+  }
+})
+
+test('a new host schema refetches', async () => {
+  const { store, nextStream } = syncOverStaleCache('1:schema 8', { schema: 9 })
+  store.start()
+  assert.match((await nextStream()).path, /since=0&/)
+  store.retire()
+})
+
+test('a cache an older app left refetches underneath the cached chat', async () => {
   const { store, nextStream, kept, ids } = syncOverStaleCache()
   store.start()
   const stream = await nextStream()
@@ -151,7 +192,7 @@ test('a refetch the link cut short starts over', async () => {
   assert.deepEqual(ids(), ['gone', 'kept', 'local-x'])
   second.send({ type: 'hello', hostId: 'h1', rev: 80 })
   assert.deepEqual(ids(), ['local-x'], "a host that doesn't say how long its catch-up is: the held entries go at its hello")
-  assert.equal(savedStamp(), '2.29.0/2.29.0')
+  assert.equal(savedStamp(), '1:2.29.0')
   store.retire()
 })
 

@@ -51,10 +51,13 @@ that stays undecodable after the one rewind, or a `hello` whose other fields can
 **The cached conversation survives an update.** A client keeps a copy of each computer's bots and newest messages
 (its mirror), and an update of the app or the host never empties what a chat shows:
 
-- iPhone and desktop decode what the computer sends into their own models, so a copy saved by another app build
-  or read from another host version may lack fields. They fetch everything again from rev 0 underneath what's
-  shown and, once that catch-up has all arrived (`hello.catchUp` events), keep exactly what the computer sent
-  again; a refetch the link cut short starts over.
+- iPhone and desktop keep their event cursor across app and host updates, so a reconnect catches up only on what
+  is new: a catch-up from rev 0 would bring every chat again. Their copy records what it was synced under: a
+  mirror format the app raises when it starts to need a field cached rows may lack, and `hello.schema` (the
+  host's store schema; a host that sends no `schema` is judged by its version). When either changes, they fetch
+  everything again from rev 0 underneath what's shown and, once that catch-up has all arrived (`hello.catchUp`
+  events), keep exactly what the computer sent again; a refetch the link cut short starts over. A bot field a
+  host update adds shows once that bot next changes.
 - Android stores each row as the computer sent it, so a new app or host version keeps the whole conversation: it
   only reads the bots again. Its event cursor stays where it was: a catch-up from rev 0 brings only each chat's
   newest entries, and onto the rows held it could leave a gap paging never fills. The one exception is a change of `hello.schema` (the host's store

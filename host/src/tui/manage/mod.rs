@@ -8,6 +8,7 @@
 mod agent;
 mod analytics;
 mod bot_chat;
+mod computer;
 mod dev_servers;
 mod fields;
 mod gear;

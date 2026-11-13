@@ -111,6 +111,8 @@ export type HostEvent =
   | { type: 'cloud'; cloud: CloudStatus }
   /** The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on. */
   | { type: 'name'; name: string }
+  /** The computer's automatic bot order was switched (from any device): its `hello` says it from now on. */
+  | { type: 'autoOrder'; enabled: boolean }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
@@ -172,6 +174,8 @@ export function parseEvent(line: string): HostEvent | null {
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
     case 'name':
       return typeof raw.name === 'string' ? { type, name: raw.name } : null
+    case 'autoOrder':
+      return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
     case 'call': {

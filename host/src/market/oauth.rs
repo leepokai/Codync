@@ -12,10 +12,12 @@
 
 mod device;
 mod discovery;
+mod registration;
 
 pub use device::offers_sign_in;
 pub use discovery::required;
 use discovery::{resource_metadata, server_metadata, split};
+use registration::register_client;
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -141,44 +143,30 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
         return device::start(hub, &c, &meta, app, token_endpoint).await;
     }
 
+    let loopback = loopback_uri(hub.port);
     let app = app_uri(store);
     let redirect_uri = match callback {
-        Callback::Host => loopback_uri(hub.port),
+        Callback::Host => loopback.clone(),
         Callback::App => app
             .clone()
             .ok_or_else(|| anyhow!("The Codync cloud is off on this computer, so sign in from the computer itself."))?,
     };
     let authorize = text(&meta["authorization_endpoint"]).ok_or_else(|| anyhow!("no authorization endpoint"))?;
 
-    // Register once with every redirect URI we might use; again if they changed.
-    let wanted: Vec<String> = std::iter::once(loopback_uri(hub.port)).chain(app).collect();
+    // Reuse a client already registered for the redirect URI this sign-in needs; otherwise register
+    // with every URI we might use. A server that only takes the loopback URI still signs in here.
     let mut oauth = c.oauth.clone().unwrap_or_default();
-    if oauth.client_id.is_empty() || !wanted.iter().all(|u| oauth.redirect_uris.contains(u)) {
-        let register = text(&meta["registration_endpoint"]).ok_or_else(|| {
+    if oauth.client_id.is_empty() || !oauth.redirect_uris.contains(&redirect_uri) {
+        let register_endpoint = text(&meta["registration_endpoint"]).ok_or_else(|| {
             anyhow!(
                 "{} doesn't let new apps sign in on their own. Add it as a custom connector with a token header.",
                 c.name
             )
         })?;
-        let res = crate::http()
-            .post(&register)
-            .json(&json!({
-                "client_name": "Codync",
-                "redirect_uris": wanted,
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            }))
-            .timeout(TIMEOUT)
-            .send()
+        let wanted: Vec<String> = std::iter::once(loopback.clone()).chain(app).collect();
+        register_client(&register_endpoint, wanted, loopback, callback, &mut oauth)
             .await
-            .with_context(|| format!("registering with {}", c.name))?;
-        let status = res.status();
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        oauth.client_id =
-            text(&v["client_id"]).ok_or_else(|| anyhow!("{} refused the registration ({status})", c.name))?;
-        oauth.client_secret = text(&v["client_secret"]);
-        oauth.redirect_uris = wanted;
+            .with_context(|| format!("signing in to {}", c.name))?;
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();

@@ -391,6 +391,15 @@
   color: var(--danger);
 }
 
+.composio-settings {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-size: var(--text-caption);
+  font-weight: 400;
+  color: var(--tertiary);
+}
 .composio-connected {
   color: var(--added);
 }

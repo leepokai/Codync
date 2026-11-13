@@ -40,6 +40,8 @@ pub enum After {
     /// `editQueued` for bot `.0`, entry `.1`, of text `.2`: a waiting message the box rewrote.
     QueuedEdited(String, String, String),
     Connection(String, super::super::connections::Step),
+    /// Composio's connect flow, as the app's sheet steps through the host's answers.
+    Composio(super::super::manage::composio::Step),
     Hello,
     /// `testApprovalRule`: what the host says about a command tried in the rules sheet.
     RuleTest,

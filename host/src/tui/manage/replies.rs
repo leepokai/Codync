@@ -191,6 +191,52 @@ impl App {
             Reply::Apps => self.with_market(|_, m| {
                 m.apps = Some(v["items"].as_array().cloned().unwrap_or_default());
             }),
+            Reply::ComposioStatus => self.with_market(|app, m| {
+                let configured = v["configured"] == true;
+                m.composio = Some(v);
+                m.composio_error = None;
+                m.composio_apps.clear();
+                m.composio_next = None;
+                if !configured {
+                    m.composio_loading = false;
+                    return;
+                }
+                let search = m.composio_searched.clone().unwrap_or_default();
+                m.composio_searched = Some(search.clone());
+                m.composio_loading = true;
+                m.composio_request += 1;
+                let reply = Reply::ComposioApps { request: m.composio_request, append: false };
+                app.sheet("composioToolkits", json!({"search": search}), reply);
+            }),
+            Reply::ComposioApps { request, append } => self.with_market(|app, m| {
+                if m.composio_request != request {
+                    return;
+                }
+                let page = v["items"].as_array().cloned().unwrap_or_default();
+                if append {
+                    let known: Vec<String> =
+                        m.composio_apps.iter().filter_map(|a| a["slug"].as_str().map(str::to_owned)).collect();
+                    m.composio_apps.extend(page.into_iter().filter(|a| !known.contains(&s(a, "slug"))));
+                } else {
+                    m.composio_apps = page;
+                }
+                m.composio_next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
+                m.composio_loading = false;
+                m.composio_error = None;
+                app.load_near_end(m);
+            }),
+            Reply::ComposioKey => {
+                if let Some(i) = self
+                    .overlays
+                    .iter()
+                    .rposition(|o| matches!(o, Overlay::Fields(f) if matches!(&f.submit, Submit::ComposioKey)))
+                {
+                    self.overlays.truncate(i);
+                }
+                self.flash(&super::super::l10n::tr(if v["configured"] == true { "Saved" } else { "Key removed" }));
+                self.call("connectors", json!({}), After::Connectors);
+                self.reload_composio();
+            }
             Reply::Catalog => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -379,6 +425,23 @@ impl App {
                 m.apps.get_or_insert_with(Vec::new);
                 m.error = Some(e);
             }),
+            Reply::ComposioStatus => self.with_market(|_, m| {
+                m.composio_loading = false;
+                m.composio_error = Some(e);
+            }),
+            Reply::ComposioApps { request, .. } => self.with_market(|_, m| {
+                if m.composio_request == request {
+                    m.composio_loading = false;
+                    m.composio_error = Some(e);
+                }
+            }),
+            Reply::ComposioKey => match self.overlays.last_mut() {
+                Some(Overlay::Fields(f)) if matches!(&f.submit, Submit::ComposioKey) => {
+                    f.saving = false;
+                    f.error = Some(e);
+                }
+                _ => self.flash(&e),
+            },
             Reply::CallEntries(call) => {
                 // The call's line folds again with nothing kept, so the next `o` asks again.
                 let lines: Vec<String> = self
@@ -534,6 +597,7 @@ impl App {
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
                     calls.push(("skills", json!({}), After::Skills));
+                    calls.push(("composioStatus", json!({}), After::Sheet(Reply::ComposioStatus)));
                 }
                 _ => {}
             }

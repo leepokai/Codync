@@ -36,6 +36,9 @@ impl App {
                     i.ed.insert("\n");
                 }
             }
+            KeyCode::Enter if matches!(&f.submit, Submit::Composio(c) if c.step == super::composio::Step::Done) => {
+                return None;
+            }
             KeyCode::Enter => self.save_fields(&mut f),
             KeyCode::Char('s') if ctrl(k) => self.save_fields(&mut f),
             KeyCode::Tab | KeyCode::Down => f.cursor = (f.cursor + 1) % rows.max(1),
@@ -99,6 +102,8 @@ impl App {
             Submit::App(item) => {
                 self.sheet("installMarketApp", json!({"id": item["id"], "values": values}), Reply::FieldsSaved);
             }
+            Submit::ComposioKey => self.submit_composio_key(&values),
+            Submit::Composio(_) => self.submit_composio(f, &values),
             Submit::Handoff(entry) => {
                 self.sheet("editHandoff", json!({"entryId": entry, "text": values["text"]}), Reply::FieldsSaved);
             }

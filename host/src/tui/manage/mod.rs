@@ -10,6 +10,7 @@ mod agent;
 mod analytics;
 mod bot_chat;
 mod catalog;
+pub(in crate::tui) mod composio;
 pub(in crate::tui) mod computer;
 mod dev_servers;
 pub(in crate::tui) mod documents;
@@ -108,6 +109,15 @@ pub enum Reply {
     Skills,
     Apps,
     Catalog,
+    /// Composio's key state, and the apps it unlocks.
+    ComposioStatus,
+    /// A page of Composio's apps: the request it answers, and whether it follows the loaded ones.
+    ComposioApps {
+        request: u64,
+        append: bool,
+    },
+    /// The Composio key was saved or removed.
+    ComposioKey,
     /// A catalog bot or team (its id) was created.
     CatalogAdded(String),
     /// A skill's instructions, for the details sheet with that id.
@@ -278,6 +288,16 @@ pub struct Market {
     pub skills: Option<Vec<Value>>,
     /// The app catalogue; `None` while it loads.
     pub apps: Option<Vec<Value>>,
+    /// Composio's key state (`composioStatus`); `None` until it answers.
+    pub composio: Option<Value>,
+    /// Composio's apps loaded so far, for the query in `composio_searched`.
+    pub composio_apps: Vec<Value>,
+    pub composio_next: Option<String>,
+    pub composio_searched: Option<String>,
+    /// The newest apps request; answers to older ones are dropped.
+    pub composio_request: u64,
+    pub composio_loading: bool,
+    pub composio_error: Option<String>,
     /// The host's ready-made bots and teams (`botCatalog`); empty on an older host.
     pub catalog: Value,
     /// Catalog bots and teams added while this sheet is open.
@@ -296,6 +316,10 @@ pub enum Row<'a> {
     Registry(&'a Value),
     /// A catalogue app; it is a connector the host builds, and it is offered until installed.
     App(&'a Value),
+    /// The Composio key: setting it up, or replacing and removing it.
+    ComposioKey,
+    /// An app through Composio, connected with its key.
+    ComposioApp(&'a Value),
     OwnSkill(&'a Value),
     Skill(&'a Value),
     /// A ready-made bot from the catalog.
@@ -342,6 +366,10 @@ pub enum Submit {
     Connector(Value),
     /// A catalogue app and the sheet's values, as `installMarketApp` takes them.
     App(Value),
+    /// The Composio key sheet.
+    ComposioKey,
+    /// One app through Composio, as its sheet steps through the host's answers.
+    Composio(Box<composio::Composio>),
     Import,
     /// A handoff card's text (the card's entry id).
     Handoff(String),

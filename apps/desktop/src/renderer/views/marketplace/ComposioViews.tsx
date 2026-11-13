@@ -6,13 +6,192 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import {
-  errorText, market, sleep,
-  type ComposioApp, type ComposioConnect, type ComposioStatus,
+  appendPage, appConnected, emptyPage, errorText, market, sleep,
+  type ComposioApp, type ComposioConnect, type ComposioStatus, type MarketplacePage,
 } from './market-models'
-import { AppLogo, ErrorText, Field, WebLink, filled } from './pieces'
+import {
+  AppLogo, ErrorText, Field, FormSheet, ItemGrid, LoadMoreRow, MarketRow, MarketSection, SkeletonGrid, TileIcon, WebLink, filled,
+} from './pieces'
+import { usePlugins } from './plugins'
 import { useTr } from '../../lib/use-language'
 import { fill } from '../../lib/fill.ts'
 
+
+/**
+ * Apps through Composio (host/src/market/composio.rs): a key once, then connect apps with
+ * Composio's own sign-in, which also works from the phone.
+ */
+export function ComposioSection({ query, onError }: { query: string; onError: (message: string) => void }) {
+  const tr = useTr()
+  const store = useStore()
+  const plugins = usePlugins(store)
+  const [status, setStatus] = useState<ComposioStatus | null>(null)
+  const [page, setPage] = useState<MarketplacePage<ComposioApp>>(emptyPage<ComposioApp>)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState<string | null>(null)
+  const [settingUp, setSettingUp] = useState(false)
+  const [connecting, setConnecting] = useState<ComposioApp | null>(null)
+  const request = useRef(0)
+
+  /** Answers for another search or page are late ones. */
+  const load = async (search: string, cursor: string | null = null) => {
+    const client = store.client
+    if (!client) return
+    const id = ++request.current
+    setLoading(true)
+    try {
+      const s = await market.composioStatus(client)
+      const more = s.configured ? await market.composioApps(client, search, cursor) : { items: [], next: null }
+      if (request.current !== id) return
+      setStatus(s)
+      setPage((old) => (cursor ? appendPage(old, more.items, (a) => a.slug) : appendPage(emptyPage<ComposioApp>(), more.items, (a) => a.slug)))
+      setFailed(null)
+    } catch (e) {
+      if (request.current === id) {
+        setFailed(errorText(e))
+        onError(errorText(e))
+      }
+    } finally {
+      if (request.current === id) setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(query), query ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  }, [query])
+
+  const configured = status?.configured === true
+  return (
+    <MarketSection title={tr('Composio')}>
+      {!configured && !loading ? (
+        <ItemGrid>
+          <MarketRow
+            title={tr('Composio')}
+            subtitle={tr('Gmail, Slack, GitHub, Notion and 1,000 more apps')}
+            added={false}
+            busy={status === null}
+            addLabel={tr('Set up')}
+            icon={<TileIcon name="square.grid.3x3" />}
+            onAdd={() => setSettingUp(true)}
+          />
+        </ItemGrid>
+      ) : loading && page.items.length === 0 ? (
+        <SkeletonGrid />
+      ) : page.items.length === 0 ? (
+        <Text tone="secondary">
+          {failed ?? (query ? tr('No apps match “{query}”.').replaceAll('{query}', query) : tr(`Couldn't load apps.`))}
+        </Text>
+      ) : (
+        <>
+          <ItemGrid>
+            {page.items.map((app) => (
+              <MarketRow
+                key={app.slug}
+                title={app.name}
+                subtitle={app.description ?? app.slug}
+                added={appConnected(app)}
+                addLabel={tr('Connect')}
+                icon={<AppLogo url={app.logo} name={app.name} />}
+                onAdd={() => setConnecting(app)}
+              />
+            ))}
+          </ItemGrid>
+          {page.next ? <LoadMoreRow cursor={page.next} failed={failed !== null} onLoad={() => void load(query, page.next)} /> : null}
+        </>
+      )}
+      {configured ? (
+        <button className="composio-settings" onClick={() => setSettingUp(true)}>
+          <Icon name="key" size={10} />
+          {tr('Composio settings')}
+        </button>
+      ) : null}
+      <FormSheet open={settingUp} onClose={() => setSettingUp(false)}>
+        <ComposioKeySheet
+          status={status}
+          onError={onError}
+          done={(s) => {
+            setStatus(s)
+            setPage(emptyPage<ComposioApp>())
+            void load(query)
+          }}
+        />
+      </FormSheet>
+      <FormSheet open={connecting !== null} onClose={() => setConnecting(null)}>
+        {connecting ? (
+          <ComposioConnectSheet
+            key={connecting.slug}
+            app={connecting}
+            done={() => {
+              void load(query)
+              void plugins.refresh()
+            }}
+          />
+        ) : null}
+      </FormSheet>
+    </MarketSection>
+  )
+}
+
+/** Paste (or remove) the Composio API key; the host checks it with Composio before keeping it. */
+export function ComposioKeySheet({ status, done, onError }: {
+  status: ComposioStatus | null
+  done: (status: ComposioStatus) => void
+  onError: (message: string) => void
+}) {
+  const tr = useTr()
+  const store = useStore()
+  const dismiss = useDismiss()
+  const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async (key: string) => {
+    const client = store.client
+    if (!client) return
+    setSaving(true)
+    try {
+      done(await market.setComposioKey(client, key))
+      dismiss()
+    } catch (e) {
+      setError(errorText(e))
+      onError(errorText(e))
+    }
+    setSaving(false)
+  }
+
+  const keyUrl = status?.keyUrl ?? 'https://platform.composio.dev'
+  return (
+    <SheetPage>
+      <ModalHeader
+        icon="square.grid.3x3"
+        title="Composio"
+        trailing={saving ? <Spinner /> : <IconButton title={tr('Save')} icon="checkmark" disabled={!key.trim()} onClick={() => void save(key)} />}
+      />
+      <CardForm>
+        <CardSection
+          title={tr('Composio API key')}
+          footer={tr('Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on {name}.').replaceAll('{name}', store.hostName)}
+        >
+          <Field
+            label={tr('API key')}
+            value={key}
+            onChange={setKey}
+            secret
+            placeholder={status?.configured ? tr('Saved (paste to replace)') : 'ak_…'}
+          />
+          {URL.canParse(keyUrl) ? <WebLink title={tr('Get a key from Composio')} url={keyUrl} className="small" /> : null}
+        </CardSection>
+        {status?.configured ? (
+          <CardSection footer={tr('Bots lose the apps you connected until you add a key again.')}>
+            <button className="market-danger-button" onClick={() => void save('')}>{tr('Remove key')}</button>
+          </CardSection>
+        ) : null}
+        {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
+      </CardForm>
+    </SheetPage>
+  )
+}
 
 /**
  * Connects one app: Composio's sign-in page (opened here, finished anywhere),

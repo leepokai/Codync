@@ -10,13 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
-import com.codync.android.core.CatalogPage
 import com.codync.android.core.ComposioApp
 import com.codync.android.core.ComposioStatus
 import com.codync.android.design.*
@@ -38,65 +38,71 @@ import kotlinx.coroutines.launch
 // Apps through Composio (host/src/market/composio.rs): set up a key once, connect apps with
 // Composio's hosted sign-in, then turn them on per bot like any other connector.
 
-/** The Extensions page's "Apps" section (iOS `ComposioSection`). */
-@Composable internal fun ComposioSection(query: String, searchToken: Int, state: AppState, store: AppStore) {
-    var status by remember { mutableStateOf<ComposioStatus?>(null) }
-    var apps by remember { mutableStateOf(CatalogPage<ComposioApp>()) }
-    var cursor by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var settingUp by remember { mutableStateOf(false) }
-    var connecting by remember { mutableStateOf<ComposioApp?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    LaunchedEffect(searchToken, reload) {
-        loading = true
-        cursor = null
-        try {
-            val answer = store.composioStatus()
-            if (answer.configured) {
-                val page = store.composioApps(query, null)
-                status = answer; apps = CatalogPage<ComposioApp>().append(page.items) { it.slug }
-                cursor = page.nextCursor; error = null
-            } else {
-                status = answer; apps = CatalogPage(); error = null
-            }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "Couldn't load apps." }
-        finally { loading = false }
+/**
+ * The Apps tab's Composio half (iOS `ComposioSection`): the key check, the apps it pages through,
+ * and what its sheets are showing. Its rows are lazy items, so a page is asked for as its end comes
+ * into view rather than all 1,000 apps at once.
+ */
+internal class ComposioState(private val store: AppStore) {
+    var status by mutableStateOf<ComposioStatus?>(null)
+    var settingUp by mutableStateOf(false)
+    var connecting by mutableStateOf<ComposioApp?>(null)
+    /** The apps loaded so far, and the cursor of the page after them. */
+    val catalog = ConnectorCatalog<ComposioApp>({ it.slug }) { search, cursor ->
+        // The key is checked with the first page only; later pages reuse that answer.
+        if (cursor == null) status = store.composioStatus()
+        if (status?.configured == true) store.composioApps(search, cursor).let { it.items to it.nextCursor }
+        else emptyList<ComposioApp>() to null
     }
-    // The next page Composio lists, asked for when its row comes into view.
-    suspend fun loadMore() {
-        val at = cursor ?: return
-        try {
-            val page = store.composioApps(query, at)
-            apps = apps.append(page.items) { it.slug }
-            cursor = page.nextCursor; error = null
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "Couldn't load more apps." }
-    }
-    MarketSection("Apps") {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            when {
-                status?.configured != true -> MarketRow("Composio", "Gmail, Slack, GitHub, Notion and 1,000 more apps", added = false,
-                    busy = status == null && loading, addLabel = "Set up", icon = { TileIcon("square.grid.3x3") }) { settingUp = true }
-                loading -> SkeletonRows()
-                apps.items.isEmpty() -> Text(if (query.isEmpty()) "Couldn't load apps." else "No apps match “$query”.", style = Type.body, color = Palette.secondary)
-                else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (app in apps.items) MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
-                        icon = { AppLogo(app.logo, app.name) }) { connecting = app }
-                    cursor?.let { at -> LoadMoreRow(at, error != null) { loadMore() } }
-                }
+
+    /** The key's state and the first page of `search`, replacing what was listed. */
+    suspend fun load(search: String) = catalog.load(search)
+
+    /** The page at the cursor, under the same search. */
+    suspend fun loadMore() = catalog.loadMore()
+}
+
+/** The Composio apps under the MCP Registry: the key row until it's set up, then the paged apps. */
+internal fun LazyListScope.composio(state: AppState, composio: ComposioState, query: String) {
+    item(key = "composio:title") { MarketSection("Apps") {} }
+    when {
+        composio.status?.configured != true -> item(key = "composio:setup") {
+            MarketRow("Composio", "Gmail, Slack, GitHub, Notion and 1,000 more apps", added = false,
+                busy = composio.status == null && composio.catalog.loading, addLabel = "Set up",
+                icon = { TileIcon("square.grid.3x3") }) { composio.settingUp = true }
+        }
+        composio.catalog.loading -> item(key = "composio:loading") { SkeletonRows() }
+        composio.catalog.items.items.isEmpty() -> item(key = "composio:empty") {
+            Text(if (query.isEmpty()) "Couldn't load apps." else "No apps match “$query”.", style = Type.body, color = Palette.secondary)
+        }
+        else -> {
+            items(composio.catalog.items.items, key = { "composio:${it.slug}" }) { app ->
+                MarketRow(app.name, app.description ?: app.slug, app.connected, addLabel = "Connect",
+                    icon = { AppLogo(app.logo, app.name) }) { composio.connecting = app }
             }
-            error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
-            if (status?.configured == true) Row(Modifier.plainButton { settingUp = true }, verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Symbol("key", size = 14.dp, tint = Palette.tertiary)
-                Text("Composio settings", style = Type.footnote, color = Palette.tertiary)
+            composio.catalog.cursor?.let { cursor ->
+                item(key = "composio:more") { LoadMoreRow(cursor, composio.catalog.error != null) { composio.loadMore() } }
             }
         }
     }
-    CodyncSheet(settingUp, { settingUp = false }) { ComposioKeySheet(status, state, store) { status = it; reload++ } }
-    CodyncSheet(connecting, { connecting = null }) { ComposioConnectSheet(it, state, store) { reload++; store.refreshPlugins() } }
+    composio.catalog.error?.let { item(key = "composio:error") { Text(it, style = Type.footnote, color = Palette.danger) } }
+    if (composio.status?.configured == true) item(key = "composio:settings") {
+        Row(Modifier.plainButton { composio.settingUp = true }, verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Symbol("key", size = 14.dp, tint = Palette.tertiary)
+            Text("Composio settings", style = Type.footnote, color = Palette.tertiary)
+        }
+    }
+}
+
+/** The key and connect sheets, over the page. */
+@Composable internal fun ComposioSheets(state: AppState, store: AppStore, composio: ComposioState, reload: () -> Unit) {
+    CodyncSheet(composio.settingUp, { composio.settingUp = false }) {
+        ComposioKeySheet(composio.status, state, store) { composio.status = it; reload() }
+    }
+    CodyncSheet(composio.connecting, { composio.connecting = null }) {
+        ComposioConnectSheet(it, state, store) { reload(); store.refreshPlugins() }
+    }
 }
 
 /** Paste (or remove) the Composio API key; the host checks it with Composio first (iOS `ComposioKeySheet`). */

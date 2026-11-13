@@ -2,22 +2,22 @@
 
 The Extensions screen configures capabilities installed on one computer. Account membership does not install the same capability on every computer, so each computer has its own Extensions, opened from that computer and never switched inside: with several computers, from the Extensions button on its heading in the bot list (desktop and iPhone); on the desktop with one computer, from the sidebar footer; on the iPhone, also from its row in Manage computers.
 
-Under the open section, one line says where that section comes from: agents from the ACP registry, apps from CopilotKit's reviewed connector catalogue, connectors from the MCP Registry, skills from Anthropic, and that they install on this computer. Credentials sits on the title row, beside the computer name, on the iPhone, Android and desktop, so the list can use the rest of the screen. The terminal has no Credentials control on this sheet. The desktop and iPhone installed count is labeled **Connectors & skills**, and opens a library with that same title. It includes connected apps (stored as connectors), but excludes agents; agents show their own installation status in the Agents section. The terminal already separates these categories and does not show a combined installed count.
+Under the open section, one line says where that section comes from: agents from the ACP registry, apps from CopilotKit's reviewed connector catalogue and Composio, connectors from the MCP Registry, skills from Anthropic, and that they install on this computer. Credentials sits on the title row, beside the computer name, on the iPhone, Android and desktop, so the list can use the rest of the screen. The terminal has no Credentials control on this sheet. The desktop and iPhone installed count is labeled **Connectors & skills**, and opens a library with that same title. It includes connected apps (stored as connectors), but excludes agents; agents show their own installation status in the Agents section. The terminal already separates these categories and does not show a combined installed count.
 
 | Capability | Implementation | Behavior |
 | --- | --- | --- |
-| Apps | `host/src/market/copilotkit/` (its `install.rs` is the bridge) | Browse the bundled app catalogue and install one as an MCP connector with its sign-in, key or nothing at all; the MCP Registry and custom connectors stay in the same Apps tab |
+| Apps | `host/src/market/copilotkit/` (its `install.rs` is the bridge) | Browse the bundled app catalogue and install one as an MCP connector with its sign-in, key or nothing at all; Composio's key and its 1,000+ apps end the same list; the MCP Registry and custom connectors stay in the same Apps tab |
 | Agents | `host/src/agent/backends.rs`, `host/src/agent/registry.rs`, `host/src/agent/node.rs` | Detect installed harnesses, resolve ACP registry adapters, provide Node.js for npm agents |
 | Connectors | `host/src/market/mod.rs`, `registry.rs`, `install.rs`, `custom.rs` | Discover MCP servers or add one manually; install per computer; on for every bot unless a bot turns it off |
 | Connected apps | `host/src/market/composio.rs` | Expose connected Composio apps as connectors |
 | Skills | `host/src/market/skills.rs`, `host/src/market/openbot/` | Instruction folders containing `SKILL.md`, stored under `~/.codync/skills/<id>`; the bundled OpenBot catalog installs offline, and anthropics/skills stays available; on for every bot unless a bot turns it off |
 
-Two different catalogues ship with the host, and they are not mixed:
+Three catalogues ship with the host, and they are not mixed:
 
 - **Agents and skills**: `host/src/market/openbot/`, generated from the `nightly-labs/openbot` marketplace
-  by `tools/import-openbot-catalog.mjs`: 27 agents and 92 skills (including the pstack pack). Skills
-  install from an embedded archive, so browsing works without a network; attributions and licences are
-  in `host/src/market/openbot/NOTICE.md`.
+  by `tools/import-openbot-catalog.mjs`: 27 agents, 92 skills (including the pstack pack) and the apps
+  CopilotKit's catalogue doesn't cover. Skills install from an embedded archive, so browsing works
+  without a network; attributions and licences are in `host/src/market/openbot/NOTICE.md`.
 - **Apps**: `host/src/market/copilotkit/`, every connector of the `CopilotKit/OpenBot` catalogue,
   regenerated with `tools/import-copilotkit-connectors.mjs` from `server/src/plugins/catalogue.ts` of
   that checkout (MIT, see its `NOTICE.md`). The entries keep upstream's keys, titles, vendors, hosts and
@@ -25,6 +25,8 @@ Two different catalogues ship with the host, and they are not mixed:
   reviewed write/read tool lists and docs links, so an app authenticates here exactly as it does there.
   Codync writes only the sheet: category, tagline, description, prompts, field labels. The module's
   `install.rs` is the bridge that turns an entry into a connector.
+- **Composio**: no file; its 1,000+ apps are Composio's live list, reached with the user's own Platform
+  key and connected through Composio's sign-in.
 
 Marketplace agents are bot profiles with a title, category, creator, version and the skills and
 routines they bring. Installing one creates the bot on the computer's defaults, turns on exactly the
@@ -42,22 +44,26 @@ token) or registers Codync at the entry's registration endpoint (Notion), and `b
 installs nothing: it is already on, so Add answers with its public shape. Installing an app again
 replaces the connector under the id its bots know, so Add after a failure repairs it.
 
-Composio Connect is featured in Connectors through the official MCP Registry
+Composio's apps are in the Apps tab (`host/src/market/composio.rs`): one Platform API key
+(`setComposioKey`, checked with Composio before it is kept) unlocks a live search of
+1,000+ apps (`composioToolkits {search, cursor}` → `{items, nextCursor}`, 30 per page).
+Connecting one follows the app's own sign-in page (`composioConnect {toolkit}` →
+`{status, url, connection}`), or the key fields the app declares
+(`composioConnectFields`), then polls `composioConnection {id}` until it is active. A
+connected app is a `composio-<slug>` connector, turned on per bot like any other. The
+key stays on the computer; removing it disconnects the apps.
+Composio Connect is also featured in Connectors through the official MCP Registry
 (`io.github.ComposioHQ/composio`, `https://connect.composio.dev/mcp`). Install it
-and sign in with the shared MCP OAuth flow; no Platform API key is needed.
-The agent discovers and connects apps through Composio's hosted tools. For
-manual header authentication, add the endpoint as a custom connector with
+and sign in with the shared MCP OAuth flow; no Platform API key is needed there.
+For manual header authentication, add that endpoint as a custom connector with
 `x-consumer-api-key: ck_…`. Consumer keys are not interchangeable with Platform
-project keys (`ak_…`, sent as `x-api-key`), which the legacy Platform integration uses. The Apps shelf and Platform-key
-setup have been removed from Extensions; existing connections and pending
-connection requests remain supported.
-All clients render the host's connector catalog and use its existing sign-in
-flow; Composio is installed from Connectors on every client. The terminal has
-the same tabs.
+project keys (`ak_…`, sent as `x-api-key`).
+All clients render the key, the apps and the connect flow; the terminal has the
+same tabs and sheets.
 
 Install runs the CLI's own native installer where it has one, on Windows too (Claude Code, Codex, Grok, Qwen, Droid, Qoder, Cursor…, `Install` in `backends.rs`); CLIs published only on npm (Gemini, Cline, Auggie, Kilo…) install with `codync-host npm install -g <package>`, npm on the computer's own Node or else on Codync's. A CLI with its own ACP mode then runs as installed, without Node.js (except an OpenCode older than 2: the registry build runs in its place, [OpenCode](../upstream-agents/opencode.md)). Refreshing the agents re-reads the PATH a fresh login would get (the login shell's; on Windows the user's and machine's PATH from the registry), so a CLI found by an installer that just ran shows up without restarting the host. Many agents' ACP adapters run through `npx` (Claude, Codex, Gemini, Qwen…). On a computer without Node.js, the agent list marks each of them `node: "missing"` (only then is the field there; `added` once Codync's copy is in place) and they aren't available; Extensions shows one *Add Node.js* notice above the agents, each such agent reads *Needs Node.js*, and its setup sheet gets a Node.js step between Install and Sign in. Adding it (`agentSetup {step: "node"}`, a setup terminal running `codync-host node`) downloads the official Node.js of a pinned version (`VERSION` and SHA-256s in `node.rs`) once into `~/.codync/node/<version>`; npm installs with it go to `~/.codync/node/global`. Both folders come last on the agent search path, so the computer's own Node and CLIs always win, and nothing outside `~/.codync` changes. Linux builds of Node need glibc: on musl distros (Alpine) install Node.js yourself.
 
-Extensions shows one section at a time — Agents, Connectors, or Skills — and each is one list that scrolls; there are no pages. The lists are lazy (iPhone `LazyVGrid`, Android `LazyColumn`), so only the rows near view are built. Agents and Skills arrive whole. The Connectors section opens with the first registry page (`marketConnectors {search, cursor}` → `{items, nextCursor}`, 60 metadata records per API page); while a cursor remains, placeholder rows end the list (`LoadMoreRow`), and when they come into view the client asks for the page at the cursor, one page per ask, then again each time the cursor moves on while the end stays in view (`ConnectorCatalog.loadMore`). A page with nothing Codync can install still moves the cursor, so the list reads on and never stalls on an empty answer. If a fetch fails, the rows stay, the error shows under the list, the end of the list becomes a Try again button, and it also asks again once it scrolls back into view. A registry that answers with the cursor it was asked for ends the list there: the host drops that cursor rather than serve the same page forever. Searching starts the list over; late responses from an older search are ignored. In the terminal, moving the cursor within about a screen of the end of Connectors asks for the next page the same way. Listed: stdio npm/PyPI/OCI/NuGet packages (the registry's runtime and package arguments become inputs) and streamable-HTTP or SSE remotes (URL `{variables}` become inputs). Not listed: MCPB bundles and packages that serve HTTP locally; add those as a custom connector.
+Extensions shows one section at a time — Apps, Channels, Agents, CLIs, or Skills — and each is one list that scrolls; there are no pages. The lists are lazy (iPhone `LazyVGrid`, Android `LazyColumn`), so only the rows near view are built. Agents and Skills arrive whole. The Connectors section opens with the first registry page (`marketConnectors {search, cursor}` → `{items, nextCursor}`, 60 metadata records per API page); while a cursor remains, placeholder rows end the list (`LoadMoreRow`), and when they come into view the client asks for the page at the cursor, one page per ask, then again each time the cursor moves on while the end stays in view (`ConnectorCatalog.loadMore`). A page with nothing Codync can install still moves the cursor, so the list reads on and never stalls on an empty answer. If a fetch fails, the rows stay, the error shows under the list, the end of the list becomes a Try again button, and it also asks again once it scrolls back into view. A registry that answers with the cursor it was asked for ends the list there: the host drops that cursor rather than serve the same page forever. Searching starts the list over; late responses from an older search are ignored. In the terminal, moving the cursor within about a screen of the end of Connectors asks for the next page the same way. The Composio apps end the Apps tab and page the same way, 30 per ask. Listed: stdio npm/PyPI/OCI/NuGet packages (the registry's runtime and package arguments become inputs) and streamable-HTTP or SSE remotes (URL `{variables}` become inputs). Not listed: MCPB bundles and packages that serve HTTP locally; add those as a custom connector.
 
 Registry package installs use pinned package references: npm, PyPI and NuGet require the package’s own version; OCI uses the tag or SHA-256 digest already in its image identifier, even when the separate package version is omitted. Untagged images, `latest` tags without a digest, and invalid references are rejected; a server-level version does not pin the executable package.
 

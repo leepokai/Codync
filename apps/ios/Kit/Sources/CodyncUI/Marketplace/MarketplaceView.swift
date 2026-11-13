@@ -267,7 +267,7 @@ enum ExtensionSection: String, CaseIterable, Identifiable {
     }
     var source: String {
         switch self {
-        case .apps: "Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server."
+        case .apps: "Apps connect a service to {name} with its own sign-in or key; Composio adds 1,000 more. Custom connectors add any MCP server."
         case .agents: "Ready-made agents come with their instructions, skills and routines. Add one to {name}."
         case .skills: "Skills install on {name} and every bot can use them."
         }

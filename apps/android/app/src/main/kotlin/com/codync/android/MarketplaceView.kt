@@ -102,6 +102,7 @@ import kotlinx.coroutines.launch
     val connectors = remember(store) {
         ConnectorCatalog<MarketConnector>({ it.name }) { search, cursor -> store.marketConnectors(search, cursor).let { it.items to it.nextCursor } }
     }
+    val composio = remember(store) { ComposioState(store) }
     var skills by remember { mutableStateOf(emptyList<MarketSkill>()) }
     var apps by remember { mutableStateOf(emptyList<MarketApp>()) }
     var marketAgents by remember { mutableStateOf(emptyList<MarketAgent>()) }
@@ -139,6 +140,10 @@ import kotlinx.coroutines.launch
     LaunchedEffect(canLoad, state.contextId) {
         if (!canLoad) return@LaunchedEffect
         connectors.load(query)
+    }
+    LaunchedEffect(canLoad, state.contextId, searchToken) {
+        if (!canLoad) return@LaunchedEffect
+        composio.load(query)
     }
     LaunchedEffect(canLoad, state.contextId) {
         if (!canLoad) return@LaunchedEffect
@@ -187,9 +192,7 @@ import kotlinx.coroutines.launch
     }
     /** Composio apps sit under the Apps catalog: connecting one adds it like any other connector. */
     fun LazyListScope.apps() {
-        if (section == ExtensionSection.Apps && canLoad) item {
-            Box(Modifier.padding(top = 12.dp)) { ComposioSection(query, searchToken, state, store) }
-        }
+        if (section == ExtensionSection.Apps && canLoad) composio(state, composio, query)
     }
     /** The MCP Registry after the app catalog: every other server can be found or searched there. */
     fun LazyListScope.registry() {
@@ -347,6 +350,7 @@ import kotlinx.coroutines.launch
     CodyncSheet(showWhatsApp, { showWhatsApp = false }) { WhatsAppSheet(state, store) }
     CodyncSheet(showChannels, { showChannels = false }) { ChannelsSheet(state, store) }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
+    ComposioSheets(state, store, composio) { submit() }
     CodyncSheet(writingSkill, { writingSkill = false }) { NewSkillSheet(store) }
     CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store) }
     CodyncSheet(viewingApp, { viewingApp = null }) { app ->

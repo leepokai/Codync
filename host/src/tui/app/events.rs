@@ -186,6 +186,10 @@ impl App {
             self.connection_reply(&id, step, r);
             return;
         }
+        if let After::Composio(step) = after {
+            self.composio_reply(step, r);
+            return;
+        }
         if let After::Sent(key) = after {
             self.sent(&key, r);
             return;
@@ -277,6 +281,7 @@ impl App {
             | After::ThreadOpened(_, _)
             | After::QueuedEdited(_, _, _)
             | After::Connection(_, _)
+            | After::Composio(_)
             | After::Roster(_, _)
             | After::RosterStopped(_)
             | After::Pairing

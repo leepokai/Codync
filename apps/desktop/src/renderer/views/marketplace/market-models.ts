@@ -297,8 +297,10 @@ export const market = {
   composioStatus: (c: HostClient) => c.call<ComposioStatus>('composioStatus'),
   /** Checks the key with Composio before keeping it; an empty key forgets Composio. */
   setComposioKey: (c: HostClient, key: string) => c.call<ComposioStatus>('setComposioKey', { key }, s(60)),
-  composioApps: (c: HostClient, search: string, cursor = '') =>
-    c.call<{ items: ComposioApp[]; nextCursor: string | null }>('composioToolkits', { search, cursor }, s(60)),
+  composioApps: async (c: HostClient, search: string, cursor: string | null = null) => {
+    const res = await c.call<{ items: ComposioApp[]; nextCursor?: string | null }>('composioToolkits', { search, cursor: cursor ?? '' }, s(60))
+    return { items: res.items, next: res.nextCursor || null }
+  },
   composioConnect: (c: HostClient, app: string) => c.call<ComposioConnect>('composioConnect', { toolkit: app }, s(60)),
   composioConnectFields: (c: HostClient, app: string, mode: string, fields: Record<string, string>) =>
     c.call<ComposioConnectionState>('composioConnectFields', { toolkit: app, mode, fields }, s(60)),
@@ -370,7 +372,7 @@ export type ExtensionSection = 'apps' | 'channels' | 'agents' | 'clis' | 'skills
 
 /** Each section with the line saying where its items come from. */
 export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
-  { id: 'apps', label: 'Apps', source: 'Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server.' },
+  { id: 'apps', label: 'Apps', source: 'Apps connect a service to {name} with its own sign-in or key; Composio adds 1,000 more. Custom connectors add any MCP server.' },
   { id: 'channels', label: 'Channels', source: 'WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow.' },
   { id: 'agents', label: 'Agents', source: 'Ready-made agents come with their own instructions, skills and routines. Add one to {name}.' },
   { id: 'clis', label: 'CLIs', source: 'The coding agents (ACPs) that run bots on {name}. Install one and sign in.' },

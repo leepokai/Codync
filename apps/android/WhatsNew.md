@@ -12,6 +12,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 應用程式分頁換成 CopilotKit 審核過的連接器目錄：Google Drive、Notion、Linear、Sentry、Exa、Firecrawl 等服務，各自保留原廠的授權方式。
 - 需要登入的應用程式在瀏覽器完成授權，金鑰型的應用程式則填入自己的金鑰；兩者都只留在你的電腦上。
 - 登入回來時會核對發出的服務，移除連接器時也會一併撤銷授權。
+- 應用程式分頁也加入 Composio：在電腦上填一次 Platform 金鑰，就能瀏覽並連接 Gmail、Slack、GitHub、Notion 等 1,000 多個應用程式，金鑰只留在這台電腦上。
 
 ### en-US
 - The Apps tab now lists CopilotKit's reviewed connector catalogue: Google Drive, Notion, Linear, Sentry, Exa, Firecrawl and more, each keeping the vendor's own sign-in or key.

@@ -30,7 +30,7 @@ function grouped<T extends { category: string; featured: boolean }>(items: T[]):
   return [{ title: 'Featured', items: featured }, ...groups].filter((g) => g.items.length > 0)
 }
 
-export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, onAddConnector, onInstallConnector, onViewConnector }: {
+export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, onAddConnector, onInstallConnector, onViewConnector, children }: {
   apps: MarketApp[]
   query: string
   catalog: ConnectorCatalog<MarketConnector>
@@ -40,6 +40,7 @@ export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, on
   onAddConnector: () => void
   onInstallConnector: (connector: MarketConnector) => void
   onViewConnector: (connector: MarketConnector) => void
+  children?: ReactNode
 }) {
   const tr = useTr()
   const rows = catalog.items.items
@@ -101,6 +102,7 @@ export function AppsPanel({ apps, query, catalog, added, onAddApp, onViewApp, on
           </>
         )}
       </MarketSection>
+      {children}
     </div>
   )
 }

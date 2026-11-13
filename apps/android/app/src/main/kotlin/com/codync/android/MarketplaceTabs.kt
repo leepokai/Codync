@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 // Extensions' sections (iOS `MarketplaceTabs`): the section rail, and the end of a list the registry continues.
 
 internal enum class ExtensionSection(val title: String, val icon: String, val source: String) {
-    Apps("Apps", "square.grid.2x2", "Apps connect a service to {name} with its own sign-in or key. Custom connectors add any MCP server."),
+    Apps("Apps", "square.grid.2x2", "Apps connect a service to {name} with its own sign-in or key; Composio adds 1,000 more. Custom connectors add any MCP server."),
     Channels("Channels", "bubble.left.and.bubble.right", "WhatsApp, Telegram, Slack and Discord: talk to a bot from the places you already write, with only the people you allow."),
     Agents("Agents", "terminal", "Ready-made agents come with their instructions, skills and routines. Add one to {name}."),
     Clis("CLIs", "command", "The coding agents (ACPs) that run bots on {name}. Install one and sign in."),

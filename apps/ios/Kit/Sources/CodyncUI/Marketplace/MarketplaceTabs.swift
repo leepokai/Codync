@@ -80,7 +80,6 @@ extension MarketplaceView {
             Text(L10n.tr("No apps match “{query}”.").replacingOccurrences(of: "{query}", with: query))
                 .foregroundStyle(Palette.secondary)
         }
-        ComposioSection(query: query)
         MarketSection(title: "MCP Registry") {
             if connectors.loading {
                 SkeletonGrid()
@@ -103,6 +102,7 @@ extension MarketplaceView {
                 }
             }
         }
+        ComposioSection(query: query)
     }
 
     @ViewBuilder private var agentsTab: some View {
@@ -179,9 +179,9 @@ extension MarketplaceView {
     }
 }
 
-/// The end of a list the registry continues. In view, it asks for the page at `cursor`, and again each
-/// time the cursor moves on while it stays in view. After a failure it shows Try again, and asks again
-/// once it scrolls back into view.
+/// The end of a list the registry or Composio continues. In view, it asks for the page at `cursor`, and
+/// again each time the cursor moves on while it stays in view. After a failure it shows Try again, and
+/// asks again once it scrolls back into view.
 struct LoadMoreRow: View {
     let cursor: String
     let failed: Bool

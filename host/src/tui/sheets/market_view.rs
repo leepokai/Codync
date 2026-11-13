@@ -26,7 +26,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         Tab::Bots | Tab::Teams => tr("Ready-made bots and coordinator teams install on {name}."),
         Tab::Agents => tr("Agents come from the ACP registry and install on {name}."),
         Tab::Connectors => tr("Connectors come from the official MCP Registry and install on {name}."),
-        Tab::Apps => tr("Apps are connectors CopilotKit reviewed; they install on {name}."),
+        Tab::Apps => tr("Apps are connectors CopilotKit reviewed; Composio adds 1,000 more. They install on {name}."),
         Tab::Skills => tr("Skills come from Anthropic and install on {name}."),
     };
     let source = source.replace("{name}", &app.host);
@@ -36,7 +36,8 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
     let list_h = usize::from(inner.height.saturating_sub(5));
     let mut y = inner.y + 2;
     if App::market_stale(m) {
-        put(buf, inner.x, y, inner.width, &tr("↵ searches the registry"), t.secondary.patch(t.panel));
+        let hint = if m.tab == Tab::Apps { tr("↵ searches the apps") } else { tr("↵ searches the registry") };
+        put(buf, inner.x, y, inner.width, &hint, t.secondary.patch(t.panel));
         y += 1;
     }
     for (i, item) in rows.iter().enumerate().skip(window(m.cursor, list_h)).take(list_h) {
@@ -82,6 +83,20 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
                 let right = if on { tr("installed").into_owned() } else { String::new() };
                 (if on { "✓" } else { "↓" }, s(v, "name").into(), s(v, "tagline").into(), right)
             }
+            Row::ComposioKey => {
+                let configured = m.composio.as_ref().is_some_and(|c| c["configured"] == true);
+                let (mark, name, detail, right) = if configured {
+                    ("•", tr("Composio settings"), tr("Replace or remove the Composio key."), tr("↵ replace / remove"))
+                } else {
+                    ("+", tr("Composio"), tr("Gmail, Slack, GitHub, Notion and 1,000 more apps"), tr("↵ set up"))
+                };
+                (mark, name.into_owned(), detail.into_owned(), right.into_owned())
+            }
+            Row::ComposioApp(v) => {
+                let on = v["connection"]["status"] == "active";
+                let right = if on { tr("connected").into_owned() } else { tr("↵ connect").into_owned() };
+                (if on { "✓" } else { "↓" }, s(v, "name").into(), s(v, "description").into(), right)
+            }
             Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), tr("installed").into_owned()),
             Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
             Row::Profile(v) | Row::Team(v) => {
@@ -102,17 +117,27 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
         y += 1;
     }
     if rows.is_empty() {
-        let msg = if m.loading { tr("Loading…") } else { tr("Nothing matches") };
+        let busy = match m.tab {
+            Tab::Apps => m.apps.is_none() || m.composio_loading,
+            Tab::Connectors => m.loading,
+            _ => false,
+        };
+        let msg = if busy { tr("Loading…") } else { tr("Nothing matches") };
         put(buf, inner.x, y, inner.width, &msg, t.dim.patch(t.panel));
     }
     let keys = match m.tab {
         Tab::Bots | Tab::Teams => tr("tab switch · ↵ add · esc close"),
         Tab::Agents => tr("tab switch · ↵ install / sign in · ^r refresh · esc close"),
         Tab::Connectors => tr("tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc"),
-        Tab::Apps => tr("tab switch · ↵ details / add · ^r refresh · esc close"),
+        Tab::Apps => tr("tab switch · ↵ details / add / connect · ^k Composio key · ^r refresh · esc"),
         Tab::Skills => tr("tab switch · ↵ details · ^x remove · esc close"),
     };
-    let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
-    let registry = tr("Loading the registry…");
-    footer(buf, inner, m.error.as_deref().or(loading.then_some(registry.as_ref())), &keys);
+    let loading = match m.tab {
+        Tab::Connectors => m.loading && !rows.is_empty(),
+        Tab::Apps => m.composio_loading && !rows.is_empty(),
+        _ => false,
+    };
+    let busy: String = if m.tab == Tab::Apps { tr("Loading the apps…") } else { tr("Loading the registry…") }.into_owned();
+    let error = if m.tab == Tab::Apps { m.composio_error.as_deref() } else { m.error.as_deref() };
+    footer(buf, inner, error.or(loading.then_some(busy.as_str())), &keys);
 }

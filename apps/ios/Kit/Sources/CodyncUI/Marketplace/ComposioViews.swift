@@ -21,6 +21,163 @@ struct AppLogo: View {
     }
 }
 
+/// Apps through Composio (host/src/market/composio.rs): the key once, then Composio's own sign-in,
+/// which also works from the phone. Turned on per bot like any other connector.
+struct ComposioSection: View {
+    let query: String
+    @Environment(BotStore.self) private var model
+    @State private var status: ComposioStatus?
+    @State private var catalog = ConnectorCatalog<ComposioApp>()
+    @State private var settingUp = false
+    @State private var connecting: ComposioApp?
+
+    var body: some View {
+        MarketSection(title: "Composio") {
+            VStack(alignment: .leading, spacing: 10) {
+                if status?.configured != true {
+                    ItemGrid {
+                        MarketRow(
+                            title: "Composio",
+                            subtitle: "Gmail, Slack, GitHub, Notion and 1,000 more apps",
+                            added: false,
+                            busy: status == nil && catalog.loading,
+                            addLabel: "Set up"
+                        ) {
+                            TileIcon(systemName: "square.grid.3x3")
+                        } add: {
+                            withAnimation(Motion.layout) { settingUp = true }
+                        }
+                    }
+                } else if catalog.loading {
+                    SkeletonGrid()
+                } else if catalog.items.isEmpty {
+                    Text(query.isEmpty ? L10n.tr("Couldn't load apps.") : L10n.tr("No apps match “{query}”.").replacingOccurrences(of: "{query}", with: query))
+                        .foregroundStyle(Palette.secondary)
+                } else {
+                    ItemGrid {
+                        ForEach(catalog.items.items) { app in
+                            MarketRow(
+                                title: app.name,
+                                subtitle: app.description ?? app.slug,
+                                added: app.connected,
+                                addLabel: "Connect"
+                            ) {
+                                AppLogo(url: app.logo, name: app.name)
+                            } add: {
+                                withAnimation(Motion.layout) { connecting = app }
+                            }
+                        }
+                    }
+                    if let cursor = catalog.cursor {
+                        LoadMoreRow(cursor: cursor, failed: catalog.error != nil) { await loadMore() }
+                    }
+                }
+                if let error = catalog.error {
+                    Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                }
+                if status?.configured == true {
+                    Button("Composio settings", systemImage: "key") { withAnimation(Motion.layout) { settingUp = true } }
+                        .labelStyle(.titleAndIcon)
+                        .buttonStyle(.plain)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.tertiary)
+                }
+            }
+        }
+        .task(id: query) { await load() }
+        .codyncSheet(isPresented: $settingUp) {
+            ComposioKeySheet(status: status) { new in
+                status = new
+                Task { await load() }
+            }
+        }
+        .codyncSheet(item: $connecting) { app in
+            ComposioConnectSheet(app: app) { Task { await load(); await model.refreshPlugins() } }
+        }
+    }
+
+    private func load() async {
+        guard let client = model.client else { return }
+        await catalog.load(search: query) { search, cursor in
+            let answer = try await client.composioStatus()
+            status = answer
+            guard answer.configured else { return ([], nil) }
+            return try await client.composioApps(search: search, cursor: cursor)
+        }
+    }
+
+    private func loadMore() async {
+        guard let client = model.client else { return }
+        await catalog.loadMore { search, cursor in try await client.composioApps(search: search, cursor: cursor) }
+    }
+}
+
+/// Paste (or remove) the Composio API key; the host checks it with Composio before keeping it.
+struct ComposioKeySheet: View {
+    let status: ComposioStatus?
+    let done: (ComposioStatus) -> Void
+    @Environment(BotStore.self) private var model
+    @Environment(\.dismissModal) private var dismiss
+    @State private var key = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ModalHeader("Composio") {
+                if saving {
+                    Spinner()
+                } else {
+                    IconButton("Save", systemImage: "checkmark") { save(key) }
+                        .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            form
+        }
+        .background(Palette.background)
+    }
+
+    private var form: some View {
+        CardForm {
+            CardSection(
+                "Composio API key",
+                footer: "Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on \(model.hostName)."
+            ) {
+                SecureField("API key", text: $key, prompt: Text(status?.configured == true ? "Saved (paste to replace)" : "ak_…"))
+                    .plainTextInput()
+                if let url = URL(string: status?.keyUrl ?? "https://platform.composio.dev") {
+                    WebLink("Get a key from Composio", url: url).font(.footnote)
+                }
+            }
+            if status?.configured == true {
+                CardSection(footer: "Bots lose the apps you connected until you add a key again.") {
+                    Button("Remove key", role: .destructive) { save("") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.danger)
+                }
+            }
+            if let error {
+                CardSection { Text(error).foregroundStyle(Palette.danger) }
+            }
+        }
+        .textFieldStyle(.plain)
+    }
+
+    private func save(_ key: String) {
+        guard let client = model.client else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                done(try await client.setComposioKey(key))
+                dismiss()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
 /// Connects one app: Composio's sign-in page (opened here, finished anywhere),
 /// or a form for apps that use a key.
 struct ComposioConnectSheet: View {
@@ -181,187 +338,6 @@ struct ComposioConnectSheet: View {
             } catch {
                 self.error = error.localizedDescription
             }
-        }
-    }
-}
-
-/// The Apps tab's Composio section (Android `ComposioSection`): set a key once, then connect
-/// apps. Connecting one adds it on the computer like any other connector.
-struct ComposioSection: View {
-    let query: String
-    @Environment(BotStore.self) private var model
-    @State private var status: ComposioStatus?
-    @State private var apps: [ComposioApp] = []
-    @State private var cursor: String?
-    @State private var loading = true
-    @State private var error: String?
-    @State private var settingUp = false
-    @State private var connecting: ComposioApp?
-    @State private var reload = 0
-    @State private var seen: Set<String> = []
-
-    var body: some View {
-        MarketSection(title: "Apps") {
-            if status?.configured != true {
-                MarketRow(title: "Composio", subtitle: "Gmail, Slack, GitHub, Notion and 1,000 more apps",
-                          added: false, busy: status == nil && loading, addLabel: "Set up") {
-                    TileIcon(systemName: "square.grid.3x3")
-                } add: {
-                    settingUp = true
-                }
-            } else if loading {
-                SkeletonGrid()
-            } else if apps.isEmpty {
-                Text(query.isEmpty ? L10n.tr("Couldn't load apps.")
-                     : L10n.tr("No apps match “{query}”.").replacingOccurrences(of: "{query}", with: query))
-                    .foregroundStyle(Palette.secondary)
-            } else {
-                ItemGrid {
-                    ForEach(apps) { app in
-                        MarketRow(title: app.name, subtitle: app.description ?? app.slug, added: app.connected,
-                                  addLabel: "Connect") {
-                            AppLogo(url: app.logo, name: app.name)
-                        } add: {
-                            connecting = app
-                        }
-                    }
-                }
-                if let cursor { LoadMoreRow(cursor: cursor, failed: error != nil) { await loadMore() } }
-            }
-            if let error, !loading { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
-            if status?.configured == true {
-                Button { settingUp = true } label: {
-                    Label(L10n.tr("Composio settings"), systemImage: "key")
-                        .font(.footnote)
-                        .foregroundStyle(Palette.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .task(id: "\(reload)|\(query)") { await load() }
-        .codyncSheet(isPresented: $settingUp) {
-            ComposioKeySheet(status: status) { answer in
-                status = answer
-                reload += 1
-            }
-        }
-        .codyncSheet(item: $connecting) { app in
-            ComposioConnectSheet(app: app) {
-                reload += 1
-                Task { await model.refreshPlugins() }
-            }
-        }
-    }
-
-    private func load() async {
-        loading = true
-        cursor = nil
-        seen = []
-        defer { loading = false }
-        do {
-            guard let client = model.client else { return }
-            let answer = try await client.composioStatus()
-            status = answer
-            guard answer.configured else { apps = []; return }
-            let page = try await client.composioApps(search: query)
-            apps = appending(page.items)
-            cursor = page.next
-            error = nil
-        } catch {
-            guard !(error is CancellationError || Task.isCancelled) else { return }
-            self.error = error.localizedDescription
-        }
-    }
-
-    private func loadMore() async {
-        guard let client = model.client, let at = cursor else { return }
-        do {
-            let page = try await client.composioApps(search: query, cursor: at)
-            apps = appending(page.items)
-            cursor = page.next
-            error = nil
-        } catch {
-            guard !(error is CancellationError || Task.isCancelled) else { return }
-            self.error = error.localizedDescription
-        }
-    }
-
-    /// Composio may repeat an app across pages; keep the one already shown.
-    private func appending(_ page: [ComposioApp]) -> [ComposioApp] {
-        apps + page.filter { seen.insert($0.slug).inserted }
-    }
-}
-
-/// Paste (or remove) the Composio API key; the host checks it with Composio first (Android
-/// `ComposioKeySheet`).
-struct ComposioKeySheet: View {
-    let status: ComposioStatus?
-    let done: (ComposioStatus) -> Void
-    @Environment(BotStore.self) private var model
-    @Environment(\.dismissModal) private var dismiss
-    @State private var key = ""
-    @State private var saving = false
-    @State private var error: String?
-
-    private var typed: String { key.trimmingCharacters(in: .whitespaces) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ModalHeader("Composio") {
-                if saving {
-                    Spinner()
-                } else {
-                    IconButton("Save", systemImage: "checkmark") { save(typed) }
-                        .disabled(typed.isEmpty)
-                }
-            }
-            form
-        }
-        .background(Palette.background)
-    }
-
-    private var form: some View {
-        CardForm {
-            CardSection("Composio API key",
-                        footer: "Composio signs you in to apps like Gmail and Slack and runs their tools for your bots. The key stays on \(model.hostName).") {
-                Group {
-                    if status?.configured == true {
-                        SecureField(L10n.tr("Saved (paste to replace)"), text: $key)
-                    } else {
-                        SecureField("ak_…", text: $key)
-                    }
-                }
-                .plainTextInput()
-                if let url = URL(string: status?.keyUrl ?? "https://platform.composio.dev") {
-                    WebLink("Get a key from Composio", url: url).font(.footnote)
-                }
-            }
-            if status?.configured == true {
-                CardSection(footer: "Bots lose the apps you connected until you add a key again.") {
-                    Button(L10n.tr("Remove key")) { save("") }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .disabled(saving)
-                }
-            }
-            if let error {
-                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
-            }
-        }
-        .textFieldStyle(.plain)
-    }
-
-    private func save(_ value: String) {
-        guard let client = model.client else { return }
-        saving = true
-        error = nil
-        Task {
-            do {
-                done(try await client.setComposioKey(value))
-                dismiss()
-            } catch {
-                self.error = error.localizedDescription
-            }
-            saving = false
         }
     }
 }

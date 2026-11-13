@@ -23,7 +23,7 @@ macOS: Apple Silicon + Intel (DMG) · Windows: x64 installer · Linux: AppImage 
 [![App Store](https://img.shields.io/badge/App_Store-iOS-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/codync/id6760984418)
 [![Homebrew](https://img.shields.io/badge/Homebrew-codync-FBB040?logo=homebrew&logoColor=white)](https://github.com/leepokai/homebrew-codync)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/KBAX3Qznxh)
-[![WeChat and Lark China](https://img.shields.io/badge/WeChat_/_Lark-China_community-07C160?logo=wechat&logoColor=white)](#community)
+[![Telegram China](https://img.shields.io/badge/Telegram-China_community-26A5E4?logo=telegram&logoColor=white)](https://t.me/+e5egWrp5z4BlOWNl)
 [![Release](https://img.shields.io/github/v/release/leepokai/Codync?color=black)](https://github.com/leepokai/Codync/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 <br>
@@ -245,16 +245,14 @@ Clients and the host each name the oldest version of the other they still work w
 
 ## Community
 
-| Discord | WeChat · China community (temporarily unavailable) | Lark · China community |
-| --- | --- | --- |
-| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | **The WeChat group is temporarily unavailable.** Please join the Lark group for now. | A community for Codync users in China to share tips, ask questions and give feedback. Scan with the Lark app; you need a Lark account. |
-| | <img src="web/public/wechat-group.png" width="200" alt="QR code to join the Codync WeChat community for users in China"> | <img src="web/public/lark-group.png" width="200" alt="QR code to join the Codync Lark community for users in China"> |
-| | [Download the QR code](web/public/wechat-group.png) · [WeChat community page](https://www.codync.dev/wechat) | [Download the QR code](web/public/lark-group.png) · [Open in Lark](https://applink.larksuite.com/client/chat/chatter/add_by_link?link_token=bb2ibae9-710a-4d4a-96a5-e69d85ktg60s&qr_code=true) |
+| Discord | Telegram · China community |
+| --- | --- |
+| [Join Discord](https://discord.gg/KBAX3Qznxh) for questions, help and feedback. | [Join the Telegram group](https://t.me/+e5egWrp5z4BlOWNl), a community for Codync users in China to share tips, ask questions and give feedback. |
 
 ## Contact
 
 - Email: [kevin@codync.dev](mailto:kevin@codync.dev)
-- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [WeChat or Lark (China)](#community)
+- Questions and bug reports: [GitHub Issues](https://github.com/leepokai/Codync/issues), [Discord](https://discord.gg/KBAX3Qznxh) or [Telegram (China)](https://t.me/+e5egWrp5z4BlOWNl)
 - Security issues: report privately as described in [SECURITY.md](SECURITY.md) (GitHub private reporting or email)
 - Community rules: [Code of Conduct](CODE_OF_CONDUCT.md)
 

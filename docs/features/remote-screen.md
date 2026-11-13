@@ -117,7 +117,8 @@ full viewer isn't open (one stream per device), and stops when any of that ends.
 app (counted from when it goes live; a connecting or failed session sends nothing and never pauses. Desktop: the
 pointer, a key or the wheel in that window; phones: any touch in the app; watching alone doesn't count) and show
 "Paused. Click to continue." ("Tap…" on the phones) until clicked, which starts a new session (the viewer keeps its
-Take over or Hand back choice); while the computer is offline or its screen unavailable, the viewer shows why instead.
+Take over or Hand back choice, and the display picked from Displays: desktop `displayToShow`, while the computer
+still has it, else the main one; phones: kept in their viewer state); while the computer is offline or its screen unavailable, the viewer shows why instead.
 One constant per app (`SCREEN_IDLE_MS` in `lib/screen-state.ts` on the desktop, `ScreenPause.idleLimit` on the
 iPhone, `SCREEN_PAUSE_AFTER_MS` in `ScreenPause.kt` on Android); each pause reports `remote_screen_paused`. It bounds what a picture left open costs: TURN traffic for a relayed computer, and the helper's
 capture and encoding on the computer. A bot using the computer shows as

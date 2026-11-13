@@ -240,6 +240,8 @@ public struct Hello: Codable, Sendable {
     public var hostId: String
     public var name: String
     public var version: String
+    /// The host's store schema, which the mirror's rows were synced under (missing from older hosts).
+    public var schema: Int?
     public var os: String
     /// laptop · macmini · macstudio · imac · macpro · desktop · linux (missing from older hosts).
     public var device: String?

@@ -197,3 +197,156 @@ async fn the_token_is_saved_only_while_the_connector_is_unchanged() {
     assert_eq!(left[0].url.as_deref(), Some("https://other.example/mcp"));
     assert!(left[0].oauth.is_none(), "the replacement got the token");
 }
+
+/// A registration server: `/register` accepts only the loopback redirect URI, as servers that
+/// follow the native app rule do (issue #440), and repeats its reason for anything else; `/down`
+/// always answers 503, `/closed` 401 (it wants an initial access token); `/mcp` asks for sign-in and the authorization server metadata points here.
+/// The base URL, and how many registrations it has seen.
+async fn registration_server() -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    use axum::{Json, Router, http::StatusCode, routing};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let seen = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let (on_register, on_down, on_closed, origin) = (seen.clone(), seen.clone(), seen.clone(), base.clone());
+    let router = Router::new()
+        .route("/mcp", routing::post(|| async { StatusCode::UNAUTHORIZED }))
+        .route(
+            "/.well-known/oauth-authorization-server",
+            routing::get(move || async move {
+                Json(json!({
+                    "issuer": origin,
+                    "authorization_endpoint": format!("{origin}/authorize"),
+                    "token_endpoint": format!("{origin}/token"),
+                    "registration_endpoint": format!("{origin}/register"),
+                }))
+            }),
+        )
+        .route(
+            "/register",
+            routing::post(move |body: String| async move {
+                on_register.fetch_add(1, Ordering::SeqCst);
+                let v: Value = serde_json::from_str(&body).unwrap();
+                let uris = v["redirect_uris"].as_array().unwrap();
+                if uris.len() == 1 && uris[0].as_str().unwrap().starts_with("http://127.0.0.1:") {
+                    (StatusCode::CREATED, Json(json!({"client_id": "loopback-only"})))
+                } else {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "error": "invalid_redirect_uri",
+                            "error_description": "One or more redirect URIs are invalid"
+                        })),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/down",
+            routing::post(move || async move {
+                on_down.fetch_add(1, Ordering::SeqCst);
+                StatusCode::SERVICE_UNAVAILABLE
+            }),
+        )
+        .route(
+            "/closed",
+            routing::post(move || async move {
+                on_closed.fetch_add(1, Ordering::SeqCst);
+                (StatusCode::UNAUTHORIZED, Json(json!({"error": "invalid_token"})))
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (base, seen)
+}
+
+fn wanted(loopback: &str) -> Vec<String> {
+    vec![loopback.to_owned(), "https://cloud.example/v1/oauth/callback".to_owned()]
+}
+
+#[tokio::test]
+async fn a_server_that_only_takes_the_loopback_uri_still_signs_in_here() {
+    let (base, seen) = registration_server().await;
+    let endpoint = format!("{base}/register");
+    let loopback = loopback_uri(19222);
+
+    let mut oauth = OAuth::default();
+    register_client(&endpoint, wanted(&loopback), loopback.clone(), Callback::Host, &mut oauth).await.unwrap();
+    assert_eq!(oauth.client_id, "loopback-only");
+    assert!(oauth.client_secret.is_none());
+    assert_eq!(oauth.redirect_uris, vec![loopback], "the client is registered for the URI it uses");
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_phone_sign_in_the_server_refuses_registers_nothing_else() {
+    let (base, seen) = registration_server().await;
+    let loopback = loopback_uri(19222);
+
+    let endpoint = format!("{base}/register");
+    let err = register_client(&endpoint, wanted(&loopback), loopback, Callback::App, &mut OAuth::default())
+        .await
+        .unwrap_err();
+    let text = format!("{err:#}");
+    assert!(text.contains("sign in there"), "{text}");
+    assert!(text.contains("One or more redirect URIs are invalid"), "the server's reason is shown: {text}");
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1, "no loopback-only client left behind");
+}
+
+#[tokio::test]
+async fn a_server_that_is_down_gets_no_second_registration() {
+    let (base, seen) = registration_server().await;
+    let loopback = loopback_uri(19222);
+
+    let endpoint = format!("{base}/down");
+    let err = register_client(&endpoint, wanted(&loopback), loopback, Callback::Host, &mut OAuth::default())
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("503"), "{err:#}");
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1, "only a refusal falls back");
+}
+
+#[tokio::test]
+async fn a_refusal_about_something_else_gets_no_fallback_or_phone_advice() {
+    let (base, seen) = registration_server().await;
+    let endpoint = format!("{base}/closed");
+    let loopback = loopback_uri(19222);
+
+    for callback in [Callback::Host, Callback::App] {
+        let err = register_client(&endpoint, wanted(&loopback), loopback.clone(), callback, &mut OAuth::default())
+            .await
+            .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(text.contains("refused the registration (401 Unauthorized: invalid_token)"), "{text}");
+    }
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2, "one registration per sign-in");
+}
+
+#[tokio::test]
+async fn signing_in_on_the_computer_with_the_cloud_on_falls_back_to_the_loopback_uri() {
+    let (base, seen) = registration_server().await;
+    let dir = std::env::temp_dir().join(format!("codync-oauth-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let c: Connector =
+        serde_json::from_value(json!({"id": "notes", "name": "Notes", "url": format!("{base}/mcp")})).unwrap();
+    market::save_connectors(&store, &[c]).unwrap();
+    store.kv_set("test_cloud_url", "https://cloud.example").unwrap();
+    assert!(app_uri(&store).is_some(), "the cloud is on, so both redirect URIs are wanted");
+    let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+    let hub = Hub::new(store, "h".into(), identity, "t".into(), 19222);
+
+    let v = start(&hub, "notes", Callback::Host, true).await.unwrap();
+    let url = v["url"].as_str().unwrap();
+    assert!(url.contains("client_id=loopback-only"), "{url}");
+    assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A19222%2Foauth%2Fcallback"), "{url}");
+    let saved = market::connectors(&hub.store).unwrap().remove(0).oauth.unwrap();
+    assert_eq!(saved.redirect_uris, vec![loopback_uri(19222)]);
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+    start(&hub, "notes", Callback::Host, true).await.unwrap();
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2, "the loopback-only client is reused");
+    let err = start(&hub, "notes", Callback::App, true).await.unwrap_err();
+    assert!(format!("{err:#}").contains("sign in there"), "{err:#}");
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3, "a phone sign-in can't reuse it");
+    std::fs::remove_dir_all(&dir).ok();
+}

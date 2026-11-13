@@ -22,7 +22,10 @@ pub fn save(addr: IpAddr) -> Result<()> {
     check(addr)?;
     let dir = super::data_dir();
     std::fs::create_dir_all(&dir).context("creating the data directory")?;
-    std::fs::write(dir.join(FILE), addr.to_string()).context("saving the bind address")
+    // Written beside it, then renamed over it: a half-written file would keep the host from starting.
+    let temporary = dir.join(format!("{FILE}.{}.tmp", uuid::Uuid::new_v4()));
+    std::fs::write(&temporary, addr.to_string()).context("saving the bind address")?;
+    std::fs::rename(&temporary, dir.join(FILE)).context("saving the bind address")
 }
 
 fn load_from(dir: &Path) -> Result<IpAddr> {

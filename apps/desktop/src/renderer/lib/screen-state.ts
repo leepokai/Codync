@@ -10,6 +10,11 @@ export const controlReady = (s: ScreenState) => s.platform === 'windows' ? s.com
 
 export const mainDisplay = (s: ScreenState): ScreenDisplay | undefined => s.displays.find((d) => d.main) ?? s.displays[0]
 
+/** The display a new session shows: the one picked before (a pause or an outage ended the last session) while the
+ * computer still has it, else the main one. */
+export const displayToShow = (s: ScreenState, picked: number | null): ScreenDisplay | undefined =>
+  s.displays.find((d) => d.id === picked) ?? mainDisplay(s)
+
 const SETUP = 'On the computer, open Codync → Settings → Computer access. Permissions are set separately on each computer.'
 
 /** What keeps a computer's screen from this app, and where to fix it (the iPhone's `accessGuidance`). */

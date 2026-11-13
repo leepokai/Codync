@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ScreenState } from '@shared/models'
 import type { ScreenPhase } from '../store/screen-session.ts'
-import { SCREEN_IDLE_MS, controlReady, mainDisplay, untouchedTooLong, screenAvailable, screenGuidance, screenNotice } from './screen-state.ts'
+import { SCREEN_IDLE_MS, controlReady, displayToShow, mainDisplay, untouchedTooLong, screenAvailable, screenGuidance, screenNotice } from './screen-state.ts'
 
 const ready: ScreenState = {
   enabled: true, connected: true, platform: 'linux', capture: true, input: true, userControl: false, agentBot: null, computerUse: true, viewers: 0,
@@ -15,6 +15,9 @@ test('a screen is available once it is on, running and allowed to record', () =>
   assert.equal(screenAvailable({ ...ready, connected: false }), false)
   assert.equal(screenAvailable(null), false)
   assert.equal(mainDisplay(ready)?.id, 1)
+  assert.equal(displayToShow(ready, 0)?.id, 0, 'the display picked before')
+  assert.equal(displayToShow(ready, 7)?.id, 1, 'gone since: the main one')
+  assert.equal(displayToShow(ready, null)?.id, 1)
 })
 
 test('bots can use the computer once control is allowed too, or when Windows says so', () => {

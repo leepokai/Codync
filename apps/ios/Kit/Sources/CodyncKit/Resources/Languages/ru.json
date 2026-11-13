@@ -2032,5 +2032,11 @@
   "Click to see the screen": "Нажмите, чтобы увидеть экран",
   "Tap to see the screen": "Коснитесь, чтобы увидеть экран",
   "Paused. Click to continue.": "Приостановлено. Нажмите, чтобы продолжить.",
-  "Paused. Tap to continue.": "Приостановлено. Коснитесь, чтобы продолжить."
+  "Paused. Tap to continue.": "Приостановлено. Коснитесь, чтобы продолжить.",
+  "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "Ваш облачный компьютер обновляется до Codync {minimum} или новее; это приложение переподключится по завершении.",
+  "Updating Codync on {host}. This takes a few minutes.": "Обновляем Codync на {host}. Это займёт несколько минут.",
+  "The app on this computer needs to be {minimum} or newer ({host} requires it).": "Приложение на этом компьютере должно быть {minimum} или новее (требование {host}).",
+  "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync на {host} — {version}; этому компьютеру нужен Codync {minimum} или новее.",
+  "{host} needs Codync {version} or newer.": "{host} требует Codync {version} или новее.",
+  "This app needs to be {minimum} or newer ({host} requires it).": "Это приложение должно быть версии {minimum} или новее (требование {host})."
 }

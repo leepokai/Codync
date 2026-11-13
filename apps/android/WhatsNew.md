@@ -9,9 +9,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.46.2
 ### zh-Hant
+- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
 - 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
 
 ### en-US
+- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
 - Leaving a chat while a voice note is loading no longer lets it start playing afterward.
 
 ## 2.46.1

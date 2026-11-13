@@ -2032,5 +2032,11 @@
   "Click to see the screen": "Clique para ver a tela",
   "Tap to see the screen": "Toque para ver a tela",
   "Paused. Click to continue.": "Pausado. Clique para continuar.",
-  "Paused. Tap to continue.": "Pausado. Toque para continuar."
+  "Paused. Tap to continue.": "Pausado. Toque para continuar.",
+  "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "Seu computador na nuvem está atualizando para Codync {minimum} ou mais recente; este aplicativo se reconecta ao terminar.",
+  "Updating Codync on {host}. This takes a few minutes.": "Atualizando o Codync em {host}. Leva alguns minutos.",
+  "The app on this computer needs to be {minimum} or newer ({host} requires it).": "O aplicativo deste computador precisa ser {minimum} ou mais recente (exigido por {host}).",
+  "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync em {host} é {version}; esse computador precisa de Codync {minimum} ou mais recente.",
+  "{host} needs Codync {version} or newer.": "{host} precisa de Codync {version} ou mais recente.",
+  "This app needs to be {minimum} or newer ({host} requires it).": "Este aplicativo precisa ser {minimum} ou mais recente (exigido por {host})."
 }

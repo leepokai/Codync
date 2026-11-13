@@ -195,6 +195,8 @@
 .settings-computers {
   height: 100%;
   overflow-y: auto;
+  /* A row scrolled into view keeps the page's own margins (`.settings-computers-content`). */
+  scroll-padding: 14px 0 20px;
   background: var(--background);
 }
 .settings-computers-content {

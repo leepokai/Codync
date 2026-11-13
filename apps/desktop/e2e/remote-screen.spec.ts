@@ -64,10 +64,14 @@ test("a bot's Computer tab shows its computer's screen and opens it", async () =
     const details = await openComputerTab(page, section)
     const picture = details.locator('.computer-tab-screen')
     await expect(picture.locator('video')).toBeVisible({ timeout: 30_000 })
+    // Opened from a bot that's using the computer, the viewer watches first; otherwise it takes over.
+    const bot = await details.locator('.details-name').innerText()
+    const pill = picture.locator('.computer-tab-agent')
+    const watching = (await pill.count()) > 0 && (await pill.innerText()).startsWith(`${bot} `)
     await picture.getByRole('button', { name: 'Open the screen' }).click()
     const viewer = page.getByRole('dialog').filter({ has: page.locator('.screen-viewer') })
     await expect(viewer.locator('video')).toBeVisible({ timeout: 30_000 })
-    await expect(viewer.getByRole('button', { name: 'Hand back to bots' })).toBeVisible()
+    await expect(viewer.getByRole('button', { name: watching ? 'Take over' : 'Hand back to bots' })).toBeVisible()
     // One stream per device: the picture lets go while the viewer has the screen.
     await expect(picture.locator('video')).toBeHidden()
     await viewer.getByRole('button', { name: 'Close' }).click()

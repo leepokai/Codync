@@ -196,6 +196,7 @@ async fn install_server(
         url: None,
         headers: BTreeMap::new(),
         oauth: None,
+        auth_revision: String::new(),
     };
     match kind {
         "package" => {

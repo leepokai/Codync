@@ -81,13 +81,34 @@ clears it; `env` merges, with `null` removing a key. A change to how it runs (`c
 `args`, `env`) is checked on the edited copy and exactly that copy is saved if it passes,
 so a typo can't break a working connector and an error means the edit changed nothing. A
 save by anything else during the check refuses the edit, so overlapping edits never combine
-into settings nobody checked. A new `name` or `description` alone starts nothing: it saves
+into settings nobody checked. A rename cannot take another installed connector's name; rejection leaves the saved
+connector and bot choices unchanged. The name is checked again after verification,
+under the save lock, so a concurrent install cannot introduce a collision. An unchanged
+name remains valid, including duplicates imported from a config. A new `name` or `description` alone starts nothing: it saves
 even while the server can't start, `verify` is null in the answer and no bot restarts.
 Otherwise the bots that have the connector on are told to rebuild their tools. An agent that
 can resume restarts whole before its next turn (not only this connector's process); one
 that can't keeps its session, and the old definition, until its next new session. A bot
-that can't be told is logged and doesn't fail the saved edit. Registry and remote
-connectors are refused (`host/src/market/connector_update.rs`).
+that can't be told is logged and doesn't fail the saved edit (`host/src/market/connector_update.rs`).
+
+Custom URL connectors use the same loopback-only method with `url` and `headers`.
+Remote connection changes are saved before verification, allowing sign-in against
+the new endpoint; failed verification leaves the edit saved and refreshes no bots.
+Old running proxies are already invalidated, so affected bots cannot use the connector
+until a successful retry checks the saved settings and refreshes their tools.
+Metadata-only edits need no check. Explicit URL/header retries verify even when
+unchanged, so repeating the current URL after sign-in refreshes affected bots.
+The saved connection is checked before and after verification; token refreshes may
+advance the same grant, but intervening edits cannot supply its readiness result.
+URL changes require explicit replacement headers,
+and clear the old OAuth grant. URL or header changes advance the revision and
+invalidate pending sign-ins and running proxies.
+Revisioned managed edits require an updated keeper. An older keeper rejects the new record field before the connector list is saved.
+
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them.
+
+See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
+Registry connectors are still refused.
 
 ## Conversation requests
 

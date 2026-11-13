@@ -10,11 +10,12 @@
 //! only).
 
 use super::{Connector, oauth::OAuth, passwords};
+use crate::LockExt;
 use crate::keeper::PLACEHOLDER;
 use crate::keeper::client;
 use crate::keeper::record::{self, Keep, Record};
 use crate::store::Store;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,14 +42,11 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
     let mut live = BTreeSet::new();
     for c in items.iter_mut() {
         let Some((url, upstream)) = c.url.clone().and_then(|url| origin(&url).map(|o| (url, o))) else { continue };
-        live.insert(slot(&c.id));
         let headers: BTreeMap<String, String> =
             c.headers.iter().filter(|(_, v)| literal(v)).map(|(k, v)| (k.to_ascii_lowercase(), v.clone())).collect();
         let token: Option<OAuth> = c.oauth.clone().filter(|o| o.signed_in() && o.access_token != PLACEHOLDER);
-        if headers.is_empty() && token.is_none() {
-            continue;
-        }
         let mut record = Record::new(&upstream, headers);
+        record.auth_revision.clone_from(&c.auth_revision);
         if let Some(o) = &token {
             record.headers.insert("authorization".into(), format!("Bearer {}", o.access_token));
             record.oauth = Some(record::OAuth {
@@ -65,6 +63,12 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
             headers: c.headers.iter().filter(|(_, v)| *v == PLACEHOLDER).map(|(k, _)| k.clone()).collect(),
             oauth: token.is_none() && c.oauth.as_ref().is_some_and(|o| o.access_token == PLACEHOLDER),
         };
+        // Rebuild even when only placeholders remain: omitted headers must disappear.
+        // With nothing to retain, cleanup below deletes the old slot and its grants.
+        if record.headers.is_empty() && record.oauth.is_none() && keep.headers.is_empty() && !keep.oauth {
+            continue;
+        }
+        live.insert(slot(&c.id));
         client::put_proxied(store, &slot(&c.id), &record, &keep)?;
         for value in c.headers.values_mut().filter(|v| literal(v)) {
             PLACEHOLDER.clone_into(value);
@@ -98,8 +102,15 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
     for (name, value) in c.headers.iter().filter(|(_, v)| v.starts_with("op://")) {
         resolved.insert(name.to_ascii_lowercase(), passwords::resolve(store, value).await?);
     }
+    // Resolution can await another process. Never grant a replacement slot to a
+    // lookup made from its previous definition, or overwrite it with stale secrets.
+    let _guard = store.connector_lock.locked();
+    if super::connectors(store)?.iter().find(|saved| saved.id == c.id) != Some(c) {
+        bail!("The connector changed while resolving its target. Retry the request.");
+    }
     if !resolved.is_empty() {
-        let record = Record::new(&upstream, resolved);
+        let mut record = Record::new(&upstream, resolved);
+        record.auth_revision.clone_from(&c.auth_revision);
         let keep = Keep { headers: c.headers.keys().cloned().collect(), oauth: true };
         client::put_proxied(store, &slot, &record, &keep)?;
     }
@@ -109,7 +120,9 @@ pub async fn target(store: &Store, c: &Connector, url: &str) -> Result<Option<Va
     let base = client::short_grant(store, &slot)?;
     let parsed = reqwest::Url::parse(url)?;
     let query = parsed.query().map(|q| format!("?{q}")).unwrap_or_default();
-    Ok(Some(json!({"url": format!("{base}{}{query}", parsed.path()), "headers": {}, "base": base})))
+    Ok(Some(
+        json!({"url": format!("{base}{}{query}", parsed.path()), "headers": {}, "base": base, "connectorUrl": url, "authRevision": c.auth_revision}),
+    ))
 }
 
 #[cfg(all(test, unix))]
@@ -192,5 +205,30 @@ mod tests {
         })
         .unwrap();
         assert!(!client::has(&store, "connector:linear").unwrap());
+    }
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stale_target_lookup_cannot_grant_the_replacement_connection() {
+        let keeper = crate::keeper::tests::test_keeper();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        keeper.manage(&store);
+        let original: Connector = serde_json::from_value(json!({
+            "id":"stale", "name":"Stale", "url":"https://old.example/mcp",
+            "headers":{"X-Key":"old"}, "authRevision":"before"
+        }))
+        .unwrap();
+        save_connectors(&store, &[original]).unwrap();
+        let stale = connectors(&store).unwrap().remove(0);
+        update_connectors(&store, |all| {
+            all[0].url = Some("https://new.example/mcp".into());
+            all[0].headers.insert("X-Key".into(), "new".into());
+            all[0].auth_revision = "after".into();
+            Ok(())
+        })
+        .unwrap();
+        assert!(target(&store, &stale, stale.url.as_deref().unwrap()).await.is_err());
+        let record = keeper.keeper.record("connector:stale").unwrap().unwrap();
+        assert_eq!(record.upstream, "https://new.example");
+        assert_eq!(record.headers["x-key"], "new");
+        assert!(crate::market::oauth::target(&store, "stale", false).await.is_ok());
     }
 }

@@ -65,7 +65,12 @@ pub use daemon::run;
 
 #[cfg(unix)]
 mod daemon {
-    use super::{LOCKED, MAX_GRANT_SECS, protocol::Granted, record::Record, store};
+    use super::{
+        LOCKED, MAX_GRANT_SECS,
+        protocol::Granted,
+        record::{Keep, Record},
+        store,
+    };
     use crate::LockExt;
     use crate::remote::identity::Identity;
     use anyhow::{Context, Result, anyhow, bail};
@@ -142,13 +147,52 @@ mod daemon {
             self.secrets.put(&*self.key()?, slot, store::Kind::Proxied, &plain)
         }
 
+        /// A host edit replaces a connection atomically with its grants. Ordinary token
+        /// refreshes use `save_refreshed` instead, so they keep the same connection alive.
+        pub fn replace_record(&self, slot: &str, record: Record, keep: &Keep) -> Result<()> {
+            let mut grants = self.grants.locked();
+            let old = self.record(slot)?;
+            let record = record.checked()?.keeping(old.clone(), keep);
+            let changed = old.as_ref() != Some(&record);
+            self.put_record(slot, &record)?;
+            if changed && slot.starts_with("connector:") {
+                grants.retain(|_, grant| grant.slot != slot);
+            }
+            Ok(())
+        }
+
+        /// A refresh cannot overwrite a concurrent host edit or recreate a removed slot.
+        pub fn save_refreshed(&self, slot: &str, seen: &Record, fresh: &Record) -> Result<Record> {
+            let _grants = self.grants.locked();
+            let current = self.record(slot)?.ok_or_else(|| anyhow!("the record is gone"))?;
+            if current != *seen {
+                return Ok(current);
+            }
+            self.put_record(slot, fresh)?;
+            Ok(fresh.clone())
+        }
+
+        pub fn put_visible(&self, slot: &str, value: &[u8]) -> Result<()> {
+            let mut grants = self.grants.locked();
+            self.secrets.put(&*self.key()?, slot, store::Kind::Visible, value)?;
+            grants.retain(|_, grant| grant.slot != slot);
+            Ok(())
+        }
+
+        pub fn delete(&self, slot: &str) -> Result<()> {
+            let mut grants = self.grants.locked();
+            self.secrets.delete(slot)?;
+            grants.retain(|_, grant| grant.slot != slot);
+            Ok(())
+        }
+
         /// A new grant on proxied `slot` for `ttl` seconds (at most a day; none or 0: until revoked).
         pub fn grant(&self, slot: &str, ttl: Option<u64>) -> Result<Granted> {
+            let mut grants = self.grants.locked();
             if self.secrets.kind(slot) != Some(store::Kind::Proxied) {
                 bail!("no proxied secret in {slot}");
             }
             let token = crate::remote::crypto::b64(&crate::remote::crypto::random::<24>());
-            let mut grants = self.grants.locked();
             let now = Instant::now();
             grants.retain(|_, g| g.live(now));
             let until = ttl.filter(|&t| t > 0).map(|t| now + Duration::from_secs(t.min(MAX_GRANT_SECS)));
@@ -164,11 +208,6 @@ mod daemon {
 
         pub fn revoke(&self, token: &str) {
             self.grants.locked().remove(token);
-        }
-
-        /// Ends every grant on `slot` (it was deleted).
-        pub fn revoke_slot(&self, slot: &str) {
-            self.grants.locked().retain(|_, g| g.slot != slot);
         }
     }
 

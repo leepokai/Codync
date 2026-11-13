@@ -18,7 +18,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let fields = b["fields"].as_object().ok_or_else(|| anyhow!("Credential fields are required"))?;
             market::update_connectors(&hub.store, |all| {
                 let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
-                let values = if c.command.is_some() { &mut c.env } else { &mut c.headers };
+                let remote = c.command.is_none();
+                let values = if remote { &mut c.headers } else { &mut c.env };
+                let mut changed = false;
                 for (key, value) in fields {
                     if !values.contains_key(key) {
                         bail!("Unknown credential field");
@@ -27,7 +29,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                         .as_str()
                         .filter(|s| !s.is_empty() && s.len() <= market::MAX_CREDENTIAL_BYTES)
                         .ok_or_else(|| anyhow!("Invalid credential value"))?;
+                    changed |= values.get(key).is_none_or(|old| old != value);
                     values.insert(key.clone(), value.to_owned());
+                }
+                if remote && changed {
+                    c.auth_revision = uuid::Uuid::new_v4().to_string();
                 }
                 Ok(())
             })?;
@@ -141,10 +147,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "updateConnector" => {
             let id = str_arg(&b, "id")?;
-            let updated = market::connector_update::update_custom_connector(&hub.store, id, &b, hub.port).await?;
+            let updated = market::update_connector(&hub.store, id.trim(), &b, hub.port).await?;
             // Without a check how it runs didn't change, so no bot has anything to pick up.
             if !updated["verify"].is_null() {
-                refresh_tools_for_bots_using(hub, id);
+                refresh_tools_for_bots_using(hub, id.trim());
             }
             updated
         }
@@ -215,3 +221,7 @@ fn refresh_tools_for_bots_using(hub: &Hub, id: &str) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "connector_credentials_tests.rs"]
+mod credential_tests;

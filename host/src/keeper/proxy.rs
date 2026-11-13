@@ -53,7 +53,8 @@ async fn handle(State(keeper): State<Arc<Keeper>>, request: Request) -> Response
 
 async fn forward(keeper: &Arc<Keeper>, request: Request) -> Result<Response, StatusCode> {
     let (token, rest) = split(request.uri().path()).ok_or(StatusCode::UNAUTHORIZED)?;
-    let slot = keeper.granted(token).ok_or(StatusCode::UNAUTHORIZED)?;
+    let token = token.to_owned();
+    let slot = keeper.granted(&token).ok_or(StatusCode::UNAUTHORIZED)?;
     if !METHODS.contains(request.method()) {
         return Err(StatusCode::METHOD_NOT_ALLOWED);
     }
@@ -66,21 +67,32 @@ async fn forward(keeper: &Arc<Keeper>, request: Request) -> Result<Response, Sta
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
+    let upstream = record.upstream.clone();
     let url = target(&record, rest, request.uri().query()).map_err(|_| StatusCode::BAD_REQUEST)?;
     let (parts, body) = request.into_parts();
     let body = axum::body::to_bytes(body, MAX_BODY).await.map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
     if record.oauth.as_ref().is_some_and(|o| o.expires_at != 0 && o.expires_at <= now() + EARLY_SECS) {
         record = refreshed(keeper, &slot, record).await;
     }
+    check_grant(keeper, &token, &slot, &record, &upstream)?;
     let mut answer = send(&slot, &record, &parts, &url, body.clone()).await?;
     // Once, on a 401: the sign-in may have ended early.
     if answer.status() == StatusCode::UNAUTHORIZED && record.oauth.is_some() {
         let fresh = refreshed(keeper, &slot, record.clone()).await;
         if fresh.oauth.is_some() && fresh != record {
+            check_grant(keeper, &token, &slot, &fresh, &upstream)?;
             answer = send(&slot, &fresh, &parts, &url, body).await?;
         }
     }
     Ok(response(answer))
+}
+
+/// The body and token refresh may have waited while the host replaced the connection.
+fn check_grant(keeper: &Keeper, token: &str, slot: &str, record: &Record, upstream: &str) -> Result<(), StatusCode> {
+    if keeper.granted(token).as_deref() != Some(slot) || record.upstream != upstream {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(())
 }
 
 /// `/t/<token><rest>` → the token and the rest of the path (`""` or starting with `/`).
@@ -238,15 +250,7 @@ fn signed_out(mut record: Record) -> Record {
 async fn save(keeper: &Arc<Keeper>, slot: &str, current: Record, fresh: Record) -> Result<Record> {
     let keeper = keeper.clone();
     let slot = slot.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let now = keeper.record(&slot)?;
-        if now.as_ref() != Some(&current) {
-            return now.ok_or_else(|| anyhow!("the record is gone"));
-        }
-        keeper.put_record(&slot, &fresh)?;
-        Ok(fresh)
-    })
-    .await?
+    tokio::task::spawn_blocking(move || keeper.save_refreshed(&slot, &current, &fresh)).await?
 }
 
 #[cfg(test)]
@@ -271,3 +275,7 @@ mod tests {
         assert_eq!(url(&record, "/m", Some("key=x")), "https://api.example.com/v1/m");
     }
 }
+
+#[cfg(test)]
+#[path = "proxy_edit_tests.rs"]
+mod edit_tests;

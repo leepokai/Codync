@@ -77,7 +77,7 @@ pub(super) async fn start(
     let oauth = OAuth { client_id: app.client_id.to_owned(), token_endpoint, ..OAuth::default() };
     let interval = v["interval"].as_u64().unwrap_or(5);
     let lasts = Duration::from_secs(v["expires_in"].as_u64().unwrap_or(900));
-    let target = Target { id: c.id.clone(), url: c.url.clone() };
+    let target = Target { id: c.id.clone(), url: c.url.clone(), revision: c.auth_revision.clone() };
     tokio::spawn(poll(hub.clone(), target, oauth, device_code, interval, lasts));
     Ok(json!({"url": page, "callback": "host", "code": code}))
 }
@@ -87,6 +87,7 @@ pub(super) async fn start(
 struct Target {
     id: String,
     url: Option<String>,
+    revision: String,
 }
 
 /// What one answer from the token endpoint means.
@@ -127,7 +128,9 @@ async fn poll(hub: Arc<Hub>, target: Target, oauth: OAuth, device_code: String, 
         match step(&v, interval) {
             Step::Done => {
                 // Fails, dropping the token, when the connector no longer points where the sign-in started.
-                if let Err(error) = update(&hub.store, id, target.url.as_deref(), |c| signed_in(c, &oauth, &v)) {
+                if let Err(error) =
+                    update(&hub.store, id, target.url.as_deref(), &target.revision, |c| signed_in(c, &oauth, &v))
+                {
                     tracing::warn!(connector = %id, error = format!("{error:#}"), "couldn't save the sign-in");
                 }
                 return;

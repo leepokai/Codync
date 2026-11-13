@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdateOffer } from './host-update.ts'
+import { testLanguage } from './test-language.ts'
 
 test('an update asked from here runs for a while, then is offered again', () => {
   const requested = { kind: 'requested', at: 1_000_000 } as const
@@ -15,7 +16,8 @@ test('a refused update is offered again with why; a computer that cannot update 
   assert.deepEqual(offerHostUpdate(null, false), { kind: 'unavailable' })
 })
 
-test('the Codync row offers a newer release, says it is current, or makes no claim', () => {
+test('the Codync row offers a newer release, says it is current, or makes no claim', (t) => {
+  testLanguage(t, 'en-US')
   const line = (latest: string | null, offer: HostUpdateOffer) => hostVersionLine('2.28.0', latest, null, offer, 'Mac', 'macos')
   const available = { kind: 'available', last: null } as const
   assert.deepEqual(line('2.28.0', available), { version: '2.28.0', detail: ['Up to date'], warns: false, accessory: null })
@@ -27,12 +29,14 @@ test('the Codync row offers a newer release, says it is current, or makes no cla
   assert.deepEqual(line('2.29.0', { kind: 'updating' }).accessory, { kind: 'updating' })
 })
 
-test('a Codync Cloud computer says the cloud updates it, not how to update it by hand', () => {
+test('a Codync Cloud computer says the cloud updates it, not how to update it by hand', (t) => {
+  testLanguage(t, 'en-US')
   assert.deepEqual(hostVersionLine('2.28.0', '2.29.0', null, { kind: 'unavailable' }, 'Cloud', 'linux', true).detail,
     ['Version 2.29.0 is available.', 'Codync Cloud updates it before it next sleeps.'])
 })
 
-test('a computer too old for this app, or an update that did not take, is a problem', () => {
+test('a computer too old for this app, or an update that did not take, is a problem', (t) => {
+  testLanguage(t, 'en-US')
   const behind = { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' } as const
   assert.deepEqual(hostVersionLine('2.20.0', null, behind, { kind: 'available', last: null }, 'Mac', 'linux'),
     { version: '2.20.0', detail: ['This app needs 2.26.0 or newer.'], warns: true, accessory: { kind: 'button', title: 'Update' } })
@@ -42,3 +46,4 @@ test('a computer too old for this app, or an update that did not take, is a prob
     accessory: { kind: 'button', title: 'Try again' },
   })
 })
+

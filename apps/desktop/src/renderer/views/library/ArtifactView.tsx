@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Artifact } from '@shared/artifacts'
 import { DropdownMenu, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -18,6 +18,9 @@ import { ArtifactFrame, artifactShareItems, renameArtifact, TitleField } from '.
 export function ArtifactView({ botId, artifactId, close }: { botId: string; artifactId: string; close: () => void }) {
   const tr = useTr()
   const store = useStore()
+  const back = useRef<HTMLDivElement>(null)
+  // Take focus when the artifact opens: Escape and Tab then act on the artifact, not on the chat it covers.
+  useEffect(() => { back.current?.focus({ preventScroll: true }) }, [])
   const [error, setError] = useState<string | null>(null)
   const artifact = store.artifacts.byId.get(artifactId)
   const html = store.artifacts.html.get(artifactId)
@@ -26,7 +29,15 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
   useEffect(() => store.artifacts.load(store.client, botId, artifactId), [store, store.client, botId, artifactId, newest])
   useScreenViewed('artifact', artifactId)
   return (
-    <div className="artifact-layer fade-in">
+    <div ref={back} tabIndex={-1} className="artifact-layer fade-in" onKeyDown={(e) => {
+      // Escape leaves the artifact. A sheet, dialog or menu opened on top runs its own Escape first and
+      // prevents this one (`useEscape`), and typing fields keep Escape for themselves.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      e.stopPropagation()
+      close()
+    }}>
       <div className="top-chrome">
         <div className="top-chrome-row">
           <MacChatButton className="ringed" title={tr('Close artifact')} icon="xmark" direction={[-1, 0]} onClick={close} />

@@ -2032,5 +2032,10 @@
   "Click to see the screen": "点按查看画面",
   "Tap to see the screen": "轻点查看画面",
   "Paused. Click to continue.": "已暂停，点按继续",
-  "Paused. Tap to continue.": "已暂停，轻点继续"
+  "Paused. Tap to continue.": "已暂停，轻点继续",
+  "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "你的云端电脑正在升级到 Codync {minimum} 或更高版本；完成后这个 App 会自动重连。",
+  "Updating Codync on {host}. This takes a few minutes.": "正在更新 {host} 上的 Codync，大约需要几分钟。",
+  "The app on this computer needs to be {minimum} or newer ({host} requires it).": "本机这个 App 需要升级到 {minimum} 或更高版本（{host} 的要求）。",
+  "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "{host} 上的 Codync 是 {version}；需要把那台电脑上的 Codync 升级到 {minimum} 或更高版本。",
+  "{host} needs Codync {version} or newer.": "{host} 需要 Codync {version} 或更高版本。"
 }

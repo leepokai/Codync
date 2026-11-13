@@ -12,10 +12,12 @@
 
 mod device;
 mod discovery;
+mod registration;
 
 pub use device::offers_sign_in;
 pub use discovery::required;
 use discovery::{resource_metadata, server_metadata, split};
+use registration::register_client;
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -121,57 +123,6 @@ fn update(store: &Store, id: &str, url: Option<&str>, f: impl FnOnce(&mut Connec
     })
 }
 
-/// The server's answer to a dynamic client registration: its client id and secret. `Err` carries
-/// the server's own reason, so a person sees why it refused instead of only a status code.
-async fn register(endpoint: &str, redirect_uris: &[String]) -> Result<(String, Option<String>)> {
-    let res = crate::http()
-        .post(endpoint)
-        .json(&json!({
-            "client_name": "Codync",
-            "redirect_uris": redirect_uris,
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-            "token_endpoint_auth_method": "none",
-        }))
-        .timeout(TIMEOUT)
-        .send()
-        .await
-        .context("registering the sign-in")?;
-    let status = res.status();
-    let v: Value = res.json().await.unwrap_or(Value::Null);
-    if let Some(client_id) = text(&v["client_id"]) {
-        return Ok((client_id, text(&v["client_secret"])));
-    }
-    let reason = text(&v["error_description"]).or_else(|| text(&v["error"]));
-    Err(match reason {
-        Some(reason) => anyhow!("{status}: {reason}"),
-        None => anyhow!("{status}"),
-    })
-}
-
-/// Registers the client for one sign-in: its id and secret, and the redirect URIs it accepted.
-/// A server that only allows the loopback URI a native app uses refuses the whole registration
-/// when the cloud bounce URI is among the URIs, so signing in on this computer then registers just
-/// the loopback URI. `phone` marks a sign-in started on a phone, which that fallback cannot serve.
-async fn register_client(
-    endpoint: &str,
-    wanted: Vec<String>,
-    loopback: String,
-    phone: bool,
-) -> Result<(String, Option<String>, Vec<String>)> {
-    match register(endpoint, &wanted).await {
-        Ok((client_id, secret)) => Ok((client_id, secret, wanted)),
-        Err(first) if wanted.len() > 1 => match register(endpoint, std::slice::from_ref(&loopback)).await {
-            Ok(_) if phone => bail!(
-                "This connector accepts only a sign-in from the computer, not from the phone ({first}). Open Codync on this computer and sign in there."
-            ),
-            Ok((client_id, secret)) => Ok((client_id, secret, vec![loopback])),
-            Err(second) => bail!("refused the registration ({first}); with only the loopback redirect URI: {second}"),
-        },
-        Err(first) => Err(first),
-    }
-}
-
 /// Starts signing in to connector `id`: the page to open, and the code to type there for a device sign-in.
 /// `shows_code`: the client can show that code (older apps can't).
 pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: bool) -> Result<Value> {
@@ -213,13 +164,9 @@ pub async fn start(hub: &Arc<Hub>, id: &str, callback: Callback, shows_code: boo
             )
         })?;
         let wanted: Vec<String> = std::iter::once(loopback.clone()).chain(app).collect();
-        let (client_id, client_secret, registered) =
-            register_client(&register_endpoint, wanted, loopback, callback == Callback::App)
-                .await
-                .with_context(|| format!("signing in to {}", c.name))?;
-        oauth.client_id = client_id;
-        oauth.client_secret = client_secret;
-        oauth.redirect_uris = registered;
+        register_client(&register_endpoint, wanted, loopback, callback, &mut oauth)
+            .await
+            .with_context(|| format!("signing in to {}", c.name))?;
     }
     oauth.token_endpoint = token_endpoint;
     let client_id = oauth.client_id.clone();

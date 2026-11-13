@@ -5,6 +5,10 @@
   "Add Widget": "Добавить виджет",
   "Add a Codync widget": "Добавить виджет Codync",
   "Add a widget": "Добавить виджет",
+  "Add a key to choose from {name}'s models.": "Добавьте ключ, чтобы выбрать модель {name}.",
+  "{name} wants to: {title}": "{name} хочет: {title}",
+  "in {path}": "в {path}",
+  "N reject + say why": "N отклонить + объяснить",
   "Add account": "Добавить аккаунт",
   "Appearance": "Оформление",
   "App language": "Язык приложения",
@@ -2024,5 +2028,9 @@
   "Active bots move to the top": "Активные боты перемещаются наверх",
   "Bots keep the order you set": "Боты сохраняют заданный вами порядок",
   "Waking the computer…": "Пробуждение компьютера…",
-  "Open the screen": "Открыть экран"
+  "Open the screen": "Открыть экран",
+  "Click to see the screen": "Нажмите, чтобы увидеть экран",
+  "Tap to see the screen": "Коснитесь, чтобы увидеть экран",
+  "Paused. Click to continue.": "Приостановлено. Нажмите, чтобы продолжить.",
+  "Paused. Tap to continue.": "Приостановлено. Коснитесь, чтобы продолжить."
 }

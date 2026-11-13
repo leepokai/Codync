@@ -8,6 +8,7 @@ public struct ScreenView: View {
     @Environment(BotStore.self) private var model
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     /// Animated close from the presenting layer (`.codyncOverlay`'s `close`); falls back to `dismiss`.
     private let close: (() -> Void)?
 
@@ -24,6 +25,7 @@ public struct ScreenView: View {
     /// the screen, bots may still look), then what they last chose.
     @State private var wanted: Bool
     @State private var portrait = false
+    @State private var pause = ScreenPause(.remoteScreen, state: .watching)
 
     /// `watching`: the bot being watched, when opened from its chat.
     public init(watching: String? = nil, close: (() -> Void)? = nil) {
@@ -33,6 +35,8 @@ public struct ScreenView: View {
 
     private var screen: ScreenState? { model.screen }
     private var agent: Bot? { screen?.agentBot.flatMap { model.bots[$0] } }
+    /// The idle pause counts while the picture is live and the app in front.
+    private var idleCounts: Bool { session?.phase == .live && scenePhase == .active }
 
     public var body: some View {
         ZStack {
@@ -45,6 +49,8 @@ public struct ScreenView: View {
                     // overlays it, since shrinking there would leave the screen too small.
                     .ignoresSafeArea(portrait ? [] : .keyboard)
                 status(session)
+            } else if ScreenNotice(model) == nil, let prompt = ScreenNotice(pause) {
+                prompt
             } else {
                 unavailable
             }
@@ -72,6 +78,12 @@ public struct ScreenView: View {
         .onChange(of: screen?.available) { _, available in
             if available == true, session == nil { start() }
         }
+        // Paused after a while live with nobody touching the app (the count starts over back from the background);
+        // tapping continues in a new session, with the user's choice of control.
+        .task(id: idleCounts) { if idleCounts { await pause.pauseWhenIdle() } }
+        .onChange(of: pause.state) { _, state in
+            if state == .watching { start() } else { stop() }
+        }
         // Control comes and goes with the computer (a restarted helper, its permission): the user's
         // choice comes back with it.
         .onChange(of: screen?.input) {
@@ -88,7 +100,8 @@ public struct ScreenView: View {
 
     /// Also runs when the screen becomes available after opening, so it leaves orientation alone.
     private func start() {
-        guard session == nil, let client = model.client, let screen, screen.available, let d = display ?? screen.mainDisplay else { return }
+        guard session == nil, pause.state == .watching, let client = model.client, let screen, screen.available,
+              let d = display ?? screen.mainDisplay else { return }
         display = d
         let s = ScreenSession(client: client, display: d)
         session = s
@@ -101,6 +114,8 @@ public struct ScreenView: View {
         session = nil
         if tookOver { model.screenTakeover(false) }
         tookOver = false
+        interactive = false
+        keyboard = false
     }
 
     private func setInteractive(_ on: Bool) {

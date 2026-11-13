@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, DropdownMenu, IconButton, Spinner } from '../../components/Controls'
+import { DropdownMenu, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
-import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { fill } from '../../lib/fill'
 import { useModel } from '../../lib/observable'
-import { screenAvailable, screenNotice, type ScreenNotice } from '../../lib/screen-state'
+import { screenAvailable, screenNotice } from '../../lib/screen-state'
 import { useTr } from '../../lib/use-language'
 import { useScreenViewed } from '../../store/analytics'
 import type { BotStore } from '../../store/bot-store'
 import type { ScreenSession } from '../../store/screen-session'
+import { Notice, ScreenPrompt } from './ScreenNotice'
+import { usePauseWhenIdle } from './use-idle-pause'
 import { useScreenInput } from './use-screen-input'
 import { screenComputer, useScreenSession, useVideo, useViewSize } from './use-screen-session'
 import './screen-viewer.css'
@@ -26,7 +27,10 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
   const screen = store.screen
   const online = store.connection.kind === 'online'
   const available = online && screenAvailable(screen)
-  const session = useScreenSession(store, available)
+  const [paused, setPaused] = useState(false)
+  // The display picked from Displays, for the session a pause or an outage starts next.
+  const picked = useRef<number | null>(null)
+  const session = useScreenSession(store, available && !paused, picked)
   const [interactive, setInteractive] = useState(false)
   const tookOver = useRef(false)
   /** Whether the user wants the controls: at first unless this opened to watch a bot, then what they last chose. */
@@ -58,6 +62,7 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
   // Back live after a failure or a long outage, the host may have handed control back to the bots when its last
   // viewer went: ask again.
   const live = session?.phase.kind === 'live'
+  usePauseWhenIdle(live, () => setPaused(true), 'remote_screen')
   useEffect(() => {
     if (live && tookOver.current && store.screen?.userControl === false) store.screenTakeover(true)
   }, [live])
@@ -81,7 +86,10 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
       ) : null}
       {displays.length > 1 ? (
         <DropdownMenu className="icon-button screen-viewer-menu" title={tr('Displays')} items={() => displays.map((d) => ({
-          title: d.name, icon: 'display', verbatim: true, selected: d.id === session.display.id, action: () => session.switchDisplay(d),
+          title: d.name, icon: 'display', verbatim: true, selected: d.id === session.display.id, action: () => {
+            picked.current = d.id
+            session.switchDisplay(d)
+          },
         }))}>
           <Icon name="display.2" size={14} weight="medium" />
         </DropdownMenu>
@@ -97,7 +105,7 @@ export function ScreenViewer({ store, watching }: { store: BotStore; watching: s
         <video ref={video} className="screen-viewer-video" autoPlay muted playsInline hidden={!session?.video} />
         <textarea ref={keys} className="screen-viewer-keys" aria-label={tr('Keyboard for the remote screen')} autoComplete="off" autoCorrect="off" spellCheck={false} tabIndex={-1}
           data-captures-keys={interactive && live ? '' : undefined} />
-        <ScreenStatus store={store} session={session} available={available} canControl={canControl} />
+        {paused && available ? <ScreenPrompt kind="paused" onClick={() => setPaused(false)} /> : <ScreenStatus store={store} session={session} available={available} canControl={canControl} />}
       </div>
     </SheetPage>
   )
@@ -109,15 +117,4 @@ function ScreenStatus({ store, session, available, canControl }: { store: BotSto
   if (notice) return <Notice {...notice} />
   const note = !canControl ? tr('View only. To allow control, open Codync → Settings → Computer access on the computer.') : session?.lastError ? tr(session.lastError) : null
   return note ? <Text className="screen-viewer-note" size="caption" tone="secondary">{note}</Text> : null
-}
-
-/** What shows instead of the picture; `compact` in a small picture (the bot details' Computer tab). */
-export function Notice({ icon, text, retry, compact = false }: ScreenNotice & { compact?: boolean }) {
-  return (
-    <VStack gap={compact ? 8 : 12} className={`screen-viewer-notice${compact ? ' compact' : ''}`}>
-      {icon ? <Icon name={icon} size={compact ? 20 : 28} color="var(--secondary)" /> : <Spinner size={compact ? 18 : 22} />}
-      <Text size={compact ? 'caption' : 'callout'} tone="secondary">{text}</Text>
-      {retry ? <Button kind="secondary" onClick={retry} title="Try again"><Icon name="arrow.clockwise" size={13} /></Button> : null}
-    </VStack>
-  )
 }

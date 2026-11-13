@@ -108,8 +108,20 @@ channels `input` and `input-fast`), recovery and renewal like the iPhone's `Scre
 Each bot runs on one computer, so bot details (desktop inspector, iPhone and Android sheets) have a **Computer** tab
 between Details and Library: the computer's name and connection label, a live picture of its screen, and the Use the
 computer switch (moved from Details). The picture is a view-only session of its own (no `screenTakeover`, no input) at
-the picture's size, 16:10 and letterboxed; it streams only while the tab shows, the window or app is in front and the
-full viewer isn't open (one stream per device), and stops when any of that ends. A bot using the computer shows as
+the picture's size, 16:10 and letterboxed. Opening the tab starts nothing: the picture offers "Click to see the screen"
+("Tap…" on the phones) and connects only when clicked, again on each visit (leaving the tab, or the window or app going
+to the background, asks again); from then it streams only while the tab shows, the window or app is in front and the
+full viewer isn't open (one stream per device), and stops when any of that ends.
+
+**Idle pause**: the picture and the full viewer stop streaming after 5 minutes of live picture with nobody touching the
+app (counted from when it goes live; a connecting or failed session sends nothing and never pauses. Desktop: the
+pointer, a key or the wheel in that window; phones: any touch in the app; watching alone doesn't count) and show
+"Paused. Click to continue." ("Tap…" on the phones) until clicked, which starts a new session (the viewer keeps its
+Take over or Hand back choice, and the display picked from Displays: desktop `displayToShow`, while the computer
+still has it, else the main one; phones: kept in their viewer state); while the computer is offline or its screen unavailable, the viewer shows why instead.
+One constant per app (`SCREEN_IDLE_MS` in `lib/screen-state.ts` on the desktop, `ScreenPause.idleLimit` on the
+iPhone, `SCREEN_PAUSE_AFTER_MS` in `ScreenPause.kt` on Android); each pause reports `remote_screen_paused`. It bounds what a picture left open costs: TURN traffic for a relayed computer, and the helper's
+capture and encoding on the computer. A bot using the computer shows as
 "{name} is using the computer" over it. Clicking or tapping it opens the full viewer: watching when this bot is the one
 using the computer, else as from Computers. Until it's live the picture shows the viewer's own notices
 (`screenNotice` in `lib/screen-state.ts` on the desktop, `ScreenNotice` on the iPhone, `unavailableNotice` on Android): a sleeping cloud computer reads "Waking the computer…",

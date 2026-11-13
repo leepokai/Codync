@@ -2,16 +2,32 @@ import CodyncKit
 import SwiftUI
 
 /// What shows in place of the screen (the full viewer, the bot details' picture): what's wrong, or a
-/// spinner while waiting, and a retry after a failure.
+/// spinner while waiting, and a retry after a failure; or the one button that starts or continues it.
 struct ScreenNotice: View {
     let icon: String?
     let text: String
     var retry: (() -> Void)?
+    /// The whole area is one button, labeled with the text.
+    var tap: (() -> Void)?
     @Environment(\.screenNoticeCompact) private var compact
 
     var body: some View {
+        if let tap {
+            Button(action: tap) {
+                notice.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+            }
+            .buttonStyle(PressScale())
+            .accessibilityLabel(L10n.tr(text))
+        } else {
+            notice
+        }
+    }
+
+    private var notice: some View {
         VStack(spacing: compact ? 8 : 12) {
-            if let icon {
+            if let icon, tap != nil {
+                Image(systemName: icon).font(.system(size: compact ? 30 : 44)).foregroundStyle(.primary)
+            } else if let icon {
                 Image(systemName: icon).font(compact ? .title2 : .largeTitle).foregroundStyle(.secondary)
             } else {
                 Spinner(size: compact ? 18 : 22)
@@ -44,6 +60,12 @@ extension ScreenNotice {
         } else {
             self.init(icon: "arrow.down.circle", text: "Update Codync on your computer to use its screen from here.")
         }
+    }
+
+    /// Start or continue the screen; nil while it's wanted.
+    init?(_ pause: ScreenPause) {
+        guard let prompt = pause.state.prompt else { return nil }
+        self.init(icon: "play.circle", text: prompt, tap: pause.play)
     }
 
     /// A session that isn't showing the screen yet: connecting, reconnecting, or failed with a retry.

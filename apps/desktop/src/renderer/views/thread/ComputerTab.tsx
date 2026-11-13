@@ -1,5 +1,5 @@
 import type { Bot } from '@shared/models'
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RowLabel, Switch } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { HStack } from '../../components/Stack'
@@ -11,7 +11,8 @@ import { useScreenViewed } from '../../store/analytics'
 import type { BotStore } from '../../store/bot-store'
 import { useApp, useStore } from '../../store/context'
 import { ComputerBadge } from '../ComputerBadge'
-import { Notice } from '../screen/ScreenViewer'
+import { Notice, ScreenPrompt, type ScreenPromptKind } from '../screen/ScreenNotice'
+import { usePauseWhenIdle } from '../screen/use-idle-pause'
 import { screenComputer, useScreenSession, useVideo, useViewSize, useWindowShown } from '../screen/use-screen-session'
 import './computer-tab.css'
 
@@ -37,7 +38,8 @@ export function ComputerTab({ bot }: { bot: Bot }) {
   )
 }
 
-/** The screen, view only, while this tab and the window show; it lets go while the full viewer has it. */
+/** The screen, view only, once clicked and while this tab and the window show; it lets go while the full viewer has it,
+ * and pauses when nobody touches the window for a while. */
 function ScreenPreview({ store, bot }: { store: BotStore; bot: Bot }) {
   const tr = useTr()
   const app = useApp()
@@ -45,18 +47,27 @@ function ScreenPreview({ store, bot }: { store: BotStore; bot: Bot }) {
   const available = online && screenAvailable(store.screen)
   const viewing = app.screenComputer === store.computer.id
   const shown = useWindowShown()
-  const session = useScreenSession(store, available && !viewing && shown)
+  /** Why the picture waits for a click; null once clicked. */
+  const [prompt, setPrompt] = useState<ScreenPromptKind | null>('start')
+  // A hidden window (closed to the background, minimized) asks again next time, like leaving the tab.
+  useEffect(() => {
+    if (!shown) setPrompt('start')
+  }, [shown])
+  const session = useScreenSession(store, !prompt && available && !viewing && shown)
   const area = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   useVideo(video, session)
   useViewSize(area, session)
-  const notice = viewing ? null : screenNotice(screenComputer(store), session, available, tr)
+  const asking = available && !viewing ? prompt : null
+  const notice = viewing || asking ? null : screenNotice(screenComputer(store), session, available, tr)
   const agentId = store.screen?.agentBot ?? null
   const agent = agentId ? store.bots.get(agentId) : undefined
   const live = session?.phase.kind === 'live'
+  usePauseWhenIdle(live, () => setPrompt('paused'), 'bot_computer')
   return (
     <div ref={area} className="computer-tab-screen">
       <video ref={video} className="screen-viewer-video" autoPlay muted playsInline hidden={!session?.video} />
+      {asking ? <ScreenPrompt compact kind={asking} onClick={() => setPrompt(null)} /> : null}
       {notice ? <Notice {...notice} compact /> : null}
       {live ? (
         <button className="computer-tab-open" title={tr('Open the screen')} aria-label={tr('Open the screen')}

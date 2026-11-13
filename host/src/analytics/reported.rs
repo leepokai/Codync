@@ -74,6 +74,11 @@ pub enum Reported {
     ScreenViewed {
         screen: Screen,
     },
+    /// A computer's screen stopped streaming after a while with nobody touching the app (desktop): the bot details'
+    /// picture (`bot_computer`) or the full viewer (`remote_screen`).
+    RemoteScreenPaused {
+        screen: Screen,
+    },
     /// A picture opened full size (desktop).
     ImagePreviewOpened,
     ImagePreviewAction {
@@ -559,6 +564,10 @@ mod tests {
                 Event::VoiceNotePlayed,
             ),
             (json!({"event": "screen_viewed", "app": "tui", "screen": "bot_details"}), Event::ScreenViewed),
+            (
+                json!({"event": "remote_screen_paused", "app": "desktop", "screen": "bot_computer"}),
+                Event::RemoteScreenPaused,
+            ),
             (json!({"event": "image_preview_opened", "app": "desktop"}), Event::ImagePreviewOpened),
             (
                 json!({"event": "image_preview_action", "app": "desktop", "action": "copy_image", "from": "menu", "outcome": "done"}),

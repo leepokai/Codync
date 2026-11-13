@@ -1,4 +1,4 @@
-# A bot's Computer tab on the phones: the computer's connection over a live picture of its screen, or the notice saying
+# A bot's Computer tab on the phones: the computer's connection over its screen (a tap shows it live), or the notice saying
 # why there's none, and Use the computer, which is there and no longer on Details. The phone must already be signed in
 # and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
 # `welcome`; the flow makes its own bot there:
@@ -42,10 +42,11 @@ onFlowComplete:
 - tapOn: "Computer"
 - assertVisible: "Connected"
 - assertVisible: "Use the computer.*"
-# The host's own screen streams when it can; a sandbox host without Codync Screen says how to set it up instead.
+# The host's own screen waits for a tap when it can show (nothing streams before); a sandbox host without Codync Screen
+# says how to set it up instead.
 - runFlow:
     when:
-      notVisible: "Open the screen"
+      notVisible: "Tap to see the screen"
     commands:
       - assertVisible: ".*Permissions are set separately on each computer\\."
 - takeScreenshot: computer-tab

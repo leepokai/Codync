@@ -146,7 +146,7 @@ systemctl --user edit codync-host
 systemctl --user restart codync-host
 ```
 
-If you run the host under your own supervisor instead of the installed service, start it with `CODYNC_EXTERNAL_URL=https://codync.example.com codync-host serve --bind 127.0.0.1`. Binding to `127.0.0.1` keeps the host reachable only through the proxy (and the relay).
+To keep the installed service on this computer only, run `codync-host install --bind 127.0.0.1` once: the host then answers only through the proxy (and the relay), and updates keep that setting. `codync-host install --bind 0.0.0.0` opens it to every interface again, and `codync-host status` shows which one is set. If you run the host under your own supervisor instead, start it with `CODYNC_EXTERNAL_URL=https://codync.example.com codync-host serve --bind 127.0.0.1`.
 
 The host puts these URLs first in the pairing code and sends its current addresses on every connection, by any route. Paired phones save them on their own the next time they connect, so you don't need to pair again. Pair again only if the phone can't reach the computer at all: none of its saved addresses answers and the relay is off.
 

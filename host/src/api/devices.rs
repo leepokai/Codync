@@ -39,8 +39,9 @@ const LOCAL_ONLY: &[&str] = &[
     "setAnalytics",
     "track",
     "reportError",
-    // Voice keys are entered on the computer itself; phones only use them.
+    // Voice keys and the speech server are set on the computer itself; phones only use them.
     "setVoiceKey",
+    "setSpeechServer",
     // An export file is a path on this computer.
     "previewImport",
     "importBots",

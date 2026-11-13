@@ -141,6 +141,8 @@ host answers and sends it once the host is up.
 | `artifact_published` | host | A bot's `publish_artifact` (`chatCall`) | `change` (`new`/`update`), `card` (whether its card went into the bot's chat), never its title |
 | `voice_note_sent` | host | A bot's `send_file` with text (`chatCall`): a message that carries a voice note | never the file, its name or the text |
 | `voice_note_played` | host `track` (desktop), iOS, Android | A voice note's play button starts it from its beginning (not a resume) | `outcome` (`played`/`failed`), `error` when failed (`load`: fetching or opening it; `playback`: starting it), never which note |
+| `speech_server_linked` | host | `setSpeechServer` links a speech server for dictation (unlinking isn't counted) | `outcome` (`linked`/`failed`), `error` when failed (`bad_address`/`off_network`: not on the user's computers or network/`unreachable`/`timed_out`/`needs_model`/`refused`: an error status/`no_transcript`/`other`), never the address or model |
+| `local_dictation_transcribed` | host | `voiceTranscribe` with provider `local`: one piece of dictation on the linked speech server | `outcome` (`transcribed`/`silent`: no speech heard/`failed`), `error` when failed (as `speech_server_linked`, plus `not_linked`), never the audio or transcript |
 | `credential_saved` | host | A key, login or vault is saved (clearing one isn't) | `kind` (`login`/`onepassword`/`connector`/`composio`/`voice`/`agent_env`) |
 | `agent_setup_started` | host | `agentSetup` (an agent's install or sign-in terminal) | `agent` |
 | `agent_signed_in` | host | `agentAuthenticate` | `agent` |

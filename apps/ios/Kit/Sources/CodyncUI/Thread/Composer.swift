@@ -36,6 +36,10 @@ struct Composer: View {
     @State private var photoItems: [PhotosPickerItem] = []
     @FocusState private var focused: Bool
     @State private var dictation = Dictation()
+    /// Bumped after dictated words land in the unfocused field: it keeps the height it measured in the update that
+    /// set its text (beside the send button's old width) until it's edited, so it's rebuilt at its settled width.
+    /// A focused field measures again by itself, and rebuilding it would drop the keyboard.
+    @State private var dictatedLanding = 0
     /// One line of the field's text, following Dynamic Type: the send button centers on the last line.
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
@@ -221,7 +225,10 @@ struct Composer: View {
                 HStack(spacing: 0) {
                     Button {
                         Task {
-                            await dictation.start(after: draft, model: model) { change in draft = change(draft) }
+                            await dictation.start(after: draft, model: model) { change in
+                                draft = change(draft)
+                                if !focused { Task { dictatedLanding += 1 } }
+                            }
                         }
                     } label: {
                         Image(systemName: "mic")
@@ -253,6 +260,7 @@ struct Composer: View {
                 .font(.body)
                 .textFieldStyle(.plain)
                 .focused($focused)
+                .id(dictatedLanding)
                 // A hardware keyboard's Return (⌘↩ too) submits the field and ends editing.
                 .onSubmit(newline)
                 .padding(.vertical, fieldPadding)

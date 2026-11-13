@@ -1,5 +1,6 @@
-import { voiceEngine, voiceEngineIds } from '../../../shared/voice-engine'
-import type { HostClient } from '../../client/host-client'
+import { dictationEngineIds, voiceEngine, voiceEngineIds } from '../../../shared/voice-engine'
+import type { HostClient, HostError } from '../../client/host-client'
+import { trNow } from '../../lib/l10n'
 import { pref, type Pref } from '../../lib/prefs'
 
 // Realtime voice on the user's own provider keys (host/src/voice.rs, kit Voice.swift +
@@ -7,6 +8,9 @@ import { pref, type Pref } from '../../lib/prefs'
 
 export type VoiceProvider = 'openai' | 'gemini'
 export const VOICE_PROVIDERS: VoiceProvider[] = ['openai', 'gemini']
+
+/** What transcribes dictation in the message box: a provider on the user's key, or `local`, the speech server linked on the computer (no key, no usage). */
+export type DictationTarget = VoiceProvider | 'local'
 
 /** The provider's newest model for each voice mode, as the computer last found them. */
 export interface VoiceDefaults {
@@ -17,6 +21,14 @@ export interface VoiceDefaults {
 
 export interface VoiceStatus {
   providers: { provider: VoiceProvider; configured: boolean; defaults?: VoiceDefaults | null }[]
+}
+
+/** Whether the computer's linked speech server can transcribe dictation; `message` says what to do when it can't. */
+export interface LocalDictation {
+  ready: boolean
+  message: string | null
+  /** The linked speech server's address; hosts before `server` omit it. */
+  server?: string | null
 }
 
 export interface VoiceModels {
@@ -54,7 +66,7 @@ export const voiceInfo: Record<VoiceProvider, {
 export const isVoiceProvider = (s: string): s is VoiceProvider => s === 'openai' || s === 'gemini'
 export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some((x) => x.provider === p && x.configured)
 
-/** `device` (on-device speech) or a provider. */
+/** `device` (on-device speech), `local` (the computer's speech model) or a provider. */
 function enginePref(stored: Pref<string>): Pref<string> {
   return { ...stored, get: () => voiceEngine(stored.get(), window.codync.platform) }
 }
@@ -62,6 +74,16 @@ function enginePref(stored: Pref<string>): Pref<string> {
 export const engineOptions = () => voiceEngineIds(window.codync.platform).map((id) => ({
   id, label: isVoiceProvider(id) ? voiceInfo[id].name : 'On device',
 }))
+
+/** The `local` engine goes by the computer it runs on: "This computer" when that's where this app is, its name otherwise (an SSH or account computer). */
+export const localEngineName = (thisComputer: boolean, hostName: string) => (thisComputer ? 'This computer' : hostName)
+
+/** The engines the message box dictates with: call engines plus `local`, under `localName` (dictation only). */
+export const dictationEngineOptions = (localName: string) =>
+  dictationEngineIds(window.codync.platform).map((id) => ({
+    id,
+    label: isVoiceProvider(id) ? voiceInfo[id].name : id === 'local' ? localName : 'On device',
+  }))
 
 const storedCallEngine = pref('callEngine', 'device')
 /** Keep an old/default device choice available to call startup's configured-provider fallback. */
@@ -154,8 +176,28 @@ export async function voiceStatus(c: HostClient) {
   return status
 }
 
+/** The linked speech server and whether dictation can use it; hosts before `localDictation` are told to update. */
+export async function localDictation(c: HostClient): Promise<LocalDictation> {
+  try {
+    return await c.call<LocalDictation>('localDictation')
+  } catch (e) {
+    if ((e as Partial<HostError>).status === 404) return { ready: false, message: trNow('Update Codync on your computer to dictate with its own speech model.') }
+    throw e
+  }
+}
+
 /** Checks the key with the provider before the computer keeps it; an empty key removes it. */
 export const setVoiceKey = (c: HostClient, p: VoiceProvider, key: string) => c.call<VoiceStatus>('setVoiceKey', { provider: p, key }, 30_000)
+
+/** The computer gives the speech server two minutes per request (host `voice::local` `TIMEOUT`) — linking's test piece and every dictated piece, a big model on a slow CPU — plus the trip there and back. */
+export const SPEECH_SERVER_MS = 135_000
+
+/**
+ * Links the speech server at `url`, asking it for `model` (empty: the one it serves), after the computer checks it with a test
+ * transcription; an empty `url` unlinks. Loopback-only, like `setVoiceKey`.
+ */
+export const setSpeechServer = (c: HostClient, url: string, model = '') =>
+  c.call<LocalDictation>('setSpeechServer', { url, model }, SPEECH_SERVER_MS)
 
 /** A short-lived credential for one call's audio session. */
 export const voiceSession = async (c: HostClient, p: VoiceProvider, model: string, voice: string) =>

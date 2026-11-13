@@ -62,8 +62,9 @@ window takes the speech helper; it doesn't stop on a pause. On the iPhone the pi
 was recognized so far. The desktop island's message field has the same mic and pill.
 
 A `chevron.up` beside the composer's mic picks dictation's engine, kept on the device apart from the
-call engine (`dictationEngine`): **On device** (the above), or **OpenAI** / **Gemini** on the user's
-own key. With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
+call engine (`dictationEngine`): **On device** (the above), **OpenAI** / **Gemini** on the user's own
+key, or the computer's own speech server (`local`), listed under the computer's name (**This computer** in the
+desktop app on that computer). With a provider, the mic first checks that the computer holds its key (`voiceStatus`; no key
 opens Voice chat settings before anything is recorded), then records; the pill (and its time) appears only once
 the microphone is open, so nothing said before it is lost; nothing is typed while recording. The
 pill's stop turns the pill into "Transcribing…" and the whole recording goes through
@@ -73,8 +74,36 @@ channel message each on the iPhone; under the host's 2 MB request body on the de
 time, joined in order; a tail under half a second stays with the piece before, and the first piece
 that fails fails the dictation. Under half a second of audio in all is dropped. Sending a message,
 starting a call or switching chats drops a dictation still recording or transcribing. The
-recording's length counts toward the provider's minutes this month. The island's mic stays
-on-device (its window doesn't reach the host).
+recording's length counts toward the provider's minutes this month.
+
+The computer's speech server records the same way, and `voiceTranscribe` with `provider: "local"` has the host
+send each piece to a speech server the user runs and links (`host/src/voice/local.rs`): any server
+answering OpenAI's `POST /v1/audio/transcriptions` (whisper.cpp's `whisper-server --inference-path
+/v1/audio/transcriptions`, Speaches, …), on the computer or another of the user's computers on the
+same network, with whatever model the user picked. The host resolves the server's name at each
+request and sends audio only when every address is loopback, private, link-local or Tailscale's
+100.64.0.0/10, then connects only to those addresses with no proxy and no redirects, so audio never
+leaves the user's computers. A recording that never gets louder than -45 dBFS is answered with no
+text without reaching the server (Whisper writes "Thank you." for silence), and Whisper's
+markers for what isn't speech (`[BLANK_AUDIO]`, `(upbeat music)`) are taken out, keeping every other
+bracket and parenthetical as spoken. No key, no minutes, and it never waits on the keyring.
+Each request to the server gets the host's two minutes (a big model on a slow CPU answers in over a
+minute a piece), and the apps wait that out before calling the piece failed, as the desktop app
+does when linking.
+`setSpeechServer {url, model}` → `{ready, message, server}` links the server, with the model to ask
+it for when it serves several (Speaches answers 422 without one), once it transcribes a second of
+silence (the error says why not) or, with an empty `url`, unlinks it; only the computer
+itself may call it, so the desktop app's **This computer** card in Voice chat settings has the
+address field and shows the linked address; the phones and other computers' apps show only whether
+one is linked (**Linked** / **Not linked**) and how to link one, in a card under that computer's name;
+the host's `message` names the computer too, since a phone shows it. `localDictation` →
+`{ready, message, server}` says whether one is linked, with its address (`server`) only for the
+computer itself (hosts before it answer "unknown method", and
+the apps say to update Codync on the computer); before recording, the mic checks it and, if not
+ready, shows `message` as the dictation's failure. It's a dictation engine only, never a call
+engine. Linking and each piece transcribed report `speech_server_linked` and
+`local_dictation_transcribed` with how they ended, never the address, model, audio or words
+([analytics events](../reference/analytics-events.md)).
 
 - Desktop (`views/thread/dictation.ts`, the model, tested with a stub platform; the helper,
   microphone and host wired in `dictation-platform.ts`; pieces in `dictation-pieces.ts`; menu in
@@ -238,7 +267,8 @@ shows the provider's name next to the dots whenever audio leaves the device.
   logged and never sent to the relay or our cloud. On a Codync Cloud computer it goes on to the computer's keeper
   instead (`host/src/voice/keys.rs`, proxied slot `voice:<provider>`), and the host reaches the provider through a
   10-minute grant that adds the key: [Agents and the host's secrets](../plans/codync-cloud.md#agents-and-the-hosts-secrets).
-- Host methods (control scope): `voiceStatus` (which providers have a key), `setVoiceKey
+- Host methods (control scope): `voiceStatus` (which providers have a key), `localDictation` (whether a
+  speech server is linked; never waits on the keyring), `setSpeechServer {url, model}` (loopback only), `setVoiceKey
   {provider, key}` (checked with one credential mint before it's kept; empty removes it),
   `voiceSession {provider, model, voice}` → `{credential}`, `voiceModels {provider}` → `{models,
   transcribe, speech}`, `voiceTranscribe {provider, model, audio}` (base64 16 kHz WAV) → `{text}`,

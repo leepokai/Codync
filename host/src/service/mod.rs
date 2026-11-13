@@ -179,9 +179,17 @@ impl KeepAwake {
     }
 }
 
+/// The computer's name as people see it in Codync: the host name without its network domain, so a
+/// name the network gave it (`mac.local`, Tailscale's `mac.tailnet.ts.net`) reads `mac` on a phone.
 pub fn host_name() -> String {
-    let n = gethostname::gethostname().to_string_lossy().into_owned();
-    n.trim_end_matches(".local").to_owned()
+    display_name(&gethostname::gethostname().to_string_lossy())
+}
+
+fn display_name(host: &str) -> String {
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return host.to_owned();
+    }
+    host.split('.').next().unwrap_or(host).to_owned()
 }
 
 /// What the computer is, so phones can draw the right icon (Linux gets its penguin;
@@ -342,6 +350,14 @@ fn unwrap_statusline(cmd: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_display_name_drops_the_network_domain() {
+        assert_eq!(display_name("studio.tail1234.ts.net"), "studio");
+        assert_eq!(display_name("Studio.local"), "Studio");
+        assert_eq!(display_name("build-box"), "build-box");
+        assert_eq!(display_name("10.0.0.7"), "10.0.0.7", "an address stays whole");
+    }
 
     fn temp_settings(contents: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("codync-settings-{}", uuid::Uuid::new_v4()));

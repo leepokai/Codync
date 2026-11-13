@@ -49,6 +49,9 @@ public struct VoiceChatSettingsView: View {
                 if let provider = dictationProvider {
                     ProviderVoiceSettings(provider: provider, dictationOnly: true).id("dictation-\(provider.rawValue)")
                 }
+                if dictationEngine == DictationEngine.local.pref {
+                    LocalDictationSettings()
+                }
             }
         }
         .background(Palette.background)
@@ -346,5 +349,45 @@ private struct ProviderVoiceSettings: View {
             }
             busy = false
         }
+    }
+}
+
+/// Dictation on the computer's linked speech server, titled with the computer's name (the phone
+/// isn't where it runs): no key and nothing to pick, only whether that server is linked, plus the
+/// computer's message when it isn't. Linking is loopback-only (`setSpeechServer`), done in Codync on
+/// that computer, so the phone shows no address. The check runs again when the computer (re)connects.
+private struct LocalDictationSettings: View {
+    @Environment(BotStore.self) private var store
+    /// The computer's answer while it hasn't given one yet.
+    @State private var local: LocalDictation?
+    @State private var error: String?
+
+    private var footer: String {
+        var text = L10n.tr("Your speech model transcribes what you say. Codync sends the audio only to the speech server you link on your computer or your own network, so it never leaves your computers.")
+        if let local, !local.ready { text += " " + L10n.tr(local.reason) }
+        if let error { text += " " + L10n.tr(error) }
+        return text
+    }
+
+    var body: some View {
+        CardSection(store.hostName, footer: footer) {
+            if let local {
+                ValueRow("Speech server", value: local.ready ? "Linked" : "Not linked")
+            }
+        }
+
+        Color.clear.frame(height: 0)
+            .task(id: store.connection == .online) {
+                guard let client = store.client else {
+                    error = "Not connected to \(store.hostName)."
+                    return
+                }
+                do {
+                    local = try await client.localDictation()
+                    error = nil
+                } catch {
+                    self.error = error.localizedDescription
+                }
+            }
     }
 }

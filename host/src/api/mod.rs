@@ -83,7 +83,8 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || method.starts_with("credential")
         // Only signing in reads the vault; other computer tools work without a keyring.
         || (method == "computerCall" && b["name"] == "type_login")
-        || method.starts_with("voice")
+        // Dictation on the user's own speech server (`localDictation`, `setSpeechServer`, local `voiceTranscribe`) has no key.
+        || (method.starts_with("voice") && !(method == "voiceTranscribe" && b["provider"] == "local"))
         || method == "setVoiceKey"
         || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")
     {
@@ -112,5 +113,43 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
     match remote::call(hub, caller, method, b).await? {
         ControlFlow::Break(v) => Ok(v),
         ControlFlow::Continue(_) => Err(UnknownMethod.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LockExt;
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use serde_json::json;
+    use std::time::Duration;
+
+    /// A host whose keyring read is still waiting (an unanswered unlock prompt).
+    fn hub_unlocking() -> (Arc<Hub>, tokio::sync::OwnedMutexGuard<()>) {
+        let dir = std::env::temp_dir().join(format!("codync-api-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        *store.secret_key.locked() = None;
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
+        let reading = Arc::clone(&hub.store.vault_unlock).try_lock_owned().unwrap();
+        (hub, reading)
+    }
+
+    async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Option<Result<Value>> {
+        tokio::time::timeout(Duration::from_secs(2), dispatch(hub, &Caller::Local, method, b)).await.ok()
+    }
+
+    #[tokio::test]
+    async fn dictation_on_this_computer_never_waits_for_the_keyring() {
+        let (hub, _reading) = hub_unlocking();
+        let local = call(&hub, "localDictation", json!({})).await.expect("answered").unwrap();
+        assert!(call(&hub, "setSpeechServer", json!({"url": ""})).await.is_some(), "linking waited for the keyring");
+        assert!(local["ready"].is_boolean(), "{local}");
+        let audio = STANDARD.encode(crate::voice::wav(&[0; 3200], 16_000));
+        let said = call(&hub, "voiceTranscribe", json!({"provider": "local", "model": "", "audio": audio})).await;
+        assert!(said.is_some(), "local dictation waited for the keyring");
+        // Provider keys still come from the vault, so their checks wait for it.
+        assert!(call(&hub, "voiceStatus", json!({})).await.is_none());
     }
 }

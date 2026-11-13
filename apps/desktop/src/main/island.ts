@@ -102,6 +102,7 @@ export class Island {
     ipcMain.on('island:send', (_e, ref: string, text: string) => this.deps.send({ kind: 'sendMessage', ref, text }, false))
     ipcMain.on('island:newBot', () => this.deps.send({ kind: 'newBot' }))
     ipcMain.on('island:openApp', () => this.deps.openApp())
+    ipcMain.on('island:openVoiceSettings', () => this.deps.send({ kind: 'voiceSettings' }))
     ipcMain.on('island:focusable', (_e, on: boolean) => this.setFocusable(on))
     ipcMain.on('island:keys', (_e, on: boolean) => this.setKeys(on))
     screen.on('display-added', () => void this.place())

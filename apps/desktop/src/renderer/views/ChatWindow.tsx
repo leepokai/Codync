@@ -263,6 +263,7 @@ function ChatSplitView() {
         // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
         if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
+        if (c.kind === 'voiceSettings') setSettings('voice')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {
           if (c.key === 'double' && !app.selection) app.select(voiceTarget(roster)?.ref ?? null)

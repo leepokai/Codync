@@ -3,10 +3,18 @@ import {
   type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
 } from '@shared/island'
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
+import { HostClient, LoopbackTransport } from '../../client/host-client'
 import { Observable } from '../../lib/observable'
 import { pref } from '../../lib/prefs'
 import { Dictation } from '../thread/dictation'
 import { dictationPlatform } from '../thread/dictation-platform'
+
+/** The island reaches this computer's own host through the main process's loopback address and token. */
+async function islandHost(): Promise<HostClient> {
+  const { local } = await window.codync.host.snapshot()
+  if (!local) throw new Error("The computer's host isn't running yet.")
+  return new HostClient(new LoopbackTransport(local.baseURL, local.token))
+}
 
 /** The bare notch peeks at once and opens after a rest; the compact island opens sooner. */
 const OPEN_FROM_PEEK_MS = 650
@@ -32,7 +40,10 @@ export class IslandModel extends Observable {
   /** The message field's text. */
   draft = ''
   /** Talking into the message field (the field's mic, or the voice input shortcut). */
-  readonly dictation = new Dictation((change) => this.update(() => (this.draft = change(this.draft))), dictationPlatform())
+  readonly dictation = new Dictation(
+    (change) => this.update(() => (this.draft = change(this.draft))),
+    dictationPlatform(islandHost, () => {}, () => window.codync.island.openVoiceSettings()),
+  )
   /** The voice input shortcut, as Settings → General has it. */
   shortcut: VoiceShortcut = 'off'
   /** The shape grew on its last change: open with a spring, close without one. */

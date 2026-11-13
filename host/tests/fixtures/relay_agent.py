@@ -31,6 +31,23 @@ def update(sid, update):
     send({"method": "session/update", "params": {"sessionId": sid, "update": update}})
 
 
+def manifest_work(sid):
+    """Optional synthetic file/command evidence for the context-manifest regressions."""
+    if not os.path.exists("ledger-files.json"):
+        return
+    with open("ledger-files.json", encoding="utf-8") as source:
+        paths = json.load(source)
+    for index, path in enumerate(paths):
+        with open(path, "w", encoding="utf-8") as target:
+            target.write("hello")
+        update(sid, {"sessionUpdate": "tool_call", "toolCallId": f"ledger-{index}",
+                     "title": f"Write {path}", "kind": "edit", "status": "completed",
+                     "content": [{"type": "diff", "path": path, "oldText": "", "newText": "hello"}]})
+    update(sid, {"sessionUpdate": "tool_call", "toolCallId": "ledger-command",
+                 "title": "synthetic-test", "kind": "execute", "status": "failed",
+                 "content": [{"type": "content", "content": {"type": "text", "text": "Process exited with code 3"}}]})
+
+
 for line in sys.stdin:
     message = json.loads(line)
     method, params = message.get("method"), message.get("params") or {}
@@ -51,6 +68,7 @@ for line in sys.stdin:
         send({"id": message["id"], "result": {}})
     elif method == "session/prompt":
         sid = params["sessionId"]
+        manifest_work(sid)
         revoked = os.path.exists(f"{NAME}.revoked") and os.path.getmtime(f"{NAME}.revoked") > STARTED
         if os.path.exists(f"{NAME}.signedout") or revoked:
             send({"id": message["id"], "error": {"code": -32000, "message": "Authentication required"}})
@@ -60,6 +78,8 @@ for line in sys.stdin:
             meta = {"_meta": {"codebuddy.ai/errorMessage": error}} if error else {}
             send({"id": message["id"], "result": {"stopReason": "refusal", **meta}})
         elif os.path.exists(f"{NAME}.limit"):
+            if os.path.exists(f"{NAME}.window"):
+                update(sid, {"sessionUpdate": "usage_update", "used": 1000, "size": 100000})
             diff = {"type": "diff", "path": "a.txt", "oldText": "", "newText": "the edit's own text\n"}
             tool = {"toolCallId": "t1", "title": "Edit a.txt", "kind": "edit", "status": "completed", "content": [diff]}
             update(sid, {"sessionUpdate": "tool_call", **tool})

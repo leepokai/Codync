@@ -144,13 +144,23 @@ impl Actor {
     /// `start_turn`, once the session is up (a new one, or the agent's own resumed): sets what the agent should hear
     /// first, and puts it on the chat line of the move. The main session gets a recap of the chat in a new session or
     /// a catch-up in its own; a retried turn gets what the agents before did. Not for hidden turns.
-    pub(super) fn carry_in(&mut self) {
+    pub(super) async fn carry_in(&mut self) -> anyhow::Result<()> {
         let mut carried = Vec::new();
         if self.slot().is_none()
-            && let Some((agent, session)) = self.relay.recap.take()
-            && let Some(text) = self.recap(&agent, session.as_deref())
+            && let Some((agent, session)) = self.relay.recap.clone()
         {
-            carried.push(text);
+            match self.recap(&agent, session.as_deref()).await {
+                Ok(Some(text)) => {
+                    carried.push(text);
+                    self.relay.recap = None;
+                }
+                Ok(None) => self.relay.recap = None,
+                Err(error) => {
+                    // Keep the owed handoff so it is retried on a later turn instead of starting without it.
+                    tracing::warn!(bot = %self.base.id, error = format!("{error:#}"), "handoff couldn't be bounded");
+                    return Err(error);
+                }
+            }
         }
         carried.extend(carry::takeover(&self.relay.failed));
         let text = (!carried.is_empty()).then(|| carried.join("\n\n"));
@@ -162,6 +172,7 @@ impl Actor {
             self.hub.set_entry(&id, &line.data);
         }
         self.relay.carried = text;
+        Ok(())
     }
 
     /// The chat line for a move from the agent `from` ran on to step `target`'s (`carry_in` adds what the new agent
@@ -212,16 +223,17 @@ impl Actor {
     /// What the agent the main session just moved to should hear first: a catch-up when it resumed its own
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
     /// replies count, never from before the user last started a new session.
-    fn recap(&self, from: &str, from_session: Option<&str>) -> Option<String> {
+    async fn recap(&self, from: &str, from_session: Option<&str>) -> anyhow::Result<Option<String>> {
         let (kind, room, text) = if self.session_fresh {
             let room = self.agent_window().map(carry::room);
-            (Carried::Recap, room, self.recap_text(from, from_session, room)?)
+            (Carried::Recap, room, self.recap_text(from, from_session, room).await?)
         } else {
             // A catch-up isn't sized to the agent's window.
-            (Carried::CatchUp, None, self.catch_up_text()?)
+            (Carried::CatchUp, None, self.catch_up_text())
         };
+        let Some(text) = text else { return Ok(None) };
         crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, kind, text.len(), room.is_some());
-        Some(text)
+        Ok(Some(text))
     }
 
     /// The main chat's last entry when the user last started a new session: no agent hears what came before it.
@@ -248,13 +260,18 @@ impl Actor {
 
     /// For an agent in a new session: the conversation so far with agent `from` (in its session `from_session`),
     /// within `room` bytes.
-    fn recap_text(&self, from: &str, from_session: Option<&str>, room: Option<usize>) -> Option<String> {
+    async fn recap_text(
+        &self,
+        from: &str,
+        from_session: Option<&str>,
+        room: Option<usize>,
+    ) -> anyhow::Result<Option<String>> {
         let bot = &self.base.id;
         let fresh = self.fresh();
-        let entries = self.main_messages(fresh)?;
+        let Some(entries) = self.main_messages(fresh) else { return Ok(None) };
         let said = carry::said(&entries);
         if said.is_empty() {
-            return None;
+            return Ok(None);
         }
         // The open plan and the ledger, as far back as the messages read.
         let oldest = entries.first().map_or(0, |e| e.seq).max(fresh);
@@ -265,17 +282,20 @@ impl Actor {
             .store
             .last_of_kind(&Lane::main(bot), EntryKind::Plan, oldest)
             .map(|e| crate::chat::handoff::plan_text(&e.data));
-        let ledger = self.ledger(oldest);
+        let index = self.ledger(oldest);
+        let current = self.relay.attempt.as_ref().map(|a| a.entries.clone()).unwrap_or_default();
+        let manifest = carry::ledger::build(self.hub.clone(), self.cfg.clone(), fresh, current).await;
         let recap = carry::Recap {
             from: &from,
             summary: summary.as_deref(),
             said: &said,
             plan: plan.as_deref(),
             bookmark: entries.last().map(|e| e.id.as_str()),
-            ledger: ledger.as_deref(),
+            ledger: index.as_deref(),
+            manifest: Some(&manifest),
             room,
         };
-        Some(recap.text())
+        recap.text().map(Some)
     }
 
     /// The ledger of what agents did in the main chat after `after`, before this turn (`carry::ledger`).
@@ -284,12 +304,12 @@ impl Actor {
         // This turn's own calls go with the takeover (`so_far`). A room's turns are numbered apart from the main
         // chat's, and their calls aren't in it.
         let running = self.turn.filter(|_| self.lane.chat == *bot);
-        let tools = self.hub.store.tools_after(&Lane::main(bot), after, running, carry::ledger::READS);
+        let tools = self.hub.store.tools_after(&Lane::main(bot), after, running, carry::index::READS);
         let tools = tools.unwrap_or_else(|error| {
             tracing::warn!(bot = %bot, error = format!("{error:#}"), "couldn't read the tool calls for a handoff");
             Vec::new()
         });
-        carry::ledger::Ledger::of(&tools, &self.hub.dev_servers.active(bot)).render()
+        carry::index::Ledger::of(&tools, &self.hub.dev_servers.active(bot)).render()
     }
 
     /// The window this agent last reported in the bot's own chat, in tokens.

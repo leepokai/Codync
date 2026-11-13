@@ -41,6 +41,111 @@ async fn bot_value(host: &Host, bot: &str) -> Value {
     snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap()
 }
 
+/// Real host: a fresh session's handoff carries the mechanical Context Manifest and respects a new-session boundary.
+#[tokio::test]
+async fn a_fresh_handoff_carries_the_context_manifest_and_names_budget_omissions() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"Ledger", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    std::fs::write(folder.join("ledger-files.json"), r#"["old-secret.txt"]"#).unwrap();
+    host.reply(&bot, "Never change old/private.txt").await;
+    host.call("newSession", json!({"botId":bot})).await;
+    std::fs::write(folder.join("ledger-files.json"), r#"["current.txt"]"#).unwrap();
+    host.reply(&bot, "Only work in new/current.txt").await;
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    std::fs::write(folder.join("primary.noload"), "").unwrap();
+    host.call("switchBack", json!({"botId":bot})).await;
+    host.reply(&bot, "Continue").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    assert!(prompt.contains("<handoff>") && prompt.contains("Only work in new/current.txt"), "{prompt}");
+    assert!(
+        prompt.contains(
+            "current.txt (created; 5 B; sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ),
+        "{prompt}"
+    );
+    assert!(prompt.contains("synthetic-test") && prompt.contains("exit 3"), "{prompt}");
+    assert!(
+        !prompt.contains("old/private.txt") && !prompt.contains("old-secret.txt"),
+        "reset scopes the manifest: {prompt}"
+    );
+}
+
+#[tokio::test]
+async fn a_bounded_handoff_names_each_item_it_could_not_expand() {
+    let host = Host::start().await;
+    let bot = host
+        .call(
+            "createBot",
+            json!({"name":"Budget", "backend":"custom", "command":agent("primary"), "connectors":[], "notify":false,
+        "fallbacks":[{"backend":"codex", "command":agent("standin")}]}),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // The primary agent reports a known 100k-token window; carry::room gives the handoff 60_000 bytes.
+    std::fs::write(folder.join("primary.window"), "").unwrap();
+    host.reply(&bot, "Report your window").await;
+    let paths: Vec<_> = (0..24).map(|i| format!("file_{i}_{}.txt", "x".repeat(90))).collect();
+    std::fs::write(folder.join("ledger-files.json"), serde_json::to_vec(&paths).unwrap()).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, &format!("Never lose these constraints {}", "a".repeat(12_000))).await;
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    std::fs::write(folder.join("primary.noload"), "").unwrap();
+    host.call("switchBack", json!({"botId":bot})).await;
+    host.reply(&bot, "Continue").await;
+    let prompt = last_prompt(&host, &bot, "primary");
+    let from = prompt.find("<handoff>").unwrap();
+    let end = prompt[from..].find("</handoff>").unwrap() + from + "</handoff>".len();
+    let handoff = &prompt[from..end];
+    assert!(handoff.len() <= 60_000, "{} bytes", handoff.len());
+    assert!(handoff.contains("collection limit"), "{handoff}");
+    assert!(
+        handoff.contains(&format!("Never lose these constraints {}", "a".repeat(12_000)))
+            || handoff.contains("user constraint #1"),
+        "a user constraint must be expanded or explicitly itemized: {handoff}"
+    );
+    assert!(handoff.contains("context budget") || handoff.contains("labels not expanded"), "{handoff}");
+    assert!(handoff.contains("created") && handoff.contains("5 B"), "{handoff}");
+    assert!(
+        handoff.contains("Omitted due to budget/collection limit") && handoff.contains("search_history"),
+        "every unexpanded item must be disclosed: {handoff}"
+    );
+    let disclosure = handoff.split("Omitted due to budget/collection limit:").nth(1).unwrap_or("");
+    for index in 0..24 {
+        let prefix = format!("file_{index}_");
+        let expanded = handoff.contains(&format!("File this turn: {prefix}"));
+        let omitted = disclosure.lines().find(|line| line.contains(&prefix));
+        assert!(expanded || omitted.is_some(), "file {index} must be expanded or itemized: {handoff}");
+        if let Some(label) = omitted {
+            assert!(
+                label.contains(" B") && (label.contains("collection limit") || label.contains("context budget")),
+                "an omitted file must name its size and reason: {label}"
+            );
+        }
+    }
+    let skipped: usize = handoff
+        .split("Omitted: ")
+        .nth(1)
+        .and_then(|text| text.split(" items").next())
+        .and_then(|text| text.parse().ok())
+        .unwrap_or_default();
+    let labels = disclosure.lines().filter(|line| line.contains(" B") || line.contains("unknown bytes")).count();
+    assert_eq!(labels, skipped, "every unexpanded item needs its own label: {handoff}");
+}
+
 #[tokio::test]
 async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     let host = Host::start().await;

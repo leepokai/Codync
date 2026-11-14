@@ -25,8 +25,8 @@ private actor SearchRemote: RemoteTransport {
     nonisolated func stream(_ request: HostStreamRequest) -> AsyncThrowingStream<Data, Error> { base.stream(request) }
     nonisolated func computerUpdates() -> AsyncStream<Computer> { base.computerUpdates() }
     nonisolated func mailboxEvents() -> AsyncStream<MailboxEvent> { base.mailboxEvents() }
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
-        try await base.enqueue(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo)
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws {
+        try await base.enqueue(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, pasted: pasted)
     }
     func cancelQueued(clientNonce: String) async -> MailboxCancel { await base.cancelQueued(clientNonce: clientNonce) }
     func listQueued() async throws -> [QueuedItem] { try await base.listQueued() }

@@ -2092,5 +2092,8 @@
   "X stops": "X останавливает",
   "T full": "T полностью",
   "r retries": "r — повторить",
-  "↵ opens": "↵ открывает"
+  "↵ opens": "↵ открывает",
+  "Google Search": "Google Поиск",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "Разрешить Gemini искать в интернете во время звонков. Нужна квота Google Search; может взиматься плата.",
+  "Couldn't open the link.": "Не удалось открыть ссылку."
 }

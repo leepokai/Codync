@@ -30,15 +30,17 @@ class GoogleSearchSettingsTest {
         val oldMode = choices.speechMode(VoiceProvider.Gemini)
         val oldSearch = choices.googleSearch
         choices.provider = null; choices.speechMode(VoiceProvider.Gemini, false); choices.googleSearch = false
+        var accounts: AccountStore? = null
         var store: AppStore? = null
         try {
             compose.setContent {
-                val model: AppStore = viewModel()
-                store = model
+                val account = viewModel<AccountStore>().also { accounts = it }
+                val model = account.stores.collectAsState().value.firstOrNull() ?: return@setContent
                 val state by model.state.collectAsState()
                 Hosted { VoiceChatSettings(state, model) }
             }
-            compose.runOnIdle { requireNotNull(store).setForeground(true) }
+            store = compose.computerStore(requireNotNull(accounts))
+            compose.runOnIdle { requireNotNull(accounts).setForeground(true) }
             compose.waitUntil(30_000) { store?.state?.value?.actualConnection is LinkState.Ready }
             assertTrue(runBlocking { requireNotNull(store).voiceStatus() }.googleSearch)
             compose.onNodeWithContentDescription("Engine:", substring = true).performClick()
@@ -60,7 +62,7 @@ class GoogleSearchSettingsTest {
             compose.onNodeWithText("OpenAI", useUnmergedTree = true).performClick()
             compose.onNode(toggle).assertDoesNotExist()
         } finally {
-            compose.runOnIdle { store?.setForeground(false) }
+            compose.runOnIdle { accounts?.setForeground(false) }
             choices.provider = oldProvider; choices.speechMode(VoiceProvider.Gemini, oldMode); choices.googleSearch = oldSearch
         }
     }

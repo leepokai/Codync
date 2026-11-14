@@ -210,6 +210,8 @@ pub(crate) struct Conn {
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
+    /// The agent account the process runs on, which isn't removed meanwhile.
+    on_account: Option<crate::agent::accounts::Running>,
 }
 
 impl Conn {

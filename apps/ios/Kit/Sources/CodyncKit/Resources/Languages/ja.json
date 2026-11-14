@@ -2045,5 +2045,12 @@
   "Open Codync and connect a computer first.": "先に Codync を開いてコンピュータを接続してください。",
   "Couldn't send. Try again.": "送信できませんでした。もう一度お試しください。",
   "Uploading {sent} of {total}": "アップロード中 {sent}/{total}",
-  "Couldn't read this file": "このファイルを読み込めませんでした"
+  "Couldn't read this file": "このファイルを読み込めませんでした",
+  "Other accounts": "その他のアカウント",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "ボットは設定の「エージェント」でアカウントを選びます。選ばないボットは上のサインインを使います。",
+  "Remove account": "アカウントを削除",
+  "Signs in another {name} account in a terminal on {other}.": "{other} の端末で別の {name} アカウントにサインインします。",
+  "This computer's sign-in": "このコンピュータのサインイン",
+  "Add account…": "アカウントを追加…",
+  "New account": "新しいアカウント"
 }

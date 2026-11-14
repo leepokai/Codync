@@ -19,6 +19,8 @@ export interface Bot {
   avatarShape: string
   backend: string
   command?: string | null
+  /** The agent account it runs on; absent for the login the computer already has. */
+  account?: string | null
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
@@ -104,6 +106,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     avatarShape: raw.avatarShape ?? 'blob',
     backend: raw.backend ?? 'custom',
     command: raw.command ?? null,
+    account: raw.account ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'ask',
@@ -504,7 +507,20 @@ export interface Backend {
   canInstall?: boolean
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Its extra logins, for an agent that can have them (absent otherwise, and from older hosts). */
+  accounts?: AgentAccount[]
 }
+
+/** One more login to an agent, beside the one the computer already has. `name`: who it signs in, once it has. */
+export interface AgentAccount {
+  id: string
+  name: string | null
+  signedIn: boolean
+}
+
+/** The accounts a bot on `backend` can pick. One that isn't signed in can't run a bot; `picked`, the bot's own, stays listed so its row shows it. */
+export const accountChoices = (backend: Backend, picked: string | null): AgentAccount[] =>
+  (backend.accounts ?? []).filter((a) => a.signedIn || a.id === picked)
 
 export interface ScreenDisplay {
   id: number
@@ -705,6 +721,8 @@ export interface BotDraft {
   avatarShape: string
   backend: string
   command?: string | null
+  /** Null for the login the computer already has: sent as is, so the host clears it. */
+  account?: string | null
   cwd: string
   permission: string
   /** Null for the agent's default: sent as is, so the host clears it. */
@@ -740,6 +758,7 @@ export function draftOf(bot: Bot): BotDraft {
     avatarShape: bot.avatarShape,
     backend: bot.backend,
     command: bot.command ?? null,
+    account: bot.account ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
     mode: bot.mode,

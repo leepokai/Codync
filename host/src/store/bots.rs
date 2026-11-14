@@ -185,6 +185,7 @@ mod tests {
             avatar_shape: "blob".into(),
             backend: "claude".into(),
             command: None,
+            account: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
             mode: None,

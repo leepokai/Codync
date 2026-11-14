@@ -2,8 +2,6 @@
 //! Unified plans use the dashboard service's weekly allowance. The website's
 //! usage summary reports only the legacy monthly pools. The token is never logged.
 
-use base64::Engine as _;
-use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -132,10 +130,8 @@ fn token_text(raw: &str) -> String {
 }
 
 fn jwt_sub(token: &str) -> Option<String> {
-    let payload = token.split('.').nth(1)?;
-    let bytes = URL_SAFE_NO_PAD.decode(payload).or_else(|_| URL_SAFE.decode(payload)).ok()?;
-    let value: Value = serde_json::from_slice(&bytes).ok()?;
-    let sub = value["sub"].as_str().filter(|s| !s.is_empty())?;
+    let claims = super::jwt_claims(token)?;
+    let sub = claims["sub"].as_str().filter(|s| !s.is_empty())?;
     Some(sub.to_owned())
 }
 
@@ -194,6 +190,8 @@ fn non_negative(value: Option<f64>) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use serde_json::json;
 
     #[test]

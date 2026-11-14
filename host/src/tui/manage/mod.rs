@@ -84,7 +84,12 @@ pub enum Reply {
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
-    Setup,
+    /// The setup terminal opened; for an account's sign-in, that account.
+    Setup(Option<String>),
+    /// An agent's accounts changed (`backends` comes with the answer), on its sheet.
+    Accounts(String),
+    /// `addAgentAccount` for that agent: the new account signs in next.
+    AccountAdded(String),
     FieldsSaved,
     /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
     SectionRenamed {
@@ -197,6 +202,10 @@ pub enum SetupRow {
     Check,
     /// Opens the read-only lists of what this agent already brings.
     Brings,
+    /// One of the agent's other accounts: ↵ signs it in, `x` removes it.
+    Account(Value),
+    /// Adds an account; its sign-in follows.
+    AddAccount,
 }
 
 pub struct Input {
@@ -258,6 +267,8 @@ pub struct Shell {
     /// Keys in the order typed (one sender, one request at a time).
     pub input: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pub backend: String,
+    /// The account it signs in; `None`: the computer's own sign-in.
+    pub account: Option<String>,
     pub exited: Option<i64>,
     /// Output not yet written to the screen.
     pub out: Vec<u8>,

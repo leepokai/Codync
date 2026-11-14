@@ -27,6 +27,8 @@ pub struct Bot {
     pub color: String,
     pub shape: String,
     pub backend: String,
+    /// The agent account it runs on; none for the computer's own sign-in.
+    pub account: Option<String>,
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
@@ -178,6 +180,7 @@ impl Bot {
             color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),
             shape: v["avatarShape"].as_str().unwrap_or("blob").to_owned(),
             backend: s("backend"),
+            account: v["account"].as_str().map(str::to_owned),
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",

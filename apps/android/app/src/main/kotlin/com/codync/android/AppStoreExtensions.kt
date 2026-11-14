@@ -23,7 +23,7 @@ suspend fun AppStore.setAgentEnv(backend: String, values: Map<String, String>): 
     refreshBackends()
     return WireJson.decodeFromJsonElement(response)
 }
-internal fun AppStore.setupTerminal(owner: String, backend: String, step: String, method: String?): SetupTerminalSession {
+internal fun AppStore.setupTerminal(owner: String, backend: String, step: String, method: String?, account: String? = null): SetupTerminalSession {
     require(step in listOf("install", "login", "node"))
     return setupTerminals.getOrPut(owner) {
         val generation = state.value.generation
@@ -38,7 +38,7 @@ internal fun AppStore.setupTerminal(owner: String, backend: String, step: String
             override suspend fun setup(cols: Int, rows: Int): String {
                 val active = connection()
                 val response = active.call("agentSetup", buildJsonObject { put("backend", backend); put("step", step);
-                    method?.let { put("method", it) }; put("cols", cols); put("rows", rows) }, 300_000)
+                    method?.let { put("method", it) }; account?.let { put("account", it) }; put("cols", cols); put("rows", rows) }, 300_000)
                 return response.jsonObject.getValue("term").jsonPrimitive.content
             }
             override suspend fun awaitActive() { foregroundState.first { it } }
@@ -184,9 +184,22 @@ suspend fun AppStore.finishConnectionRequest(entryId: String, connectorId: Strin
     try { request.await() } finally { request.cancel() }
 }
 fun AppStore.refreshBackends() = action("backends") {
-    val response = hostQuery("refreshBackends", JsonObject(emptyMap()), 60_000)
-    mutableState.update { it.copy(hello = JsonObject(it.hello.orEmpty() + ("backends" to response.jsonObject.getValue("backends")))) }
+    showBackends(hostQuery("refreshBackends", JsonObject(emptyMap()), 60_000))
 }
+/** The agent list a reply carries (`backends`) replaces the one on screen. */
+private fun AppStore.showBackends(response: JsonElement) =
+    mutableState.update { it.copy(hello = JsonObject(it.hello.orEmpty() + ("backends" to response.jsonObject.getValue("backends")))) }
+/** A new, signed-out account for the agent; a `login` setup terminal with it signs it in. */
+suspend fun AppStore.addAgentAccount(backend: String): AgentAccount {
+    val response = hostQuery("addAgentAccount", body("backend" to backend), 60_000)
+    showBackends(response)
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("account"))
+}
+/** Asks the account's agent whether its sign-in went through, and as whom. */
+suspend fun AppStore.checkAgentAccount(backend: String, account: String) =
+    showBackends(hostQuery("agentAuth", body("backend" to backend, "account" to account), 60_000))
+/** The host refuses while a bot still uses the account, and says so. */
+suspend fun AppStore.removeAgentAccount(account: String) = showBackends(hostQuery("removeAgentAccount", body("account" to account), 60_000))
 suspend fun AppStore.installConnector(item: MarketConnector, option: InstallOption, inputs: Map<String, String>): InstalledConnector {
     require(option in item.options && option.complete(inputs)) { "Complete the required connector fields." }
     val response = hostQuery("installConnector", buildJsonObject { put("registryName", item.name); put("option", option.id); put("inputs", WireJson.encodeToJsonElement(inputs)) }, 45_000)

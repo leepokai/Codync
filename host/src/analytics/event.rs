@@ -100,6 +100,8 @@ pub enum Event {
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
+    /// An agent account was added or removed (`action`); never its name or who it signs in.
+    AgentAccountChanged,
     SettingChanged,
     /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
     ReachAccountAnswered,
@@ -223,6 +225,7 @@ impl Event {
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
+            Self::AgentAccountChanged => "agent_account_changed",
             Self::SettingChanged => "setting_changed",
             Self::ReachAccountAnswered => "reach_account_answered",
             Self::ContinuedWithoutAccount => "continued_without_account",

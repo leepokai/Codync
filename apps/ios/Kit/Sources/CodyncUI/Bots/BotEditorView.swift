@@ -107,6 +107,7 @@ struct BotSettingsForm: View {
             CardSection("Agent") {
                 fallbackBanner
                 modelPicker
+                accountPicker
                 fallbackList
                 compactionPicker
             }
@@ -134,6 +135,13 @@ struct BotSettingsForm: View {
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
                          restLine: bot?.rest(of: draft.backend)?.line, onReload: { modelReload += 1 })
+    }
+
+    /// Only for an agent that can have accounts (its host says).
+    @ViewBuilder private var accountPicker: some View {
+        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.accounts != nil {
+            AccountRow(backend: backend, account: $draft.account)
+        }
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -199,6 +207,7 @@ struct BotSettingsForm: View {
                 }
                 if part == .all {
                     modelPicker
+                    accountPicker
                     fallbackList
                     compactionPicker
                 }

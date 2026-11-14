@@ -73,6 +73,7 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
         None => BotConfig {
             backend: current.backend.clone(),
             command: current.command.clone(),
+            account: None,
             model: current.model.clone(),
             model_options: current.model_options.clone(),
             ..base.clone()
@@ -340,9 +341,11 @@ impl Actor {
             let now = now_ms();
             let (agent, account) = (self.cfg.backend.clone(), rest::account(&self.cfg));
             if reason == Reason::SignedOut {
-                crate::agent::backends::set_signed_in(&agent, Some(false));
+                self.note_signed_out(&agent);
             }
-            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, now);
+            // The usage Codync reads is the computer's own login's: an agent account's reset isn't known.
+            let resets =
+                self.cfg.account.is_none().then(|| rest::reset_time(&self.hub.usage.locked(), &agent, now)).flatten();
             let rest = rest::record(&self.hub.store, &account, reason, now, resets);
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &account);

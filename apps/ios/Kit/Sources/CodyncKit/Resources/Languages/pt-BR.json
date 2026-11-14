@@ -2045,5 +2045,12 @@
   "Open Codync and connect a computer first.": "Abra o Codync e conecte um computador primeiro.",
   "Couldn't send. Try again.": "Não foi possível enviar. Tente novamente.",
   "Uploading {sent} of {total}": "Enviando {sent} de {total}",
-  "Couldn't read this file": "Não foi possível ler este arquivo"
+  "Couldn't read this file": "Não foi possível ler este arquivo",
+  "Other accounts": "Outras contas",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "Cada bot escolhe sua conta em Agente, nas configurações dele. Os que não escolhem nenhuma usam o login acima.",
+  "Remove account": "Remover conta",
+  "Signs in another {name} account in a terminal on {other}.": "Entra com outra conta do {name} em um terminal em {other}.",
+  "This computer's sign-in": "Login deste computador",
+  "Add account…": "Adicionar conta…",
+  "New account": "Nova conta"
 }

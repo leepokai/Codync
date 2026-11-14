@@ -170,12 +170,29 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
-        "agentSetup" | "agentAuthenticate" => {
+        "agentSetup" | "agentAuthenticate" | "agentAuth" => {
+            // Checking the computer's own login is no event; an account's check is its sign-in (`answered`).
+            let account = b["account"].is_string();
+            if method == "agentAuth" && !account {
+                return None;
+            }
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
+            if account {
+                p.insert("account".into(), true.into());
+            }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
+        }
+        // Never the account's name or id.
+        "addAgentAccount" | "removeAgentAccount" => {
+            let action = method.strip_suffix("AgentAccount").unwrap_or(method);
+            p.insert("action".into(), action.into());
+            if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
+                p.insert("agent".into(), agent.into());
+            }
+            Event::AgentAccountChanged
         }
         // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
@@ -257,6 +274,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
         }
+        // An account's check that still finds it signed out is no sign-in.
+        Event::AgentSignedIn if p.contains_key("account") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -275,6 +294,13 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
+        }
+        // `in_use`: removing an account bots still run on. `unsupported`: an agent that can't have accounts.
+        Event::AgentAccountChanged => {
+            let category = error.downcast_ref::<crate::agent::accounts::Refused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         Event::ConnectorUpdated => {
             let category =

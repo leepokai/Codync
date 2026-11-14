@@ -74,10 +74,14 @@ on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a ref
 signed-out WorkBuddy moves on. codex-acp still sends its 429s and overloads as reply text ([codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)),
 so only its usage limit moves a Codex bot on today.
 
-**Rests** (`fallback::rest`, `kv` `rest.<account>`: the agent, or a custom command's own) are the computer's: once one
-bot finds Claude Code out of usage, every bot skips it until it resets. A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
-A signed-out rest also ends when the agent is signed in (`agent_sign_in::agent_signed_in`: the card, Extensions, a turn of it
-finishing, a re-check), for each of its accounts; a usage rest stays.
+**Rests** (`fallback::rest`, `kv` `rest.<account>`: the agent, a custom command's own, or the agent on an
+[agent account](agent-accounts.md), `<agent>#account-<id>`) are the computer's: once one
+bot finds Claude Code out of usage, every bot on that login skips it until it resets. Each login rests by itself: a usage
+limit or sign-out on an agent account leaves the computer's own login, and the bots on it, alone, and the other way
+round. An account's usage limit rests for an hour at a time, since the usage Codync reads is the computer's own login's. A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
+A signed-out rest also ends when the agent is signed in (`agent_sign_in::signed_in`: the card, Extensions, a turn of it
+finishing, a re-check), on that login: the computer's own (with the custom commands of the agent), or the one agent
+account; a usage rest stays.
 Usage windows only time a usage limit's rest; they never skip an agent on their own (extra usage can go past 100%).
 
 ## Carrying the turn over

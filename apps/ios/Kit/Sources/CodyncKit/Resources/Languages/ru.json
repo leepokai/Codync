@@ -2045,5 +2045,12 @@
   "Open Codync and connect a computer first.": "Сначала откройте Codync и подключите компьютер.",
   "Couldn't send. Try again.": "Не удалось отправить. Попробуйте ещё раз.",
   "Uploading {sent} of {total}": "Загрузка: {sent} из {total}",
-  "Couldn't read this file": "Не удалось прочитать файл"
+  "Couldn't read this file": "Не удалось прочитать файл",
+  "Other accounts": "Другие аккаунты",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "Бот выбирает аккаунт в своих настройках, в разделе «Агент». Боты без выбора используют вход выше.",
+  "Remove account": "Убрать аккаунт",
+  "Signs in another {name} account in a terminal on {other}.": "Выполняет вход в другой аккаунт {name} в терминале на {other}.",
+  "This computer's sign-in": "Вход этого компьютера",
+  "Add account…": "Добавить аккаунт…",
+  "New account": "Новый аккаунт"
 }

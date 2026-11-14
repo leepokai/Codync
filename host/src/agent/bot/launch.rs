@@ -236,6 +236,7 @@ pub(crate) async fn start_agent(
         reports_compaction: false,
         usage: HashMap::new(),
         renamed: HashMap::new(),
+        on_account: None,
     })
 }
 

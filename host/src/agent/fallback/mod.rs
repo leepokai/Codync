@@ -40,6 +40,8 @@ pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
     if let Some(f) = fallback_at(cfg, step) {
         out.backend.clone_from(&f.backend);
         out.command.clone_from(&f.command);
+        // The bot's agent account is its own agent's: a fallback runs on the computer's own login.
+        out.account = None;
         out.model.clone_from(&f.model);
         out.model_options.clone_from(&f.model_options);
     }
@@ -93,10 +95,11 @@ pub fn end_rest(hub: &Hub, account: &str) {
     }
 }
 
-/// Agent `backend` is signed in now: its rests for being signed out are over (one for usage stays), so bots that
-/// moved on to a fallback come back on their next message.
-pub fn signed_in(hub: &Hub, backend: &str) {
-    for account in rest::signed_out(&hub.store, backend) {
+/// Agent `backend` is signed in now on `agent_account`, or on the computer's own login: that login's rests for
+/// being signed out are over (one for usage stays), so bots that moved on to a fallback come back on their next
+/// message.
+pub fn signed_in(hub: &Hub, backend: &str, agent_account: Option<&str>) {
+    for account in rest::signed_out(&hub.store, backend, agent_account) {
         end_rest(hub, &account);
     }
 }

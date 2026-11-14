@@ -40,13 +40,14 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model, mode }
+    private enum CodingKeys: String, CodingKey { case model, mode, account }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         if draft.model == nil { try container.encodeNil(forKey: .model) }
         if draft.mode == nil { try container.encodeNil(forKey: .mode) }
+        if draft.account == nil { try container.encodeNil(forKey: .account) }
     }
 }
 
@@ -457,12 +458,13 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command.
-    func agentSetup(backend: String, step: SetupStep, method: String?, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `account`: the agent
+    /// account a `login` signs in; nil for the computer's own.
+    func agentSetup(backend: String, step: SetupStep, method: String?, account: String? = nil, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var account: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
         // The first sign-in through a registry build can download it.
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, cols: cols, rows: rows), timeout: 300)
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, account: account, cols: cols, rows: rows), timeout: 300)
         return res.term
     }
 
@@ -473,6 +475,27 @@ public extension HostClient {
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
         try await call("agentAuth", ["backend": backend], timeout: 300)
+    }
+
+    /// A new, signed-out account for `backend`, and the agent list with it.
+    func addAgentAccount(_ backend: String) async throws -> (account: AgentAccount, backends: [Backend]) {
+        struct Res: Decodable { var account: AgentAccount; var backends: [Backend] }
+        let res: Res = try await call("addAgentAccount", ["backend": backend])
+        return (res.account, res.backends)
+    }
+
+    /// Asks the account's agent whether its sign-in went through, and as whom.
+    func agentAccountAuth(_ backend: String, account: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuth", ["backend": backend, "account": account], timeout: 300)
+        return res.backends
+    }
+
+    /// Fails while a bot still uses the account.
+    func removeAgentAccount(_ account: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("removeAgentAccount", ["account": account])
+        return res.backends
     }
 
     /// Lets the agent sign itself in; returns once it's done (or gave up).

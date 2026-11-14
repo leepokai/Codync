@@ -30,7 +30,7 @@ Everything else stays the bot's own whichever agent is answering: its folder, ap
 
 Codync moves on only when the agent returns an error that says it can't answer. The agents retry on their own first, so Codync doesn't ask the same agent again. Each agent is tried at most once per turn.
 
-The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying.
+The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying. A bot on one of the agent's [other accounts](/docs/agents#more-than-one-account) rests only that account: bots on the computer's own sign-in carry on, and the other way round.
 
 | The chat says the agent… | Bots skip it until |
 | --- | --- |

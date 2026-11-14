@@ -75,6 +75,9 @@ pub struct BotConfig {
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// The agent account it runs on (`agent::accounts`). None: the login this computer already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub cwd: String,

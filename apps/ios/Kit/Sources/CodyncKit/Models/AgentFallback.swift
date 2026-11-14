@@ -96,6 +96,8 @@ public extension BotDraft {
     mutating func setAgent(_ backend: String) {
         guard self.backend != backend else { return }
         self.backend = backend
+        // An account belongs to one agent.
+        account = nil
         model = nil
         modelOptions = [:]
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).

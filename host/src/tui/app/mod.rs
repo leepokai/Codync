@@ -1,5 +1,6 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
+mod accounts;
 mod analytics;
 mod approvals;
 mod auto_order;

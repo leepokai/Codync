@@ -47,6 +47,8 @@ struct AgentSheet: View {
     /// Opened from a chat's sign-in request, whose agent refused a turn: the agent is asked
     /// again however signed in it looked.
     var recheck = false
+    /// The request is for this agent account: its sign-in opens, not a check of the computer's own login.
+    var signInAccount: String?
     @Environment(BotStore.self) private var model
     @State private var route: SetupRoute?
     @State private var auth: AgentAuth?
@@ -78,10 +80,16 @@ struct AgentSheet: View {
         .frame(minWidth: 0, minHeight: 0)
         // A known "signed in" needs no agent start; one set up asks the agent (which can't start
         // without its Node.js). Opening never downloads one: that waits for Set up.
-        .task { if recheck || (setUp && backend.signedIn != true), !backend.needsNode { await check() } }
+        .task {
+            if let signInAccount { go(.terminal(nil, account: signInAccount)) }
+            if recheck || (setUp && backend.signedIn != true), !backend.needsNode { await check() }
+        }
         .onChange(of: route) { old, new in
-            // Back from a terminal or key form: see what changed.
-            if new == nil, old != nil { Task { await check() } }
+            // Back from a terminal or key form: see what changed, for the login it was about.
+            guard new == nil, let old else { return }
+            Task {
+                if case .terminal(_, let account?) = old { await checkAccount(account) } else { await check() }
+            }
         }
     }
 
@@ -90,7 +98,7 @@ struct AgentSheet: View {
         switch route {
         case .install: SetupTerminalView(backend: backend, step: .install, back: back)
         case .node: SetupTerminalView(backend: backend, step: .node, back: back)
-        case .terminal(let method): SetupTerminalView(backend: backend, step: .login, method: method, back: back)
+        case .terminal(let method, let account): SetupTerminalView(backend: backend, step: .login, method: method, account: account, back: back)
         case .keys(let method): AgentKeysForm(backend: backend, method: method, saved: auth?.savedEnv ?? [], back: back) { auth = $0 }
         }
     }
@@ -142,6 +150,9 @@ struct AgentSheet: View {
                 }
             }
             signInSection
+            if backend.accounts != nil, installed {
+                AgentAccounts(backend: backend) { go(.terminal(nil, account: $0)) }
+            }
             AgentBrings(backendId: backend.id)
             if let error {
                 CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
@@ -185,14 +196,14 @@ struct AgentSheet: View {
             if signedIn != true, !checking {
                 if auth?.login == true {
                     optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
-                        go(.terminal(nil))
+                        go(.terminal(nil, account: nil))
                     }
                 }
                 ForEach(auth?.methods ?? []) { m in
                     switch m.kind {
                     case .terminal?:
                         optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
-                            go(.terminal(m))
+                            go(.terminal(m, account: nil))
                         }
                     case .envVar?:
                         optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
@@ -227,6 +238,63 @@ struct AgentSheet: View {
     }
 
     private func optionRow(_ title: String, detail: String, icon: String, busy: Bool = false, action: @escaping () -> Void) -> some View {
+        SetupOptionRow(title: title, detail: detail, icon: icon, busy: busy, action: action)
+            .disabled(authenticating != nil)
+    }
+
+    private func check() async {
+        guard let client = model.client, !checking else { return }
+        checking = true
+        defer { checking = false }
+        do {
+            auth = try await client.agentAuth(backend.id)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        await model.refreshBackends()
+    }
+
+    private func checkAccount(_ account: String) async {
+        do {
+            try await model.checkAgentAccount(backend.id, account: account)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func authenticate(_ m: AuthMethod) async {
+        guard let client = model.client else { return }
+        authenticating = m.id
+        defer { authenticating = nil }
+        do {
+            auth = try await client.agentAuthenticate(backend.id, method: m.id)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+        await model.refreshBackends()
+    }
+}
+
+private enum SetupRoute: Hashable {
+    case install
+    case node
+    /// `account`: the agent account it signs in; nil for the computer's own.
+    case terminal(AuthMethod?, account: String?)
+    case keys(AuthMethod)
+}
+
+/// One way forward in an agent's setup: a titled row that opens the next step.
+struct SetupOptionRow: View {
+    let title: String
+    let detail: String
+    let icon: String
+    var busy = false
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -248,41 +316,24 @@ struct AgentSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(authenticating != nil)
-    }
-
-    private func check() async {
-        guard let client = model.client, !checking else { return }
-        checking = true
-        defer { checking = false }
-        do {
-            auth = try await client.agentAuth(backend.id)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-        await model.refreshBackends()
-    }
-
-    private func authenticate(_ m: AuthMethod) async {
-        guard let client = model.client else { return }
-        authenticating = m.id
-        defer { authenticating = nil }
-        do {
-            auth = try await client.agentAuthenticate(backend.id, method: m.id)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-        await model.refreshBackends()
     }
 }
 
-private enum SetupRoute: Hashable {
-    case install
-    case node
-    case terminal(AuthMethod?)
-    case keys(AuthMethod)
+/// The button at the end of a setup row: what that row's step does next.
+struct StepAction: View {
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(L10n.tr(label), action: action)
+            .buttonStyle(.plain)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Palette.text)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(Palette.bubbleAgent, in: Capsule())
+            .fixedSize()
+    }
 }
 
 /// Keys an agent reads from its environment, kept on the computer.
@@ -408,14 +459,7 @@ private struct SetupStepRow: View {
             }
             Spacer(minLength: 8)
             if let action {
-                Button(L10n.tr(action.label), action: action.run)
-                    .buttonStyle(.plain)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Palette.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Palette.bubbleAgent, in: Capsule())
-                    .fixedSize()
+                StepAction(label: action.label, action: action.run)
             }
         }
         .padding(.vertical, 4)

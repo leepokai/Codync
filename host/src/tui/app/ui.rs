@@ -174,6 +174,8 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
+    /// Which of the agent's logins the bot runs on; only for an agent that can have accounts.
+    Account,
     Model,
     ModelOptions,
     Fast,
@@ -193,10 +195,11 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 21] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
+    Field::Account,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -228,6 +231,8 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
+    /// The agent account it runs on; `None`: the computer's own sign-in.
+    pub account: Option<String>,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),

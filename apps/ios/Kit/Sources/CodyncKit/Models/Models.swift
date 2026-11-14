@@ -187,6 +187,8 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     /// Only for an agent that runs on Node.js, on a computer without its own: Codync's copy
     /// is `missing` or `added`.
     public var node: String?
+    /// Its extra logins, for an agent that can have them (nil otherwise, and from older hosts).
+    public var accounts: [AgentAccount]?
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }
@@ -326,6 +328,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var avatarShape: String
     public var backend: String
     public var command: String?
+    /// The agent account it runs on. Sent as null when nil (`BotUpdate`): the login the computer already has.
+    public var account: String?
     public var cwd: String
     public var permission: String
     /// Sent as null when nil (`BotUpdate`): the agent's default.
@@ -374,6 +378,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         avatarShape = bot.avatarShape
         backend = bot.backend
         command = bot.command
+        account = bot.account
         cwd = bot.managedWorkspace ? "" : bot.cwd
         permission = bot.permission
         mode = bot.mode
@@ -403,7 +408,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
             if self[keyPath: field] == base[keyPath: field] { draft[keyPath: field] = fresh[keyPath: field] }
         }
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
-        follow(\.command); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
+        follow(\.command); follow(\.account); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)

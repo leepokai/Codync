@@ -307,7 +307,7 @@ impl Actor {
                 self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
             }
             (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
-            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
+            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg),
             _ => {}
         }
         let failure = done.as_ref().err().filter(|_| !self.stop_requested);

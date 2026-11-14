@@ -99,7 +99,10 @@ struct Server {
 }
 
 fn server(store: &Store) -> Option<Server> {
-    serde_json::from_str(&store.kv_get(SERVER_KEY)?).ok()
+    let saved = store.kv_get(SERVER_KEY)?;
+    serde_json::from_str(&saved)
+        .inspect_err(|error| tracing::warn!(%error, "couldn't read the linked speech server"))
+        .ok()
 }
 
 /// `{ready, message, server}` for `localDictation`: the linked server, or what to do without one,

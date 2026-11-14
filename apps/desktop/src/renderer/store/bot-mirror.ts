@@ -19,6 +19,7 @@ import { rosterOrder } from '../lib/computer-roster'
 import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
 import { hostHasSections } from '../lib/roster-sections'
+import { offersMarkUnread } from './read-marks'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
@@ -196,6 +197,10 @@ export class BotMirror extends Observable {
   /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
   get hasLeadChoice() {
     return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  offersMarkUnread(bot: Bot) {
+    return offersMarkUnread(bot, this.hostVersion?.version)
   }
 
   /** What the update notice offers while this computer is behind this app. */

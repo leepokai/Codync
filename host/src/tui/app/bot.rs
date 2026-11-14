@@ -84,6 +84,8 @@ pub struct Bot {
     pub activity: String,
     pub started_at: Option<i64>,
     pub unread: i64,
+    /// Marked unread: it stays so on screen until the user reads it.
+    pub kept_unread: bool,
     pub last_message: String,
     pub last_at: i64,
     /// A group chat: several bots and the user, no agent of its own.
@@ -235,6 +237,7 @@ impl Bot {
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
             unread: v["unread"].as_i64().unwrap_or(0),
+            kept_unread: v["keptUnread"] == true,
             last_message: s("lastMessage"),
             last_at: v["lastAt"].as_i64().unwrap_or(0),
             group: v["kind"] == "group",

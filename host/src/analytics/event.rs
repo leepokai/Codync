@@ -38,6 +38,7 @@ pub enum Event {
     /// The user had a queued message handled now (`agent::bot::steer`).
     MessageSteered,
     QueuedMessageRemoved,
+    ChatMarkedUnread,
     TurnStopped,
     TurnFinished,
     /// A turn moved on to the bot's next agent (`agent::fallback`).
@@ -188,6 +189,7 @@ impl Event {
             Self::MessageSent => "message_sent",
             Self::MessageSteered => "message_steered",
             Self::QueuedMessageRemoved => "queued_message_removed",
+            Self::ChatMarkedUnread => "chat_marked_unread",
             Self::TurnStopped => "turn_stopped",
             Self::TurnFinished => "turn_finished",
             Self::AgentFellBack => "agent_fell_back",

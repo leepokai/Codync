@@ -60,10 +60,10 @@ export async function setPref(page: Page, key: string, value: unknown) {
   }, [key, JSON.stringify(value)] as const)
 }
 
-/** A bot on the scripted agent, which waits up to `seconds` for a steered message. */
-export async function steerBot(page: Page, name: string, seconds: number) {
+/** A bot on the scripted agent, which waits up to `seconds` for a steered message (`plain`: one that doesn't take steering). */
+export async function steerBot(page: Page, name: string, seconds: number, mode: 'steer' | 'plain' = 'steer') {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' steer ${seconds}`, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `python3 -X utf8 -u '${steerAgent}' ${mode} ${seconds}`, connectors: [], skills: [], notify: false,
   })
   return bot
 }

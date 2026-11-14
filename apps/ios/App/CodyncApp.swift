@@ -264,7 +264,7 @@ final class AppStore {
         case "bot":
             guard let ref = storage.reference(from: url), accounts.store(for: ref.computerId) != nil else { return }
             tab = .bots
-            accounts.selection = ref
+            accounts.open(ref)
         case "plugins":
             accounts.selection = nil
             tab = .bots
@@ -383,7 +383,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let accounts = AppStore.shared.accounts
             guard ctx == accounts.storage.id, accounts.store(for: computerId) != nil else { return }
             AppStore.shared.tab = .bots
-            accounts.selection = BotReference(accountId: accounts.accountId, computerId: computerId, botId: botId)
+            accounts.open(BotReference(accountId: accounts.accountId, computerId: computerId, botId: botId))
         }
     }
 

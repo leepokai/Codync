@@ -101,17 +101,20 @@ extension BotStore {
         Task {
             do {
                 // Safe to repeat: the computer skips a nonce it already has.
-                let e = try await withLink(replay: true) { client in
-                    var ids: [String]?
-                    if let files = self.outgoingFiles[nonce] {
-                        let uploaded = try await client.upload(botId: botId, files: files)
-                        for (id, file) in zip(uploaded, files) { Self.cacheAttachment(id, file.data) }
-                        ids = uploaded
+                let sending = inReadOrder(botId) {
+                    try await self.withLink(replay: true) { client in
+                        var ids: [String]?
+                        if let files = self.outgoingFiles[nonce] {
+                            let uploaded = try await client.upload(botId: botId, files: files)
+                            for (id, file) in zip(uploaded, files) { Self.cacheAttachment(id, file.data) }
+                            ids = uploaded
+                        }
+                        try Task.checkCancellation()
+                        return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
+                                                     pasted: pasted, call: call)
                     }
-                    try Task.checkCancellation()
-                    return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                 pasted: pasted, call: call)
                 }
+                let e = try await withTaskCancellationHandler { try await sending.value } onCancel: { sending.cancel() }
                 outgoingFiles[nonce] = nil
                 upsert(e)
                 // Only once it arrived, so a resend counts once.

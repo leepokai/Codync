@@ -112,6 +112,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         "stop" => Event::TurnStopped,
         "unqueue" => Event::QueuedMessageRemoved,
+        "markUnread" => Event::ChatMarkedUnread,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,
         "react" => Event::ReactionAdded,
@@ -272,8 +273,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a follow-up was
-/// still there to cancel. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, whether a follow-up was
+/// still there to cancel, and whether a chat had anything to mark unread. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -294,6 +295,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
         }
+        Event::ChatMarkedUnread => {
+            p.insert("outcome".into(), if answer["bot"]["keptUnread"] == true { "marked" } else { "empty" }.into());
+        }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,
         // A login profile's check that still finds it signed out is no sign-in.
@@ -309,8 +313,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
-/// never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit or a mark as unread reports its
+/// category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -329,6 +333,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::ConnectorUpdated => {
             let category =
                 error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::ChatMarkedUnread => {
+            let category = if error.to_string() == "unknown bot" { "unknown_bot" } else { "other" };
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

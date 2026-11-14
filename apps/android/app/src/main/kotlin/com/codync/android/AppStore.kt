@@ -41,6 +41,7 @@ class AppStore internal constructor(
     internal val downloadLocks = ConcurrentHashMap<String, Mutex>()
     internal val imageCopies = CopyRequests()
     internal val mutableState = MutableStateFlow(AppState(computer, contextId = contextId, generation = generation))
+    internal val reads = ReadMarks(::action)
     val state = mutableState.asStateFlow()
     internal val feed = TaskFeed(local.directory, computer.id)
     internal var database: MirrorDatabase? = null

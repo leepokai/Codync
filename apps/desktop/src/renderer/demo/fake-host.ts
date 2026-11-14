@@ -18,6 +18,7 @@ export class FakeHost {
   private listeners = new Set<(line: string) => void>()
   private turns = new Map<string, number>()
   private nextReply = new Map<string, number>()
+  private unreadBeforeRead = new Map<string, number>()
   /** Already chosen, so the demo never asks for consent. */
   private analytics = true
 
@@ -106,6 +107,13 @@ export class FakeHost {
     return entry
   }
 
+  private read(bot: Bot) {
+    this.unreadBeforeRead.set(bot.id, bot.unread)
+    bot.unread = 0
+    bot.keptUnread = false
+    this.emitBot(bot)
+  }
+
   private refreshPreview(b: Bot) {
     const last = this.entries.filter((e) => e.botId === b.id && (e.kind === 'user' || (e.kind === 'agent' && e.data.final))).at(-1)
     if (!last) return
@@ -191,15 +199,33 @@ export class FakeHost {
         const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
         const replyTo = target && quoteOf(target)
         const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
+        if (chat.unread > 0 || chat.keptUnread) this.read(chat)
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }
       }
+      case 'markUnread': {
+        const bot = this.bots.get(str('botId'))
+        if (!bot) throw fail('That bot was deleted.')
+        if (bot.unread > 0 && !bot.keptUnread) {
+          bot.keptUnread = true
+          this.emitBot(bot)
+        } else if (bot.unread === 0) {
+          const replies = this.entries.filter((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e))
+          const before = this.unreadBeforeRead.get(bot.id) ?? 0
+          const count = (list: Entry[]) => list.filter((e) => !e.data.reactions?.length && !e.data.call).length
+          const unread = (before > 0 ? count(replies.slice(-before)) : 0) || Math.min(count(replies), 1)
+          if (unread > 0) {
+            bot.unread = unread
+            bot.keptUnread = true
+            this.emitBot(bot)
+          }
+        }
+        return { bot: this.botJSON(bot) }
+      }
       case 'markRead': {
         const bot = this.bots.get(str('botId'))
-        if (bot && bot.unread > 0) {
-          bot.unread = 0
-          this.emitBot(bot)
-        }
+        // `automatic` is the chat being on screen: one marked unread waits for the user.
+        if (bot && (bot.unread > 0 || bot.keptUnread) && !(b.automatic && bot.keptUnread)) this.read(bot)
         return {}
       }
       case 'respondPermission':
@@ -242,6 +268,7 @@ export class FakeHost {
       case 'deleteBot': {
         const id = str('botId')
         this.bots.delete(id)
+        this.unreadBeforeRead.delete(id)
         this.emit({ type: 'bot', rev: ++this.rev, bot: { id, rev: this.rev, deleted: true } })
         return {}
       }

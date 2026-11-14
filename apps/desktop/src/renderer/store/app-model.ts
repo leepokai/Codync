@@ -214,6 +214,8 @@ export class AppModel extends Observable {
   }
 
   select(ref: BotRef | null) {
+    // A chat already on screen doesn't mount again (`useReading`): picking it is still the user opening it.
+    if (ref && sameRef(ref, this.selection)) this.store(ref.computerId)?.reads.open(ref.botId)
     this.selection = ref
     this.changed()
   }

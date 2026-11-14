@@ -77,7 +77,7 @@ export class BotStore extends BotSync {
     void (async () => {
       try {
         // Safe to repeat: the computer skips a nonce it already has.
-        const e = await this.withLink(async (client) => {
+        const e = await this.reads.send(botId, () => this.withLink(async (client) => {
           let ids: string[] | null = null
           const pending = this.outgoingFiles.get(nonce)
           if (pending) {
@@ -90,7 +90,7 @@ export class BotStore extends BotSync {
             }
           }
           return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null, call)
-        }, true)
+        }, true))
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
@@ -329,15 +329,6 @@ export class BotStore extends BotSync {
   retryRoutineRun(entry: Entry) {
     const runId = entry.data.runId
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
-  }
-
-  /** The roster's "Mark as read". */
-  markAllRead(botId: string) {
-    const bot = this.bots.get(botId)
-    if (!bot || bot.unread <= 0) return
-    this.bots.set(botId, { ...bot, unread: 0 })
-    this.changed()
-    this.perform((c) => c.call('markRead', { botId }), true)
   }
 
   private patchBot(bot: Bot, change: Partial<BotDraft>) {

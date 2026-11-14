@@ -22,7 +22,7 @@ fun AppStore.command(method: String, body: JsonObject = JsonObject(emptyMap()), 
 }
 
 /** Takes in the bot or entry a command's reply carries, then shows it. */
-private suspend fun AppStore.receiveReply(response: JsonElement) {
+internal suspend fun AppStore.receiveReply(response: JsonElement) {
     response.jsonObject["bot"]?.let { value ->
         withContext(Dispatchers.IO) { requireNotNull(database).receive(HostClient.decode(value.jsonObject)) }
     }

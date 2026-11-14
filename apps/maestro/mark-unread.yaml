@@ -1,0 +1,310 @@
+# The roster's Mark as unread: the count comes back and holds until the chat is opened again, marked read or sent from, also
+# when it's marked on another device while on screen or while the app is away, and a new reply adds to it. A chat not marked
+# reads what lands while it's on screen. The phone must already be signed in and paired with
+# the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), which must have `markUnread`
+# (`MARK_UNREAD_HOST`), since the menu hides it otherwise; run it apart from `welcome`, whose clearState undoes that.
+# Both phones share the host and list each other's bot, so each reads the count on its own bot's row:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags mark-unread \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - mark-unread
+onFlowComplete:
+  - runScript:
+      file: mark-unread.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: mark-unread.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "${output.bot.name}"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 20000
+# Opening reads it, as always.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+# The menu offers it on a read chat.
+- longPressOn: "${output.bot.name}"
+- assertVisible: "Mark as unread"
+- assertNotVisible: "Mark as read"
+- tapOn: "Mark as unread"
+- extendedWaitUntil:
+    visible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+# With the hold on: Mark as read instead, which clears it.
+- longPressOn: "${output.bot.name}"
+- assertVisible: "Mark as read"
+- assertNotVisible: "Mark as unread"
+- tapOn: "Mark as read"
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+# Marked again: opening the chat reads it.
+- longPressOn: "${output.bot.name}"
+- tapOn: "Mark as unread"
+- extendedWaitUntil:
+    visible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+# Marked on another device while the chat is on screen here: it stays unread.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runScript:
+    file: mark-unread.js
+    env:
+      MARK: "true"
+- extendedWaitUntil:
+    visible: "no such text"
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- assertVisible:
+    containsDescendants:
+      - "${output.bot.name}"
+      - "${output.unread}"
+# Opening reads it.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000
+# Marked while the app is away with the chat on screen: coming back doesn't read it.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- pressKey: Home
+- runScript:
+    file: mark-unread.js
+    env:
+      MARK: "true"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          stopApp: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          stopApp: false
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "no such text"
+    timeout: 5000
+    optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- assertVisible:
+    containsDescendants:
+      - "${output.bot.name}"
+      - "${output.unread}"
+- takeScreenshot: mark-unread-held-after-coming-back
+# A reply landing while it's marked unread, on screen, adds to the count, and still nothing reads it.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runScript:
+    file: mark-unread.js
+    env:
+      REPLY_WHILE_MARKED: "true"
+- extendedWaitUntil:
+    visible: "no such text"
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- assertVisible:
+    containsDescendants:
+      - "${output.bot.name}"
+      - "${output.onePlus}"
+# Sending from a chat marked unread reads it, so its reply doesn't add to a count.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runScript:
+    file: mark-unread.js
+    env:
+      MARK: "true"
+- tapOn: "Ask ${output.bot.name}"
+- inputText: "from the composer"
+- tapOn: "Send"
+- runScript:
+    file: mark-unread.js
+    env:
+      AWAIT_REPLY: "true"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+# Android: the first back may only close the keyboard.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - repeat:
+          while:
+            visible: "Ask ${output.bot.name}"
+          times: 2
+          commands:
+            - back
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.twoPlus}"
+    timeout: 8000
+# With no mark, what lands while the chat is on screen is read as it lands.
+- tapOn: "${output.bot.name}"
+- extendedWaitUntil:
+    visible: "WorkingDone"
+    timeout: 10000
+- runScript:
+    file: mark-unread.js
+    env:
+      SEND: "true"
+- extendedWaitUntil:
+    visible: "no such text"
+    timeout: 2000
+    optional: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "BackButton"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- extendedWaitUntil:
+    notVisible:
+      containsDescendants:
+        - "${output.bot.name}"
+        - "${output.unread}"
+    timeout: 8000

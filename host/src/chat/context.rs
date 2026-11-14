@@ -243,6 +243,8 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(crate::dev_servers::BRIEF.to_owned());
     lines.push(String::new());
     lines.push(crate::routines::BRIEF.to_owned());
+    lines.push(String::new());
+    lines.push(crate::chat::tasks::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);

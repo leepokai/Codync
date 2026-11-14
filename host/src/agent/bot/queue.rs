@@ -21,6 +21,7 @@ impl Actor {
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
+            Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
                 if !self.try_decision_message(&lane, &entry_id) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
@@ -164,6 +165,8 @@ impl Actor {
         for queued in std::mem::take(&mut self.queue) {
             match queued {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
+                // A task's report is news the user still wants.
+                Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
                         e.data["status"] = "cancelled".into();
@@ -265,6 +268,27 @@ impl Actor {
                     let prompt = crate::chat::team::reply_prompt(&replies);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
+                    }
+                    continue;
+                }
+                Some(Queued::TaskReport(_)) => {
+                    // Reports that came in while the bot worked are one turn, as replies are.
+                    let mut reports = Vec::new();
+                    while let Some(Queued::TaskReport(_)) = self.queue.front() {
+                        if let Some(Queued::TaskReport(report)) = self.queue.pop_front() {
+                            reports.push(report);
+                        }
+                    }
+                    self.host_turn = Some(HostTurn::TaskReport);
+                    let hops = reports.iter().map(|r| r.hops).max().unwrap_or(0);
+                    let prompt = crate::chat::tasks::report_prompt(&reports);
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                        Ok(()) => {
+                            // A task this turn starts carries the chain on.
+                            self.hub.tasks.answering(&self.cfg.id, hops);
+                            crate::chat::tasks::reported(&self.hub.store, &reports);
+                        }
+                        Err(e) => self.start_error(e, done_tx).await,
                     }
                     continue;
                 }

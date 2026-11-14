@@ -291,6 +291,8 @@ pub enum Screen {
     Library,
     Artifact,
     Network,
+    /// A background task's details.
+    Task,
     #[serde(other)]
     Other,
 }

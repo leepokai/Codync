@@ -87,7 +87,9 @@ The roster shows activity, previews, unread counts, groups, pin/hide actions and
 touch and hold a bot, then move it, to reorder within its section (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
 final replies, Markdown/code, permissions, reactions, quote replies (touch and hold a
-message, then Reply), history and Full conversation.
+message, then Reply), history and Full conversation. A bot's
+[background tasks](../../docs/features/background-tasks.md) show as one capsule above the composer; its text opens the
+task's own transcript, held in memory per task and never in the chat or the mirror.
 
 Text and private attachment drafts survive process death separately for each bot. Sends retain their nonce through durable queue commit and retry.
 Uncertain sends require explicit retry with the same ID. Text can wait in the

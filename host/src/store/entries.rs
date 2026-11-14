@@ -28,6 +28,8 @@ const ENTRY_COLS: &str = "seq, id, bot_id, rev, kind, turn, data, created_at, up
 const LIVE_CHAT: &str = "WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?2 AND deleted = 1)";
 /// Leaves out a message the user took back before it went out (`unqueue`): no bot, model or list reads it.
 pub(super) const NOT_REMOVED: &str = "json_extract(data, '$.removed') IS NOT 1";
+/// Leaves out the transcripts of task bots (`model::TASK_PREFIX`).
+const NOT_A_TASKS: &str = "bot_id NOT GLOB 'task-*'";
 
 /// What `expire_pending` closed out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,17 +166,19 @@ impl Store {
         )?)
     }
 
-    /// Entries changed after `since`. A fresh client (`since == 0`) only gets the
+    /// Entries changed after `since`, in the chats clients list: a task's transcript is fetched by itself
+    /// (`taskEntries`). A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let sql = if since == 0 {
             format!(
-                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries)
+                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries
+                   WHERE {NOT_A_TASKS})
                  WHERE rn <= ?2 AND rev > ?1 ORDER BY seq"
             )
         } else {
-            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 ORDER BY seq")
+            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND {NOT_A_TASKS} ORDER BY seq")
         };
         let mut st = c.prepare(&sql)?;
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)

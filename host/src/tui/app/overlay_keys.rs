@@ -109,6 +109,7 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
+                        ConfirmAct::StopTasks { bot, task } => self.stop_tasks(bot, task.as_deref()),
                     }
                     None
                 }
@@ -121,6 +122,8 @@ impl App {
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
+            Overlay::Tasks(l) => self.task_list_key(l, k),
+            Overlay::Task(s) => self.task_key(s, k),
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),

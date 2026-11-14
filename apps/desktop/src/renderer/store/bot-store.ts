@@ -15,6 +15,7 @@ import {
   type Usage,
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
+import type { TaskRecord } from '@shared/tasks'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
@@ -435,6 +436,19 @@ export class BotStore extends BotSync {
   /** What a voice call carried, from the computer: the loaded chat may not reach back to it. */
   async callEntries(botId: string, call: string): Promise<Entry[]> {
     return (await (await this.ready()).call<{ entries: Entry[] }>('callEntries', { botId, callId: call })).entries
+  }
+
+  /** A background task as the computer has it now; its transcript goes into the watched task's (`taskEntriesOf`). */
+  async loadTask(botId: string, taskId: string): Promise<TaskRecord> {
+    const res = await (await this.ready()).call<{ task: TaskRecord; entries: Entry[] }>('taskEntries', { botId, taskId })
+    this.mergeTask(taskId, res.entries.map((e) => ({ ...e, data: e.data ?? {} })))
+    this.changed()
+    return res.task
+  }
+
+  /** Stops one background task of the bot, or all of them without `taskId`. */
+  stopTask(botId: string, taskId?: string) {
+    this.perform((c) => c.call('stopTask', taskId ? { botId, taskId } : { botId }))
   }
 
   /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */

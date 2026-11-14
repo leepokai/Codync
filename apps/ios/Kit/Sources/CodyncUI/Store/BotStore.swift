@@ -67,6 +67,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
+    public internal(set) var taskEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?

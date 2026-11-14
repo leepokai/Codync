@@ -6,7 +6,7 @@ use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Permission};
+use crate::store::{EntryKind, Lane, Permission};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -230,23 +230,35 @@ impl Actor {
         self.show_card(title, data, Answer::Codync(reply));
     }
 
-    /// Posts an approval card in the turn's lane and tells the user it needs them.
-    fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
+    /// Posts an approval card in the turn's lane and tells the user it needs them. A task's card goes where the
+    /// user is, its bot's chat.
+    fn show_card(&mut self, title: &str, mut data: Value, answer: Answer) {
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
-        if let Some(e) = self.add(EntryKind::Permission, turn, data) {
+        let card = match self.cfg.task_of.clone() {
+            Some(bot) => {
+                // To the user it is the bot asking; the answer finds this actor by the task (`tasks::card_actor`).
+                data["author"] = bot.clone().into();
+                data["task"] =
+                    json!({"id": self.cfg.id, "title": crate::chat::tasks::title(&self.hub.store, &self.cfg.id)});
+                self.hub.add_entry(&Lane::main(&bot), EntryKind::Permission, self.hub.store.max_turn(&bot), &data)
+            }
+            None => self.add(EntryKind::Permission, turn, data),
+        };
+        let chat = card.as_ref().map_or_else(|| self.lane.chat.clone(), |e| e.bot_id.clone());
+        if let Some(e) = card {
             self.perms.insert(e.id, answer);
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        // Tapping it opens where the card is: the group, for a room turn.
-        let target = self.hub.store.bot(&self.lane.chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
+        // Tapping it opens where the card is: the group, for a room turn; its bot's chat, for a task.
+        let target = self.hub.store.bot(&chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
         push::notify(
             &self.hub,
             &target,
-            Some(&self.cfg.id),
+            (!self.cfg.is_task()).then_some(self.cfg.id.as_str()),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,

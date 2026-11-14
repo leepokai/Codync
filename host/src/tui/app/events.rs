@@ -37,6 +37,8 @@ impl App {
             Msg::Connected { since } => {
                 self.stream_since = since;
                 self.floors.clear();
+                // A task's entries aren't in the catch-up: the open details ask for what they missed.
+                self.reload_task_details();
             }
             Msg::Event(v) => self.on_event(&v),
             Msg::Reply(after, r) => self.on_reply(after, r),
@@ -77,6 +79,7 @@ impl App {
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),
+            Some("taskEntry") => self.task_entries.keep(v["task"].as_str(), &v["entry"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
@@ -119,7 +122,9 @@ impl App {
     fn upsert_bot(&mut self, v: &Value) {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
-            self.bots.remove(id);
+            if let Some(gone) = self.bots.remove(id) {
+                self.tasks_ended(&gone.tasks, &[]);
+            }
             self.entries.remove(id);
             self.floors.remove(id);
             self.drafts.remove(id);
@@ -141,6 +146,7 @@ impl App {
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
+        self.tasks_ended(&old.tasks, &new.tasks);
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
         if !new.notify || watching || old.away().is_some() || new.away().is_some() {

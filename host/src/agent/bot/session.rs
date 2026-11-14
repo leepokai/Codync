@@ -71,7 +71,7 @@ impl Actor {
             params["sessionId"] = sid.into();
         }
         if self.conn.as_ref().is_some_and(|c| c.sessions.additional_directories) {
-            params["additionalDirectories"] = json!(memory::files::folders(&self.cfg));
+            params["additionalDirectories"] = json!(memory::files::folders(&self.cfg.as_owner()));
         }
         params
     }
@@ -117,7 +117,9 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
-            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
+            // A task's memory is its bot's; everything else of it is its own.
+            let bot = if name == "memory" { self.cfg.owner() } else { &self.cfg.id };
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", bot], port));
         }
         Ok(Value::Array(servers))
     }
@@ -272,8 +274,8 @@ impl Actor {
                     self.note_options(&sid, &res, Listing::Session);
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
-                        context::mark_announced(&self.hub.store, &self.cfg.id, &s, s.system_identity.clone())?;
-                        memory::opened(&self.hub.store, &self.cfg.id, &sid, &s.memory)?;
+                        context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
+                        memory::opened(&self.hub.store, self.cfg.owner(), &sid, &s.memory)?;
                         self.applied_system.insert(sid.clone(), s.system);
                     }
                     self.turn_session = Some(sid);
@@ -284,8 +286,26 @@ impl Actor {
                 }
             }
         }
+        // A task's first session: a fork of its bot's main one where the agent can, so it starts knowing the chat;
+        // otherwise a new session that is told the chat so far.
+        if slot.is_none() && crate::chat::tasks::first_session(&self.hub.store, &self.cfg) {
+            match self.fork_owner_session(&servers, &renamed, instructions).await {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't fork the chat's session; starting from a brief");
+                    crate::chat::tasks::fork_failed(&self.hub.store, &self.cfg.id);
+                }
+            }
+            // A fork that timed out stopped the agent: start over, on the brief's way.
+            if self.conn.is_none() {
+                return Box::pin(self.ensure_session(slot)).await;
+            }
+            self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
+            crate::chat::tasks::started(&self.hub, &self.cfg.id, crate::chat::tasks::Start::Brief);
+        }
         let (revision, system) = {
-            let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
+            let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
             tokio::task::spawn_blocking(move || {
                 (memory::current_revision(&hub.store, &cfg.id), context::render(&hub.store, &cfg))
             })
@@ -307,11 +327,66 @@ impl Actor {
         self.set_session(slot, Some(&sid));
         self.session_fresh = true;
         self.turn_session = Some(sid.clone());
-        context::adopt(&self.hub.store, &self.cfg, &sid, system.clone(), revision)?;
+        context::adopt(&self.hub.store, &self.cfg.as_owner(), &sid, system.clone(), revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }
         Ok(())
+    }
+
+    /// Opens a task's session as a fork of its bot's main one (`session/fork`), from this task's own agent process:
+    /// the same instructions and MCP servers, so the prompt cache is the chat's. `false`: there is nothing to fork
+    /// (the task starts from a brief, or the agent can't fork).
+    async fn fork_owner_session(
+        &mut self,
+        servers: &Value,
+        renamed: &codex_names::Renamed,
+        instructions: Instructions,
+    ) -> Result<bool> {
+        let Some(source) = crate::chat::tasks::take_fork_source(&self.hub.store, &self.cfg.id) else {
+            return Ok(false);
+        };
+        if !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
+            return Ok(false);
+        }
+        // The chat's frozen instructions, as its session holds them.
+        let owner = self.cfg.as_owner();
+        let parent = {
+            let (hub, owner, source) = (self.hub.clone(), owner.clone(), source.clone());
+            tokio::task::spawn_blocking(move || context::resolve(&hub.store, &owner, &source)).await??
+        };
+        let mut params = self.session_params(servers, Some(&source));
+        match instructions {
+            Instructions::ClaudeMeta => params["_meta"] = claude_meta(&self.cfg, &parent.system),
+            Instructions::SystemPrompt => params["systemPrompt"] = system_prompt(&parent.system),
+            Instructions::FirstMessage => {}
+        }
+        self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
+        let res = self.session_request("session/fork", params).await?;
+        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
+        let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
+        // A fork may replay the chat's history as session/update before it answers; drop it.
+        while let Ok(inc) = conn.rx.try_recv() {
+            if let Incoming::Request { id, .. } = inc {
+                let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+            }
+        }
+        conn.loaded.insert(sid.clone(), Instant::now());
+        conn.renamed.insert(sid.clone(), renamed.clone());
+        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
+        self.note_options(&sid, &options, Listing::Session);
+        self.set_session(None, Some(&sid));
+        self.session_fresh = true;
+        self.turn_session = Some(sid.clone());
+        // It already holds the instructions and memory as the chat's session had them: nothing to send again.
+        let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
+        context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
+        memory::opened(&self.hub.store, &owner.id, &sid, &parent.memory)?;
+        if instructions == Instructions::ClaudeMeta {
+            self.applied_system.insert(sid, parent.system);
+        }
+        crate::chat::tasks::started(&self.hub, &self.cfg.id, crate::chat::tasks::Start::Fork);
+        Ok(true)
     }
 
     /// A session request the agent doesn't answer in time stops the agent: a hung one

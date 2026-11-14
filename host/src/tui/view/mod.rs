@@ -28,6 +28,7 @@ mod queue;
 mod roster;
 mod skill;
 mod style;
+mod tasks;
 mod time;
 mod trace;
 mod transcript;

@@ -81,7 +81,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let interrupted = Inflight::load(&hub.store, &cfg.id)
         .filter(|turn| now_ms() - turn.started < STALE_RESUME_MS)
         .map(|_| Lane::main(&cfg.id));
-    let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
+    // A task's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
+    let dreamer =
+        if cfg.is_task() { mpsc::unbounded_channel().0 } else { memory::spawn_dreamer(hub.clone(), cfg.id.clone()) };
     let lane = Lane::main(&cfg.id);
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
@@ -161,6 +163,8 @@ struct SessionCaps {
     additional_directories: bool,
     /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
     steering: bool,
+    /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
+    fork: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -380,7 +384,8 @@ impl Actor {
         let failed = done.as_ref().is_err_and(acp::may_end_session);
         self.finish_turn(&done);
         match session {
-            Some(sid) if routine => self.release_spent(&sid).await,
+            // A task's session is spent like a run's until its bot tells it more.
+            Some(sid) if routine || self.cfg.is_task() => self.release_spent(&sid).await,
             Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }

@@ -89,6 +89,7 @@ pub struct Hub {
     pub analytics: crate::analytics::Analytics,
     pub routines: crate::routines::Routines,
     pub team: crate::chat::team::Requests,
+    pub tasks: crate::chat::tasks::Tasks,
     pub groups: crate::chat::group::Rooms,
     /// The user's other computers (codync-network), once this one is in a network.
     pub network: crate::network::Network,
@@ -134,6 +135,16 @@ pub struct Hub {
     pub dev_servers: crate::dev_servers::DevServers,
 }
 
+/// What tells clients of a saved entry. A task bot's transcript goes out under a type of its own: an app from before
+/// tasks skips it, and the others keep it out of the chats they list.
+fn entry_event(e: &Entry) -> Value {
+    if crate::store::is_task_id(&e.bot_id) {
+        json!({"type": "taskEntry", "rev": e.rev, "task": e.bot_id, "entry": e})
+    } else {
+        json!({"type": "entry", "rev": e.rev, "entry": e})
+    }
+}
+
 impl Hub {
     pub fn busy(&self) -> bool {
         self.runtime.locked().values().any(|r| matches!(r.status, BotStatus::Working | BotStatus::NeedsInput))
@@ -147,6 +158,7 @@ impl Hub {
             analytics: crate::analytics::Analytics::load(&store),
             routines: crate::routines::Routines::default(),
             team: crate::chat::team::Requests::default(),
+            tasks: crate::chat::tasks::Tasks::default(),
             groups: crate::chat::group::Rooms::default(),
             network: crate::network::Network::default(),
             waiting: crate::chat::team::remote::Waiting::default(),
@@ -193,13 +205,14 @@ impl Hub {
                 self.spawn_bot(row.config);
             }
         }
+        crate::chat::tasks::restore(self);
         crate::chat::calls::rewatch(self);
         crate::routines::start(self);
         crate::analytics::start(self);
         Ok(())
     }
 
-    fn spawn_bot(self: &Arc<Self>, cfg: BotConfig) {
+    pub(crate) fn spawn_bot(self: &Arc<Self>, cfg: BotConfig) {
         let id = cfg.id.clone();
         self.runtime.locked().insert(id.clone(), Runtime::default());
         let handle = bot::spawn(self.clone(), cfg);
@@ -222,6 +235,11 @@ impl Hub {
         }
         self.dev_servers.shutdown().await;
         self.keep_awake.locked().set(false);
+    }
+
+    /// Whether `bot_id`'s actor runs.
+    pub fn has_actor(&self, bot_id: &str) -> bool {
+        self.bots.locked().contains_key(bot_id)
     }
 
     pub fn send_cmd(&self, bot_id: &str, cmd: Cmd) -> Result<()> {
@@ -267,8 +285,14 @@ impl Hub {
         Ok(())
     }
 
-    /// Bumps the bot's rev and broadcasts its current state.
+    /// Bumps the bot's rev and broadcasts its current state. A task bot isn't a bot to any client: its bot's state,
+    /// which lists it, goes out instead.
     pub fn emit_bot(&self, id: &str) {
+        let task = crate::store::is_task_id(id);
+        let owner = if task { self.store.bot(id).ok().flatten().and_then(|b| b.config.task_of) } else { None };
+        let Some(id) = owner.as_deref().or((!task).then_some(id)) else {
+            return; // a task bot that is gone
+        };
         let _g = self.emit_lock.locked();
         if self.store.touch_bot(id).is_ok()
             && let Some(v) = self.bot_value(id)
@@ -300,7 +324,7 @@ impl Hub {
             }
             self.update_keep_awake();
         }
-        if before.status != after.status {
+        if before.status != after.status && !crate::store::is_task_id(id) {
             push::live_activity_update(self, id, &after);
             // A group's Live Activity follows its busy member.
             for lane in [&before.lane, &after.lane].into_iter().flatten().filter(|l| l.chat != id) {
@@ -334,7 +358,7 @@ impl Hub {
         let _g = self.emit_lock.locked();
         match self.store.insert_entry(lane, kind, turn, data) {
             Ok(e) => {
-                let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                let _ = self.events.send(entry_event(&e));
                 Some(e)
             }
             Err(error) => {
@@ -361,7 +385,7 @@ impl Hub {
             let _guard = self.emit_lock.locked();
             let (entry, added) = self.store.insert_entry_once(id, lane, kind, turn, data)?;
             if added {
-                let _ = self.events.send(json!({"type":"entry","rev":entry.rev,"entry":entry}));
+                let _ = self.events.send(entry_event(&entry));
             }
             (entry, added)
         };
@@ -392,7 +416,7 @@ impl Hub {
         match self.store.update_entry_turn(id, turn, data) {
             Ok(e) => {
                 if let Some(e) = &e {
-                    let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+                    let _ = self.events.send(entry_event(e));
                 }
                 e
             }
@@ -413,7 +437,7 @@ impl Hub {
             return Ok(e);
         }
         let e = self.store.update_entry(id, &e.data)?.ok_or_else(|| anyhow!("unknown message"))?;
-        let _ = self.events.send(json!({"type": "entry", "rev": e.rev, "entry": e}));
+        let _ = self.events.send(entry_event(&e));
         Ok(e)
     }
 

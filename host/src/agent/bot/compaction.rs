@@ -157,7 +157,7 @@ impl Actor {
     /// `context`), a harness that got them in its first message gets them again, and the chat shows the summary.
     pub(super) fn compacted(&mut self, id: &str, summary: Option<String>) {
         let Some(sid) = self.turn_session.clone() else { return };
-        match context::bump_epoch(&self.hub.store, &self.cfg.id, &sid, id) {
+        match context::bump_epoch(&self.hub.store, self.cfg.owner(), &sid, id) {
             Ok(true) => {}
             // The same compaction reported again; Claude's adapter carries the summary on one of its reports.
             Ok(false) => {
@@ -171,7 +171,7 @@ impl Actor {
                 return;
             }
         }
-        if let Err(error) = memory::compacted(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = memory::compacted(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
         }
         if self.conn.as_ref().is_some_and(|c| c.instructions() == Instructions::FirstMessage) {
@@ -319,7 +319,7 @@ impl Actor {
         }
         crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
-        if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = context::refresh(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");
         }
         self.compacting = Some(idle);

@@ -83,7 +83,7 @@ pub fn draft(hub: &Hub, cfg: &BotConfig, session: &str, reason: Reason) -> Resul
     Ok(entry)
 }
 
-fn build(store: &Store, bot: &str, session: &str) -> Result<String> {
+pub(crate) fn build(store: &Store, bot: &str, session: &str) -> Result<String> {
     let entries = store.history(bot, i64::MAX, READ)?;
     let user = EntryKind::User.as_str();
     let requests: Vec<(String, String)> = entries

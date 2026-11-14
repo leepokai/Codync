@@ -76,6 +76,11 @@ public struct BotRow: View {
             }
             .font(.subheadline)
             .foregroundStyle(Palette.secondary)
+        } else if bot.status == "idle", !bot.tasks.isEmpty {
+            Text(bot.tasks.rosterPreview())
+                .font(.subheadline)
+                .foregroundStyle(Palette.secondary)
+                .lineLimit(1)
         } else if bot.status == "error" {
             Text(MessagePreview.text(bot.lastMessage ?? "Something went wrong"))
                 .font(.subheadline)

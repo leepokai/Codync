@@ -464,12 +464,16 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 }
 
 /** `Text(date, style: .timer)`: the time since `startedAt`, every second. */
-@Composable private fun Elapsed(startedAt: Long) {
+@Composable internal fun Elapsed(startedAt: Long) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(startedAt) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
-    val seconds = maxOf(0, (now - startedAt) / 1000)
-    Text(if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60),
-        style = Type.footnote.monospacedDigit, color = Palette.tertiary)
+    Text(timerText(now - startedAt), style = Type.footnote.monospacedDigit, color = Palette.tertiary)
+}
+
+/** A length of time as the working line's timer writes it: "0:07", "12:30", "1:02:03". */
+internal fun timerText(millis: Long): String {
+    val seconds = maxOf(0, millis / 1000)
+    return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 /** The start of an empty chat: who the bot is and how it works. */

@@ -24,6 +24,7 @@ mod roster;
 mod section_order;
 mod slash;
 mod steps;
+mod tasks;
 mod ui;
 mod usage_chooser;
 mod whats_new;
@@ -38,6 +39,7 @@ pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
+pub use tasks::{Background, Task, TaskStatus};
 pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
@@ -140,6 +142,8 @@ pub struct App {
     pub section_order: Vec<String>,
     /// Voice calls' own messages, by call id (`callEntries`): the chat loaded here may not reach back to them.
     pub call_entries: HashMap<String, Vec<Entry>>,
+    /// Background tasks' own transcripts, by task id (`taskEntry` events, `taskEntries`): never part of a chat.
+    pub task_entries: super::manage::TaskEntries,
     pub market: (Vec<Toggle>, Vec<Toggle>),
     /// Installed connectors and skills as the host lists them.
     pub plugins: (Vec<Value>, Vec<Value>),
@@ -227,6 +231,7 @@ impl App {
             folded: HashSet::new(),
             section_order: Vec::new(),
             call_entries: HashMap::new(),
+            task_entries: super::manage::TaskEntries::default(),
             market: (vec![], vec![]),
             plugins: (vec![], vec![]),
             models: HashMap::new(),
@@ -344,7 +349,8 @@ impl App {
             || self.hint.is_some()
             || !self.online
             || !self.answering.is_empty()
-            || self.bots.values().any(|b| b.status == Status::Working)
+            // A task's time runs while its bot's chat is idle.
+            || self.bots.values().any(|b| b.status == Status::Working || !b.tasks.is_empty())
     }
 
     fn select(&mut self, id: &str) {

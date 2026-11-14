@@ -1929,7 +1929,6 @@
   "Couldn't play. Click to retry.": "재생할 수 없습니다. 클릭하여 다시 시도하세요.",
   "Downloaded": "다운로드됨",
   "Tap to retry.": "탭하여 다시 시도하세요.",
-  "View": "보기",
   "Voice note": "음성 메시지",
   "Summarize long chats": "긴 채팅 요약",
   "Auto leaves it to the agent, which summarizes once the chat fills up. The others have Codync do it sooner.": "'자동'은 에이전트에 맡기며, 채팅이 가득 차면 에이전트가 직접 요약합니다. 다른 선택지는 Codync가 더 일찍 요약합니다.",
@@ -2080,5 +2079,16 @@
   "Follow-up cancelled": "다시 확인 취소됨",
   "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다",
   "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "새 기능: Codync Cloud(베타). 내 Boat 또는 InstaBox 계정에서 클라우드 컴퓨터를 시작하면 컴퓨터가 꺼져 있어도 봇이 계속 작업합니다.",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "새 기능: 로그인 프로필. 에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요."
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "새 기능: 로그인 프로필. 에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요.",
+  "In the background": "백그라운드",
+  "{count} tasks running": "작업 {count}개",
+  "Stop the background work?": "백그라운드 작업을 중지할까요?",
+  "What it already changed stays.": "이미 변경한 내용은 그대로 남습니다.",
+  "In the background: {what}": "백그라운드: {what}",
+  "Nothing in the background": "백그라운드에서 진행 중인 작업이 없습니다",
+  "B opens": "B 열기",
+  "X stops": "X 중지",
+  "T full": "T 전체 보기",
+  "r retries": "r로 다시 시도",
+  "↵ opens": "↵ 열기"
 }

@@ -158,13 +158,41 @@ pub struct BotConfig {
     /// until the user renames it.
     #[serde(default)]
     pub auto_name: bool,
+    /// Set on a task bot: the bot whose work it does away from the chat (see `chat::tasks`). It has its own actor,
+    /// agent process, session and transcript; clients never see it as a bot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_of: Option<String>,
     #[serde(default)]
     pub created_at: i64,
+}
+
+/// A task bot's id starts with this; a bot's and a group's are plain UUIDs.
+pub const TASK_PREFIX: &str = "task-";
+
+/// Whether `id` is a task bot's (and so a chat no client lists).
+pub fn is_task_id(id: &str) -> bool {
+    id.starts_with(TASK_PREFIX)
 }
 
 impl BotConfig {
     pub fn is_group(&self) -> bool {
         self.kind == BotKind::Group
+    }
+
+    pub fn is_task(&self) -> bool {
+        self.task_of.is_some()
+    }
+
+    /// The bot it is to the user: a task's bot, else itself.
+    pub fn owner(&self) -> &str {
+        self.task_of.as_deref().unwrap_or(&self.id)
+    }
+
+    /// This config under its owner's id: what memory and the instruction snapshot key on, so a task reads and
+    /// writes its bot's.
+    #[must_use]
+    pub fn as_owner(&self) -> Self {
+        Self { id: self.owner().to_owned(), task_of: None, ..self.clone() }
     }
 }
 

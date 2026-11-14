@@ -31,7 +31,17 @@ const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
      ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
 impl Store {
+    /// The roster's rows: bots and groups, deleted ones included. Task bots aren't among them (`task_bots`).
     pub fn bots(&self) -> Result<Vec<BotRow>> {
+        Ok(self.all_bots()?.into_iter().filter(|b| !b.config.is_task()).collect())
+    }
+
+    /// The task bots (`chat::tasks`), deleted ones left out.
+    pub fn task_bots(&self) -> Result<Vec<BotRow>> {
+        Ok(self.all_bots()?.into_iter().filter(|b| b.config.is_task() && !b.deleted).collect())
+    }
+
+    fn all_bots(&self) -> Result<Vec<BotRow>> {
         let c = self.db.locked();
         let mut st = c.prepare(&format!("SELECT {BOT_COLS} FROM bots"))?;
         let rows = st.query_map([], row_bot)?.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -211,6 +221,7 @@ mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
+            task_of: None,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.

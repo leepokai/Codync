@@ -390,6 +390,7 @@ pub(super) mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
+            task_of: None,
             lead: false,
             created_at: 0,
         }

@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::super::manage::{
     AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, KeyImport, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
+    NetworkSheet, RoutineForm, RoutineList, SkillSheet, TaskList, TaskSheet,
 };
 use super::{Editor, Mark, WhatsNew};
 
@@ -111,6 +111,11 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    /// Stops a bot's background work: one task, or all of them.
+    StopTasks {
+        bot: String,
+        task: Option<String>,
+    },
 }
 
 pub struct Confirm {
@@ -357,6 +362,10 @@ pub enum Overlay {
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
+    /// A bot's background tasks, when it has several: a row opens one.
+    Tasks(TaskList),
+    /// A background task's details: its own transcript, read-only.
+    Task(TaskSheet),
     /// A bot's dev servers.
     DevServers(DevServersSheet),
     Routines(RoutineList),

@@ -6,15 +6,13 @@
 use super::{TRANSCRIBE_HINT, multipart, names_hint, spoken_names};
 use crate::store::Store;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use url::Url;
 
 const SERVER_KEY: &str = "speech-server";
-/// The model to ask the server for: servers serving several (Speaches) need one; whisper-server
-/// serves one and ignores it.
-const MODEL_KEY: &str = "speech-server-model";
 const TIMEOUT: Duration = Duration::from_mins(2);
 /// Whisper writes "Thank you." or "you" for silence or faint room noise; a recording whose loudest
 /// 100 ms stays under this RMS (-45 dBFS; room noise is about -60, speech -30 to -10) has no speech.
@@ -90,19 +88,25 @@ fn not_linked(here: bool) -> String {
     format!("No speech model is linked on {computer}. Link one in Codync on that computer: Settings, Voice chat.")
 }
 
-fn server(store: &Store) -> Option<String> {
-    store.kv_get(SERVER_KEY).filter(|s| !s.is_empty())
+/// The linked speech server, saved as one value so a dictation never pairs one server's address
+/// with another's model.
+#[derive(Serialize, Deserialize)]
+struct Server {
+    url: String,
+    /// The model to ask it for: servers serving several (Speaches) need one; whisper-server serves
+    /// one and ignores it.
+    model: String,
 }
 
-fn model(store: &Store) -> String {
-    store.kv_get(MODEL_KEY).unwrap_or_default()
+fn server(store: &Store) -> Option<Server> {
+    serde_json::from_str(&store.kv_get(SERVER_KEY)?).ok()
 }
 
 /// `{ready, message, server}` for `localDictation`: the linked server, or what to do without one,
 /// worded for a caller on this computer (`here`) or elsewhere. Only this computer, where it's
 /// linked and unlinked, is told the server's address.
 pub fn status(store: &Store, here: bool) -> Value {
-    let server = server(store);
+    let server = server(store).map(|s| s.url);
     let message = server.is_none().then(|| not_linked(here));
     json!({"ready": server.is_some(), "message": message, "server": server.filter(|_| here)})
 }
@@ -113,22 +117,21 @@ pub async fn link(store: &Store, url: &str, model: &str) -> Result<Value> {
     let (url, model) = (url.trim(), model.trim());
     if url.is_empty() {
         store.kv_delete(SERVER_KEY)?;
-        store.kv_delete(MODEL_KEY)?;
     } else {
         post(store, url, model, &super::wav(&vec![0; 32_000], 16_000)).await?;
-        store.kv_set(SERVER_KEY, url)?;
-        store.kv_set(MODEL_KEY, model)?;
+        let server = Server { url: url.into(), model: model.into() };
+        store.kv_set(SERVER_KEY, &serde_json::to_string(&server)?)?;
     }
     Ok(status(store, true))
 }
 
 /// Speech to text for one utterance (a 16 kHz mono 16-bit WAV) on the linked server.
 pub async fn transcribe(store: &Store, wav: &[u8]) -> Result<Value> {
-    let url = server(store).ok_or_else(|| SpeechFailure::NotLinked.error(not_linked(false)))?;
+    let Server { url, model } = server(store).ok_or_else(|| SpeechFailure::NotLinked.error(not_linked(false)))?;
     if !voiced(wav) {
         return Ok(json!({"text": ""}));
     }
-    let text = post(store, &url, &model(store), wav).await?;
+    let text = post(store, &url, &model, wav).await?;
     Ok(json!({"text": spoken(&text)}))
 }
 
@@ -410,7 +413,6 @@ mod tests {
             (unlinked["ready"].as_bool(), unlinked["message"].as_str()),
             (Some(false), Some(not_linked(true).as_str()))
         );
-        assert!(store.kv_get(MODEL_KEY).is_none(), "unlinking forgets the model");
     }
 
     #[test]

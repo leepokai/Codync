@@ -27,7 +27,7 @@ export class LocalDictationModel extends Observable {
   /** Asks the computer again; the card calls it whenever the computer (re)connects. */
   async load() {
     const client = this.client()
-    if (!client) return this.update({ note: trNow('Not connected to {name}.').replaceAll('{name}', this.hostName) })
+    if (!client) return this.update({ note: trNow('Not connected to {name}.').replaceAll('{name}', () => this.hostName()) })
     try {
       this.show(await localDictation(client))
     } catch (e) {

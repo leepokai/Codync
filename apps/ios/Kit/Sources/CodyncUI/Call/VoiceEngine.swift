@@ -37,6 +37,7 @@ enum Reconnect {
 /// `CallView` only talks to this; nothing on the host changes.
 @MainActor
 protocol VoiceEngine: AnyObject, Observable {
+    var searchResult: CallSearchResult? { get }
     var phase: VoicePhase { get }
     /// Microphone loudness, 0…1, while listening.
     var level: Float { get }
@@ -60,6 +61,7 @@ protocol VoiceEngine: AnyObject, Observable {
 }
 
 extension VoiceEngine {
+    var searchResult: CallSearchResult? { nil }
     /// What the computer tells the call's voice, handed to the method that says it.
     func hear(_ cue: CallCue) {
         switch cue.kind {
@@ -94,6 +96,8 @@ struct VoiceError: LocalizedError {
 /// The engine picked in the call settings, kept on this device.
 enum VoiceSettings {
     static let engineKey = "callEngine"
+    static let googleSearchKey = "callGoogleSearch.gemini"
+    static var googleSearch: Bool { UserDefaults.standard.bool(forKey: googleSearchKey) }
 
     static var provider: VoiceProvider? {
         UserDefaults.standard.string(forKey: engineKey).flatMap(VoiceProvider.init(rawValue:))
@@ -174,7 +178,7 @@ enum VoiceSettings {
         guard let provider else { return "device \(UserDefaults.standard.string(forKey: OnDeviceEngine.languageKey) ?? "")" }
         return isSpeechMode(provider)
             ? "\(provider.rawValue) speech \(transcribeModel(provider)) \(speechModel(provider)) \(voice(provider))"
-            : "\(provider.rawValue) \(model(provider)) \(voice(provider))"
+            : "\(provider.rawValue) \(model(provider)) \(voice(provider)) \(provider == .gemini && googleSearch)"
     }
 
     static func voiceKey(_ provider: VoiceProvider) -> String { "callVoice.\(provider.rawValue)" }

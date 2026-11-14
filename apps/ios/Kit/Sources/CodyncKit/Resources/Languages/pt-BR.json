@@ -2092,5 +2092,8 @@
   "X stops": "X para",
   "T full": "T tudo",
   "r retries": "r tenta de novo",
-  "↵ opens": "↵ abre"
+  "↵ opens": "↵ abre",
+  "Google Search": "Pesquisa Google",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "Permite que o Gemini pesquise na Web durante as chamadas. Requer cota do Google Search; podem ser cobradas tarifas.",
+  "Couldn't open the link.": "Não foi possível abrir o link."
 }

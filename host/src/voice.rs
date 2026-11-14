@@ -153,7 +153,7 @@ async fn mint(p: Provider, access: &Access, model: &str, voice: &str) -> Result<
         .ok_or_else(|| anyhow!("{} sent no session credential.", p.name()))
 }
 
-/// Which providers have a key here, with their default models.
+/// Which providers have a key here, with their default models, and that Gemini realtime calls can use Google Search.
 pub fn status(store: &Store) -> Result<Value> {
     let providers = Provider::ALL
         .iter()
@@ -162,7 +162,7 @@ pub fn status(store: &Store) -> Result<Value> {
             Ok(json!({"provider": p.id(), "configured": keys::configured(store, p)?, "defaults": defaults}))
         })
         .collect::<Result<Vec<Value>>>()?;
-    Ok(json!({"providers": providers}))
+    Ok(json!({"providers": providers, "googleSearch": true}))
 }
 
 /// Checks the key with the provider (one credential mint), then keeps it. An empty key removes it.
@@ -483,6 +483,12 @@ fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_says_calls_can_use_google_search() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        assert_eq!(status(&store).unwrap()["googleSearch"], true);
+    }
 
     fn ids(p: Provider, ids: &[&str]) -> (Vec<String>, Vec<String>, Vec<String>) {
         let models: Vec<Model> = ids

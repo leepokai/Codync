@@ -361,12 +361,13 @@ public extension HostClient {
     /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
     /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
     func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
-                   voice: String? = nil, language: String?) async throws -> CallSession {
+                   voice: String? = nil, language: String?, googleSearch: Bool = false) async throws -> CallSession {
         struct Body: Encodable {
             var botId, callId, mode: String; var provider, model, voice, language: String?
+            var googleSearch: Bool
         }
         let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
-                        language: language)
+                        language: language, googleSearch: googleSearch)
         let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
         return try CallSession(json: data)
     }

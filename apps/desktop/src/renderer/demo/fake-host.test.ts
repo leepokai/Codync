@@ -73,3 +73,15 @@ test('marking a chat unread after a new reply keeps its count and holds it, like
   const { bot: still } = (await host.call('markUnread', { botId: 'scout' })) as { bot: Bot }
   assert.equal(still.unread, 2)
 })
+
+test('a reply the user reacted to does not come back unread, like the real host', async () => {
+  const host = new FakeHost('2.48.0', macBook)
+  const { bot: created } = (await host.call('createBot', { name: 'Quiet', kind: 'agent' })) as { bot: Bot }
+  const reply = (host as unknown as { add(e: { botId: string; kind: string; data: object }): { id: string } }).add.bind(host)
+  const only = reply({ botId: created.id, kind: 'agent', data: { text: 'one', final: true } })
+  await host.call('markRead', { botId: created.id })
+  await host.call('react', { entryId: only.id, emoji: '👍' })
+  const { bot } = (await host.call('markUnread', { botId: created.id })) as { bot: Bot }
+  assert.equal(bot.unread, 0)
+  assert.equal(bot.keptUnread ?? false, false)
+})

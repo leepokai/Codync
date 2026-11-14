@@ -206,14 +206,19 @@ export class FakeHost {
       case 'markUnread': {
         const bot = this.bots.get(str('botId'))
         if (!bot) throw fail('That bot was deleted.')
-        const before = this.unreadBeforeRead.get(bot.id) ?? 0
         if (bot.unread > 0 && !bot.keptUnread) {
           bot.keptUnread = true
           this.emitBot(bot)
-        } else if (bot.unread === 0 && (before > 0 || this.entries.some((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e)))) {
-          bot.unread = before || 1
-          bot.keptUnread = true
-          this.emitBot(bot)
+        } else if (bot.unread === 0) {
+          const replies = this.entries.filter((e) => e.botId === bot.id && e.kind !== 'user' && isChat(e))
+          const before = this.unreadBeforeRead.get(bot.id) ?? 0
+          const count = (list: Entry[]) => list.filter((e) => !e.data.reactions?.length && !e.data.call).length
+          const unread = (before > 0 ? count(replies.slice(-before)) : 0) || Math.min(count(replies), 1)
+          if (unread > 0) {
+            bot.unread = unread
+            bot.keptUnread = true
+            this.emitBot(bot)
+          }
         }
         return { bot: this.botJSON(bot) }
       }

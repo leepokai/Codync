@@ -2078,5 +2078,7 @@
   "Follow-up due now": "Скоро проверка",
   "Cancel follow-up": "Отменить проверку",
   "Follow-up cancelled": "Проверка отменена",
-  "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет"
+  "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Новое: Codync Cloud (бета). Запустите облачный компьютер в собственном аккаунте Boat или InstaBox, чтобы боты работали, пока ваш компьютер выключен.",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Новое: профили входа. Войдите агентом в несколько аккаунтов или добавьте API-ключи в разделе «Профили входа» в его настройках, а затем выберите профиль для каждого бота."
 }

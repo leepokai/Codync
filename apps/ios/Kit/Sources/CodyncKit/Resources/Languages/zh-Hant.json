@@ -2078,5 +2078,7 @@
   "Follow-up due now": "即將跟進",
   "Cancel follow-up": "取消跟進",
   "Follow-up cancelled": "已取消跟進",
-  "A follow-up is the bot's own: x cancels it": "跟進由 Bot 自己設定：按 x 取消"
+  "A follow-up is the bot's own: x cancels it": "跟進由 Bot 自己設定：按 x 取消",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "新功能：Codync Cloud（測試版）。用你自己的 Boat 或 InstaBox 賬戶啟動一台雲端電腦，電腦關機時 Bot 也能繼續工作。",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "新功能：登入設定。在智慧體設定頁的「登入設定」讓同一個智慧體登入多個賬戶或新增 API 金鑰，再選擇每個 Bot 要用哪一個。"
 }

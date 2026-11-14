@@ -2078,5 +2078,7 @@
   "Follow-up due now": "まもなくフォローアップ",
   "Cancel follow-up": "フォローアップを取り消す",
   "Follow-up cancelled": "フォローアップを取り消しました",
-  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます"
+  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "新機能：Codync Cloud（ベータ）。自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "新機能：ログインプロファイル。エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。"
 }

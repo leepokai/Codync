@@ -16,14 +16,14 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 智慧體可以有多個「登入設定」：新增賬戶（Claude Code、Codex 等），或為任何智慧體新增 API 金鑰；每個都能取名，bot 在「智慧體」選擇要用哪一個。
 - 備援可以選同一個智慧體的另一個登入設定。
 - 「用量上限」會分別列出每個賬戶的額度（Claude Code、Codex）。
-- Bot 說「晚點回來看」時會設定跟進，時間到了自己回到聊天告訴你結果。
+- Bot 說「晚點回來看」時會設定跟進，時間到了自己回到聊天告訴你結果；等待中的跟進列在例行任務上方，可以取消。
 - 例行任務會記住上次做到哪裡，下次接著做。
 
 ### en-US
-- Share text, links, photos or files to a bot from any app's share sheet.
+- Share text, links, photos or files to a bot from any app.
 - Update notices say whether this app or your computer needs updating.
 - A voice note no longer plays after you leave its chat.
 - Choice cards show numbered options and take your own answer.
 - Agents can have several login profiles (account or API key): pick a bot's under Agent, fall back to another, see each account's limits in Usage.
-- Bots can check back later.
-- Routines pick up where the last run stopped.
+- Bots can check back later; cancel one under Routines.
+- Routines resume where the last run stopped.

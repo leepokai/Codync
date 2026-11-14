@@ -229,6 +229,9 @@ test('follow-up notices translate around the wait and keep the note as written',
   assert.equal(translate('Follow-up in about 2 days: Plan', 'ru', false), 'Проверка через примерно 2 дн.: Plan')
   assert.equal(translate('Follow-up · Plan', 'ja', false), 'フォローアップ · Plan')
   assert.equal(translate('Follow-up cancelled: Plan', 'fr', false), 'Suivi annulé : Plan')
+  // A waiting follow-up's row in the routines list.
+  assert.equal(translate('Follow-up at 15:42', 'zh-Hant', 'en'), '15:42 跟進')
+  assert.equal(translate('Follow-up due now', 'zh-Hant', 'en'), '即將跟進')
 })
 
 test('filled interface templates preserve user-owned names', () => {

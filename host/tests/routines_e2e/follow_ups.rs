@@ -133,6 +133,25 @@ async fn a_follow_up_cut_off_by_a_restart_is_resumed_as_a_follow_up() {
 }
 
 #[tokio::test]
+async fn the_user_cancels_a_waiting_follow_up_from_the_routines_list() {
+    let host = Host::start().await;
+    let bot = host.stable_bot("listed").await;
+    let set = follow_up(&host, &bot, "Look at the deploy").await;
+    let id = set["followUp"]["id"].clone();
+    let listed = host.call("routines", json!({"botId":bot})).await["followUps"].clone();
+    assert_eq!((&listed[0]["id"], &listed[0]["note"]), (&id, &json!("Look at the deploy")));
+    assert!(listed[0]["at"].as_i64().unwrap() > listed[0]["createdAt"].as_i64().unwrap());
+
+    host.call("cancelFollowUp", json!({"botId":bot,"id":id})).await;
+    assert_eq!(host.call("routines", json!({"botId":bot})).await["followUps"], json!([]));
+    assert!(notices(&entries(&host, &bot).await).contains(&"Follow-up cancelled: Look at the deploy"));
+    // A list a moment old: cancelling it again is no error, and no second line in the chat.
+    assert_eq!(host.call("cancelFollowUp", json!({"botId":bot,"id":id})).await["gone"], true);
+    let entries = entries(&host, &bot).await;
+    assert_eq!(notices(&entries).iter().filter(|text| text.starts_with("Follow-up cancelled")).count(), 1);
+}
+
+#[tokio::test]
 async fn stop_drops_a_follow_up_waiting_behind_the_running_turn() {
     let mut host = Host::start().await;
     let bot = host.stable_bot("stopped").await;

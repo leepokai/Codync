@@ -113,6 +113,10 @@ fn follow_up_notices_translate_around_the_wait_and_keep_the_note() {
     assert_eq!(translate_with("Follow-up in about 2 days: Plan", &HANS), "约 2 天后跟进：Plan");
     assert_eq!(translate_with("Follow-up · Plan", &HANS), "跟进 · Plan");
     assert_eq!(translate_with("Follow-up cancelled: Plan", &HANS), "已取消跟进：Plan");
+    // A waiting follow-up's row in the routines list.
+    assert_eq!(translate_with("Follow-up at 15:42", &HANS), "15:42 跟进");
+    assert_eq!(translate_with("Follow-up due now", &HANS), "即将跟进");
+    assert_eq!(translate_with("A follow-up is the bot's own: x cancels it", &HANS), "跟进由 Bot 自己设定：按 x 取消");
 }
 
 #[test]

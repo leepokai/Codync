@@ -2073,5 +2073,10 @@
   "about {count} hours": "約 {count} 小時",
   "about {count} days": "約 {count} 天",
   "Follow-up · {note}": "跟進 · {note}",
-  "Follow-up cancelled: {note}": "已取消跟進：{note}"
+  "Follow-up cancelled: {note}": "已取消跟進：{note}",
+  "Follow-up at {time}": "{time} 跟進",
+  "Follow-up due now": "即將跟進",
+  "Cancel follow-up": "取消跟進",
+  "Follow-up cancelled": "已取消跟進",
+  "A follow-up is the bot's own: x cancels it": "跟進由 Bot 自己設定：按 x 取消"
 }

@@ -15,7 +15,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 「用量上限」會在智慧體底下分別列出每個賬戶的額度（Claude Code、Codex），小工具顯示最接近上限的那一個。
 - 電腦重新啟動或 App、Codync 更新後，iPhone 只接收新的訊息，不再重新載入每個聊天。
 - 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
-- Bot 說「晚點回來看」時會真的設定跟進：聊天裡會出現「20 分鐘後跟進」的提示，時間到了它會自己回到聊天告訴你結果，還沒有進展就不打擾你。
+- Bot 說「晚點回來看」時會真的設定跟進：聊天裡會出現「20 分鐘後跟進」的提示，時間到了它會自己回到聊天告訴你結果，還沒有進展就不打擾你。等待中的跟進會列在例行任務上方，可以直接取消。
 - 例行任務會記住上次做到哪裡，分批進行的工作下次會接著做。
 
 ### en-US
@@ -26,5 +26,5 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Usage limits lists each account of an agent with its own limits (Claude Code, Codex), and widgets show the one nearest its limit.
 - After your computer restarts or the app or Codync updates, the iPhone catches up on only what's new instead of reloading every chat.
 - Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
-- A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet.
+- A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
 - A routine remembers where its last run stopped, so work done in parts carries on from there.

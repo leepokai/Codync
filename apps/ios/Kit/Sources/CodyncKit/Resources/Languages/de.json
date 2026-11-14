@@ -2073,5 +2073,10 @@
   "about {count} hours": "etwa {count} Stunden",
   "about {count} days": "etwa {count} Tagen",
   "Follow-up · {note}": "Nachfassen · {note}",
-  "Follow-up cancelled: {note}": "Nachfassen abgebrochen: {note}"
+  "Follow-up cancelled: {note}": "Nachfassen abgebrochen: {note}",
+  "Follow-up at {time}": "Nachfassen: {time}",
+  "Follow-up due now": "Nachfassen steht an",
+  "Cancel follow-up": "Nachfassen abbrechen",
+  "Follow-up cancelled": "Nachfassen abgebrochen",
+  "A follow-up is the bot's own: x cancels it": "Ein Nachfassen gehört dem Bot: x bricht es ab"
 }

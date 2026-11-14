@@ -2073,5 +2073,10 @@
   "about {count} hours": "約 {count} 時間",
   "about {count} days": "約 {count} 日",
   "Follow-up · {note}": "フォローアップ · {note}",
-  "Follow-up cancelled: {note}": "フォローアップを取り消しました：{note}"
+  "Follow-up cancelled: {note}": "フォローアップを取り消しました：{note}",
+  "Follow-up at {time}": "{time} にフォローアップ",
+  "Follow-up due now": "まもなくフォローアップ",
+  "Cancel follow-up": "フォローアップを取り消す",
+  "Follow-up cancelled": "フォローアップを取り消しました",
+  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます"
 }

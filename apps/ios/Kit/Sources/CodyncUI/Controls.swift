@@ -400,12 +400,16 @@ extension View {
             .background(fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    /// Grok Bot's list cards (routines, the computer switch): an outline on the page, no fill.
-    func outlinedCard(vertical: CGFloat = 12) -> some View {
+    /// Grok Bot's list cards (routines, the computer switch): an outline on the page, no fill. `dashed` for what
+    /// is there only until it happens (a bot's follow-up).
+    func outlinedCard(vertical: CGFloat = 12, dashed: Bool = false) -> some View {
         padding(.horizontal, 14)
             .padding(.vertical, vertical)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.border))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : []))
+            )
     }
 }
 

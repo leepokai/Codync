@@ -2073,5 +2073,10 @@
   "about {count} hours": "unas {count} horas",
   "about {count} days": "unos {count} días",
   "Follow-up · {note}": "Seguimiento · {note}",
-  "Follow-up cancelled: {note}": "Seguimiento cancelado: {note}"
+  "Follow-up cancelled: {note}": "Seguimiento cancelado: {note}",
+  "Follow-up at {time}": "Seguimiento: {time}",
+  "Follow-up due now": "Seguimiento inminente",
+  "Cancel follow-up": "Cancelar seguimiento",
+  "Follow-up cancelled": "Seguimiento cancelado",
+  "A follow-up is the bot's own: x cancels it": "Un seguimiento es del propio bot: x lo cancela"
 }

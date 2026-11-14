@@ -207,6 +207,9 @@ extension AppLanguageTests {
         #expect(hant("Follow-up in about 2 days: Plan") == "約 2 天後跟進：Plan")
         #expect(hant("Follow-up · Plan") == "跟進 · Plan")
         #expect(hant("Follow-up cancelled: Plan") == "已取消跟進：Plan")
+        // A waiting follow-up's row in the routines list.
+        #expect(hant("Follow-up at 15:42") == "15:42 跟進")
+        #expect(hant("Follow-up due now") == "即將跟進")
     }
 
     @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {

@@ -1,5 +1,5 @@
 # A follow-up a bot sets is a line in its chat, and on the phones in 繁體中文 it reads translated around the note the bot
-# wrote. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# wrote. It then waits above the bot's routines on a card of its own, where ✕ cancels it. The phone must already be signed in and paired with the host (a worktree's sandbox,
 # docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`; the iPhone gets 繁體中文 from its launch
 # arguments, Android from its language file, written before the run:
 #   adb shell run-as com.pokai.Codync.android.dev sh -c 'mkdir -p shared_prefs && echo "<map><string name=\"appLanguage\">zh-Hant</string></map>" > shared_prefs/codync-language.xml'
@@ -38,3 +38,14 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: "30 分鐘後跟進：Look at the build"
     timeout: 20000
+# The bot's details: the follow-up waits above its routines, saying when it happens, and ✕ drops it.
+- tapOn: ${output.bot.name}
+- scrollUntilVisible:
+    element: ".* 跟進"
+    direction: DOWN
+- assertVisible: "Look at the build"
+- takeScreenshot: follow-up-card
+- tapOn: "取消跟進"
+- extendedWaitUntil:
+    notVisible: ".* 跟進"
+    timeout: 10000

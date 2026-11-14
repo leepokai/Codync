@@ -4,7 +4,8 @@ Routines belong to an agent bot and are usually created by talking to it ("I wan
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
-(name, schedule, on/off switch). **+** opens the form for doing it by hand;
+(name, schedule, on/off switch), with the [follow-ups](follow-ups.md#in-the-routines-list) the bot set for
+itself listed above it on dashed cards. **+** opens the form for doing it by hand;
 requests to the bot are typed directly in the chat. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two

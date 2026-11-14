@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.contentDescription
@@ -81,6 +82,19 @@ import kotlinx.coroutines.launch
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionHeading("Routines", Modifier.weight(1f).padding(start = 2.dp))
             IconButton("Set up a routine", "plus", enabled = online) { editing = "" }
+        }
+        // A follow-up is the bot's own one-off, not a standing routine: a dashed outline, a clock and a way to drop it.
+        for (followUp in listing?.followUps.orEmpty()) {
+            Row(Modifier.outlinedCard(vertical = 0.dp, dashed = true), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Symbol("clock", Modifier.padding(top = 12.dp), size = 13.dp, tint = Palette.secondary)
+                Column(Modifier.weight(1f).padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(followUp.note, style = Type.system(13f), color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(tr(followUp.line(appLocale())), style = Type.caption, color = Palette.secondary)
+                }
+                IconButton("Cancel follow-up", "xmark", Modifier.padding(top = 2.dp).offset(x = 6.dp), enabled = online && !busy) {
+                    store.cancelFollowUp(bot.id, followUp.id)
+                }
+            }
         }
         val routines = listing?.routines.orEmpty()
         if (routines.isEmpty()) Text(tr(if (listing != null) "No routines yet. Ask the bot for one, or set it up yourself with +." else "Loading routines…"),

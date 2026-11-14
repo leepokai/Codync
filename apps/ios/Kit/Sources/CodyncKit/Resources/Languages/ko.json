@@ -2073,5 +2073,10 @@
   "about {count} hours": "약 {count}시간",
   "about {count} days": "약 {count}일",
   "Follow-up · {note}": "다시 확인 · {note}",
-  "Follow-up cancelled: {note}": "다시 확인 취소됨: {note}"
+  "Follow-up cancelled: {note}": "다시 확인 취소됨: {note}",
+  "Follow-up at {time}": "{time}에 다시 확인",
+  "Follow-up due now": "곧 다시 확인",
+  "Cancel follow-up": "다시 확인 취소",
+  "Follow-up cancelled": "다시 확인 취소됨",
+  "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다"
 }

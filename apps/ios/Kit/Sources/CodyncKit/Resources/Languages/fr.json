@@ -2073,5 +2073,10 @@
   "about {count} hours": "environ {count} heures",
   "about {count} days": "environ {count} jours",
   "Follow-up · {note}": "Suivi · {note}",
-  "Follow-up cancelled: {note}": "Suivi annulé : {note}"
+  "Follow-up cancelled: {note}": "Suivi annulé : {note}",
+  "Follow-up at {time}": "Suivi : {time}",
+  "Follow-up due now": "Suivi imminent",
+  "Cancel follow-up": "Annuler le suivi",
+  "Follow-up cancelled": "Suivi annulé",
+  "A follow-up is the bot's own: x cancels it": "Un suivi appartient au bot : x l’annule"
 }

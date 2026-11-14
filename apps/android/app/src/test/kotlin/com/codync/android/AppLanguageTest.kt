@@ -106,6 +106,8 @@ class AppLanguageTest {
             "about {count} hours" to "约 {count} 小时",
             "about {count} days" to "约 {count} 天",
             "Follow-up · {note}" to "跟进 · {note}",
+            "Follow-up at {time}" to "{time} 跟进",
+            "Follow-up due now" to "即将跟进",
             "Settings" to "设置",
         )
         fun zh(text: String) = translate(text, AppLanguage.Zh, false, table)
@@ -117,6 +119,9 @@ class AppLanguageTest {
         assertEquals("1 分钟后跟进：wait 5 minutes: then check", zh("Follow-up in 1 minute: wait 5 minutes: then check"))
         assertEquals("约 2 天后跟进：rerun if 3 hours: passed", zh("Follow-up in about 2 days: rerun if 3 hours: passed"))
         assertEquals("跟进 · Settings", zh("Follow-up · Settings"))
+        // A waiting follow-up's row in the routines list.
+        assertEquals("15:42 跟进", zh("Follow-up at 15:42"))
+        assertEquals("即将跟进", zh("Follow-up due now"))
     }
     @Test fun filledTemplatesPreserveNamesMessagesAndNestedHints() {
         val table = mapOf(

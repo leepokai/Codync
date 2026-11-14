@@ -2073,5 +2073,10 @@
   "about {count} hours": "circa {count} ore",
   "about {count} days": "circa {count} giorni",
   "Follow-up · {note}": "Follow-up · {note}",
-  "Follow-up cancelled: {note}": "Follow-up annullato: {note}"
+  "Follow-up cancelled: {note}": "Follow-up annullato: {note}",
+  "Follow-up at {time}": "Follow-up: {time}",
+  "Follow-up due now": "Follow-up a momenti",
+  "Cancel follow-up": "Annulla follow-up",
+  "Follow-up cancelled": "Follow-up annullato",
+  "A follow-up is the bot's own: x cancels it": "Un follow-up è del bot: x lo annulla"
 }

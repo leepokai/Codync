@@ -1,5 +1,5 @@
 //! The built-in `routines` MCP server, scoped to one bot: its tools and instructions.
-use super::{Arc, Context, Hub, Result, Value, bail, json, required};
+use super::{Arc, Cancelled, Context, Hub, Result, Value, bail, json, required};
 
 pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
@@ -28,7 +28,7 @@ pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value
         "save_progress" => hub.routines.save_progress(hub, bot, required(args, "id")?, required(args, "content")?),
         "read_progress" => hub.routines.progress(bot, required(args, "id")?),
         "follow_up" => hub.routines.follow_up(hub, bot, args),
-        "cancel_follow_up" => hub.routines.cancel_follow_up(hub, bot, required(args, "id")?),
+        "cancel_follow_up" => hub.routines.cancel_follow_up(hub, bot, required(args, "id")?, Cancelled::Bot),
         _ => bail!("unknown routine tool"),
     }
 }

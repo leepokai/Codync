@@ -4,7 +4,7 @@ pub use check::Checked;
 mod editor;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
 mod follow_up;
-pub use follow_up::FollowUp;
+pub use follow_up::{Cancelled, FollowUp};
 pub mod hooks;
 use hooks::Refused;
 mod kept;
@@ -232,9 +232,12 @@ impl Routines {
 
     pub fn list(&self, bot: &str) -> Value {
         let state = self.state.locked();
+        // The next one to happen first, as every list of them shows.
+        let mut follow_ups: Vec<_> = state.follow_ups.iter().filter(|f| f.bot_id == bot).collect();
+        follow_ups.sort_by_key(|f| f.at);
         json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
             "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>(),
-            "followUps": state.follow_ups.iter().filter(|f| f.bot_id == bot).collect::<Vec<_>>()})
+            "followUps": follow_ups})
     }
 
     pub fn owns(&self, bot: &str, id: &str) -> bool {

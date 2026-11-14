@@ -22,7 +22,8 @@ On the built-in `routines` MCP server every agent has:
 - `follow_up {minutes, note}`: `minutes` from now, 1 to 43,200 (30 days). A delay, not a clock time: an agent
   doesn't reliably know what time it is. The answer has the follow-up (`id`, `at`) and `atLocal`, the time on the
   computer's clock, for the bot to tell the user.
-- `cancel_follow_up {id}`.
+- `cancel_follow_up {id}`. The user's own cancel, from the routines list, is the host method `cancelFollowUp`
+  ([below](#in-the-routines-list)).
 - `list_routines` also answers `followUps`, the ones still waiting.
 
 `follow_up` works only from a turn in the bot's own chat. In a group room, or while the bot answers another bot's
@@ -91,17 +92,49 @@ They show the note's first line, at most 120 bytes. The phrases are in the share
 ([interface languages](../guides/localization.md)), so iPhone, Android, desktop and terminal translate them with
 no code of their own. The first line is one phrase, `Follow-up in {when}: {note}`, and the wait is a phrase of
 its own inside it (`1 minute`, `{count} minutes`, `about {count} hours`, `about {count} days`): the wait ends at
-the first colon, so a note that reads like a wait ("wait 5 minutes: then check") stays a note. There is no list
-of follow-ups in the apps yet: the user asks the bot what is waiting or to cancel one.
+the first colon, so a note that reads like a wait ("wait 5 minutes: then check") stays a note.
+
+## In the routines list
+
+The follow-ups still waiting are listed where the bot's routines are (the Details page of its details; the
+terminal's routines sheet), above the routines, so the user sees what the bot will come back to and can drop one
+without asking it. The `routines` method answers them as `followUps` beside `routines` and `runs`, the next one
+to happen first, and the apps
+already read that listing every three seconds.
+
+- **A card of its own look**, so it doesn't read as a routine: a dashed outline (a routine's is solid), a clock,
+  the note (two lines at most), then when it happens: `Follow-up at 15:42` today, with the date on another day,
+  and `Follow-up due now` once it is due and waits behind what the bot is doing. No switch and nothing to open:
+  it is the bot's own, and it happens once.
+- **✕ cancels it** (`cancelFollowUp {botId, id}`, a method phones may call, unlike the bot's tools). The chat gets
+  the `Follow-up cancelled` line, and `follow_up_cancelled` says `by: user`. There is no confirmation: nothing has
+  run, and the bot can be asked to set it again. A card can be a moment old: for one that began or was cancelled
+  since, the method answers `gone: true` instead of an error (the card leaves on the next load), with no line in
+  the chat and no event. The bot's own `cancel_follow_up` still gets an error for an id that isn't waiting.
+- **The time is in the app's language**, like the routine editor's dates (`useIntlLocale`, the iPhone's
+  `\.locale`, Android's `appLocale`), not the device's.
+- **Terminal:** the follow-ups come first in the list (`RoutineList::rows`), marked `◷` where a routine has its
+  on/off dot; `x` cancels the one picked, and a routine's other keys do nothing on it. The sheet loads again when
+  a notice arrives in that chat, so one that fires or is dropped leaves the list; the cursor stays on the row it
+  picked, so a key pressed just then never lands on another row.
+- Code: desktop `views/routines/RoutinesView.tsx` (`followUpLine` in `routine.ts`), iPhone
+  `CodyncUI/Routines/RoutinesView.swift` (`FollowUp.line`), Android `RoutinesView.kt` (`FollowUp.line` in core),
+  terminal `tui/sheets.rs` and `tui/manage/routines.rs`. The dashed card is `outlinedCard(dashed:)` on both
+  phones and `.follow-up-card` on the desktop.
 
 ## Analytics
 
-`follow_up_set` (`outcome`, `minutes`, `chain`), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`), and
+`follow_up_set` (`outcome`, `minutes`, `chain`), `follow_up_fired` (`late`), `follow_up_cancelled` (`by`; the
+user's comes from `api::dispatch` like every API call, so it also says which app), and
 `turn_finished` with `source: follow_up` for how the turn went:
 [analytics events](../reference/analytics-events.md).
 
 ## Tests
 
+- The list: `the_user_cancels_a_waiting_follow_up_from_the_routines_list` (host), `followUpLine` (desktop
+  `routine.test.ts`), `FollowUp.line` and the listing's decoding (iPhone `RoutineTests.swift`, Android
+  `RoutineTest.kt`), `a_follow_up_sits_above_the_routines_and_x_cancels_it`,
+  `a_reload_keeps_the_cursor_on_the_row_it_picked` and the sheet's render test (terminal).
 - Unit (`routines/follow_up.rs`, `kept.rs`): the wait's wording, the note's checks, the ten and the chain limit,
   only from the bot's own chat, surviving a restart, leaving with the bot, what Stop drops, one that couldn't be
   taken or dropped is handed over again.

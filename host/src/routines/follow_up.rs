@@ -2,7 +2,7 @@
 //! gets one turn in its own chat, in the conversation it set it from, and the follow-up is gone. A routine is the
 //! user's standing task and runs in a session of its own; a follow-up is the bot keeping its word once.
 use super::kept::{self, Refused};
-use super::{Context, EntryKind, Hub, Lane, LockExt, Result, Routines, Store, Value, agent_bot, bail, json, now_ms};
+use super::{EntryKind, Hub, Lane, LockExt, Result, Routines, Store, Value, agent_bot, bail, json, now_ms};
 use crate::agent::acp;
 use crate::agent::bot::{Cmd, NoticeStyle};
 use crate::analytics::{self, Event};
@@ -34,6 +34,18 @@ pub struct FollowUp {
     /// How many follow-ups led to this one, each set in the turn of the one before.
     #[serde(default)]
     pub chain: u32,
+}
+
+/// Who dropped a waiting follow-up, as `follow_up_cancelled` reports it.
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Cancelled {
+    /// Its bot's `cancel_follow_up`.
+    Bot,
+    /// The user, from the routines list in an app.
+    User,
+    /// The bot's Stop, for one already due and waiting its turn.
+    Stop,
 }
 
 /// What only the running host knows about follow-ups.
@@ -101,13 +113,16 @@ impl Routines {
         Ok(follow_up)
     }
 
-    /// `cancel_follow_up`: one of `bot`'s that hasn't begun.
-    pub fn cancel_follow_up(&self, hub: &Hub, bot: &str, id: &str) -> Result<Value> {
-        let cancelled = self
-            .take_follow_ups(&hub.store, |f| f.id == id && f.bot_id == bot)?
-            .pop()
-            .context("no follow-up with that id is waiting (list_routines shows them)")?;
-        cancelled_notice(hub, &cancelled, "bot");
+    /// One of `bot`'s that hasn't begun is dropped: its own `cancel_follow_up`, or the user's from the routines list.
+    pub fn cancel_follow_up(&self, hub: &Hub, bot: &str, id: &str, by: Cancelled) -> Result<Value> {
+        let Some(cancelled) = self.take_follow_ups(&hub.store, |f| f.id == id && f.bot_id == bot)?.pop() else {
+            // The user's list can be a moment old: one that began or was cancelled since is `gone`, as they asked.
+            if matches!(by, Cancelled::User) {
+                return Ok(json!({"ok": true, "gone": true}));
+            }
+            bail!("no follow-up with that id is waiting (list_routines shows them)");
+        };
+        cancelled_notice(hub, &cancelled, by);
         Ok(json!({"ok": true}))
     }
 
@@ -115,7 +130,7 @@ impl Routines {
     /// later stay.
     pub fn drop_queued_follow_ups(&self, hub: &Hub, bot: &str) -> Result<()> {
         for dropped in self.take_queued_follow_ups(&hub.store, bot)? {
-            cancelled_notice(hub, &dropped, "stop");
+            cancelled_notice(hub, &dropped, Cancelled::Stop);
         }
         Ok(())
     }
@@ -215,9 +230,12 @@ fn notice(hub: &Hub, bot: &str, text: &str) {
     hub.add_entry(&Lane::main(bot), EntryKind::Notice, 0, &json!({"text": text, "style": NoticeStyle::Info}));
 }
 
-fn cancelled_notice(hub: &Hub, follow_up: &FollowUp, by: &str) {
-    let properties = json!({"by": by});
-    analytics::capture(hub, Event::FollowUpCancelled, properties.as_object().cloned().unwrap_or_default());
+fn cancelled_notice(hub: &Hub, follow_up: &FollowUp, by: Cancelled) {
+    // The user's `cancelFollowUp` is reported as an API call (`analytics::observe`), with the app it came from.
+    if !matches!(by, Cancelled::User) {
+        let properties = json!({"by": by});
+        analytics::capture(hub, Event::FollowUpCancelled, properties.as_object().cloned().unwrap_or_default());
+    }
     notice(hub, &follow_up.bot_id, &format!("Follow-up cancelled: {}", shown(&follow_up.note)));
 }
 
@@ -268,6 +286,16 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+    }
+
+    #[test]
+    fn the_list_has_the_next_follow_up_first() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let routines = Routines::default();
+        waiting(&routines, &store, "tomorrow", "bot", 90_000_000);
+        waiting(&routines, &store, "soon", "bot", 60_000);
+        let listed = routines.list("bot")["followUps"].clone();
+        assert_eq!((&listed[0]["id"], &listed[1]["id"]), (&json!("soon"), &json!("tomorrow")));
     }
 
     #[test]

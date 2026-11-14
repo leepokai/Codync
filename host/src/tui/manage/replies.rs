@@ -82,10 +82,13 @@ impl App {
                         if let Overlay::Routines(l) = o
                             && l.bot == bot
                         {
-                            let items = v["routines"].as_array().cloned().unwrap_or_default();
-                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
-                            l.items = Some(items);
+                            // Follow-ups come and go with no key pressed: the cursor stays on the row it picked.
+                            let picked = l.picked().map(|row| row.id().clone());
+                            l.items = Some(v["routines"].as_array().cloned().unwrap_or_default());
+                            l.follow_ups = v["followUps"].as_array().cloned().unwrap_or_default();
                             l.runs = v["runs"].as_array().cloned().unwrap_or_default();
+                            let kept = picked.and_then(|id| l.rows().position(|row| *row.id() == id));
+                            l.cursor = kept.unwrap_or(l.cursor).min(l.rows().count().saturating_sub(1));
                         }
                     }
                 } else {

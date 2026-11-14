@@ -23,6 +23,8 @@ export function agentTint(registry: string | null | undefined) {
     case 'dsh': return 'rgb(77, 107, 254)'
     case 'cortex-code': return 'rgb(41, 181, 232)'
     case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
+    // TRAE's favicon green, the only colour its mark carries.
+    case 'trae': return 'rgb(42, 197, 116)'
     default: return 'var(--text)'
   }
 }
@@ -33,3 +35,4 @@ export function AgentIcon({ registry, size, color = 'currentColor' }: { registry
   if (!url) return <Icon name="terminal" size={size * 0.8} scaled={false} color={color} />
   return <span aria-hidden className="agent-icon" style={{ width: size, height: size, background: color, WebkitMaskImage: `url("${url}")` }} />
 }
+

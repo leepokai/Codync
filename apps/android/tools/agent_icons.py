@@ -9,6 +9,7 @@ and `ProviderIcons.kt` (`providerIconRes("boat")`; one this can't convert falls 
 
 Run from apps/android: python3 tools/agent_icons.py (self-check: python3 tools/agent_icons_test.py)
 """
+import base64
 import pathlib
 import re
 import xml.etree.ElementTree as ET
@@ -16,6 +17,7 @@ import xml.etree.ElementTree as ET
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = ROOT.parent / "desktop/src/renderer/assets"
 DRAWABLES = ROOT / "app/src/main/res/drawable"
+PNG_DRAWABLES = ROOT / "app/src/main/res/drawable-nodpi"
 KOTLIN = ROOT / "app/src/main/kotlin/com/codync/android"
 SVG = "{http://www.w3.org/2000/svg}"
 IGNORED = {"title", "desc"}
@@ -90,16 +92,34 @@ def convert(svg: pathlib.Path, logos: str = "agent logos") -> str | None:
     )
 
 
+def raster(svg: pathlib.Path) -> bytes | None:
+    """The PNG an SVG embeds: a mark that is a raster keeps its pixels (an `image` element)."""
+    root = ET.parse(svg).getroot()
+    for image in root.iter(f"{SVG}image"):
+        href = image.get("href") or image.get("{http://www.w3.org/1999/xlink}href", "")
+        head = "data:image/png;base64,"
+        if href.startswith(head):
+            return base64.b64decode(href[len(head):])
+    return None
+
 def generate(*, folder: str, prefix: str, logos: str, kotlin: str, doc: str, fn: str, param: str) -> None:
     source = ASSETS / folder
     for old in DRAWABLES.glob(f"{prefix}*.xml"):
         old.unlink()
+    for old in PNG_DRAWABLES.glob(f"{prefix}*.png"):
+        old.unlink()
     made = []
     for svg in sorted(source.glob("*.svg")):
         xml = convert(svg, logos)
-        if xml is None:
+        if xml is not None:
+            (DRAWABLES / f"{resource(svg.stem, prefix)}.xml").write_text(xml)
+            made.append(svg.stem)
             continue
-        (DRAWABLES / f"{resource(svg.stem, prefix)}.xml").write_text(xml)
+        pixels = raster(svg)
+        if pixels is None:
+            continue
+        PNG_DRAWABLES.mkdir(parents=True, exist_ok=True)
+        (PNG_DRAWABLES / f"{resource(svg.stem, prefix)}.png").write_bytes(pixels)
         made.append(svg.stem)
     cases = "\n".join(f'    "{r}" -> R.drawable.{resource(r, prefix)}' for r in made)
     (KOTLIN / kotlin).write_text(
@@ -124,3 +144,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

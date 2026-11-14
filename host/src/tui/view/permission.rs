@@ -62,16 +62,16 @@ fn option_keys(opts: &[(String, String, String)]) -> Vec<String> {
         .collect()
 }
 
-/// A bot's choice card (`request_decision`): its question heads it, then a button per option, the suggested one marked.
+/// A bot's choice card (`request_decision`): the bot's name heads it, its question in bold, then a button per option
+/// (the suggested one marked) and a pointer to the message box for the user's own words.
 pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let answering = app.answering.get(&e.id);
     let question = e.data["question"].as_str().unwrap_or_default();
     let bw = width.saturating_sub(1).max(20);
     let inner = bw.saturating_sub(4);
-    let ask = tr("Needs your choice");
-    card_head(out, &format!(" ◆ {} · {ask} ", truncate(&b.name, inner.saturating_sub(w(&ask) + 8))), bw);
-    for l in md::wrap(&[Span::styled(question.to_owned(), t.secondary)], inner, &[], &[]) {
+    card_head(out, &format!(" ◆ {} ", truncate(&b.name, inner.saturating_sub(4))), bw);
+    for l in md::wrap(&[Span::styled(question.to_owned(), t.text.add_modifier(Modifier::BOLD))], inner, &[], &[]) {
         card_row(out, l.spans, inner);
     }
     card_row(out, vec![], inner);
@@ -95,6 +95,8 @@ pub(super) fn decision_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, widt
             out.buttons.push((li, 3, u(inner), Click::Option { entry: e.id.clone(), option: option.clone() }));
         }
     }
+    // The message box below takes the user's own words.
+    card_row(out, vec![Span::styled(format!(" ↓ {}", tr("Something else")), t.dim)], inner);
     card_foot(out, bw);
 }
 

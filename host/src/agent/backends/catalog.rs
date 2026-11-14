@@ -310,6 +310,20 @@ pub const HARNESSES: &[Harness] = &[
         signed_in: Some(SignInCheck { args: "status -o json", ok: qoder_signed_in }),
     },
     Harness {
+        id: "muse",
+        name: "Muse Code",
+        bins: &["muse"],
+        // `muse acp` serves ACP v1 on stdio; it answered an `initialize` with
+        // protocolVersion 1 and agentInfo {"name":"muse","version":"1.4.20"}.
+        local: Some("{bin} acp"),
+        registry: None,
+        setup: "Install Muse Code and run `muse login` to approve a device code in your browser.",
+        // No published installer to point at, and no status command: the sign-in card comes from the agent's own ACP auth method.
+        install: None,
+        login: Some("{bin} login"),
+        signed_in: None,
+    },
+    Harness {
         id: "codebuddy",
         name: "CodeBuddy Code",
         bins: &["codebuddy", "cbc"],

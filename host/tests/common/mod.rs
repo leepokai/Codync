@@ -3,7 +3,7 @@
 pub mod host;
 pub mod steer;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -14,6 +14,26 @@ fn test_cloud_key() -> String {
     use base64::Engine as _;
     let key = ed25519_dalek::SigningKey::from_bytes(&TEST_CLOUD_SEED).verifying_key();
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.as_bytes())
+}
+
+/// The agent directory (`PI_CODING_AGENT_DIR`) oh-my-pi and pi get under a test host on `home`, so the
+/// sessions its agent probes open land there, and go with `home`, not in the user's `~/.omp/agent`.
+pub fn agent_dir(home: &Path) -> PathBuf {
+    home.join("pi-agent")
+}
+
+/// `codync-host serve` on `home` with the cloud off. It stops when its stdin closes: the pipe lives in the
+/// returned `Child` and the test process, so a run that is killed takes its hosts with it.
+pub fn host_command(home: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_codync-host"));
+    command
+        .arg("serve")
+        .env("CODYNC_HOME", home)
+        .env("CODYNC_CLOUD", "off")
+        .env("PI_CODING_AGENT_DIR", agent_dir(home))
+        .env("CODYNC_EXIT_WITH_STDIN", "1")
+        .stdin(Stdio::piped());
+    command
 }
 
 /// Runs `codync-host serve` for `home` until it answers: the process and its base URL. A port
@@ -34,10 +54,8 @@ pub async fn serve_with(home: &Path, env: &[(&str, &std::ffi::OsStr)]) -> (Child
     loop {
         let port = std::net::TcpListener::bind("127.0.0.1:0").expect("free port").local_addr().expect("port").port();
         let base = format!("http://127.0.0.1:{port}");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codync-host"))
-            .args(["serve", "--bind", "127.0.0.1", "--port", &port.to_string()])
-            .env("CODYNC_HOME", home)
-            .env("CODYNC_CLOUD", "off")
+        let mut child = host_command(home)
+            .args(["--bind", "127.0.0.1", "--port", &port.to_string()])
             // Pairing checks the phone's account: tests sign certificates with `TEST_CLOUD_SEED`.
             .env("CODYNC_DEVICE_CERT_KEY", test_cloud_key())
             // A test host leaves the computer's agent CLIs and the user's logins alone.

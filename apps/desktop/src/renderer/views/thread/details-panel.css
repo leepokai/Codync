@@ -36,6 +36,12 @@
   padding-bottom: 24px;
 }
 
+/* The sheet opens with the focus in this column, so the keys scroll it. It is a scroller, not a
+   control: a ring here would trace the whole card, so it takes none (as the card itself does). */
+.details-scroll:focus {
+  outline: none;
+}
+
 .details-identity {
   display: flex;
   flex-direction: column;

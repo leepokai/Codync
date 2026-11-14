@@ -414,7 +414,10 @@ impl Actor {
     /// status` with a revoked token).
     pub(super) fn note_signed_out(&self, login: &Login) {
         if let Some(profile) = &login.profile {
-            crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false);
+            if crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false) {
+                // Signed out, it leaves the Usage screens.
+                crate::usage::login_profiles_changed(&self.hub);
+            }
         } else {
             crate::agent::backends::set_signed_in(&login.backend, Some(false));
             crate::agent::backends::note_prompt_refused(&login.backend);

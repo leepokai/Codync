@@ -11,6 +11,7 @@ import { resetLine, resolvedLanguage, systemLanguage, translate } from '../lib/l
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
+import { tightestLogin } from './usage/usage-logins'
 import { providerTint, resetDate, untilText, windowReading, windowTitle } from './usage/usage-model'
 import { drawMascot, nearlyUsedUp } from './usage/ProviderMascot'
 
@@ -187,7 +188,7 @@ export function useTraySummary(app: AppModel) {
         usage: (local?.usage.providers ?? []).map((p) => ({
           name: p.name,
           icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-          lines: p.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
+          lines: tightestLogin(p).windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
         })),
         screen: screen
           ? {

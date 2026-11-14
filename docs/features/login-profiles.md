@@ -130,11 +130,11 @@ by every slot (its keyring names them by server, not by home).
   says signed in, the sign-in card (its `connectionRequest` carries `loginProfile`, and the apps open that login profile's
   sign-in), and the [fallback rest](agent-fallback.md) (`rest.<agent>#profile-<id>`). A usage
   limit or sign-out on a login profile never rests or signs out the computer's own login.
-- The Usage screens show the computer's own login. What an agent on a login profile reports stays out of them (the status
-  line hook sees `CODYNC_AGENT_ACCOUNT` and forwards nothing).
+- The Usage screens list each signed-in account under its agent, beside the default login, each with its own limits
+  ([usage limits](usage-limits.md#login-profiles)). An API key has no plan to read.
 - Removing a login profile is refused while a bot or one of its fallbacks uses it (saving that bot would fail once the
   account is gone), while an agent process still runs on it (a bot moved off it mid-turn restarts only when the
-  turn ends) and while its sign-in is open, in a terminal or in the agent's own browser flow. Otherwise an account's
+  turn ends), while its usage is being checked (up to a minute) and while its sign-in is open, in a terminal or in the agent's own browser flow. Otherwise an account's
   CLI signs it out and the slot is deleted; an API key profile's vault record is deleted, which needs no open vault.
 
 API: `addLoginProfile` (with `kind`), `renameLoginProfile`, `removeLoginProfile`, `setLoginProfileKeys`,
@@ -145,8 +145,7 @@ its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. Al
 
 ## Not built
 
-- **Limits per login profile** in the Usage screens. They would come from the same local sources per slot, never from a
-  provider API.
+- **Limits of an account** of an agent other than Claude Code and Codex: its row says **No reading yet**.
 - **Models per login profile.** The model list is read on the computer's own login.
 - **A second real account on each agent.** Only Claude Code has had two accounts signed in at once here. The
   others are checked as far as the table says.

@@ -56,4 +56,16 @@ test('the Chinese notice names which side has to update', (t) => {
   assert.equal(cloud, '你的云端电脑正在升级到 Codync 2.26.0 或更高版本；完成后这个 App 会自动重连。')
   assert.equal(hostVersionLine('2.20.0', null, { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, { kind: 'available', last: null }, 'Mac', 'linux').detail[0],
     'Mac 需要 Codync 2.26.0 或更高版本。')
+  assert.equal(updateNeededText.title({ kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, 'Cloud', true), '你的云端电脑正在升级…')
+  const stalled = hostVersionLine('2.28.0', '2.29.0', null, { kind: 'available', last: { kind: 'requested', at: 0 } }, 'Mac', 'macos')
+  assert.equal(stalled.detail[0], 'Mac 没有完成更新。请再试一次，或在那台电脑上更新 Codync。')
+  assert.deepEqual(stalled.accessory, { kind: 'button', title: '再试一次' })
+})
+
+test('how to update a computer this app cannot update is in the app language', (t) => {
+  testLanguage(t, 'zh-Hans')
+  assert.equal(updateNeededText.how('linux'), '请在那台电脑上运行 codync-host update。')
+  assert.equal(updateNeededText.how('macos'), '请在那台 Mac 上打开 Codync，选择 Check for Updates。')
+  assert.equal(updateNeededText.how('windows'), '请在那台电脑上更新 Codync。')
+  assert.equal(updateNeededText.how('linux', true), 'Codync Cloud 会在它下次休眠前更新它。')
 })

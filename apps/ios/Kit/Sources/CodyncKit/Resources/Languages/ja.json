@@ -2033,6 +2033,7 @@
   "Paused. Click to continue.": "一時停止中。クリックして再開。",
   "Paused. Tap to continue.": "一時停止中。タップして再開。",
   "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "クラウドのコンピューターは Codync {minimum} 以降に更新中です。完了するとこのアプリは再接続します。",
+  "Your cloud computer is updating…": "クラウドのコンピューターを更新中です…",
   "Updating Codync on {host}. This takes a few minutes.": "{host} の Codync を更新しています。数分かかります。",
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "このコンピューターのアプリを {minimum} 以降に更新してください（{host} の要件）。",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "{host} の Codync は {version} です。そのコンピューターの Codync を {minimum} 以降に更新してください。",

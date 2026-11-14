@@ -164,9 +164,8 @@ function AddFallback({ choices, taken, onAdd }: { choices: Backend[]; taken: Log
       <ModalHeader title={tr(`Add fallback`)} trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, loginProfile, model, modelOptions })} />} />
       <CardForm>
         <CardSection>
-          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setPicked(undefined); setModel(null); setModelOptions({}) }}>
-            {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={free} onChange={setPicked} /> : null}
-          </AgentModelPicker>
+          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setPicked(undefined); setModel(null); setModelOptions({}) }} collapsible={false} />
+          {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={free} onChange={setPicked} /> : null}
         </CardSection>
       </CardForm>
     </SheetPage>

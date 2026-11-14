@@ -141,7 +141,7 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
             CardSection {
-                row { AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null, agents = choices, chooseAgent = { backend = it }) }
+                row { AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null, agents = choices, chooseAgent = { backend = it }, collapsible = false) }
                 if (agent?.loginProfiles != null) row { LoginProfilePicker(agent, loginProfile, state, store, free) { picked = it } }
             }
         }

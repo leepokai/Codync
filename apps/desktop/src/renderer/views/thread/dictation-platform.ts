@@ -3,17 +3,18 @@ import type { HostClient } from '../../client/host-client'
 import { useModel } from '../../lib/observable'
 import { useStoreRef } from '../../store/context'
 import { countVoiceUsage, micPCM16k, onDeviceUnavailableReason, transcribeOnHost, VoiceSettings, wav } from '../call/voice'
-import { configured, voiceStatus } from '../settings/voice-settings'
+import { configured, localDictation, voiceStatus } from '../settings/voice-settings'
 import { Dictation, type DictationPlatform } from './dictation'
 import { trNow } from '../../lib/l10n.ts'
 
 /**
  * Dictation's real surroundings: the speech helper and the microphone, and with `host` a provider
- * on the user's key through it; `report` shows its errors (the island has neither).
+ * on the user's key or the computer's own speech model through it; `report` shows its errors
+ * (the island shows them in its field instead).
  */
 export function dictationPlatform(host: (() => Promise<HostClient>) | null = null, report: (message: string) => void = () => {}, configureKey: () => void = () => {}): DictationPlatform {
   const client = async () => {
-    if (!host) throw new Error(trNow('Dictating with a provider needs the chat window.'))
+    if (!host) throw new Error(trNow('Dictating on a host needs the chat window.'))
     return host()
   }
   return {
@@ -22,13 +23,16 @@ export function dictationPlatform(host: (() => Promise<HostClient>) | null = nul
     get noSpeech() { return onDeviceUnavailableReason() },
     host: host !== null,
     language: () => VoiceSettings.language() || null,
-    provider: VoiceSettings.dictationProvider,
-    async checkKey(provider) {
-      return configured(await voiceStatus(await client()), provider)
+    target: VoiceSettings.dictationTarget,
+    async checkReady(target) {
+      if (target !== 'local') return configured(await voiceStatus(await client()), target)
+      const local = await localDictation(await client())
+      if (!local.ready) throw new Error(local.message ?? trNow('No speech model is linked on this computer.'))
+      return true
     },
     configureKey,
     microphone: micPCM16k,
-    transcribe: async (provider, piece) => transcribeOnHost(await client(), provider, VoiceSettings.transcribeModel(provider), wav([piece])),
+    transcribe: async (target, piece) => transcribeOnHost(await client(), target, target === 'local' ? '' : VoiceSettings.transcribeModel(target), wav([piece])),
     count: countVoiceUsage,
     report,
   }

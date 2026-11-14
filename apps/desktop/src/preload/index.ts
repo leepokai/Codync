@@ -134,6 +134,7 @@ const bridge: CodyncBridge = {
     openBot: (ref) => ipcRenderer.send('island:openBot', ref),
     newBot: () => ipcRenderer.send('island:newBot'),
     openApp: () => ipcRenderer.send('island:openApp'),
+    openVoiceSettings: () => ipcRenderer.send('island:openVoiceSettings'),
   },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),

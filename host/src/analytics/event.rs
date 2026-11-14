@@ -105,6 +105,10 @@ pub enum Event {
     VoiceNoteSent,
     /// A voice note played from its start, or failed to (`outcome`).
     VoiceNotePlayed,
+    /// `setSpeechServer` linking a speech server, or failing to (`outcome`).
+    SpeechServerLinked,
+    /// One piece of local-engine dictation transcribed on the linked speech server (`outcome`).
+    LocalDictationTranscribed,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
@@ -235,6 +239,8 @@ impl Event {
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",
             Self::VoiceNotePlayed => "voice_note_played",
+            Self::SpeechServerLinked => "speech_server_linked",
+            Self::LocalDictationTranscribed => "local_dictation_transcribed",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",

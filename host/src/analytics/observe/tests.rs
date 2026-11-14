@@ -155,6 +155,43 @@ fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     assert_eq!(other["error"], "other", "never the error's own words");
 }
 
+#[tokio::test]
+async fn dictation_on_my_speech_server_reports_how_it_ended_and_never_the_server_or_words() {
+    use crate::voice::local;
+    let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+    let server = "http://8.8.8.8:8080/v1/audio/transcriptions";
+    let link = json!({"url": server, "model": "Systran/faster-whisper-small"});
+    let (event, p) = observe(&Caller::Local, "setSpeechServer", &link).expect("linking is tracked");
+    assert_eq!(event, Event::SpeechServerLinked);
+    assert!(props("setSpeechServer", &json!({"url": " "})).is_none(), "an empty address unlinks");
+    let linked = answered(event, p.clone(), &json!({"ready": true, "server": server})).expect("reported");
+    assert_eq!(Value::Object(linked), json!({"client": "local", "outcome": "linked"}));
+    let category = |event: Event, p: &Map<String, Value>, error: anyhow::Error| {
+        let (reported, p) = failed(event, p.clone(), &error).expect("reported");
+        assert_eq!((reported, &p["outcome"]), (event, &json!("failed")));
+        assert!(!Value::Object(p.clone()).to_string().contains("8.8.8.8"), "{p:?}");
+        p["error"].clone()
+    };
+    let off = local::link(&store, server, "").await.expect_err("off this network");
+    assert_eq!(category(event, &p, off), "off_network");
+    let bad = local::link(&store, "not a url", "").await.expect_err("not an address");
+    assert_eq!(category(event, &p, bad), "bad_address");
+    let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
+    let gone = local::link(&store, &format!("http://{closed}/v1/audio/transcriptions"), "").await.expect_err("closed");
+    assert_eq!(category(event, &p, gone), "unreachable");
+    assert_eq!(category(event, &p, anyhow::anyhow!("the store is locked")), "other");
+
+    let audio = json!({"provider": "local", "model": "", "audio": "secret words"});
+    let (event, p) = observe(&Caller::Local, "voiceTranscribe", &audio).expect("local dictation is tracked");
+    assert_eq!(event, Event::LocalDictationTranscribed);
+    assert!(props("voiceTranscribe", &json!({"provider": "openai", "model": "m", "audio": ""})).is_none());
+    let outcome =
+        |text: &str| answered(event, p.clone(), &json!({ "text": text })).expect("reported")["outcome"].clone();
+    assert_eq!((outcome("Ship the fix."), outcome("")), (json!("transcribed"), json!("silent")));
+    let unlinked = local::transcribe(&store, &[]).await.expect_err("nothing linked");
+    assert_eq!(category(event, &p, unlinked), "not_linked");
+}
+
 #[test]
 fn connectors_skills_and_agents() {
     assert_eq!(

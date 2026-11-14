@@ -60,3 +60,32 @@ test('Windows and Linux retain automatic call fallback until a provider is expli
     assert.equal(settings.engine.get(), 'gemini')
   }
 })
+
+/** A transport that gives up when its budget runs out, and a computer whose speech server answers just inside its two minutes. */
+function slowHost(answer: unknown) {
+  return {
+    call: (_method: string, _body: unknown, timeoutMs: number) =>
+      new Promise((resolve, reject) => {
+        setTimeout(() => reject(new Error("Can't reach your computer.")), timeoutMs)
+        setTimeout(() => resolve(answer), 121_000)
+      }),
+  }
+}
+
+test("linking a speech server waits out the computer's own two minutes for its test transcription", async (t) => {
+  const settings = await import('../settings/voice-settings.ts')
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const slow = slowHost({ ready: true, message: null, server: 'http://127.0.0.1:8080/inference' }) as unknown as Parameters<typeof settings.setSpeechServer>[0]
+  const linking = settings.setSpeechServer(slow, 'http://127.0.0.1:8080/inference')
+  t.mock.timers.tick(121_000)
+  assert.equal((await linking).ready, true)
+})
+
+test("a dictated piece on the computer's own speech server waits out its two minutes too", async (t) => {
+  const voice = await import('./voice.ts')
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const slow = slowHost({ text: 'slow but heard' }) as unknown as Parameters<typeof voice.transcribeOnHost>[0]
+  const piece = voice.transcribeOnHost(slow, 'local', '', new Uint8Array())
+  t.mock.timers.tick(121_000)
+  assert.equal(await piece, 'slow but heard')
+})

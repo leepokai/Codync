@@ -22,15 +22,15 @@ function setup(over: Partial<DictationPlatform> = {}) {
     noSpeech: 'No speech here.',
     host: true,
     language: () => null,
-    provider: () => null,
-    checkKey: async () => true,
+    target: () => null,
+    checkReady: async () => true,
     configureKey: (provider) => void log.push(`configure ${provider}`),
     microphone: async (out) => {
       feed = out
       log.push('mic.open')
       return () => void log.push('mic.close')
     },
-    transcribe: (_, piece) => new Promise((answer, fail) => pending.push({ piece, answer, fail })),
+    transcribe: (target, piece) => new Promise((answer, fail) => { log.push(`transcribe ${target}`); pending.push({ piece, answer, fail }) }),
     count: (seconds) => void log.push(`count ${seconds}`),
     report: (message) => void log.push(`report ${message}`),
     ...over,
@@ -94,12 +94,12 @@ test('a speech error ends it and reports it; a send already asked for goes with 
 test('without on-device speech or a provider, the mic says what to pick', () => {
   const s = setup({ speech: null })
   s.dictation.start(s.box())
-  assert.equal(s.dictation.error, 'No speech here. Pick OpenAI or Gemini beside the mic.')
+  assert.equal(s.dictation.error, 'No speech here. Pick another engine beside the mic.')
   assert.equal(s.dictation.listening, false)
 })
 
 test('a provider without a key opens settings without an error or microphone', async () => {
-  const s = setup({ provider: () => 'openai', checkKey: async () => false })
+  const s = setup({ target: () => 'openai', checkReady: async () => false })
   s.dictation.start(s.box())
   await settle()
   assert.equal(s.dictation.error, null)
@@ -110,7 +110,7 @@ test('a provider without a key opens settings without an error or microphone', a
 
 test('with a provider it shows listening only once the microphone is open', async () => {
   let open: (stop: () => void) => void = () => {}
-  const s = setup({ provider: () => 'openai', microphone: () => new Promise((done) => (open = done)) })
+  const s = setup({ target: () => 'openai', microphone: () => new Promise((done) => (open = done)) })
   s.dictation.start(s.box())
   await settle()
   assert.equal(s.dictation.listening, false)
@@ -126,7 +126,7 @@ test('stopped or cancelled while the microphone opens, it lets the microphone go
   for (const end of ['finish', 'cancel'] as const) {
     let open: (stop: () => void) => void = () => {}
     let closed = false
-    const s = setup({ provider: () => 'openai', microphone: () => new Promise((done) => (open = done)) })
+    const s = setup({ target: () => 'openai', microphone: () => new Promise((done) => (open = done)) })
     s.dictation.start(s.box())
     await settle()
     s.dictation[end]()
@@ -140,7 +140,7 @@ test('stopped or cancelled while the microphone opens, it lets the microphone go
 })
 
 test("a provider's transcript lands after what's in the box by then, in order, then done runs", async () => {
-  const s = setup({ provider: () => 'gemini' })
+  const s = setup({ target: () => 'gemini' })
   s.dictation.start(s.box())
   await settle()
   s.hear(PIECE_SAMPLES)
@@ -162,7 +162,7 @@ test("a provider's transcript lands after what's in the box by then, in order, t
 })
 
 test('cancel while transcribing drops the transcript', async () => {
-  const s = setup({ provider: () => 'openai' })
+  const s = setup({ target: () => 'openai' })
   s.dictation.start(s.box())
   await settle()
   s.hear(MIN_SAMPLES * 2)
@@ -176,7 +176,7 @@ test('cancel while transcribing drops the transcript', async () => {
 })
 
 test('a recording under half a second is dropped without a request', async () => {
-  const s = setup({ provider: () => 'openai' })
+  const s = setup({ target: () => 'openai' })
   s.dictation.start(s.box())
   await settle()
   s.hear(MIN_SAMPLES - 1)
@@ -189,7 +189,7 @@ test('a recording under half a second is dropped without a request', async () =>
 })
 
 test('a failed transcription reports it and sends nothing', async () => {
-  const s = setup({ provider: () => 'openai' })
+  const s = setup({ target: () => 'openai' })
   s.dictation.start(s.box())
   await settle()
   s.hear(MIN_SAMPLES * 2)
@@ -201,4 +201,33 @@ test('a failed transcription reports it and sends nothing', async () => {
   assert.equal(s.dictation.error, 'Host error 500')
   assert.equal(sent, false)
   assert.equal(s.dictation.busy, false)
+})
+
+test('this computer without its speech model reports the message and never opens the microphone', async () => {
+  const s = setup({ target: () => 'local', checkReady: async () => Promise.reject(new Error('Install the speech model.')) })
+  s.dictation.start(s.box())
+  await settle()
+  assert.equal(s.dictation.error, 'Install the speech model.')
+  assert.ok(s.log.includes('report Install the speech model.'))
+  assert.ok(!s.log.includes('mic.open'))
+  assert.ok(!s.log.some((m) => m.startsWith('configure')))
+  assert.equal(s.dictation.busy, false)
+})
+
+test('this computer transcribes through the local target and counts no usage', async () => {
+  const s = setup({ target: () => 'local' })
+  s.dictation.start(s.box())
+  await settle()
+  s.hear(MIN_SAMPLES * 2)
+  let sent = false
+  s.dictation.finish(() => (sent = true))
+  await settle()
+  assert.equal(s.pending.length, 1)
+  s.pending[0]!.answer('what I said')
+  await settle()
+  assert.equal(s.box(), 'Fix the bug what I said')
+  assert.ok(s.log.includes('transcribe local'))
+  assert.ok(!s.log.some((m) => m.startsWith('count')))
+  assert.ok(!s.log.some((m) => m.startsWith('configure')))
+  assert.equal(sent, true)
 })

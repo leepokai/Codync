@@ -44,6 +44,26 @@ class VoiceEnginesTest {
         assertEquals("61", prefs.values["callUsage.openai.2026-10"])
     }
 
+    @Test fun thisComputerIsADictationEngineOnlyAndSaysWhatItNeeds() {
+        assertEquals(listOf(DictationEngine.Cloud(VoiceProvider.OpenAI), DictationEngine.Cloud(VoiceProvider.Gemini), DictationEngine.Local),
+            DictationEngine.engines)
+        assertNull(DictationEngine.of(null)); assertNull(DictationEngine.of("gone")); assertNull(DictationEngine.of("device"))
+        assertEquals(DictationEngine.Local, DictationEngine.of("local"))
+        val prefs = Prefs(); val choices = prefs.choices
+        assertNull(choices.dictation)
+        choices.dictation = DictationEngine.Local; assertEquals("local", choices.dictation?.id)
+        choices.dictation = null; assertNull(choices.dictation)
+        val notReady = WireJson.decodeFromString(LocalDictation.serializer(), """{"ready":false,"message":"Link a speech server."}""")
+        assertFalse(notReady.ready); assertEquals("Link a speech server.", notReady.reason())
+        val silent = WireJson.decodeFromString(LocalDictation.serializer(), """{"ready":false}""")
+        assertFalse(silent.ready); assertEquals(LOCAL_UPDATE_MESSAGE, silent.reason())
+        assertTrue(WireJson.decodeFromString(LocalDictation.serializer(),
+            """{"ready":true,"server":"http://127.0.0.1:8080/v1/audio/transcriptions"}""").ready)
+        // A host before `localDictation` answers 404; `localDictation()` turns that into the update note (app side).
+        DictationEngine.Local.addUsage(choices, 61)
+        assertTrue(prefs.values.keys.none { it.startsWith("callUsage.") })
+    }
+
     @Test fun aCallTakesAnotherEngineOnlyWhenWhatItsEngineIsBuiltFromChanges() {
         val choices = Prefs().choices; val gemini = VoiceProvider.Gemini
         assertEquals(choices.engineChoice(null, ""), choices.engineChoice(null, ""))

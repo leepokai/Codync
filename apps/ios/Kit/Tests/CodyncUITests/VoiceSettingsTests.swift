@@ -58,3 +58,44 @@ import Testing
         seen.append(choice)
     }
 }
+
+/// The computer's speech server is offered beside the mic's dictation engines only, never among call engines.
+@Test @MainActor func theComputersSpeechServerIsDictationOnly() {
+    defer { UserDefaults.standard.removeObject(forKey: VoiceSettings.dictationEngineKey) }
+    #expect(DictationEngine.local.pref == "local")
+
+    // Call engines are `VoiceProvider`s (the call engine picker's options): "local" isn't one.
+    #expect(VoiceProvider(rawValue: DictationEngine.local.pref) == nil)
+    #expect(VoiceProvider.allCases.map(\.rawValue) == ["openai", "gemini"])
+
+    // The dictation pref stores it as "local"; picking it needs no key or model rows.
+    UserDefaults.standard.set("local", forKey: VoiceSettings.dictationEngineKey)
+    #expect(VoiceSettings.dictationEngine == .local)
+}
+
+/// The speech server card's check says what the computer answered (linked or not), that the
+/// computer can't be asked while there's no client, and the error when it can't be reached.
+@Test @MainActor func theSpeechServerCheckSaysWhatTheComputerAnswers() async {
+    let (storage, suite) = context()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let remote = FakeRemote(.connecting)
+    let store = BotStore(computer: Computer(id: "voice", name: "Mac", signKey: ""), storage: storage) { _ in remote }
+    defer { store.retire() }
+    let status = LocalDictationStatus()
+
+    await status.load(on: store)
+    #expect(status.error == "Not connected to Mac." && status.local == nil)
+
+    store.client = HostClient(transport: remote)
+    await remote.setCanned("localDictation", #"{"ready":false,"message":"Link a model."}"#)
+    await status.load(on: store)
+    #expect(status.local?.ready == false && status.local?.reason == "Link a model." && status.error == nil)
+
+    await remote.setCanned("localDictation", #"{"ready":true,"message":null}"#)
+    await status.load(on: store)
+    #expect(status.local?.ready == true && status.error == nil)
+
+    await remote.setCanned("localDictation", throwing: HostError.unreachable)
+    await status.load(on: store)
+    #expect(status.error == HostError.unreachable.localizedDescription)
+}

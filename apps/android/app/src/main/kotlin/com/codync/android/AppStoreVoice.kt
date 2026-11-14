@@ -97,7 +97,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
                 val transcribe = choices.model(provider, VoiceChoices.Model.Transcribe)
                 val speech = choices.model(provider, VoiceChoices.Model.Speech)
                 CloudSpeechEngine(contextScope, provider, settings, mic(), AndroidClipPlayer, CloudSpeechEngine.Speech(
-                    transcribe = { inReadersScript(voiceTranscribe(provider, transcribe, it)) },
+                    transcribe = { inReadersScript(voiceTranscribe(provider.id, transcribe, it)) },
                     synthesize = { voiceSpeak(provider, speech, voice, it) },
                     send = { sendFromCall(call, it) }))
             }
@@ -263,6 +263,13 @@ fun AppStore.voiceSettings(settings: VoiceSettings) { VoicePreferences.save(appl
 // The computer's voice methods: it holds the provider keys and does the provider calls that need them.
 
 internal suspend fun AppStore.voiceStatus(): VoiceStatus = WireJson.decodeFromJsonElement(hostCall("voiceStatus", JsonObject(emptyMap()), 30_000))
+
+/** Whether the computer's linked speech server can transcribe dictation. Never asks for the keys `voiceStatus` waits on; a host before it answers 404, which reads as "update". */
+internal suspend fun AppStore.localDictation(): LocalDictation = try {
+    WireJson.decodeFromJsonElement(hostCall("localDictation", JsonObject(emptyMap()), 30_000))
+} catch (error: HostError) {
+    if (error.status == 404) LocalDictation(ready = false, message = LOCAL_UPDATE_MESSAGE) else throw error
+}
 internal suspend fun AppStore.voiceModels(provider: VoiceProvider): VoiceModels =
     WireJson.decodeFromJsonElement(hostCall("voiceModels", body("provider" to provider.id), 30_000))
 
@@ -271,9 +278,9 @@ internal suspend fun AppStore.voiceSession(provider: VoiceProvider, model: Strin
     hostCall("voiceSession", body("provider" to provider.id, "model" to model, "voice" to voice), 30_000).jsonObject["credential"]
         ?.jsonPrimitive?.contentOrNull ?: throw IOException("${provider.title} didn't start the call.")
 
-/** Speech to text for one utterance (a WAV file), with the computer's key. */
-internal suspend fun AppStore.voiceTranscribe(provider: VoiceProvider, model: String, wav: ByteArray): String =
-    hostCall("voiceTranscribe", body("provider" to provider.id, "model" to model, "audio" to Base64.getEncoder().encodeToString(wav)), 60_000)
+/** Speech to text for one utterance (a WAV file): a provider on the computer's key, or `local` for its own speech model, whose pieces get the host's two-minute budget plus the trip there and back — a big model on a slow CPU answers in over a minute. */
+internal suspend fun AppStore.voiceTranscribe(provider: String, model: String, wav: ByteArray): String =
+    hostCall("voiceTranscribe", body("provider" to provider, "model" to model, "audio" to Base64.getEncoder().encodeToString(wav)), if (provider == "local") 135_000 else 60_000)
         .jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
 /** Text to speech for a stretch of a reply: the audio and its format (`aac` or `wav`). */

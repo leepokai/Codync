@@ -175,6 +175,9 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
+        // Never the server's address, its model, the audio or the transcript. An empty address unlinks.
+        "setSpeechServer" if b["url"].as_str().is_some_and(|u| !u.trim().is_empty()) => Event::SpeechServerLinked,
+        "voiceTranscribe" if b["provider"] == "local" => Event::LocalDictationTranscribed,
         "agentSetup" | "agentAuthenticate" | "agentAuth" => {
             // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
             let on_profile = b["loginProfile"].is_string();
@@ -272,8 +275,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a follow-up was
-/// still there to cancel. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, whether a speech server
+/// linked or heard words, and whether a follow-up was still there to cancel. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -294,6 +297,14 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
         }
+        Event::SpeechServerLinked => {
+            p.insert("outcome".into(), "linked".into());
+        }
+        // No speech: a quiet recording (never sent to the server) or only Whisper's markers for sounds.
+        Event::LocalDictationTranscribed => {
+            let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
+            p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
+        }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,
         // A login profile's check that still finds it signed out is no sign-in.
@@ -309,32 +320,30 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
-/// never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a login profile, a connector edit
+/// or a speech server reports its category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
-    match event {
+    let category = match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
-            Some((Event::NetworkFailed, p))
+            return Some((Event::NetworkFailed, p));
         }
         // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
         // one sign-in.
         Event::LoginProfileChanged => {
-            let category =
-                error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category);
-            p.insert("outcome".into(), "failed".into());
-            p.insert("error".into(), category.into());
-            Some((event, p))
+            error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category)
         }
         Event::ConnectorUpdated => {
-            let category =
-                error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
-            p.insert("outcome".into(), "failed".into());
-            p.insert("error".into(), category.into());
-            Some((event, p))
+            error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category())
         }
-        _ => None,
-    }
+        Event::SpeechServerLinked | Event::LocalDictationTranscribed => {
+            error.downcast_ref::<crate::voice::local::SpeechFailed>().map_or("other", |e| e.category())
+        }
+        _ => return None,
+    };
+    p.insert("outcome".into(), "failed".into());
+    p.insert("error".into(), category.into());
+    Some((event, p))
 }
 
 /// The bot settings a patch changes, by name (never their values), sorted.

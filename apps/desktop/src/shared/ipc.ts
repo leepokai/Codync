@@ -111,6 +111,8 @@ export type WindowCommand =
   | { kind: 'sendMessage'; ref: string; text: string }
   /** The voice input shortcut, while the island is off: a double tap starts dictating into the composer, a tap sends. */
   | { kind: 'voiceKey'; key: VoiceKey }
+  /** Opens Settings at Voice chat (the island asks when a dictation key is missing). */
+  | { kind: 'voiceSettings' }
   /** The chat window was shown again after being hidden (`window_opened`). */
   | { kind: 'windowOpened' }
 
@@ -232,6 +234,8 @@ export interface CodyncBridge {
     openBot(ref: string): void
     newBot(): void
     openApp(): void
+    /** Opens the chat window's Settings at Voice chat. */
+    openVoiceSettings(): void
   }
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {

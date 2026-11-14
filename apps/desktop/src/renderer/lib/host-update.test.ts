@@ -57,3 +57,11 @@ test('the Chinese notice names which side has to update', (t) => {
   assert.equal(hostVersionLine('2.20.0', null, { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' }, { kind: 'available', last: null }, 'Mac', 'linux').detail[0],
     'Mac 需要 Codync 2.26.0 或更高版本。')
 })
+
+test('a computer named like a placeholder keeps its name', (t) => {
+  testLanguage(t, 'en-US')
+  const behind = { kind: 'updateHost', version: '2.20.0', minimum: '2.26.0' } as const
+  // Filling in one pass: the name inserted for {host} is never read as a placeholder itself.
+  assert.equal(updateNeededText.detail(behind, '{minimum}', 'macos', false), 'Codync on {minimum} is 2.20.0; that computer needs Codync 2.26.0 or newer.')
+  assert.equal(hostVersionLine('2.20.0', null, behind, { kind: 'unavailable' }, '{version}', 'macos').detail[0], '{version} needs Codync 2.26.0 or newer.')
+})

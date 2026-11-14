@@ -85,8 +85,11 @@ device acceptance, and the account flows on main (they were walked on dev; main 
   same means marking the rows the computer sent again across restarts, left out while a schema change stays rare
   (`MirrorDatabase.setStamp`, [compatibility](../reference/compatibility.md)).
 - **Shortcuts actions** (Open Live Mode, Send Text to Bot) are Apple App Intents; Android's counterparts are
-  **Talk to Codync** in the app icon's shortcuts (the lead, by Settings → Shortcuts → Lead to call) and text shared
-  from another app, which opens the picked bot's chat with the text in its box ([iOS Shortcuts](../features/ios-shortcuts.md), `LiveShortcut.kt`, `ShareToBot.kt`).
+  **Talk to Codync** in the app icon's shortcuts (the lead, by Settings → Shortcuts → Lead to call); sharing from
+  another app is the same on both ([iOS Shortcuts](../features/ios-shortcuts.md), [share to a bot](../features/share-to-bot.md), `LiveShortcut.kt`).
+- **Pasted text** in the message box isn't sent as `pasted` (the iPhone's `pastedInsertion`), so
+  [memory](../features/context-and-memory.md) can take a document pasted there as the user's own words; text shared
+  from another app is sent as `pasted` on both.
 - **On-device voice**: languages other than English need Android 13+ and Android's on-device
   recognizer; it never falls back to online recognition (iOS may use Apple's servers).
 - **Jump to latest** is an opaque disc: it sits in the scrolling content, so there's no blur under it.

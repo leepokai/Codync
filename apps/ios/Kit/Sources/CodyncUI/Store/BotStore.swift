@@ -323,18 +323,3 @@ public final class BotStore {
         onComputerChanged?(c)
     }
 }
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
-}

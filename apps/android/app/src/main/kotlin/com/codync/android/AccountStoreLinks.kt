@@ -204,18 +204,33 @@ private fun AccountStore.whenActivated(open: (AccountContext) -> Unit) {
     linkJob = viewModelScope.launch { withTimeoutOrNull(30_000) { activated() }?.let(open) }
 }
 
-/** Text another app shared waits for a bot to go to (`ShareToBot`), once the account has loaded. */
-fun AccountStore.share(text: String) = whenActivated {
+/** What another app shared waits for a bot to go to (`ShareToBot`), once the account has loaded. */
+fun AccountStore.share(content: SharedContent) = whenActivated {
     navigate(LinkPage.Bots)
-    mutableState.update { it.copy(sharing = text) }
+    mutableState.update { it.copy(sharing = content) }
 }
 
-/** The shared text goes after what's in [to]'s message box, and its chat opens. */
-fun AccountStore.sendShared(to: BotDestination) {
-    val text = state.value.sharing ?: return
-    store(to.computerId)?.appendDraft(to.botId, text)
+/**
+ * The share goes to [to] as one message, the way its message box sends one ([AppStore.sendShared]); that chat becomes the
+ * most recent in Recent and opens, and the share sheet closes. Throws what stopped it, for the sheet to show. [pasted]: what
+ * came from the other app ([SharedContent.pasted]); [recent]: [to] was picked from Recent.
+ */
+internal suspend fun AccountStore.sendShared(to: BotDestination, text: String, uris: List<Uri>, pasted: List<String>, recent: Boolean) {
+    fun report(outcome: ShareOutcome, error: ShareError? = null) =
+        Analytics.capture(AnalyticsEvent.ShareSent(outcome, uris.size, text.isNotBlank(), recent, error))
+    val store = store(to.computerId) ?: throw IOException(SHARE_FAILED)
+    val files = try { store.importAll(uris) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { report(ShareOutcome.Failed, ShareError.Read); throw error }
+    val outcome = try { store.sendShared(to.botId, text, files, pasted) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { report(ShareOutcome.Failed, ShareError.Send); throw error }
+    report(outcome)
+    val recipients = state.value.shareRecipients.recorded(ShareRecipient(to.computerId, to.botId))
     openBot(to)
-    finishSharing()
+    mutableState.update { it.copy(shareRecipients = recipients, sharing = null) }
+    // Saved even as the closing sheet's scope ends; only a convenience, so a failure is let go: the message went either way.
+    withContext(NonCancellable + Dispatchers.IO) { runCatching { local.saveShareRecipients(recipients) } }
 }
 
 fun AccountStore.finishSharing() = mutableState.update { it.copy(sharing = null) }

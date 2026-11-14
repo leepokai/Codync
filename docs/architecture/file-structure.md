@@ -25,7 +25,7 @@ Codync/
 │   ├── project.yml            # XcodeGen source of truth for every Apple target
 │   ├── Codync.xcodeproj/      # Generated Xcode project
 │   ├── shared/Config/         # {dev,main}.plist: environment for the iPhone, Android and desktop apps
-│   ├── ios/                   # App/, Views/, Resources/, Widgets/, NotificationService/, WhatsNew.md (App Store notes)
+│   ├── ios/                   # App/, Views/, Resources/, Widgets/, NotificationService/, Share/ (share sheet), WhatsNew.md (App Store notes)
 │   │   └── Kit/               # The iPhone app's Swift package
 │   │       ├── Sources/
 │   │       │   ├── CodyncKit/  # Wire models, transports, design; widget-safe

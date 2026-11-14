@@ -25,7 +25,7 @@ configs:
   DevRelease: release
 settings:
   base:
-    MARKETING_VERSION: 2.46.2
+    MARKETING_VERSION: 2.47.0
     CURRENT_PROJECT_VERSION: 24
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
@@ -144,6 +144,7 @@ targets:
         excludes:
           - Widgets
           - NotificationService
+          - Share
           - WhatsNew.md
           # The app's shared Swift package (models, client, screens), added as a package below.
           - Kit
@@ -160,6 +161,8 @@ targets:
       - target: Widgets
         embed: true
       - target: NotificationService
+        embed: true
+      - target: Share
         embed: true
     postBuildScripts:
       - name: Codync environment
@@ -210,6 +213,27 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: ios/Widgets/Resources/Widgets.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME)
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+  # Codync in other apps' share sheets: sends what they share to a bot (docs/features/share-to-bot.md).
+  # CodyncKit only, like the other extensions: its connection, keys and bots come from the shared App Group and Keychain.
+  Share:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ios/Share
+    dependencies:
+      - package: CodyncKit
+        product: CodyncKit
+    settings:
+      base:
+        PRODUCT_NAME: CodyncShare
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID).Share
+        INFOPLIST_FILE: ios/Share/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: ios/Share/Share.entitlements
+        INFOPLIST_KEY_CFBundleDisplayName: $(CODYNC_APP_NAME)
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Codync connects to the computer running your bots on your local network.
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
   # Opens end-to-end sealed alert text (spec §6.7) with this account's push key from the shared Keychain.

@@ -114,7 +114,6 @@
   "Siri, the Action button and Open Live Mode without a bot call this lead. Automatic calls the lead of the first computer in your list.": "Siri, кнопка действия и Open Live Mode без бота вызывают этого ведущего агента. «Автоматически» вызывает ведущего агента первого компьютера в вашем списке.",
   "Talk to Codync, in the app icon's shortcuts, calls this lead. Automatic calls the lead of the first computer in your list.": "«Talk to Codync» в быстрых действиях значка приложения вызывает этого ведущего агента. «Автоматически» вызывает ведущего агента первого компьютера в вашем списке.",
   "Send to a bot": "Отправить боту",
-  "The message waits in the chat's box until you send it.": "Сообщение ждёт в поле ввода чата, пока вы его не отправите.",
   "This computer was removed": "Этот компьютер удалён",
   "↑↓ scroll · esc close": "↑↓ прокрутка · esc закрыть",
   "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.": "Ваш ведущий агент — первая точка контакта. Он следит за вашими целями и незавершёнными задачами, предлагает полезные следующие шаги и координирует работу с другими ботами. Ведущий агент, которого создаёт Codync, получает рутину «Check in», которая по умолчанию запускается дважды в день; её можно изменить или приостановить в разделе «Рутины».",
@@ -2042,5 +2041,13 @@
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "Приложение на этом компьютере должно быть {minimum} или новее (требование {host}).",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync на {host} — {version}; этому компьютеру нужен Codync {minimum} или новее.",
   "{host} needs Codync {version} or newer.": "{host} требует Codync {version} или новее.",
-  "This app needs to be {minimum} or newer ({host} requires it).": "Это приложение должно быть версии {minimum} или новее (требование {host})."
+  "This app needs to be {minimum} or newer ({host} requires it).": "Это приложение должно быть версии {minimum} или новее (требование {host}).",
+  "Add a message": "Добавить сообщение",
+  "Recent": "Недавние",
+  "Larger than 100 MB": "Больше 100 МБ",
+  "Files go out once your computer is online.": "Файлы отправятся, когда компьютер будет в сети.",
+  "Open Codync and connect a computer first.": "Сначала откройте Codync и подключите компьютер.",
+  "Couldn't send. Try again.": "Не удалось отправить. Попробуйте ещё раз.",
+  "Uploading {sent} of {total}": "Загрузка: {sent} из {total}",
+  "Couldn't read this file": "Не удалось прочитать файл"
 }

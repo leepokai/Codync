@@ -240,6 +240,9 @@ internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == n
     else -> false
 }
 
+/** The computer can't take a message now, but text still goes: its relay holds it, or with no relay this phone does. */
+internal val AppState.holdsText get() = actualConnection is LinkState.ComputerOffline || holdsOnPhone(computer.cloud, actualConnection)
+
 /** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
 internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held
 

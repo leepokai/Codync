@@ -114,7 +114,6 @@
   "Siri, the Action button and Open Live Mode without a bot call this lead. Automatic calls the lead of the first computer in your list.": "Siri、動作按鈕和沒有指定 Bot 的「Open Live Mode」會呼叫這個主助理。選「自動」時，會呼叫清單中第一台電腦的主助理。",
   "Talk to Codync, in the app icon's shortcuts, calls this lead. Automatic calls the lead of the first computer in your list.": "應用圖示捷徑裡的「Talk to Codync」會呼叫這個主助理。選「自動」時，會呼叫清單中第一台電腦的主助理。",
   "Send to a bot": "傳送給 Bot",
-  "The message waits in the chat's box until you send it.": "訊息會留在聊天的輸入框裡，直到你傳送。",
   "This computer was removed": "這台電腦已被移除",
   "↑↓ scroll · esc close": "↑↓ 捲動 · esc 關閉",
   "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.": "主助理是你優先聯絡的 agent。它會追蹤你的目標與未完成的任務、建議實用的下一步，並協調其他 bots 一起完成工作。Codync 建立的主助理帶有「Check in」例行任務，預設每天執行兩次；你可以在「例行任務」中調整或暫停。",
@@ -2042,5 +2041,13 @@
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "本機這個 App 需要升級到 {minimum} 或更高版本（{host} 的要求）。",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "{host} 上的 Codync 是 {version}；需要把那台電腦上的 Codync 升級到 {minimum} 或更高版本。",
   "{host} needs Codync {version} or newer.": "{host} 需要 Codync {version} 或更高版本。",
-  "This app needs to be {minimum} or newer ({host} requires it).": "這個 App 需要升級到 {minimum} 或更高版本（{host} 的要求）。"
+  "This app needs to be {minimum} or newer ({host} requires it).": "這個 App 需要升級到 {minimum} 或更高版本（{host} 的要求）。",
+  "Add a message": "加上訊息",
+  "Recent": "最近",
+  "Larger than 100 MB": "超過 100 MB",
+  "Files go out once your computer is online.": "電腦上線後才能傳送檔案。",
+  "Open Codync and connect a computer first.": "請先開啟 Codync 並連線一臺電腦。",
+  "Couldn't send. Try again.": "傳送失敗，請再試一次。",
+  "Uploading {sent} of {total}": "正在上傳 {sent}/{total}",
+  "Couldn't read this file": "無法讀取這個檔案"
 }

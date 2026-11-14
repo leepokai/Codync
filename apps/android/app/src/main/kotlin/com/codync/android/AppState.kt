@@ -49,8 +49,10 @@ data class AccountContext(
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */
     val shortcutLeadComputer: String? = null,
-    /** Text another app shared, waiting for a bot to go to. */
-    val sharing: String? = null,
+    /** What another app shared, waiting for a bot to go to. */
+    val sharing: SharedContent? = null,
+    /** The chats shares went to, most recent first: the share sheet's Recent (iOS `shareRecipients`). */
+    val shareRecipients: List<ShareRecipient> = emptyList(),
     /** The open chat's computer was removed: the chat's place shows that until Back (iOS `ChatScreen`). */
     val removedChat: Boolean = false,
     /** The computer the Usage sheet and widget show: the last one a chat was opened or sent on. */

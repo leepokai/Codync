@@ -114,7 +114,6 @@
   "Siri, the Action button and Open Live Mode without a bot call this lead. Automatic calls the lead of the first computer in your list.": "Siri, el botón de acción y Open Live Mode sin bot llaman a este agente principal. Automático llama al agente principal del primer ordenador de tu lista.",
   "Talk to Codync, in the app icon's shortcuts, calls this lead. Automatic calls the lead of the first computer in your list.": "Talk to Codync, en los accesos directos del icono de la app, llama a este agente principal. Automático llama al agente principal del primer ordenador de tu lista.",
   "Send to a bot": "Enviar a un bot",
-  "The message waits in the chat's box until you send it.": "El mensaje espera en el cuadro del chat hasta que lo envíes.",
   "This computer was removed": "Este ordenador se ha eliminado",
   "↑↓ scroll · esc close": "↑↓ desplazar · esc cerrar",
   "Your lead agent is your first point of contact. It follows your goals and unfinished tasks, suggests useful next steps, and coordinates work with your other bots. The lead Codync sets up has a Check in routine that runs twice a day by default; you can change or pause it in Routines.": "Tu agente principal es tu primer punto de contacto. Sigue tus objetivos y tareas pendientes, sugiere próximos pasos útiles y coordina el trabajo con tus otros bots. El agente principal que crea Codync tiene una rutina Check in que se ejecuta dos veces al día de forma predeterminada; puedes cambiarla o pausarla en Rutinas.",
@@ -2042,5 +2041,13 @@
   "The app on this computer needs to be {minimum} or newer ({host} requires it).": "La aplicación de este ordenador debe ser {minimum} o superior (lo exige {host}).",
   "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "Codync en {host} es {version}; ese ordenador necesita Codync {minimum} o superior.",
   "{host} needs Codync {version} or newer.": "{host} necesita Codync {version} o superior.",
-  "This app needs to be {minimum} or newer ({host} requires it).": "Esta aplicación debe ser {minimum} o superior (lo exige {host})."
+  "This app needs to be {minimum} or newer ({host} requires it).": "Esta aplicación debe ser {minimum} o superior (lo exige {host}).",
+  "Add a message": "Añadir un mensaje",
+  "Recent": "Recientes",
+  "Larger than 100 MB": "Más de 100 MB",
+  "Files go out once your computer is online.": "Los archivos se envían cuando tu ordenador esté en línea.",
+  "Open Codync and connect a computer first.": "Abre Codync y conecta un ordenador primero.",
+  "Couldn't send. Try again.": "No se pudo enviar. Inténtalo de nuevo.",
+  "Uploading {sent} of {total}": "Subiendo {sent} de {total}",
+  "Couldn't read this file": "No se pudo leer este archivo"
 }

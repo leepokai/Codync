@@ -273,8 +273,23 @@ public extension HostClient {
     /// Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message.
     static let uploadChunk = 384 * 1024
 
-    /// Sends one file in chunks for a later `send`; `id` names the upload there.
-    func upload(botId: String, id: String, name: String, data: Data) async throws {
+    /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
+    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+        var ids: [String] = []
+        var done = 0
+        for file in files {
+            let id = UUID().uuidString
+            let before = done
+            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            done += file.data.count
+            ids.append(id)
+        }
+        return ids
+    }
+
+    /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
+    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
         struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
@@ -282,6 +297,7 @@ public extension HostClient {
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
             let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
+            sent(offset)
         } while offset < data.count
     }
 

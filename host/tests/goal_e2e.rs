@@ -335,6 +335,73 @@ async fn reported_usage_limit_stops_before_starting_the_agent() {
 }
 
 #[tokio::test]
+async fn a_goal_checks_the_agent_it_would_use_after_its_own_agent_recovers() {
+    let host = Host::start().await;
+    let cwd = host.home.join("ada");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
+    let primary = format!("{} primary", common::python_agent(&fixture));
+    let fallback = format!("{} standin", common::python_agent(&fixture));
+    let bot = host
+        .call(
+            "createBot",
+            json!({
+                "name": "Budget", "backend": "custom", "command": primary, "cwd": cwd,
+                "fallbacks": [{"backend": "claude", "command": fallback}],
+                "connectors": [], "notify": false,
+            }),
+        )
+        .await["bot"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    std::fs::write(cwd.join("primary.limit"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Park on the fallback"})).await;
+    common::eventually("the fallback answers", Duration::from_secs(20), async || {
+        common::bot(&host.snapshot().await, &bot)["status"] == "idle"
+            && common::bot(&host.snapshot().await, &bot)["agentStep"]["agent"] == "claude"
+    })
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("{}/ingest/statusline", host.base))
+        .bearer_auth(&host.token)
+        .json(&json!({"rate_limits": {"five_hour": {"used_percentage": 80.0}}}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+
+    // The own agent is healthy again without first switching the idle bot back to it.
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
+    let cleared = db.execute("DELETE FROM kv WHERE k LIKE 'rest.custom#%'", []).unwrap();
+    assert_eq!(cleared, 1);
+    drop(db);
+    std::fs::remove_file(cwd.join("primary.limit")).unwrap();
+
+    host.call("setGoal", json!({"botId": bot, "goal": "One resumed step", "maxTurns": 1})).await;
+    let history = host.until(&bot, |h| !notice(h, "goalEnded").is_empty()).await;
+    assert_eq!(notice(&history, "goalEnded")[0]["data"]["goalEnded"], "limit");
+    assert_eq!(common::bot(&host.snapshot().await, &bot)["goal"]["turns"], 1);
+    assert_eq!(
+        common::bot(&host.snapshot().await, &bot)["agentStep"],
+        Value::Null,
+        "the goal runs on the recovered own agent"
+    );
+
+    let prompts = |name: &str| {
+        std::fs::read_to_string(cwd.join(name))
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| line.contains("\"session/prompt\""))
+            .count()
+    };
+    assert_eq!(prompts("primary.jsonl"), 2, "the parked turn and the goal use the own agent");
+    assert_eq!(prompts("standin.jsonl"), 1, "the high-usage fallback gets no goal work");
+}
+
+#[tokio::test]
 async fn replacing_a_running_goal_cancels_only_the_old_generation() {
     let host = Host::start().await;
     let bot = host.goal_bot().await;

@@ -98,8 +98,7 @@ impl Actor {
         })
     }
 
-    /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
-    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str) {
+    fn begin_new_attempt(&mut self) {
         if !std::mem::take(&mut self.relay.retrying) {
             self.relay.tried.clear();
             self.relay.failed.clear();
@@ -109,6 +108,18 @@ impl Actor {
         self.relay.exhausted = false;
         self.relay.line = None;
         self.relay.carried = None;
+    }
+
+    /// The agent a fresh turn would start on. Goal checks consult this agent's usage before spending a turn.
+    pub(super) fn next_agent_backend(&mut self) -> String {
+        self.begin_new_attempt();
+        let target = self.next_step(now_ms()).unwrap_or(0);
+        fallback::backend(&self.base, target).to_owned()
+    }
+
+    /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.
+    pub(super) async fn relay_turn(&mut self, lane: &Lane, entries: &[String], text: &str) {
+        self.begin_new_attempt();
         self.relay.attempt = Some(Attempt { lane: lane.clone(), entries: entries.to_vec(), text: text.to_owned() });
         let now = now_ms();
         let target = self.next_step(now).unwrap_or(0);

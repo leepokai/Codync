@@ -172,7 +172,7 @@ struct AddFallbackSheet: View {
                 CardSection {
                     AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions,
                                      agents: choices.map { ($0.id, model.agentLabel($0)) },
-                                     onAgentChange: { fallback = BotFallback(backend: $0) })
+                                     onAgentChange: { fallback = BotFallback(backend: $0) }, collapsible: false)
                     if let agent, agent.loginProfiles != nil {
                         LoginProfileRow(backend: agent, loginProfile: Binding(get: { loginProfile }, set: { fallback.loginProfile = $0 }), free: free)
                     }

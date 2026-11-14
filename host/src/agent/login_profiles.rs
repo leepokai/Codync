@@ -8,7 +8,7 @@
 //!   vault and set for the process (`keys`). Any agent can have one.
 
 use crate::LockExt;
-use crate::agent::backends;
+use crate::agent::backends::{self, agent_id};
 use crate::hub::Hub;
 use crate::keeper::client::Grants;
 use crate::store::{BotConfig, Store};
@@ -93,11 +93,6 @@ impl Profile {
     }
 }
 
-/// The agent `backend` is, as profiles name it: its harness id, also for its registry entry's.
-fn agent_id(backend: &str) -> &str {
-    backends::harness_of(backend).map_or(backend, |h| h.id)
-}
-
 /// How `backend`'s agent keeps accounts, if it can have them.
 fn accounts_of(backend: &str) -> Option<&'static Agent> {
     codync_accounts::agent(agent_id(backend))
@@ -110,8 +105,12 @@ fn default_names(store: &Store) -> serde_json::Map<String, Value> {
 /// Agent `id`'s default login, as clients show it beside its profiles.
 fn default_wire(id: &str, names: &serde_json::Map<String, Value>) -> Value {
     let label = names.get(id).and_then(Value::as_str);
-    let email = account::default_identity(id);
-    json!({"name": label.map(str::to_owned).or_else(|| email.clone()), "label": label, "email": email})
+    json!({"name": default_name(id, names), "label": label, "email": account::default_identity(id)})
+}
+
+/// What to call agent `id`'s default login: the user's name for it, else who it signs in.
+fn default_name(id: &str, names: &serde_json::Map<String, Value>) -> Option<String> {
+    names.get(id).and_then(Value::as_str).map(str::to_owned).or_else(|| account::default_identity(id))
 }
 
 /// Names profile `id`, or with no id `backend`'s default login: an empty name takes it back to who it signs in.
@@ -165,7 +164,7 @@ impl std::error::Error for Refused {}
 /// The login profiles agent processes run on now, one entry per process (`Running`).
 static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Held by an agent process on a login profile, or by its sign-in: it isn't removed under it.
+/// Held by an agent process on a login profile, by its sign-in or by a usage check of it: it isn't removed under it.
 pub struct Running(String);
 
 impl Running {
@@ -277,7 +276,8 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
         return Err(Refused::error("in_use", why));
     }
     if RUNNING.locked().iter().any(|running| running == id) || hub.terms.signing_in(id) {
-        let why = "An agent is still running on this login profile, or its sign-in is open. Try again once it's done.";
+        let why = "An agent is still running on this login profile, its usage is being checked, or its sign-in is \
+                   open. Try again once it's done.";
         return Err(Refused::error("in_use", why.into()));
     }
     match profile.kind {
@@ -372,6 +372,12 @@ pub async fn prepare(store: &Store, backend: &str, profile: Option<&str>) -> Res
     Ok(Some(running))
 }
 
+/// Before a usage check runs the agent's CLI on a profile: only kept from being removed meanwhile ([`prepare`] without
+/// the setup, which add and sign-in already gave the slot).
+pub fn hold(store: &Store, backend: &str, profile: Option<&str>) -> Result<Option<Running>> {
+    Ok(resolve(store, backend, profile)?.map(|profile| Running::on(&profile.account.id)))
+}
+
 /// Gives an account's slot the user's setup. An API key profile has no folder.
 async fn share(profile: &Profile) -> Result<()> {
     match profile.kind {
@@ -399,6 +405,14 @@ pub async fn check(store: &Store, id: &str) -> Result<Profile> {
         }
         Ok(profile.clone())
     })
+}
+
+/// What the Usage screens list under agent `id`: what its default login is called, and its signed-in account
+/// profiles by id and name. An API key has no plan to read, and a signed-out account nothing to ask.
+pub fn usage_rows(store: &Store, id: &str) -> (Option<String>, Vec<(String, String)>) {
+    let listed = |p: &Profile| p.account.agent == id && p.kind == Kind::Account && p.account.signed_in;
+    let rows = all(store).iter().filter(|p| listed(p)).map(|p| (p.account.id.clone(), p.called())).collect();
+    (default_name(id, &default_names(store)), rows)
 }
 
 /// What to call login profile `profile` of `backend`; none for the default login, or for a profile that isn't

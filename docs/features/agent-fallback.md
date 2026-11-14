@@ -81,7 +81,7 @@ so only its usage limit moves a Codex bot on today.
 [login profile](login-profiles.md), `<agent>#profile-<id>`) are the computer's: once one
 bot finds Claude Code out of usage, every bot on that login skips it until it resets. Each login rests by itself: a usage
 limit or sign-out on a login profile leaves the computer's own login, and the bots on it, alone, and the other way
-round. A login profile's usage limit rests for an hour at a time, since the usage Codync reads is the computer's own login's. A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
+round. A login's usage limit rests until the reset its own windows give ([usage limits](usage-limits.md#login-profiles)), or for an hour at a time while it has no reading (an API key, an account of an agent whose accounts aren't read). A rest ends at its time, when any turn on that agent ends normally, or with Switch back.
 A signed-out rest also ends when the agent is signed in (`agent_sign_in::signed_in`: the card, Extensions, a turn of it
 finishing, a re-check), on that login: the computer's own (with the custom commands of the agent), or the one login
 profile; a usage rest stays.

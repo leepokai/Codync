@@ -64,6 +64,14 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot's `save_progress` ended (`outcome`).
+    RoutineProgressSaved,
+    /// A bot's `follow_up` ended (`outcome`).
+    FollowUpSet,
+    /// A follow-up came due and its bot took it.
+    FollowUpFired,
+    /// A follow-up was dropped before it began (`by`).
+    FollowUpCancelled,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -204,6 +212,10 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::RoutineProgressSaved => "routine_progress_saved",
+            Self::FollowUpSet => "follow_up_set",
+            Self::FollowUpFired => "follow_up_fired",
+            Self::FollowUpCancelled => "follow_up_cancelled",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",

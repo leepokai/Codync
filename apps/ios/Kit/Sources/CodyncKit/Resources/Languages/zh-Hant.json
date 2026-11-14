@@ -2079,5 +2079,17 @@
   "Add variable": "新增變數",
   "Import from login shell": "從登入 shell 匯入",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "選擇這個登入設定要使用的變數。它們的值會立即複製並儲存在 {name} 上。",
-  "Values are kept on {name} only and never shown again.": "值只儲存在 {name} 上，不會再次顯示。"
+  "Values are kept on {name} only and never shown again.": "值只儲存在 {name} 上，不會再次顯示。",
+  "Follow-up in {when}: {note}": "{when}後跟進：{note}",
+  "1 minute": "1 分鐘",
+  "{count} minutes": "{count} 分鐘",
+  "about {count} hours": "約 {count} 小時",
+  "about {count} days": "約 {count} 天",
+  "Follow-up · {note}": "跟進 · {note}",
+  "Follow-up cancelled: {note}": "已取消跟進：{note}",
+  "Follow-up at {time}": "{time} 跟進",
+  "Follow-up due now": "即將跟進",
+  "Cancel follow-up": "取消跟進",
+  "Follow-up cancelled": "已取消跟進",
+  "A follow-up is the bot's own: x cancels it": "跟進由 Bot 自己設定：按 x 取消"
 }

@@ -122,6 +122,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let name = b["name"].as_str().unwrap_or_default();
             let profile = b["loginProfile"].as_str();
             crate::agent::login_profiles::rename(&hub.store, str_arg(&b, "backend")?, profile, name)?;
+            usage::login_profiles_changed(hub);
             json!({"backends": agents(hub)})
         }
         // An API key profile's variables: `vars` typed by the user (an empty value removes one), and `import`, names
@@ -142,6 +143,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "loginShellVariables" => json!({"names": crate::agent::login_profiles::keys::shell_names().await?}),
         "removeLoginProfile" => {
             crate::agent::login_profiles::remove(hub, str_arg(&b, "loginProfile")?).await?;
+            usage::login_profiles_changed(hub);
             json!({"backends": agents(hub)})
         }
         "usage" => {

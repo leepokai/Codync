@@ -43,7 +43,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
-    onReload: () -> Unit = {}, agentDetails: @Composable () -> Unit = {}) {
+    onReload: () -> Unit = {}, collapsible: Boolean = true, agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
     var loading by remember(backend) { mutableStateOf(false) }
@@ -74,15 +74,18 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     val summary = (listOf(agentName, modelName) + levels + if (fastMode) listOf("Fast") else emptyList()).joinToString(" · ")
     val unfold = tr(if (stage == PickerStage.Closed) "Collapsed" else "Expanded")
     Column(Modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth().clickable { open(if (stage == PickerStage.Closed) PickerStage.Models else PickerStage.Closed) }
-            .semantics { stateDescription = unfold }.padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Crossfade(summary, Modifier.weight(1f), animationSpec = Motion.fade(), label = "Agent summary") { text ->
-                Text(text, style = Type.subheadline, color = Palette.text)
+        // collapsible = false: picking is the whole sheet (Add fallback), so no summary line; the choices show at once.
+        if (collapsible) {
+            Row(Modifier.fillMaxWidth().clickable { open(if (stage == PickerStage.Closed) PickerStage.Models else PickerStage.Closed) }
+                .semantics { stateDescription = unfold }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Crossfade(summary, Modifier.weight(1f), animationSpec = Motion.fade(), label = "Agent summary") { text ->
+                    Text(text, style = Type.subheadline, color = Palette.text)
+                }
+                Symbol(if (stage == PickerStage.Closed) "chevron.down" else "chevron.up", size = 12.dp, tint = Palette.secondary)
             }
-            Symbol(if (stage == PickerStage.Closed) "chevron.down" else "chevron.up", size = 12.dp, tint = Palette.secondary)
         }
-        if (stage != PickerStage.Closed) {
+        if (stage != PickerStage.Closed || !collapsible) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (chooseAgent != null) LinkButton(agentName, Modifier.weight(1f)) { open(if (stage == PickerStage.Agents) PickerStage.Settings else PickerStage.Agents) }
                 LinkButton(modelName, Modifier.weight(1f)) { open(if (stage == PickerStage.Models) PickerStage.Settings else PickerStage.Models) }

@@ -1,5 +1,6 @@
 //! What reaches a bot's actor ([`Cmd`]) and the turns that wait in its queue ([`Queued`]).
 
+use crate::analytics::TurnSource;
 use crate::chat::group::GroupTurn;
 use crate::store::{BotConfig, Lane};
 use anyhow::Result;
@@ -11,6 +12,8 @@ pub enum Cmd {
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
     Routine(String),
+    /// A follow-up the bot set for itself is due (`routines::follow_up`): a turn in its own chat.
+    FollowUp(String),
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -109,6 +112,7 @@ pub enum Cmd {
 
 pub(super) enum Queued {
     Routine(String),
+    FollowUp(String),
     User {
         lane: Lane,
         entry_id: String,
@@ -125,4 +129,41 @@ pub(super) enum Queued {
         idle: bool,
     },
     Group(GroupTurn),
+}
+
+/// A turn the host starts in the bot's own chat, with no message of the user's.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum HostTurn {
+    /// The lead opening a call (`Cmd::Prompt`): heard on the call, so it alerts no one and isn't resumed after a
+    /// restart (the call is over).
+    Opening,
+    /// A follow-up the bot set for itself (`Cmd::FollowUp`): alerts like a reply, unless it had nothing to say,
+    /// and is resumed after a restart as the follow-up it is.
+    FollowUp,
+}
+
+impl HostTurn {
+    /// Whether a host restart in the middle of it resumes it.
+    pub(super) fn resumed(self) -> bool {
+        match self {
+            Self::Opening => false,
+            Self::FollowUp => true,
+        }
+    }
+
+    /// Whether its end alerts the user, as a reply's does.
+    pub(super) fn alerts(self) -> bool {
+        match self {
+            Self::Opening => false,
+            Self::FollowUp => true,
+        }
+    }
+
+    /// What `turn_finished` reports as its source.
+    pub(super) fn source(self) -> TurnSource {
+        match self {
+            Self::Opening => TurnSource::Host,
+            Self::FollowUp => TurnSource::FollowUp,
+        }
+    }
 }

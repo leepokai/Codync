@@ -123,6 +123,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
+        "cancelFollowUp" => {
+            p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
+            Event::FollowUpCancelled
+        }
         "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
             let action = method.trim_start_matches("devServer").to_ascii_lowercase();
             p.insert("action".into(), action.into());
@@ -270,8 +275,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether
-/// a speech server linked or heard words. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, whether a speech server
+/// linked or heard words, and whether a follow-up was still there to cancel. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -300,6 +305,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
             let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
         }
+        // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
+        Event::FollowUpCancelled if answer["gone"] == true => return None,
         // A login profile's check that still finds it signed out is no sign-in.
         Event::AgentSignedIn if p.contains_key("loginProfile") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled

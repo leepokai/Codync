@@ -63,6 +63,11 @@ impl Requests {
         self.0.locked().active.insert(bot.to_owned(), turn);
     }
 
+    /// Whether `bot`'s running turn answers another bot's request.
+    pub fn answering(&self, bot: &str) -> bool {
+        matches!(self.0.locked().active.get(bot), Some(Turn::Request))
+    }
+
     /// `bot`'s turn ended (or it was deleted): it can't send more until its next turn.
     pub fn end_turn(&self, bot: &str) {
         self.0.locked().active.remove(bot);

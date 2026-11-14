@@ -129,12 +129,41 @@ pub struct Library {
     pub cursor: usize,
 }
 
+#[derive(Default)]
 pub struct RoutineList {
     pub bot: String,
     pub items: Option<Vec<Value>>,
     /// The bot's runs, newest first.
     pub runs: Vec<Value>,
+    /// The follow-ups the bot set for itself that still wait.
+    pub follow_ups: Vec<Value>,
+    /// Over `rows`.
     pub cursor: usize,
+}
+
+/// A row of the routines list.
+pub enum RoutineRow<'a> {
+    FollowUp(&'a Value),
+    Routine(&'a Value),
+}
+
+impl RoutineRow<'_> {
+    pub fn id(&self) -> &Value {
+        let (Self::FollowUp(item) | Self::Routine(item)) = self;
+        &item["id"]
+    }
+}
+
+impl RoutineList {
+    /// The list top to bottom: the follow-ups come first, then the routines.
+    pub fn rows(&self) -> impl Iterator<Item = RoutineRow<'_>> {
+        self.follow_ups.iter().map(RoutineRow::FollowUp).chain(self.items.iter().flatten().map(RoutineRow::Routine))
+    }
+
+    /// The row the cursor is on.
+    pub fn picked(&self) -> Option<RoutineRow<'_>> {
+        self.rows().nth(self.cursor)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

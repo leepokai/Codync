@@ -3,10 +3,14 @@ mod check;
 pub use check::Checked;
 mod editor;
 pub use editor::{ScheduleDraft, preview as schedule_preview};
+mod follow_up;
+pub use follow_up::{Cancelled, FollowUp};
 pub mod hooks;
 use hooks::Refused;
+mod kept;
 mod mcp;
-pub use mcp::{INSTRUCTIONS, call, tools};
+pub use mcp::{BRIEF, INSTRUCTIONS, call, tools};
+mod progress;
 mod retry;
 mod runner;
 mod schedule;
@@ -50,6 +54,9 @@ pub struct Routine {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// Where its runs stand, for the next one (`progress.rs`).
+    #[serde(default)]
+    pub progress: Option<String>,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -114,6 +121,8 @@ impl Run {
 struct State {
     routines: Vec<Routine>,
     runs: Vec<Run>,
+    #[serde(default)]
+    follow_ups: Vec<FollowUp>,
 }
 
 pub struct Routines {
@@ -123,6 +132,7 @@ pub struct Routines {
     stopping: std::sync::atomic::AtomicBool,
     /// Bumped whenever the webhook set the relay registers (`hooks()`) changes.
     hooks_rev: tokio::sync::watch::Sender<u64>,
+    following: follow_up::Following,
 }
 
 impl Default for Routines {
@@ -133,6 +143,7 @@ impl Default for Routines {
             scheduler: Mutex::default(),
             stopping: std::sync::atomic::AtomicBool::default(),
             hooks_rev: tokio::sync::watch::channel(0).0,
+            following: follow_up::Following::default(),
         }
     }
 }
@@ -221,20 +232,20 @@ impl Routines {
 
     pub fn list(&self, bot: &str) -> Value {
         let state = self.state.locked();
+        // The next one to happen first, as every list of them shows.
+        let mut follow_ups: Vec<_> = state.follow_ups.iter().filter(|f| f.bot_id == bot).collect();
+        follow_ups.sort_by_key(|f| f.at);
         json!({"routines": state.routines.iter().filter(|r| r.bot_id == bot && !r.deleted).map(public).collect::<Vec<_>>(),
-            "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>()})
+            "runs": state.runs.iter().rev().filter(|r| r.bot_id == bot).take(200).collect::<Vec<_>>(),
+            "followUps": follow_ups})
     }
 
     pub fn owns(&self, bot: &str, id: &str) -> bool {
-        self.state.locked().routines.iter().any(|r| r.id == id && r.bot_id == bot && !r.deleted)
+        self.state.locked().routines.iter().any(|r| r.is(bot, id))
     }
 
     pub fn save(&self, hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
-        let row = hub
-            .store
-            .bot(bot)?
-            .filter(|b| !b.deleted && !b.config.is_group())
-            .context("routine requires an existing agent bot")?;
+        let row = agent_bot(hub, bot)?;
         let Checked { name, instruction, triggers, timeout } = Checked::parse(body)?;
         let now = now_ms();
         let id = body["id"].as_str().map_or_else(|| uuid::Uuid::new_v4().to_string(), str::to_owned);
@@ -266,6 +277,7 @@ impl Routines {
                 timeout_seconds: timeout
                     .unwrap_or_else(|| old.as_ref().map_or_else(default_timeout, |r| r.timeout_seconds)),
                 last_error: None,
+                progress: old.as_ref().and_then(|r| r.progress.clone()),
             };
             if !(1..=86_400).contains(&r.timeout_seconds) {
                 bail!("timeoutSeconds must be between 1 and 86400");
@@ -283,11 +295,7 @@ impl Routines {
 
     pub fn set_enabled(&self, store: &Store, bot: &str, id: &str, enabled: bool) -> Result<Value> {
         self.change(store, |s| {
-            let r = s
-                .routines
-                .iter_mut()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?;
+            let r = own_mut(&mut s.routines, bot, id)?;
             if enabled && !r.enabled {
                 r.next_runs = r.triggers.iter().map(|t| t.next(now_ms())).collect::<Result<_>>()?;
             }
@@ -306,11 +314,7 @@ impl Routines {
 
     pub fn remove(&self, hub: &Hub, bot: &str, id: &str) -> Result<Value> {
         let withdrawn = self.change(&hub.store, |s| {
-            let r = s
-                .routines
-                .iter_mut()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?;
+            let r = own_mut(&mut s.routines, bot, id)?;
             r.deleted = true;
             r.enabled = false;
             r.webhook_key.clear();
@@ -331,8 +335,7 @@ impl Routines {
         test: bool,
     ) -> Result<Value> {
         self.change(store, |s| {
-            let r =
-                s.routines.iter().find(|r| r.id == id && r.bot_id == bot && !r.deleted).context("routine not found")?;
+            let r = own(&s.routines, bot, id)?;
             if !r.enabled && !test {
                 bail!(Refused::Paused);
             }
@@ -368,25 +371,13 @@ impl Routines {
     pub fn credentials(&self, hub: &Hub, bot: &str, id: &str, rotate: bool) -> Result<Value> {
         if rotate {
             self.change(&hub.store, |s| {
-                let r = s
-                    .routines
-                    .iter_mut()
-                    .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                    .context("routine not found")?;
+                let r = own_mut(&mut s.routines, bot, id)?;
                 r.webhook_key = webhook_key();
                 r.updated_at = now_ms();
                 Ok(())
             })?;
         }
-        let key = {
-            let s = self.state.locked();
-            s.routines
-                .iter()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .context("routine not found")?
-                .webhook_key
-                .clone()
-        };
+        let key = own(&self.state.locked().routines, bot, id)?.webhook_key.clone();
         let cloud = hub.cloud.status();
         // Public deliveries go through the relay, for a computer in an account (docs/plans/optional-sign-in.md).
         let url = crate::remote::cloud::codync_url(hub)
@@ -424,6 +415,30 @@ impl Routines {
             Err(e) => Refused::Invalid(format!("{e:#}")),
         })
     }
+}
+
+impl Routine {
+    /// Whether this is `bot`'s routine `id`.
+    fn is(&self, bot: &str, id: &str) -> bool {
+        self.id == id && self.bot_id == bot && !self.deleted
+    }
+}
+
+/// `bot`'s own routine `id`. They take the routines alone, so a caller can change the runs while it holds one.
+fn own<'a>(routines: &'a [Routine], bot: &str, id: &str) -> Result<&'a Routine> {
+    routines.iter().find(|r| r.is(bot, id)).ok_or_else(|| kept::Refused::NotFound.into())
+}
+
+fn own_mut<'a>(routines: &'a mut [Routine], bot: &str, id: &str) -> Result<&'a mut Routine> {
+    routines.iter_mut().find(|r| r.is(bot, id)).ok_or_else(|| kept::Refused::NotFound.into())
+}
+
+/// Routines and follow-ups belong to an agent bot: a group has no agent to take their turn.
+fn agent_bot(hub: &Hub, bot: &str) -> Result<crate::store::BotRow> {
+    hub.store
+        .bot(bot)?
+        .filter(|b| !b.deleted && !b.config.is_group())
+        .context("routines and follow-ups need an existing agent bot")
 }
 
 fn required<'a>(body: &'a Value, key: &str) -> Result<&'a str> {

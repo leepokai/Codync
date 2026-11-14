@@ -360,13 +360,7 @@ impl Actor {
             if reason == Reason::SignedOut {
                 self.note_signed_out(&login);
             }
-            // The usage Codync reads is the computer's own login's: a login profile's reset isn't known.
-            let resets = self
-                .cfg
-                .login_profile
-                .is_none()
-                .then(|| rest::reset_time(&self.hub.usage.locked(), &agent, now))
-                .flatten();
+            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now);
             let rest = rest::record(&self.hub.store, &key, reason, now, resets);
             if rest.is_some() {
                 fallback::tell_bots(&self.hub, &key);

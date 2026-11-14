@@ -2079,5 +2079,17 @@
   "Add variable": "Добавить переменную",
   "Import from login shell": "Импортировать из оболочки входа",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "Выберите переменные для этого профиля входа. Их значения копируются сейчас и хранятся на {name}.",
-  "Values are kept on {name} only and never shown again.": "Значения хранятся только на {name} и больше не показываются."
+  "Values are kept on {name} only and never shown again.": "Значения хранятся только на {name} и больше не показываются.",
+  "Follow-up in {when}: {note}": "Проверка через {when}: {note}",
+  "1 minute": "1 мин",
+  "{count} minutes": "{count} мин",
+  "about {count} hours": "примерно {count} ч",
+  "about {count} days": "примерно {count} дн.",
+  "Follow-up · {note}": "Проверка · {note}",
+  "Follow-up cancelled: {note}": "Проверка отменена: {note}",
+  "Follow-up at {time}": "Проверка: {time}",
+  "Follow-up due now": "Скоро проверка",
+  "Cancel follow-up": "Отменить проверку",
+  "Follow-up cancelled": "Проверка отменена",
+  "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет"
 }

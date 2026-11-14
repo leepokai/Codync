@@ -69,11 +69,11 @@ pub fn record(store: &Store, login: &str, reason: Reason, now: i64, resets_at: O
     Some(rest)
 }
 
-/// When `backend`'s usage limit resets, from the windows it last reported (`usage`): the latest reset of a window
-/// that is used up. `None` when none is, or none said when.
-pub fn reset_time(usage: &Usage, backend: &str, now: i64) -> Option<i64> {
-    let provider = usage.providers.iter().find(|p| p.id == backend)?;
-    provider.windows.iter().filter(|w| w.percent >= 99.5).filter_map(|w| w.resets_at).filter(|t| *t > now).max()
+/// When the usage limit of `backend`'s login (`login_profile`'s, or the default one's) resets, from the windows it
+/// last reported (`usage`): the latest reset of a window that is used up. `None` when none is, or none said when.
+pub fn reset_time(usage: &Usage, backend: &str, login_profile: Option<&str>, now: i64) -> Option<i64> {
+    let windows = usage.windows(backend, login_profile)?;
+    windows.iter().filter(|w| w.percent >= 99.5).filter_map(|w| w.resets_at).filter(|t| *t > now).max()
 }
 
 /// Agent `backend`'s accounts on one login (`login_profile`'s, or the computer's own, which a command of its own

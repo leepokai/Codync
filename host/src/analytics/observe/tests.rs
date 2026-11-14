@@ -97,6 +97,11 @@ fn settings_routines_screen_and_devices() {
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
     );
+    let (event, p) = props("cancelFollowUp", &json!({"botId": "b", "id": "f"})).expect("tracked");
+    assert_eq!((event, &p), (Event::FollowUpCancelled, &json!({"by": "user", "client": "local"})));
+    let Value::Object(p) = p else { unreachable!() };
+    assert!(answered(event, p.clone(), &json!({"ok": true})).is_some());
+    assert!(answered(event, p, &json!({"ok": true, "gone": true})).is_none(), "it had already begun");
     assert_eq!(
         props("devServerRestart", &json!({"botId": "b", "id": "s"})),
         Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))

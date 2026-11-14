@@ -2079,5 +2079,17 @@
   "Add variable": "Aggiungi variabile",
   "Import from login shell": "Importa dalla shell di login",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "Scegli le variabili che questo profilo di accesso deve usare. I loro valori vengono copiati ora e conservati su {name}.",
-  "Values are kept on {name} only and never shown again.": "I valori restano solo su {name} e non vengono più mostrati."
+  "Values are kept on {name} only and never shown again.": "I valori restano solo su {name} e non vengono più mostrati.",
+  "Follow-up in {when}: {note}": "Follow-up tra {when}: {note}",
+  "1 minute": "1 minuto",
+  "{count} minutes": "{count} minuti",
+  "about {count} hours": "circa {count} ore",
+  "about {count} days": "circa {count} giorni",
+  "Follow-up · {note}": "Follow-up · {note}",
+  "Follow-up cancelled: {note}": "Follow-up annullato: {note}",
+  "Follow-up at {time}": "Follow-up: {time}",
+  "Follow-up due now": "Follow-up a momenti",
+  "Cancel follow-up": "Annulla follow-up",
+  "Follow-up cancelled": "Follow-up annullato",
+  "A follow-up is the bot's own: x cancels it": "Un follow-up è del bot: x lo annulla"
 }

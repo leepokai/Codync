@@ -69,6 +69,8 @@ use tests::check;
 pub async fn refresh(hub: &Hub) {
     backends::refresh_sign_in().await;
     login_profiles::refresh_default().await;
+    // The Usage screens call each default login by who it signs in.
+    crate::usage::login_profiles_changed(hub);
     for h in backends::HARNESSES.iter().filter(|h| backends::signed_in(h.id) == Some(true)) {
         if let Err(error) = agent_signed_in(hub, h.id) {
             tracing::warn!(backend = h.id, error = format!("{error:#}"), "couldn't complete the sign-in cards");
@@ -191,6 +193,9 @@ pub async fn set_keys(hub: &Hub, id: &str, typed: &serde_json::Map<String, Value
 fn settled(hub: &Hub, profile: &login_profiles::Profile) -> Result<Value> {
     if profile.account.signed_in {
         signed_in(hub, &profile.account.agent, Some(&profile.account.id))?;
+    } else {
+        // Signed out, it leaves the Usage screens.
+        crate::usage::login_profiles_changed(hub);
     }
     Ok(profile.status())
 }
@@ -199,6 +204,10 @@ fn settled(hub: &Hub, profile: &login_profiles::Profile) -> Result<Value> {
 /// login complete.
 pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<()> {
     crate::agent::fallback::signed_in(hub, backend, login_profile);
+    if login_profile.is_some() {
+        // Its limits are read and listed from now on.
+        crate::usage::login_profiles_changed(hub);
+    }
     let _guard = SIGN_IN.locked();
     for card in hub.store.pending_sign_ins(backend)? {
         if card.data["connectionRequest"]["loginProfile"].as_str() != login_profile {

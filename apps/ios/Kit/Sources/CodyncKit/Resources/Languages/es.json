@@ -2079,5 +2079,17 @@
   "Add variable": "Agregar variable",
   "Import from login shell": "Importar del shell de inicio de sesión",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "Elige las variables que debe usar este perfil de inicio de sesión. Sus valores se copian ahora y se guardan en {name}.",
-  "Values are kept on {name} only and never shown again.": "Los valores se guardan solo en {name} y no se vuelven a mostrar."
+  "Values are kept on {name} only and never shown again.": "Los valores se guardan solo en {name} y no se vuelven a mostrar.",
+  "Follow-up in {when}: {note}": "Seguimiento en {when}: {note}",
+  "1 minute": "1 minuto",
+  "{count} minutes": "{count} minutos",
+  "about {count} hours": "unas {count} horas",
+  "about {count} days": "unos {count} días",
+  "Follow-up · {note}": "Seguimiento · {note}",
+  "Follow-up cancelled: {note}": "Seguimiento cancelado: {note}",
+  "Follow-up at {time}": "Seguimiento: {time}",
+  "Follow-up due now": "Seguimiento inminente",
+  "Cancel follow-up": "Cancelar seguimiento",
+  "Follow-up cancelled": "Seguimiento cancelado",
+  "A follow-up is the bot's own: x cancels it": "Un seguimiento es del propio bot: x lo cancela"
 }

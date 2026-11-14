@@ -241,6 +241,8 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
     lines.push(format!("Workspace: your default working directory is {}. {} Keep your own files and outputs there. For another project, use explicit paths or change directory for that command; don't change your bot configuration to work elsewhere. This directory is not a sandbox or a grant of access: follow the user's instructions and your permissions, and don't assume other bots' files are yours.", cfg.cwd, if crate::agent::workspace::is_managed(cfg) { "Codync allocated it for you alone." } else { "The user chose this project folder." }));
     lines.push(String::new());
     lines.push(crate::dev_servers::BRIEF.to_owned());
+    lines.push(String::new());
+    lines.push(crate::routines::BRIEF.to_owned());
     if let Some(skills) = crate::market::skills_brief(store, &cfg.skills) {
         lines.push(String::new());
         lines.push(skills);
@@ -347,6 +349,13 @@ mod tests {
         let system = render(&store(), &cfg("Reporter", ""));
         assert!(system.contains("not in Claude Code's own CLI, IDE or app"), "{system}");
         assert!(system.contains("The engine Codync runs you on is Claude Code:"), "{system}");
+    }
+
+    #[test]
+    fn instructions_send_a_later_look_to_follow_ups_not_the_engines_timers() {
+        let system = render(&store(), &cfg("Reporter", ""));
+        assert!(system.contains("set a follow-up with follow_up"), "{system}");
+        assert!(system.contains("Don't use your engine's own wake-ups, timers, loops, sleeps or cron"), "{system}");
     }
 
     #[test]

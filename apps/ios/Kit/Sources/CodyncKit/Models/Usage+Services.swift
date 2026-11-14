@@ -6,8 +6,8 @@ public extension Usage {
         return order.compactMap { id in all.first { $0.id == id } } + all.filter { !order.contains($0.id) }
     }
 
-    /// On, with nothing to show: signed out, or nothing to report.
+    /// On, with no windows on any of its logins: signed out, nothing to report, or not read yet.
     func hasNoReading(_ service: UsageService) -> Bool {
-        service.shown && !providers.contains { $0.id == service.id }
+        service.shown && !providers.contains { $0.id == service.id && $0.logins.contains { !$0.windows.isEmpty } }
     }
 }

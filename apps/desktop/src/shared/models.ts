@@ -474,14 +474,27 @@ export interface UsageWindow {
   text?: string | null
 }
 
+/** One login profile's plan windows: none while it has no reading yet. */
+export interface UsageLoginProfile {
+  id: string
+  name: string
+  windows: UsageWindow[]
+  updatedAt: number
+}
+
 export interface UsageProvider {
   id: string
   name: string
+  /** The default login's windows. */
   windows: UsageWindow[]
   source: string
   updatedAt: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
+  /** What the default login is called, when the agent has login profiles to tell it from. */
+  defaultLoginProfile?: string
+  /** The agent's signed-in account login profiles, each with its own windows. Absent when it has one login. */
+  loginProfiles?: UsageLoginProfile[]
 }
 
 /** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */

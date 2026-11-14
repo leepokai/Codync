@@ -2079,5 +2079,17 @@
   "Add variable": "変数を追加",
   "Import from login shell": "ログインシェルから読み込む",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "このログインプロファイルで使う変数を選びます。値は今コピーされ、{name} に保存されます。",
-  "Values are kept on {name} only and never shown again.": "値は {name} にのみ保存され、再表示されません。"
+  "Values are kept on {name} only and never shown again.": "値は {name} にのみ保存され、再表示されません。",
+  "Follow-up in {when}: {note}": "{when}後にフォローアップ：{note}",
+  "1 minute": "1 分",
+  "{count} minutes": "{count} 分",
+  "about {count} hours": "約 {count} 時間",
+  "about {count} days": "約 {count} 日",
+  "Follow-up · {note}": "フォローアップ · {note}",
+  "Follow-up cancelled: {note}": "フォローアップを取り消しました：{note}",
+  "Follow-up at {time}": "{time} にフォローアップ",
+  "Follow-up due now": "まもなくフォローアップ",
+  "Cancel follow-up": "フォローアップを取り消す",
+  "Follow-up cancelled": "フォローアップを取り消しました",
+  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます"
 }

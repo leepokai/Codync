@@ -62,16 +62,15 @@ test('an agent gets another login profile, a bot runs on it, and it goes once no
     await page.reload()
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
-    const picker = page.locator('.details-panel .agent-picker')
-    await picker.locator('.agent-picker-summary').click()
-    const chosen = picker.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')
+    // Its own row under the picker, shown without opening it.
+    const chosen = page.locator('.details-panel .value-row', { hasText: 'Login profile' }).locator('.choice-picker')
     await expect(chosen).toHaveText(WORK)
 
     // Add fallback offers the bot's own agent again, on a login the chain doesn't have: with the bot on the new
     // login profile, that is the default one.
     await page.locator('.details-panel').getByRole('button', { name: 'Add fallback' }).click()
     const adding = page.locator('.sheet-page', { hasText: 'Add fallback' })
-    await adding.locator('.agent-picker-summary').click()
+    await expect(adding.locator('.agent-picker-summary')).toHaveCount(0) // the choices show at once
     await adding.locator('.agent-picker-choice').first().click()
     await adding.locator('.agent-picker-item').filter({ hasText: new RegExp(`^${agent.name}$`) }).click()
     await expect(adding.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(OWN)

@@ -33,8 +33,8 @@ fn an_account_points_its_own_agent_at_its_folder_and_no_other() {
     assert_eq!(env[1], (ACCOUNT_VAR.to_owned(), "a1".to_owned()));
     // The registry id of the same agent is the same agent.
     assert_eq!(super::env(&store, "claude-acp", Some("a1")).expect("env").len(), 2);
-    assert!(super::env(&store, "claude", None).expect("own login").is_empty());
-    assert!(super::env(&store, "codex", Some("a1")).expect("a fallback's agent").is_empty());
+    assert_eq!(super::env(&store, "claude", None).expect("own login"), []);
+    assert_eq!(super::env(&store, "codex", Some("a1")).expect("a fallback's agent"), []);
     assert!(super::env(&store, "claude", Some("gone")).is_err(), "never the wrong login in silence");
     let on_account = bot("claude", Some("a1"));
     assert_eq!(of_bot(&store, "claude", &on_account), Some("a1"));

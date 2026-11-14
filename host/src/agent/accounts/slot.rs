@@ -159,7 +159,8 @@ fn claude_mcp_servers(source: &Path, target: &Path) -> Result<()> {
     write_if_changed(target, &serde_json::to_vec_pretty(&state)?)
 }
 
-#[cfg(test)]
+// Slots share by symlink, so their tests are Unix only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -178,7 +179,6 @@ mod tests {
         (root, home, slot)
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_claude_slot_shares_setup_and_sessions_but_not_the_login() {
         let (root, home, slot) = home();
@@ -217,7 +217,6 @@ mod tests {
         assert_eq!(state["oauthAccount"]["emailAddress"], "work@example.com", "the account stays signed in as itself");
     }
 
-    #[cfg(unix)]
     #[test]
     fn session_folders_the_user_lacks_are_made_so_both_sides_share_them() {
         let root = scratch();
@@ -230,7 +229,6 @@ mod tests {
         assert!(slot.join("sessions").is_symlink() && home.join("sessions").is_dir());
     }
 
-    #[cfg(unix)]
     #[test]
     fn sharing_again_keeps_what_the_slot_made_its_own() {
         let (root, home, slot) = home();
@@ -242,7 +240,6 @@ mod tests {
         assert!(slot.join("projects").is_symlink(), "an empty folder becomes the shared one");
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_slot_that_shares_all_but_the_login_links_everything_else() {
         let root = scratch();

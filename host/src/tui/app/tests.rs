@@ -11,8 +11,7 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
     app.overlays.push(Overlay::Routines(RoutineList {
         bot: "b".into(),
         items: Some(Vec::new()),
-        runs: Vec::new(),
-        cursor: 0,
+        ..Default::default()
     }));
 
     app.on_key(KeyEvent::from(KeyCode::Char('c')));
@@ -22,6 +21,80 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
     app.on_key(KeyEvent::from(KeyCode::Char('n')));
     assert!(matches!(app.overlays.last(), Some(Overlay::Routine(_))));
     assert_eq!(app.drafts["b"].text, "My unfinished message");
+}
+
+#[tokio::test]
+async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
+    use crate::tui::manage::{Reply, RoutineList};
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    fn list(app: &App) -> &RoutineList {
+        let Some(Overlay::Routines(l)) = app.overlays.last() else { panic!("the routines are open") };
+        l
+    }
+
+    let mut app = test_app();
+    app.selected = Some("b".into());
+    app.overlays.push(Overlay::Routines(RoutineList {
+        bot: "b".into(),
+        items: Some(vec![json!({"id": "r", "name": "Morning", "enabled": true, "triggers": []})]),
+        follow_ups: vec![json!({"id": "f", "botId": "b", "at": 0, "note": "Check the build"})],
+        ..Default::default()
+    }));
+
+    // On the follow-up, a routine's keys leave it and the routine alone.
+    app.on_key(KeyEvent::from(KeyCode::Char(' ')));
+    assert_eq!(list(&app).follow_ups.len(), 1);
+    assert_eq!(list(&app).items.as_ref().unwrap()[0]["enabled"], true);
+
+    // x asks the host; the row stays until it answers, and a cancel that failed leaves it there.
+    app.on_key(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(list(&app).follow_ups.len(), 1);
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Err("the computer is unreachable".into()));
+    assert_eq!(list(&app).follow_ups.len(), 1, "it still waits on the host");
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("the computer is unreachable"));
+
+    // Dropped on the host: the list it answers has the routine alone, which is picked now.
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Ok(json!({"ok": true})));
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Follow-up cancelled"));
+    let listing = json!({"routines": [{"id": "r", "name": "Morning", "enabled": true, "triggers": []}], "followUps": [], "runs": []});
+    app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
+    assert_eq!(list(&app).follow_ups.len(), 0);
+    assert_eq!(list(&app).cursor, 0, "the routine below is picked now");
+
+    // On the routine, x asks before deleting it.
+    app.on_key(KeyEvent::from(KeyCode::Char('x')));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+}
+
+#[tokio::test]
+async fn a_reload_keeps_the_cursor_on_the_row_it_picked() {
+    use crate::tui::manage::{Reply, RoutineList};
+
+    fn list(app: &mut App) -> &mut RoutineList {
+        let Some(Overlay::Routines(l)) = app.overlays.last_mut() else { panic!("the routines are open") };
+        l
+    }
+    /// The listing comes again with these follow-ups above the two routines: the id of the row then picked.
+    fn reload(app: &mut App, follow_ups: &[&str]) -> String {
+        let follow_ups: Vec<Value> = follow_ups.iter().map(|id| json!({"id": id, "note": "Check the build"})).collect();
+        let listing = json!({"routines": [{"id": "r1"}, {"id": "r2"}], "followUps": follow_ups, "runs": []});
+        app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
+        list(app).picked().map(|row| row.id().as_str().unwrap_or_default().to_owned()).unwrap_or_default()
+    }
+
+    let mut app = test_app();
+    app.overlays.push(Overlay::Routines(RoutineList { bot: "b".into(), ..Default::default() }));
+    reload(&mut app, &["f"]);
+    list(&mut app).cursor = 1;
+    // The follow-up above began: `r` or space must not act on the next routine.
+    assert_eq!(reload(&mut app, &[]), "r1");
+    // The bot set two more, listed above the routines: `x` must not cancel one of them.
+    assert_eq!(reload(&mut app, &["g", "h"]), "r1");
+    // The picked follow-up itself began: the cursor stays where it was, on a row that exists.
+    list(&mut app).cursor = 0;
+    assert_eq!(reload(&mut app, &["h"]), "h");
+    assert_eq!(reload(&mut app, &[]), "r1");
 }
 
 #[tokio::test]
@@ -198,4 +271,17 @@ async fn a_long_field_help_wraps_to_a_second_row() {
     terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
     let drawn = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>();
     assert!(drawn.contains("50K–960K"), "the sizes one can type, after a description longer than a row");
+}
+
+#[test]
+fn update_notices_name_the_side_that_needs_updating() {
+    use crate::compat::Mismatch;
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateApp { minimum: "2.46.3".into() }, "Office Mac"),
+        "Update this app: the app on this computer needs Codync 2.46.3 or newer (Office Mac requires it)."
+    );
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateHost { version: "2.20.0".into(), minimum: "2.46.3".into() }, "Office Mac"),
+        "Update Codync on Office Mac: it runs 2.20.0; that computer needs Codync 2.46.3 or newer. ^k → Check for updates."
+    );
 }

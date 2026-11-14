@@ -53,7 +53,10 @@ struct ChatRow: View {
             if entry.kind == "notice", entry.data.decision == true {
                 DecisionCard(entry: entry, answering: model.answering[entry.id]) { option in
                     model.decide(entry, option: option)
-                }.padding(.top, 12)
+                } reply: { text in
+                    model.send(text, to: entry.botId)
+                }
+                .padding(.top, 12)
             } else if let request = entry.data.connectionRequest {
                 ConnectionRequestCard(entry: entry, request: request).padding(.top, 12)
             } else if let card = entry.data.handoff {

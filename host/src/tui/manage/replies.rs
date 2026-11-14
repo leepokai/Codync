@@ -82,10 +82,13 @@ impl App {
                         if let Overlay::Routines(l) = o
                             && l.bot == bot
                         {
-                            let items = v["routines"].as_array().cloned().unwrap_or_default();
-                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
-                            l.items = Some(items);
+                            // Follow-ups come and go with no key pressed: the cursor stays on the row it picked.
+                            let picked = l.picked().map(|row| row.id().clone());
+                            l.items = Some(v["routines"].as_array().cloned().unwrap_or_default());
+                            l.follow_ups = v["followUps"].as_array().cloned().unwrap_or_default();
                             l.runs = v["runs"].as_array().cloned().unwrap_or_default();
+                            let kept = picked.and_then(|id| l.rows().position(|row| *row.id() == id));
+                            l.cursor = kept.unwrap_or(l.cursor).min(l.rows().count().saturating_sub(1));
                         }
                     }
                 } else {
@@ -109,6 +112,10 @@ impl App {
                         gear.failed = false;
                     }
                 }
+            }
+            Reply::FollowUpCancelled(bot) => {
+                self.flash("Follow-up cancelled");
+                self.reload_routines(&bot);
             }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
@@ -161,18 +168,32 @@ impl App {
                 }
                 self.call("refreshBackends", json!({}), After::Nothing);
             }
-            Reply::Setup => {
+            Reply::LoginProfiles(backend) => self.login_profiles_changed(&backend, &v),
+            Reply::LoginProfileAdded(backend) => {
+                self.login_profiles_changed(&backend, &v);
+                if let Some(id) = v["loginProfile"]["id"].as_str() {
+                    self.sign_in_login_profile(&backend, id);
+                }
+            }
+            Reply::LoginKeys(backend) => self.login_keys_saved(&backend, &v),
+            Reply::ShellVariables(login_profile) => self.shell_variables(&login_profile, Ok(&v)),
+            Reply::Setup(login_profile) => {
                 let Some(id) = v["term"].as_str() else { return };
                 let backend = match self.overlays.last() {
                     Some(Overlay::Agent(a)) => a.backend.clone(),
                     _ => String::new(),
                 };
                 let input = self.client.spawn_term(id.to_owned(), self.tx.clone());
-                self.shell = Some(Shell { id: id.to_owned(), input, backend, exited: None, out: vec![] });
+                self.shell =
+                    Some(Shell { id: id.to_owned(), input, backend, login_profile, exited: None, out: vec![] });
             }
             Reply::FieldsSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
                     self.overlays.truncate(i);
+                }
+                // A renamed login profile comes back with the agents.
+                if let Some(agents) = v["backends"].as_array() {
+                    self.backends.clone_from(agents);
                 }
                 if let Some(Overlay::Agent(a)) = self.overlays.last_mut()
                     && v.get("signedIn").is_some()
@@ -269,12 +290,15 @@ impl App {
                 }
                 _ => self.flash(&e),
             },
-            Reply::Auth(backend) => {
+            Reply::LoginKeys(_) => self.login_keys_failed(e),
+            Reply::ShellVariables(login_profile) => self.shell_variables(login_profile, Err(e)),
+            Reply::Auth(backend) | Reply::LoginProfiles(backend) | Reply::LoginProfileAdded(backend) => {
                 for o in &mut self.overlays {
                     if let Overlay::Agent(a) = o
                         && a.backend == *backend
                     {
                         a.busy = false;
+                        a.signing_in = None;
                         a.error = Some(e.clone());
                     }
                 }

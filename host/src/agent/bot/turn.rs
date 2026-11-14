@@ -1,6 +1,6 @@
 //! Starting a turn and wrapping it up: final reply, notices, the reply to a requesting bot or room, alerts and memory.
 
-use super::{Actor, Conn, Done, Instructions, NoticeStyle, Queued, Reacted, Seg};
+use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
@@ -28,9 +28,10 @@ impl Actor {
     async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
-        // Sessions whose frozen instructions predate send_file or artifacts hear about them each turn.
+        // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
+        let remind_follow_ups = !snapshot.system.contains("follow_up");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.
         for first in [self.relay.carried.take(), self.handoff.take()].into_iter().flatten() {
@@ -69,6 +70,9 @@ impl Actor {
         if remind_artifacts && own_chat {
             prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id).]");
         }
+        if remind_follow_ups && own_chat {
+            prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
+        }
         Ok(prompt)
     }
 
@@ -91,7 +95,8 @@ impl Actor {
         let turn = entry_ids.last().and_then(|id| self.hub.store.entry(id)).map_or_else(
             || {
                 run_turn.unwrap_or_else(|| {
-                    self.hub.store.max_turn(&lane.chat) + i64::from(self.source() != TurnSource::User)
+                    // A resumed turn (hidden) carries on in the one that was cut off.
+                    self.hub.store.max_turn(&lane.chat) + i64::from(!hidden && self.source() != TurnSource::User)
                 })
             },
             |e| e.turn,
@@ -141,12 +146,12 @@ impl Actor {
         }
         // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
         // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
-        // call is over). A reply turn is resumed.
+        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now.
         self.set_inflight(
             self.active_request.is_none()
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
-                && !self.active_prompt,
+                && self.host_turn.is_none_or(HostTurn::resumed),
         );
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
@@ -188,6 +193,7 @@ impl Actor {
                 None,
             );
             self.turn = None;
+            self.end_host_turn();
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
@@ -307,7 +313,7 @@ impl Actor {
                 self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
             }
             (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
-            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
+            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg),
             _ => {}
         }
         let failure = done.as_ref().err().filter(|_| !self.stop_requested);
@@ -353,8 +359,7 @@ impl Actor {
         });
         self.turn = None;
         self.reply_hops = None;
-        // A call's opening is heard on the call: no alert.
-        let opening = std::mem::take(&mut self.active_prompt);
+        let host_turn = self.end_host_turn();
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
@@ -386,11 +391,13 @@ impl Actor {
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
         let held_back = final_text.is_none() && matches!(reacted, Reacted::Refused);
+        // A turn the host started that found nothing worth saying (a follow-up's `(pass)`): the same.
+        let passed = final_text.is_none() && host_turn.is_some();
         if !self.stop_requested
             && !delegated
             && !grouped
-            && !opening
-            && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back)
+            && host_turn.is_none_or(HostTurn::alerts)
+            && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back || passed)
         {
             let body = final_text.unwrap_or_else(|| match (kind, reacted) {
                 (AlertKind::Done, Reacted::With(emoji)) => format!("Reacted {emoji} to your message"),
@@ -460,10 +467,8 @@ impl Actor {
             TurnSource::Group
         } else if self.active_request.is_some() || self.reply_hops.is_some() {
             TurnSource::Bot
-        } else if self.active_prompt {
-            TurnSource::Host
         } else {
-            TurnSource::User
+            self.host_turn.map_or(TurnSource::User, HostTurn::source)
         }
     }
 }

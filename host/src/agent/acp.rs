@@ -197,13 +197,8 @@ impl Acp {
         env: &[(String, String)],
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
         let mut process = crate::shell::exec(command).tokio();
-        process
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+        crate::shell::apply_env(process.as_std_mut(), env);
+        process.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         // So `kill` can stop everything it started.
         super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;

@@ -75,6 +75,10 @@ pub struct BotConfig {
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// The login profile it runs on (`agent::login_profiles`). None: the default one, the login this computer
+    /// already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub cwd: String,
@@ -171,6 +175,10 @@ pub struct Fallback {
     pub backend: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The login profile this step runs on (`agent::login_profiles`). None: the default one. Always on the wire,
+    /// `null` for none: an edit that leaves the key out keeps the saved one (`hub::patch`).
+    #[serde(default)]
+    pub login_profile: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]

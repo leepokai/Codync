@@ -10,8 +10,9 @@ use super::Window;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub(super) async fn collect() -> Option<Vec<Window>> {
-    let reading = read_live(start_codex, READ_TIMEOUT).await;
+/// `env` points it at a login profile's folder; empty for the default login.
+pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
+    let reading = read_live(move || start_codex(&env), READ_TIMEOUT).await;
     // A failed sign-in or an unavailable CLI must not leave an expired snapshot on screen.
     match reading {
         Ok(windows) => Some(windows.unwrap_or_default()),
@@ -22,11 +23,11 @@ pub(super) async fn collect() -> Option<Vec<Window>> {
     }
 }
 
-fn start_codex() -> Result<Option<Arc<Acp>>> {
+fn start_codex(env: &[(String, String)]) -> Result<Option<Arc<Acp>>> {
     let Some(bin) = super::command::program("codex") else { return Ok(None) };
     let home = dirs::home_dir().context("locating the host user's home directory")?;
     let command = format!("{} app-server", crate::shell::quote(&bin.to_string_lossy()));
-    let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), &[])?;
+    let (client, _events) = Acp::spawn(&command, &home.to_string_lossy(), env)?;
     Ok(Some(client))
 }
 

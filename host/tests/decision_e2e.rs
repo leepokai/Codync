@@ -269,17 +269,49 @@ async fn stopping_expires_a_choice_and_refuses_a_late_click() {
 }
 
 #[tokio::test]
-async fn a_different_user_message_expires_the_card_and_runs_only_the_new_message() {
+async fn the_users_own_words_answer_the_card_in_the_same_turn() {
     let host = Host::start().await;
     let bot = host.bot().await;
     host.call("send", json!({"botId":bot,"text":"ASK Which?|Left|Right"})).await;
     let card = host.card(&bot).await;
-    host.call("send", json!({"botId":bot,"text":"Changed direction"})).await;
-    host.wait_for(&bot, "agent", |e| e["data"]["final"] == true && e["data"]["text"] == "reply: Changed direction")
-        .await;
+    host.call("send", json!({"botId":bot,"text":"Neither, go up"})).await;
+    let answered = host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "answered").await;
+    assert_eq!(answered["data"]["selected"], "Neither, go up");
+    let done = host.wait_for(&bot, "agent", |e| e["data"]["final"] == true).await;
+    let text = done["data"]["text"].as_str().unwrap();
+    assert!(text.contains("Neither, go up") && text.contains("custom"), "the tool hands back their own words: {text}");
+    host.status(&bot, "idle").await;
+    assert_eq!(host.prompts().len(), 1, "the answer must not prompt a second full turn");
+    let said = host.wait_for(&bot, "user", |e| e["data"]["from"] == "decision").await;
+    assert_eq!(said["data"]["text"], "Neither, go up");
+    assert_eq!(said["turn"], card["turn"]);
+}
+
+#[tokio::test]
+async fn a_quoted_message_expires_the_card_and_runs_only_the_new_message() {
+    let host = Host::start().await;
+    let bot = host.bot().await;
+    host.call("send", json!({"botId":bot,"text":"ASK Which?|Left|Right"})).await;
+    let card = host.card(&bot).await;
+    let asked = host.wait_for(&bot, "user", |e| e["data"]["text"] == "ASK Which?|Left|Right").await;
+    host.call("send", json!({"botId":bot,"text":"Changed direction","replyTo":asked["id"]})).await;
     host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "expired").await;
     host.status(&bot, "idle").await;
-    assert_eq!(host.prompts().len(), 2);
+    assert_eq!(host.prompts().len(), 2, "{:?}", host.prompts());
+    assert!(host.prompts()[1].contains("Changed direction"));
+}
+
+#[tokio::test]
+async fn a_slash_command_expires_the_card_and_runs_as_its_own_message() {
+    let host = Host::start().await;
+    let bot = host.bot().await;
+    host.call("send", json!({"botId":bot,"text":"ASK Which?|Left|Right"})).await;
+    let card = host.card(&bot).await;
+    host.call("send", json!({"botId":bot,"text":"/x something"})).await;
+    host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "expired").await;
+    host.status(&bot, "idle").await;
+    assert_eq!(host.prompts().len(), 2, "{:?}", host.prompts());
+    assert!(host.prompts()[1].contains("/x something"));
 }
 
 #[tokio::test]

@@ -14,6 +14,17 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
         }
     }
     let mut cfg: BotConfig = serde_json::from_value(merged)?;
+    // A list that names each step's agent alone (a bot's own tools) sends no login profile, which isn't the user
+    // clearing it: the step keeps its saved one (the apps send `loginProfile`, `null` for none).
+    if let Some(sent) = patch.get("fallbacks").and_then(Value::as_array) {
+        let agents: Vec<&str> = sent.iter().map(|step| step["backend"].as_str().unwrap_or_default()).collect();
+        let saved = crate::agent::fallback::saved_steps(&stored.fallbacks, &agents);
+        for ((step, sent), saved) in cfg.fallbacks.iter_mut().zip(sent).zip(saved) {
+            if sent.get("loginProfile").is_none() {
+                step.login_profile = saved.and_then(|f| f.login_profile.clone());
+            }
+        }
+    }
     if cfg.name.trim().is_empty() {
         cfg.name.clone_from(&stored.name);
     }
@@ -54,6 +65,23 @@ mod tests {
         assert_eq!(section(json!({"id": "a", "name": "b"})).as_deref(), Some("Play"), "left out: kept");
         assert_eq!(section(json!({"id": "a", "section": null})), None, "null: out of its section");
         assert_eq!(section(json!({"id": "a", "section": "Work"})).as_deref(), Some("Work"));
+    }
+
+    #[test]
+    fn a_fallback_sent_without_a_login_profile_keeps_its_saved_one() {
+        let stored: BotConfig =
+            serde_json::from_value(json!({"id": "a", "name": "a", "backend": "codex", "fallbacks": [
+                {"backend": "claude", "loginProfile": "a1"}, {"backend": "claude", "loginProfile": "a2"},
+            ]}))
+            .expect("a bot config");
+        let profiles = |fallbacks| -> Vec<Option<String>> {
+            let cfg = patched(&stored, &json!({"name": "b", "fallbacks": fallbacks})).expect("a valid patch");
+            cfg.fallbacks.into_iter().map(|f| f.login_profile).collect()
+        };
+        let older = json!([{"backend": "claude"}, {"backend": "gemini"}, {"backend": "claude", "model": "opus"}]);
+        assert_eq!(profiles(older), [Some("a1".into()), None, Some("a2".into())], "a list of agents alone");
+        let cleared = json!([{"backend": "claude", "loginProfile": null}, {"backend": "claude", "loginProfile": "a1"}]);
+        assert_eq!(profiles(cleared), [None, Some("a1".into())], "a step that names its login profile, or none");
     }
 
     #[test]

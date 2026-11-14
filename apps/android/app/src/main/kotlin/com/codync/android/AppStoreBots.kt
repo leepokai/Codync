@@ -147,6 +147,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
     receiveRoutines(botId)
     done()
 }
+/** Drops a follow-up of the bot's that hasn't happened yet. */
+fun AppStore.cancelFollowUp(botId: String, id: String) = action("routines:$botId") {
+    ready().call("cancelFollowUp", body("botId" to botId, "id" to id))
+    receiveRoutines(botId)
+}
 /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
 fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
     val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }

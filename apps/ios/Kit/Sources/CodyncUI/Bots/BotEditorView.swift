@@ -107,6 +107,7 @@ struct BotSettingsForm: View {
             CardSection("Agent") {
                 fallbackBanner
                 modelPicker
+                loginProfilePicker
                 fallbackList
                 compactionPicker
             }
@@ -133,7 +134,14 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.backend)?.line, onReload: { modelReload += 1 })
+                         restLine: bot?.rest(of: draft.login)?.line, onReload: { modelReload += 1 })
+    }
+
+    /// Only when the host has login profiles (an older one sends none).
+    @ViewBuilder private var loginProfilePicker: some View {
+        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.loginProfiles != nil {
+            LoginProfileRow(backend: backend, loginProfile: $draft.loginProfile)
+        }
     }
 
     /// While the bot runs on a fallback: which, and Switch back.
@@ -199,6 +207,7 @@ struct BotSettingsForm: View {
                 }
                 if part == .all {
                     modelPicker
+                    loginProfilePicker
                     fallbackList
                     compactionPicker
                 }

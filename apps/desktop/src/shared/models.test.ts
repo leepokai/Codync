@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Entry, type SharedFile } from './models.ts'
+import { loginProfileChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
+
+test('a bot keeps its login profile through the settings draft, and picks among the signed-in ones', () => {
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a2' })).loginProfile, 'a2')
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude' })).loginProfile, null, 'sent as null, so the host clears it')
+  const loginProfiles = [{ id: 'a1', kind: 'account' as const, name: 'ada@example.com', signedIn: true }, { id: 'a2', kind: 'apiKey' as const, name: null, signedIn: false }]
+  const claude = { id: 'claude', loginProfiles } as Backend
+  assert.deepEqual(loginProfileChoices(claude, null).map((a) => a.id), ['a1'])
+  assert.deepEqual(loginProfileChoices(claude, 'a2').map((a) => a.id), ['a1', 'a2'], 'its own stays listed')
+  assert.deepEqual(loginProfileChoices({ id: 'gemini' } as Backend, null), [])
+})
 
 test('a bot keeps its Fast mode through the settings draft', () => {
   const bot = normalizeBot({ id: 'b', backend: 'codex', fastMode: true })

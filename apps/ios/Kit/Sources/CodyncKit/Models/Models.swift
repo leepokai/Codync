@@ -122,6 +122,59 @@ public struct UsageProvider: Codable, Hashable, Sendable, Identifiable {
     public var updatedAt: Int64
     /// The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it.
     public var registry: String? = nil
+    /// What the default login is called, when the host knows. Only sent beside `loginProfiles`.
+    public var defaultLoginProfile: String? = nil
+    /// The agent's other logins, each with its own windows. Empty for an agent with one login: `windows` is then all there is.
+    public var loginProfiles: [UsageLoginProfile] = []
+}
+
+public extension UsageProvider {
+    /// In an extension, so the memberwise initializer stays. A host or a saved widget snapshot older than
+    /// login profiles names none.
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        windows = try values.decode([UsageWindow].self, forKey: .windows)
+        source = try values.decode(String.self, forKey: .source)
+        updatedAt = try values.decode(Int64.self, forKey: .updatedAt)
+        registry = try values.decodeIfPresent(String.self, forKey: .registry)
+        defaultLoginProfile = try values.decodeIfPresent(String.self, forKey: .defaultLoginProfile)
+        loginProfiles = try values.decodeIfPresent([UsageLoginProfile].self, forKey: .loginProfiles) ?? []
+    }
+
+    /// The agent's logins, the default one first. A single entry for an agent with one login.
+    var logins: [UsageLogin] {
+        [UsageLogin(id: nil, name: defaultLoginProfile, windows: windows)]
+            + loginProfiles.map { UsageLogin(id: $0.id, name: $0.name, windows: $0.windows) }
+    }
+
+    /// The login closest to a plan limit, which is what a compact view shows: the default login when none has a
+    /// limit, or on a tie.
+    var tightestLogin: UsageLogin {
+        let all = logins
+        return all.max { ($0.tightest?.percent ?? -1) < ($1.tightest?.percent ?? -1) } ?? all[0]
+    }
+}
+
+/// One of an agent's logins with what it has used. The default login has no id, and no name unless the host knows it.
+public struct UsageLogin: Identifiable, Hashable, Sendable {
+    public var id: String?
+    public var name: String?
+    public var windows: [UsageWindow]
+
+    /// Plan windows. A note (today's tokens, a dollar balance) is not a limit.
+    public var limits: [UsageWindow] { windows.filter { $0.text == nil } }
+
+    public var tightest: UsageWindow? { limits.max { $0.percent < $1.percent } }
+}
+
+/// Another login of an agent (a signed-in account) and what it has used. No windows: no reading yet.
+public struct UsageLoginProfile: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var windows: [UsageWindow]
+    public var updatedAt: Int64
 }
 
 public struct UsageWindow: Codable, Hashable, Sendable, Identifiable {
@@ -187,6 +240,18 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     /// Only for an agent that runs on Node.js, on a computer without its own: Codync's copy
     /// is `missing` or `added`.
     public var node: String?
+    /// Its login profiles beside the default one (nil from older hosts, which hides the feature).
+    public var loginProfiles: [LoginProfile]?
+    /// The login the computer already has, beside `loginProfiles` (nil from older hosts).
+    public var defaultLoginProfile: DefaultLoginProfile?
+    /// How an account login profile of it signs in: `terminal` (its CLI), or `browser` (the agent itself, on the
+    /// computer). nil: the agent keeps one sign-in of its own, so only API key profiles can be added to it.
+    public var loginProfileSignIn: String?
+    /// The variable names its API key usually goes in, to start a key form with.
+    public var loginKeys: [String]?
+
+    /// An account login profile's agent signs it in itself, in a browser on the computer: no terminal opens.
+    public var loginProfilesSignInInBrowser: Bool { loginProfileSignIn == "browser" }
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }
@@ -240,6 +305,8 @@ public struct Hello: Codable, Sendable {
     public var hostId: String
     public var name: String
     public var version: String
+    /// The host's store schema, which the mirror's rows were synced under (missing from older hosts).
+    public var schema: Int?
     public var os: String
     /// laptop · macmini · macstudio · imac · macpro · desktop · linux (missing from older hosts).
     public var device: String?
@@ -324,6 +391,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var avatarShape: String
     public var backend: String
     public var command: String?
+    /// The login profile it runs on. Sent as null when nil (`BotUpdate`): the login the computer already has.
+    public var loginProfile: String?
     public var cwd: String
     public var permission: String
     /// Sent as null when nil (`BotUpdate`): the agent's default.
@@ -372,6 +441,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         avatarShape = bot.avatarShape
         backend = bot.backend
         command = bot.command
+        loginProfile = bot.loginProfile
         cwd = bot.managedWorkspace ? "" : bot.cwd
         permission = bot.permission
         mode = bot.mode
@@ -401,7 +471,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
             if self[keyPath: field] == base[keyPath: field] { draft[keyPath: field] = fresh[keyPath: field] }
         }
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
-        follow(\.command); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
+        follow(\.command); follow(\.loginProfile); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)

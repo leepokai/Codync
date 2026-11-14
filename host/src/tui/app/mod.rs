@@ -13,6 +13,7 @@ mod forms;
 mod group_form;
 mod input;
 mod kofi;
+mod login_profiles;
 mod model;
 mod navigate;
 mod new_bot;
@@ -447,10 +448,10 @@ pub fn mismatch_text(m: &crate::compat::Mismatch, host: &str) -> String {
     let host = if host.is_empty() { "the computer" } else { host };
     match m {
         crate::compat::Mismatch::UpdateApp { minimum } => {
-            format!("Update this app: {host} needs Codync {minimum} or newer here.")
+            format!("Update this app: the app on this computer needs Codync {minimum} or newer ({host} requires it).")
         }
         crate::compat::Mismatch::UpdateHost { version, minimum } => format!(
-            "Update Codync on {host}: it runs {version}, this app needs {minimum} or newer. ^k → Check for updates."
+            "Update Codync on {host}: it runs {version}; that computer needs Codync {minimum} or newer. ^k → Check for updates."
         ),
     }
 }
@@ -519,6 +520,17 @@ pub fn tilde(path: &str, home: &str) -> String {
 pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
+}
+
+/// What `draw` leaves in `area`, line by line.
+#[cfg(test)]
+pub(in crate::tui) fn screen(
+    area: ratatui::layout::Rect,
+    draw: impl FnOnce(&mut ratatui::buffer::Buffer),
+) -> Vec<String> {
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    draw(&mut buf);
+    (0..area.height).map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
 }
 
 #[cfg(test)]

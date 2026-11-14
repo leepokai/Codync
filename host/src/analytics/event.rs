@@ -64,6 +64,14 @@ pub enum Event {
     RoutineDeleted,
     RoutineRun,
     RoutineRetried,
+    /// A bot's `save_progress` ended (`outcome`).
+    RoutineProgressSaved,
+    /// A bot's `follow_up` ended (`outcome`).
+    FollowUpSet,
+    /// A follow-up came due and its bot took it.
+    FollowUpFired,
+    /// A follow-up was dropped before it began (`by`).
+    FollowUpCancelled,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -100,6 +108,9 @@ pub enum Event {
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
+    /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
+    /// its variables.
+    LoginProfileChanged,
     SettingChanged,
     /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.
     ReachAccountAnswered,
@@ -197,6 +208,10 @@ impl Event {
             Self::RoutineDeleted => "routine_deleted",
             Self::RoutineRun => "routine_run",
             Self::RoutineRetried => "routine_retried",
+            Self::RoutineProgressSaved => "routine_progress_saved",
+            Self::FollowUpSet => "follow_up_set",
+            Self::FollowUpFired => "follow_up_fired",
+            Self::FollowUpCancelled => "follow_up_cancelled",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",
@@ -223,6 +238,7 @@ impl Event {
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
+            Self::LoginProfileChanged => "login_profile_changed",
             Self::SettingChanged => "setting_changed",
             Self::ReachAccountAnswered => "reach_account_answered",
             Self::ContinuedWithoutAccount => "continued_without_account",

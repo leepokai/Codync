@@ -103,7 +103,14 @@ import kotlin.math.roundToInt
             ProviderMascot(provider, 20.dp)
             Text(provider.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        for (window in provider.windows) key(window.id) { WindowLimit(window, tint) }
+        val logins = provider.logins
+        for (login in logins) key(login.id.orEmpty()) {
+            if (logins.size > 1) {
+                Text(login.name ?: tr("Default login profile"), style = Type.footnote, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (login.windows.isEmpty()) Text(tr("No reading yet"), style = Type.subheadline, color = Palette.secondary, maxLines = 1)
+            }
+            for (window in login.windows) key(window.id) { WindowLimit(window, tint) }
+        }
     }
 }
 

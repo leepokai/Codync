@@ -6,6 +6,8 @@
 #[allow(dead_code)]
 mod common;
 
+#[path = "routines_e2e/follow_ups.rs"]
+mod follow_ups;
 #[path = "routines_e2e/timeout.rs"]
 mod timeout;
 

@@ -67,6 +67,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case conversationFindOpened
     /// A search in the find bar settled: whether it found anything, never the text.
     case conversationFindSearched(found: Bool)
+    /// Something from another app's share sheet handed to a bot, or why it wasn't; never names or content.
+    case shareSent(ShareSent)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -93,6 +95,25 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum ImageError: String, Sendable { case unavailable, convert, clipboard, transfer }
     public enum DevServerUse: String, Sendable { case open, copy }
     public enum VoiceNoteFailure: String, Sendable { case load, playback }
+    /// One share: how it ended, how many files went, whether it had text, and whether its bot came from Recent.
+    /// Codable: the share extension can't send analytics, so it leaves this for the app (`Analytics.queueShare`).
+    public struct ShareSent: Codable, Equatable, Sendable {
+        public enum Outcome: String, Codable, Sendable { case sent, queued, failed }
+        public enum Failure: String, Codable, Sendable { case offline, unreachable, unauthorized, read, upload, send }
+        public var outcome: Outcome
+        public var error: Failure?
+        public var files: Int
+        public var text: Bool
+        public var recent: Bool
+
+        public init(_ outcome: Outcome, error: Failure? = nil, files: Int, text: Bool, recent: Bool) {
+            self.outcome = outcome
+            self.error = error
+            self.files = files
+            self.text = text
+            self.recent = recent
+        }
+    }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
     public enum VoiceStuck: String, Sendable { case none, connecting, reconnecting, speaking }
     public enum VoiceFailure: String, Sendable { case none, microphone, connection, provider }
@@ -248,6 +269,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceNotePlayed: "voice_note_played"
         case .conversationFindOpened: "conversation_find_opened"
         case .conversationFindSearched: "conversation_find_searched"
+        case .shareSent: "share_sent"
         }
     }
 
@@ -303,6 +325,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
             guard let failure else { return ["outcome": .string("played")] }
             return ["outcome": .string("failed"), "error": .string(failure.rawValue)]
         case let .screenViewed(screen), let .remoteScreenPaused(screen): return ["screen": .string(screen.rawValue)]
+        case let .shareSent(share):
+            var p: [String: Analytics.Value] = ["outcome": .string(share.outcome.rawValue), "files": .int(share.files),
+                                                "text": .bool(share.text), "recent": .bool(share.recent)]
+            p["error"] = share.error.map { .string($0.rawValue) }
+            return p
         }
     }
 }

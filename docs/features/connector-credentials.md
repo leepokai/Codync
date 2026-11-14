@@ -115,7 +115,8 @@ it signed out. When a [fallback agent](agent-fallback.md) takes the turn over, o
 an agent another bot found signed out, the card comes anyway, holding no message (the fallback
 answers it). A bot keeps one such card in each chat; messages that fail later join it. The
 card's Sign in opens the agent's sign-in sheet from Extensions. As soon as a sign-in
-check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, connectorRequestFinish on the
+check (`agentAuth`, `agentAuthenticate`, `setAgentEnv`, `setLoginProfileKeys` for a card on an API key
+[login profile](login-profiles.md), connectorRequestFinish on the
 card, a new bot's check, or the re-check at host start and `refreshBackends`) finds
 the agent signed in, or a turn of the agent finishes (signed in outside Codync),
 every pending card for it completes, its messages go out again and bots that moved on to a

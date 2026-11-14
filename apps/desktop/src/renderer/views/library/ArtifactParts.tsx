@@ -57,7 +57,11 @@ export function TitleField({ initial, className, done }: { initial: string; clas
       onBlur={() => finish(draft.trim())}
       onKeyDown={(e) => {
         if (e.key === 'Enter') finish(draft.trim())
-        if (e.key === 'Escape') finish(null)
+        if (e.key === 'Escape') {
+          // Escape cancels the rename, not the artifact behind it.
+          e.stopPropagation()
+          finish(null)
+        }
       }}
     />
   )

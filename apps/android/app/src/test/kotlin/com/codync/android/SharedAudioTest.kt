@@ -59,6 +59,25 @@ class SharedAudioTest {
         assertEquals(AudioPhase.Loading, audio.phase)
     }
 
+    @Test fun `a card released while its sound prepares releases it without playing`() = runBlocking {
+        val opening = CompletableDeferred<Unit>()
+        val prepared = CompletableDeferred<Sound>()
+        val audio = SharedAudio(load = { File("note.m4a") }, open = { _, _ ->
+            opening.complete(Unit)
+            prepared.await()
+        })
+        val tap = launch { audio.toggle() }
+        opening.await()
+        audio.release()
+        prepared.complete(speaker)
+        tap.join()
+        assertEquals(listOf("release"), speaker.log)
+        assertFalse(speaker.playing)
+        assertEquals(0.0, audio.duration, 0.0)
+        audio.release()
+        assertEquals(listOf("release"), speaker.log)
+    }
+
     @Test fun `a sound that fails to play fails the card and the next tap loads again`() = runBlocking {
         val tap = launch { audio.toggle() }
         yield()

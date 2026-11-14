@@ -726,8 +726,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "codync-accounts"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codync-host"
-version = "2.46.1"
+version = "2.47.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -736,6 +745,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "codync-accounts",
  "codync-mem",
  "codync-network",
  "croner",

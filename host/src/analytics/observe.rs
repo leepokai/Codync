@@ -123,6 +123,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
+        "cancelFollowUp" => {
+            p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
+            Event::FollowUpCancelled
+        }
         "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
             let action = method.trim_start_matches("devServer").to_ascii_lowercase();
             p.insert("action".into(), action.into());
@@ -170,12 +175,43 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
-        "agentSetup" | "agentAuthenticate" => {
+        "agentSetup" | "agentAuthenticate" | "agentAuth" => {
+            // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
+            let on_profile = b["loginProfile"].is_string();
+            if method == "agentAuth" && !on_profile {
+                return None;
+            }
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
+            if on_profile {
+                p.insert("loginProfile".into(), true.into());
+            }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
+        }
+        // Never the profile's name or id.
+        "addLoginProfile" | "renameLoginProfile" | "removeLoginProfile" => {
+            let action = method.strip_suffix("LoginProfile").unwrap_or(method);
+            p.insert("action".into(), action.into());
+            if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
+                p.insert("agent".into(), agent.into());
+            }
+            // A kind the host doesn't know fails the call, and isn't reported.
+            if method == "addLoginProfile"
+                && let Ok(kind) = crate::agent::login_profiles::Kind::parse(&b["kind"])
+            {
+                p.insert("kind".into(), serde_json::json!(kind));
+            }
+            Event::LoginProfileChanged
+        }
+        // An API key profile's keys: how many were typed and how many came from the login shell, never their
+        // names or values.
+        "setLoginProfileKeys" => {
+            p.insert("action".into(), "keys".into());
+            p.insert("typed".into(), b["vars"].as_object().map_or(0, Map::len).into());
+            p.insert("imported".into(), b["import"].as_array().map_or(0, Vec::len).into());
+            Event::LoginProfileChanged
         }
         // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
@@ -236,7 +272,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, and whether a connector edit needed a check. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a follow-up was
+/// still there to cancel. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -257,6 +294,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
         }
+        // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
+        Event::FollowUpCancelled if answer["gone"] == true => return None,
+        // A login profile's check that still finds it signed out is no sign-in.
+        Event::AgentSignedIn if p.contains_key("loginProfile") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -275,6 +316,15 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
+        }
+        // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
+        // one sign-in.
+        Event::LoginProfileChanged => {
+            let category =
+                error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
         }
         Event::ConnectorUpdated => {
             let category =

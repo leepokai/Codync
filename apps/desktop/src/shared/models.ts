@@ -19,6 +19,8 @@ export interface Bot {
   avatarShape: string
   backend: string
   command?: string | null
+  /** The login profile it runs on; absent for the login the computer already has. */
+  loginProfile?: string | null
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
@@ -104,6 +106,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     avatarShape: raw.avatarShape ?? 'blob',
     backend: raw.backend ?? 'custom',
     command: raw.command ?? null,
+    loginProfile: raw.loginProfile ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'ask',
@@ -156,6 +159,8 @@ export interface Fallback {
   backend: string
   /** A custom command, only from the bot itself (the apps don't offer one). */
   command?: string
+  /** The login profile the step runs on; absent for the login the computer already has. */
+  loginProfile?: string | null
   model: string | null
   modelOptions: Record<string, string>
 }
@@ -167,6 +172,8 @@ export type FallbackReason = string
 export interface AgentStep {
   step: number
   agent: string
+  /** The login profile the step runs on; absent for the computer's own login. */
+  loginProfile?: string | null
   model: string | null
   since: number
   reason: FallbackReason | null
@@ -175,6 +182,8 @@ export interface AgentStep {
 /** An agent that can't answer until `until`. */
 export interface Resting {
   agent: string
+  /** The login profile that rests; absent for the computer's own login. */
+  loginProfile?: string | null
   until: number
   reason: FallbackReason
 }
@@ -465,14 +474,27 @@ export interface UsageWindow {
   text?: string | null
 }
 
+/** One login profile's plan windows: none while it has no reading yet. */
+export interface UsageLoginProfile {
+  id: string
+  name: string
+  windows: UsageWindow[]
+  updatedAt: number
+}
+
 export interface UsageProvider {
   id: string
   name: string
+  /** The default login's windows. */
   windows: UsageWindow[]
   source: string
   updatedAt: number
   /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
   registry?: string
+  /** What the default login is called, when the agent has login profiles to tell it from. */
+  defaultLoginProfile?: string
+  /** The agent's signed-in account login profiles, each with its own windows. Absent when it has one login. */
+  loginProfiles?: UsageLoginProfile[]
 }
 
 /** An agent the Usage screen can show or hide. The host keeps the choice, so every app follows it. */
@@ -504,7 +526,33 @@ export interface Backend {
   canInstall?: boolean
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Its login profiles beside the default one (absent from older hosts, which hide the feature). */
+  loginProfiles?: LoginProfile[]
+  /** The login the computer already has, beside `loginProfiles`: the name the user gave it and who it signs in, when known. */
+  defaultLoginProfile?: { name: string | null; label?: string | null; email?: string | null }
+  /** How an account profile of it signs in: its CLI in a terminal, or the agent itself in a browser on the computer. Null: it keeps one sign-in of its own, so it only takes API key profiles. */
+  loginProfileSignIn?: 'terminal' | 'browser' | null
+  /** The variable names its API key usually goes in, which the key form starts with. */
+  loginKeys?: string[]
 }
+
+/** One more login to an agent, beside the one the computer already has: the agent's own sign-in in a folder of the profile's (`account`), or named environment variables (`apiKey`). */
+export interface LoginProfile {
+  id: string
+  kind: 'account' | 'apiKey'
+  /** The user's name for it, else who it signs in once it has. */
+  name: string | null
+  /** The name the user gave it. */
+  label?: string | null
+  email?: string | null
+  signedIn: boolean
+  /** An API key profile's variable names; their values never leave the host. */
+  vars?: string[]
+}
+
+/** The login profiles a bot on `backend` can pick. One that isn't signed in can't run a bot; `picked`, the bot's own, stays listed so its row shows it. */
+export const loginProfileChoices = (backend: Backend, picked: string | null): LoginProfile[] =>
+  (backend.loginProfiles ?? []).filter((p) => p.signedIn || p.id === picked)
 
 export interface ScreenDisplay {
   id: number
@@ -553,6 +601,8 @@ export interface Hello {
   hostId: string
   name: string
   version: string
+  /** The host's store schema, which the mirror's rows were synced under (absent from older hosts). */
+  schema?: number
   os: string
   device?: string
   home?: string
@@ -703,6 +753,8 @@ export interface BotDraft {
   avatarShape: string
   backend: string
   command?: string | null
+  /** Null for the login the computer already has: sent as is, so the host clears it. */
+  loginProfile?: string | null
   cwd: string
   permission: string
   /** Null for the agent's default: sent as is, so the host clears it. */
@@ -738,6 +790,7 @@ export function draftOf(bot: Bot): BotDraft {
     avatarShape: bot.avatarShape,
     backend: bot.backend,
     command: bot.command ?? null,
+    loginProfile: bot.loginProfile ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
     mode: bot.mode,

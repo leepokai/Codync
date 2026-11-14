@@ -365,6 +365,7 @@ pub(super) mod tests {
             avatar_shape: "blob".into(),
             backend: "claude".into(),
             command: None,
+            login_profile: None,
             cwd: cwd.into(),
             permission: Permission::Ask,
             mode: None,

@@ -79,11 +79,12 @@ impl Actor {
         if let Some(life) = self.hub.store.kv_get(&self.cache_life_key()).and_then(|v| serde_json::from_str(&v).ok()) {
             return life;
         }
-        let api_key = crate::agent::auth::saved_env(&self.hub.store, &self.cfg.backend)
-            .unwrap_or_default()
-            .iter()
-            .any(|k| k == "ANTHROPIC_API_KEY")
-            || std::env::var_os("ANTHROPIC_API_KEY").is_some();
+        // The key its process starts with (saved for the agent, or its login profile's), or the host's own it
+        // inherits: on the default login only, a login profile's process starts without that one.
+        let (store, backend) = (&self.hub.store, self.cfg.backend.as_str());
+        let profile = crate::agent::login_profiles::of_bot(store, backend, &self.cfg);
+        let api_key = crate::agent::auth::launch_sets(store, backend, profile, "ANTHROPIC_API_KEY")
+            || (profile.is_none() && std::env::var_os("ANTHROPIC_API_KEY").is_some());
         if self.adapter() == Adapter::Claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
     }
 

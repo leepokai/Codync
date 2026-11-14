@@ -24,6 +24,7 @@ mod decisions;
 mod fallback;
 mod fast_mode;
 mod files;
+mod inflight;
 mod launch;
 mod lifecycle;
 mod modes;
@@ -36,8 +37,9 @@ mod turn;
 mod updates;
 
 pub use cmd::Cmd;
-use cmd::Queued;
+use cmd::{HostTurn, Queued};
 pub use compaction::{context_window, offers_threshold};
+use inflight::Inflight;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
@@ -76,10 +78,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let cfg = fallback::resume_step(&hub, &base);
     // A turn the previous host process never finished (crash, update, restart), unless
     // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
-    let interrupted = hub.store.kv_get(&inflight_key(&cfg.id)).and_then(|v| {
-        let started: i64 = v.parse().ok()?;
-        (now_ms() - started < STALE_RESUME_MS).then(|| Lane::main(&cfg.id))
-    });
+    let interrupted = Inflight::load(&hub.store, &cfg.id)
+        .filter(|turn| now_ms() - turn.started < STALE_RESUME_MS)
+        .map(|_| Lane::main(&cfg.id));
     let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
     let lane = Lane::main(&cfg.id);
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
@@ -119,7 +120,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         held_done: None,
         active_request: None,
         reply_hops: None,
-        active_prompt: false,
+        host_turn: None,
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
@@ -210,6 +211,8 @@ pub(crate) struct Conn {
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,
+    /// The login profile the process runs on, which isn't removed meanwhile.
+    on_profile: Option<crate::agent::login_profiles::Running>,
 }
 
 impl Conn {
@@ -306,8 +309,8 @@ struct Actor {
     active_request: Option<crate::chat::team::BotRequest>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
-    /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`).
-    active_prompt: bool,
+    /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
+    host_turn: Option<HostTurn>,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
@@ -491,10 +494,6 @@ const CANCEL_GRACE: Duration = Duration::from_secs(15);
 
 /// An interrupted turn older than this isn't resumed.
 const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
-
-fn inflight_key(bot_id: &str) -> String {
-    format!("turn.inflight.{bot_id}")
-}
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {

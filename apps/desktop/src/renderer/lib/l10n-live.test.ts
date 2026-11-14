@@ -24,3 +24,15 @@ test('static labels stay English data and translate when shown, not when the mod
   assert.equal(trNow(daily!.label), 'Daily')
   assert.equal(runLabel({ id: 'r', routineId: 'x', botId: 'b', status: 'running', createdAt: 0, notBefore: null } as RoutineRun), 'Running')
 })
+
+test('the update card names its action in the saved language', () => {
+  // The button carries data (`Update now`), translated where the card draws it; the phone apps read
+  // these same catalog files, so one entry reaches all three.
+  lang = 'zh-Hans'
+  assert.equal(trNow('Update now'), '立即更新')
+  assert.equal(trNow('Update Codync'), '更新 Codync')
+  lang = 'ru'
+  assert.equal(trNow('Update now'), 'Обновить сейчас')
+  lang = 'en'
+  assert.equal(trNow('Update now'), 'Update now')
+})

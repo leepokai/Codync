@@ -233,8 +233,8 @@ Gemini realtime, includes the public-search exception in its instructions, and r
 engines append `googleSearch: {}` alongside their existing function declarations only when the host confirms it.
 Older clients omit the option and keep search off; an older host ignores the request and omits the field, so Gemini
 voice keeps working without search. A provider reconnect obtains a fresh acknowledged configuration. Transcription
-isn't ordered with Google's other messages, so a piece that arrives after `turnComplete` stays with its answer; the
-next model turn starts a new one. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
+isn't ordered with Google's other messages, so a piece that arrives after `turnComplete` stays with its answer until
+the user is heard or the next answer's model content arrives, which starts a new one. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
 clients display its original suggestions next to that answer's transcription under the call bar. The HTML is held
 only in the engine's memory and cleared on replacement or end; it never enters chat, memory, analytics or disk.
 Analytics only count it: each engine's `voice_call_quality` adds `google_search` and `searches` (answers with

@@ -73,4 +73,17 @@ extension CallRecoveryTests {
         #expect(turn.receive(["outputTranscription": ["text": "Late piece."]]) == CallSearchResult(html: html, text: "Late piece."))
         #expect(turn.receive(["modelTurn": [:], "outputTranscription": ["text": "Next turn."]]) == nil)
     }
+
+    @Test func theUserBeingHeardStartsTheNextTurnSoItsEarlyTranscriptionStays() {
+        var turn = CallSearchTurn()
+        _ = turn.receive(["modelTurn": [:], "groundingMetadata": ["searchEntryPoint": ["renderedContent": "<p>First</p>"]],
+                          "outputTranscription": ["text": "A."], "turnComplete": true])
+        #expect(turn.receive(["inputTranscription": ["text": "And tomorrow?"]]) == nil)
+        #expect(turn.receive(["outputTranscription": ["text": "Tomorrow "]]) == nil)
+        _ = turn.receive(["modelTurn": [:]])
+        let result = turn.receive(["groundingMetadata": ["searchEntryPoint": ["renderedContent": "<p>Second</p>"]],
+                                   "outputTranscription": ["text": "is sunny."]])
+        #expect(result == CallSearchResult(html: "<p>Second</p>", text: "Tomorrow is sunny."))
+        #expect(turn.answers == 2)
+    }
 }

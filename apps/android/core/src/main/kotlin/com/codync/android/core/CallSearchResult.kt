@@ -6,8 +6,9 @@ import kotlinx.serialization.json.*
 data class CallSearchResult(val html: String, val text: String)
 
 /** Joins transcription and grounding metadata for the same model turn. Transcription is not ordered with the other
- * server messages, so a piece that arrives after `turnComplete` still belongs to that turn: only the next turn's
- * model content starts a new one. */
+ * server messages, so after `turnComplete` the voice's words alone can't say which answer they belong to: the next
+ * turn starts when the user is heard or the next answer's model content arrives, whichever comes first. Words that
+ * arrive before either stay with the answer that just finished. */
 class CallSearchTurn {
     var result: CallSearchResult? = null
         private set
@@ -22,7 +23,8 @@ class CallSearchTurn {
         val text = (content["outputTranscription"] as? JsonObject)?.text("text")
         val metadata = content["groundingMetadata"] as? JsonObject
         val html = (metadata?.get("searchEntryPoint") as? JsonObject)?.text("renderedContent")
-        val next = complete && "modelTurn" in content
+        val heard = (content["inputTranscription"] as? JsonObject)?.text("text") != null
+        val next = complete && ("modelTurn" in content || heard)
         if (next) { this.text = ""; this.html = null; complete = false }
         if (text != null) this.text += text
         if (!html.isNullOrBlank()) {

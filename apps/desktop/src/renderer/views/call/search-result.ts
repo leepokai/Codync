@@ -2,8 +2,9 @@
 export interface SearchResult { html: string; text: string }
 
 /** Joins transcription and grounding metadata for the same model turn. Transcription is not ordered with the other
- * server messages, so a piece that arrives after `turnComplete` still belongs to that turn: only the next turn's
- * model content starts a new one. */
+ * server messages, so after `turnComplete` the voice's words alone can't say which answer they belong to: the next
+ * turn starts when the user is heard or the next answer's model content arrives, whichever comes first. Words that
+ * arrive before either stay with the answer that just finished. */
 export class SearchTurn {
   result: SearchResult | null = null
   /** Turns that came with search suggestions. */
@@ -15,7 +16,7 @@ export class SearchTurn {
   receive(content: Record<string, any>): SearchResult | null {
     const text = content.outputTranscription?.text
     const html = content.groundingMetadata?.searchEntryPoint?.renderedContent
-    const next = this.complete && content.modelTurn != null
+    const next = this.complete && (content.modelTurn != null || typeof content.inputTranscription?.text === 'string')
     if (next) { this.text = ''; this.html = null; this.complete = false }
     if (typeof text === 'string') this.text += text
     if (typeof html === 'string' && html.trim()) {

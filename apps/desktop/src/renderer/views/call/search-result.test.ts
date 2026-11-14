@@ -22,6 +22,19 @@ test('transcription that arrives after turnComplete stays with its turn and keep
   assert.equal(turn.receive({ ...audio, outputTranscription: { text: 'Next turn.' } }), null)
 })
 
+test('the user being heard starts the next turn, so its transcription before its audio stays with it', () => {
+  const turn = new SearchTurn()
+  const first = '<p>First suggestions</p>'
+  const second = '<p>Second suggestions</p>'
+  turn.receive({ ...audio, groundingMetadata: { searchEntryPoint: { renderedContent: first } }, outputTranscription: { text: 'A.' }, turnComplete: true })
+  assert.deepEqual(turn.receive({ inputTranscription: { text: 'And tomorrow?' } }), null)
+  assert.equal(turn.receive({ outputTranscription: { text: 'Tomorrow ' } }), null)
+  turn.receive(audio)
+  assert.deepEqual(turn.receive({ groundingMetadata: { searchEntryPoint: { renderedContent: second } }, outputTranscription: { text: 'is sunny.' } }),
+    { html: second, text: 'Tomorrow is sunny.' })
+  assert.equal(turn.answers, 2)
+})
+
 test('search links can only open explicit HTTP or HTTPS destinations', () => {
   for (const value of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', '/relative', 'codync://pair', '']) assert.equal(searchLink(value), null)
   assert.equal(searchLink('https://www.google.com/search?q=weather'), 'https://www.google.com/search?q=weather')

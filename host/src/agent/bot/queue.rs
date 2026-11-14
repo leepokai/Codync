@@ -1,9 +1,6 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{
-    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, INFLIGHT_FOLLOW_UP, Queued, RESUME_PROMPT, RoutineCompletion,
-    inflight_key,
-};
+use super::{Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, Queued, RESUME_PROMPT, RoutineCompletion};
 use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
@@ -515,8 +512,9 @@ impl Actor {
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
     pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
-        let mark = self.hub.store.kv_get(&inflight_key(&self.cfg.id)).unwrap_or_default();
-        let follow_up = self.active_routine.is_none() && mark.ends_with(INFLIGHT_FOLLOW_UP);
+        let follow_up = Inflight::load(&self.hub.store, &self.cfg.id)
+            .and_then(|turn| turn.follow_up)
+            .filter(|_| self.active_routine.is_none());
         self.set_inflight(false);
         let slot = self.slot();
         if self.session_for(slot.as_deref()).is_none() {
@@ -531,9 +529,11 @@ impl Actor {
             format!(
                 "{RESUME_PROMPT} This is still a scheduled routine run. If its instruction permits silence and there is nothing to report, return exactly (pass)."
             )
-        } else if follow_up {
-            // Still the follow-up's turn: a `(pass)` stays silent and alerts no one.
+        } else if let Some(chain) = follow_up {
+            // Still the follow-up's turn: a `(pass)` stays silent and alerts no one, and a follow-up it sets
+            // continues the chain it was in.
             self.host_turn = Some(HostTurn::FollowUp);
+            self.hub.routines.resume_follow_up(&self.cfg.id, chain);
             format!(
                 "{RESUME_PROMPT} This is still the follow-up you set for yourself. If there is nothing worth telling the user yet, return exactly (pass)."
             )
@@ -546,14 +546,14 @@ impl Actor {
     }
 
     /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a
-    /// follow-up's turn is marked as one.
+    /// follow-up's turn is marked as one, with its place in its chain.
     pub(super) fn set_inflight(&self, on: bool) {
-        let value = match (on, self.host_turn) {
-            (false, _) => String::new(),
-            (true, Some(HostTurn::FollowUp)) => format!("{}{INFLIGHT_FOLLOW_UP}", now_ms()),
-            (true, _) => now_ms().to_string(),
-        };
-        if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
+        let turn = on.then(|| {
+            let follow_up = (self.host_turn == Some(HostTurn::FollowUp))
+                .then(|| self.hub.routines.follow_up_chain(&self.cfg.id).unwrap_or(0));
+            Inflight { started: now_ms(), follow_up }
+        });
+        if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
         }
     }

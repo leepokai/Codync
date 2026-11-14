@@ -24,6 +24,7 @@ mod decisions;
 mod fallback;
 mod fast_mode;
 mod files;
+mod inflight;
 mod launch;
 mod lifecycle;
 mod modes;
@@ -38,6 +39,7 @@ mod updates;
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
 pub use compaction::{context_window, offers_threshold};
+use inflight::Inflight;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
@@ -76,10 +78,9 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let cfg = fallback::resume_step(&hub, &base);
     // A turn the previous host process never finished (crash, update, restart), unless
     // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
-    let interrupted = hub.store.kv_get(&inflight_key(&cfg.id)).and_then(|v| {
-        let started: i64 = v.trim_end_matches(INFLIGHT_FOLLOW_UP).parse().ok()?;
-        (now_ms() - started < STALE_RESUME_MS).then(|| Lane::main(&cfg.id))
-    });
+    let interrupted = Inflight::load(&hub.store, &cfg.id)
+        .filter(|turn| now_ms() - turn.started < STALE_RESUME_MS)
+        .map(|_| Lane::main(&cfg.id));
     let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
     let lane = Lane::main(&cfg.id);
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
@@ -493,14 +494,6 @@ const CANCEL_GRACE: Duration = Duration::from_secs(15);
 
 /// An interrupted turn older than this isn't resumed.
 const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
-
-/// Where a running turn in the bot's own chat is marked, with the time it started.
-fn inflight_key(bot_id: &str) -> String {
-    format!("turn.inflight.{bot_id}")
-}
-
-/// Ends the mark of a follow-up's turn, which is resumed as one.
-const INFLIGHT_FOLLOW_UP: &str = " follow_up";
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {

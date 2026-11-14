@@ -206,6 +206,17 @@ impl Routines {
         Ok(Some(prompt(&follow_up, now)))
     }
 
+    /// The place in its chain of the follow-up whose turn `bot` is running.
+    pub fn follow_up_chain(&self, bot: &str) -> Option<u32> {
+        self.following.running.locked().get(bot).copied()
+    }
+
+    /// The host was stopped in a follow-up's turn of `bot` and goes on with it: what that turn sets continues the
+    /// chain the follow-up was in, as before the restart.
+    pub fn resume_follow_up(&self, bot: &str, chain: u32) {
+        self.following.running.locked().insert(bot.to_owned(), chain);
+    }
+
     /// The follow-up turn of `bot` is over: a follow-up it sets from now on starts a chain of its own.
     pub fn end_follow_up(&self, bot: &str) {
         self.following.running.locked().remove(bot);

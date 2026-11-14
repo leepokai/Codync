@@ -63,6 +63,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
+    FollowUpCancelled(String),
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),

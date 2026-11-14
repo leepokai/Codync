@@ -113,6 +113,10 @@ impl App {
                     }
                 }
             }
+            Reply::FollowUpCancelled(bot) => {
+                self.flash("Follow-up cancelled");
+                self.reload_routines(&bot);
+            }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
                     self.overlays.truncate(i);

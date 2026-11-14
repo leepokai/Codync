@@ -25,7 +25,7 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
 
 #[tokio::test]
 async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
-    use crate::tui::manage::RoutineList;
+    use crate::tui::manage::{Reply, RoutineList};
     use crossterm::event::{KeyCode, KeyEvent};
 
     fn list(app: &App) -> &RoutineList {
@@ -47,7 +47,18 @@ async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
     assert_eq!(list(&app).follow_ups.len(), 1);
     assert_eq!(list(&app).items.as_ref().unwrap()[0]["enabled"], true);
 
+    // x asks the host; the row stays until it answers, and a cancel that failed leaves it there.
     app.on_key(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(list(&app).follow_ups.len(), 1);
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Err("the computer is unreachable".into()));
+    assert_eq!(list(&app).follow_ups.len(), 1, "it still waits on the host");
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("the computer is unreachable"));
+
+    // Dropped on the host: the list it answers has the routine alone, which is picked now.
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Ok(json!({"ok": true})));
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Follow-up cancelled"));
+    let listing = json!({"routines": [{"id": "r", "name": "Morning", "enabled": true, "triggers": []}], "followUps": [], "runs": []});
+    app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
     assert_eq!(list(&app).follow_ups.len(), 0);
     assert_eq!(list(&app).cursor, 0, "the routine below is picked now");
 

@@ -57,34 +57,34 @@ class FallbacksTest {
         assertNull(old.withAgent("codex").fallbacks)
     }
 
-    @Test fun `a step runs on an account, and rests and the step in use match by login`() {
-        val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude","account":"a1",
-            "fallbacks":[{"backend":"claude","account":"a2"},{"backend":"claude","account":null},{"backend":"codex"}],
-            "agentStep":{"step":1,"agent":"claude","account":"a2","since":5},
-            "resting":[{"agent":"claude","account":"a1","until":2000,"reason":"usageLimit"}]}""").jsonObject)
+    @Test fun `a step runs on a login profile, and rests and the step in use match by login`() {
+        val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude","loginProfile":"a1",
+            "fallbacks":[{"backend":"claude","loginProfile":"a2"},{"backend":"claude","loginProfile":null},{"backend":"codex"}],
+            "agentStep":{"step":1,"agent":"claude","loginProfile":"a2","since":5},
+            "resting":[{"agent":"claude","loginProfile":"a1","until":2000,"reason":"usageLimit"}]}""").jsonObject)
         assertEquals(listOf(Login("claude", "a2"), Login("claude"), Login("codex")), bot.fallbacks?.map { it.login })
         assertEquals(bot.fallbacks?.first()?.login, bot.agentStep?.login)
         assertNotNull(bot.restOf(bot.login, now = 1000))
         assertNull("another login of the same agent isn't resting", bot.restOf(Login("claude"), now = 1000))
         val draft = BotDraft.from(bot)
         assertEquals(listOf(Login("claude", "a1"), Login("claude", "a2"), Login("claude"), Login("codex")), draft.logins)
-        val sent = draft.body().getValue("fallbacks").jsonArray.map { it.jsonObject["account"] }
+        val sent = draft.body().getValue("fallbacks").jsonArray.map { it.jsonObject["loginProfile"] }
         assertEquals(listOf(JsonPrimitive("a2"), JsonNull, JsonNull), sent)
     }
 
     @Test fun `the banner tells two logins of one agent apart`() {
         fun bot(step: String) = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"B","backend":"claude","agentStep":$step}""").jsonObject)
-        val name = { login: Login, own: Boolean -> login.backend + (login.account?.let { " ($it)" } ?: if (own) " (Default account)" else "") }
+        val name = { login: Login, own: Boolean -> login.backend + (login.loginProfile?.let { " ($it)" } ?: if (own) " (Default login profile)" else "") }
         val clock = { _: Long -> "3:00 PM" }
-        assertEquals("Using claude (Work) while claude (Default account) can't answer",
-            bot("""{"step":1,"agent":"claude","account":"Work","since":1}""").stepBanner(name, clock))
+        assertEquals("Using claude (Work) while claude (Default login profile) can't answer",
+            bot("""{"step":1,"agent":"claude","loginProfile":"Work","since":1}""").stepBanner(name, clock))
         assertEquals("Using codex while claude can't answer", bot("""{"step":1,"agent":"codex","since":1}""").stepBanner(name, clock))
         assertNull(bot("null").stepBanner(name, clock))
     }
 
     @Test fun `a new step takes a login the chain doesn't have, signed in`() {
         val claude = WireJson.decodeFromString<AgentBackend>("""{"id":"claude","name":"Claude Code",
-            "accounts":[{"id":"a1","signedIn":true},{"id":"a2","signedIn":true},{"id":"a3","signedIn":false}]}""")
+            "loginProfiles":[{"id":"a1","signedIn":true},{"id":"a2","signedIn":true},{"id":"a3","signedIn":false}]}""")
         assertEquals(listOf(null, "a1", "a2"), claude.freeLogins(emptyList()))
         assertEquals(listOf("a2"), claude.freeLogins(listOf(Login("claude"), Login("claude", "a1"), Login("codex", "a2"))))
         val codex = WireJson.decodeFromString<AgentBackend>("""{"id":"codex","name":"Codex"}""")
@@ -93,9 +93,9 @@ class FallbacksTest {
     }
 
     @Test fun `switching agent drops only the step on that agent's own login`() {
-        val draft = BotDraft(backend = "claude", account = "a1", fallbacks = listOf(Fallback("codex"), Fallback("codex", account = "c1"), Fallback("claude")))
+        val draft = BotDraft(backend = "claude", loginProfile = "a1", fallbacks = listOf(Fallback("codex"), Fallback("codex", loginProfile = "c1"), Fallback("claude")))
         val switched = draft.withAgent("codex")
-        assertNull(switched.account)
+        assertNull(switched.loginProfile)
         assertEquals(listOf(Login("codex", "c1"), Login("claude")), switched.fallbacks?.map { it.login })
     }
 }

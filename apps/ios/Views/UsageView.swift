@@ -136,8 +136,27 @@ private struct ProviderLimits: View {
                 Mascot(provider: provider)
                 Text(provider.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
             }
-            ForEach(provider.windows) { WindowLimit(window: $0, tint: provider.widgetTint) }
+            if provider.loginProfiles.isEmpty {
+                windows(provider.windows)
+            } else {
+                ForEach(provider.logins) { login in
+                    quiet(login.name ?? L10n.tr("Default login profile"))
+                    if login.windows.isEmpty {
+                        quiet(L10n.tr("No reading yet"))
+                    } else {
+                        windows(login.windows)
+                    }
+                }
+            }
         }
+    }
+
+    private func windows(_ windows: [UsageWindow]) -> some View {
+        ForEach(windows) { WindowLimit(window: $0, tint: provider.widgetTint) }
+    }
+
+    private func quiet(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(1)
     }
 }
 

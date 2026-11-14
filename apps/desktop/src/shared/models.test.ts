@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { accountChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
+import { loginProfileChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
 
-test('a bot keeps its agent account through the settings draft, and picks among the signed-in ones', () => {
-  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude', account: 'a2' })).account, 'a2')
-  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude' })).account, null, 'sent as null, so the host clears it')
-  const accounts = [{ id: 'a1', name: 'ada@example.com', signedIn: true }, { id: 'a2', name: null, signedIn: false }]
-  const claude = { id: 'claude', accounts } as Backend
-  assert.deepEqual(accountChoices(claude, null).map((a) => a.id), ['a1'])
-  assert.deepEqual(accountChoices(claude, 'a2').map((a) => a.id), ['a1', 'a2'], 'its own stays listed')
-  assert.deepEqual(accountChoices({ id: 'gemini' } as Backend, null), [])
+test('a bot keeps its login profile through the settings draft, and picks among the signed-in ones', () => {
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a2' })).loginProfile, 'a2')
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude' })).loginProfile, null, 'sent as null, so the host clears it')
+  const loginProfiles = [{ id: 'a1', kind: 'account' as const, name: 'ada@example.com', signedIn: true }, { id: 'a2', kind: 'apiKey' as const, name: null, signedIn: false }]
+  const claude = { id: 'claude', loginProfiles } as Backend
+  assert.deepEqual(loginProfileChoices(claude, null).map((a) => a.id), ['a1'])
+  assert.deepEqual(loginProfileChoices(claude, 'a2').map((a) => a.id), ['a1', 'a2'], 'its own stays listed')
+  assert.deepEqual(loginProfileChoices({ id: 'gemini' } as Backend, null), [])
 })
 
 test('a bot keeps its Fast mode through the settings draft', () => {

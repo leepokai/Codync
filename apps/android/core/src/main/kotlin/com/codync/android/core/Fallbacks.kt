@@ -2,32 +2,32 @@ package com.codync.android.core
 
 import kotlinx.serialization.Serializable
 
-/** A login of the chain: an agent on one of its accounts, or (no account) on the login the computer already has. */
-data class Login(val backend: String, val account: String? = null)
+/** A login of the chain: an agent on one of its login profiles, or (with none) on the login the computer already has. */
+data class Login(val backend: String, val loginProfile: String? = null)
 
-/** One step of a bot's fallback chain: an agent (the bot's own too, on another [account]), and the model to use on it. */
+/** One step of a bot's fallback chain: an agent (the bot's own too, on another [loginProfile]), and the model to use on it. */
 @Serializable
 data class Fallback(val backend: String = "", val command: String? = null, val model: String? = null, val modelOptions: Map<String, String> = emptyMap(),
-    val account: String? = null) {
-    val login: Login get() = Login(backend, account)
+    val loginProfile: String? = null) {
+    val login: Login get() = Login(backend, loginProfile)
 }
 
 /** The fallback a bot runs on right now (`agentStep`): its step, agent and model, since when, and why it left the one before. */
 @Serializable
 data class AgentStep(val step: Int = 0, val agent: String = "", val model: String? = null, val since: Long = 0, val reason: String? = null,
-    val account: String? = null) {
-    val login: Login get() = Login(agent, account)
+    val loginProfile: String? = null) {
+    val login: Login get() = Login(agent, loginProfile)
 }
 
 /** The login the bot is set to run on. */
-val Bot.login: Login get() = Login(backend, account)
+val Bot.login: Login get() = Login(backend, loginProfile)
 
 /** [login]'s rest, unless it's over. */
-fun Bot.restOf(login: Login, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { Login(it.agent, it.account) == login && it.until > now }
+fun Bot.restOf(login: Login, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { Login(it.agent, it.loginProfile) == login && it.until > now }
 
 /**
  * The Agent card's first line while the bot runs on a fallback; null on its own agent. [name] says what to call a login
- * ("Claude Code (Work)" on an account), the computer's own by its account too when asked, which tells two logins of one
+ * ("Claude Code (Work)" on a login profile), the computer's own by its name too when asked, which tells two logins of one
  * agent apart; [clock] writes a time.
  */
 fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): String? {
@@ -39,14 +39,14 @@ fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> Strin
 }
 
 /** The login the draft is set to run on. */
-val BotDraft.login: Login get() = Login(backend, account)
+val BotDraft.login: Login get() = Login(backend, loginProfile)
 
-/** The logins the chain has, the bot's own first: each is in it once, so an agent comes again only on another of its accounts. */
+/** The logins the chain has, the bot's own first: each is in it once, so an agent comes again only on another of its login profiles. */
 val BotDraft.logins: List<Login> get() = listOf(login) + fallbacks.orEmpty().map { it.login }
 
-/** The logins of this agent a new step can still take: the computer's own (first, as null) and its signed-in accounts, without the ones in [taken]. */
+/** The logins of this agent a new step can still take: the computer's own (first, as null) and its signed-in login profiles, without the ones in [taken]. */
 fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
-    (listOf<String?>(null) + accounts.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }
+    (listOf<String?>(null) + loginProfiles.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }
 
 /** The agent the bot runs on right now: its fallback's while it's on one. */
 val Bot.runningAgent: String get() = agentStep?.agent ?: backend
@@ -56,7 +56,7 @@ fun List<Bot>.mixesAgents(): Boolean = filter { it.kind != "group" }.mapTo(HashS
 
 /** A login of a bot's chain that rests until `until` (ms): `usageLimit`, `rateLimited`, `signedOut`… */
 @Serializable
-data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "", val account: String? = null) {
+data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "", val loginProfile: String? = null) {
     /** Its line under the agent, with `until` as [time]: "Usage resets 3:00 PM", "Resting until 3:00 PM". */
     fun line(time: String): String = if (reason == "usageLimit") "Usage resets $time" else "Resting until $time"
 }

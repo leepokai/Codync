@@ -103,11 +103,12 @@ impl App {
             if request["kind"] == "agent" {
                 let backend = request["backend"].as_str().unwrap_or_default();
                 // The host completes the request and resends the messages once a check finds it signed in.
-                match request["account"].as_str() {
-                    // The login that refused is the bot's agent account's: its sign-in opens over the agent's sheet.
-                    Some(account) => {
+                match request["loginProfile"].as_str() {
+                    // The login that refused is the bot's login profile: its sign-in (an API key's key form) opens over
+                    // the agent's sheet.
+                    Some(login_profile) => {
                         self.open_agent(backend, false);
-                        self.sign_in_account(backend, account);
+                        self.sign_in_login_profile(backend, login_profile);
                     }
                     None => self.open_agent(backend, true),
                 }
@@ -318,6 +319,7 @@ mod tests {
                     }
                     "composioConnect" => json!({"status":"needsFields","mode":"apiKey","fields":[{"name":"token","label":"Token","secret":true}]}),
                     "composioConnectFields" => json!({"status":"active"}),
+                    "loginShellVariables" => json!({"names":["HOME","OPENAI_API_KEY"]}),
                     _ => json!({}),
                 })
             }
@@ -443,13 +445,24 @@ mod tests {
         reply(&mut app, &mut rx).await;
         assert_eq!(calls.lock().unwrap()[0], json!({"method":"agentAuth","body":{"backend":"claude"}}));
 
-        // A request of a bot on an agent account signs that account in, not the computer's own login.
+        // A request of a bot on a login profile this app hasn't heard of opens no sign-in: its kind isn't known, and
+        // an API key's variables never go to a terminal.
         app.overlays.clear();
         let entry = app.entries.get_mut("bot").and_then(|lane| lane.get_mut(&1)).expect("the card");
-        entry.data["connectionRequest"]["account"] = "a1".into();
+        entry.data["connectionRequest"]["loginProfile"] = "a1".into();
         app.open_connection();
         assert!(matches!(app.overlays.last(), Some(Overlay::Agent(a)) if !a.busy), "no check of the own login");
+        reply(&mut app, &mut rx).await;
         let sign_in = || calls.lock().unwrap().iter().find(|call| call["method"] == "agentSetup").cloned();
+        assert_eq!(calls.lock().unwrap()[1]["method"], "refreshBackends");
+        assert_eq!(sign_in(), None);
+
+        // Once it knows the account login profile, the request signs that one in, not the computer's own login.
+        app.overlays.clear();
+        let profiles = json!([{"id":"a1","kind":"account","signedIn":false}]);
+        app.backends =
+            vec![json!({"id":"claude","signedIn":true,"loginProfileSignIn":"terminal","loginProfiles":profiles})];
+        app.open_connection();
         let asked = tokio::time::timeout(std::time::Duration::from_secs(3), async {
             loop {
                 if let Some(call) = sign_in() {
@@ -458,7 +471,67 @@ mod tests {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         });
-        assert_eq!(asked.await.expect("the sign-in terminal is asked for")["body"]["account"], "a1");
+        assert_eq!(asked.await.expect("the sign-in terminal is asked for")["body"]["loginProfile"], "a1");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_api_key_sign_in_request_opens_its_key_form_which_saves_removes_and_imports() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let (mut app, mut rx, calls, server) = fixture().await;
+        let profiles = json!([{"id":"k1","kind":"apiKey","name":null,"signedIn":true,"vars":["OPENAI_API_KEY"]}]);
+        app.backends = vec![json!({"id":"codex","installed":true,"signedIn":true,"loginProfiles":profiles})];
+        let request = json!({"kind":"agent","status":"pending","backend":"codex","loginProfile":"k1"});
+        let card = Entry {
+            id: "card".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Notice,
+            data: json!({"connectionRequest":request}),
+            created_at: 0,
+        };
+        app.entries.entry("bot".into()).or_default().insert(1, card);
+        app.selected = Some("bot".into());
+        app.open_connection();
+        let sent = || calls.lock().unwrap().last().cloned().expect("a call");
+        let keys = |vars: Value, import: Value| json!({"method":"setLoginProfileKeys","body":{"loginProfile":"k1","vars":vars,"import":import}});
+
+        // No terminal: the key form, over the agent's sheet. A saved value never shows.
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form") };
+        let names: Vec<_> = f.inputs.iter().map(|i| (i.name.as_str(), i.ed.text.as_str(), i.secret)).collect();
+        assert_eq!(names, [("OPENAI_API_KEY", "", true), ("+name", "", false), ("+value", "", true)]);
+        assert_eq!(f.inputs[0].placeholder, "Saved (type to replace)");
+        f.inputs[1].ed = Editor::with("OPENAI_BASE_URL");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form stays") };
+        assert_eq!(f.error.as_deref(), Some("Value is required."), "a named variable needs its value");
+        f.inputs[2].ed = Editor::with("https://example.com");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_BASE_URL":"https://example.com"}), json!([])));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(_))), "saved: back on the agent's sheet");
+
+        // ^x on a saved variable removes it: an empty value.
+        app.open_login_keys("codex", "k1");
+        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_API_KEY":""}), json!([])));
+
+        // ^l lists the login shell's variables; space ticks, ↵ imports the ticked ones and saves what was typed.
+        app.open_login_keys("codex", "k1");
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form") };
+        f.inputs[0].ed = Editor::with("typed-before-import");
+        key(&mut app, KeyCode::Char('l'), KeyModifiers::CONTROL);
+        reply(&mut app, &mut rx).await;
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        let Some(Overlay::KeyImport(i)) = app.overlays.last() else { panic!("the import list") };
+        assert_eq!((i.names.as_deref().map(<[String]>::len), i.importing), (Some(2), false), "nothing ticked yet");
+        key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_API_KEY":"typed-before-import"}), json!(["OPENAI_API_KEY"])));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(_))), "the list and the form both close");
         server.abort();
     }
 

@@ -107,7 +107,7 @@ struct BotSettingsForm: View {
             CardSection("Agent") {
                 fallbackBanner
                 modelPicker
-                accountPicker
+                loginProfilePicker
                 fallbackList
                 compactionPicker
             }
@@ -137,10 +137,10 @@ struct BotSettingsForm: View {
                          restLine: bot?.rest(of: draft.login)?.line, onReload: { modelReload += 1 })
     }
 
-    /// Only for an agent that can have accounts (its host says).
-    @ViewBuilder private var accountPicker: some View {
-        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.accounts != nil {
-            AccountRow(backend: backend, account: $draft.account)
+    /// Only when the host has login profiles (an older one sends none).
+    @ViewBuilder private var loginProfilePicker: some View {
+        if let backend = model.hello?.backends.first(where: { $0.id == draft.backend }), backend.loginProfiles != nil {
+            LoginProfileRow(backend: backend, loginProfile: $draft.loginProfile)
         }
     }
 
@@ -207,7 +207,7 @@ struct BotSettingsForm: View {
                 }
                 if part == .all {
                     modelPicker
-                    accountPicker
+                    loginProfilePicker
                     fallbackList
                     compactionPicker
                 }

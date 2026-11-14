@@ -1,8 +1,8 @@
 //! The bot form's Fallbacks field: the logins that carry on, in order, when the bot's own can't answer
-//! (`agent::fallback`). A login is an agent on one of its accounts or (none) on its default one, the bot's own agent
-//! on another account included; the chain has each once. ←/→ picks a fallback or the "+ add" slot after them; space
+//! (`agent::fallback`). A login is an agent on one of its login profiles or (none) on its default one, the bot's own agent
+//! on another login profile included; the chain has each once. ←/→ picks a fallback or the "+ add" slot after them; space
 //! adds the next free agent on the slot and cycles a fallback's model; `a` gives a fallback the next agent with a free
-//! login; `c` its agent's next free account; `[`/`]` move it; `x` removes it. `A` on a failure notice that offers a
+//! login; `c` its agent's next free login profile; `[`/`]` move it; `x` removes it. `A` on a failure notice that offers a
 //! fallback opens the field.
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -64,10 +64,13 @@ impl App {
                 // Its own login, among the free ones in their order.
                 let step = &f.fallbacks[at];
                 let free = self.free_logins(f, &step.backend);
-                let logins: Vec<Option<String>> =
-                    self.logins(&step.backend).into_iter().filter(|l| *l == step.account || free.contains(l)).collect();
-                let i = logins.iter().position(|l| *l == step.account).unwrap_or(0);
-                f.fallbacks[at].account.clone_from(&logins[cycle(i, 1, logins.len())]);
+                let logins: Vec<Option<String>> = self
+                    .logins(&step.backend)
+                    .into_iter()
+                    .filter(|l| *l == step.login_profile || free.contains(l))
+                    .collect();
+                let i = logins.iter().position(|l| *l == step.login_profile).unwrap_or(0);
+                f.fallbacks[at].login_profile.clone_from(&logins[cycle(i, 1, logins.len())]);
             }
             KeyCode::Char('[') if at > 0 && at < f.fallbacks.len() => {
                 f.fallbacks.swap(at, at - 1);
@@ -90,25 +93,27 @@ impl App {
         self.agent_choices().into_iter().filter(|a| a != "custom").collect()
     }
 
-    /// Agent `backend`'s logins: its default one (`None`), then its signed-in accounts.
+    /// Agent `backend`'s logins: its default one (`None`), then its signed-in login profiles.
     fn logins(&self, backend: &str) -> Vec<Option<String>> {
-        let accounts = self.accounts(backend).unwrap_or_default().iter().filter(|a| a["signedIn"] == true);
-        std::iter::once(None).chain(accounts.filter_map(|a| a["id"].as_str()).map(|id| Some(id.to_owned()))).collect()
+        let login_profiles = self.login_profiles(backend).unwrap_or_default().iter().filter(|a| a["signedIn"] == true);
+        std::iter::once(None)
+            .chain(login_profiles.filter_map(|a| a["id"].as_str()).map(|id| Some(id.to_owned())))
+            .collect()
     }
 
     /// The logins of agent `backend` a step can still take: the ones the chain, the bot's own included, doesn't have.
     fn free_logins(&self, f: &Form, backend: &str) -> Vec<Option<String>> {
         let taken = |l: &Option<String>| {
-            (f.backend == backend && f.account == *l)
-                || f.fallbacks.iter().any(|x| x.backend == backend && x.account == *l)
+            (f.backend == backend && f.login_profile == *l)
+                || f.fallbacks.iter().any(|x| x.backend == backend && x.login_profile == *l)
         };
         self.logins(backend).into_iter().filter(|l| !taken(l)).collect()
     }
 
     /// A step on agent `backend`'s first free login; `None` when the chain has them all.
     fn free_step(&self, f: &Form, backend: String) -> Option<Fallback> {
-        let account = self.free_logins(f, &backend).into_iter().next()?;
-        Some(Fallback { backend, account, ..Fallback::default() })
+        let login_profile = self.free_logins(f, &backend).into_iter().next()?;
+        Some(Fallback { backend, login_profile, ..Fallback::default() })
     }
 }
 
@@ -150,30 +155,31 @@ mod tests {
     #[tokio::test]
     async fn a_fallback_runs_on_a_free_login_the_bots_own_agent_included() {
         let mut app = test_app();
-        let accounts = json!([
+        let login_profiles = json!([
             {"id": "a1", "name": "Work", "signedIn": true},
             {"id": "a2", "signedIn": true},
             {"id": "a3", "signedIn": false},
         ]);
         app.backends = vec![
-            json!({"id": "claude", "name": "Claude Code", "available": true, "installed": true, "accounts": accounts}),
+            json!({"id": "claude", "name": "Claude Code", "available": true, "installed": true, "loginProfiles": login_profiles}),
             json!({"id": "codex", "name": "Codex", "available": true, "installed": true}),
         ];
-        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "account": "a1",
-            "agentStep": {"agent": "claude", "account": "a2"},
-            "resting": [{"agent": "claude", "account": "a1", "until": i64::MAX, "reason": "usageLimit"}]});
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "loginProfile": "a1",
+            "agentStep": {"agent": "claude", "loginProfile": "a2"},
+            "resting": [{"agent": "claude", "loginProfile": "a1", "until": i64::MAX, "reason": "usageLimit"}]});
         app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
         app.selected = Some("b".into());
         app.edit_bot();
         let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
         let key = |c: char| KeyEvent::from(KeyCode::Char(c));
-        let steps = |f: &Form| f.fallbacks.iter().map(|x| (x.backend.clone(), x.account.clone())).collect::<Vec<_>>();
+        let steps =
+            |f: &Form| f.fallbacks.iter().map(|x| (x.backend.clone(), x.login_profile.clone())).collect::<Vec<_>>();
         let (claude, codex) =
             (|a: Option<&str>| ("claude".to_owned(), a.map(str::to_owned)), ("codex".to_owned(), None));
         app.fallback_key(&mut f, key(' '));
         assert_eq!(steps(&f), [claude(None)], "its own agent, on the first login it isn't on");
         app.fallback_key(&mut f, key('c'));
-        assert_eq!(steps(&f), [claude(Some("a2"))], "then the signed-in accounts the chain doesn't have");
+        assert_eq!(steps(&f), [claude(Some("a2"))], "then the signed-in login profiles the chain doesn't have");
         app.fallback_key(&mut f, key('c'));
         assert_eq!(steps(&f), [claude(None)], "never the bot's own or a signed-out one");
         f.sub = 1;
@@ -184,12 +190,12 @@ mod tests {
         f.sub = 0;
         app.fallback_key(&mut f, key('c'));
         app.fallback_key(&mut f, key('a'));
-        assert_eq!(steps(&f)[0], claude(None), "no other agent or account is free");
+        assert_eq!(steps(&f)[0], claude(None), "no other agent or login profile is free");
 
         let bot = app.bots.get("b");
         let shown = |i: usize| crate::tui::view::step_item(&app, bot, i, &f.fallbacks[i]);
         assert_eq!(shown(0), "1 Claude Code · default");
-        assert_eq!(shown(1), "2 Claude Code (New account) · default (in use)", "in use by login, not by agent");
+        assert_eq!(shown(1), "2 Claude Code (New login profile) · default (in use)", "in use by login, not by agent");
         assert!(crate::tui::view::rest_note(bot.expect("the bot"), "claude", Some("a1")).is_some());
         assert!(crate::tui::view::rest_note(bot.expect("the bot"), "claude", None).is_none(), "resting by login");
     }

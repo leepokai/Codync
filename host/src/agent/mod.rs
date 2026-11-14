@@ -1,7 +1,6 @@
 //! Driving coding agents: harness discovery, the ACP registry, sign-in, setup
 //! terminals and the per-bot actor that runs turns over ACP.
 
-pub mod accounts;
 pub mod acp;
 pub mod auth;
 pub mod backends;
@@ -9,6 +8,7 @@ pub mod bot;
 pub mod config;
 pub mod fallback;
 pub mod gear;
+pub mod login_profiles;
 pub mod modes;
 pub mod new_bot;
 pub mod node;

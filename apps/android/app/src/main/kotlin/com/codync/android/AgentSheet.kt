@@ -36,6 +36,8 @@ import com.codync.android.core.AgentAuth
 import com.codync.android.core.AgentAuthMethod
 import com.codync.android.core.AgentBackend
 import com.codync.android.core.LinkState
+import com.codync.android.core.LoginProfile
+import com.codync.android.core.LoginProfileKind
 import com.codync.android.core.WireJson
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -44,8 +46,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.decodeFromJsonElement
 
-/** A step inside the agent's sheet: a terminal for install / Node.js / sign-in (of `account`, when it's one's), or its keys. */
-private data class SetupRoute(val step: String, val method: AgentAuthMethod? = null, val account: String? = null)
+/**
+ * A step inside the agent's sheet: a terminal for install / Node.js / sign-in (of `loginProfile`, when it's one's), its
+ * keys, or an API key login profile's (`keysOf`, as it was when its form opened: a just added one isn't in the
+ * agent list this sheet drew yet).
+ */
+private data class SetupRoute(val step: String, val method: AgentAuthMethod? = null, val loginProfile: String? = null, val keysOf: LoginProfile? = null)
 
 /** The computer's agents, live: an install or sign-in updates the host's list. */
 internal fun agentBackends(state: AppState): List<AgentBackend> =
@@ -57,15 +63,21 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
 /**
  * Getting an agent ready on the computer (iOS `AgentSheet`): install it, add Node.js when it runs
  * on Node and the computer has none, then sign in. `recheck` (a chat's sign-in request) asks the
- * agent again however signed in it looked. `signInAccount`: the request is for that agent account,
- * so its sign-in opens (a terminal, or the agent's own browser sign-in), not a check of the computer's own login.
+ * agent again however signed in it looked. `openLoginProfile`: the request is for that login profile, so its
+ * sign-in opens (a terminal, or the agent's own browser sign-in) or, for an API key one, its key form, not a check of the
+ * computer's own login.
  */
-@Composable internal fun AgentSheet(initial: AgentBackend, state: AppState, store: AppStore, recheck: Boolean = false, signInAccount: String? = null) {
+@Composable internal fun AgentSheet(initial: AgentBackend, state: AppState, store: AppStore, recheck: Boolean = false, openLoginProfile: String? = null) {
     val scope = rememberCoroutineScope()
     val backend = agentBackends(state).firstOrNull { it.id == initial.id } ?: initial
-    var route by remember { mutableStateOf(signInAccount?.takeUnless { initial.signsInBrowser }?.let { SetupRoute("login", account = it) }) }
-    // The account whose browser sign-in this sheet was opened for, until that has started.
-    var signInNow by remember { mutableStateOf(signInAccount?.takeIf { initial.signsInBrowser }) }
+    // One this app hasn't heard of yet (added from another app) opens nothing: its kind isn't known.
+    val asked = initial.loginProfiles?.firstOrNull { it.id == openLoginProfile }
+    val opensKeys = asked?.kind == LoginProfileKind.ApiKey
+    var route by remember {
+        mutableStateOf(asked?.let { if (opensKeys) SetupRoute("profileKeys", keysOf = it) else if (initial.signsInBrowser) null else SetupRoute("login", loginProfile = it.id) })
+    }
+    // The login profile whose browser sign-in this sheet was opened for, until that has started.
+    var signInNow by remember { mutableStateOf(asked?.id?.takeIf { initial.signsInBrowser && !opensKeys }) }
     var auth by remember { mutableStateOf<AgentAuth?>(null) }
     var checking by remember { mutableStateOf(false) }
     var authenticating by remember { mutableStateOf<String?>(null) }
@@ -83,15 +95,15 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     // A known "signed in" needs no agent start; one set up asks the agent (which can't start without its Node.js).
     // Opening never downloads one: that waits for Set up.
     LaunchedEffect(Unit) { if ((recheck || (setUp(backend, auth) && backend.signedIn != true)) && !backend.needsNode) check() }
-    fun checkAccount(account: String) {
+    fun checkLoginProfile(loginProfile: String) {
         scope.launch {
-            try { store.checkAgentAccount(backend.id, account) }
+            try { store.checkLoginProfile(backend.id, loginProfile) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { error = failure.message ?: "Couldn't check this agent." }
         }
     }
     // Back from a terminal or key form: see what changed, for the login it was about.
-    val back = { val account = route?.account; route = null; if (account != null) checkAccount(account) else check() }
+    val back = { val loginProfile = route?.loginProfile; route = null; if (loginProfile != null) checkLoginProfile(loginProfile) else check() }
     AnimatedContent(route, transitionSpec = {
         val forward = targetState != null
         (slideInHorizontally(Motion.layoutOffset) { if (forward) it else -it } + fadeIn(Motion.fade())) togetherWith
@@ -110,8 +122,10 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                     }
                 }
             }
+            // Its save already brought the new agent list: nothing to check on the way back.
+            shown.keysOf != null -> LoginProfileKeysForm(backend, shown.keysOf, state, store) { route = null }
             shown.step == "keys" -> AgentKeysForm(backend, requireNotNull(shown.method), auth?.savedEnv.orEmpty(), state, store, back) { auth = it }
-            else -> SetupTerminal(backend.takeUnless { shown.step == "node" }, shown.step, shown.method, state, store, shown.account, back)
+            else -> SetupTerminal(backend.takeUnless { shown.step == "node" }, shown.step, shown.method, state, store, shown.loginProfile, back)
         }
     }
 }
@@ -182,9 +196,9 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
-        // An agent with accounts lists its sign-in as the default one of them.
-        if (backend.accounts != null && backend.installed) AgentAccounts(backend, host, store, OwnLogin(status, checking, check),
-            { go(SetupRoute("login", account = it)) }, signInNow, signInStarted) {
+        // Its sign-in is listed as the default one of its login profiles.
+        if (backend.loginProfiles != null) LoginProfiles(backend, host, store, OwnLogin(status, checking, check),
+            { go(SetupRoute("login", loginProfile = it)) }, { go(SetupRoute("profileKeys", keysOf = it)) }, signInNow, signInStarted) {
             signInRows()
             browserNote?.let { row { Text(tr(it), style = Type.footnote, color = Palette.secondary) } }
         } else CardSection(footer = browserNote) {

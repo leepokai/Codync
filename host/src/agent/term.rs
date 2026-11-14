@@ -41,7 +41,7 @@ struct Output {
     exit: Option<i32>,
 }
 
-/// What a terminal is for: an agent, the step, and the agent account a sign-in is for.
+/// What a terminal is for: an agent, the step, and the account login profile a sign-in is for.
 type Key = (String, Step, Option<String>);
 
 pub struct Term {
@@ -95,22 +95,22 @@ impl Terms {
         self.0.locked().get(id).cloned()
     }
 
-    /// Whether a sign-in to agent account `account` is open.
-    pub fn signing_in(&self, account: &str) -> bool {
-        let open = |term: &Arc<Term>| term.key.2.as_deref() == Some(account) && term.output.locked().exit.is_none();
+    /// Whether a sign-in to login profile `id` is open.
+    pub fn signing_in(&self, id: &str) -> bool {
+        let open = |term: &Arc<Term>| term.key.2.as_deref() == Some(id) && term.output.locked().exit.is_none();
         self.0.locked().values().any(open)
     }
 
-    /// Runs `command`, which signs `backend`'s account `account` in, or returns the one already running.
+    /// Runs `command`, which signs `backend`'s account login profile `id` in, or returns the one already running.
     pub fn sign_in_account(
         self: &Arc<Self>,
         backend: &str,
-        account: &str,
+        id: &str,
         command: &str,
         cols: u16,
         rows: u16,
     ) -> Result<String> {
-        self.spawn((backend.to_owned(), Step::Login, Some(account.to_owned())), command, cols, rows)
+        self.spawn((backend.to_owned(), Step::Login, Some(id.to_owned())), command, cols, rows)
     }
 
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
@@ -152,7 +152,7 @@ impl Terms {
         let mut builder = CommandBuilder::new(shell.program);
         builder.args(&shell.args);
         for (k, v) in &shell.env {
-            builder.env(k, v);
+            if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
         }
         builder.env("TERM", "xterm-256color");
         builder.env("COLORTERM", "truecolor");
@@ -280,7 +280,7 @@ async fn run(
         _ => -1,
     };
     tracing::info!(term = %id, code, "setup terminal finished");
-    // A finished sign-in is believed again, over the prompt that login (the account's, or the agent's own)
+    // A finished sign-in is believed again, over the prompt that login (the login profile's, or the agent's own)
     // refused before.
     if term.key.1 == Step::Login && code == 0 {
         backends::clear_prompt_refused(term.key.2.as_deref().unwrap_or(&term.key.0));

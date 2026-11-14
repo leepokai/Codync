@@ -139,11 +139,9 @@ impl Actor {
             }
             "usage_update" => {
                 let info = &u["_meta"]["_claude/rateLimit"];
-                // The limits shown are the computer's own login's: an account's stay out of them.
-                if info.is_object()
-                    && crate::agent::accounts::of_bot(&self.hub.store, &self.cfg.backend, &self.cfg).is_none()
-                {
-                    crate::usage::ingest_claude_rate_limit(&self.hub, info);
+                if info.is_object() {
+                    let profile = crate::agent::login_profiles::of_bot(&self.hub.store, &self.cfg.backend, &self.cfg);
+                    crate::usage::ingest_claude_rate_limit(&self.hub, profile, info);
                 }
                 if let Some(used) = u["used"].as_u64() {
                     self.track_usage(used, u["size"].as_u64().unwrap_or(0));

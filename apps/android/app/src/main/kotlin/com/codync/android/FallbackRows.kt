@@ -59,14 +59,14 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
 
 /** The Agent card's first row while the bot runs on a fallback ([step]): which one, until when, and Switch back. */
 @Composable internal fun FallbackBanner(state: AppState, store: AppStore, bot: Bot, step: AgentStep) {
-    val unnamed = tr("New account")
-    val default = tr("Default account")
-    // "Claude Code (Work)": a login on an account, and the computer's own when it's asked for by name.
+    val unnamed = tr("New login profile")
+    val default = tr("Default login profile")
+    // "Claude Code (Work)": a login on a login profile, and the computer's own when it's asked for by name.
     val name = { login: Login, own: Boolean ->
         val backend = agentBackends(state).firstOrNull { it.id == login.backend }
-        val account = login.account?.let { id -> backend?.accounts?.firstOrNull { it.id == id }?.name ?: unnamed }
-            ?: if (own) backend?.ownAccount?.name ?: default else null
-        backendName(state, login.backend) + if (account != null) " ($account)" else ""
+        val loginProfile = login.loginProfile?.let { id -> backend?.loginProfiles?.firstOrNull { it.id == id }?.name ?: unnamed }
+            ?: if (own) backend?.defaultLoginProfile?.name ?: default else null
+        backendName(state, login.backend) + if (loginProfile != null) " ($loginProfile)" else ""
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AgentIcon(agentRegistry(state, step.agent), 22.dp)
@@ -102,8 +102,8 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
 
 @Composable private fun FallbackRow(state: AppState, number: Int, fallback: Fallback, rest: Resting?, inUse: Boolean, menu: () -> List<MenuItem>) {
     val agent = tr(agentChoices(state).firstOrNull { it.first == fallback.backend }?.second ?: backendName(state, fallback.backend))
-    val account = fallback.account?.let { id -> agentBackends(state).firstOrNull { it.id == fallback.backend }?.accounts?.firstOrNull { it.id == id } }
-    val name = if (account != null) "$agent (${account.name ?: tr("New account")})" else agent
+    val loginProfile = fallback.loginProfile?.let { id -> agentBackends(state).firstOrNull { it.id == fallback.backend }?.loginProfiles?.firstOrNull { it.id == id } }
+    val name = if (loginProfile != null) "$agent (${loginProfile.name ?: tr("New login profile")})" else agent
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("$number", style = Type.subheadline.monospacedDigit, color = Palette.secondary)
         AgentIcon(agentRegistry(state, fallback.backend), 22.dp)
@@ -120,7 +120,7 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
     }
 }
 
-/** "+": another agent (or the bot's own on another of its accounts) and its model, added at the end of the list. */
+/** "+": another agent (or the bot's own on another of its login profiles) and its model, added at the end of the list. */
 @Composable internal fun AddFallbackSheet(state: AppState, store: AppStore, chain: List<Login>, add: (Fallback) -> Unit) {
     // Taken as the sheet opens, so the added login doesn't drop out of the pickers while the sheet slides away.
     val taken = remember { chain }
@@ -134,15 +134,15 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
     val free = agent?.freeLogins(taken).orEmpty()
     // The first login the chain doesn't have yet, until the user picks one.
     var picked by remember(backend) { mutableStateOf<String?>(null) }
-    val account = if (picked in free) picked else free.firstOrNull()
+    val loginProfile = if (picked in free) picked else free.firstOrNull()
     Column(Modifier.fillMaxSize()) {
         ModalHeader("Add fallback") {
-            IconButton("Add fallback", "checkmark", enabled = backend.isNotEmpty()) { add(Fallback(backend, model = model, modelOptions = options, account = account)) }
+            IconButton("Add fallback", "checkmark", enabled = backend.isNotEmpty()) { add(Fallback(backend, model = model, modelOptions = options, loginProfile = loginProfile)) }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
             CardSection {
-                row { AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null, agents = choices, chooseAgent = { backend = it }) }
-                if (agent?.accounts != null) row { AccountPicker(agent, account, state, store, free) { picked = it } }
+                row { AgentModelPicker(state, store::agentModels, backend, model, options, false, null, { id, picked -> model = id; options = picked }, null, agents = choices, chooseAgent = { backend = it }, collapsible = false) }
+                if (agent?.loginProfiles != null) row { LoginProfilePicker(agent, loginProfile, state, store, free) { picked = it } }
             }
         }
     }

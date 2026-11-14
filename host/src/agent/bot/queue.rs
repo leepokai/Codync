@@ -1,7 +1,7 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
-use crate::agent::accounts::Login;
+use super::{Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, Queued, RESUME_PROMPT, RoutineCompletion};
+use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
@@ -21,6 +21,7 @@ impl Actor {
             }
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
+            Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
                 if !self.try_decision_message(&lane, &entry_id) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
@@ -98,7 +99,7 @@ impl Actor {
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
-                    || cfg.account != self.cfg.account
+                    || cfg.login_profile != self.cfg.login_profile
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
@@ -156,6 +157,9 @@ impl Actor {
         }
         if self.active_routine.is_none() {
             self.hub.routines.release(&self.cfg.id);
+        }
+        if let Err(error) = self.hub.routines.drop_queued_follow_ups(&self.hub, &self.cfg.id) {
+            tracing::error!(error = format!("{error:#}"), "couldn't drop queued follow-ups");
         }
         // Queued messages are dropped too: Stop means "stop everything". A room's late turn stays: the room was
         // told this member answers there once free, and only the group's Stop drops it.
@@ -275,10 +279,29 @@ impl Actor {
                     let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
                     };
-                    self.active_prompt = true;
+                    self.host_turn = Some(HostTurn::Opening);
                     self.prompt_call = call;
                     if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
                         self.start_error(e, done_tx).await;
+                    }
+                    continue;
+                }
+                Some(Queued::FollowUp(_)) => {
+                    let Some(Queued::FollowUp(id)) = self.queue.pop_front() else {
+                        unreachable!("front is a follow-up")
+                    };
+                    match self.hub.routines.begin_follow_up(&self.hub, &self.cfg.id, &id) {
+                        Ok(Some(prompt)) => {
+                            self.host_turn = Some(HostTurn::FollowUp);
+                            if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                                self.start_error(e, done_tx).await;
+                            }
+                        }
+                        // Cancelled while it waited for its turn.
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::error!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't begin a follow-up");
+                        }
                     }
                     continue;
                 }
@@ -356,7 +379,7 @@ impl Actor {
         self.relay.carried = None;
         self.turn = None;
         self.reply_hops = None;
-        self.active_prompt = false;
+        self.end_host_turn();
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {
             self.set_inflight(false);
@@ -394,12 +417,15 @@ impl Actor {
         self.sign_in_card(&login, &held)
     }
 
-    /// `login` refused the bot's prompt for auth: an agent account, or the computer's own login. Only that one
+    /// `login` refused the bot's prompt for auth: a login profile, or the computer's own login. Only that one
     /// reads signed out, also over a check that still says signed in (`claude auth
     /// status` with a revoked token).
     pub(super) fn note_signed_out(&self, login: &Login) {
-        if let Some(account) = &login.account {
-            crate::agent::accounts::note_signed_in(&self.hub.store, account, false);
+        if let Some(profile) = &login.profile {
+            if crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false) {
+                // Signed out, it leaves the Usage screens.
+                crate::usage::login_profiles_changed(&self.hub);
+            }
         } else {
             crate::agent::backends::set_signed_in(&login.backend, Some(false));
             crate::agent::backends::note_prompt_refused(&login.backend);
@@ -424,6 +450,15 @@ impl Actor {
                 |error| tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't ask to sign in"),
             )
             .is_ok()
+    }
+
+    /// The host-started turn is over; what it was, for the turn's end to act on.
+    pub(super) fn end_host_turn(&mut self) -> Option<HostTurn> {
+        let ended = self.host_turn.take();
+        if ended == Some(HostTurn::FollowUp) {
+            self.hub.routines.end_follow_up(&self.cfg.id);
+        }
+        ended
     }
 
     pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {
@@ -488,6 +523,9 @@ impl Actor {
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
     pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
+        let follow_up = Inflight::load(&self.hub.store, &self.cfg.id)
+            .and_then(|turn| turn.follow_up)
+            .filter(|_| self.active_routine.is_none());
         self.set_inflight(false);
         let slot = self.slot();
         if self.session_for(slot.as_deref()).is_none() {
@@ -502,6 +540,14 @@ impl Actor {
             format!(
                 "{RESUME_PROMPT} This is still a scheduled routine run. If its instruction permits silence and there is nothing to report, return exactly (pass)."
             )
+        } else if let Some(chain) = follow_up {
+            // Still the follow-up's turn: a `(pass)` stays silent and alerts no one, and a follow-up it sets
+            // continues the chain it was in.
+            self.host_turn = Some(HostTurn::FollowUp);
+            self.hub.routines.resume_follow_up(&self.cfg.id, chain);
+            format!(
+                "{RESUME_PROMPT} This is still the follow-up you set for yourself. If there is nothing worth telling the user yet, return exactly (pass)."
+            )
         } else {
             RESUME_PROMPT.to_owned()
         };
@@ -510,10 +556,15 @@ impl Actor {
         }
     }
 
-    /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]).
+    /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a
+    /// follow-up's turn is marked as one, with its place in its chain.
     pub(super) fn set_inflight(&self, on: bool) {
-        let value = if on { now_ms().to_string() } else { String::new() };
-        if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
+        let turn = on.then(|| {
+            let follow_up = (self.host_turn == Some(HostTurn::FollowUp))
+                .then(|| self.hub.routines.follow_up_chain(&self.cfg.id).unwrap_or(0));
+            Inflight { started: now_ms(), follow_up }
+        });
+        if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
         }
     }

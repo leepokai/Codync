@@ -18,8 +18,8 @@ data class Bot(
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
     val command: String? = null,
-    /** The agent account it runs on ([AgentAccount]); null for the login the computer already has. */
-    val account: String? = null,
+    /** The login profile it runs on ([LoginProfile]); null for the login the computer already has. */
+    val loginProfile: String? = null,
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",

@@ -85,7 +85,7 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || (method == "computerCall" && b["name"] == "type_login")
         || method.starts_with("voice")
         || method == "setVoiceKey"
-        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv")
+        || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "setLoginProfileKeys")
     {
         market::vault::unlock(hub.clone()).await?;
     }

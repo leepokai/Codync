@@ -19,6 +19,8 @@ struct AgentModelPicker: View {
     var restLine: String?
     /// Retry model list, for the rows that read the same list (Permissions).
     var onReload: (() -> Void)?
+    /// False where picking is the whole sheet (Add fallback): no summary line, the choices show at once.
+    var collapsible = true
     private enum Stage { case closed, agents, models, settings }
     @State private var stage = Stage.closed
     @State private var query = ""
@@ -95,20 +97,22 @@ struct AgentModelPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button { open(stage == .closed ? .models : .closed) } label: {
-                HStack(spacing: 6) {
-                    Text(summary).font(.subheadline).lineLimit(2)
-                        .contentTransition(.opacity)
-                        .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
-                    Spacer(minLength: 0)
-                    Image(systemName: stage == .closed ? "chevron.down" : "chevron.up").font(.caption)
+            if collapsible {
+                Button { open(stage == .closed ? .models : .closed) } label: {
+                    HStack(spacing: 6) {
+                        Text(summary).font(.subheadline).lineLimit(2)
+                            .contentTransition(.opacity)
+                            .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
+                        Spacer(minLength: 0)
+                        Image(systemName: stage == .closed ? "chevron.down" : "chevron.up").font(.caption)
+                    }
+                    .foregroundStyle(Palette.text)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(Palette.text)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityValue(stage == .closed ? "Collapsed" : "Expanded")
             }
-            .buttonStyle(.plain)
-            .accessibilityValue(stage == .closed ? "Collapsed" : "Expanded")
-            if stage != .closed {
+            if stage != .closed || !collapsible {
                 HStack {
                     if onAgentChange != nil {
                         Button { open(stage == .agents ? .settings : .agents) } label: { Text(agentName).lineLimit(1); Image(systemName: "chevron.down") }

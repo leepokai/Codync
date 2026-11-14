@@ -67,7 +67,8 @@ fn well_known_dirs_for(home: &Path, data_local: Option<&Path>) -> Vec<PathBuf> {
 }
 
 /// Re-detects the search path and exports it as this process's PATH, so every
-/// agent we spawn (and the `npx`/`node` they need) resolves the same way.
+/// agent we spawn (and the `npx`/`node` they need) resolves the same way. The login shell's other
+/// variables reach an agent only when the user imports them into a login profile.
 pub fn hydrate_path() {
     let mut seen = HashSet::new();
     let mut path: Vec<PathBuf> = vec![];

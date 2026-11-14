@@ -93,31 +93,42 @@ extension BotStore {
         hello?.backends = backends
     }
 
-    /// A new, signed-out account for `backend`; its sign-in follows.
-    func addAgentAccount(_ backend: String) async throws -> AgentAccount {
-        let added = try await ready().addAgentAccount(backend)
-        hello?.backends = added.backends
-        return added.account
+    /// A new login profile for `backend`: an account one's sign-in follows, an API key one's key form.
+    func addLoginProfile(_ backend: String, kind: LoginProfile.Kind) async throws -> LoginProfile {
+        let added = try await ready().addLoginProfile(backend, kind: kind)
+        showBackends(added.backends)
+        return added.loginProfile
     }
 
-    /// After an account's sign-in terminal closes: whether it went through, and as whom.
-    func checkAgentAccount(_ backend: String, account: String) async throws {
-        showBackends(try await ready().agentAccountAuth(backend, account: account))
+    /// After a login profile's sign-in terminal closes: whether it went through, and as whom.
+    func checkLoginProfile(_ backend: String, loginProfile: String) async throws {
+        showBackends(try await ready().loginProfileAuth(backend, loginProfile: loginProfile))
     }
 
-    /// For an agent that signs its accounts in itself: waits for the browser sign-in on the computer.
-    func signInAgentAccount(_ backend: String, account: String) async throws {
-        showBackends(try await ready().signInAgentAccount(backend, account: account))
+    /// For an agent that signs its login profiles in itself: waits for the browser sign-in on the computer.
+    func signInLoginProfile(_ backend: String, loginProfile: String) async throws {
+        showBackends(try await ready().signInLoginProfile(backend, loginProfile: loginProfile))
     }
 
-    /// Names an account (`account` nil: the default one); an empty name clears it.
-    func renameAgentAccount(_ backend: String, account: String?, name: String) async throws {
-        showBackends(try await ready().renameAgentAccount(backend, account: account, name: name))
+    /// Names a login profile (`loginProfile` nil: the default one); an empty name clears it.
+    func renameLoginProfile(_ backend: String, loginProfile: String?, name: String) async throws {
+        showBackends(try await ready().renameLoginProfile(backend, loginProfile: loginProfile, name: name))
     }
 
-    /// Fails, in words to show, while a bot still uses the account.
-    func removeAgentAccount(_ account: String) async throws {
-        showBackends(try await ready().removeAgentAccount(account))
+    /// Fails, in words to show, while something still uses the login profile.
+    func removeLoginProfile(_ loginProfile: String) async throws {
+        showBackends(try await ready().removeLoginProfile(loginProfile))
+    }
+
+    /// Saves an API key login profile's typed values (an empty one removes its variable) and imports `importing`
+    /// from the computer's login shell.
+    func setLoginProfileKeys(_ loginProfile: String, vars: [String: String] = [:], importing: [String] = []) async throws {
+        showBackends(try await ready().setLoginProfileKeys(loginProfile, vars: vars, importing: importing))
+    }
+
+    /// The variable names the computer's login shell has, to import.
+    func loginShellVariables() async throws -> [String] {
+        try await ready().loginShellVariables()
     }
 
     /// Re-detects agents on the computer (after an install or sign-in).

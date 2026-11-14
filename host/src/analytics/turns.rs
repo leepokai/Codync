@@ -27,6 +27,8 @@ pub enum TurnSource {
     Bot,
     /// The host's own turn, with no message of the user's (the lead opening a call).
     Host,
+    /// A follow-up the bot set for itself came due.
+    FollowUp,
 }
 
 /// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
@@ -55,6 +57,7 @@ pub fn turn_finished(
         TurnSource::Group => "group",
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
+        TurnSource::FollowUp => "follow_up",
     };
     let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
     if let Some((kind, rpc)) = failure {
@@ -80,16 +83,16 @@ fn outcome_name(outcome: TurnOutcome, error: Option<&str>) -> &'static str {
 }
 
 /// `agent_fell_back`: a turn moved on from `agent` to the bot's next one, and why (never the error's text).
-/// `account`: the step it left or the one taking over runs on an agent account (never which).
-pub fn agent_fell_back(hub: &Hub, agent: &str, account: bool, reason: crate::agent::fallback::Reason) {
-    let p = on_account(json!({"agent": agent, "reason": reason}), account);
+/// `login_profile`: the step it left or the one taking over runs on a login profile (never which).
+pub fn agent_fell_back(hub: &Hub, agent: &str, login_profile: bool, reason: crate::agent::fallback::Reason) {
+    let p = on_login_profile(json!({"agent": agent, "reason": reason}), login_profile);
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
 }
 
-/// `p` with `account: true` when an agent account is involved, as the account events mark it (`observe`).
-fn on_account(mut p: Value, account: bool) -> Value {
-    if account {
-        p["account"] = true.into();
+/// `p` with `loginProfile: true` when a login profile is involved, as the sign-in events mark it (`observe`).
+fn on_login_profile(mut p: Value, login_profile: bool) -> Value {
+    if login_profile {
+        p["loginProfile"] = true.into();
     }
     p
 }
@@ -105,11 +108,11 @@ pub enum Carried {
 }
 
 /// `handoff_carried`: `agent` took over a bot's chat and was told `bytes` of it first (never the text).
-/// `account`: it runs on an agent account (never which). `window_known`: a recap sized to the agent's window; a
-/// catch-up never is.
-pub fn handoff_carried(hub: &Hub, agent: &str, account: bool, kind: Carried, bytes: usize, window_known: bool) {
+/// `login_profile`: it runs on a login profile (never which). `window_known`: a recap sized to the agent's window;
+/// a catch-up never is.
+pub fn handoff_carried(hub: &Hub, agent: &str, login_profile: bool, kind: Carried, bytes: usize, window_known: bool) {
     let p = json!({"agent": agent, "kind": kind, "bytes": bytes, "window_known": window_known});
-    let p = on_account(p, account);
+    let p = on_login_profile(p, login_profile);
     capture(hub, Event::HandoffCarried, p.as_object().cloned().unwrap_or_default());
 }
 

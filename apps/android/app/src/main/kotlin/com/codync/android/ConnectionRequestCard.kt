@@ -111,7 +111,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
         }
         error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
     }
-    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = request.account == null, signInAccount = request.account) }
+    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = request.loginProfile == null, openLoginProfile = request.loginProfile) }
 }
 
 /** The agent, website or service the request is for. */

@@ -34,7 +34,7 @@ impl Actor {
             || self.active_request.is_some()
             || self.active_group.is_some()
             || self.active_routine.is_some()
-            || self.active_prompt
+            || self.host_turn.is_some()
             || self.lane.chat != self.cfg.id
             || self.hub.runtime(&self.cfg.id).started_at != Some(started_at)
         {

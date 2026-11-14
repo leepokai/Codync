@@ -204,6 +204,8 @@ To bump, set `version` in `host/crates/memory/Cargo.toml` (patch for fixes, mino
 
 `codync-network` (`host/crates/network`) ships the same way as codync-mem, through `.github/workflows/network-crate.yml`: a pull request into `main` that changes it must raise its 0.x `version`, and the push to `main` mirrors it to [leepokai/codync-network](https://github.com/leepokai/codync-network) (deploy key in `CODYNC_NETWORK_DEPLOY_KEY`) and publishes the version on crates.io by trusted publishing (`leepokai/Codync`, `network-crate.yml`). Bump with `cargo check -p codync-network` in `host/`. Its `.github` folder is the mirror's own CI and pull-request redirect, inert in Codync.
 
+`codync-accounts` (`host/crates/accounts`, the account kind of [login profiles](../features/login-profiles.md)) ships the same way through `.github/workflows/accounts-crate.yml`: mirror [leepokai/codync-accounts](https://github.com/leepokai/codync-accounts), deploy key in `CODYNC_ACCOUNTS_DEPLOY_KEY`, trusted publishing for `leepokai/Codync` with `accounts-crate.yml`. Bump with `cargo check -p codync-accounts` in `host/`. Its first release needs a hand: trusted publishing can only be set up for a crate crates.io already has, so before the first dev → main merge that carries it, publish 0.1.0 once with a token and set its trusted publisher (`leepokai/Codync`, `accounts-crate.yml`), as was done for codync-network.
+
 The mirror only fast-forwards: the crate's commits must reach `main` as they are. Merge a branch that touches a crate (no rebase or squash after its commits were mirrored or published), or the next push to the mirror is refused. 0.1.0 was published and mirrored by hand from `feat/codync-network` on 2026-10-26, ahead of its Codync release.
 
 ## iOS releases (Xcode Cloud)

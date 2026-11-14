@@ -81,7 +81,7 @@ pub fn call_started(hub: &Hub, bot: &str, call: Option<&str>) -> Result<()> {
 pub fn check_in_waits(hub: &Hub, routine: &str, bot: &str, event: &Value) -> bool {
     event["source"] == "schedule"
         && hub.store.kv_get(CHECK_IN_KEY).as_deref() == Some(routine)
-        && hub.store.bot(bot).ok().flatten().is_some_and(|r| crate::usage::near_limit(hub, &r.config.backend))
+        && hub.store.bot(bot).ok().flatten().is_some_and(|r| crate::usage::near_limit(hub, &r.config))
 }
 
 #[cfg(test)]

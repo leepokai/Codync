@@ -14,14 +14,14 @@ pub(super) fn patched(stored: &BotConfig, patch: &Value) -> Result<BotConfig> {
         }
     }
     let mut cfg: BotConfig = serde_json::from_value(merged)?;
-    // An app from before fallbacks had accounts sends each step without one, which isn't the user clearing it:
-    // the step keeps its saved account (the newer apps send `account`, `null` for none).
+    // A list that names each step's agent alone (a bot's own tools) sends no login profile, which isn't the user
+    // clearing it: the step keeps its saved one (the apps send `loginProfile`, `null` for none).
     if let Some(sent) = patch.get("fallbacks").and_then(Value::as_array) {
         let agents: Vec<&str> = sent.iter().map(|step| step["backend"].as_str().unwrap_or_default()).collect();
         let saved = crate::agent::fallback::saved_steps(&stored.fallbacks, &agents);
         for ((step, sent), saved) in cfg.fallbacks.iter_mut().zip(sent).zip(saved) {
-            if sent.get("account").is_none() {
-                step.account = saved.and_then(|f| f.account.clone());
+            if sent.get("loginProfile").is_none() {
+                step.login_profile = saved.and_then(|f| f.login_profile.clone());
             }
         }
     }
@@ -68,20 +68,20 @@ mod tests {
     }
 
     #[test]
-    fn a_fallback_sent_without_an_account_keeps_its_saved_one() {
+    fn a_fallback_sent_without_a_login_profile_keeps_its_saved_one() {
         let stored: BotConfig =
             serde_json::from_value(json!({"id": "a", "name": "a", "backend": "codex", "fallbacks": [
-                {"backend": "claude", "account": "a1"}, {"backend": "claude", "account": "a2"},
+                {"backend": "claude", "loginProfile": "a1"}, {"backend": "claude", "loginProfile": "a2"},
             ]}))
             .expect("a bot config");
-        let accounts = |fallbacks| -> Vec<Option<String>> {
+        let profiles = |fallbacks| -> Vec<Option<String>> {
             let cfg = patched(&stored, &json!({"name": "b", "fallbacks": fallbacks})).expect("a valid patch");
-            cfg.fallbacks.into_iter().map(|f| f.account).collect()
+            cfg.fallbacks.into_iter().map(|f| f.login_profile).collect()
         };
         let older = json!([{"backend": "claude"}, {"backend": "gemini"}, {"backend": "claude", "model": "opus"}]);
-        assert_eq!(accounts(older), [Some("a1".into()), None, Some("a2".into())], "an app that doesn't know accounts");
-        let cleared = json!([{"backend": "claude", "account": null}, {"backend": "claude", "account": "a1"}]);
-        assert_eq!(accounts(cleared), [None, Some("a1".into())], "a step that names its account, or none");
+        assert_eq!(profiles(older), [Some("a1".into()), None, Some("a2".into())], "a list of agents alone");
+        let cleared = json!([{"backend": "claude", "loginProfile": null}, {"backend": "claude", "loginProfile": "a1"}]);
+        assert_eq!(profiles(cleared), [None, Some("a1".into())], "a step that names its login profile, or none");
     }
 
     #[test]

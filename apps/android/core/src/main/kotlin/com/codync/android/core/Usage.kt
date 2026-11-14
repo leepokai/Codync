@@ -23,8 +23,9 @@ import java.util.Locale
         return order.mapNotNull { id -> services.firstOrNull { it.id == id } } + services.filter { it.id !in order }
     }
 
-    /** On, with nothing to show: signed out, or nothing to report. */
-    fun hasNoReading(service: UsageService): Boolean = service.shown && providers.none { it.id == service.id }
+    /** On, with no windows on any of its logins: signed out, nothing to report, or not read yet. */
+    fun hasNoReading(service: UsageService): Boolean =
+        service.shown && providers.none { it.id == service.id && it.logins.any { login -> login.windows.isNotEmpty() } }
 
     companion object { fun decode(value: JsonElement): UsageReport = WireJson.decodeFromJsonElement(value) }
 }
@@ -32,7 +33,25 @@ import java.util.Locale
 @Serializable data class UsageProvider(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(),
     val source: String = "", val updatedAt: Long? = null,
     /** The agent's ACP registry id, which its logo goes by. Absent from a host that doesn't name it. */
-    val registry: String? = null) {
+    val registry: String? = null,
+    /** What the default login is called, when the host knows; only sent beside [loginProfiles]. */
+    val defaultLoginProfile: String? = null,
+    /** The agent's other logins, each with its own reading. Empty for an agent with one login. */
+    val loginProfiles: List<UsageLoginProfile> = emptyList()) {
+    /** The agent's logins, the default first ([windows] are its reading); one when it has no login profiles. */
+    val logins: List<UsageLogin> get() = listOf(UsageLogin(null, defaultLoginProfile, windows)) + loginProfiles.map { UsageLogin(it.id, it.name, it.windows) }
+    /** The login nearest a limit, which the widgets and summaries show; the default when none has a limit. */
+    val tightestLogin: UsageLogin get() = logins.maxBy { it.tightest?.percent ?: -1.0 }
+    val limits: List<UsageWindow> get() = tightestLogin.limits
+    val tightest: UsageWindow? get() = tightestLogin.tightest
+}
+
+/** A login profile's reading; no [windows] until the host has read it. */
+@Serializable data class UsageLoginProfile(val id: String, val name: String, val windows: List<UsageWindow> = emptyList(), val updatedAt: Long? = null)
+
+/** One of an agent's logins and what it has used. The default login has no [id], and a [name] only when the host knows it. */
+data class UsageLogin(val id: String?, val name: String?, val windows: List<UsageWindow>) {
+    /** The plan windows: a note (a window with text) is never a limit. */
     val limits: List<UsageWindow> get() = windows.filter { it.text.isNullOrBlank() }
     val tightest: UsageWindow? get() = limits.filter { it.percent?.isFinite() == true }.maxByOrNull { requireNotNull(it.percent) }
 }

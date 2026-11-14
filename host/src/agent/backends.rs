@@ -85,6 +85,11 @@ pub fn harness_of(backend: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.answers_to(backend))
 }
 
+/// The agent `backend` is: its harness id, also for its registry entry's. One with no harness goes by its own id.
+pub fn agent_id(backend: &str) -> &str {
+    harness_of(backend).map_or(backend, |h| h.id)
+}
+
 /// `id`'s CLI is on this computer.
 pub fn installed(id: &str) -> bool {
     harness(id).is_some_and(|h| installed_cli(h).is_some())

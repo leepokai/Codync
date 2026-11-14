@@ -135,9 +135,9 @@ pub(crate) async fn start_first<F: Future<Output = Result<Conn>>>(
         let fallback_left = i + 1 < count;
         match start(candidate, env.clone(), fallback_left).await {
             Ok(conn) if conn.superseded && fallback_left => {
-                // An agent account keeps that database with its login: the shared one would sign every account in
+                // A login profile keeps that database with its login: the shared one would sign every one of them in
                 // as whoever signed in last (OpenCode 2 keeps its logins there).
-                let own = env.iter().any(|(name, _)| name == crate::agent::accounts::ACCOUNT_VAR);
+                let own = env.iter().any(|(name, _)| name == crate::agent::login_profiles::PROFILE_VAR);
                 let slot = env.iter().find(|(name, _)| own && name == "XDG_DATA_HOME").map(|(_, folder)| folder);
                 let dir = slot.map_or_else(crate::service::data_dir, std::path::PathBuf::from).join("opencode");
                 let dir = if slot.is_some() { dir.join("registry") } else { dir };
@@ -241,7 +241,7 @@ pub(crate) async fn start_agent(
         reports_compaction: false,
         usage: HashMap::new(),
         renamed: HashMap::new(),
-        on_account: None,
+        on_profile: None,
     })
 }
 

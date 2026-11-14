@@ -41,7 +41,8 @@ its own context and compacts it itself.
 
 ## Memory (`host/src/chat/memory/`, crate `host/crates/memory`)
 
-Memory records the person, not the work; what a bot learns about a project goes in a note of its own. The
+Memory records the person, not the work; what a bot learns about a project goes in a note of its own, and where
+a routine's runs stand is that routine's [progress note](routines.md#progress-note), not memory. The
 [design](../design/bot-memory.md#memory-is-files) explains why. Memory is Markdown files the bot keeps itself, like
 Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/memory` runs them in the host.
 

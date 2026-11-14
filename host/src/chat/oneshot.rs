@@ -18,10 +18,11 @@ pub async fn one_shot(hub: &Arc<Hub>, cfg: &BotConfig, system: &str, user: &str)
     let cwd = crate::service::data_dir().join("background");
     tokio::fs::create_dir_all(&cwd).await?;
     let cwd = cwd.to_string_lossy().into_owned();
-    if crate::market::vault::saved(&hub.store, &format!("agent-env:{}", cfg.backend))? {
+    let profile = cfg.login_profile.as_deref();
+    if crate::agent::auth::launch_reads_vault(&hub.store, &cfg.backend, profile)? {
         crate::market::vault::unlock(hub.clone()).await?;
     }
-    let (env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend, cfg.account.as_deref())?;
+    let (env, grants) = crate::agent::auth::launch_env(&hub.store, &cfg.backend, profile)?;
     let candidates = crate::agent::bot::launch_commands(cfg)?;
     let workspace = cwd.as_str();
     let mut conn = crate::agent::bot::start_first(candidates, &env, |candidate, mut env, _| async move {

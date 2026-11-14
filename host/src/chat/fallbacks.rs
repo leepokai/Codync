@@ -105,8 +105,8 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
 }
 
 /// `[{agent, model?}]`, as the bots' tools take it, into fallbacks. An agent already in `current` keeps what the tools
-/// don't show: its custom command, its account, and its model's options while the model stays. An agent that is
-/// there again (on another account) keeps them in order (`fallback::saved_steps`).
+/// don't show: its custom command, its login profile, and its model's options while the model stays. An agent that is
+/// there again (on another login profile) keeps them in order (`fallback::saved_steps`).
 pub fn parse(list: &Value, current: &[Fallback]) -> Result<Vec<Fallback>> {
     let items = list.as_array().context("fallbacks must be a list")?;
     if items.len() > MAX_FALLBACKS {
@@ -124,7 +124,7 @@ pub fn parse(list: &Value, current: &[Fallback]) -> Result<Vec<Fallback>> {
             Fallback {
                 backend: (*agent).to_owned(),
                 command: kept.and_then(|f| f.command.clone()),
-                account: kept.and_then(|f| f.account.clone()),
+                login_profile: kept.and_then(|f| f.login_profile.clone()),
                 model_options: kept.filter(|f| f.model == model).map(|f| f.model_options.clone()).unwrap_or_default(),
                 model,
             }
@@ -137,14 +137,14 @@ pub fn wire(list: &[Fallback]) -> Value {
     json!(list.iter().map(|f| json!({"agent": f.backend, "model": f.model})).collect::<Vec<_>>())
 }
 
-/// "Codex · gpt-5.5, Claude Code (Work)": each agent, with the agent account it runs on and its model.
+/// "Codex · gpt-5.5, Claude Code (Work)": each agent, with the login profile it runs on and its model.
 pub fn describe(store: &Store, list: &[Fallback]) -> String {
     let names: Vec<String> = list
         .iter()
         .map(|f| {
             let agent = fallback::name(&f.backend);
-            let agent = match crate::agent::accounts::name_of(store, &f.backend, f.account.as_deref()) {
-                Some(account) => format!("{agent} ({account})"),
+            let agent = match crate::agent::login_profiles::name_of(store, &f.backend, f.login_profile.as_deref()) {
+                Some(profile) => format!("{agent} ({profile})"),
                 None => agent,
             };
             match &f.model {
@@ -174,17 +174,20 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_there_twice_keeps_each_steps_account() {
-        let on =
-            |account: &str| Fallback { backend: "claude".into(), account: Some(account.into()), ..Fallback::default() };
+    fn an_agent_there_twice_keeps_each_steps_login_profile() {
+        let on = |profile: &str| Fallback {
+            backend: "claude".into(),
+            login_profile: Some(profile.into()),
+            ..Fallback::default()
+        };
         let current = [on("a1"), Fallback { backend: "codex".into(), ..Fallback::default() }, on("a2")];
         let restated = json!([{"agent": "claude", "model": "opus"}, {"agent": "claude"}, {"agent": "codex"}]);
         let list = parse(&restated, &current).unwrap();
-        let accounts: Vec<_> = list.iter().map(|f| f.account.as_deref()).collect();
-        assert_eq!(accounts, [Some("a1"), Some("a2"), None]);
+        let profiles: Vec<_> = list.iter().map(|f| f.login_profile.as_deref()).collect();
+        assert_eq!(profiles, [Some("a1"), Some("a2"), None]);
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        crate::agent::accounts::tests::insert(&store, &[("a1", "claude")]);
-        assert_eq!(describe(&store, &list[..2]), "Claude Code (Account 2) · opus, Claude Code", "a2 is gone");
+        crate::agent::login_profiles::tests::insert(&store, &[("a1", "claude")]);
+        assert_eq!(describe(&store, &list[..2]), "Claude Code (Login profile 2) · opus, Claude Code", "a2 is gone");
     }
 
     #[test]
@@ -192,7 +195,7 @@ mod tests {
         let current = [Fallback {
             backend: "codex".into(),
             command: Some("python3 standin".into()),
-            account: None,
+            login_profile: None,
             model: Some("gpt-5.5".into()),
             model_options: [("reasoning_effort".to_owned(), "high".to_owned())].into(),
         }];

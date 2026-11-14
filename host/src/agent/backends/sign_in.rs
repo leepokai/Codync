@@ -43,7 +43,7 @@ pub fn signed_in(id: &str) -> Option<bool> {
     SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
 }
 
-/// Logins (an agent's own, by the agent's id, or an agent account's, by its id) whose prompt was refused because
+/// Logins (an agent's own, by the agent's id, or a login profile's, by its id) whose prompt was refused because
 /// the agent asked for auth. Their own account check can still say signed in after that (`claude auth status`
 /// with a revoked token, `WorkBuddy`'s account).
 static PROMPT_REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -100,9 +100,10 @@ pub async fn run_cli(h: &Harness, args: &str, env: &[(String, String)]) -> Optio
         return None;
     }
     let bin = h.bins.iter().find_map(|b| which(b))?;
-    let run = tokio::process::Command::new(bin)
+    let mut command = tokio::process::Command::new(bin);
+    crate::shell::apply_env(command.as_std_mut(), env);
+    let run = command
         .args(args.split_whitespace())
-        .envs(env.iter().map(|(k, v)| (k, v)))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)

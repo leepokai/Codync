@@ -9,8 +9,8 @@ pub(super) use park::resume_step;
 
 use super::{Actor, Done, NoticeStyle};
 use crate::LockExt;
-use crate::agent::accounts::Login;
 use crate::agent::fallback::{self, Reason, carry, rest};
+use crate::agent::login_profiles::Login;
 use crate::analytics::Carried;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use serde_json::{Value, json};
@@ -23,10 +23,10 @@ const READ: i64 = 120;
 /// Tool calls a takeover lists, the latest ones.
 const TOOLS_LISTED: usize = 40;
 
-/// The context window agent `account` last reported in `bot`'s own chat, in tokens (`note_agent_window`). Deleted with
-/// the bot's other `fallback.` records.
-fn agent_window_key(bot: &str, account: &str) -> String {
-    format!("fallback.window.{bot}.{account}")
+/// The context window the agent on `login` last reported in `bot`'s own chat, in tokens (`note_agent_window`).
+/// Deleted with the bot's other `fallback.` records.
+fn agent_window_key(bot: &str, login: &str) -> String {
+    format!("fallback.window.{bot}.{login}")
 }
 
 /// What a turn needs to start again on the next agent.
@@ -74,7 +74,7 @@ pub(super) fn running(base: &BotConfig, current: &BotConfig) -> BotConfig {
         None => BotConfig {
             backend: current.backend.clone(),
             command: current.command.clone(),
-            account: current.account.clone(),
+            login_profile: current.login_profile.clone(),
             model: current.model.clone(),
             model_options: current.model_options.clone(),
             ..base.clone()
@@ -92,10 +92,10 @@ impl Actor {
     /// rests too: the sign-in state an app last checked can be stale.
     fn next_step(&self, now: i64) -> Option<usize> {
         (0..fallback::steps(&self.base)).find(|&s| {
-            let account = fallback::login(&self.base, s);
-            !self.relay.tried.contains(&account)
-                && !self.relay.skipped.contains(&account)
-                && rest::get(&self.hub.store, &account, now).is_none()
+            let login = fallback::login(&self.base, s);
+            !self.relay.tried.contains(&login)
+                && !self.relay.skipped.contains(&login)
+                && rest::get(&self.hub.store, &login, now).is_none()
         })
     }
 
@@ -177,12 +177,12 @@ impl Actor {
         self.relay.carried = text;
     }
 
-    /// What the chat calls the agent `cfg` runs: its name, with the agent account it runs on ("Claude Code
+    /// What the chat calls the agent `cfg` runs: its name, with the login profile it runs on ("Claude Code
     /// (Work)"), which is what tells two steps on one agent apart.
     fn called(&self, cfg: &BotConfig) -> String {
         let agent = fallback::name(&cfg.backend);
-        match crate::agent::accounts::name_of(&self.hub.store, &cfg.backend, cfg.account.as_deref()) {
-            Some(account) => format!("{agent} ({account})"),
+        match crate::agent::login_profiles::name_of(&self.hub.store, &cfg.backend, cfg.login_profile.as_deref()) {
+            Some(profile) => format!("{agent} ({profile})"),
             None => agent,
         }
     }
@@ -191,15 +191,15 @@ impl Actor {
     /// was told).
     fn tell_switch(&self, from: &BotConfig, target: usize) -> Option<String> {
         let to = self.cfg.backend.clone();
-        let from_account = fallback::login::of(from);
+        let from_login = fallback::login::of(from);
         let (from_name, to_name) = (self.called(from), self.called(&self.cfg));
         let from = from.backend.as_str();
         // Toward the bot's own agent, or away from one it no longer uses.
-        let back = fallback::step_of(&self.base, &from_account).is_none_or(|s| target < s);
+        let back = fallback::step_of(&self.base, &from_login).is_none_or(|s| target < s);
         let (reason, until) = self
             .relay
             .stopped
-            .or_else(|| rest::get(&self.hub.store, &from_account, now_ms()).map(|r| (r.reason, Some(r.until))))
+            .or_else(|| rest::get(&self.hub.store, &from_login, now_ms()).map(|r| (r.reason, Some(r.until))))
             .unzip();
         let until = until.flatten();
         let text = if back {
@@ -244,8 +244,8 @@ impl Actor {
             // A catch-up isn't sized to the agent's window.
             (Carried::CatchUp, None, self.catch_up_text()?)
         };
-        let on_account = Login::of(&self.hub.store, &self.cfg).account.is_some();
-        crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, on_account, kind, text.len(), room.is_some());
+        let on_profile = Login::of(&self.hub.store, &self.cfg).profile.is_some();
+        crate::analytics::handoff_carried(&self.hub, &self.cfg.backend, on_profile, kind, text.len(), room.is_some());
         Some(text)
     }
 
@@ -370,22 +370,20 @@ impl Actor {
         let mut start_error: Option<anyhow::Error> = None;
         loop {
             let now = now_ms();
-            let (agent, account) = (self.cfg.backend.clone(), fallback::login::of(&self.cfg));
+            let (agent, key) = (self.cfg.backend.clone(), fallback::login::of(&self.cfg));
             let login = Login::of(&self.hub.store, &self.cfg);
             if reason == Reason::SignedOut {
                 self.note_signed_out(&login);
             }
-            // The usage Codync reads is the computer's own login's: an agent account's reset isn't known.
-            let resets =
-                self.cfg.account.is_none().then(|| rest::reset_time(&self.hub.usage.locked(), &agent, now)).flatten();
-            let rest = rest::record(&self.hub.store, &account, reason, now, resets);
+            let resets = rest::reset_time(&self.hub.usage.locked(), &agent, login.profile.as_deref(), now);
+            let rest = rest::record(&self.hub.store, &key, reason, now, resets);
             if rest.is_some() {
-                fallback::tell_bots(&self.hub, &account);
+                fallback::tell_bots(&self.hub, &key);
             }
             if matches!(reason, Reason::ModelMissing | Reason::ModeMissing) {
-                self.relay.skipped.push(account.clone());
+                self.relay.skipped.push(key.clone());
             }
-            self.relay.tried.push(account);
+            self.relay.tried.push(key);
             let failed = start_error.as_ref().unwrap_or(error);
             let Some(next) = self.next_step(now) else {
                 self.relay.exhausted = true;
@@ -407,8 +405,8 @@ impl Actor {
             }
             self.report_turn(false, Some(failed), "error");
             let to = Login::of(&self.hub.store, &fallback::effective(&self.base, next));
-            let on_account = login.account.is_some() || to.account.is_some();
-            crate::analytics::agent_fell_back(&self.hub, &agent, on_account, reason);
+            let on_profile = login.profile.is_some() || to.profile.is_some();
+            crate::analytics::agent_fell_back(&self.hub, &agent, on_profile, reason);
             let done = self.so_far();
             self.relay.failed.push(carry::Failed { agent: self.called(&self.cfg), reason, done });
             self.relay.stopped = Some((reason, rest.map(|r| r.until)));

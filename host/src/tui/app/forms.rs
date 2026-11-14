@@ -38,7 +38,7 @@ impl App {
             name: Editor::with(&b.name),
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
-            account: b.account.clone(),
+            login_profile: b.login_profile.clone(),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
             model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             fast: b.fast_mode,
@@ -120,8 +120,8 @@ impl App {
                 self.open_folder(&start);
                 return None;
             }
-            // An account is added and signed in on the agent's own sheet.
-            KeyCode::Enter if matches!(field, Field::Agent | Field::Account) => {
+            // A login profile is added and signed in on the agent's own sheet.
+            KeyCode::Enter if matches!(field, Field::Agent | Field::LoginProfile) => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_agent(&backend, false);
@@ -150,7 +150,7 @@ impl App {
                 if matches!(
                     field,
                     Field::Agent
-                        | Field::Account
+                        | Field::LoginProfile
                         | Field::Fast
                         | Field::SelfFallbacks
                         | Field::Approvals
@@ -178,15 +178,15 @@ impl App {
                             // Another agent's model ids mean nothing here, and a login is in the chain once.
                             f.model.clear();
                             f.model_options = Default::default();
-                            f.account = None;
+                            f.login_profile = None;
                             let own = f.backend.clone();
-                            f.fallbacks.retain(|x| x.backend != own || x.account.is_some());
+                            f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
                             f.mode = f.mode.take().map(|_| crate::agent::modes::AUTO.to_owned());
                             self.want_models(&f.backend);
                         }
                     }
-                    Field::Account if !space => self.cycle_account(&mut f, d),
+                    Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Approvals => self.cycle_approval(&mut f, d),
@@ -282,7 +282,7 @@ impl Form {
             "name": self.name.text.trim(),
             "description": self.instructions.text.trim(),
             "backend": self.backend,
-            "account": self.account,
+            "loginProfile": self.login_profile,
             "cwd": self.cwd,
             "permission": if self.auto { "auto" } else { "ask" },
             "mode": self.mode,

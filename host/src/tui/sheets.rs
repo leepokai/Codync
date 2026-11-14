@@ -7,22 +7,24 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 
-use crate::tui::l10n::tr;
+use crate::tui::l10n::{fill, tr};
 use serde_json::Value;
 
 mod computer_view;
 mod gear_view;
 mod library_view;
+mod login_keys_view;
 mod market_view;
 mod memory_view;
 pub use computer_view::draw as computer;
 pub use gear_view::draw as gear;
 pub use library_view::draw as library;
+pub use login_keys_view::draw as key_import;
 pub use market_view::draw as market;
 pub use memory_view::draw as memory;
 
 use super::app::{App, Editor};
-use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, RoutineList, SetupRow, Submit};
+use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, RoutineList, RoutineRow, SetupRow, Submit};
 use super::md::truncate;
 use super::view::{
     centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
@@ -121,7 +123,7 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         None => {
             put(buf, inner.x, inner.y + 1, inner.width, &tr("Loading…"), t.dim.patch(t.panel));
         }
-        Some(v) if v.is_empty() => {
+        Some(_) if l.rows().next().is_none() => {
             put(
                 buf,
                 inner.x,
@@ -131,47 +133,76 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                 t.secondary.patch(t.panel),
             );
         }
-        Some(items) => {
+        Some(_) => {
             let mut y = inner.y + 1;
-            for (i, it) in items.iter().enumerate().skip(window(l.cursor, list_h)).take(list_h) {
-                let base = row(buf, inner, y, i == l.cursor);
-                let on = it["enabled"] == true;
-                put(buf, inner.x, y, 2, if on { "●" } else { "○" }, if on { t.bold } else { t.dim }.patch(base));
-                put(buf, inner.x + 2, y, inner.width / 2, s(it, "name"), t.bold.patch(base));
-                // A retry still waiting comes before the schedule's next run.
-                let retry = l
-                    .runs
-                    .iter()
-                    .find(|r| r["routineId"] == it["id"] && r["status"] == "pending")
-                    .and_then(|r| r["notBefore"].as_i64());
-                let next = retry
-                    .map(|ms| format!("retry {}", when_future(ms)))
-                    .or_else(|| it["nextRunAt"].as_i64().map(|ms| format!("next {}", when_future(ms))));
-                rput(
-                    buf,
-                    inner.right(),
-                    y,
-                    &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
-                    t.dim.patch(base),
-                );
-                let when: Vec<String> = it["triggerDescriptions"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .map(|text| tr(text).into_owned())
-                    .collect();
-                let (line, style) = match it["lastError"].as_str() {
-                    Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
-                    None => (when.join(" · "), t.secondary),
-                };
-                let room = usize::from(inner.width.saturating_sub(2));
-                put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
+            for (i, item) in l.rows().enumerate().skip(window(l.cursor, list_h)).take(list_h) {
+                match item {
+                    RoutineRow::FollowUp(follow_up) => follow_up_row(buf, inner, y, i == l.cursor, follow_up),
+                    RoutineRow::Routine(it) => routine_row(buf, inner, y, i == l.cursor, it, &l.runs),
+                }
                 y += 2;
             }
         }
     }
-    footer(buf, inner, None, "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc");
+    let keys = if matches!(l.picked(), Some(RoutineRow::FollowUp(_))) {
+        "x cancel follow-up · esc"
+    } else {
+        "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc"
+    };
+    footer(buf, inner, None, keys);
+}
+
+/// A follow-up the bot set for itself: a clock where a routine has its on/off dot, and when it happens.
+fn follow_up_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, follow_up: &Value) {
+    let t = theme();
+    let base = row(buf, inner, y, selected);
+    put(buf, inner.x, y, 2, "◷", t.dim.patch(base));
+    let room = usize::from(inner.width.saturating_sub(2));
+    let note = s(follow_up, "note").lines().next().unwrap_or_default();
+    put(buf, inner.x + 2, y, u(room), &truncate(note, room), t.bold.patch(base));
+    let at = follow_up["at"].as_i64().unwrap_or_default();
+    let when = if at <= crate::store::now_ms() {
+        tr("Follow-up due now").into_owned()
+    } else {
+        fill(&tr("Follow-up at {time}"), &[("time", &when_future(at))])
+    };
+    put(buf, inner.x + 2, y + 1, u(room), &truncate(&when, room), t.secondary.patch(t.panel));
+}
+
+fn routine_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, it: &Value, runs: &[Value]) {
+    let t = theme();
+    let base = row(buf, inner, y, selected);
+    let on = it["enabled"] == true;
+    put(buf, inner.x, y, 2, if on { "●" } else { "○" }, if on { t.bold } else { t.dim }.patch(base));
+    put(buf, inner.x + 2, y, inner.width / 2, s(it, "name"), t.bold.patch(base));
+    // A retry still waiting comes before the schedule's next run.
+    let retry = runs
+        .iter()
+        .find(|r| r["routineId"] == it["id"] && r["status"] == "pending")
+        .and_then(|r| r["notBefore"].as_i64());
+    let next = retry
+        .map(|ms| format!("retry {}", when_future(ms)))
+        .or_else(|| it["nextRunAt"].as_i64().map(|ms| format!("next {}", when_future(ms))));
+    rput(
+        buf,
+        inner.right(),
+        y,
+        &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
+        t.dim.patch(base),
+    );
+    let when: Vec<String> = it["triggerDescriptions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|text| tr(text).into_owned())
+        .collect();
+    let (line, style) = match it["lastError"].as_str() {
+        Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
+        None => (when.join(" · "), t.secondary),
+    };
+    let room = usize::from(inner.width.saturating_sub(2));
+    put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
@@ -241,8 +272,8 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
     let name = b.map_or(a.backend.as_str(), |b| s(b, "name"));
     let rows = app.agent_rows(a);
-    let accounts = usize::from(rows.iter().any(|r| matches!(r, SetupRow::OwnAccount))) * 2;
-    let r = centered(area, 80, u(rows.len() * 2 + accounts + 11).max(14));
+    let login_profiles = usize::from(rows.iter().any(|r| matches!(r, SetupRow::DefaultLoginProfile))) * 2;
+    let r = centered(area, 90, u(rows.len() * 2 + login_profiles + 11).max(14));
     let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
     let mut y = inner.y;
     let mut headed = false;
@@ -292,15 +323,15 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     y += 1;
     let default = tr("Default");
-    let in_browser = b.is_some_and(|b| b["accountSignIn"] == "browser");
+    let in_browser = b.is_some_and(|b| b["loginProfileSignIn"] == "browser");
     for (i, rw) in rows.iter().enumerate() {
-        let heading = !headed && matches!(rw, SetupRow::OwnAccount);
+        let heading = !headed && matches!(rw, SetupRow::DefaultLoginProfile);
         if y + 1 + u16::from(heading) * 2 >= inner.bottom().saturating_sub(2) {
             break;
         }
         if heading {
             headed = true;
-            put(buf, inner.x, y + 1, inner.width, &tr("Accounts"), t.secondary.patch(t.panel));
+            put(buf, inner.x, y + 1, inner.width, &tr("Login profiles"), t.secondary.patch(t.panel));
             y += 2;
         }
         let base = row(buf, inner, y, i == a.cursor);
@@ -327,27 +358,43 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
             SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
-            SetupRow::OwnAccount => {
-                let own = b.map_or(&Value::Null, |b| &b["ownAccount"]);
+            SetupRow::DefaultLoginProfile => {
+                let own = b.map_or(&Value::Null, |b| &b["defaultLoginProfile"]);
                 let state = signed_in.map(|on| tr(if on { "Signed in" } else { "Not signed in" }));
-                let name = own["name"].as_str().unwrap_or("Default account");
-                ("◎", name.to_owned(), account_detail(Some(&default), own, state.as_deref()))
+                let name = own["name"].as_str().unwrap_or("Default login profile");
+                ("◎", name.to_owned(), login_profile_detail(Some(&default), own, state.as_deref()))
             }
-            SetupRow::Account(account) => {
-                let state = if account["signedIn"] == true {
+            SetupRow::LoginProfile(login_profile) if login_profile["kind"] == "apiKey" => {
+                let vars: Vec<&str> =
+                    login_profile["vars"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let keys = if vars.is_empty() { tr("No key yet").into_owned() } else { vars.join(", ") };
+                let state = format!("{keys} · ↵ {}", tr("Edit keys"));
+                let detail = login_profile_detail(Some(&tr("API key")), login_profile, Some(&state));
+                ("⚿", login_profile["name"].as_str().unwrap_or("New login profile").to_owned(), detail)
+            }
+            SetupRow::LoginProfile(login_profile) => {
+                let state = if login_profile["signedIn"] == true {
                     tr("Signed in").into_owned()
-                } else if a.signing_in.as_deref() == account["id"].as_str() {
+                } else if a.signing_in.as_deref() == login_profile["id"].as_str() {
                     tr("Finish signing in in the browser on {name}…").replace("{name}", &app.host)
                 } else {
                     format!("{} · ↵ {}", tr("Not signed in"), tr("Sign in"))
                 };
-                let detail = account_detail(None, account, Some(&state));
-                ("◎", account["name"].as_str().unwrap_or("New account").to_owned(), detail)
+                let detail = login_profile_detail(None, login_profile, Some(&state));
+                ("◎", login_profile["name"].as_str().unwrap_or("New login profile").to_owned(), detail)
             }
-            SetupRow::AddAccount if in_browser => {
-                ("+", "Add account".to_owned(), format!("Opens a browser on {}.", app.host))
+            SetupRow::AddAccount => {
+                let how = if in_browser {
+                    "Signs in another {name} account in a browser on {other}."
+                } else {
+                    "Signs in another {name} account in a terminal on {other}."
+                };
+                ("+", "Add account".to_owned(), fill(&tr(how), &[("name", name), ("other", &app.host)]))
             }
-            SetupRow::AddAccount => ("+", "Add account".to_owned(), format!("In a terminal on {}.", app.host)),
+            SetupRow::AddApiKey => {
+                let what = tr("Runs {name} on keys you type or import from your login shell.");
+                ("+", "Add API key".to_owned(), fill(&what, &[("name", name)]))
+            }
         };
         let title = tr(&title);
         let detail = tr(&detail);
@@ -365,17 +412,19 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let keys = tr("↑↓ move · ↵ run · esc back");
     let keys = match rows.get(a.cursor) {
-        Some(SetupRow::OwnAccount) => format!("{keys} · r {}", tr("Rename account")),
-        Some(SetupRow::Account(_)) => format!("{keys} · r {} · x {}", tr("Rename account"), tr("Remove account")),
+        Some(SetupRow::DefaultLoginProfile) => format!("{keys} · r {}", tr("Rename login profile")),
+        Some(SetupRow::LoginProfile(_)) => {
+            format!("{keys} · r {} · x {}", tr("Rename login profile"), tr("Remove login profile"))
+        }
         _ => keys.into_owned(),
     };
     footer(buf, inner, a.error.as_deref(), &keys);
 }
 
-/// An account row's detail: `lead`, who it signs in (under a name the user gave it; otherwise that is its title),
+/// A login profile row's detail: `lead`, who it signs in (under a name the user gave it; otherwise that is its title),
 /// then its state.
-fn account_detail(lead: Option<&str>, account: &Value, state: Option<&str>) -> String {
-    let email = account["email"].as_str().filter(|_| account["label"].is_string());
+fn login_profile_detail(lead: Option<&str>, login_profile: &Value, state: Option<&str>) -> String {
+    let email = login_profile["email"].as_str().filter(|_| login_profile["label"].is_string());
     [lead, email, state].into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
@@ -462,8 +511,39 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
         "tab next · esc close"
     } else if tall {
         "⇧↵ new line · paste works"
+    } else if matches!(f.submit, Submit::LoginProfileKeys { .. }) {
+        "tab next field · ^x remove · ^l import"
     } else {
         "tab next field"
     };
-    rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
+    rput(buf, inner.right(), by, &tr(hint), t.dim.patch(t.panel));
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::tui::app::{screen, test_app};
+
+    #[tokio::test]
+    async fn the_routines_sheet_lists_follow_ups_above_the_routines_with_a_clock_and_when() {
+        let app = test_app();
+        let routine = json!({"id": "r", "name": "Morning summary", "enabled": true,
+            "triggerDescriptions": ["Every day at 09:00"]});
+        let list = RoutineList {
+            bot: "b".into(),
+            items: Some(vec![routine]),
+            follow_ups: vec![json!({"id": "f", "at": 0, "note": "Check the build\nthen the deploy"})],
+            ..Default::default()
+        };
+        let area = Rect::new(0, 0, 100, 30);
+        let lines = screen(area, |buf| routines(buf, area, &app, &list));
+        let at = |text: &str| lines.iter().position(|line| line.contains(text));
+        let note = at("◷ Check the build").expect("the note's first line, after its clock");
+        assert!(!lines[note].contains("then the deploy"));
+        assert!(lines[note + 1].contains("Follow-up due now"));
+        assert!(at("● Morning summary") > Some(note), "the routines come after");
+        assert!(at("x cancel follow-up").is_some(), "the keys of what is picked");
+    }
 }

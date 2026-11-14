@@ -59,12 +59,17 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.platform.LocalDensity
@@ -283,11 +288,28 @@ val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
 @Composable fun Modifier.cardGroup(): Modifier =
     if (LocalCardStyle.current == CardStyle.Outlined) cardOutline() else clip(RoundedRectangle(16.dp)).background(Palette.surface)
 
-/** Grok Bot's list cards (routines): an outline on the page, no fill. */
-@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp): Modifier =
-    fillMaxWidth().cardOutline().padding(horizontal = 14.dp, vertical = vertical)
+/**
+ * Grok Bot's list cards (routines): an outline on the page, no fill. `dashed` for what is there only until it
+ * happens (a bot's follow-up).
+ */
+@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp, dashed: Boolean = false): Modifier =
+    fillMaxWidth().then(if (dashed) Modifier.dashedCardOutline() else Modifier.cardOutline())
+        .padding(horizontal = 14.dp, vertical = vertical)
 
 @Composable private fun Modifier.cardOutline(): Modifier = border(1.dp, Palette.border, RoundedRectangle(14.dp))
+
+/** `cardOutline` in dashes: `border` draws only solid lines. */
+@Composable private fun Modifier.dashedCardOutline(): Modifier {
+    val color = Palette.border
+    val shape = RoundedRectangle(14.dp)
+    return drawWithCache {
+        val stroke = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
+        // The line is centered on the outline, so the outline sits half a line inside the card's edge.
+        val inside = Size(size.width - stroke.width, size.height - stroke.width)
+        val outline = shape.createOutline(inside, layoutDirection, this)
+        onDrawBehind { translate(stroke.width / 2, stroke.width / 2) { drawOutline(outline, color, style = stroke) } }
+    }
+}
 
 /** A 1-pixel separator line in the border color. */
 @Composable fun Hairline(modifier: Modifier = Modifier) {

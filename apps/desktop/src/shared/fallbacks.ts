@@ -4,24 +4,24 @@ import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type Res
 /** The host refuses more. */
 export const MAX_FALLBACKS = 3
 
-/** A login of the chain: an agent on one of its accounts, or (no account) on the login the computer already has. */
-export type Login = { backend: string; account?: string | null }
+/** A login of the chain: an agent on one of its login profiles, or (none) on the login the computer already has. */
+export type Login = { backend: string; loginProfile?: string | null }
 
 /** Two steps are the same when they run the same agent on the same login. */
-export const sameLogin = (a: Login, b: Login) => a.backend === b.backend && (a.account ?? null) === (b.account ?? null)
+export const sameLogin = (a: Login, b: Login) => a.backend === b.backend && (a.loginProfile ?? null) === (b.loginProfile ?? null)
 
 /** `login`'s rest, while it lasts. */
 export const restOf = (bot: Bot, login: Login, now: number): Resting | null =>
-  bot.resting.find((r) => sameLogin({ backend: r.agent, account: r.account }, login) && r.until > now) ?? null
+  bot.resting.find((r) => sameLogin({ backend: r.agent, loginProfile: r.loginProfile }, login) && r.until > now) ?? null
 
 /** The step the bot runs on right now, as a login; null on its own agent. */
-export const stepLogin = (bot: Bot): Login | null => bot.agentStep && { backend: bot.agentStep.agent, account: bot.agentStep.account }
+export const stepLogin = (bot: Bot): Login | null => bot.agentStep && { backend: bot.agentStep.agent, loginProfile: bot.agentStep.loginProfile }
 
-/** The logins of agent `backend` a new step can still take: its accounts that are signed in and, first as `null`, the computer's own, without the ones the chain has. */
+/** The logins of agent `backend` a new step can still take: its login profiles that are signed in and, first as `null`, the computer's own, without the ones the chain has. */
 export function freeLogins(backend: Backend, taken: Login[]): (string | null)[] {
   const own: (string | null)[] = [null]
-  const all = own.concat((backend.accounts ?? []).filter((a) => a.signedIn).map((a) => a.id))
-  return all.filter((account) => !taken.some((t) => sameLogin(t, { backend: backend.id, account })))
+  const all = own.concat((backend.loginProfiles ?? []).filter((p) => p.signedIn).map((p) => p.id))
+  return all.filter((loginProfile) => !taken.some((t) => sameLogin(t, { backend: backend.id, loginProfile })))
 }
 
 /** The agent a bot runs on right now: its fallback's while it's on one. */
@@ -43,7 +43,7 @@ export const restLine = (rest: Resting, now: number) =>
 
 /**
  * The Agent card's first line while the bot runs on a fallback; null on its own agent. `name` says what to call a login
- * ("Claude Code (Work)" on an account); `own` asks for the computer's own login by its account too, which tells two
+ * ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its name too, which tells two
  * logins of one agent apart.
  */
 export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
@@ -65,7 +65,7 @@ export function moveFallback(list: Fallback[], index: number, by: number): Fallb
 
 /** The bot on agent `backend`, on the computer's own login: a fallback on that login goes (a login is in the chain once, as the host keeps it). */
 export const withBackend = (d: BotDraft, backend: string): BotDraft => d.backend === backend ? d : ({
-  ...d, backend, account: null, model: null, modelOptions: {}, fallbacks: d.fallbacks?.filter((f) => !sameLogin(f, { backend })),
+  ...d, backend, loginProfile: null, model: null, modelOptions: {}, fallbacks: d.fallbacks?.filter((f) => !sameLogin(f, { backend })),
   // A picked mode becomes the new agent's Auto mode (or, without one, asking).
   mode: d.mode ? AUTO_MODE : d.mode,
 })

@@ -233,6 +233,7 @@ pub(crate) async fn start_agent(
         fast_options: HashMap::new(),
         modes: HashMap::new(),
         mode_set: HashSet::new(),
+        stale_options: HashSet::new(),
         reports_compaction: false,
         usage: HashMap::new(),
         renamed: HashMap::new(),

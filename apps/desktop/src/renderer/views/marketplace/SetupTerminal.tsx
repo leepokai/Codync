@@ -25,14 +25,14 @@ const openLink = (uri: string) => {
  * Installing or signing in to an agent, or adding Node.js, live: the command runs in a
  * terminal on the computer and this screen is that terminal (links open here).
  */
-export function SetupTerminalView({ backend, step, method, account, back }: {
+export function SetupTerminalView({ backend, step, method, loginProfile, back }: {
   /** Null only for the `node` step, which belongs to the computer. */
   backend: Backend | null
   step: SetupStep
   /** A terminal sign-in method the agent offered; null runs Codync's own command. */
   method?: AuthMethod | null
-  /** The agent account a sign-in is for; none signs in the computer's own login. */
-  account?: string
+  /** The login profile a sign-in is for; none signs in the computer's own login. */
+  loginProfile?: string
   /** Back to the agent's sheet (the terminal is a step inside it). */
   back: () => void
 }) {
@@ -140,7 +140,7 @@ export function SetupTerminalView({ backend, step, method, account, back }: {
     void (async () => {
       try {
         const client = await store.ready()
-        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows, account)
+        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows, loginProfile)
         if (cancelled) {
           void market.termClose(client, id).catch(() => {})
           return

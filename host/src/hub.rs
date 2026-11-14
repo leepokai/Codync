@@ -64,9 +64,9 @@ pub struct Runtime {
 pub struct AgentStep {
     pub step: usize,
     pub agent: String,
-    /// The agent account the step runs on; none for the computer's own login.
+    /// The login profile the step runs on; none for the default one.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
+    pub login_profile: Option<String>,
     pub model: Option<String>,
     pub since: i64,
     pub reason: Option<crate::agent::fallback::Reason>,
@@ -77,7 +77,7 @@ impl AgentStep {
         Self {
             step,
             agent: cfg.backend.clone(),
-            account: cfg.account.clone(),
+            login_profile: cfg.login_profile.clone(),
             model: cfg.model.clone(),
             since: crate::store::now_ms(),
             reason,

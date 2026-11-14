@@ -91,16 +91,29 @@ pub(crate) fn probe_dir() -> PathBuf {
     crate::service::data_dir().join("probe")
 }
 
+/// Where `backend`'s saved keys are. A login profile's are in a slot of its own (`login_profiles::keys`).
 fn env_slot(backend: &str) -> String {
     format!("agent-env:{backend}")
 }
 
-/// The keys saved for `backend` that its agents may read: all of them, except a cloud computer's proxied ones.
-fn visible(store: &Store, backend: &str) -> Result<BTreeMap<String, String>> {
-    let Some(raw) = crate::market::vault::read(store, &env_slot(backend))? else {
+/// The variables saved in `slot` that agents may read: all of them, except a cloud computer's proxied ones.
+fn visible(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
+    let Some(raw) = crate::market::vault::read(store, slot)? else {
         return Ok(BTreeMap::new());
     };
     Ok(serde_json::from_str(&raw)?)
+}
+
+/// What the user typed (name → value) as changes: an empty value removes the variable.
+pub(crate) fn env_changes(vars: &Map<String, Value>) -> Result<Vec<(String, Option<String>)>> {
+    let mut changes = Vec::new();
+    for (k, v) in vars {
+        if !crate::shell::is_env_name(k) {
+            bail!("`{k}` isn't an environment variable name");
+        }
+        changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
+    }
+    Ok(changes)
 }
 
 /// Applies `changes` (a value, or `None` to remove it) to `saved`: the names removed.
@@ -117,11 +130,30 @@ fn apply(saved: &mut BTreeMap<String, String>, changes: &[(String, Option<String
     removed
 }
 
-/// Keys saved for `backend` but those `skip` names (each with the address saved for it), as environment for its
-/// process, and the grants a cloud computer's proxied ones are on: the process holds those for as long as it runs
+/// Applies `changes` to the variables saved in `slot`. On a Codync Cloud computer, provider keys go to its keeper
+/// (`proxied`).
+pub(crate) fn save_env(store: &Store, slot: &str, changes: &[(String, Option<String>)]) -> Result<()> {
+    if is_managed(store) {
+        return proxied::save(store, slot, changes);
+    }
+    let mut saved = visible(store, slot)?;
+    apply(&mut saved, changes);
+    crate::market::vault::write(store, slot, &serde_json::to_string(&saved)?)
+}
+
+/// Deletes every variable saved in `slot`, proxied ones too. Needs no open vault.
+pub(crate) fn forget_env(store: &Store, slot: &str) -> Result<()> {
+    if is_managed(store) {
+        proxied::forget(store, slot)?;
+    }
+    crate::market::vault::delete(store, slot)
+}
+
+/// The variables saved in `slot` but those `skip` names (each with the address saved for it), as environment for
+/// a process, and the grants a cloud computer's proxied ones are on: the process holds those for as long as it runs
 /// (`Acp::hold`); dropping them revokes them.
-fn env_without(store: &Store, backend: &str, skip: &[&str]) -> Result<(Vec<(String, String)>, Grants)> {
-    let mut saved = visible(store, backend)?;
+pub(crate) fn env_without(store: &Store, slot: &str, skip: &[&str]) -> Result<(Vec<(String, String)>, Grants)> {
+    let mut saved = visible(store, slot)?;
     for key in skip {
         if saved.remove(*key).is_some()
             && let Some(address) = proxied::address_of(key)
@@ -132,43 +164,67 @@ fn env_without(store: &Store, backend: &str, skip: &[&str]) -> Result<(Vec<(Stri
     let mut env: Vec<(String, String)> = saved.into_iter().collect();
     let mut grants = Grants::default();
     if is_managed(store) {
-        proxied::add(store, backend, skip, &mut env, &mut grants)?;
+        proxied::add(store, slot, skip, &mut env, &mut grants)?;
     }
     Ok((env, grants))
 }
 
 /// One saved value its agent reads as is (a folder, such as `CODEX_HOME`); never a proxied key.
 pub fn saved_value(store: &Store, backend: &str, name: &str) -> Result<Option<String>> {
-    Ok(visible(store, backend)?.remove(name))
+    Ok(visible(store, &env_slot(backend))?.remove(name))
 }
 
-/// The environment `backend`'s process starts with: the saved keys, what the harness needs to start, where
-/// `account`'s login is, and the login shell's variables, as in the user's terminal (the others win); and
-/// [`env_without`]'s grants.
-pub fn launch_env(store: &Store, backend: &str, account: Option<&str>) -> Result<(Vec<(String, String)>, Grants)> {
-    let slot = crate::agent::accounts::env(store, backend, account)?;
-    // An account's login wins over a key saved for the agent, which the agent would run on instead.
-    let login_keys = if slot.is_empty() { &[] } else { crate::agent::accounts::login_keys(backend) };
-    let (mut env, grants) = env_without(store, backend, login_keys)?;
+/// The environment `backend`'s process starts with on `login_profile` (none: the computer's own login): the saved
+/// keys, what the harness needs to start, and the login profile's own (and [`env_without`]'s grants).
+pub fn launch_env(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+) -> Result<(Vec<(String, String)>, Grants)> {
+    let (own, own_grants) = crate::agent::login_profiles::env(store, backend, login_profile)?;
+    // A login profile wins over a key saved for the agent, which the agent would run on instead.
+    let login_keys = if own.is_empty() { &[] } else { crate::agent::login_profiles::login_keys(backend) };
+    let (mut env, mut grants) = env_without(store, &env_slot(backend), login_keys)?;
+    grants.absorb(own_grants);
     backends::apply_process_env(backend, &mut env);
-    // And its folder over one the user saved for the agent.
-    env.retain(|(name, _)| !slot.iter().any(|(set, _)| set == name));
-    env.extend(slot);
-    // The shell's variables come last, and never a key the account's login replaced.
-    let mut shell = backends::login_env();
-    shell.retain(|(k, _)| !login_keys.contains(&k.as_str()) && !env.iter().any(|(name, _)| name == k));
-    shell.append(&mut env);
-    Ok((shell, grants))
+    // And its variables over the ones the user saved for the agent.
+    env.retain(|(name, _)| !own.iter().any(|(set, _)| set == name));
+    env.extend(own);
+    Ok((env, grants))
 }
 
-/// Names of the saved keys (values never leave the host), proxied ones too.
-pub(crate) fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
-    let mut names: Vec<String> = visible(store, backend)?.into_keys().collect();
+/// Whether [`launch_env`] reads the vault, which has to be open then: keys are saved for the agent, or it runs on
+/// an API key login profile.
+pub fn launch_reads_vault(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<bool> {
+    Ok(crate::market::vault::saved(store, &env_slot(backend))?
+        || crate::agent::login_profiles::reads_vault(store, backend, login_profile))
+}
+
+/// Whether [`launch_env`] sets variable `name`, answered from the saved names alone (no vault, no grant).
+pub fn launch_sets(store: &Store, backend: &str, login_profile: Option<&str>, name: &str) -> bool {
+    let saved = || saved_env(store, backend).unwrap_or_default().iter().any(|k| k == name);
+    match crate::agent::login_profiles::vars(store, backend, login_profile) {
+        Some(own) => {
+            own.iter().any(|k| k == name)
+                || (!crate::agent::login_profiles::login_keys(backend).contains(&name) && saved())
+        }
+        None => saved(),
+    }
+}
+
+/// Names of the variables saved in `slot` (values never leave the host), proxied ones too.
+pub(crate) fn saved_names(store: &Store, slot: &str) -> Result<Vec<String>> {
+    let mut names: Vec<String> = visible(store, slot)?.into_keys().collect();
     if is_managed(store) {
-        names.extend(proxied::names(store, backend)?);
+        names.extend(proxied::names(store, slot)?);
         names.sort();
     }
     Ok(names)
+}
+
+/// Names of the keys saved for `backend`.
+pub(crate) fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
+    saved_names(store, &env_slot(backend))
 }
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
@@ -292,7 +348,7 @@ fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
                     .iter()
                     .filter_map(|v| {
                         let name = text(&v["name"])?;
-                        name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_').then(|| EnvVar {
+                        crate::shell::is_env_name(&name).then(|| EnvVar {
                             label: text(&v["label"]).unwrap_or_else(|| name.clone()),
                             secret: v["secret"].as_bool().unwrap_or(true),
                             optional: v["optional"].as_bool().unwrap_or(false),
@@ -342,20 +398,7 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
 
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
 pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) -> Result<Value> {
-    let mut changes = Vec::new();
-    for (k, v) in vars {
-        if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || k.is_empty() {
-            bail!("`{k}` isn't an environment variable name");
-        }
-        changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
-    }
-    if is_managed(store) {
-        proxied::save(store, backend, &changes)?;
-    } else {
-        let mut saved = visible(store, backend)?;
-        apply(&mut saved, &changes);
-        crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
-    }
+    save_env(store, &env_slot(backend), &env_changes(vars)?)?;
     // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
     backends::clear_prompt_refused(backend);
     check(store, backend).await

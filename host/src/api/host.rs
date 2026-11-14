@@ -99,19 +99,38 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::market::agent_sign_in::refresh(hub).await;
             json!({"backends": agents(hub)})
         }
-        // A new, signed-out account for an agent; `agentSetup` with it signs it in.
-        "addAgentAccount" => {
-            let account = crate::agent::accounts::add(&hub.store, str_arg(&b, "backend")?).await?;
-            json!({"account": account, "backends": agents(hub)})
+        // A new login profile for an agent, not signed in yet: `kind` is `account` (its sign-in follows:
+        // `agentSetup` or `agentAuthenticate` with it) or `apiKey` (`setLoginProfileKeys` gives it its keys).
+        "addLoginProfile" => {
+            let kind = crate::agent::login_profiles::Kind::parse(&b["kind"])?;
+            let profile = crate::agent::login_profiles::add(&hub.store, str_arg(&b, "backend")?, kind).await?;
+            json!({"loginProfile": profile, "backends": agents(hub)})
         }
-        // The user's name for an account, or with no `account` for the computer's own login; empty clears it.
-        "renameAgentAccount" => {
+        // The user's name for a login profile, or with no `loginProfile` for the agent's default one; empty clears it.
+        "renameLoginProfile" => {
             let name = b["name"].as_str().unwrap_or_default();
-            crate::agent::accounts::rename(&hub.store, str_arg(&b, "backend")?, b["account"].as_str(), name)?;
+            let profile = b["loginProfile"].as_str();
+            crate::agent::login_profiles::rename(&hub.store, str_arg(&b, "backend")?, profile, name)?;
             json!({"backends": agents(hub)})
         }
-        "removeAgentAccount" => {
-            crate::agent::accounts::remove(hub, str_arg(&b, "account")?).await?;
+        // An API key profile's variables: `vars` typed by the user (an empty value removes one), and `import`, names
+        // whose values the host reads from the login shell now. Values never come back.
+        "setLoginProfileKeys" => {
+            let none = serde_json::Map::new();
+            let typed = b["vars"].as_object().unwrap_or(&none);
+            let import: Vec<String> = match &b["import"] {
+                Value::Null => Vec::new(),
+                names => serde_json::from_value(names.clone()).context("`import` is a list of variable names")?,
+            };
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::set_keys(hub, id, typed, &import).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        // The names (never the values) of the login shell's variables an API key profile can import.
+        "loginShellVariables" => json!({"names": crate::agent::login_profiles::keys::shell_names().await?}),
+        "removeLoginProfile" => {
+            crate::agent::login_profiles::remove(hub, str_arg(&b, "loginProfile")?).await?;
             json!({"backends": agents(hub)})
         }
         "usage" => {
@@ -159,9 +178,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (cols, rows) = term_size(&b);
             // Node.js belongs to the computer, not to one agent.
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
-            let term = match b["account"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
+            let term = match b["loginProfile"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
                 Some(id) => {
-                    let command = crate::agent::accounts::login_command(&hub.store, id).await?;
+                    let command = crate::agent::login_profiles::login_command(&hub.store, id).await?;
                     hub.terms.sign_in_account(backend, id, &command, cols, rows)?
                 }
                 None => hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?,
@@ -169,15 +188,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"term": term})
         }
         "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
-        // An account's own sign-in state: `{signedIn, account}`, and the agent list it changed.
-        "agentAuth" if b["account"].is_string() => {
-            let mut status = crate::market::agent_sign_in::check_account(hub, str_arg(&b, "account")?).await?;
+        // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
+        "agentAuth" if b["loginProfile"].is_string() => {
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::check_login_profile(hub, id).await?;
             status["backends"] = agents(hub).into();
             status
         }
-        // An account whose agent signs itself in (a browser on this computer): the same answer once it's done.
-        "agentAuthenticate" if b["account"].is_string() => {
-            let mut status = crate::market::agent_sign_in::sign_in_account(hub, str_arg(&b, "account")?).await?;
+        // An account login profile whose agent signs itself in (a browser on this computer): the same answer once
+        // it's done.
+        "agentAuthenticate" if b["loginProfile"].is_string() => {
+            let mut status = crate::market::agent_sign_in::sign_in_account(hub, str_arg(&b, "loginProfile")?).await?;
             status["backends"] = agents(hub).into();
             status
         }
@@ -278,10 +299,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     }))
 }
 
-/// The agents this computer can run, each with its accounts.
+/// The agents this computer can run, each with its login profiles.
 fn agents(hub: &Hub) -> Vec<Value> {
     let mut agents = backends::list();
-    crate::agent::accounts::annotate(&hub.store, &mut agents);
+    crate::agent::login_profiles::annotate(&hub.store, &mut agents);
     agents
 }
 

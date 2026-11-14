@@ -56,10 +56,10 @@ pub struct Account {
 }
 
 impl Account {
-    /// A new, signed-out account of `agent`, numbered after `others` (the accounts there are).
-    pub fn new(id: String, agent: &Agent, others: &[Account]) -> Self {
-        let last = others.iter().filter(|a| a.agent == agent.id).map(|a| a.number).max().unwrap_or(1);
-        Self { id, agent: agent.id.to_owned(), label: None, email: None, number: last.max(1) + 1, signed_in: false }
+    /// A new, signed-out account of agent `agent`, numbered after `others` (the accounts there are).
+    pub fn new(id: String, agent: &str, others: &[Account]) -> Self {
+        let last = others.iter().filter(|a| a.agent == agent).map(|a| a.number).max().unwrap_or(1);
+        Self { id, agent: agent.to_owned(), label: None, email: None, number: last.max(1) + 1, signed_in: false }
     }
 
     /// What to call it: the name the user gave it, else, once it's signed in, who it signs in or its number. Not
@@ -148,12 +148,11 @@ mod tests {
 
     #[test]
     fn an_account_goes_by_who_it_signs_in_or_its_number() {
-        let claude = agent("claude").unwrap();
-        let first = Account::new("a1".into(), claude, &[]);
+        let first = Account::new("a1".into(), "claude", &[]);
         assert_eq!((first.number, first.name()), (2, None), "the computer's own login is the first");
         assert_eq!(first.called(), "Account 2", "signed out, it still has something to go by");
         let others = [first, account("b1", "codex")];
-        let mut second = Account::new("a2".into(), claude, &others);
+        let mut second = Account::new("a2".into(), "claude", &others);
         assert_eq!(second.number, 3);
         second.signed_in = true;
         assert_eq!(second.name().as_deref(), Some("Account 3"));

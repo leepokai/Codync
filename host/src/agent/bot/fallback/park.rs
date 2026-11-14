@@ -97,11 +97,9 @@ impl Actor {
         };
         logged(&bot, "record the bot's agent", stored);
         // Still on the same agent and model (a settings change elsewhere): it's been on it since it moved.
-        let same = self
-            .hub
-            .runtime(&bot)
-            .agent_step
-            .filter(|s| s.agent == self.cfg.backend && s.account == self.cfg.account && s.model == self.cfg.model);
+        let same = self.hub.runtime(&bot).agent_step.filter(|s| {
+            s.agent == self.cfg.backend && s.login_profile == self.cfg.login_profile && s.model == self.cfg.model
+        });
         let reason = self.relay.stopped.map(|(r, _)| r);
         let on = (step > 0).then(|| same.unwrap_or_else(|| AgentStep::new(&self.cfg, step, reason)));
         self.hub.set_runtime(&bot, |r| r.agent_step = on);

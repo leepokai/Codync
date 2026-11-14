@@ -24,6 +24,8 @@ impl App {
             }
             KeyCode::Enter => self.save_fields(&mut f),
             KeyCode::Char('s') if ctrl(k) => self.save_fields(&mut f),
+            KeyCode::Char('x') if ctrl(k) => self.remove_login_key(&mut f),
+            KeyCode::Char('l') if ctrl(k) => self.import_login_keys(&f),
             KeyCode::Tab | KeyCode::Down => f.cursor = (f.cursor + 1) % rows.max(1),
             KeyCode::BackTab | KeyCode::Up => f.cursor = (f.cursor + rows.max(1) - 1) % rows.max(1),
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if on_choice => {
@@ -48,14 +50,13 @@ impl App {
             f.error = Some(format!("{} is required.", i.label));
             return;
         }
-        let values: serde_json::Map<String, Value> = f
-            .inputs
-            .iter()
-            .filter(|i| !i.ed.text.trim().is_empty())
-            .map(|i| (i.name.clone(), if i.secret { i.ed.text.as_str() } else { i.ed.text.trim() }.into()))
-            .collect();
+        let values = f.typed();
         f.saving = true;
         f.error = None;
+        if matches!(f.submit, Submit::LoginProfileKeys { .. }) {
+            self.save_login_keys(f, values);
+            return;
+        }
         match &f.submit {
             Submit::Icon(target) => {
                 let mut body = json!({"target": target, "tinted": f.choice == 1});
@@ -101,7 +102,7 @@ impl App {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
                 self.sheet("renameArtifact", body, Reply::FieldsSaved);
             }
-            Submit::RenameAccount { backend, account } => {
+            Submit::RenameLoginProfile { backend, login_profile } => {
                 let name: String = values
                     .get("name")
                     .and_then(Value::as_str)
@@ -110,11 +111,13 @@ impl App {
                     .take(codync_accounts::LABEL_MAX)
                     .collect();
                 let mut body = json!({"backend": backend, "name": name});
-                if let Some(account) = account {
-                    body["account"] = account.as_str().into();
+                if let Some(login_profile) = login_profile {
+                    body["loginProfile"] = login_profile.as_str().into();
                 }
-                self.sheet("renameAgentAccount", body, Reply::FieldsSaved);
+                self.sheet("renameLoginProfile", body, Reply::FieldsSaved);
             }
+            // Saved above: its new variable takes the map apart.
+            Submit::LoginProfileKeys { .. } => {}
         }
     }
 }

@@ -13,12 +13,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
 - 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
 - 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
-- Claude Code、Codex、OpenCode 等智慧體可以登入多個賬戶：每個賬戶都能取名，bot 在「智慧體」選擇要用哪一個。
-- 備援可以選同一個智慧體的另一個賬戶。
+- 智慧體可以有多個「登入設定」：新增賬戶（Claude Code、Codex 等），或為任何智慧體新增 API 金鑰；每個都能取名，bot 在「智慧體」選擇要用哪一個。
+- 備援可以選同一個智慧體的另一個登入設定。
 
 ### en-US
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet.
 - Update notices say whether this app or Codync on your computer needs updating.
 - A voice note no longer starts playing after you leave its chat.
 - Choice cards show numbered options, and Something else takes your own answer.
-- Agents such as Claude Code and Codex can sign in to several accounts: name each one, pick a bot's under Agent, or fall back to another account of the same agent.
+- Agents can have several login profiles: another account, or an API key for any agent. Name each, pick a bot's under Agent, or fall back to another of the same agent.

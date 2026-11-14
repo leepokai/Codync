@@ -52,27 +52,44 @@ pub fn exec(command: &str) -> Shell {
     if cfg!(windows) { line(command) } else { line(&format!("exec {command}")) }
 }
 
-/// The environment a fresh login would get (its PATH finds CLIs installed after this process
-/// started; its other variables are what the user's agents expect, such as API keys).
-/// Unix: the login shell's, via `$SHELL -ilc` with a timeout (nvm/conda can make shells
-/// slow); the shell writes it to a file, since a background job started by an rc file can hold a
-/// stdout pipe open long after the shell exits. It holds secrets, so it sits in a folder only this
-/// user can open; the shell creates the file itself, so an rc file's `noclobber` doesn't block it.
+/// The PATH a fresh login would get, for finding CLIs installed after this process started.
+#[cfg(unix)]
+pub fn user_path() -> Option<String> {
+    String::from_utf8(login_shell_output(&login_shell(), "printf '%s' \"$PATH\"")?).ok()
+}
+
+/// The variables a fresh login would get, read only when the user imports some into a login profile.
 #[cfg(unix)]
 pub fn user_env() -> Option<Vec<(String, String)>> {
-    login_env(&std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()))
+    login_shell_output(&login_shell(), "env -0").map(|dump| parse_env(&dump))
+}
+
+/// Windows: the host's own. A process started at sign-in already has the user's variables.
+#[cfg(windows)]
+#[allow(clippy::unnecessary_wraps)] // the Unix signature
+pub fn user_env() -> Option<Vec<(String, String)>> {
+    Some(std::env::vars().collect())
 }
 
 #[cfg(unix)]
-fn login_env(shell: &str) -> Option<Vec<(String, String)>> {
+fn login_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
+}
+
+/// What `script` prints in the login shell (`shell -ilc`), with a timeout (nvm/conda can make shells slow). The
+/// shell writes it to a file, since a background job started by an rc file can hold a stdout pipe open long after
+/// the shell exits. It can hold secrets, so the file sits in a folder only this user can open; the shell creates
+/// the file itself, so an rc file's `noclobber` doesn't block it.
+#[cfg(unix)]
+fn login_shell_output(shell: &str, script: &str) -> Option<Vec<u8>> {
     use std::os::unix::fs::DirBuilderExt as _;
     use std::time::{Duration, Instant};
-    let dir = std::env::temp_dir().join(format!("codync-env-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("codync-shell-{}", uuid::Uuid::new_v4()));
     std::fs::DirBuilder::new().mode(0o700).create(&dir).ok()?;
-    let file = dir.join("env");
+    let file = dir.join("out");
     let target = file.to_string_lossy().replace('\'', r"'\''");
     let child = std::process::Command::new(shell)
-        .args(["-ilc", &format!("env -0 > '{target}'")])
+        .args(["-ilc", &format!("{script} > '{target}'")])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -92,9 +109,9 @@ fn login_env(shell: &str) -> Option<Vec<(String, String)>> {
             }
         }
     };
-    let dump = std::fs::read(&file).ok().filter(|d| exited && !d.is_empty());
+    let out = std::fs::read(&file).ok().filter(|d| exited && !d.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
-    Some(parse_env(&dump?))
+    out
 }
 
 /// `env -0` output: `KEY=value` entries ended by NUL; entries that aren't UTF-8 are skipped.
@@ -107,16 +124,10 @@ fn parse_env(dump: &[u8]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Windows: only PATH. A process started at sign-in already has the user's variables.
-#[cfg(windows)]
-pub fn user_env() -> Option<Vec<(String, String)>> {
-    user_path().map(|path| vec![("PATH".to_owned(), path)])
-}
-
 /// Windows: the user's and the machine's PATH from the registry. A running process keeps the
 /// PATH it started with, so a CLI whose installer just added its folder is only seen there.
 #[cfg(windows)]
-fn user_path() -> Option<String> {
+pub fn user_path() -> Option<String> {
     use std::os::windows::process::CommandExt as _;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let read = "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')";
@@ -144,12 +155,17 @@ pub fn quote(s: &str) -> String {
     }
 }
 
+/// Whether `name` can name an environment variable Codync sets.
+pub fn is_env_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// `KEY=value ` assignments before a command. Unix goes through `env` so the result
 /// still works after `exec`; Windows' [`line`] lifts them into the environment.
 pub fn env_prefix<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
     let mut out = String::new();
     for (k, v) in pairs {
-        if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if is_env_name(k) {
             let _ = write!(out, "{k}={} ", quote(v));
         }
     }
@@ -196,7 +212,7 @@ fn split_env(line: &str) -> (Vec<(String, String)>, &str) {
     let mut rest = line.trim_start();
     rest = rest.strip_prefix("env ").map_or(rest, str::trim_start);
     while let Some((key, after)) = rest.split_once('=') {
-        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if !is_env_name(key) {
             break;
         }
         let (value, after) = match after.strip_prefix(['"', '\'']) {
@@ -249,13 +265,14 @@ mod tests {
     #[test]
     fn reads_a_login_shell_with_noclobber() {
         use std::os::unix::fs::PermissionsExt as _;
-        let dir = std::env::temp_dir().join(format!("codync-shell-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("codync-shell-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let shell = dir.join("shell");
         std::fs::write(&shell, "#!/bin/sh\nset -C\nexport CODYNC_SHELL_TEST=yes\neval \"$2\"\n").unwrap();
         std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let env = login_env(&shell.to_string_lossy()).expect("the shell's environment");
-        assert!(env.contains(&("CODYNC_SHELL_TEST".to_owned(), "yes".to_owned())));
+        let run = |script| login_shell_output(&shell.to_string_lossy(), script).expect("the shell's output");
+        assert!(parse_env(&run("env -0")).contains(&("CODYNC_SHELL_TEST".to_owned(), "yes".to_owned())));
+        assert_eq!(run("printf '%s' \"$CODYNC_SHELL_TEST\""), b"yes");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -145,7 +145,7 @@ fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     let locked = refused(anyhow::anyhow!("the vault is locked"));
     assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
 
-    let (event, p) = observe(&Caller::Local, "removeAgentAccount", &json!({"account": "a1"})).unwrap();
+    let (event, p) = observe(&Caller::Local, "removeLoginProfile", &json!({"loginProfile": "a1"})).unwrap();
     let (_, other) = failed(event, p, &anyhow::anyhow!("removing /Users/me/slot")).expect("reported");
     assert_eq!(other["error"], "other", "never the error's own words");
 }
@@ -192,21 +192,30 @@ fn connectors_skills_and_agents() {
     let signed = props("agentAuthenticate", &json!({"backend": "codex", "method": "chatgpt"}));
     assert_eq!(signed, Some((Event::AgentSignedIn, json!({"agent": "codex", "client": "local"}))));
     assert_eq!(props("agentAuth", &json!({"backend": "codex"})), None, "a check of the computer's own login");
-    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "account": "a1"})).unwrap();
+    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "loginProfile": "a1"})).unwrap();
     assert_eq!(event, Event::AgentSignedIn);
     assert!(answered(event, p.clone(), &json!({"signedIn": false})).is_none(), "still signed out");
     let p = answered(event, p, &json!({"signedIn": true})).expect("signed in");
-    assert_eq!(Value::Object(p), json!({"agent": "codex", "account": true, "client": "local"}));
-    let added = props("addAgentAccount", &json!({"backend": "claude"}));
+    assert_eq!(Value::Object(p), json!({"agent": "codex", "loginProfile": true, "client": "local"}));
+    let added = props("addLoginProfile", &json!({"backend": "claude"}));
     assert_eq!(
         added,
-        Some((Event::AgentAccountChanged, json!({"action": "add", "agent": "claude", "client": "local"})))
+        Some((
+            Event::LoginProfileChanged,
+            json!({"action": "add", "agent": "claude", "kind": "account", "client": "local"})
+        ))
     );
-    let renamed = props("renameAgentAccount", &json!({"backend": "claude", "account": "a1", "name": "Work"}));
+    let keys = props(
+        "setLoginProfileKeys",
+        &json!({"loginProfile": "a1", "vars": {"MY_KEY": "secret"}, "import": ["A", "B"]}),
+    );
+    let counted = json!({"action": "keys", "typed": 1, "imported": 2, "client": "local"});
+    assert_eq!(keys, Some((Event::LoginProfileChanged, counted)), "counts, never a name or a value");
+    let renamed = props("renameLoginProfile", &json!({"backend": "claude", "loginProfile": "a1", "name": "Work"}));
     let named = json!({"action": "rename", "agent": "claude", "client": "local"});
-    assert_eq!(renamed, Some((Event::AgentAccountChanged, named)), "never the name");
-    let removed = props("removeAgentAccount", &json!({"account": "a1"})).map(|(_, p)| p);
-    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the account");
+    assert_eq!(renamed, Some((Event::LoginProfileChanged, named)), "never the name");
+    let removed = props("removeLoginProfile", &json!({"loginProfile": "a1"})).map(|(_, p)| p);
+    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the login profile");
 
     let (event, p) = observe(&Caller::Local, "importConnectors", &json!({"config": "{\"secret\": 1}"})).unwrap();
     let p = answered(event, p, &json!({"items": [{"id": "a"}, {"id": "b"}]})).expect("an import");

@@ -1,36 +1,36 @@
 import Foundation
 
-/// A login of a bot's chain: an agent on one of its accounts, or (no account) on the login the computer already has.
+/// A login of a bot's chain: an agent on one of its login profiles, or (no login profile) on the login the computer already has.
 /// Two steps are the same when they run the same agent on the same login.
 public struct AgentLogin: Hashable, Sendable {
     public var backend: String
-    public var account: String?
+    public var loginProfile: String?
 
-    public init(backend: String, account: String? = nil) {
+    public init(backend: String, loginProfile: String? = nil) {
         self.backend = backend
-        self.account = account
+        self.loginProfile = loginProfile
     }
 }
 
 public extension BotFallback {
-    var login: AgentLogin { AgentLogin(backend: backend, account: account) }
+    var login: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
 }
 
 public extension BotDraft {
     /// The bot's own login.
-    var login: AgentLogin { AgentLogin(backend: backend, account: account) }
+    var login: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
 }
 
 public extension AgentRest {
-    var login: AgentLogin { AgentLogin(backend: agent, account: account) }
+    var login: AgentLogin { AgentLogin(backend: agent, loginProfile: loginProfile) }
 }
 
 public extension Bot {
     /// The bot's own login.
-    var login: AgentLogin { AgentLogin(backend: backend, account: account) }
+    var login: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
 
     /// The step the bot runs on right now, as a login; nil on its own agent.
-    var stepLogin: AgentLogin? { agentStep.map { AgentLogin(backend: $0.agent, account: $0.account) } }
+    var stepLogin: AgentLogin? { agentStep.map { AgentLogin(backend: $0.agent, loginProfile: $0.loginProfile) } }
 
     /// `login`'s rest while it lasts: one whose time has passed is over, whatever the host last said.
     func rest(of login: AgentLogin, now: Date = .now) -> AgentRest? {
@@ -38,7 +38,7 @@ public extension Bot {
     }
 
     /// The Agent card's first line while the bot runs on a fallback; nil on its own agent. `name` says what to call
-    /// a login ("Claude Code (Work)" on an account); `own` asks for the computer's own login by its account too,
+    /// a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its login profile too,
     /// which tells two logins of one agent apart.
     func stepBanner(now: Date = .now, name: (AgentLogin, _ own: Bool) -> String) -> String? {
         guard let step = stepLogin else { return nil }
@@ -50,10 +50,10 @@ public extension Bot {
 }
 
 public extension Backend {
-    /// The logins a new step can still take: the computer's own (nil, first) and the accounts that are signed in,
+    /// The logins a new step can still take: the computer's own (nil, first) and the login profiles that are signed in,
     /// without the ones the chain has.
     func freeLogins(taken: [AgentLogin]) -> [String?] {
-        let all: [String?] = [nil] + (accounts ?? []).filter(\.signedIn).map(\.id)
-        return all.filter { !taken.contains(AgentLogin(backend: id, account: $0)) }
+        let all: [String?] = [nil] + (loginProfiles ?? []).filter(\.signedIn).map(\.id)
+        return all.filter { !taken.contains(AgentLogin(backend: id, loginProfile: $0)) }
     }
 }

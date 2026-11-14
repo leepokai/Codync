@@ -1,6 +1,5 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
-mod accounts;
 mod analytics;
 mod approvals;
 mod auto_order;
@@ -14,6 +13,7 @@ mod forms;
 mod group_form;
 mod input;
 mod kofi;
+mod login_profiles;
 mod model;
 mod navigate;
 mod new_bot;

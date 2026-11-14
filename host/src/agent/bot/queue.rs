@@ -1,7 +1,7 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
 use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
-use crate::agent::accounts::Login;
+use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
@@ -97,7 +97,7 @@ impl Actor {
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
-                    || cfg.account != self.cfg.account
+                    || cfg.login_profile != self.cfg.login_profile
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
@@ -383,12 +383,12 @@ impl Actor {
         self.sign_in_card(&login, &held)
     }
 
-    /// `login` refused the bot's prompt for auth: an agent account, or the computer's own login. Only that one
+    /// `login` refused the bot's prompt for auth: a login profile, or the computer's own login. Only that one
     /// reads signed out, also over a check that still says signed in (`claude auth
     /// status` with a revoked token).
     pub(super) fn note_signed_out(&self, login: &Login) {
-        if let Some(account) = &login.account {
-            crate::agent::accounts::note_signed_in(&self.hub.store, account, false);
+        if let Some(profile) = &login.profile {
+            crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false);
         } else {
             crate::agent::backends::set_signed_in(&login.backend, Some(false));
             crate::agent::backends::note_prompt_refused(&login.backend);

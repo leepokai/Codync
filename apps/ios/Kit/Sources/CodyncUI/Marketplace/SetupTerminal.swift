@@ -11,8 +11,8 @@ struct SetupTerminalView: View {
     let step: SetupStep
     /// A terminal sign-in method the agent offered; nil runs Codync's own command.
     var method: AuthMethod?
-    /// The agent account a `login` signs in; nil for the computer's own.
-    var account: String?
+    /// The login profile a `login` signs in; nil for the computer's own.
+    var loginProfile: String?
     /// Back to the agent's sheet (the terminal is a step inside it).
     let back: () -> Void
     @Environment(BotStore.self) private var model
@@ -48,7 +48,7 @@ struct SetupTerminalView: View {
         .background(Palette.background)
         .task {
             guard let client = model.client else { return }
-            await session.run(client, backend: backend?.id ?? "", step: step, method: method?.id, account: account)
+            await session.run(client, backend: backend?.id ?? "", step: step, method: method?.id, loginProfile: loginProfile)
             await model.refreshBackends()
         }
         .onDisappear { session.close() }
@@ -98,11 +98,11 @@ final class TermSession {
         (keyStream, keys) = AsyncStream.makeStream()
     }
 
-    func run(_ client: HostClient, backend: String, step: SetupStep, method: String?, account: String? = nil) async {
+    func run(_ client: HostClient, backend: String, step: SetupStep, method: String?, loginProfile: String? = nil) async {
         self.client = client
         let term: String
         do {
-            term = try await client.agentSetup(backend: backend, step: step, method: method, account: account, cols: size.cols, rows: size.rows)
+            term = try await client.agentSetup(backend: backend, step: step, method: method, loginProfile: loginProfile, cols: size.cols, rows: size.rows)
         } catch {
             self.error = error.localizedDescription
             return

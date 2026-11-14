@@ -45,7 +45,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
-- [Agent accounts](features/agent-accounts.md) (more than one login per agent; each bot picks its own)
+- [Login profiles](features/login-profiles.md) (more than one login per agent, by account or API key; each bot picks its own)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)

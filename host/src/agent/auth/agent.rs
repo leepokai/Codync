@@ -27,11 +27,11 @@ pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
     start_with(store, backend, None, &[]).await
 }
 
-/// [`start`] on `account` (none: the computer's own login), with `extra` added to the agent's environment.
+/// [`start`] on `login_profile` (none: the computer's own login), with `extra` added to the agent's environment.
 pub(crate) async fn start_with(
     store: &Store,
     backend: &str,
-    account: Option<&str>,
+    login_profile: Option<&str>,
     extra: &[(&str, &str)],
 ) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
@@ -39,7 +39,7 @@ pub(crate) async fn start_with(
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let (mut env, mut grants) = launch_env(store, backend, account)?;
+    let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
@@ -107,10 +107,10 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
     check(store, backend).await
 }
 
-/// Signs agent account `account` in the way its agent does itself: the first sign-in it offers that it runs on its
+/// Signs account login profile `id` in the way its agent does itself: the first sign-in it offers that it runs on its
 /// own (a browser on this computer). The caller checks what came of it.
-pub(crate) async fn authenticate_account(store: &Store, backend: &str, account: &str) -> Result<()> {
-    let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(account), &[]).await?;
+pub(crate) async fn authenticate_account(store: &Store, backend: &str, id: &str) -> Result<()> {
+    let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(id), &[]).await?;
     let own = |m: &super::Method| matches!(m.kind, super::MethodKind::Agent);
     let Some(method) = super::methods(backend, &init, &cmd).into_iter().find(own) else {
         acp.kill().await;

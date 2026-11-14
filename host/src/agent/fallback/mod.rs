@@ -41,7 +41,7 @@ pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
     if let Some(f) = fallback_at(cfg, step) {
         out.backend.clone_from(&f.backend);
         out.command.clone_from(&f.command);
-        out.account.clone_from(&f.account);
+        out.login_profile.clone_from(&f.login_profile);
         out.model.clone_from(&f.model);
         out.model_options.clone_from(&f.model_options);
     }
@@ -54,14 +54,14 @@ pub fn step_of(cfg: &BotConfig, login: &str) -> Option<usize> {
 }
 
 /// Drops fallbacks that repeat an earlier login (the bot's own included), as when the user makes a fallback the
-/// bot's own agent. The same agent on another of its accounts is another login.
+/// bot's own agent. The same agent on another of its login profiles is another login.
 pub fn tidy(cfg: &mut BotConfig) {
     let mut seen = HashSet::from([login::of(cfg)]);
     cfg.fallbacks.retain(|f| seen.insert(step_login(f)));
 }
 
 fn step_login(f: &Fallback) -> String {
-    login::key(&f.backend, f.command.as_deref(), f.account.as_deref())
+    login::key(&f.backend, f.command.as_deref(), f.login_profile.as_deref())
 }
 
 /// The login step `step` runs on (`login`): what tells the chain's steps apart, and whose usage a rest is about.
@@ -69,8 +69,7 @@ pub fn login(cfg: &BotConfig, step: usize) -> String {
     fallback_at(cfg, step).map_or_else(|| login::of(cfg), step_login)
 }
 
-/// For each agent of a list that came in order without what it can't show (a bot's own tools, an app from before
-/// fallbacks had accounts), the saved step it stands for: the n-th step of an agent is the n-th saved one of it.
+/// For each agent of a list that came in order without what it can't show (a bot's own tools), the saved step it stands for: the n-th step of an agent is the n-th saved one of it.
 pub fn saved_steps<'a>(saved: &'a [Fallback], agents: &[&str]) -> Vec<Option<&'a Fallback>> {
     let nth = |i: usize| agents[..i].iter().filter(|a| **a == agents[i]).count();
     (0..agents.len()).map(|i| saved.iter().filter(|f| f.backend == agents[i]).nth(nth(i))).collect()
@@ -81,8 +80,8 @@ pub fn resting(store: &Store, cfg: &BotConfig, now: i64) -> Vec<Value> {
     (0..steps(cfg))
         .filter_map(|s| {
             let r = rest::get(store, &login(cfg, s), now)?;
-            let on = fallback_at(cfg, s).map_or(cfg.account.as_ref(), |f| f.account.as_ref());
-            Some(json!({"agent": backend(cfg, s), "account": on, "until": r.until, "reason": r.reason}))
+            let on = fallback_at(cfg, s).map_or(cfg.login_profile.as_ref(), |f| f.login_profile.as_ref());
+            Some(json!({"agent": backend(cfg, s), "loginProfile": on, "until": r.until, "reason": r.reason}))
         })
         .collect()
 }
@@ -104,17 +103,17 @@ pub fn end_rest(hub: &Hub, login: &str) {
     }
 }
 
-/// Agent `backend` is signed in now on `agent_account`, or on the computer's own login: that login's rests for
+/// Agent `backend` is signed in now on `login_profile`, or on the computer's own login: that login's rests for
 /// being signed out are over (one for usage stays), so bots that moved on to a fallback come back on their next
 /// message.
-pub fn signed_in(hub: &Hub, backend: &str, agent_account: Option<&str>) {
-    for login in rest::signed_out(&hub.store, backend, agent_account) {
+pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) {
+    for login in rest::signed_out(&hub.store, backend, login_profile) {
         end_rest(hub, &login);
     }
 }
 
 /// Saved fallbacks are at most `MAX_FALLBACKS`, each a known agent or a custom command, and no login twice
-/// (the bot's own included): an agent appears again only on another of its accounts. Falling back between one
+/// (the bot's own included): an agent appears again only on another of its login profiles. Falling back between one
 /// agent's models is that agent's own setting.
 pub fn check(cfg: &BotConfig) -> Result<()> {
     if cfg.fallbacks.len() > MAX_FALLBACKS {
@@ -127,7 +126,7 @@ pub fn check(cfg: &BotConfig) -> Result<()> {
             bail!("unknown fallback agent {}", f.backend);
         }
         if !seen.insert(step_login(f)) {
-            bail!("{} is already in this bot's agents: each agent appears once per account", name(&f.backend));
+            bail!("{} is already in this bot's agents: each agent appears once per login profile", name(&f.backend));
         }
     }
     Ok(())
@@ -166,37 +165,37 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_appears_again_on_another_of_its_accounts() {
+    fn an_agent_appears_again_on_another_of_its_login_profiles() {
         let mut cfg = bot(&[("claude", None), ("claude", None), ("codex", None), ("claude", None)]);
-        cfg.fallbacks[0].account = Some("a1".into());
-        cfg.fallbacks[1].account = Some("a1".into());
-        cfg.fallbacks[3].account = Some("a2".into());
-        assert!(check(&cfg).is_err(), "the same account twice");
+        cfg.fallbacks[0].login_profile = Some("a1".into());
+        cfg.fallbacks[1].login_profile = Some("a1".into());
+        cfg.fallbacks[3].login_profile = Some("a2".into());
+        assert!(check(&cfg).is_err(), "the same login profile twice");
         tidy(&mut cfg);
-        let steps: Vec<_> = cfg.fallbacks.iter().map(|f| (f.backend.as_str(), f.account.as_deref())).collect();
+        let steps: Vec<_> = cfg.fallbacks.iter().map(|f| (f.backend.as_str(), f.login_profile.as_deref())).collect();
         assert_eq!(steps, [("claude", Some("a1")), ("codex", None), ("claude", Some("a2"))]);
         check(&cfg).expect("each login once");
-        assert_eq!(effective(&cfg, 1).account.as_deref(), Some("a1"), "the step runs on its account");
-        assert_eq!(effective(&cfg, 2).account, None, "another agent runs on the computer's own login");
+        assert_eq!(effective(&cfg, 1).login_profile.as_deref(), Some("a1"), "the step runs on its login profile");
+        assert_eq!(effective(&cfg, 2).login_profile, None, "another agent runs on the computer's own login");
         assert_eq!(step_of(&cfg, &login(&cfg, 3)), Some(3));
         assert_eq!(step_of(&cfg, "claude"), Some(0), "the bot's own agent, on the computer's own login");
-        // The bot's own agent on an account leaves the computer's own login free for a fallback.
-        cfg.account = Some("a1".into());
+        // The bot's own agent on a login profile leaves the computer's own login free for a fallback.
+        cfg.login_profile = Some("a1".into());
         tidy(&mut cfg);
-        assert_eq!(cfg.fallbacks.len(), 2, "the step on the bot's own account goes");
+        assert_eq!(cfg.fallbacks.len(), 2, "the step on the bot's own login profile goes");
     }
 
     #[test]
     fn a_list_sent_by_agent_alone_stands_for_the_saved_steps_in_order() {
         let mut cfg = bot(&[("claude", None), ("codex", None), ("claude", None)]);
-        cfg.fallbacks[0].account = Some("a1".into());
-        cfg.fallbacks[2].account = Some("a2".into());
-        let accounts = |agents: &[&str]| -> Vec<Option<&str>> {
+        cfg.fallbacks[0].login_profile = Some("a1".into());
+        cfg.fallbacks[2].login_profile = Some("a2".into());
+        let profiles = |agents: &[&str]| -> Vec<Option<&str>> {
             let saved = saved_steps(&cfg.fallbacks, agents);
-            saved.into_iter().map(|f| f.and_then(|f| f.account.as_deref())).collect()
+            saved.into_iter().map(|f| f.and_then(|f| f.login_profile.as_deref())).collect()
         };
-        assert_eq!(accounts(&["claude", "claude", "codex"]), [Some("a1"), Some("a2"), None]);
-        assert_eq!(accounts(&["gemini", "claude", "claude", "claude"]), [None, Some("a1"), Some("a2"), None]);
+        assert_eq!(profiles(&["claude", "claude", "codex"]), [Some("a1"), Some("a2"), None]);
+        assert_eq!(profiles(&["gemini", "claude", "claude", "claude"]), [None, Some("a1"), Some("a2"), None]);
     }
 
     #[test]

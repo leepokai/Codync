@@ -1,7 +1,7 @@
 # codync-accounts
 
 More than one login to the same coding agent on one computer, so several agents can run at once on different
-accounts. It is the part of [Codync](https://github.com/leepokai/Codync)'s agent accounts that is true of the agents
+accounts. It is the part of [Codync](https://github.com/leepokai/Codync)'s login profiles (the account kind) that is true of the agents
 themselves, with no app in it.
 
 An account is a folder (its slot) the agent keeps its login in, and the agent's own variables point a process at it.
@@ -23,7 +23,7 @@ use codync_accounts::{Account, agent};
 use std::path::Path;
 
 let claude = agent("claude").expect("Claude Code can have accounts");
-let account = Account::new("0b7c".into(), claude, &[]);
+let account = Account::new("0b7c".into(), claude.id, &[]);
 let slot = account.slot(Path::new("/var/app/agent-accounts"))?;
 
 // Before each start: the slot gets the user's skills, rules, MCP servers and sessions, never the login.

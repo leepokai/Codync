@@ -23,7 +23,7 @@ suspend fun AppStore.setAgentEnv(backend: String, values: Map<String, String>): 
     refreshBackends()
     return WireJson.decodeFromJsonElement(response)
 }
-internal fun AppStore.setupTerminal(owner: String, backend: String, step: String, method: String?, account: String? = null): SetupTerminalSession {
+internal fun AppStore.setupTerminal(owner: String, backend: String, step: String, method: String?, loginProfile: String? = null): SetupTerminalSession {
     require(step in listOf("install", "login", "node"))
     return setupTerminals.getOrPut(owner) {
         val generation = state.value.generation
@@ -38,7 +38,7 @@ internal fun AppStore.setupTerminal(owner: String, backend: String, step: String
             override suspend fun setup(cols: Int, rows: Int): String {
                 val active = connection()
                 val response = active.call("agentSetup", buildJsonObject { put("backend", backend); put("step", step);
-                    method?.let { put("method", it) }; account?.let { put("account", it) }; put("cols", cols); put("rows", rows) }, 300_000)
+                    method?.let { put("method", it) }; loginProfile?.let { put("loginProfile", it) }; put("cols", cols); put("rows", rows) }, 300_000)
                 return response.jsonObject.getValue("term").jsonPrimitive.content
             }
             override suspend fun awaitActive() { foregroundState.first { it } }
@@ -189,23 +189,30 @@ fun AppStore.refreshBackends() = action("backends") {
 /** The agent list a reply carries (`backends`) replaces the one on screen. */
 private fun AppStore.showBackends(response: JsonElement) =
     mutableState.update { it.copy(hello = JsonObject(it.hello.orEmpty() + ("backends" to response.jsonObject.getValue("backends")))) }
-/** A new, signed-out account for the agent; a `login` setup terminal with it signs it in. */
-suspend fun AppStore.addAgentAccount(backend: String): AgentAccount {
-    val response = hostQuery("addAgentAccount", body("backend" to backend), 60_000)
+/** A new login profile for the agent: an account (signed out: its sign-in follows) or an API key (its key form follows). */
+suspend fun AppStore.addLoginProfile(backend: String, kind: LoginProfileKind): LoginProfile {
+    val response = hostQuery("addLoginProfile", body("backend" to backend, "kind" to kind.wire), 60_000)
     showBackends(response)
-    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("account"))
+    return WireJson.decodeFromJsonElement(response.jsonObject.getValue("loginProfile"))
 }
-/** Asks the account's agent whether its sign-in went through, and as whom. */
-suspend fun AppStore.checkAgentAccount(backend: String, account: String) =
-    showBackends(hostQuery("agentAuth", body("backend" to backend, "account" to account), 60_000))
-/** Signs an account in through its agent, in a browser on the computer; the host answers once that's done (or given up on). */
-suspend fun AppStore.signInAgentAccount(backend: String, account: String) =
-    showBackends(hostQuery("agentAuthenticate", body("backend" to backend, "account" to account), 660_000))
-/** Names an account, or without one the login the computer already has; an empty name clears it. */
-suspend fun AppStore.renameAgentAccount(backend: String, account: String?, name: String) =
-    showBackends(hostQuery("renameAgentAccount", body("backend" to backend, "account" to account, "name" to name)))
-/** The host refuses while a bot still uses the account, and says so. */
-suspend fun AppStore.removeAgentAccount(account: String) = showBackends(hostQuery("removeAgentAccount", body("account" to account), 60_000))
+/** Asks the login profile's agent whether its sign-in went through, and as whom. */
+suspend fun AppStore.checkLoginProfile(backend: String, loginProfile: String) =
+    showBackends(hostQuery("agentAuth", body("backend" to backend, "loginProfile" to loginProfile), 60_000))
+/** Signs a login profile in through its agent, in a browser on the computer; the host answers once that's done (or given up on). */
+suspend fun AppStore.signInLoginProfile(backend: String, loginProfile: String) =
+    showBackends(hostQuery("agentAuthenticate", body("backend" to backend, "loginProfile" to loginProfile), 660_000))
+/** Names a login profile, or without one the default (the login the computer already has); an empty name clears it. */
+suspend fun AppStore.renameLoginProfile(backend: String, loginProfile: String?, name: String) =
+    showBackends(hostQuery("renameLoginProfile", body("backend" to backend, "loginProfile" to loginProfile, "name" to name)))
+/** The host refuses while a bot still uses the login profile, and says so. */
+suspend fun AppStore.removeLoginProfile(loginProfile: String) = showBackends(hostQuery("removeLoginProfile", body("loginProfile" to loginProfile), 60_000))
+/** An API key profile's variables: [vars] as typed ("" removes one), [import] the names whose values the host copies from the login shell now. */
+suspend fun AppStore.setLoginProfileKeys(loginProfile: String, vars: Map<String, String> = emptyMap(), import: List<String> = emptyList()) =
+    showBackends(hostQuery("setLoginProfileKeys", buildJsonObject { put("loginProfile", loginProfile); put("vars", WireJson.encodeToJsonElement(vars))
+        put("import", WireJson.encodeToJsonElement(import)) }, 60_000))
+/** The names (never values) of the login shell's variables, to import from. */
+suspend fun AppStore.loginShellVariables(): List<String> =
+    WireJson.decodeFromJsonElement(hostQuery("loginShellVariables", JsonObject(emptyMap()), 60_000).jsonObject.getValue("names"))
 suspend fun AppStore.installConnector(item: MarketConnector, option: InstallOption, inputs: Map<String, String>): InstalledConnector {
     require(option in item.options && option.complete(inputs)) { "Complete the required connector fields." }
     val response = hostQuery("installConnector", buildJsonObject { put("registryName", item.name); put("option", option.id); put("inputs", WireJson.encodeToJsonElement(inputs)) }, 45_000)

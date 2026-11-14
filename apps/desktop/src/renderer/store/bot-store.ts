@@ -2,13 +2,13 @@ import {
   isWorking,
   needsInput,
   normalizeBot,
-  type AgentAccount,
   type Bot,
   type BotDraft,
   type DirListing,
   type Entry,
   type GroupDraft,
   type Hello,
+  type LoginProfile,
   type ReplyQuote,
   type ScreenState,
   type SharedFile,
@@ -475,30 +475,40 @@ export class BotStore extends BotSync {
     } catch {}
   }
 
-  /** A new, signed-out account for agent `backend`: its id. A `login` setup with it signs it in. */
-  async addAgentAccount(backend: string) {
-    const added = await (await this.ready()).call<{ account: AgentAccount; backends: Hello['backends'] }>('addAgentAccount', { backend })
+  /** A new login profile for agent `backend`. An `account` one is signed out (a `login` setup with it signs it in); an `apiKey` one has no key yet. */
+  async addLoginProfile(backend: string, kind: LoginProfile['kind']) {
+    const added = await (await this.ready()).call<{ loginProfile: LoginProfile; backends: Hello['backends'] }>('addLoginProfile', { backend, kind })
     this.showBackends(added.backends)
-    return added.account.id
+    return added.loginProfile.id
   }
 
-  /** Asks the account's agent whether it's signed in, and as whom. */
-  async checkAgentAccount(backend: string, account: string) {
-    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, account }, 60_000)).backends)
+  /** Asks the login profile's agent whether it's signed in, and as whom. */
+  async checkLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, loginProfile }, 60_000)).backends)
   }
 
-  /** Has the account's agent sign it in itself, in a browser on the computer; answers once that's done. */
-  async signInAgentAccount(backend: string, account: string) {
-    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuthenticate', { backend, account }, 660_000)).backends)
+  /** Has the login profile's agent sign it in itself, in a browser on the computer; answers once that's done. */
+  async signInLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuthenticate', { backend, loginProfile }, 660_000)).backends)
   }
 
-  /** Names an account, or with `null` the login the computer already has; an empty name clears it. */
-  async renameAgentAccount(backend: string, account: string | null, name: string) {
-    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('renameAgentAccount', { backend, account, name })).backends)
+  /** Names a login profile, or with `null` the default one; an empty name clears it. */
+  async renameLoginProfile(backend: string, loginProfile: string | null, name: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('renameLoginProfile', { backend, loginProfile: loginProfile ?? undefined, name })).backends)
   }
 
-  async removeAgentAccount(account: string) {
-    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeAgentAccount', { account }, 60_000)).backends)
+  async removeLoginProfile(loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeLoginProfile', { loginProfile }, 60_000)).backends)
+  }
+
+  /** An API key profile's variables: `vars` as typed (an empty value removes one), and `imported` names whose values the host reads from the login shell now. */
+  async setLoginProfileKeys(loginProfile: string, vars: Record<string, string>, imported: string[] = []) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('setLoginProfileKeys', { loginProfile, vars, import: imported }, 60_000)).backends)
+  }
+
+  /** The names (never the values) of the login shell's variables, which a login profile can import. */
+  async loginShellVariables() {
+    return (await (await this.ready()).call<{ names: string[] }>('loginShellVariables', {}, 60_000)).names
   }
 
   async selectWorkspace(path: string) {

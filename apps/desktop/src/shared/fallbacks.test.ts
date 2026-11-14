@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBanner, withBackend } from './fallbacks.ts'
-import { draftOf, normalizeBot } from './models.ts'
+import { draftOf, normalizeBot, type Backend } from './models.ts'
 
 const now = new Date(2026, 9, 21, 10, 0).getTime()
 const at3 = new Date(2026, 9, 21, 15, 0).getTime()
@@ -26,33 +26,33 @@ test('a rest that ended no longer counts', () => {
   assert.equal(restOf(bot, { backend: 'claude' }, now - 2)?.reason, 'usageLimit')
 })
 
-test('an agent comes again in the chain only on another of its accounts', () => {
-  const claude = { id: 'claude', name: 'Claude Code', available: true, command: '', installHint: '',
-    accounts: [{ id: 'a1', name: 'Work', signedIn: true }, { id: 'a2', name: null, signedIn: false }] }
+test('an agent comes again in the chain only on another of its login profiles', () => {
+  const claude: Backend = { id: 'claude', name: 'Claude Code', available: true, command: '', installHint: '',
+    loginProfiles: [{ id: 'a1', kind: 'account', name: 'Work', signedIn: true }, { id: 'a2', kind: 'apiKey', name: null, signedIn: false }] }
   assert.deepEqual(freeLogins(claude, []), [null, 'a1'], "one that isn't signed in can't carry a turn")
   assert.deepEqual(freeLogins(claude, [{ backend: 'claude' }]), ['a1'], "the bot's own agent, on the computer's login")
-  assert.deepEqual(freeLogins(claude, [{ backend: 'claude', account: 'a1' }, { backend: 'codex' }]), [null])
-  assert.deepEqual(freeLogins({ ...claude, accounts: undefined }, [{ backend: 'claude' }]), [], 'an agent with one login')
-  // A rest is one login's: the account's leaves the computer's own free.
-  const bot = normalizeBot({ id: 'b', resting: [{ agent: 'claude', account: 'a1', until: now + 1, reason: 'usageLimit' }] })
+  assert.deepEqual(freeLogins(claude, [{ backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }]), [null])
+  assert.deepEqual(freeLogins({ ...claude, loginProfiles: undefined }, [{ backend: 'claude' }]), [], 'an agent with one login')
+  // A rest is one login's: the login profile's leaves the computer's own free.
+  const bot = normalizeBot({ id: 'b', resting: [{ agent: 'claude', loginProfile: 'a1', until: now + 1, reason: 'usageLimit' }] })
   assert.equal(restOf(bot, { backend: 'claude' }, now), null)
-  assert.equal(restOf(bot, { backend: 'claude', account: 'a1' }, now)?.reason, 'usageLimit')
-  assert.equal(sameLogin({ backend: 'claude', account: null }, { backend: 'claude' }), true)
+  assert.equal(restOf(bot, { backend: 'claude', loginProfile: 'a1' }, now)?.reason, 'usageLimit')
+  assert.equal(sameLogin({ backend: 'claude', loginProfile: null }, { backend: 'claude' }), true)
 })
 
 test('the banner names the fallback, and when the own agent is back if it says', () => {
   const step = { step: 1, agent: 'codex', model: null, since: now, reason: 'usageLimit' }
-  // "Claude Code (Work)" on an account; the computer's own login by name too when it's asked for.
-  const called = (login: { backend: string; account?: string | null }, own: boolean) =>
-    `${name(login.backend)}${login.account ? ' (Work)' : own ? ' (Default account)' : ''}`
+  // "Claude Code (Work)" on a login profile; the computer's own login by name too when it's asked for.
+  const called = (login: { backend: string; loginProfile?: string | null }, own: boolean) =>
+    `${name(login.backend)}${login.loginProfile ? ' (Work)' : own ? ' (Default login profile)' : ''}`
   assert.equal(stepBanner(normalizeBot({ id: 'b', backend: 'claude' }), called, now), null)
   const resting = normalizeBot({ id: 'b', backend: 'claude', agentStep: step, resting: [{ agent: 'claude', until: at3, reason: 'usageLimit' }] })
   assert.equal(stepBanner(resting, called, now), `Using Codex until Claude Code resets at ${time(at3)}`)
   const failing = normalizeBot({ id: 'b', backend: 'claude', agentStep: step, resting: [{ agent: 'claude', until: now - 1, reason: 'usageLimit' }] })
   assert.equal(stepBanner(failing, called, now), "Using Codex while Claude Code can't answer")
-  // Two logins of one agent go by their accounts.
-  const onAccount = normalizeBot({ id: 'b', backend: 'claude', agentStep: { ...step, agent: 'claude', account: 'a1' } })
-  assert.equal(stepBanner(onAccount, called, now), "Using Claude Code (Work) while Claude Code (Default account) can't answer")
+  // Two logins of one agent go by their login profiles.
+  const onProfile = normalizeBot({ id: 'b', backend: 'claude', agentStep: { ...step, agent: 'claude', loginProfile: 'a1' } })
+  assert.equal(stepBanner(onProfile, called, now), "Using Claude Code (Work) while Claude Code (Default login profile) can't answer")
 })
 
 test('fallbacks move within the list', () => {
@@ -80,11 +80,11 @@ test('an older host has no fallbacks to show or send', () => {
 
 
 test('switching harness clears its model and effort, selecting the same harness preserves them', () => {
-  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', account: 'a1', model: 'opus', modelOptions: { effort: 'high' } }))
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a1', model: 'opus', modelOptions: { effort: 'high' } }))
   assert.equal(withBackend(draft, 'claude'), draft)
   const changed = withBackend(draft, 'codex')
   assert.equal(changed.model, null)
-  assert.equal(changed.account, null, 'an account is its own agent\'s')
+  assert.equal(changed.loginProfile, null, 'a login profile is its own agent\'s')
   assert.deepEqual(changed.modelOptions, {})
   const defaultModel = withBackend({ ...draft, model: null }, 'codex')
   assert.deepEqual(defaultModel.modelOptions, {})

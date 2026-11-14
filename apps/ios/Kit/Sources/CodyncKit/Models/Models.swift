@@ -187,15 +187,18 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     /// Only for an agent that runs on Node.js, on a computer without its own: Codync's copy
     /// is `missing` or `added`.
     public var node: String?
-    /// Its extra logins, for an agent that can have them (nil otherwise, and from older hosts).
-    public var accounts: [AgentAccount]?
-    /// The login the computer already has, beside `accounts` (nil from older hosts).
-    public var ownAccount: OwnAccount?
-    /// How an account of it signs in: `terminal` (its CLI), or `browser` (the agent itself, on the computer).
-    public var accountSignIn: String?
+    /// Its login profiles beside the default one (nil from older hosts, which hides the feature).
+    public var loginProfiles: [LoginProfile]?
+    /// The login the computer already has, beside `loginProfiles` (nil from older hosts).
+    public var defaultLoginProfile: DefaultLoginProfile?
+    /// How an account login profile of it signs in: `terminal` (its CLI), or `browser` (the agent itself, on the
+    /// computer). nil: the agent keeps one sign-in of its own, so only API key profiles can be added to it.
+    public var loginProfileSignIn: String?
+    /// The variable names its API key usually goes in, to start a key form with.
+    public var loginKeys: [String]?
 
-    /// An account's agent signs it in itself, in a browser on the computer: no terminal opens.
-    public var accountsSignInInBrowser: Bool { accountSignIn == "browser" }
+    /// An account login profile's agent signs it in itself, in a browser on the computer: no terminal opens.
+    public var loginProfilesSignInInBrowser: Bool { loginProfileSignIn == "browser" }
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }
@@ -335,8 +338,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var avatarShape: String
     public var backend: String
     public var command: String?
-    /// The agent account it runs on. Sent as null when nil (`BotUpdate`): the login the computer already has.
-    public var account: String?
+    /// The login profile it runs on. Sent as null when nil (`BotUpdate`): the login the computer already has.
+    public var loginProfile: String?
     public var cwd: String
     public var permission: String
     /// Sent as null when nil (`BotUpdate`): the agent's default.
@@ -385,7 +388,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         avatarShape = bot.avatarShape
         backend = bot.backend
         command = bot.command
-        account = bot.account
+        loginProfile = bot.loginProfile
         cwd = bot.managedWorkspace ? "" : bot.cwd
         permission = bot.permission
         mode = bot.mode
@@ -415,7 +418,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
             if self[keyPath: field] == base[keyPath: field] { draft[keyPath: field] = fresh[keyPath: field] }
         }
         follow(\.name); follow(\.description); follow(\.avatarColor); follow(\.avatarShape); follow(\.backend)
-        follow(\.command); follow(\.account); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
+        follow(\.command); follow(\.loginProfile); follow(\.cwd); follow(\.permission); follow(\.mode); follow(\.model); follow(\.modelOptions)
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)

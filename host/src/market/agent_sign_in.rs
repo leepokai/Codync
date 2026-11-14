@@ -6,9 +6,9 @@ use super::requests::{MAX_AGE, RequestKind, RequestStatus};
 use crate::{
     LockExt,
     agent::{
-        accounts::{self, Login},
         backends,
         bot::Cmd,
+        login_profiles::{self, Login},
     },
     hub::Hub,
     store::{BotConfig, EntryKind, Lane, now_ms},
@@ -31,15 +31,15 @@ const HOLDING: &str = "Needs you to sign in. Your message goes out again once yo
 pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
     let Some(h) = backends::harness(&cfg.backend) else { return };
     let login = Login::of(&hub.store, cfg);
-    if login.account.is_none() && backends::signed_in(&cfg.backend) == Some(true) {
+    if login.profile.is_none() && backends::signed_in(&cfg.backend) == Some(true) {
         return;
     }
     let (hub, bot, backend) = (hub.clone(), cfg.id.clone(), cfg.backend.clone());
     tokio::spawn(async move {
-        let asked = match check(&hub, &backend, login.account.as_deref()).await {
+        let asked = match check(&hub, &backend, login.profile.as_deref()).await {
             Ok(Some(false)) => invite_saying(&hub, &bot, &Lane::main(&bot), &login, h.name, &[], BEFORE_FIRST),
             // Other chats waiting on this login go on.
-            Ok(Some(true)) => signed_in(&hub, &backend, login.account.as_deref()),
+            Ok(Some(true)) => signed_in(&hub, &backend, login.profile.as_deref()),
             Ok(None) => Ok(()),
             Err(error) => {
                 tracing::info!(bot, backend, error = format!("{error:#}"), "sign-in check failed");
@@ -52,12 +52,12 @@ pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
     });
 }
 
-/// What the agent's own check says about the sign-in of `account`, or of the computer's own login (`None`:
+/// What the agent's own check says about the sign-in of `login_profile`, or of the computer's own login (`None`:
 /// can't tell).
 #[cfg(not(test))]
-async fn check(hub: &Hub, backend: &str, account: Option<&str>) -> Result<Option<bool>> {
-    Ok(match account {
-        Some(id) => Some(accounts::check(&hub.store, id).await?.signed_in),
+async fn check(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Option<bool>> {
+    Ok(match login_profile {
+        Some(id) => Some(login_profiles::check(&hub.store, id).await?.account.signed_in),
         None => crate::agent::auth::check(&hub.store, backend).await?["signedIn"].as_bool(),
     })
 }
@@ -68,7 +68,7 @@ use tests::check;
 /// in now go on.
 pub async fn refresh(hub: &Hub) {
     backends::refresh_sign_in().await;
-    accounts::refresh_own().await;
+    login_profiles::refresh_default().await;
     for h in backends::HARNESSES.iter().filter(|h| backends::signed_in(h.id) == Some(true)) {
         if let Err(error) = agent_signed_in(hub, h.id) {
             tracing::warn!(backend = h.id, error = format!("{error:#}"), "couldn't complete the sign-in cards");
@@ -100,7 +100,9 @@ fn invite_saying(
     // In a room the card's chat is the room's: `botId` says whose it is.
     let mine = |card: &crate::store::Entry| {
         let request = &card.data["connectionRequest"];
-        card.bot_id == lane.chat && request["botId"] == bot && request["account"].as_str() == login.account.as_deref()
+        card.bot_id == lane.chat
+            && request["botId"] == bot
+            && request["loginProfile"].as_str() == login.profile.as_deref()
     };
     if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(mine) {
         let mut data = card.data;
@@ -121,9 +123,9 @@ fn invite_saying(
     }
     let mut request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name,
         "botId": bot, "backend": backend, "entryIds": entries});
-    // An agent account's: the apps open that sign-in, not the computer's own.
-    if let Some(account) = &login.account {
-        request["account"] = account.as_str().into();
+    // A login profile's: the apps open that sign-in, not the computer's own.
+    if let Some(profile) = &login.profile {
+        request["loginProfile"] = profile.as_str().into();
     }
     hub.add_entry(
         lane,
@@ -142,9 +144,9 @@ pub fn answered(hub: &Hub, cfg: &BotConfig) {
     if backends::harness(backend).is_none() {
         return;
     }
-    let account = accounts::of_bot(&hub.store, backend, cfg);
-    let news = if let Some(id) = account {
-        accounts::note_signed_in(&hub.store, id, true)
+    let profile = login_profiles::of_bot(&hub.store, backend, cfg);
+    let news = if let Some(id) = profile {
+        login_profiles::note_signed_in(&hub.store, id, true)
     } else {
         // A prompt got through, so an earlier auth refusal is over.
         backends::clear_prompt_refused(backend);
@@ -152,7 +154,7 @@ pub fn answered(hub: &Hub, cfg: &BotConfig) {
         backends::set_signed_in(backend, Some(true));
         !known
     };
-    if news && let Err(error) = signed_in(hub, backend, account) {
+    if news && let Err(error) = signed_in(hub, backend, profile) {
         tracing::warn!(backend, error = format!("{error:#}"), "couldn't complete the sign-in cards");
     }
 }
@@ -165,31 +167,41 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
 
 /// The card `bot` got for agent `backend` is answered: whether the login it waits on is signed in now, which
 /// completes that login's cards.
-pub async fn confirm(hub: &Hub, backend: &str, account: Option<&str>) -> Result<bool> {
-    if check(hub, backend, account).await? != Some(true) {
+pub async fn confirm(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<bool> {
+    if check(hub, backend, login_profile).await? != Some(true) {
         return Ok(false);
     }
-    signed_in(hub, backend, account)?;
+    signed_in(hub, backend, login_profile)?;
     Ok(true)
 }
 
-/// Checks agent account `id`'s sign-in for the apps: `{signedIn, account}`. Chats that asked the user to sign it
-/// in go on once it is.
-pub async fn check_account(hub: &Hub, id: &str) -> Result<Value> {
-    let account = accounts::check(&hub.store, id).await?;
-    if account.signed_in {
-        signed_in(hub, &account.agent, Some(id))?;
-    }
-    Ok(accounts::status(&account))
+/// Checks login profile `id`'s sign-in for the apps: `{signedIn, loginProfile}`. Chats that asked the user to
+/// sign it in go on once it is.
+pub async fn check_login_profile(hub: &Hub, id: &str) -> Result<Value> {
+    settled(hub, &login_profiles::check(&hub.store, id).await?)
 }
 
-/// `backend` is signed in now on `account`, or on the computer's own login: the cards of the bots on that login
-/// complete.
-pub fn signed_in(hub: &Hub, backend: &str, account: Option<&str>) -> Result<()> {
-    crate::agent::fallback::signed_in(hub, backend, account);
+/// Gives API key login profile `id` its keys (`login_profiles::keys::set`), and answers as
+/// [`check_login_profile`] does.
+pub async fn set_keys(hub: &Hub, id: &str, typed: &serde_json::Map<String, Value>, import: &[String]) -> Result<Value> {
+    settled(hub, &login_profiles::keys::set(&hub.store, id, typed, import).await?)
+}
+
+/// `profile` as just checked or changed: once it's signed in, the cards that wait on it complete.
+fn settled(hub: &Hub, profile: &login_profiles::Profile) -> Result<Value> {
+    if profile.account.signed_in {
+        signed_in(hub, &profile.account.agent, Some(&profile.account.id))?;
+    }
+    Ok(profile.status())
+}
+
+/// `backend` is signed in now on `login_profile`, or on the computer's own login: the cards of the bots on that
+/// login complete.
+pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<()> {
+    crate::agent::fallback::signed_in(hub, backend, login_profile);
     let _guard = SIGN_IN.locked();
     for card in hub.store.pending_sign_ins(backend)? {
-        if card.data["connectionRequest"]["account"].as_str() != account {
+        if card.data["connectionRequest"]["loginProfile"].as_str() != login_profile {
             continue;
         }
         let mut data = card.data.clone();
@@ -201,16 +213,16 @@ pub fn signed_in(hub: &Hub, backend: &str, account: Option<&str>) -> Result<()> 
     Ok(())
 }
 
-/// Signs account `id` in through its agent itself (a browser on this computer), then checks it as
-/// [`check_account`] does.
+/// Signs account login profile `id` in through its agent itself (a browser on this computer), then checks it as
+/// [`check_login_profile`] does. An API key profile has no such sign-in.
 pub async fn sign_in_account(hub: &Hub, id: &str) -> Result<Value> {
-    let backend = accounts::find(&hub.store, id)?.agent;
-    // The account isn't removed under its sign-in.
-    let _running = accounts::Running::on(id);
+    let backend = login_profiles::find_account(&hub.store, id)?.agent;
+    // The login profile isn't removed under its sign-in.
+    let _running = login_profiles::Running::on(id);
     crate::agent::auth::authenticate_account(&hub.store, &backend, id).await?;
     // A finished sign-in counts again, whatever a prompt was refused for before.
     backends::clear_prompt_refused(id);
-    check_account(hub, id).await
+    check_login_profile(hub, id).await
 }
 
 /// `bot` answers the user messages `ids` it couldn't answer (a message older than a day doesn't go out).
@@ -237,13 +249,13 @@ mod tests {
     static CHECKS: std::sync::Mutex<Vec<(&str, bool)>> = std::sync::Mutex::new(Vec::new());
 
     #[allow(clippy::unused_async)] // the real check's signature
-    pub(super) async fn check(_: &Hub, backend: &str, _account: Option<&str>) -> Result<Option<bool>> {
+    pub(super) async fn check(_: &Hub, backend: &str, _login_profile: Option<&str>) -> Result<Option<bool>> {
         Ok(CHECKS.locked().iter().find(|(b, _)| *b == backend).map(|(_, ok)| *ok))
     }
 
     /// The computer's own login of agent `backend`.
     fn own(backend: &str) -> Login {
-        Login { backend: backend.to_owned(), account: None }
+        Login { backend: backend.to_owned(), profile: None }
     }
 
     fn cards(hub: &Hub, backend: &str, bot: &str) -> Vec<crate::store::Entry> {
@@ -361,12 +373,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_accounts_sign_in_completes_only_the_cards_of_the_bots_on_it() {
+    async fn a_login_profiles_sign_in_completes_only_the_cards_of_the_bots_on_it() {
         use crate::agent::fallback::{Reason, login, rest};
         let (hub, dir) = fixture();
-        accounts::tests::insert(&hub.store, &[("a1", "claude")]);
-        let bot = |account: Value| {
-            let cfg = json!({"id": "", "name": "claude", "backend": "claude", "cwd": dir, "account": account});
+        login_profiles::tests::insert(&hub.store, &[("a1", "claude")]);
+        let bot = |profile: Value| {
+            let cfg = json!({"id": "", "name": "claude", "backend": "claude", "cwd": dir, "loginProfile": profile});
             hub.create_bot(serde_json::from_value(cfg).unwrap()).unwrap()["id"].as_str().unwrap().to_owned()
         };
         let (own, other) = (bot(Value::Null), bot(json!("a1")));
@@ -375,26 +387,26 @@ mod tests {
             invite(&hub, id, &Lane::main(id), &login, "Claude Code", &[]).unwrap();
         }
         let request = |bot: &str| cards(&hub, "claude", bot)[0].data["connectionRequest"].clone();
-        assert_eq!(request(&other)["account"], "a1", "the card says which login to sign in");
-        assert!(request(&own).get("account").is_none());
-        // Each login rests by itself: the account's usage limit and sign-out aren't the computer's own login's.
+        assert_eq!(request(&other)["loginProfile"], "a1", "the card says which login to sign in");
+        assert!(request(&own).get("loginProfile").is_none());
+        // Each login rests by itself: the login profile's usage limit and sign-out aren't the computer's own login's.
         let config = |bot: &str| hub.store.bot(bot).unwrap().unwrap().config;
-        let (on_own, on_account) = (login::of(&config(&own)), login::of(&config(&other)));
-        let resting = |account: &str| rest::get(&hub.store, account, now_ms()).map(|r| r.reason);
-        rest::record(&hub.store, &on_account, Reason::UsageLimit, now_ms(), None);
-        assert_eq!(resting(&on_own), None, "the account's usage limit");
-        rest::record(&hub.store, &on_account, Reason::SignedOut, now_ms(), None);
+        let (on_own, on_profile) = (login::of(&config(&own)), login::of(&config(&other)));
+        let resting = |login: &str| rest::get(&hub.store, login, now_ms()).map(|r| r.reason);
+        rest::record(&hub.store, &on_profile, Reason::UsageLimit, now_ms(), None);
+        assert_eq!(resting(&on_own), None, "the login profile's usage limit");
+        rest::record(&hub.store, &on_profile, Reason::SignedOut, now_ms(), None);
         rest::record(&hub.store, &on_own, Reason::SignedOut, now_ms(), None);
         signed_in(&hub, "claude", Some("a1")).unwrap();
-        assert_eq!((resting(&on_account), resting(&on_own)), (None, Some(Reason::SignedOut)));
-        assert!(cards(&hub, "claude", &other).is_empty(), "the account's bot goes on");
+        assert_eq!((resting(&on_profile), resting(&on_own)), (None, Some(Reason::SignedOut)));
+        assert!(cards(&hub, "claude", &other).is_empty(), "the login profile's bot goes on");
         assert_eq!(cards(&hub, "claude", &own).len(), 1, "the computer's own login is still signed out");
-        rest::record(&hub.store, &on_account, Reason::SignedOut, now_ms(), None);
+        rest::record(&hub.store, &on_profile, Reason::SignedOut, now_ms(), None);
         agent_signed_in(&hub, "claude").unwrap();
-        assert_eq!((resting(&on_account), resting(&on_own)), (Some(Reason::SignedOut), None));
+        assert_eq!((resting(&on_profile), resting(&on_own)), (Some(Reason::SignedOut), None));
         assert!(cards(&hub, "claude", &own).is_empty());
-        // A prompt the account answered is news about the account alone.
-        accounts::note_signed_in(&hub.store, "a1", false);
+        // A prompt the login profile answered is news about it alone.
+        login_profiles::note_signed_in(&hub.store, "a1", false);
         backends::set_signed_in("claude", Some(false));
         let cfg = hub.store.bot(&other).unwrap().unwrap().config;
         answered(&hub, &cfg);

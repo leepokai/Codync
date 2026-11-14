@@ -78,19 +78,19 @@ internal val AppState.mismatch: VersionMismatch? get() {
                     val inReview = store?.let { AppVersion.isBelow(it, mismatch.minimum) } == true
                     Text(appUpdateDetail(host, mismatch.minimum, translate) +
                         if (inReview) " That version is still in Google Play review; it'll be there soon." else "", style = Type.footnote, color = Palette.secondary)
-                    PrimaryButton("Update Codync", Modifier.padding(top = 4.dp), enabled = !inReview) { AppUpdates.open(context) }
+                    PrimaryButton(translate("Update Codync"), Modifier.padding(top = 4.dp), enabled = !inReview) { AppUpdates.open(context) }
                 }
                 is VersionMismatch.AppFloor -> {
                     val context = LocalContext.current
                     Text(mismatch.reason, style = Type.footnote, color = Palette.secondary)
-                    PrimaryButton("Update Codync", Modifier.padding(top = 4.dp)) { AppUpdates.open(context) }
+                    PrimaryButton(translate("Update Codync"), Modifier.padding(top = 4.dp)) { AppUpdates.open(context) }
                 }
                 is VersionMismatch.UpdateHost -> if (updating) {
                     Text(cloudUpdateDetail(mismatch.minimum, translate), style = Type.footnote, color = Palette.secondary)
                 } else {
                     val notice = hostUpdateNotice(host, mismatch, state.hello?.text("os"), state.canUpdateHost, state.hostUpdate, now, translate)
                     Text(notice.detail, style = Type.footnote, color = Palette.secondary)
-                    if (notice.offersUpdate) PrimaryButton("Update now", Modifier.padding(top = 4.dp), action = requestUpdate)
+                    if (notice.offersUpdate) PrimaryButton(translate("Update now"), Modifier.padding(top = 4.dp), action = requestUpdate)
                 }
             }
         }

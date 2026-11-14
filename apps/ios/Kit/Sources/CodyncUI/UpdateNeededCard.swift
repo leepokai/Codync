@@ -47,7 +47,7 @@ public struct UpdateNeededCard: View {
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let action {
-                    Button(action.title, action: action.run)
+                    Button(L10n.tr(action.title), action: action.run)
                         .buttonStyle(.primary)
                         .disabled(inReview)
                         .padding(.top, 4)

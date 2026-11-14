@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon'
 import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { updateNeededText } from '../lib/host-update'
+import { trNow } from '../lib/l10n.ts'
 import { useModel } from '../lib/observable'
 import { appFloor } from '../store/cloud'
 import { useApp, useStore } from '../store/context'
@@ -33,8 +34,8 @@ export function UpdateNeededCard() {
     : null
   const button =
     action === 'updateApp' ? updates && <UpdateButton updates={updates} kind="primary" />
-    : action === 'restartHost' ? <Button onClick={() => window.codync.host.restart()}>Update now</Button>
-    : action === 'askHost' ? <Button onClick={() => store.requestHostUpdate()}>Update now</Button>
+    : action === 'restartHost' ? <Button onClick={() => window.codync.host.restart()}>{trNow('Update now')}</Button>
+    : action === 'askHost' ? <Button onClick={() => store.requestHostUpdate()}>{trNow('Update now')}</Button>
     : null
   // With a button here, instructions for that computer would only confuse.
   const needs = updateNeededText.detail(mismatch, host, store.hello?.os, action === null)
@@ -50,7 +51,7 @@ export function AppFloorCard() {
   const floor = useModel(appFloor)
   const updates = useUpdates()
   if (!floor.message) return null
-  return <UpdateNotice title="Update this app" detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
+  return <UpdateNotice title={trNow('Update this app')} detail={floor.message} button={updates && <UpdateButton updates={updates} kind="primary" />} />
 }
 
 function UpdateNotice({ title, detail, button, updating = false }: { title: string; detail: string; button: ReactNode; updating?: boolean }) {

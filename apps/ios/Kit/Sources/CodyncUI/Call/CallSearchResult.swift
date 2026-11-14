@@ -11,6 +11,8 @@ struct CallSearchResult: Equatable {
 /// model content starts a new one.
 struct CallSearchTurn {
     private(set) var result: CallSearchResult?
+    /// Turns that came with search suggestions.
+    private(set) var answers = 0
     private var text = ""
     private var html: String?
     private var complete = false
@@ -22,7 +24,10 @@ struct CallSearchTurn {
         let next = complete && content["modelTurn"] != nil
         if next { self.text = ""; self.html = nil; complete = false }
         if let text { self.text += text }
-        if let html, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { self.html = html }
+        if let html, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if self.html == nil { answers += 1 }
+            self.html = html
+        }
         if next || text != nil || html != nil {
             result = self.html.map { CallSearchResult(html: $0, text: self.text) }
         }

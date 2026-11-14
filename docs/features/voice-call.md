@@ -237,6 +237,8 @@ isn't ordered with Google's other messages, so a piece that arrives after `turnC
 next model turn starts a new one. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
 clients display its original suggestions next to that answer's transcription under the call bar. The HTML is held
 only in the engine's memory and cleared on replacement or end; it never enters chat, memory, analytics or disk.
+Analytics only count it: each engine's `voice_call_quality` adds `google_search` and `searches` (answers with
+suggestions) when search was on ([analytics events](../reference/analytics-events.md)).
 The embedded document disables JavaScript, storage, forms and background network access; HTTP(S) links open directly
 in the system browser. Metadata may be absent; clients do not invent citations or search links. See [Google's Live API tools](https://ai.google.dev/gemini-api/docs/live-api/tools).
 

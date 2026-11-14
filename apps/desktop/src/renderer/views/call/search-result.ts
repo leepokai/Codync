@@ -6,6 +6,8 @@ export interface SearchResult { html: string; text: string }
  * model content starts a new one. */
 export class SearchTurn {
   result: SearchResult | null = null
+  /** Turns that came with search suggestions. */
+  answers = 0
   private text = ''
   private html: string | null = null
   private complete = false
@@ -16,7 +18,10 @@ export class SearchTurn {
     const next = this.complete && content.modelTurn != null
     if (next) { this.text = ''; this.html = null; this.complete = false }
     if (typeof text === 'string') this.text += text
-    if (typeof html === 'string' && html.trim()) this.html = html
+    if (typeof html === 'string' && html.trim()) {
+      if (this.html === null) this.answers++
+      this.html = html
+    }
     if (next || typeof text === 'string' || typeof html === 'string') {
       this.result = this.html ? { html: this.html, text: this.text } : null
     }

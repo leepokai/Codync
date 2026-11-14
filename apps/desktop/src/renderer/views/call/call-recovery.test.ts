@@ -166,6 +166,22 @@ test('Gemini surfaces original search suggestions beside the matching answer and
   assert.equal(c.engine.searchResult, null)
 })
 
+test('Gemini reports search use for analytics: the confirmed session, then each answer with suggestions', async () => {
+  for (const confirmed of [undefined, true]) {
+    const c = call(confirmed, true)
+    const uses: string[] = []
+    c.engine.onSearch = (use) => uses.push(use)
+    await ready(c)
+    const html = '<a href="https://www.google.com/search?q=test">Search</a>'
+    const grounded = { groundingMetadata: { searchEntryPoint: { renderedContent: html } } }
+    c.last().play({ serverContent: { modelTurn: { parts: [] }, ...grounded } })
+    c.last().play({ serverContent: { ...grounded, turnComplete: true } })
+    c.last().play({ serverContent: { modelTurn: { parts: [] }, ...grounded, turnComplete: true } })
+    c.engine.end()
+    assert.deepEqual(uses, confirmed ? ['enabled', 'answered', 'answered'] : ['answered', 'answered'])
+  }
+})
+
 test('Gemini is ready only once the microphone delivers after setup', async () => {
   const c = call()
   void c.engine.start()
@@ -438,4 +454,17 @@ test('call quality reports ready time, reconnects, stalls and failure once per e
   now += CallQuality.stuckMs
   slow.report()
   assert.deepEqual(stuck, [{ event: 'voice_call_quality', engine: 'openai', reconnects: 0, stuck: 'connecting', failure: 'none' }])
+})
+
+test('call quality says whether Google Search was on and how many answers used it, only when it was', () => {
+  const events: Record<string, unknown>[] = []
+  const quality = new CallQuality((e) => events.push(e as Record<string, unknown>))
+  quality.begin('gemini')
+  quality.search('enabled')
+  quality.search('answered')
+  quality.search('answered')
+  quality.begin('gemini')
+  quality.report()
+  assert.deepEqual([events[0]!.google_search, events[0]!.searches], [true, 2])
+  assert.ok(!('google_search' in events[1]!) && !('searches' in events[1]!))
 })

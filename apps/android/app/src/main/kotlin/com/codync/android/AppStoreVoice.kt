@@ -112,6 +112,7 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
     call.engine = engine
     call.quality.begin(kind)
     (engine as? GeminiLiveEngine)?.onStall = { contextScope.launch { if (call.engine === engine) call.quality.stalled() } }
+    (engine as? GeminiLiveEngine)?.onSearch = { use -> contextScope.launch { if (call.engine === engine) call.quality.search(use) } }
     if (muted) engine.mute(true)
     call.cloudSince = if (provider != null) SystemClock.elapsedRealtime() else null
     contextScope.launch {

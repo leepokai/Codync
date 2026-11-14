@@ -138,7 +138,10 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       engineName.current = 'on_device'
     }
     quality.current!.begin(engineName.current)
-    if (next instanceof GeminiLiveEngine) next.onStall = () => quality.current!.stalled()
+    if (next instanceof GeminiLiveEngine) {
+      next.onStall = () => quality.current!.stalled()
+      next.onSearch = (use) => quality.current!.search(use)
+    }
     // Picks up the computer's newest models for the next call; this one starts right away.
     if (provider) void rememberStatus()
     // The computer decides what the voice hears (host chat/calls/announce); the engine only says it.

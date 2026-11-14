@@ -11,6 +11,9 @@ data class CallSearchResult(val html: String, val text: String)
 class CallSearchTurn {
     var result: CallSearchResult? = null
         private set
+    /** Turns that came with search suggestions. */
+    var answers = 0
+        private set
     private var text = ""
     private var html: String? = null
     private var complete = false
@@ -22,7 +25,10 @@ class CallSearchTurn {
         val next = complete && "modelTurn" in content
         if (next) { this.text = ""; this.html = null; complete = false }
         if (text != null) this.text += text
-        if (!html.isNullOrBlank()) this.html = html
+        if (!html.isNullOrBlank()) {
+            if (this.html == null) answers++
+            this.html = html
+        }
         if (next || text != null || html != null) result = this.html?.let { CallSearchResult(it, this.text) }
         if ((content["turnComplete"] as? JsonPrimitive)?.booleanOrNull == true || (content["interrupted"] as? JsonPrimitive)?.booleanOrNull == true) complete = true
         return result

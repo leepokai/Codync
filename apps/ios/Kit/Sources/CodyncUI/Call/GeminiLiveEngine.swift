@@ -29,6 +29,8 @@ final class GeminiLiveEngine: VoiceEngine {
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
     /// Playback stopped reporting progress after the voice's turn, and the call went back to listening.
     @ObservationIgnored var onStall: (() -> Void)?
+    /// Search was confirmed for a session, or an answer came with suggestions (analytics; never content).
+    @ObservationIgnored var onSearch: ((CallSearchUse) -> Void)?
 
     private let model: String
     private let voice: String
@@ -92,6 +94,7 @@ final class GeminiLiveEngine: VoiceEngine {
             guard let token = session.credential else { throw VoiceError("Gemini sent no session credential.") }
             clearSearch()
             self.session = session
+            if session.googleSearch == true { onSearch?(.enabled) }
             var url = URLComponents(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained")
             url?.queryItems = [URLQueryItem(name: "access_token", value: token)]
             guard let url = url?.url else { throw VoiceError("Couldn't reach Gemini.") }
@@ -269,7 +272,9 @@ final class GeminiLiveEngine: VoiceEngine {
         guard !ended, let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         if msg["setupComplete"] != nil { setupCompleted() }
         if let content = msg["serverContent"] as? [String: Any] {
+            let answers = searchTurn.answers
             searchResult = searchTurn.receive(content)
+            if searchTurn.answers > answers { onSearch?(.answered) }
             if let heard = (content["inputTranscription"] as? [String: Any])?["text"] as? String { link.add("user", heard) }
             if let said = (content["outputTranscription"] as? [String: Any])?["text"] as? String { link.add("voice", said) }
             if content["turnComplete"] as? Bool == true || content["interrupted"] as? Bool == true { link.endTurn() }

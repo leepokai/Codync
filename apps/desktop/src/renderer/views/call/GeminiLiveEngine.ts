@@ -1,4 +1,5 @@
 import { SearchTurn } from './search-result'
+import type { SearchUse } from './call-quality'
 import type { CallLink, CallSession } from './call-link'
 import { browserPorts, type CallOutput, type GeminiPorts, type LiveSocket } from './gemini-ports'
 import { errorMessage, fromBase64, onDevicesChanged, PROGRESS_TAG, reconnect, toBase64, VoiceEngine } from './voice'
@@ -31,6 +32,8 @@ export class GeminiLiveEngine extends VoiceEngine {
   readonly provider = 'gemini' as const
   /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
   onStall: (() => void) | null = null
+  /** Search was confirmed for a session, or an answer came with suggestions (analytics; never content). */
+  onSearch: ((use: SearchUse) => void) | null = null
   private searchTurn = new SearchTurn()
   private socket: LiveSocket | null = null
   /** Setup is done on the current socket. */
@@ -86,6 +89,7 @@ export class GeminiLiveEngine extends VoiceEngine {
       if (!session.credential) throw new Error(trNow('Gemini sent no session credential.'))
       this.clearSearch()
       this.session = session
+      if (session.googleSearch === true) this.onSearch?.('enabled')
       const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
       this.ready = false
@@ -236,7 +240,9 @@ export class GeminiLiveEngine extends VoiceEngine {
     }
     const content = msg.serverContent
     if (content) {
+      const answers = this.searchTurn.answers
       const result = this.searchTurn.receive(content)
+      if (this.searchTurn.answers > answers) this.onSearch?.('answered')
       if (this.searchResult !== result) { this.searchResult = result; this.changed() }
       if (typeof content.inputTranscription?.text === 'string') this.link.add('user', content.inputTranscription.text)
       if (typeof content.outputTranscription?.text === 'string') this.link.add('voice', content.outputTranscription.text)

@@ -138,6 +138,7 @@ struct CallView: View {
         }
         quality.begin(engine.analyticsName)
         (engine as? GeminiLiveEngine)?.onStall = { [quality] in quality.stalled() }
+        (engine as? GeminiLiveEngine)?.onSearch = { [quality] in quality.search($0) }
         engine.onActivityChanged = { [weak engine, model, callID] active in
             if active {
                 model.beginVoiceCall(callID, hear: { [weak engine, activity] cue in

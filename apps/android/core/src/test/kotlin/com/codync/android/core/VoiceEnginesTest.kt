@@ -291,6 +291,15 @@ class VoiceEnginesTest {
         assertEquals("on_device" to CallQuality.Report(null, 0, VoiceStuck.Connecting, null), reports.last())
     }
 
+    @Test fun callQualitySaysWhetherGoogleSearchWasOnOnlyWhenItWas() {
+        val reports = mutableListOf<CallQuality.Report>()
+        val quality = CallQuality<String>({ 0L }) { _, report -> reports += report }
+        quality.begin("gemini")
+        quality.search(CallSearchUse.Enabled); quality.search(CallSearchUse.Answered); quality.search(CallSearchUse.Answered)
+        quality.begin("gemini"); quality.report()
+        assertEquals(listOf(2, null), reports.map { it.searches })
+    }
+
     @Test fun openAIRealtimeGivesUpWhenTheChannelNeverOpens() = runTest {
         val peer = Peer()
         val engine = OpenAIRealtimeEngine(backgroundScope, VoiceSettings(), "gpt-realtime", "marin", "gpt-transcribe", Link("ek"), peer) { _, _ -> "sdp" }

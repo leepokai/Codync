@@ -55,6 +55,8 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     private var watchdog: Job? = null
     /** Playback stopped reporting progress after the voice's turn, and the call went back to listening. */
     @Volatile var onStall: (() -> Unit)? = null
+    /** Search was confirmed for a session, or an answer came with suggestions (analytics; never content). */
+    @Volatile var onSearch: ((CallSearchUse) -> Unit)? = null
 
     init { hop { connect() } }
 
@@ -92,6 +94,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
         searchTurn = CallSearchTurn()
         mutable.update { it.copy(searchResult = null) }
         this.session = session
+        if (session.googleSearch == true) onSearch?.invoke(CallSearchUse.Enabled)
         ready = false
         val url = "$endpoint?access_token=" + URLEncoder.encode(token, "UTF-8")
         socket = http.newWebSocket(Request.Builder().url(url).build(), Listener())
@@ -169,7 +172,9 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
             flush()
         }
         message.objectAt("serverContent")?.let { content ->
+            val answers = searchTurn.answers
             val result = searchTurn.receive(content)
+            if (searchTurn.answers > answers) onSearch?.invoke(CallSearchUse.Answered)
             mutable.update { it.copy(searchResult = result) }
             content.objectAt("inputTranscription")?.text("text")?.let { link.add("user", it) }
             content.objectAt("outputTranscription")?.text("text")?.let { link.add("voice", it) }

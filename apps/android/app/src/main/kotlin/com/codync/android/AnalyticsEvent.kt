@@ -119,7 +119,9 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class VoiceCallQuality(val engine: VoiceEngineKind, val report: com.codync.android.core.CallQuality.Report) : AnalyticsEvent("voice_call_quality") {
         override val properties get() = mapOf("engine" to engine.json, "reconnects" to JsonPrimitive(report.reconnects),
             "stuck" to JsonPrimitive(report.stuck.wire), "failure" to JsonPrimitive(report.failure?.wire ?: "none")) +
-            listOfNotNull(report.readyMs?.let { "ready_ms" to JsonPrimitive(it) })
+            listOfNotNull(report.readyMs?.let { "ready_ms" to JsonPrimitive(it) }) +
+            // Google Search: whether it was on and how many answers used it, never the query.
+            (report.searches?.let { mapOf("google_search" to JsonPrimitive(true), "searches" to JsonPrimitive(it)) } ?: emptyMap())
     }
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)

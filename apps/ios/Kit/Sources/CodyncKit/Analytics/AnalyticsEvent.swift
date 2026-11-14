@@ -45,7 +45,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case voiceCallStarted(VoiceEngine)
     /// How one engine of a call fared, when it's replaced or the call ends: milliseconds until it was ready (nil:
     /// never), reconnects, the first phase stuck too long, why it failed.
-    case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
+    /// `searches`: with Gemini's Google Search on, the answers that came with its suggestions (never the query); nil when off.
+    case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure, searches: Int? = nil)
     case screenViewed(Screen)
     /// A computer's screen stopped streaming after a while with nobody touching the app: the bot details' picture
     /// (`botComputer`) or the full viewer (`remoteScreen`).
@@ -312,10 +313,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .settingChanged(setting, on): return ["setting": .string(setting.rawValue), "on": .bool(on)]
         case let .linkOpened(link): return ["link": .string(link.rawValue)]
         case let .voiceCallStarted(engine): return ["engine": .string(engine.rawValue)]
-        case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure):
+        case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure, searches):
             var p: [String: Analytics.Value] = ["engine": .string(engine.rawValue), "reconnects": .int(reconnects),
                                                 "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
             p["ready_ms"] = readyMs.map(Analytics.Value.int)
+            if let searches { p["google_search"] = .bool(true); p["searches"] = .int(searches) }
             return p
         case let .reviewRequested(prompts):
             return ["prompts": .int(prompts), "policy": .string("v2")]

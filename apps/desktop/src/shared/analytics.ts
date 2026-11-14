@@ -73,7 +73,9 @@ export type AnalyticsEvent =
   | { event: 'conversation_find_opened' }
   | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
-  | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
+  | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure
+      /** Gemini's Google Search was on; `searches`: answers with its suggestions (never the query). */
+      google_search?: true; searches?: number }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
   | { event: 'reach_account_answered'; outcome: ReachOutcome; error?: ClaimFailure }
   | { event: 'continued_without_account' }

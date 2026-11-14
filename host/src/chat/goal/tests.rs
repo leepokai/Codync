@@ -11,6 +11,14 @@ fn hub() -> std::sync::Arc<Hub> {
     hub
 }
 
+fn cfg(id: &str, backend: &str) -> BotConfig {
+    BotConfig {
+        id: id.into(),
+        backend: backend.into(),
+        ..serde_json::from_value(json!({"id": id, "name": id})).unwrap()
+    }
+}
+
 fn seed(hub: &Hub) -> Goal {
     let goal = Goal {
         id: uuid::Uuid::new_v4().to_string(),
@@ -52,7 +60,7 @@ fn corrupt_control_state_never_reports_a_successful_stop_or_starts_work() {
     let hub = hub();
     hub.store.kv_set(&key("b"), "not valid goal JSON").unwrap();
     assert!(stop(&hub, "b").is_err());
-    assert!(begin(&hub, "b", "old-goal", "custom").is_err());
+    assert!(begin(&hub, &cfg("b", "custom"), "old-goal", "custom").is_err());
     assert_eq!(hub.store.kv_read(&key("b")).unwrap().as_deref(), Some("not valid goal JSON"));
 }
 
@@ -61,11 +69,11 @@ fn stopping_and_replacing_invalidates_queued_steps() {
     let hub = hub();
     let old = seed(&hub);
     let newer = seed(&hub);
-    assert!(begin(&hub, "b", &old.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &old.id, "custom").unwrap().is_none());
     finish(&hub, "b", Some(&old.id), Stopped::Done);
     assert_eq!(get(&hub, "b").unwrap(), newer);
     user_spoke(&hub, "b").unwrap();
-    assert!(begin(&hub, "b", &newer.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &newer.id, "custom").unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::User));
 }
 
@@ -73,14 +81,14 @@ fn stopping_and_replacing_invalidates_queued_steps() {
 fn turn_and_time_limits_prevent_another_step() {
     let hub = hub();
     let goal = seed(&hub);
-    assert!(begin(&hub, "b", &goal.id, "custom").unwrap().is_some());
-    assert!(begin(&hub, "b", &goal.id, "custom").unwrap().is_some());
-    assert!(begin(&hub, "b", &goal.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_some());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_some());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::Limit));
     let mut expired = seed(&hub);
     expired.started_at -= 61_000;
     save(&hub, "b", &expired).unwrap();
-    assert!(begin(&hub, "b", &expired.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &expired.id, "custom").unwrap().is_none());
 }
 
 #[test]
@@ -93,6 +101,8 @@ fn plan_usage_reserves_headroom() {
         registry: None,
         source: "agent",
         updated_at: now_ms(),
+        default_login_profile: None,
+        login_profiles: Vec::new(),
         windows: vec![Window {
             id: "week".into(),
             label: "Week".into(),
@@ -102,6 +112,6 @@ fn plan_usage_reserves_headroom() {
             text: None,
         }],
     });
-    assert!(begin(&hub, "b", &goal.id, "claude").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "claude"), &goal.id, "claude").unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::Usage));
 }

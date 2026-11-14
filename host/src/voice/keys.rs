@@ -2,7 +2,7 @@
 //! Cloud computer, through its keeper (`crate::keeper`), whose grant adds the key (proxied slots `voice:<provider>`),
 //! so nothing on the computer but the keeper ever holds it again.
 
-use super::Provider;
+use super::{Provider, compatible};
 use crate::keeper::client;
 use crate::keeper::record::{GEMINI, Keep, OPENAI, Record};
 use crate::market::vault;
@@ -66,16 +66,32 @@ impl Provider {
     }
 }
 
+/// Who answers an `Access`'s requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Upstream {
+    /// The provider itself (or the keeper, on its behalf).
+    Provider,
+    /// An OpenAI-compatible server `CODYNC_OPENAI_BASE_URL` names: Speech mode only.
+    Compatible,
+}
+
 /// Where requests to a provider go, and the key they carry (none through the keeper's grant, which adds it).
 pub(super) struct Access {
     base: String,
     key: Option<String>,
+    pub(super) upstream: Upstream,
 }
 
 impl Access {
-    /// Straight to the provider with `key`.
-    pub(super) fn direct(p: Provider, key: &str) -> Self {
-        Self { base: p.base().to_owned(), key: Some(key.to_owned()) }
+    /// Straight to the provider with `key`, or to the compatible server standing in for `OpenAI`.
+    pub(super) fn direct(p: Provider, key: &str) -> Result<Self> {
+        let key = Some(key.to_owned());
+        if p == Provider::OpenAi
+            && let Some(base) = compatible::base()?
+        {
+            return Ok(Self { base, key, upstream: Upstream::Compatible });
+        }
+        Ok(Self { base: p.base().to_owned(), key, upstream: Upstream::Provider })
     }
 
     /// A request to `path` on the provider (`/v1/models`).
@@ -107,12 +123,12 @@ pub(super) fn access(store: &Store, p: Provider) -> Result<Access> {
         if !client::has(store, &slot(p))? {
             return Err(missing(p));
         }
-        return Ok(Access { base: client::short_grant(store, &slot(p))?, key: None });
+        return Ok(Access { base: client::short_grant(store, &slot(p))?, key: None, upstream: Upstream::Provider });
     }
     let keys = load(store)?;
     match keys.get(p) {
         "" => Err(missing(p)),
-        key => Ok(Access::direct(p, key)),
+        key => Access::direct(p, key),
     }
 }
 

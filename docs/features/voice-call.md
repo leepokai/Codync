@@ -204,11 +204,19 @@ Each cloud engine has two **modes**:
   model the user picks is saved; the default isn't, so a newer default reaches everyone.
 
 **OpenAI-compatible server.** Set `CODYNC_OPENAI_BASE_URL` in the host's environment (for example
-`http://127.0.0.1:8890`) to send the OpenAI engine's requests (`/v1/models`,
-`/v1/realtime/client_secrets`, `/v1/audio/transcriptions`, `/v1/audio/speech`) to that server instead
-of `https://api.openai.com`, e.g. a local speech-to-text and text-to-speech server. Speech clips are
-then requested and returned as WAV, so the server needs no AAC encoder. Only **Speech** mode goes
-through the host; **Realtime** still connects the device to OpenAI. Unset, nothing changes.
+`http://127.0.0.1:8890`, with or without a trailing `/v1`) to send the OpenAI engine's **Speech** mode
+requests (`/v1/models`, `/v1/audio/transcriptions`, `/v1/audio/speech`) to that server instead of
+`https://api.openai.com`, e.g. a local speech-to-text and text-to-speech server
+(`voice/compatible.rs`). Like `CODYNC_CLOUD_URL` it must be https, or plain http to this computer,
+since the saved key goes out as a bearer token; any other value fails the request instead of
+falling back to OpenAI. Saving a key checks it with the server's `/v1/models`. Speech clips are then
+requested and returned as WAV, so the server needs no AAC encoder. **Realtime** isn't available
+while it is set (the device would connect to OpenAI with a credential only the local server
+issued), so a Realtime call says to use Speech mode. A Codync Cloud computer ignores the variable
+(its keeper holds the key for OpenAI). Where to set it: Linux, a systemd drop-in for the host's
+user unit (`systemctl --user edit`, survives `codync-host install`); macOS has no durable place yet,
+since `codync-host install` rewrites the launchd plist, so add it again after each install. Unset,
+nothing changes.
 
 **Default models follow the provider.** Nothing pins a model version: once a day (and whenever a
 key is saved or the model list is opened) the host reads each keyed provider's model list and

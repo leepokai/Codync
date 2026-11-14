@@ -114,7 +114,7 @@ fn resolve(off: bool, env: Candidate, saved: Candidate, builtin: &str) -> Option
 }
 
 /// https, or plain http to this computer (local dev). No user name, password, path, query or fragment.
-fn parse_url(raw: &str) -> Option<String> {
+pub(crate) fn parse_url(raw: &str) -> Option<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return None;

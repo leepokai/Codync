@@ -104,6 +104,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let account = crate::agent::accounts::add(&hub.store, str_arg(&b, "backend")?).await?;
             json!({"account": account, "backends": agents(hub)})
         }
+        // The user's name for an account, or with no `account` for the computer's own login; empty clears it.
+        "renameAgentAccount" => {
+            let name = b["name"].as_str().unwrap_or_default();
+            crate::agent::accounts::rename(&hub.store, str_arg(&b, "backend")?, b["account"].as_str(), name)?;
+            json!({"backends": agents(hub)})
+        }
         "removeAgentAccount" => {
             crate::agent::accounts::remove(hub, str_arg(&b, "account")?).await?;
             json!({"backends": agents(hub)})
@@ -166,6 +172,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // An account's own sign-in state: `{signedIn, account}`, and the agent list it changed.
         "agentAuth" if b["account"].is_string() => {
             let mut status = crate::market::agent_sign_in::check_account(hub, str_arg(&b, "account")?).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        // An account whose agent signs itself in (a browser on this computer): the same answer once it's done.
+        "agentAuthenticate" if b["account"].is_string() => {
+            let mut status = crate::market::agent_sign_in::sign_in_account(hub, str_arg(&b, "account")?).await?;
             status["backends"] = agents(hub).into();
             status
         }

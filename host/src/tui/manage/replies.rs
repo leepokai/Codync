@@ -181,6 +181,10 @@ impl App {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
                     self.overlays.truncate(i);
                 }
+                // A renamed agent account comes back with the agents.
+                if let Some(agents) = v["backends"].as_array() {
+                    self.backends.clone_from(agents);
+                }
                 if let Some(Overlay::Agent(a)) = self.overlays.last_mut()
                     && v.get("signedIn").is_some()
                 {
@@ -282,6 +286,7 @@ impl App {
                         && a.backend == *backend
                     {
                         a.busy = false;
+                        a.signing_in = None;
                         a.error = Some(e.clone());
                     }
                 }

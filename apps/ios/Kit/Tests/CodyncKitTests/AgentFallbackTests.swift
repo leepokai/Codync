@@ -20,9 +20,9 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(b.fallbacks?.last?.model == nil && b.fallbacks?.last?.modelOptions == [:])
     #expect(b.selfFallbacks == false)
     #expect(b.agentStep?.agent == "codex" && b.agentStep?.reason == "usageLimit")
-    #expect(b.rest(of: "claude")?.line.hasPrefix("Usage resets ") == true)
+    #expect(b.rest(of: AgentLogin(backend: "claude"))?.line.hasPrefix("Usage resets ") == true)
     // A rest whose time has passed is over, whatever the host last said.
-    #expect(b.rest(of: "gemini") == nil)
+    #expect(b.rest(of: AgentLogin(backend: "gemini")) == nil)
     let draft = BotDraft(b)
     let body = try updateBody(draft)
     let sent = try #require(body["fallbacks"] as? [[String: Any]])
@@ -88,4 +88,53 @@ private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     #expect(onCodex.runningAgent == "codex")
     #expect(try ![claude, bot(#"{"id":"c","backend":"claude"}"#), group].mixesAgents)
     #expect([claude, onCodex].mixesAgents)
+}
+
+private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,"command":"claude","installHint":"","accounts":[{"id":"a1","signedIn":true},{"id":"a2","signedIn":false},{"id":"a3","signedIn":true}]}"#
+
+@Test func fallbackStepsDecodeAndSendTheirAccount() throws {
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    let b = try bot("""
+    {"id":"b","backend":"claude","fallbacks":[{"backend":"claude","account":"a1","model":null},{"backend":"codex","account":7}],
+     "agentStep":{"step":1,"agent":"claude","account":"a1","since":1},
+     "resting":[{"agent":"claude","until":\(soon),"reason":"usageLimit"},{"agent":"claude","account":"a3","until":\(soon),"reason":"rateLimited"}]}
+    """)
+    #expect(b.fallbacks?.map(\.account) == ["a1", nil])
+    #expect(b.stepLogin == AgentLogin(backend: "claude", account: "a1") && b.stepLogin != b.login)
+    // A rest belongs to one login, not to the agent.
+    #expect(b.rest(of: b.login)?.reason == "usageLimit")
+    #expect(b.rest(of: AgentLogin(backend: "claude", account: "a3"))?.reason == "rateLimited")
+    #expect(b.rest(of: AgentLogin(backend: "claude", account: "a1")) == nil)
+    let sent = try #require(updateBody(BotDraft(b))["fallbacks"] as? [[String: Any]])
+    // The default login sends null: a step without the key would keep its saved account on the host.
+    #expect(sent[0]["account"] as? String == "a1" && sent[1]["account"] is NSNull)
+}
+
+@Test func theBannerTellsTwoLoginsOfOneAgentApart() throws {
+    let name: (AgentLogin, Bool) -> String = { login, own in
+        login.backend + (login.account.map { " (\($0))" } ?? (own ? " (Default account)" : ""))
+    }
+    let onAccount = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"claude","account":"Work","since":1}}"#)
+    #expect(onAccount.stepBanner(name: name) == "Using claude (Work) while claude (Default account) can't answer")
+    let onCodex = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}}"#)
+    #expect(onCodex.stepBanner(name: name) == "Using codex while claude can't answer")
+    #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name: name) == nil)
+}
+
+@Test func freeLoginsAreTheDefaultAndSignedInAccountsTheChainLacks() throws {
+    let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    #expect(claude.freeLogins(taken: []) == [nil, "a1", "a3"])
+    // The bot on the default login, a step on a1: only a3 is left; another agent's logins don't count.
+    let taken = [AgentLogin(backend: "claude"), AgentLogin(backend: "claude", account: "a1"), AgentLogin(backend: "codex", account: "a3")]
+    #expect(claude.freeLogins(taken: taken) == ["a3"])
+    #expect(claude.freeLogins(taken: taken + [AgentLogin(backend: "claude", account: "a3")]).isEmpty)
+    let plain = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
+    #expect(plain.freeLogins(taken: []) == [nil] && plain.freeLogins(taken: [AgentLogin(backend: "codex")]).isEmpty)
+}
+
+@Test func switchingAgentKeepsItsStepsOnOtherAccounts() {
+    var draft = BotDraft(name: "Lead")
+    draft.fallbacks = [BotFallback(backend: "codex"), BotFallback(backend: "codex", account: "a1"), BotFallback(backend: "gemini")]
+    draft.setAgent("codex")
+    #expect(draft.fallbacks?.map(\.login) == [AgentLogin(backend: "codex", account: "a1"), AgentLogin(backend: "gemini")])
 }

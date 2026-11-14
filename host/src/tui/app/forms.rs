@@ -175,12 +175,12 @@ impl App {
                         if !ids.is_empty() {
                             let i = ids.iter().position(|x| *x == f.backend).unwrap_or(0);
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
-                            // Another agent's model ids mean nothing here, and it can't be its own fallback.
+                            // Another agent's model ids mean nothing here, and a login is in the chain once.
                             f.model.clear();
                             f.model_options = Default::default();
                             f.account = None;
                             let own = f.backend.clone();
-                            f.fallbacks.retain(|x| x.backend != own);
+                            f.fallbacks.retain(|x| x.backend != own || x.account.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
                             f.mode = f.mode.take().map(|_| crate::agent::modes::AUTO.to_owned());
                             self.want_models(&f.backend);

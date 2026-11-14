@@ -58,12 +58,14 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
  * Getting an agent ready on the computer (iOS `AgentSheet`): install it, add Node.js when it runs
  * on Node and the computer has none, then sign in. `recheck` (a chat's sign-in request) asks the
  * agent again however signed in it looked. `signInAccount`: the request is for that agent account,
- * so its sign-in opens, not a check of the computer's own login.
+ * so its sign-in opens (a terminal, or the agent's own browser sign-in), not a check of the computer's own login.
  */
 @Composable internal fun AgentSheet(initial: AgentBackend, state: AppState, store: AppStore, recheck: Boolean = false, signInAccount: String? = null) {
     val scope = rememberCoroutineScope()
     val backend = agentBackends(state).firstOrNull { it.id == initial.id } ?: initial
-    var route by remember { mutableStateOf(signInAccount?.let { SetupRoute("login", account = it) }) }
+    var route by remember { mutableStateOf(signInAccount?.takeUnless { initial.signsInBrowser }?.let { SetupRoute("login", account = it) }) }
+    // The account whose browser sign-in this sheet was opened for, until that has started.
+    var signInNow by remember { mutableStateOf(signInAccount?.takeIf { initial.signsInBrowser }) }
     var auth by remember { mutableStateOf<AgentAuth?>(null) }
     var checking by remember { mutableStateOf(false) }
     var authenticating by remember { mutableStateOf<String?>(null) }
@@ -98,7 +100,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
         when {
             shown == null -> Column(Modifier.fillMaxSize().background(Palette.background)) {
                 ModalHeader(backend.name)
-                Overview(backend, auth, checking, authenticating, error, state, store, { route = it }, ::check) { method ->
+                Overview(backend, auth, checking, authenticating, error, state, store, { route = it }, ::check, signInNow, { signInNow = null }) { method ->
                     authenticating = method.id
                     scope.launch {
                         try { auth = store.agentAuthenticate(backend.id, method.id); error = null }
@@ -115,7 +117,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
 }
 
 @Composable private fun Overview(backend: AgentBackend, auth: AgentAuth?, checking: Boolean, authenticating: String?, error: String?, state: AppState,
-    store: AppStore, go: (SetupRoute) -> Unit, check: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
+    store: AppStore, go: (SetupRoute) -> Unit, check: () -> Unit, signInNow: String?, signInStarted: () -> Unit, authenticate: (AgentAuthMethod) -> Unit) {
     val host = state.hostName
     val signedIn = auth?.signedIn ?: backend.signedIn
     val curated = backend.curated
@@ -149,16 +151,10 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
             }
         }
         val agentMethods = auth?.methods.orEmpty().any { it.kind == "agent" || it.kind == null }
-        CardSection(footer = if (signedIn != true && agentMethods) "Browser sign-ins open on $host itself. Away from it? Use Remote screen to finish there." else null) {
-            row {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) {
-                        SetupStepRow(1 + (if (curated) 1 else 0) + (if (backend.node != null) 1 else 0), "Sign in",
-                            statusText(backend, setUp, auth, signedIn, checking, host), signedIn == true, null)
-                    }
-                    if (checking) ThinkingOrb(ThinkingOrbState.Connecting, 16.dp, Palette.secondary) else IconButton("Check again", "arrow.clockwise", action = check)
-                }
-            }
+        val browserNote = if (signedIn != true && agentMethods) "Browser sign-ins open on $host itself. Away from it? Use Remote screen to finish there." else null
+        val status = statusText(backend, setUp, auth, signedIn, checking, host)
+        // The computer's own login: what the agent said of it, then the ways to sign it in.
+        val signInRows: CardRows.() -> Unit = {
             val detail = auth?.detail
             if (signedIn != true && !detail.isNullOrEmpty()) row { SelectionContainer { Text(detail, style = Type.footnote, color = Palette.secondary) } }
             // A registry agent downloads on its first start; an app's own CLI comes from Install above.
@@ -186,7 +182,22 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
-        if (backend.accounts != null && backend.installed) AgentAccounts(backend, host, store) { go(SetupRoute("login", account = it)) }
+        // An agent with accounts lists its sign-in as the default one of them.
+        if (backend.accounts != null && backend.installed) AgentAccounts(backend, host, store, OwnLogin(status, checking, check),
+            { go(SetupRoute("login", account = it)) }, signInNow, signInStarted) {
+            signInRows()
+            browserNote?.let { row { Text(tr(it), style = Type.footnote, color = Palette.secondary) } }
+        } else CardSection(footer = browserNote) {
+            row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        SetupStepRow(1 + (if (curated) 1 else 0) + (if (backend.node != null) 1 else 0), "Sign in", status, signedIn == true, null)
+                    }
+                    CheckAgain(checking, check)
+                }
+            }
+            signInRows()
+        }
         AgentBrings(backend.id, store, state.connection is LinkState.Ready)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
@@ -217,6 +228,12 @@ private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, 
 }
 
 /** A numbered setup step: done shows a check; an action sits on the right. */
+/** Asks the agent about its sign-in again; an orb, in the button's place, while it's asked. */
+@Composable internal fun CheckAgain(checking: Boolean, check: () -> Unit) {
+    if (checking) Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { ThinkingOrb(ThinkingOrbState.Connecting, 16.dp, Palette.secondary) }
+    else IconButton("Check again", "arrow.clockwise", action = check)
+}
+
 @Composable private fun SetupStepRow(number: Int, title: String, detail: String, done: Boolean, action: Pair<String, () -> Unit>?) {
     val doneLabel = tr("Done")
     Row(Modifier.padding(vertical = 4.dp).semantics(mergeDescendants = true) { stateDescription = if (done) doneLabel else "" },

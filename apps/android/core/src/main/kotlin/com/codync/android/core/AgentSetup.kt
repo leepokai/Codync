@@ -13,12 +13,24 @@ import kotlinx.serialization.json.*
     val signedIn: Boolean? = null, val canInstall: Boolean = false, val curated: Boolean = false,
     val registry: String? = null, val node: String? = null,
     /** Its extra logins, for an agent that can have them (null otherwise, and from older hosts). */
-    val accounts: List<AgentAccount>? = null) {
+    val accounts: List<AgentAccount>? = null,
+    /** The default account: the login the computer already has, as the user named it and who it signs in. */
+    val ownAccount: OwnAccount? = null,
+    /** How an account signs in: `terminal` (its CLI, in a setup terminal) or `browser` (the agent itself, in a browser on the computer). */
+    val accountSignIn: String? = null) {
     /** Runs on Node.js and the computer has none yet. */
     val needsNode: Boolean get() = node == "missing"
+    /** Its accounts sign in through the agent, in a browser on the computer: no terminal opens. */
+    val signsInBrowser: Boolean get() = accountSignIn == "browser"
 }
-/** One more login to an agent, beside the one the computer already has. [name]: who it signs in, once it has. */
-@Serializable data class AgentAccount(val id: String, val name: String? = null, val signedIn: Boolean = false)
+/**
+ * One more login to an agent, beside the one the computer already has. [name]: what to call it (the user's [label],
+ * else who it signs in, once it has); [email]: who it signs in.
+ */
+@Serializable data class AgentAccount(val id: String, val name: String? = null, val signedIn: Boolean = false,
+    val label: String? = null, val email: String? = null)
+/** The login the computer already has, named like an [AgentAccount]. */
+@Serializable data class OwnAccount(val name: String? = null, val label: String? = null, val email: String? = null)
 /** The logins a bot on this agent can pick: the signed-in ones, and the bot's [own] even when it isn't (so its row shows it). */
 fun AgentBackend.accountChoices(own: String?): List<AgentAccount> = accounts.orEmpty().filter { it.signedIn || it.id == own }
 @Serializable data class AgentAuth(val signedIn: Boolean? = null, val detail: String? = null,

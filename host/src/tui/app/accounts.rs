@@ -5,11 +5,24 @@
 use serde_json::Value;
 
 use super::{App, FIELDS, Field, Form, cycle};
+use crate::tui::l10n::tr;
 
 impl App {
     /// Agent `backend`'s other accounts; `None` for an agent that can't have any.
     pub(in crate::tui) fn accounts(&self, backend: &str) -> Option<&[Value]> {
         self.backends.iter().find(|b| b["id"] == backend)?["accounts"].as_array().map(Vec::as_slice)
+    }
+
+    /// What the user calls agent `backend`'s default account, the login the computer already has.
+    pub(in crate::tui) fn own_account_name(&self, backend: &str) -> String {
+        let own = self.backends.iter().find(|b| b["id"] == backend).and_then(|b| b["ownAccount"]["name"].as_str());
+        own.map_or_else(|| tr("Default account").into_owned(), str::to_owned)
+    }
+
+    /// The name of agent `backend`'s account `id`.
+    pub(in crate::tui) fn account_name(&self, backend: &str, id: &str) -> String {
+        let account = self.accounts(backend).unwrap_or_default().iter().find(|a| a["id"] == id);
+        account.and_then(|a| a["name"].as_str()).map_or_else(|| tr("New account").into_owned(), str::to_owned)
     }
 
     /// The field `d` steps from the focused one, past the Account field of an agent without accounts.
@@ -22,7 +35,7 @@ impl App {
         }
     }
 
-    /// What the field steps through: the computer's own sign-in (`None`), then the accounts a bot can run on. One
+    /// What the field steps through: the default account (`None`), then the accounts a bot can run on. One
     /// that isn't signed in can't run a bot; the bot's own stays listed so the field shows it.
     fn account_choices(&self, f: &Form) -> Vec<Option<String>> {
         let accounts = self.accounts(&f.backend).unwrap_or_default().iter();
@@ -68,6 +81,7 @@ mod tests {
         vec![
             json!({"id": "claude", "name": "Claude Code", "available": true, "installed": true, "accounts": accounts}),
             json!({"id": "gemini", "name": "Gemini", "available": true, "installed": true}),
+            json!({"id": "codex", "name": "Codex", "available": true, "installed": true, "accounts": [], "ownAccount": {"name": "Work"}}),
         ]
     }
 
@@ -92,10 +106,13 @@ mod tests {
     async fn changing_the_agent_clears_the_account() {
         let mut app = test_app();
         app.backends = agents();
-        let bot = json!({"id": "b", "name": "B", "backend": "claude", "account": "a1"});
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "account": "a1",
+            "fallbacks": [{"backend": "gemini"}, {"backend": "gemini", "account": "g1"}]});
         let f = editor(&mut app, &bot, Field::Agent);
         let f = press(&mut app, f, KeyCode::Right);
         assert_eq!((f.backend.as_str(), f.account.as_deref()), ("gemini", None));
+        let kept: Vec<_> = f.fallbacks.iter().map(|x| x.account.as_deref()).collect();
+        assert_eq!(kept, [Some("g1")], "only the step on the new agent's default login goes");
         assert_eq!(f.changes()["account"], Value::Null);
         // Gemini has no accounts: the field is skipped both ways.
         let f = press(&mut app, f, KeyCode::Tab);
@@ -120,9 +137,10 @@ mod tests {
             app.overlays.clear();
             terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
         };
-        assert!(drawn(json!({"id": "b", "name": "B", "backend": "claude"})).contains("This computer's sign-in"));
+        assert!(drawn(json!({"id": "b", "name": "B", "backend": "claude"})).contains("Default account"));
         let signed_out = drawn(json!({"id": "b", "name": "B", "backend": "claude", "account": "a2"}));
         assert!(signed_out.contains("New account") && signed_out.contains("Not signed in"), "{signed_out}");
-        assert!(!drawn(json!({"id": "b", "name": "B", "backend": "gemini"})).contains("This computer's sign-in"));
+        assert!(!drawn(json!({"id": "b", "name": "B", "backend": "gemini"})).contains("Default account"));
+        assert!(drawn(json!({"id": "b", "name": "B", "backend": "codex"})).contains("‹ Work ›"), "named by the user");
     }
 }

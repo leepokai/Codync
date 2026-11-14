@@ -6,21 +6,25 @@ use super::usage::when_future;
 use crate::agent::fallback::Reason;
 use crate::store::Fallback;
 
-/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Gemini CLI · default (usage resets 15:00)".
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Claude Code (Work) · default (usage resets 15:00)".
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
-    let item = format!("{} {} · {}", i + 1, app.agent_name(&f.backend), f.model.as_deref().unwrap_or("default"));
-    if bot.and_then(|b| b.agent_step.as_deref()) == Some(f.backend.as_str()) {
+    let account = f.account.as_deref();
+    let agent = app.agent_name(&f.backend);
+    let agent = account.map_or(agent.clone(), |id| format!("{agent} ({})", app.account_name(&f.backend, id)));
+    let item = format!("{} {agent} · {}", i + 1, f.model.as_deref().unwrap_or("default"));
+    if bot.is_some_and(|b| b.agent_step.as_deref() == Some(f.backend.as_str()) && b.step_account.as_deref() == account)
+    {
         format!("{item} (in use)")
-    } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend)) {
+    } else if let Some(note) = bot.and_then(|b| rest_note(b, &f.backend, account)) {
         format!("{item} ({note})")
     } else {
         item
     }
 }
 
-/// A resting agent's state: "usage resets 15:00" or "resting until 15:00".
-pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str) -> Option<String> {
-    let rest = bot.rests(agent, now_ms())?;
+/// A resting login's state: "usage resets 15:00" or "resting until 15:00".
+pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str, account: Option<&str>) -> Option<String> {
+    let rest = bot.rests(agent, account, now_ms())?;
     Some(if rest.reason == Reason::UsageLimit {
         format!("usage resets {}", when_future(rest.until))
     } else {
@@ -28,12 +32,18 @@ pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str) -> Option<String> {
     })
 }
 
-/// The Details page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00".
+/// The Details page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00". A login
+/// on an agent account goes by it too ("Claude Code (Work)"), and so does the computer's own when both are the same
+/// agent.
 pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
-    let agent = bot.agent_step.as_deref()?;
-    let own = app.agent_name(&bot.backend);
-    let using = app.agent_name(agent);
-    Some(match bot.rests(&bot.backend, now_ms()) {
+    let step = bot.agent_step.as_deref()?;
+    let same = step == bot.backend;
+    let name = |agent: &str, account: Option<&str>| {
+        let on = account.map(|id| app.account_name(agent, id)).or_else(|| same.then(|| app.own_account_name(agent)));
+        on.map_or_else(|| app.agent_name(agent), |on| format!("{} ({on})", app.agent_name(agent)))
+    };
+    let (own, using) = (name(&bot.backend, bot.account.as_deref()), name(step, bot.step_account.as_deref()));
+    Some(match bot.rests(&bot.backend, bot.account.as_deref(), now_ms()) {
         Some(rest) => format!("Using {using} until {own} resets {}", when_future(rest.until)),
         None => format!("Using {using} while {own} can't answer"),
     })
@@ -43,4 +53,29 @@ pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
 pub(in crate::tui) fn chain_line(app: &App, bot: &Bot) -> Option<String> {
     let steps: Vec<String> = bot.fallbacks.iter().enumerate().map(|(i, f)| step_item(app, Some(bot), i, f)).collect();
     (!steps.is_empty()).then(|| format!("Fallbacks: {}", steps.join(" · ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::app::test_app;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn the_line_tells_two_logins_of_one_agent_apart() {
+        let mut app = test_app();
+        app.backends = vec![
+            json!({"id": "claude", "name": "Claude Code", "accounts": [{"id": "a1", "name": "Work"}]}),
+            json!({"id": "codex", "name": "Codex"}),
+        ];
+        let line = |step| {
+            let bot = json!({"id": "b", "name": "B", "backend": "claude", "agentStep": step});
+            using_line(&app, &Bot::parse(&bot).expect("a bot"))
+        };
+        assert_eq!(
+            line(json!({"agent": "claude", "account": "a1"})).as_deref(),
+            Some("Using Claude Code (Work) while Claude Code (Default account) can't answer")
+        );
+        assert_eq!(line(json!({"agent": "codex"})).as_deref(), Some("Using Codex while Claude Code can't answer"));
+    }
 }

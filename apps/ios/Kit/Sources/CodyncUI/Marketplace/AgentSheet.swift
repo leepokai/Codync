@@ -51,6 +51,8 @@ struct AgentSheet: View {
     var signInAccount: String?
     @Environment(BotStore.self) private var model
     @State private var route: SetupRoute?
+    /// `signInAccount`'s sign-in started in its Accounts section, when its agent signs itself in: once per sheet.
+    @State private var signInStarted = false
     @State private var auth: AgentAuth?
     @State private var checking = false
     @State private var authenticating: String?
@@ -81,7 +83,7 @@ struct AgentSheet: View {
         // A known "signed in" needs no agent start; one set up asks the agent (which can't start
         // without its Node.js). Opening never downloads one: that waits for Set up.
         .task {
-            if let signInAccount { go(.terminal(nil, account: signInAccount)) }
+            if let signInAccount, !backend.accountsSignInInBrowser { go(.terminal(nil, account: signInAccount)) }
             if recheck || (setUp && backend.signedIn != true), !backend.needsNode { await check() }
         }
         .onChange(of: route) { old, new in
@@ -150,9 +152,6 @@ struct AgentSheet: View {
                 }
             }
             signInSection
-            if backend.accounts != nil, installed {
-                AgentAccounts(backend: backend) { go(.terminal(nil, account: $0)) }
-            }
             AgentBrings(backendId: backend.id)
             if let error {
                 CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
@@ -160,66 +159,79 @@ struct AgentSheet: View {
         }
     }
 
-    private var signInSection: some View {
-        CardSection(footer: signedIn != true && auth?.methods.contains(where: { $0.kind == .agent }) == true
+    private var browserNote: String? {
+        signedIn != true && auth?.methods.contains(where: { $0.kind == .agent }) == true
             ? "Browser sign-ins open on \(model.hostName) itself. Away from it? Use Remote screen to finish there."
-            : nil) {
-            HStack(spacing: 0) {
-                SetupStepRow(
-                    number: 1 + (curated ? 1 : 0) + (backend.node != nil ? 1 : 0),
-                    title: "Sign in",
-                    detail: statusText,
-                    done: signedIn == true,
-                    action: nil
-                )
-                if checking {
-                    ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
-                } else {
-                    Button(L10n.tr("Check again"), systemImage: "arrow.clockwise") { Task { await check() } }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.secondary)
-                        .help("Check again")
+            : nil
+    }
+
+    /// An agent with accounts shows its sign-in as the default account's, among them; any other as its Sign in step.
+    @ViewBuilder private var signInSection: some View {
+        if backend.accounts != nil, installed {
+            AgentAccounts(backend: backend, status: statusText, checking: checking, check: { Task { await check() } },
+                          signIn: { go(.terminal(nil, account: $0)) }, signInNow: signInStarted ? nil : signInAccount,
+                          signInStarted: { signInStarted = true }) {
+                signInOptions
+                if let browserNote {
+                    Text(L10n.tr(browserNote)).font(.footnote).foregroundStyle(Palette.secondary)
                 }
             }
-            if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
-                Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+        } else {
+            CardSection(footer: browserNote) {
+                HStack(spacing: 0) {
+                    SetupStepRow(
+                        number: 1 + (curated ? 1 : 0) + (backend.node != nil ? 1 : 0),
+                        title: "Sign in",
+                        detail: statusText,
+                        done: signedIn == true,
+                        action: nil
+                    )
+                    CheckAgain(checking: checking) { Task { await check() } }
+                }
+                signInOptions
             }
-            // A registry agent downloads on its first start; an app's own CLI comes from Install above.
-            if !setUp, !curated, !checking, !backend.needsNode {
-                optionRow("Set up", detail: "Downloads \(backend.name) on \(model.hostName) if it needs to, then checks its sign-in.",
-                          icon: "arrow.down.circle") {
-                    Task { await check() }
+        }
+    }
+
+    /// What the agent says about its sign-in, and the ways to sign the computer's own login in.
+    @ViewBuilder private var signInOptions: some View {
+        if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
+            Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+        }
+        // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+        if !setUp, !curated, !checking, !backend.needsNode {
+            optionRow("Set up", detail: "Downloads \(backend.name) on \(model.hostName) if it needs to, then checks its sign-in.",
+                      icon: "arrow.down.circle") {
+                Task { await check() }
+            }
+        }
+        // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
+        if signedIn != true, !checking {
+            if auth?.login == true {
+                optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
+                    go(.terminal(nil, account: nil))
                 }
             }
-            // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
-            if signedIn != true, !checking {
-                if auth?.login == true {
-                    optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
-                        go(.terminal(nil, account: nil))
+            ForEach(auth?.methods ?? []) { m in
+                switch m.kind {
+                case .terminal?:
+                    optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
+                        go(.terminal(m, account: nil))
                     }
-                }
-                ForEach(auth?.methods ?? []) { m in
-                    switch m.kind {
-                    case .terminal?:
-                        optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
-                            go(.terminal(m, account: nil))
-                        }
-                    case .envVar?:
-                        optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
-                            go(.keys(m))
-                        }
-                    case .agent?, nil:
-                        optionRow(
-                            m.name,
-                            detail: authenticating == m.id
-                                ? "Finish signing in in the browser on \(model.hostName)…"
-                                : m.description ?? "Opens a browser on \(model.hostName).",
-                            icon: "safari",
-                            busy: authenticating == m.id
-                        ) {
-                            Task { await authenticate(m) }
-                        }
+                case .envVar?:
+                    optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
+                        go(.keys(m))
+                    }
+                case .agent?, nil:
+                    optionRow(
+                        m.name,
+                        detail: authenticating == m.id
+                            ? "Finish signing in in the browser on \(model.hostName)…"
+                            : m.description ?? "Opens a browser on \(model.hostName).",
+                        icon: "safari",
+                        busy: authenticating == m.id
+                    ) {
+                        Task { await authenticate(m) }
                     }
                 }
             }
@@ -284,6 +296,24 @@ private enum SetupRoute: Hashable {
     /// `account`: the agent account it signs in; nil for the computer's own.
     case terminal(AuthMethod?, account: String?)
     case keys(AuthMethod)
+}
+
+/// Asks the agent about its sign-in again; an orb while it's asked.
+struct CheckAgain: View {
+    let checking: Bool
+    let check: () -> Void
+
+    var body: some View {
+        if checking {
+            ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
+        } else {
+            Button(L10n.tr("Check again"), systemImage: "arrow.clockwise", action: check)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.secondary)
+                .help("Check again")
+        }
+    }
 }
 
 /// One way forward in an agent's setup: a titled row that opens the next step.

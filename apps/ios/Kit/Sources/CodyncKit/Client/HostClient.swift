@@ -491,6 +491,21 @@ public extension HostClient {
         return res.backends
     }
 
+    /// Has the account's agent sign it in itself, in a browser on the computer; returns once that's done.
+    func signInAgentAccount(_ backend: String, account: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuthenticate", ["backend": backend, "account": account], timeout: 660)
+        return res.backends
+    }
+
+    /// Names an account (`account` nil: the default one); an empty name clears it back to who it signs in.
+    func renameAgentAccount(_ backend: String, account: String?, name: String) async throws -> [Backend] {
+        struct Body: Encodable { var backend: String; var account: String?; var name: String }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("renameAgentAccount", Body(backend: backend, account: account, name: name))
+        return res.backends
+    }
+
     /// Fails while a bot still uses the account.
     func removeAgentAccount(_ account: String) async throws -> [Backend] {
         struct Res: Decodable { var backends: [Backend] }

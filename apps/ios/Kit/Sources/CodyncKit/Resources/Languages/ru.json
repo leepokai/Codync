@@ -2058,11 +2058,14 @@
   "Couldn't send. Try again.": "Не удалось отправить. Попробуйте ещё раз.",
   "Uploading {sent} of {total}": "Загрузка: {sent} из {total}",
   "Couldn't read this file": "Не удалось прочитать файл",
-  "Other accounts": "Другие аккаунты",
-  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "Бот выбирает аккаунт в своих настройках, в разделе «Агент». Боты без выбора используют вход выше.",
   "Remove account": "Убрать аккаунт",
   "Signs in another {name} account in a terminal on {other}.": "Выполняет вход в другой аккаунт {name} в терминале на {other}.",
-  "This computer's sign-in": "Вход этого компьютера",
   "Add account…": "Добавить аккаунт…",
-  "New account": "Новый аккаунт"
+  "New account": "Новый аккаунт",
+  "Signs in another {name} account in a browser on {other}.": "Выполняет вход в другой аккаунт {name} в браузере на {other}.",
+  "Accounts": "Аккаунты",
+  "Default account": "Аккаунт по умолчанию",
+  "Account name": "Название аккаунта",
+  "Rename account": "Переименовать аккаунт",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the default account.": "Бот выбирает аккаунт в своих настройках, в разделе «Агент». Боты без выбора используют аккаунт по умолчанию."
 }

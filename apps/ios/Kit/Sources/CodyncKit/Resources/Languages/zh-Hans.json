@@ -2058,11 +2058,14 @@
   "Couldn't send. Try again.": "发送失败，请再试一次。",
   "Uploading {sent} of {total}": "正在上传 {sent}/{total}",
   "Couldn't read this file": "无法读取这个文件",
-  "Other accounts": "其他账户",
-  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "机器人在自己设置的“智能体”里选择账户。没有选择的机器人使用上面的登录。",
   "Remove account": "移除账户",
   "Signs in another {name} account in a terminal on {other}.": "在 {other} 的终端里登录另一个 {name} 账户。",
-  "This computer's sign-in": "这台电脑的登录",
   "Add account…": "添加账户…",
-  "New account": "新账户"
+  "New account": "新账户",
+  "Signs in another {name} account in a browser on {other}.": "在 {other} 的浏览器里登录另一个 {name} 账户。",
+  "Accounts": "账户",
+  "Default account": "默认账户",
+  "Account name": "账户名称",
+  "Rename account": "重命名账户",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the default account.": "机器人在自己设置的“智能体”里选择账户。没有选择的机器人使用默认账户。"
 }

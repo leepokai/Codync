@@ -241,7 +241,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
     let name = b.map_or(a.backend.as_str(), |b| s(b, "name"));
     let rows = app.agent_rows(a);
-    let accounts = usize::from(app.accounts(&a.backend).is_some()) * 2;
+    let accounts = usize::from(rows.iter().any(|r| matches!(r, SetupRow::OwnAccount))) * 2;
     let r = centered(area, 80, u(rows.len() * 2 + accounts + 11).max(14));
     let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
     let mut y = inner.y;
@@ -262,7 +262,7 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
     let set_up = app.agent_set_up(a);
     let curated = b.is_some_and(|b| b["curated"] == true);
-    let status = if a.busy {
+    let status = if a.busy && a.signing_in.is_none() {
         if a.auth.is_none() {
             format!("Checking with {name}… The first check can download it.")
         } else {
@@ -291,14 +291,16 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         y += 1;
     }
     y += 1;
+    let default = tr("Default");
+    let in_browser = b.is_some_and(|b| b["accountSignIn"] == "browser");
     for (i, rw) in rows.iter().enumerate() {
-        let heading = !headed && matches!(rw, SetupRow::Account(_) | SetupRow::AddAccount);
+        let heading = !headed && matches!(rw, SetupRow::OwnAccount);
         if y + 1 + u16::from(heading) * 2 >= inner.bottom().saturating_sub(2) {
             break;
         }
         if heading {
             headed = true;
-            put(buf, inner.x, y + 1, inner.width, &tr("Other accounts"), t.secondary.patch(t.panel));
+            put(buf, inner.x, y + 1, inner.width, &tr("Accounts"), t.secondary.patch(t.panel));
             y += 2;
         }
         let base = row(buf, inner, y, i == a.cursor);
@@ -325,13 +327,25 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
             SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
+            SetupRow::OwnAccount => {
+                let own = b.map_or(&Value::Null, |b| &b["ownAccount"]);
+                let state = signed_in.map(|on| tr(if on { "Signed in" } else { "Not signed in" }));
+                let name = own["name"].as_str().unwrap_or("Default account");
+                ("◎", name.to_owned(), account_detail(Some(&default), own, state.as_deref()))
+            }
             SetupRow::Account(account) => {
-                let detail = if account["signedIn"] == true {
+                let state = if account["signedIn"] == true {
                     tr("Signed in").into_owned()
+                } else if a.signing_in.as_deref() == account["id"].as_str() {
+                    tr("Finish signing in in the browser on {name}…").replace("{name}", &app.host)
                 } else {
                     format!("{} · ↵ {}", tr("Not signed in"), tr("Sign in"))
                 };
+                let detail = account_detail(None, account, Some(&state));
                 ("◎", account["name"].as_str().unwrap_or("New account").to_owned(), detail)
+            }
+            SetupRow::AddAccount if in_browser => {
+                ("+", "Add account".to_owned(), format!("Opens a browser on {}.", app.host))
             }
             SetupRow::AddAccount => ("+", "Add account".to_owned(), format!("In a terminal on {}.", app.host)),
         };
@@ -351,10 +365,18 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     let keys = tr("↑↓ move · ↵ run · esc back");
     let keys = match rows.get(a.cursor) {
-        Some(SetupRow::Account(_)) => format!("{keys} · x {}", tr("Remove account")),
+        Some(SetupRow::OwnAccount) => format!("{keys} · r {}", tr("Rename account")),
+        Some(SetupRow::Account(_)) => format!("{keys} · r {} · x {}", tr("Rename account"), tr("Remove account")),
         _ => keys.into_owned(),
     };
     footer(buf, inner, a.error.as_deref(), &keys);
+}
+
+/// An account row's detail: `lead`, who it signs in (under a name the user gave it; otherwise that is its title),
+/// then its state.
+fn account_detail(lead: Option<&str>, account: &Value, state: Option<&str>) -> String {
+    let email = account["email"].as_str().filter(|_| account["label"].is_string());
+    [lead, email, state].into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
 pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {

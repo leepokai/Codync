@@ -190,6 +190,8 @@ pub struct AgentSetup {
     pub auth: Option<Value>,
     /// A check or a browser sign-in is running.
     pub busy: bool,
+    /// The account its agent signs in itself, in a browser on the computer, until the host answers.
+    pub signing_in: Option<String>,
     pub cursor: usize,
     pub error: Option<String>,
 }
@@ -202,7 +204,10 @@ pub enum SetupRow {
     Check,
     /// Opens the read-only lists of what this agent already brings.
     Brings,
-    /// One of the agent's other accounts: ↵ signs it in, `x` removes it.
+    /// The default account, the login the computer already has (the agent's `ownAccount`): ↵ checks it again, `r`
+    /// names it.
+    OwnAccount,
+    /// One of the agent's other accounts: ↵ signs it in, `r` names it, `x` removes it.
     Account(Value),
     /// Adds an account; its sign-in follows.
     AddAccount,
@@ -233,6 +238,11 @@ pub enum Submit {
     RenameArtifact {
         bot: String,
         artifact: String,
+    },
+    /// An agent account's name, or empty for who it signs in; no `account`: the agent's default one.
+    RenameAccount {
+        backend: String,
+        account: Option<String>,
     },
 }
 

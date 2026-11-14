@@ -1,6 +1,7 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
 use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
+use crate::agent::accounts::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
 use crate::hub::BotStatus;
@@ -84,7 +85,9 @@ impl Actor {
                 let old = std::mem::replace(&mut self.base, *base);
                 // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
                 // moved) until `settle_chain` moves it off one it no longer uses.
-                let cfg = if crate::agent::fallback::step_of(&old, &self.cfg.backend) == Some(0) {
+                let cfg = if crate::agent::fallback::step_of(&old, &crate::agent::fallback::login::of(&self.cfg))
+                    == Some(0)
+                {
                     crate::agent::fallback::effective(&self.base, 0)
                 } else {
                     super::fallback::running(&self.base, &self.cfg)
@@ -386,19 +389,20 @@ impl Actor {
                 Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
             }
         }
-        self.note_signed_out(&backend);
-        self.sign_in_card(&backend, &held)
+        let login = Login::of(&self.hub.store, &self.cfg);
+        self.note_signed_out(&login);
+        self.sign_in_card(&login, &held)
     }
 
-    /// Agent `backend` refused the bot's prompt for auth. The login that refused is the bot's account's, or the
-    /// computer's own: only that one reads signed out, also over a check that still says signed in (`claude auth
+    /// `login` refused the bot's prompt for auth: an agent account, or the computer's own login. Only that one
+    /// reads signed out, also over a check that still says signed in (`claude auth
     /// status` with a revoked token).
-    pub(super) fn note_signed_out(&self, backend: &str) {
-        if let Some(account) = crate::agent::accounts::of_bot(&self.hub.store, backend, &self.cfg) {
+    pub(super) fn note_signed_out(&self, login: &Login) {
+        if let Some(account) = &login.account {
             crate::agent::accounts::note_signed_in(&self.hub.store, account, false);
         } else {
-            crate::agent::backends::set_signed_in(backend, Some(false));
-            crate::agent::backends::note_prompt_refused(backend);
+            crate::agent::backends::set_signed_in(&login.backend, Some(false));
+            crate::agent::backends::note_prompt_refused(&login.backend);
         }
     }
 
@@ -411,10 +415,10 @@ impl Actor {
         conn.started.elapsed() > turn_age
     }
 
-    /// Agent `backend`'s sign-in card in the chat, holding `entries`. Whether it's there.
-    pub(super) fn sign_in_card(&self, backend: &str, entries: &[String]) -> bool {
-        let Some(h) = crate::agent::backends::harness(backend) else { return false };
-        let invited = agent_sign_in::invite(&self.hub, &self.cfg.id, &self.lane, backend, h.name, entries);
+    /// `login`'s sign-in card in the chat, holding `entries`. Whether it's there.
+    pub(super) fn sign_in_card(&self, login: &Login, entries: &[String]) -> bool {
+        let Some(h) = crate::agent::backends::harness(&login.backend) else { return false };
+        let invited = agent_sign_in::invite(&self.hub, &self.cfg.id, &self.lane, login, h.name, entries);
         invited
             .inspect_err(
                 |error| tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't ask to sign in"),

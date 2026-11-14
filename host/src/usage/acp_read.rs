@@ -46,7 +46,7 @@ pub(super) async fn guarded(
 /// `backend`'s server, past `initialize`. A first start can download its build, which is why no
 /// timeout wraps this: one cut short would start over at every poll. The handshake has its own.
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started, UsageReadStage> {
-    auth::start_with(store, backend, NO_BROWSER).await.map_err(|error| {
+    auth::start_with(store, backend, None, NO_BROWSER).await.map_err(|error| {
         tracing::debug!(backend, error = format!("{error:#}"), "couldn't start the agent for its usage");
         UsageReadStage::Start
     })

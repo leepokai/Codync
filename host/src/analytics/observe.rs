@@ -186,7 +186,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
         // Never the account's name or id.
-        "addAgentAccount" | "removeAgentAccount" => {
+        "addAgentAccount" | "renameAgentAccount" | "removeAgentAccount" => {
             let action = method.strip_suffix("AgentAccount").unwrap_or(method);
             p.insert("action".into(), action.into());
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {

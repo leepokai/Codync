@@ -241,14 +241,15 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Agent => {
                 put(buf, vx, y, vw, &format!("‹ {agent_name} ›"), t.text.patch(base));
-                if let Some(note) = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::rest_note(b, &f.backend)) {
+                let bot = app.bots.get(&f.bot_id);
+                if let Some(note) = bot.and_then(|b| super::fallbacks::rest_note(b, &f.backend, f.account.as_deref())) {
                     rput(buf, inner.right(), y, &note, t.amber.patch(base));
                 }
             }
             Field::Account => {
                 let own = accounts.into_iter().flatten().find(|a| a["id"].as_str() == f.account.as_deref());
                 let name = match (&f.account, own.and_then(|a| a["name"].as_str())) {
-                    (None, _) => tr("This computer's sign-in").into_owned(),
+                    (None, _) => app.own_account_name(&f.backend),
                     (Some(_), Some(name)) => name.to_owned(),
                     (Some(_), None) => tr("New account").into_owned(),
                 };
@@ -399,7 +400,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
         Field::Account => "←→ change · ↵ add account · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
+        Field::Fallbacks => "←→ pick · space add / model · a agent · c account · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
         | Field::Color

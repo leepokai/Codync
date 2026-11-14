@@ -2058,11 +2058,14 @@
   "Couldn't send. Try again.": "Invio non riuscito. Riprova.",
   "Uploading {sent} of {total}": "Caricamento di {sent} su {total}",
   "Couldn't read this file": "Impossibile leggere questo file",
-  "Other accounts": "Altri account",
-  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "Ogni bot sceglie il suo account in Agente, nelle sue impostazioni. I bot che non ne scelgono uno usano l’accesso qui sopra.",
   "Remove account": "Rimuovi account",
   "Signs in another {name} account in a terminal on {other}.": "Accede con un altro account {name} in un terminale su {other}.",
-  "This computer's sign-in": "Accesso di questo computer",
   "Add account…": "Aggiungi account…",
-  "New account": "Nuovo account"
+  "New account": "Nuovo account",
+  "Signs in another {name} account in a browser on {other}.": "Accede con un altro account {name} in un browser su {other}.",
+  "Accounts": "Account",
+  "Default account": "Account predefinito",
+  "Account name": "Nome dell’account",
+  "Rename account": "Rinomina account",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the default account.": "Ogni bot sceglie il suo account in Agente, nelle sue impostazioni. I bot che non ne scelgono uno usano l’account predefinito."
 }

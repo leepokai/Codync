@@ -9,67 +9,101 @@ use crate::LockExt;
 use crate::agent::backends;
 use crate::hub::Hub;
 use crate::store::{BotConfig, Store};
-use anyhow::{Context, Result, anyhow, bail};
-use serde::{Deserialize, Serialize};
+use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
-mod identity;
-mod slot;
+pub use codync_accounts::{ACCOUNT_VAR, Account};
+use codync_accounts::{Agent, SignIn, SignedIn};
 
 const KV: &str = "agent-accounts";
-/// Set for an agent on an account, so its helpers know they don't report for the computer's own login.
-pub const ACCOUNT_VAR: &str = "CODYNC_AGENT_ACCOUNT";
 
-/// How one agent keeps a login in a folder of its own.
-struct Spec {
-    backend: &'static str,
-    /// Points the agent at the slot.
-    home_var: &'static str,
-    /// Where the computer's own login and setup live, under the user's home.
-    home: &'static str,
-    shared: slot::Shared,
-    /// The saved keys that would choose another login (`login_keys`), each with the address saved for it.
-    login_keys: &'static [&'static str],
-    /// The CLI arguments that sign the slot out.
-    logout: &'static str,
-    /// Who the slot is signed in as, read from its own files.
-    email: fn(&Path) -> Option<String>,
+/// How `backend`'s agent keeps accounts, if it can have them: by its own id or its registry entry's.
+fn agent_of(backend: &str) -> Option<&'static Agent> {
+    codync_accounts::agent(backends::harness_of(backend).map_or(backend, |h| h.id))
 }
 
-const SPECS: [Spec; 2] = [
-    Spec {
-        backend: "claude",
-        home_var: "CLAUDE_CONFIG_DIR",
-        home: ".claude",
-        shared: slot::Shared::Claude,
-        login_keys: &slot::CLAUDE_LOGIN_ENV,
-        logout: "auth logout",
-        email: identity::claude,
-    },
-    Spec {
-        backend: "codex",
-        home_var: "CODEX_HOME",
-        home: ".codex",
-        shared: slot::Shared::AllBut(&["auth.json", "auth.json.lock", "auth.lock", "models_cache.json"]),
-        login_keys: &["OPENAI_API_KEY", "CODEX_API_KEY"],
-        logout: "logout",
-        email: identity::codex,
-    },
-];
+/// [`agent_of`], refused for an agent that keeps one login.
+fn accounts_agent(backend: &str) -> Result<&'static Agent> {
+    agent_of(backend)
+        .ok_or_else(|| Refused::error("unsupported", format!("{backend} can't have more than one account")))
+}
 
-fn spec(backend: &str) -> Option<&'static Spec> {
-    let id = backends::harness_of(backend).map_or(backend, |h| h.id);
-    SPECS.iter().find(|s| s.backend == id)
+/// Where every account's slot is.
+fn slots() -> PathBuf {
+    crate::service::data_dir().join("agent-accounts")
+}
+
+/// The names the user gave the computer's own logins, by agent.
+const OWN_NAMES: &str = "agent-own-account-names";
+
+/// Who the computer's own login of each agent is signed in as, read from its files by [`refresh_own`].
+static OWN: Mutex<Vec<(&'static str, String)>> = Mutex::new(Vec::new());
+
+/// What clients show of an account. `name`: the user's name for it, else who it signs in once it has (`email`).
+/// Never sent to analytics.
+fn wire(account: &Account) -> Value {
+    json!({"id": account.id, "name": account.name(), "label": account.label, "email": account.email,
+        "signedIn": account.signed_in})
+}
+
+fn own_names(store: &Store) -> serde_json::Map<String, Value> {
+    store.kv_get(OWN_NAMES).and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
+}
+
+/// The computer's own login of `agent`, as clients show it beside its accounts.
+fn own_wire(agent: &Agent, names: &serde_json::Map<String, Value>) -> Value {
+    let label = names.get(agent.id).and_then(Value::as_str);
+    let email = OWN.locked().iter().find(|(id, _)| *id == agent.id).map(|(_, email)| email.clone());
+    json!({"name": label.map(str::to_owned).or_else(|| email.clone()), "label": label, "email": email})
+}
+
+/// Reads again who each agent's own login is signed in as.
+pub async fn refresh_own() {
+    let Some(home) = dirs::home_dir() else { return };
+    let read = move || {
+        let named = |agent: &'static Agent| agent.own_identity(&home).map(|email| (agent.id, email));
+        codync_accounts::agents().iter().filter_map(named).collect::<Vec<_>>()
+    };
+    match tokio::task::spawn_blocking(read).await {
+        Ok(own) => *OWN.locked() = own,
+        Err(error) => tracing::warn!(%error, "couldn't read who the agents are signed in as"),
+    }
+}
+
+/// Names account `id` of `backend`, or with no id the computer's own login: an empty name takes it back to who
+/// it signs in.
+pub fn rename(store: &Store, backend: &str, id: Option<&str>, name: &str) -> Result<()> {
+    let label = codync_accounts::label(name)?;
+    let Some(id) = id else {
+        let agent = accounts_agent(backend)?;
+        let _guard = CHANGING.locked();
+        let mut names = own_names(store);
+        match label {
+            Some(label) => names.insert(agent.id.to_owned(), label.into()),
+            None => names.remove(agent.id),
+        };
+        return store.kv_set(OWN_NAMES, &Value::Object(names).to_string());
+    };
+    change(store, |accounts| {
+        let account = accounts.iter_mut().find(|a| a.id == id).ok_or_else(|| anyhow!("unknown account"))?;
+        account.label = label;
+        Ok(())
+    })
+}
+
+/// What a check of an account answers: `{signedIn, account}`.
+pub fn status(account: &Account) -> Value {
+    json!({"signedIn": account.signed_in, "account": wire(account)})
 }
 
 /// The account `backend`'s process runs on, and how its agent keeps one: none for the computer's own login, or for
 /// an account of another agent (a bot on a fallback keeps its own agent's account).
-fn resolve(store: &Store, backend: &str, account: Option<&str>) -> Result<Option<(&'static Spec, Account)>> {
-    let (Some(id), Some(spec)) = (account, spec(backend)) else { return Ok(None) };
+fn resolve(store: &Store, backend: &str, account: Option<&str>) -> Result<Option<(&'static Agent, Account)>> {
+    let (Some(id), Some(agent)) = (account, agent_of(backend)) else { return Ok(None) };
     let account = find(store, id)?;
-    Ok((account.backend == spec.backend).then_some((spec, account)))
+    Ok((account.agent == agent.id).then_some((agent, account)))
 }
 
 /// An account that couldn't be added or removed, with why for analytics (`category`).
@@ -96,11 +130,11 @@ impl std::error::Error for Refused {}
 /// The accounts agent processes run on now, one entry per process (`Running`).
 static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// Held by an agent process on an account: its slot isn't removed under it.
+/// Held by an agent process on an account, or by its sign-in: its slot isn't removed under it.
 pub struct Running(String);
 
 impl Running {
-    fn on(id: &str) -> Self {
+    pub(crate) fn on(id: &str) -> Self {
         RUNNING.locked().push(id.to_owned());
         Self(id.to_owned())
     }
@@ -115,43 +149,6 @@ impl Drop for Running {
     }
 }
 
-fn read_json(path: &Path) -> Option<Value> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Account {
-    pub id: String,
-    pub backend: String,
-    /// Who its agent says is signed in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    #[serde(default)]
-    pub signed_in: bool,
-}
-
-impl Account {
-    /// What a check of it answers: `{signedIn, account}`.
-    pub fn status(&self) -> Value {
-        json!({"signedIn": self.signed_in, "account": self.wire()})
-    }
-
-    fn wire(&self) -> Value {
-        // `name`: who it signs in, once it has. Never sent to analytics.
-        json!({"id": self.id, "name": self.email, "signedIn": self.signed_in})
-    }
-
-    fn slot(&self) -> Result<PathBuf> {
-        let spec = spec(&self.backend).ok_or_else(|| anyhow!("{} has no accounts", self.backend))?;
-        // The id came from this host, but the store is a file anyone can edit: it must stay one folder name.
-        if self.id.is_empty() || !self.id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-            bail!("that account's id isn't valid");
-        }
-        Ok(crate::service::data_dir().join("agent-accounts").join(spec.backend).join(&self.id))
-    }
-}
-
 /// Read, change and save happen under this, so two changes can't lose each other.
 static CHANGING: Mutex<()> = Mutex::new(());
 
@@ -159,7 +156,7 @@ fn all(store: &Store) -> Vec<Account> {
     store.kv_get(KV).and_then(|raw| serde_json::from_str(&raw).ok()).unwrap_or_default()
 }
 
-fn find(store: &Store, id: &str) -> Result<Account> {
+pub(crate) fn find(store: &Store, id: &str) -> Result<Account> {
     all(store).into_iter().find(|a| a.id == id).ok_or_else(|| anyhow!("That account was removed from this computer."))
 }
 
@@ -172,45 +169,46 @@ fn change<T>(store: &Store, apply: impl FnOnce(&mut Vec<Account>) -> Result<T>) 
 }
 
 /// Adds each agent's accounts to its entry of the agent list (`backends::list`): `accounts` is there, even when
-/// empty, for every agent that can have them.
+/// empty, for every agent that can have them, and `ownAccount` is the computer's own login beside them.
 pub fn annotate(store: &Store, agents: &mut [Value]) {
-    let accounts = all(store);
+    let (accounts, names) = (all(store), own_names(store));
     for agent in agents {
-        let Some(spec) = agent["id"].as_str().and_then(spec) else { continue };
-        let own: Vec<Value> = accounts.iter().filter(|a| a.backend == spec.backend).map(Account::wire).collect();
+        let Some(kind) = agent["id"].as_str().and_then(agent_of) else { continue };
+        let own: Vec<Value> = accounts.iter().filter(|a| a.agent == kind.id).map(wire).collect();
         agent["accounts"] = own.into();
+        agent["ownAccount"] = own_wire(kind, &names);
+        // How an account signs in: its CLI in a terminal, or the agent itself (a browser on this computer).
+        agent["accountSignIn"] = (if kind.sign_in == SignIn::Agent { "browser" } else { "terminal" }).into();
     }
 }
 
 /// A new, signed-out account for `backend`, with its slot ready for the agent's sign-in.
 pub async fn add(store: &Store, backend: &str) -> Result<Value> {
-    let spec = spec(backend)
-        .ok_or_else(|| Refused::error("unsupported", format!("{backend} can't have more than one account")))?;
-    let account = Account {
-        id: uuid::Uuid::new_v4().to_string(),
-        backend: spec.backend.to_owned(),
-        email: None,
-        signed_in: false,
-    };
-    share(spec, account.slot()?).await?;
-    change(store, |accounts| {
+    let agent = accounts_agent(backend)?;
+    let account = change(store, |accounts| {
+        let account = Account::new(uuid::Uuid::new_v4().to_string(), agent, accounts);
         accounts.push(account.clone());
-        Ok(())
+        Ok(account)
     })?;
-    Ok(account.wire())
+    // A slot that couldn't be set up leaves no account behind.
+    if let Err(error) = share(agent, &account).await {
+        let dropped = change(store, |accounts| {
+            accounts.retain(|a| a.id != account.id);
+            Ok(())
+        });
+        if let Err(error) = dropped {
+            tracing::warn!(error = format!("{error:#}"), "couldn't drop the account that wasn't set up");
+        }
+        return Err(error);
+    }
+    Ok(wire(&account))
 }
 
-/// Signs the account out and deletes its slot. Refused while a bot is set to it, an agent still runs on it (a bot
-/// moved off it mid-turn) or its sign-in is open.
+/// Signs the account out and deletes its slot. Refused while a bot or one of its fallbacks is set to it, an agent
+/// still runs on it (a bot moved off it mid-turn) or its sign-in is open.
 pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
     let account = find(&hub.store, id)?;
-    let users: Vec<String> = hub
-        .store
-        .bots()?
-        .into_iter()
-        .filter(|b| !b.deleted && b.config.account.as_deref() == Some(id))
-        .map(|b| b.config.name)
-        .collect();
+    let users = users(&hub.store, id)?;
     if !users.is_empty() {
         let why = format!("{} still use this account. Move them to another account first.", users.join(", "));
         return Err(Refused::error("in_use", why));
@@ -219,12 +217,14 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
         let why = "An agent is still running on this account, or its sign-in is open. Try again once it's done.";
         return Err(Refused::error("in_use", why.into()));
     }
-    let dir = account.slot()?;
-    if let (Some(spec), Some(h)) = (spec(&account.backend), backends::harness_of(&account.backend)) {
-        // Its own CLI forgets the login (on macOS it's in the Keychain, not in the slot).
-        if backends::run_cli(h, spec.logout, &slot_env(spec, &account, &dir)).await.is_none() {
-            tracing::warn!(agent = h.id, "couldn't sign the account out");
-        }
+    let dir = account.slot(&slots())?;
+    let agent = agent_of(&account.agent).zip(backends::harness_of(&account.agent));
+    // Its own CLI forgets a login kept outside the slot (on macOS, Claude Code's is in the Keychain).
+    if let Some((agent, h)) = agent
+        && let Some(sign_out) = agent.sign_out
+        && backends::run_cli(h, sign_out, &agent.env(&dir, &account.id)).await.is_none()
+    {
+        tracing::warn!(agent = h.id, "couldn't sign the account out");
     }
     tokio::task::spawn_blocking(move || match std::fs::remove_dir_all(&dir) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -239,26 +239,45 @@ pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
     })
 }
 
+/// The bots whose agent or one of whose fallbacks is set to account `id`, by name: saving one of them fails once
+/// the account is gone (`settle`).
+fn users(store: &Store, id: &str) -> Result<Vec<String>> {
+    let uses = |cfg: &BotConfig| {
+        cfg.account.as_deref() == Some(id) || cfg.fallbacks.iter().any(|f| f.account.as_deref() == Some(id))
+    };
+    Ok(store.bots()?.into_iter().filter(|b| !b.deleted && uses(&b.config)).map(|b| b.config.name).collect())
+}
+
 /// What `backend`'s process needs to run as `account`: nothing when it runs on the computer's own login
 /// (`resolve`).
 pub fn env(store: &Store, backend: &str, account: Option<&str>) -> Result<Vec<(String, String)>> {
-    let Some((spec, account)) = resolve(store, backend, account)? else { return Ok(Vec::new()) };
-    Ok(slot_env(spec, &account, &account.slot()?))
+    let Some((agent, account)) = resolve(store, backend, account)? else { return Ok(Vec::new()) };
+    Ok(agent.env(&account.slot(&slots())?, &account.id))
 }
 
 /// The saved keys that choose `backend`'s login: a process on an account starts without them, or its agent
 /// would run on the key and not on the account.
 pub fn login_keys(backend: &str) -> &'static [&'static str] {
-    spec(backend).map_or(&[], |spec| spec.login_keys)
-}
-
-fn slot_env(spec: &Spec, account: &Account, dir: &Path) -> Vec<(String, String)> {
-    vec![(spec.home_var.to_owned(), dir.to_string_lossy().into_owned()), (ACCOUNT_VAR.to_owned(), account.id.clone())]
+    agent_of(backend).map_or(&[], |agent| agent.login_keys)
 }
 
 /// The account a bot's agent runs on, when `backend` (the agent it's on now) is the account's own.
 pub fn of_bot<'a>(store: &Store, backend: &str, cfg: &'a BotConfig) -> Option<&'a str> {
     cfg.account.as_deref().filter(|id| resolve(store, backend, Some(id)).is_ok_and(|found| found.is_some()))
+}
+
+/// A login of an agent: one of its agent accounts, or the computer's own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Login {
+    pub backend: String,
+    pub account: Option<String>,
+}
+
+impl Login {
+    /// The login `cfg` runs on, as the bot is on now (its own agent, or a fallback step's).
+    pub fn of(store: &Store, cfg: &BotConfig) -> Self {
+        Self { backend: cfg.backend.clone(), account: of_bot(store, &cfg.backend, cfg).map(str::to_owned) }
+    }
 }
 
 /// What a turn showed about the account's sign-in: a prompt it refused for auth, or one it answered. Whether
@@ -282,38 +301,45 @@ pub fn note_signed_in(store: &Store, id: &str, signed_in: bool) -> bool {
 /// Brings the account's slot up to date with the user's own setup (skills, rules, MCP servers, sessions) before
 /// its agent starts. The process keeps what this returns for as long as it runs.
 pub async fn prepare(store: &Store, backend: &str, account: Option<&str>) -> Result<Option<Running>> {
-    let Some((spec, account)) = resolve(store, backend, account)? else { return Ok(None) };
+    let Some((agent, account)) = resolve(store, backend, account)? else { return Ok(None) };
     let running = Running::on(&account.id);
-    share(spec, account.slot()?).await?;
+    share(agent, &account).await?;
     Ok(Some(running))
 }
 
-async fn share(spec: &'static Spec, dir: PathBuf) -> Result<()> {
+async fn share(agent: &'static Agent, account: &Account) -> Result<()> {
+    let dir = account.slot(&slots())?;
     let home = dirs::home_dir().context("no home folder")?;
-    tokio::task::spawn_blocking(move || slot::share(spec.shared, &home, &home.join(spec.home), &dir))
-        .await?
-        .context("setting up the account's folder")
+    tokio::task::spawn_blocking(move || agent.share(&home, &dir)).await?.context("setting up the account's folder")
 }
 
 /// The command that signs `id` in, for a setup terminal.
 pub async fn login_command(store: &Store, id: &str) -> Result<String> {
     let account = find(store, id)?;
-    let env = env(store, &account.backend, Some(id))?;
+    let env = env(store, &account.agent, Some(id))?;
     let prefix = crate::shell::env_prefix(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-    Ok(format!("{prefix}{}", backends::login_command(&account.backend).await?))
+    Ok(format!("{prefix}{}", backends::login_command(&account.agent).await?))
 }
 
-/// Asks the account's agent whether it's signed in, and as whom.
+/// Whether the account is signed in, and as whom: asked of its agent's CLI, or read from the slot's own files.
 pub async fn check(store: &Store, id: &str) -> Result<Account> {
     let account = find(store, id)?;
-    let (spec, h) = spec(&account.backend)
-        .zip(backends::harness_of(&account.backend))
-        .ok_or_else(|| anyhow!("{} has no accounts", account.backend))?;
-    let dir = account.slot()?;
-    let said = backends::cli_signed_in(h, &slot_env(spec, &account, &dir)).await;
+    let (agent, h) = agent_of(&account.agent)
+        .zip(backends::harness_of(&account.agent))
+        .ok_or_else(|| anyhow!("{} has no accounts", account.agent))?;
+    let dir = account.slot(&slots())?;
+    let env = agent.env(&dir, id);
+    let said = match agent.signed_in {
+        SignedIn::AgentCheck => backends::cli_signed_in(h, &env).await,
+        SignedIn::Lists { args, none } => backends::run_cli(h, args, &env)
+            .await
+            .map(|out| out.status.success() && !String::from_utf8_lossy(&out.stdout).contains(none)),
+        SignedIn::File(_) | SignedIn::Logins(_) => None,
+    };
+    let (on_disk, email) =
+        tokio::task::spawn_blocking(move || (agent.signed_in_on_disk(&dir), agent.identity(&dir))).await?;
     // Its check can still say signed in after a prompt was refused for auth (a revoked token).
-    let signed_in = backends::apply_prompt_refusal(id, said);
-    let email = tokio::task::spawn_blocking(move || (spec.email)(&dir)).await?;
+    let signed_in = backends::apply_prompt_refusal(id, said.or(on_disk));
     change(store, |accounts| {
         let account = accounts.iter_mut().find(|a| a.id == id).ok_or_else(|| anyhow!("unknown account"))?;
         // A check that couldn't tell keeps what the last one found.
@@ -325,17 +351,26 @@ pub async fn check(store: &Store, id: &str) -> Result<Account> {
     })
 }
 
-/// Keeps a bot's account one of its own agent's: a bot moved to another agent leaves the account behind.
+/// What to call agent account `account` of `backend`; none for the computer's own login, or for an account that
+/// isn't `backend`'s.
+pub fn name_of(store: &Store, backend: &str, account: Option<&str>) -> Option<String> {
+    Some(resolve(store, backend, account).ok()??.1.called())
+}
+
+/// Keeps the accounts a bot names its agents' own, for the bot's agent and each fallback: an agent changed to
+/// another, or run by a custom command, leaves its account behind. An account that is gone is an error.
 pub fn settle(store: &Store, cfg: &mut BotConfig) -> Result<()> {
-    let Some(id) = cfg.account.as_deref().filter(|id| !id.is_empty()) else {
-        cfg.account = None;
-        return Ok(());
-    };
-    if resolve(store, &cfg.backend, Some(id))?.is_none() || cfg.command.as_deref().is_some_and(|c| !c.trim().is_empty())
-    {
-        cfg.account = None;
+    cfg.account = settled(store, &cfg.backend, cfg.command.as_deref(), cfg.account.take())?;
+    for step in &mut cfg.fallbacks {
+        step.account = settled(store, &step.backend, step.command.as_deref(), step.account.take())?;
     }
     Ok(())
+}
+
+fn settled(store: &Store, backend: &str, command: Option<&str>, account: Option<String>) -> Result<Option<String>> {
+    let Some(id) = account.filter(|id| !id.is_empty()) else { return Ok(None) };
+    let custom = command.is_some_and(|c| !c.trim().is_empty());
+    Ok(resolve(store, backend, Some(&id))?.filter(|_| !custom).map(|_| id))
 }
 
 #[cfg(test)]

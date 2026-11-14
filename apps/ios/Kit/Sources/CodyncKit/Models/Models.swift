@@ -189,6 +189,13 @@ public struct Backend: Codable, Hashable, Sendable, Identifiable {
     public var node: String?
     /// Its extra logins, for an agent that can have them (nil otherwise, and from older hosts).
     public var accounts: [AgentAccount]?
+    /// The login the computer already has, beside `accounts` (nil from older hosts).
+    public var ownAccount: OwnAccount?
+    /// How an account of it signs in: `terminal` (its CLI), or `browser` (the agent itself, on the computer).
+    public var accountSignIn: String?
+
+    /// An account's agent signs it in itself, in a browser on the computer: no terminal opens.
+    public var accountsSignInInBrowser: Bool { accountSignIn == "browser" }
 
     /// It can't run until Node.js is added to the computer.
     public var needsNode: Bool { node == "missing" }

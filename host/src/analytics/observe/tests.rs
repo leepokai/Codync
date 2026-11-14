@@ -202,6 +202,9 @@ fn connectors_skills_and_agents() {
         added,
         Some((Event::AgentAccountChanged, json!({"action": "add", "agent": "claude", "client": "local"})))
     );
+    let renamed = props("renameAgentAccount", &json!({"backend": "claude", "account": "a1", "name": "Work"}));
+    let named = json!({"action": "rename", "agent": "claude", "client": "local"});
+    assert_eq!(renamed, Some((Event::AgentAccountChanged, named)), "never the name");
     let removed = props("removeAgentAccount", &json!({"account": "a1"})).map(|(_, p)| p);
     assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the account");
 

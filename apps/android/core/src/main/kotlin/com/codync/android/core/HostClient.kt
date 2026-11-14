@@ -92,9 +92,6 @@ data class Bot(
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1
 
-    /** [agent]'s rest, unless it's over. */
-    fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
-
     /** An agent bot unless its agent said it has no Fast mode, or one that has it on (so it can be turned off). */
     val fastModeShown: Boolean get() = kind != "group" && (fastMode || fastModeSupport != "unsupported")
 

@@ -18,7 +18,14 @@ impl App {
         let b = self.backends.iter().find(|b| b["id"] == backend);
         // An agent without its Node.js can't start, so there's nothing to ask it yet.
         let known = b.is_some_and(|b| (b["signedIn"] == true && !recheck) || b["node"] == "missing");
-        let mut a = AgentSetup { backend: backend.to_owned(), auth: None, busy: false, cursor: 0, error: None };
+        let mut a = AgentSetup {
+            backend: backend.to_owned(),
+            auth: None,
+            busy: false,
+            signing_in: None,
+            cursor: 0,
+            error: None,
+        };
         // Opening never downloads an agent: one not set up waits for Set up.
         if !known && (recheck || self.agent_set_up(&a)) {
             a.busy = true;
@@ -63,10 +70,27 @@ impl App {
         if b.is_some_and(|b| b["installed"] == true)
             && let Some(accounts) = self.accounts(&a.backend)
         {
+            rows.push(SetupRow::OwnAccount);
             rows.extend(accounts.iter().cloned().map(SetupRow::Account));
             rows.push(SetupRow::AddAccount);
         }
         rows
+    }
+
+    /// The account `r` renames on `row` (none: the default account), and the name the user gave it.
+    fn rename_target<'a>(
+        &'a self,
+        backend: &str,
+        row: Option<&'a SetupRow>,
+    ) -> Option<(Option<String>, Option<&'a str>)> {
+        match row? {
+            SetupRow::OwnAccount => {
+                let own = self.backends.iter().find(|b| b["id"] == backend).map(|b| &b["ownAccount"]);
+                Some((None, own.and_then(|o| o["label"].as_str())))
+            }
+            SetupRow::Account(account) => Some((Some(account["id"].as_str()?.to_owned()), account["label"].as_str())),
+            _ => None,
+        }
     }
 
     pub(in crate::tui) fn agent_key(&mut self, mut a: AgentSetup, k: KeyEvent) -> Option<Overlay> {
@@ -81,6 +105,14 @@ impl App {
                     a.error = None;
                     let body = json!({"account": account["id"]});
                     self.sheet("removeAgentAccount", body, Reply::Accounts(a.backend.clone()));
+                }
+            }
+            KeyCode::Char('r') if !a.busy => {
+                if let Some((account, label)) = self.rename_target(&a.backend, rows.get(a.cursor)) {
+                    let f = rename_fields(&a.backend, account, label);
+                    self.overlays.push(Overlay::Agent(a));
+                    self.overlays.push(Overlay::Fields(Box::new(f)));
+                    return None;
                 }
             }
             KeyCode::Enter if !a.busy => {
@@ -137,7 +169,7 @@ impl App {
                         self.open_agent_gear(&backend);
                         return None;
                     }
-                    Some(SetupRow::Check) | None => {
+                    Some(SetupRow::Check | SetupRow::OwnAccount) | None => {
                         a.busy = true;
                         a.error = None;
                         self.sheet("agentAuth", json!({"backend": backend}), Reply::Auth(backend.clone()));
@@ -158,8 +190,23 @@ impl App {
         self.flash("Opening the terminal…");
     }
 
-    /// Signs agent `backend`'s account `account` in, in the setup terminal.
+    /// Signs agent `backend`'s account `account` in: by the agent itself in a browser on the computer (its sheet
+    /// shows that until the host answers, once it's done), or in the setup terminal.
     pub(in crate::tui) fn sign_in_account(&mut self, backend: &str, account: &str) {
+        if self.backends.iter().any(|b| b["id"] == backend && b["accountSignIn"] == "browser") {
+            for o in &mut self.overlays {
+                if let Overlay::Agent(a) = o
+                    && a.backend == backend
+                {
+                    a.busy = true;
+                    a.error = None;
+                    a.signing_in = Some(account.to_owned());
+                }
+            }
+            let body = json!({"backend": backend, "account": account});
+            self.sheet("agentAuthenticate", body, Reply::Accounts(backend.to_owned()));
+            return;
+        }
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
         let body = json!({"backend": backend, "step": "login", "account": account, "cols": cols, "rows": rows});
         self.sheet("agentSetup", body, Reply::Setup(Some(account.to_owned())));
@@ -176,6 +223,7 @@ impl App {
                 && a.backend == backend
             {
                 a.busy = false;
+                a.signing_in = None;
                 a.error = None;
             }
         }
@@ -288,6 +336,29 @@ fn env_fields(backend: &str, method: &Value, saved: &[String], host: &str) -> Fi
     }
 }
 
+/// Asks for an agent account's name (`account`; none: the default one), from the one the user gave it.
+fn rename_fields(backend: &str, account: Option<String>, label: Option<&str>) -> Fields {
+    Fields {
+        title: "Rename account".into(),
+        note: String::new(),
+        choices: vec![],
+        choice: 0,
+        inputs: vec![Input {
+            name: "name".into(),
+            label: "Account name".into(),
+            secret: false,
+            required: false,
+            multiline: false,
+            placeholder: "Account name".into(),
+            ed: Editor::with(label.unwrap_or_default()),
+        }],
+        cursor: 0,
+        error: None,
+        saving: false,
+        submit: Submit::RenameAccount { backend: backend.to_owned(), account },
+    }
+}
+
 /// Bytes a terminal sends for a key.
 pub fn key_bytes(k: KeyEvent) -> Vec<u8> {
     let alt = k.modifiers.contains(KeyModifiers::ALT);
@@ -339,8 +410,14 @@ mod tests {
             json!({"id": "gemini", "installed": true, "signedIn": true}),
             json!({"id": "codex", "installed": false, "accounts": []}),
         ];
-        let sheet =
-            |backend: &str| AgentSetup { backend: backend.into(), auth: None, busy: false, cursor: 0, error: None };
+        let sheet = |backend: &str| AgentSetup {
+            backend: backend.into(),
+            auth: None,
+            busy: false,
+            signing_in: None,
+            cursor: 0,
+            error: None,
+        };
         assert!(
             !app.agent_rows(&sheet("gemini")).iter().any(|r| matches!(r, SetupRow::Account(_) | SetupRow::AddAccount)),
             "none for an agent that can't have accounts"
@@ -350,7 +427,10 @@ mod tests {
             "nor for one that isn't installed"
         );
         let rows = app.agent_rows(&sheet("claude"));
-        assert!(matches!(&rows[rows.len() - 3..], [SetupRow::Account(_), SetupRow::Account(_), SetupRow::AddAccount]));
+        assert!(matches!(
+            &rows[rows.len() - 4..],
+            [SetupRow::OwnAccount, SetupRow::Account(_), SetupRow::Account(_), SetupRow::AddAccount]
+        ));
         let mut press = |cursor: usize, code: KeyCode| {
             let a = AgentSetup { cursor, ..sheet("claude") };
             let Some(Overlay::Agent(a)) = app.agent_key(a, KeyEvent::from(code)) else { panic!("the sheet stays") };
@@ -370,5 +450,60 @@ mod tests {
         assert!(!a.busy);
         assert!(matches!(app.agent_rows(a).last(), Some(SetupRow::AddAccount)));
         assert_eq!(app.agent_rows(a).iter().filter(|r| matches!(r, SetupRow::Account(_))).count(), 0);
+    }
+
+    #[tokio::test]
+    async fn every_account_is_renamed_and_a_browser_agent_signs_its_accounts_in_itself() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = crate::tui::app::test_app();
+        let accounts =
+            json!([{"id": "a1", "name": "Work", "label": "Work", "email": "ada@example.com", "signedIn": false}]);
+        app.backends = vec![json!({"id": "agy", "name": "Antigravity", "installed": true, "signedIn": true,
+            "accountSignIn": "browser", "accounts": accounts, "ownAccount": {"name": "me@example.com"}})];
+        let sheet = |cursor| AgentSetup {
+            backend: "agy".into(),
+            auth: None,
+            busy: false,
+            signing_in: None,
+            cursor,
+            error: None,
+        };
+        let own = app.agent_rows(&sheet(0)).iter().position(|r| matches!(r, SetupRow::OwnAccount)).expect("its row");
+
+        for (cursor, account, label) in [(own, None, ""), (own + 1, Some("a1"), "Work")] {
+            assert!(
+                app.agent_key(sheet(cursor), KeyEvent::from(KeyCode::Char('r'))).is_none(),
+                "the name is asked for"
+            );
+            let Some(Overlay::Fields(f)) = app.overlays.pop() else { panic!("the name field") };
+            assert_eq!((f.title.as_str(), f.inputs[0].ed.text.as_str()), ("Rename account", label));
+            assert!(
+                matches!(&f.submit, Submit::RenameAccount { backend, account: a } if backend == "agy" && a.as_deref() == account)
+            );
+            app.overlays.clear();
+        }
+        assert!(app.agent_key(sheet(0), KeyEvent::from(KeyCode::Char('r'))).is_some(), "only accounts are named");
+
+        // ↵ on the signed-out account: no terminal, the row waits for the browser.
+        let Some(sheet) = app.agent_key(sheet(own + 1), KeyEvent::from(KeyCode::Enter)) else { panic!("the sheet") };
+        app.overlays.push(sheet);
+        app.sign_in_account("agy", "a1");
+        let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("the sheet stays") };
+        assert_eq!((a.busy, a.signing_in.as_deref(), app.shell.is_none()), (true, Some("a1"), true));
+        app.host = "Mac".into();
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("terminal");
+        terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the sheet");
+        let text: String = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect();
+        for shown in [
+            "Accounts",
+            "me@example.com",
+            "Default · Signed in",
+            "ada@example.com · Finish signing in in the browser on Mac…",
+            "r Rename account",
+        ] {
+            assert!(text.contains(shown), "{shown}: {text}");
+        }
+        app.on_sheet_reply(Reply::Accounts("agy".into()), Ok(json!({"signedIn": true, "backends": []})));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(a)) if !a.busy && a.signing_in.is_none()));
     }
 }

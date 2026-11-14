@@ -162,6 +162,8 @@ export interface Fallback {
   backend: string
   /** A custom command, only from the bot itself (the apps don't offer one). */
   command?: string
+  /** The agent account the step runs on; absent for the login the computer already has. */
+  account?: string | null
   model: string | null
   modelOptions: Record<string, string>
 }
@@ -173,6 +175,8 @@ export type FallbackReason = string
 export interface AgentStep {
   step: number
   agent: string
+  /** The agent account the step runs on; absent for the computer's own login. */
+  account?: string | null
   model: string | null
   since: number
   reason: FallbackReason | null
@@ -181,6 +185,8 @@ export interface AgentStep {
 /** An agent that can't answer until `until`. */
 export interface Resting {
   agent: string
+  /** The agent account that rests; absent for the computer's own login. */
+  account?: string | null
   until: number
   reason: FallbackReason
 }
@@ -512,12 +518,20 @@ export interface Backend {
   node?: 'missing' | 'added' | null
   /** Its extra logins, for an agent that can have them (absent otherwise, and from older hosts). */
   accounts?: AgentAccount[]
+  /** The login the computer already has, beside `accounts`: the name the user gave it and who it signs in, when known. */
+  ownAccount?: { name: string | null; label?: string | null; email?: string | null }
+  /** How an account of it signs in: its CLI in a terminal, or the agent itself in a browser on the computer. */
+  accountSignIn?: 'terminal' | 'browser'
 }
 
 /** One more login to an agent, beside the one the computer already has. `name`: who it signs in, once it has. */
 export interface AgentAccount {
   id: string
+  /** The user's name for it, else who it signs in once it has. */
   name: string | null
+  /** The name the user gave it. */
+  label?: string | null
+  email?: string | null
   signedIn: boolean
 }
 

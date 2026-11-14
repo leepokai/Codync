@@ -12,7 +12,7 @@ import { useTr } from '../../lib/use-language'
 import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
-import { AgentAccounts } from './AgentAccounts'
+import { AgentAccounts, CheckAgain } from './AgentAccounts'
 import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
@@ -57,7 +57,7 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  *  so its sign-in opens, not a check of the computer's own login. */
 export function AgentSheet({ initial, recheck = false, signInAccount }: { initial: Backend; recheck?: boolean; signInAccount?: string | null }) {
   const store = useStore()
-  const [route, setRoute] = useState<SetupRoute | null>(signInAccount ? { kind: 'terminal', method: null, account: signInAccount } : null)
+  const [route, setRoute] = useState<SetupRoute | null>(signInAccount && initial.accountSignIn !== 'browser' ? { kind: 'terminal', method: null, account: signInAccount } : null)
   const [auth, setAuth] = useState<AgentAuth | null>(null)
   const [checking, setChecking] = useState(false)
   const [authenticating, setAuthenticating] = useState<string | null>(null)
@@ -182,6 +182,11 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
     }
   }
 
+  const signInDetail = signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null
+  const browserNote = signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
+    ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
+    : null
+
   const overview = (
     <SheetPage>
       <ModalHeader
@@ -212,27 +217,29 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
             />
           </CardSection>
         ) : null}
-        <CardSection
-          footer={signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
-            ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
-            : null}
-        >
-          <HStack>
-            <VStack grow>
-              <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
-            </VStack>
-            {checking ? (
-              <ThinkingOrb state="connecting" size={16} color="var(--secondary)" />
-            ) : (
-              <button title="Check again" aria-label="Check again" className="agent-check-again" onClick={() => void check()}>
-                <Icon name="arrow.clockwise" size={13} />
-              </button>
-            )}
-          </HStack>
-          {signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null}
-          {options}
-        </CardSection>
-        {backend.accounts && installed ? <AgentAccounts backend={backend} signIn={(account) => setRoute({ kind: 'terminal', method: null, account })} /> : null}
+        {backend.accounts && installed ? (
+          <AgentAccounts
+            backend={backend}
+            own={{ status: statusText, checking, check: () => void check() }}
+            signIn={(account) => setRoute({ kind: 'terminal', method: null, account })}
+            signInNow={signInAccount ?? undefined}
+          >
+            {signInDetail}
+            {options}
+            {browserNote ? <Text size="footnote" tone="secondary">{browserNote}</Text> : null}
+          </AgentAccounts>
+        ) : (
+          <CardSection footer={browserNote}>
+            <HStack>
+              <VStack grow>
+                <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
+              </VStack>
+              <CheckAgain checking={checking} check={() => void check()} />
+            </HStack>
+            {signInDetail}
+            {options}
+          </CardSection>
+        )}
         <AgentBrings backendId={backend.id} />
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>

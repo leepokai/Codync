@@ -174,6 +174,10 @@ pub struct Fallback {
     pub backend: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// The agent account this step runs on (`agent::accounts`). None: the login this computer already has. Always
+    /// on the wire, `null` for none: an edit that leaves the key out keeps the saved account (`hub::patch`).
+    #[serde(default)]
+    pub account: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]

@@ -16,6 +16,19 @@ class AgentAccountsTest {
         assertEquals(listOf(AgentAccount("a1", "me@example.com", true), AgentAccount("a2"), AgentAccount("a3")), accounts)
     }
 
+    @Test fun anAccountCarriesTheNameTheUserGaveItAndTheDefaultOneToo() {
+        val agent = backend(""","accountSignIn":"browser","ownAccount":{"name":"Work","label":"Work","email":"me@example.com"},
+            "accounts":[{"id":"a1","name":"Side","label":"Side","email":"you@example.com","signedIn":true},{"id":"a2","name":"you@example.com","label":null,"email":"you@example.com"}]""")
+        assertEquals(OwnAccount("Work", "Work", "me@example.com"), agent.ownAccount)
+        assertTrue(agent.signsInBrowser)
+        assertEquals(listOf("Side", null), agent.accounts?.map { it.label })
+        assertEquals("you@example.com", agent.accounts?.first()?.email)
+        // An older host, and an agent whose CLI signs in.
+        assertNull(backend("").ownAccount)
+        assertFalse(backend("").signsInBrowser)
+        assertFalse(backend(""","accountSignIn":"terminal","ownAccount":{}""").signsInBrowser)
+    }
+
     @Test fun aBotPicksASignedInAccountOrKeepsItsOwn() {
         val agent = backend(""","accounts":[{"id":"a1","name":"me@example.com","signedIn":true},{"id":"a2","signedIn":false}]""")
         assertEquals(listOf("a1"), agent.accountChoices(null).map { it.id })

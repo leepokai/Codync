@@ -8,14 +8,21 @@ const OWN = ''
 const ADD = '+'
 
 /**
- * Which of the agent's logins a bot runs on: the one the computer already has, or one of its other
+ * Which of the agent's accounts a bot runs on: the default one (the login the computer already has), or one of its other
  * accounts. "Add account…" opens the agent's setup, where a new one signs in.
  */
-export function AccountRow({ backend, account, onChange }: { backend: Backend; account: string | null; onChange: (account: string | null) => void }) {
+export function AccountRow({ backend, account, free, onChange }: {
+  backend: Backend
+  account: string | null
+  /** The accounts that can be picked (`null`: the default one), when not all can: a fallback's, whose chain has the others. */
+  free?: (string | null)[]
+  onChange: (account: string | null) => void
+}) {
   const [adding, setAdding] = useState(false)
+  const open = (id: string | null) => !free || free.includes(id)
   const options = [
-    { id: OWN, label: `This computer's sign-in` },
-    ...accountChoices(backend, account).map((a) => ({ id: a.id, label: a.name ?? 'New account' })),
+    ...(open(null) ? [{ id: OWN, label: backend.ownAccount?.name ?? 'Default account' }] : []),
+    ...accountChoices(backend, account).filter((a) => open(a.id)).map((a) => ({ id: a.id, label: a.name ?? 'New account' })),
     { id: ADD, label: 'Add account…' },
   ]
   return (

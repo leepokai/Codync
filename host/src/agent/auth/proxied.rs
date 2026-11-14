@@ -119,7 +119,7 @@ pub fn save(store: &Store, backend: &str, changes: &[(String, Option<String>)]) 
 #[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::super::{env, env_slot, saved_env};
+    use super::super::{env_slot, env_without, saved_env};
     use super::*;
     use std::collections::BTreeMap;
 
@@ -156,7 +156,7 @@ mod tests {
             ["ANTHROPIC_API_KEY", "CODEX_HOME", "OPENAI_API_KEY", "OPENAI_BASE_URL"]
         );
 
-        let (vars, grants) = env(&store, "claude").unwrap();
+        let (vars, grants) = env_without(&store, "claude", &[]).unwrap();
         let env: BTreeMap<String, String> = vars.into_iter().collect();
         assert_eq!(env["ANTHROPIC_API_KEY"], PLACEHOLDER);
         let grant = format!("http://127.0.0.1:{}/t/", k.keeper.port);
@@ -211,7 +211,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         k.manage(&store);
         save_now(&store, &[change("GEMINI_API_KEY", Some("g"))]).unwrap();
-        let (vars, grants) = env(&store, "claude").unwrap();
+        let (vars, grants) = env_without(&store, "claude", &[]).unwrap();
         let base = vars.iter().find(|(k, _)| k == "GOOGLE_GEMINI_BASE_URL").unwrap().1.clone();
         let token = base.rsplit('/').next().unwrap().to_owned();
         let (acp, _inbox) = crate::agent::acp::Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &vars).unwrap();
@@ -228,7 +228,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let saved = serde_json::json!({"ANTHROPIC_API_KEY": "sk-ant", "OTHER": "o"});
         crate::market::vault::write(&store, &env_slot("claude"), &saved.to_string()).unwrap();
-        let (env, grants) = env(&store, "claude").unwrap();
+        let (env, grants) = env_without(&store, "claude", &[]).unwrap();
         assert!(grants.is_empty(), "no grants off a cloud computer");
         assert_eq!(env, [("ANTHROPIC_API_KEY".to_owned(), "sk-ant".to_owned()), ("OTHER".to_owned(), "o".to_owned())]);
         crate::agent::accounts::tests::insert(&store, &[("a1", "claude")]);

@@ -67,13 +67,15 @@ fn well_known_dirs_for(home: &Path, data_local: Option<&Path>) -> Vec<PathBuf> {
 }
 
 /// Re-detects the search path and exports it as this process's PATH, so every
-/// agent we spawn (and the `npx`/`node` they need) resolves the same way.
+/// agent we spawn (and the `npx`/`node` they need) resolves the same way; the login
+/// shell's other variables are kept for agents (`login_env`).
 pub fn hydrate_path() {
     let mut seen = HashSet::new();
     let mut path: Vec<PathBuf> = vec![];
     let current = std::env::var("PATH").unwrap_or_default();
-    let login = shell::user_path().unwrap_or_default();
-    for p in std::env::split_paths(&current).chain(std::env::split_paths(&login)).chain(well_known_dirs()) {
+    let login = shell::user_env();
+    let login_path = login.iter().flatten().find(|(k, _)| k == "PATH").map_or("", |(_, v)| v.as_str());
+    for p in std::env::split_paths(&current).chain(std::env::split_paths(login_path)).chain(well_known_dirs()) {
         if p.as_os_str().is_empty() || !p.is_dir() {
             continue;
         }
@@ -93,6 +95,10 @@ pub fn hydrate_path() {
         unsafe { std::env::set_var("PATH", joined) };
     }
     *SEARCH_PATH.locked() = path;
+    // A shell that failed this time keeps what the last one gave.
+    if let Some(login) = login {
+        super::login_env::set(&login);
+    }
 }
 
 pub fn which(bin: &str) -> Option<PathBuf> {

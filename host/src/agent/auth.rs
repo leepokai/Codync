@@ -117,13 +117,9 @@ fn apply(saved: &mut BTreeMap<String, String>, changes: &[(String, Option<String
     removed
 }
 
-/// Keys saved for `backend`, as environment for its process, and the grants a cloud computer's proxied ones are on:
-/// the process holds those for as long as it runs (`Acp::hold`); dropping them revokes them.
-pub fn env(store: &Store, backend: &str) -> Result<(Vec<(String, String)>, Grants)> {
-    env_without(store, backend, &[])
-}
-
-/// [`env`] without the keys `skip` names, each with the address saved for it.
+/// Keys saved for `backend` but those `skip` names (each with the address saved for it), as environment for its
+/// process, and the grants a cloud computer's proxied ones are on: the process holds those for as long as it runs
+/// (`Acp::hold`); dropping them revokes them.
 fn env_without(store: &Store, backend: &str, skip: &[&str]) -> Result<(Vec<(String, String)>, Grants)> {
     let mut saved = visible(store, backend)?;
     for key in skip {
@@ -146,8 +142,9 @@ pub fn saved_value(store: &Store, backend: &str, name: &str) -> Result<Option<St
     Ok(visible(store, backend)?.remove(name))
 }
 
-/// The environment `backend`'s process starts with: the saved keys, what the harness needs to start, and where
-/// `account`'s login is (and [`env`]'s grants).
+/// The environment `backend`'s process starts with: the saved keys, what the harness needs to start, where
+/// `account`'s login is, and the login shell's variables, as in the user's terminal (the others win); and
+/// [`env_without`]'s grants.
 pub fn launch_env(store: &Store, backend: &str, account: Option<&str>) -> Result<(Vec<(String, String)>, Grants)> {
     let slot = crate::agent::accounts::env(store, backend, account)?;
     // An account's login wins over a key saved for the agent, which the agent would run on instead.
@@ -157,7 +154,11 @@ pub fn launch_env(store: &Store, backend: &str, account: Option<&str>) -> Result
     // And its folder over one the user saved for the agent.
     env.retain(|(name, _)| !slot.iter().any(|(set, _)| set == name));
     env.extend(slot);
-    Ok((env, grants))
+    // The shell's variables come last, and never a key the account's login replaced.
+    let mut shell = backends::login_env();
+    shell.retain(|(k, _)| !login_keys.contains(&k.as_str()) && !env.iter().any(|(name, _)| name == k));
+    shell.append(&mut env);
+    Ok((shell, grants))
 }
 
 /// Names of the saved keys (values never leave the host), proxied ones too.
@@ -194,7 +195,7 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     let Started { acp, mut inbox, init, cmd } = start(store, backend).await?;
     let methods = methods(backend, &init, &cmd);
     // Held until the check below is done.
-    let (vars, _grants) = env(store, backend)?;
+    let (vars, _grants) = launch_env(store, backend, None)?;
     if let ControlFlow::Break(signed_in) = login_without_session(&init, &mut inbox, backend, &vars).await {
         acp.kill().await;
         return Ok(Status { signed_in, detail: None, methods });

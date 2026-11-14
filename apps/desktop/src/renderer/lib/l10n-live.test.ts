@@ -73,7 +73,7 @@ test("a resting agent's line follows the saved language", () => {
 test('the update card names its action in the saved language', () => {
   // The button carries data (`Update now`), translated where the card draws it; the phone apps read
   // these same catalog files, so one entry reaches all three.
-  lang = 'zh-Hans'
+  lang = 'zh'
   assert.equal(trNow('Update now'), '立即更新')
   assert.equal(trNow('Update Codync'), '更新 Codync')
   lang = 'ru'

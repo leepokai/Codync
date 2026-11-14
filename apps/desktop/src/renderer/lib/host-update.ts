@@ -20,25 +20,27 @@ export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, n
   return canUpdate ? { kind: 'available', last: update } : { kind: 'unavailable' }
 }
 
+/**
+ * Fills every placeholder in one pass, so a name that itself looks like a placeholder (a computer
+ * called `{minimum}`) stays as it is: text inserted by one replacement is never visited again.
+ */
+export function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole)
+}
+
 /** The words every client uses for a version mismatch (iOS, the TUI and this app). */
 export const updateNeededText = {
   /** `cloud`: a Codync Cloud computer, which the cloud updates by itself. */
   title(m: VersionMismatch, host: string, cloud = false) {
     if (m.kind === 'updateApp') return trNow('Update this app')
-    return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
+    return cloud ? trNow('Your cloud computer is updating…') : fill(trNow('Update Codync on {host}'), { host })
   },
   detail(m: VersionMismatch, host: string, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
-      return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
-        .replaceAll('{host}', () => host)
-        .replaceAll('{minimum}', () => m.minimum)
+      return fill(trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).'), { host, minimum: m.minimum })
     }
-    if (cloud) return trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.')
-      .replaceAll('{minimum}', () => m.minimum)
-    const needs = trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.')
-      .replaceAll('{host}', () => host)
-      .replaceAll('{version}', () => m.version)
-      .replaceAll('{minimum}', () => m.minimum)
+    if (cloud) return fill(trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.'), { minimum: m.minimum })
+    const needs = fill(trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.'), { host, version: m.version, minimum: m.minimum })
     return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
   },
   /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
@@ -50,7 +52,7 @@ export const updateNeededText = {
   },
   /** A computer updating at this app's request. */
   updating(host: string) {
-    return trNow('Updating Codync on {host}. This takes a few minutes.').replaceAll('{host}', () => host)
+    return fill(trNow('Updating Codync on {host}. This takes a few minutes.'), { host })
   },
   /** Why the last update asked of the computer didn't take. */
   notUpdated(last: HostUpdate, host: string) {
@@ -78,7 +80,7 @@ export function hostVersionLine(version: string, latest: string | null | undefin
   if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
   const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
   const available = latest && isBelow(version, latest) ? latest : null
-  const due = minimum ? trNow('{host} needs Codync {version} or newer.').replaceAll('{host}', () => host).replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
+  const due = minimum ? fill(trNow('{host} needs Codync {version} or newer.'), { host, version: minimum }) : available ? fill(trNow('Version {version} is available.'), { version: available }) : null
   if (!due) return line(latest ? [trNow('Up to date')] : [])
   if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
   if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: trNow('Try again') })

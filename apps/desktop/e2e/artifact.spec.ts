@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { join, resolve } from 'node:path'
+import { fixtureCommand } from './fixture-command.ts'
 import { api, attach } from './sandbox.ts'
 
 // Publish through the real host/MCP path, so the viewer has the same card and reply target as a real artifact.
@@ -13,7 +14,7 @@ test('artifact keyboard navigation preserves renaming, menus and the message box
   try {
     const agent = join(resolve(__dirname, '../../..'), 'host/tests/fixtures/artifact_agent.py')
     const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u '${agent}'`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: fixtureCommand(agent), connectors: [], skills: [], notify: false,
     })
     botId = bot.id
     await api(page, 'send', { botId, text: 'make-artifact' })

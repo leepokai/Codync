@@ -86,6 +86,23 @@ extension BotStore {
         try await ready().agentGear(backend: backend)
     }
 
+    /// A new, signed-out account for `backend`; its sign-in follows.
+    func addAgentAccount(_ backend: String) async throws -> AgentAccount {
+        let added = try await ready().addAgentAccount(backend)
+        hello?.backends = added.backends
+        return added.account
+    }
+
+    /// After an account's sign-in terminal closes: whether it went through, and as whom.
+    func checkAgentAccount(_ backend: String, account: String) async throws {
+        hello?.backends = try await ready().agentAccountAuth(backend, account: account)
+    }
+
+    /// Fails, in words to show, while a bot still uses the account.
+    func removeAgentAccount(_ account: String) async throws {
+        hello?.backends = try await ready().removeAgentAccount(account)
+    }
+
     /// Re-detects agents on the computer (after an install or sign-in).
     public func refreshBackends() async {
         guard let client, let backends = try? await client.refreshBackends() else { return }

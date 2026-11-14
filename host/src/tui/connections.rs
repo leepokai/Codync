@@ -101,8 +101,16 @@ impl App {
         if let Some(entry) = entry {
             let request = &entry.data["connectionRequest"];
             if request["kind"] == "agent" {
+                let backend = request["backend"].as_str().unwrap_or_default();
                 // The host completes the request and resends the messages once a check finds it signed in.
-                self.open_agent(request["backend"].as_str().unwrap_or_default(), true);
+                match request["account"].as_str() {
+                    // The login that refused is the bot's agent account's: its sign-in opens over the agent's sheet.
+                    Some(account) => {
+                        self.open_agent(backend, false);
+                        self.sign_in_account(backend, account);
+                    }
+                    None => self.open_agent(backend, true),
+                }
             } else {
                 self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
             }
@@ -434,6 +442,23 @@ mod tests {
         assert_eq!((a.backend.as_str(), a.busy), ("claude", true));
         reply(&mut app, &mut rx).await;
         assert_eq!(calls.lock().unwrap()[0], json!({"method":"agentAuth","body":{"backend":"claude"}}));
+
+        // A request of a bot on an agent account signs that account in, not the computer's own login.
+        app.overlays.clear();
+        let entry = app.entries.get_mut("bot").and_then(|lane| lane.get_mut(&1)).expect("the card");
+        entry.data["connectionRequest"]["account"] = "a1".into();
+        app.open_connection();
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(a)) if !a.busy), "no check of the own login");
+        let sign_in = || calls.lock().unwrap().iter().find(|call| call["method"] == "agentSetup").cloned();
+        let asked = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if let Some(call) = sign_in() {
+                    return call;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        assert_eq!(asked.await.expect("the sign-in terminal is asked for")["body"]["account"], "a1");
         server.abort();
     }
 

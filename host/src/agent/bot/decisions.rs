@@ -3,7 +3,7 @@
 use super::Actor;
 use crate::agent::acp;
 use crate::analytics::{self, Event};
-use crate::chat::decision::{self, Expiry};
+use crate::chat::decision::{self, Expiry, Via};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{Entry, EntryKind, Lane};
@@ -112,8 +112,12 @@ impl Actor {
             decision::Status::of(&card.data) == Some(decision::Status::Pending),
             "that card is already answered or expired"
         );
-        let choice = decision::pick(&decision::choices(&card), wanted, typed.is_some())
+        let (choice, via) = decision::answer(&decision::choices(&card), wanted, typed.is_some())
             .ok_or_else(|| anyhow!("no such option on that card"))?;
+        let mut answer = json!({"choice": choice});
+        if via == Via::Custom {
+            answer["custom"] = true.into();
+        }
         // Save one user entry in this same turn; typed input already has an entry, so update it instead.
         let mut data = typed.map_or_else(|| json!({"text": choice}), |e| e.data.clone());
         if data["from"].is_null() {
@@ -128,7 +132,7 @@ impl Actor {
         }
         .ok_or_else(|| anyhow!("couldn't save the user's choice"))?;
         let asked = self.asked.remove(id).ok_or_else(|| anyhow!("the card stopped waiting"))?;
-        if asked.reply.send(Ok(json!({"choice": choice}))).is_err() {
+        if asked.reply.send(Ok(answer.clone())).is_err() {
             decision::expire(&self.hub, id);
             data["status"] = "failed".into();
             self.hub.set_entry(&user.id, &data);
@@ -138,23 +142,22 @@ impl Actor {
         }
         // The tool delivered the label even when the old client typed a number. Carry both without losing either.
         let input = match typed {
-            Some(entry) => format!("{}\n[Selected: {choice}]", entry.data["text"].as_str().unwrap_or_default()),
-            None => choice.clone(),
+            Some(entry) if via == Via::Text => {
+                format!("{}\n[Selected: {choice}]", entry.data["text"].as_str().unwrap_or_default())
+            }
+            _ => choice.clone(),
         };
         self.record_joined_input(&user.id, &input);
         decision::mark_answered(&mut card.data, &choice);
         let saved = self.hub.set_entry(id, &card.data);
         self.continue_after_decision();
         ensure!(saved.is_some(), "the choice was delivered but the card could not be saved; do not repeat the action");
-        analytics::capture(
-            &self.hub,
-            Event::DecisionAnswered,
-            Map::from_iter([("via".into(), (if typed.is_some() { "text" } else { "button" }).into())]),
-        );
-        Ok(json!({"choice": choice}))
+        analytics::capture(&self.hub, Event::DecisionAnswered, Map::from_iter([("via".into(), json!(via))]));
+        Ok(answer)
     }
 
-    /// Old clients display a notice and use ordinary send. Only a plain, exact choice or its number answers it.
+    /// A plain typed message answers the waiting card: an exact choice, its number, or the user's own words.
+    /// Files, quotes, `/commands` and call speech that names no option are ordinary messages and expire it.
     pub(super) fn try_decision_message(&mut self, lane: &Lane, entry_id: &str) -> bool {
         self.expire_abandoned_decisions();
         if self.asked.len() != 1 || lane.chat != self.cfg.id {
@@ -174,7 +177,10 @@ impl Actor {
         let Some(card) = self.hub.store.entry(&id) else { return false };
         let text = entry.data["text"].as_str().unwrap_or_default();
         let plain = entry.data["attachments"].as_array().is_none_or(Vec::is_empty) && entry.data["replyTo"].is_null();
-        if plain && decision::pick(&decision::choices(&card), text, true).is_some() {
+        // Speech from a call may name an option, but only typed words are the user's own answer.
+        let answers = decision::answer(&decision::choices(&card), text, true)
+            .is_some_and(|(_, via)| via != Via::Custom || entry.data["call"].is_null());
+        if plain && answers {
             match self.decided(&id, text, Some(&entry)) {
                 Ok(_) => return true,
                 Err(error) => {

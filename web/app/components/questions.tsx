@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { DiscordLogo, Plus, WechatLogo } from "@phosphor-icons/react/ssr";
+import { DiscordLogo, Plus, TelegramLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
 import SectionHeader from "./section-header";
 import { CHINA_COMMUNITY, DISCORD } from "../links";
@@ -79,10 +78,10 @@ export default function Questions() {
               <DiscordLogo size={20} aria-hidden="true" />
               <span className="underline underline-offset-4">Ask on Discord</span>
             </a>
-            <Link href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
-              <WechatLogo size={20} aria-hidden="true" />
-              <span className="underline underline-offset-4">微信 / Lark 中国用户交流群</span>
-            </Link>
+            <a href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+              <TelegramLogo size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">Telegram 中国用户交流群</span>
+            </a>
           </div>
         </Reveal>
         <Reveal delay={0.05}>

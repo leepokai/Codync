@@ -63,7 +63,7 @@ The iPhone and the desktop no longer share UI code. `CodyncUI` (`apps/ios/Kit/`)
 
 ## Shared application controls
 
-Other custom iPhone screens use `Chrome.swift` and `Controls.swift`. The desktop equivalents are in `Overlay.tsx` (`Sheet`, `Dialog`, `ModalHeader`), `Menu.tsx` (`AnchoredMenu`) and `Controls.tsx` (`IconButton`, `DropdownMenu`, `ChoicePicker`, `ChipChoice`, `Switch`, `CardForm`, `CardSection`, `ValueRow`).
+Other custom iPhone screens use CodyncUI's `Chrome.swift` and `Controls.swift`, and CodyncKit's `Design/ModalChrome.swift` (`IconButton`, `ModalHeader`), `Design/Cards.swift` (`CardForm`, `CardSection`) and `Design/Spinner.swift`, which live there so the share extension draws like the app. The desktop equivalents are in `Overlay.tsx` (`Sheet`, `Dialog`, `ModalHeader`), `Menu.tsx` (`AnchoredMenu`) and `Controls.tsx` (`IconButton`, `DropdownMenu`, `ChoicePicker`, `ChipChoice`, `Switch`, `CardForm`, `CardSection`, `ValueRow`).
 
 | Need | Component |
 |---|---|

@@ -2,6 +2,7 @@ import {
   isWorking,
   needsInput,
   normalizeBot,
+  type AgentAccount,
   type Bot,
   type BotDraft,
   type DirListing,
@@ -460,13 +461,34 @@ export class BotStore extends BotSync {
     return bot
   }
 
+  /** Shows the agent list a call answered with. */
+  private showBackends(backends: Hello['backends']) {
+    if (!this.hello) return
+    this.hello = { ...this.hello, backends }
+    this.changed()
+  }
+
   async refreshBackends() {
     if (!this.client || !this.hello) return
     try {
-      const res = await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)
-      this.hello = { ...this.hello, backends: res.backends }
-      this.changed()
+      this.showBackends((await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)).backends)
     } catch {}
+  }
+
+  /** A new, signed-out account for agent `backend`: its id. A `login` setup with it signs it in. */
+  async addAgentAccount(backend: string) {
+    const added = await (await this.ready()).call<{ account: AgentAccount; backends: Hello['backends'] }>('addAgentAccount', { backend })
+    this.showBackends(added.backends)
+    return added.account.id
+  }
+
+  /** Asks the account's agent whether it's signed in, and as whom. */
+  async checkAgentAccount(backend: string, account: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, account }, 60_000)).backends)
+  }
+
+  async removeAgentAccount(account: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeAgentAccount', { account }, 60_000)).backends)
   }
 
   async selectWorkspace(path: string) {

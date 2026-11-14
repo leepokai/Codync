@@ -6,9 +6,9 @@ The chat shows your messages, the bot's messages, approval cards, choice cards a
 
 ## Choice cards
 
-When your bot needs you to pick a way forward, it can show a question with two to twelve buttons. On **iPhone**, **Android** and **Desktop**, tap the option you want. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options. Your choice appears as your message and the bot continues its current work.
+When your bot needs you to pick a way forward, it can show a question with two to twelve numbered options. On **iPhone**, **Android** and **Desktop**, tap the option you want, or type your own answer in the last row, **Something else**. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options, or type your own answer in the message box. Your choice appears as your message and the bot continues its current work.
 
-On an older app, the question and numbered options appear as text. Reply with the full option or its number. If an option itself is a number, the exact option text takes priority. Sending a different message moves the bot on from the question. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
+You can also answer in the message box: the full option, its number, or anything else in your own words. If an option itself is a number, the exact option text takes priority. A message with files, a quote or a `/` command doesn't answer the card; it moves the bot on from the question. On an older app, the question and numbered options appear as text, answered the same way. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
 
 While the bot works, a line under the last message shows what it's doing and for how long. It reads **Typing…** while the bot writes you a message.
 
@@ -43,7 +43,7 @@ If a message fails to send, it shows **Failed to send** with buttons to resend o
 
 On iPhone, sending clears the message box so you can type your next message. You can add text with dictation or switch to another chat's saved draft.
 
-**From another app (Android):** share text to Codync, pick a bot, and its chat opens with the text in the message box, after anything you had typed there. Nothing is sent until you send it.
+**From another app (iPhone and Android):** in any app's share sheet, choose **Codync** to send text, a link, pictures or files (up to 10, each up to 100 MB) to a bot. The **Send to a bot** sheet shows what you're sharing, a message box with the shared text or link already in it, and your bots. Pick one and tap send. **Recent** lists the last three bots you shared to, and the one you shared to last is already picked. On the iPhone the sheet uploads the files, sends, and closes, back in the app you shared from. On Android, Codync opens that chat, where the message shows like one you typed. Text alone can go while the computer is offline and waits for it like any message (from the iPhone's sheet, only through the Codync relay). Files need the computer online. What you had typed in that chat's message box stays as it was.
 
 **From Shortcuts (iPhone):** Codync's **Send Text to Bot** action sends a message without typing it in the chat. Pick a **Bot** and fill in **Text**. **Open Chat** is off by default, so the message goes out in the background; turn it on to open the chat. The action finishes when the computer accepts the message, or reports it queued when the computer is offline. The iPhone has to be unlocked, also from Siri ("Send text with Codync"). Only the current account's visible bots are listed.
 
@@ -77,6 +77,7 @@ A bot can also speak a message: its voice note then plays at the top of that mes
 Playback errors use your app's language, with a tap-to-retry hint on phones and a
 click-to-retry hint on desktop. On iPhone, playing a note after a call or dictation
 uses normal playback audio rather than retaining the recording settings.
+On Android, leaving the chat while a note is loading prevents it from starting afterward.
 
 A report or a tracker you'll come back to can come as an [artifact](/docs/artifacts) instead: a page that opens from its card. Everything made or shared in a chat is also in its [Library](/docs/artifacts#the-library).
 

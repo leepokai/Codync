@@ -173,12 +173,29 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         // Never the server's address, its model, the audio or the transcript. An empty address unlinks.
         "setSpeechServer" if b["url"].as_str().is_some_and(|u| !u.trim().is_empty()) => Event::SpeechServerLinked,
         "voiceTranscribe" if b["provider"] == "local" => Event::LocalDictationTranscribed,
-        "agentSetup" | "agentAuthenticate" => {
+        "agentSetup" | "agentAuthenticate" | "agentAuth" => {
+            // Checking the computer's own login is no event; an account's check is its sign-in (`answered`).
+            let account = b["account"].is_string();
+            if method == "agentAuth" && !account {
+                return None;
+            }
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
+            if account {
+                p.insert("account".into(), true.into());
+            }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
+        }
+        // Never the account's name or id.
+        "addAgentAccount" | "removeAgentAccount" => {
+            let action = method.strip_suffix("AgentAccount").unwrap_or(method);
+            p.insert("action".into(), action.into());
+            if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
+                p.insert("agent".into(), agent.into());
+            }
+            Event::AgentAccountChanged
         }
         // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
@@ -269,6 +286,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
             let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
         }
+        // An account's check that still finds it signed out is no sign-in.
+        Event::AgentSignedIn if p.contains_key("account") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -280,13 +299,17 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit or a speech server
-/// reports its category, never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and an agent account, a connector edit
+/// or a speech server reports its category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     let category = match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             return Some((Event::NetworkFailed, p));
+        }
+        // `in_use`: removing an account bots still run on. `unsupported`: an agent that can't have accounts.
+        Event::AgentAccountChanged => {
+            error.downcast_ref::<crate::agent::accounts::Refused>().map_or("other", |e| e.category)
         }
         Event::ConnectorUpdated => {
             error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category())

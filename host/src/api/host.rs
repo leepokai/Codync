@@ -88,7 +88,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "os": std::env::consts::OS,
                 "device": crate::remote::managed::computer_device(&hub.store).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
-                "backends": backends::list(),
+                "backends": agents(hub),
                 "icons": icons.icons,
                 "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
@@ -108,7 +108,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
             crate::market::agent_sign_in::refresh(hub).await;
-            json!({"backends": backends::list()})
+            json!({"backends": agents(hub)})
+        }
+        // A new, signed-out account for an agent; `agentSetup` with it signs it in.
+        "addAgentAccount" => {
+            let account = crate::agent::accounts::add(&hub.store, str_arg(&b, "backend")?).await?;
+            json!({"account": account, "backends": agents(hub)})
+        }
+        "removeAgentAccount" => {
+            crate::agent::accounts::remove(hub, str_arg(&b, "account")?).await?;
+            json!({"backends": agents(hub)})
         }
         "usage" => {
             if b["refresh"].as_bool().unwrap_or(false) {
@@ -155,9 +164,22 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (cols, rows) = term_size(&b);
             // Node.js belongs to the computer, not to one agent.
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
-            json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
+            let term = match b["account"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
+                Some(id) => {
+                    let command = crate::agent::accounts::login_command(&hub.store, id).await?;
+                    hub.terms.sign_in_account(backend, id, &command, cols, rows)?
+                }
+                None => hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?,
+            };
+            json!({"term": term})
         }
         "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
+        // An account's own sign-in state: `{signedIn, account}`, and the agent list it changed.
+        "agentAuth" if b["account"].is_string() => {
+            let mut status = crate::market::agent_sign_in::check_account(hub, str_arg(&b, "account")?).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
         "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
             let backend = str_arg(&b, "backend")?;
             let status = match method {
@@ -253,6 +275,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         _ => return Ok(ControlFlow::Continue(b)),
     }))
+}
+
+/// The agents this computer can run, each with its accounts.
+fn agents(hub: &Hub) -> Vec<Value> {
+    let mut agents = backends::list();
+    crate::agent::accounts::annotate(&hub.store, &mut agents);
+    agents
 }
 
 fn term_size(b: &Value) -> (u16, u16) {

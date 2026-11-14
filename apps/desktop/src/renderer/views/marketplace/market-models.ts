@@ -128,6 +128,8 @@ export interface ConnectionRequest {
   site?: string | null
   /** Agent sign-in requests: the agent (backend id) to sign in to. */
   backend?: string | null
+  /** Agent sign-in requests: the agent account to sign in, when it isn't the computer's own login. */
+  account?: string | null
   /** App requests: the app's logo, when Composio lists it. */
   logo?: string | null
 }
@@ -230,8 +232,8 @@ export const market = {
 
   // Agent setup terminals
   /** The first sign-in through a registry build can download it. */
-  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number) =>
-    (await c.call<{ term: string }>('agentSetup', { backend, step, method, cols, rows }, s(300))).term,
+  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number, account?: string) =>
+    (await c.call<{ term: string }>('agentSetup', { backend, step, method, account, cols, rows }, s(300))).term,
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
   setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),

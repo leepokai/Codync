@@ -111,17 +111,22 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let agent_name = app.agent_name(&f.backend);
     // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
     let room = inner.bottom().saturating_sub(FOOTER).saturating_sub(y);
+    // An agent that can't have accounts has no Account field.
+    let accounts = app.accounts(&f.backend);
+    let shown = |field: &Field| *field != Field::Account || accounts.is_some();
+    let height = |fields: &[Field]| fields.iter().filter(|x| shown(x)).map(|x| field_rows(*x) + 1).sum::<u16>();
     let mut first = 0;
-    while first < f.field && FIELDS[first..f.field].iter().map(|field| field_rows(*field) + 1).sum::<u16>() >= room {
+    while first < f.field && height(&FIELDS[first..f.field]) >= room {
         first += 1;
     }
-    for (i, field) in FIELDS.iter().enumerate().skip(first) {
+    for (i, field) in FIELDS.iter().enumerate().skip(first).filter(|(_, field)| shown(field)) {
         let active = i == f.field;
         let base = if active { t.sel } else { t.panel };
         let lab = match field {
             Field::Name => "Name",
             Field::Instructions => "Instructions",
             Field::Agent => "Agent",
+            Field::Account => "Account",
             Field::Model => "Model",
             Field::ModelOptions => "Options",
             Field::Fast => "Fast mode",
@@ -238,6 +243,18 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 put(buf, vx, y, vw, &format!("‹ {agent_name} ›"), t.text.patch(base));
                 if let Some(note) = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::rest_note(b, &f.backend)) {
                     rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                }
+            }
+            Field::Account => {
+                let own = accounts.into_iter().flatten().find(|a| a["id"].as_str() == f.account.as_deref());
+                let name = match (&f.account, own.and_then(|a| a["name"].as_str())) {
+                    (None, _) => tr("This computer's sign-in").into_owned(),
+                    (Some(_), Some(name)) => name.to_owned(),
+                    (Some(_), None) => tr("New account").into_owned(),
+                };
+                put(buf, vx, y, vw, &format!("‹ {name} ›"), t.text.patch(base));
+                if f.account.is_some() && own.is_none_or(|a| a["signedIn"] != true) {
+                    rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
             Field::Fallbacks => {
@@ -380,6 +397,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
+        Field::Account => "←→ change · ↵ add account · tab next",
         Field::Model => "←→ pick a model · or type its id",
         Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
         Field::Fast

@@ -12,6 +12,7 @@ import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { AccountRow } from './AccountRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
@@ -152,6 +153,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
         <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
       {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
+      {backend?.accounts && <AccountRow backend={backend} account={draft.account ?? null} onChange={(account) => set('account', account)} />}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>

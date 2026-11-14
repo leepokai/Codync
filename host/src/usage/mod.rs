@@ -213,6 +213,15 @@ async fn read(hub: &Hub, readers: Vec<&'static Reader>) {
     }
 }
 
+/// The claims of a JWT, unverified: for reading who a saved token names, never for trusting it.
+pub(crate) fn jwt_claims(token: &str) -> Option<serde_json::Value> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+    let payload = token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).or_else(|_| URL_SAFE.decode(payload)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 fn iso_ms(text: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(text).ok().map(|at| at.timestamp_millis())
 }

@@ -79,14 +79,17 @@ device acceptance, and the account flows on main (they were walked on dev; main 
   `AttachmentFiles.kt`).
 - **Pull to refresh** on the roster and in Computer management uses the chat's indicator; iOS uses the system one.
 - **The saved conversation across updates**: the mirror is a database of every row paged in, stored as the
-  computer sent it, so a new app or host version keeps all of it and takes the events again onto it (the iPhone
-  refetches underneath what it shows). When the host's store schema changes, Android still empties its chats and
-  the catch-up fills them, where the iPhone keeps showing them until the catch-up has arrived: doing the same
-  means marking the rows the computer sent again across restarts, left out while a schema change stays rare
+  computer sent it, so a new app or host version keeps all of it and takes the events again onto it, as the iPhone
+  does with its cursor; Android also reads the bots again. When the host's store schema changes, Android still
+  empties its chats and the catch-up fills them, where the iPhone refetches underneath what it shows: doing the
+  same means marking the rows the computer sent again across restarts, left out while a schema change stays rare
   (`MirrorDatabase.setStamp`, [compatibility](../reference/compatibility.md)).
 - **Shortcuts actions** (Open Live Mode, Send Text to Bot) are Apple App Intents; Android's counterparts are
-  **Talk to Codync** in the app icon's shortcuts (the lead, by Settings → Shortcuts → Lead to call) and text shared
-  from another app, which opens the picked bot's chat with the text in its box ([iOS Shortcuts](../features/ios-shortcuts.md), `LiveShortcut.kt`, `ShareToBot.kt`).
+  **Talk to Codync** in the app icon's shortcuts (the lead, by Settings → Shortcuts → Lead to call); sharing from
+  another app is the same on both ([iOS Shortcuts](../features/ios-shortcuts.md), [share to a bot](../features/share-to-bot.md), `LiveShortcut.kt`).
+- **Pasted text** in the message box isn't sent as `pasted` (the iPhone's `pastedInsertion`), so
+  [memory](../features/context-and-memory.md) can take a document pasted there as the user's own words; text shared
+  from another app is sent as `pasted` on both.
 - **On-device voice**: languages other than English need Android 13+ and Android's on-device
   recognizer; it never falls back to online recognition (iOS may use Apple's servers).
 - **Jump to latest** is an opaque disc: it sits in the scrolling content, so there's no blur under it.

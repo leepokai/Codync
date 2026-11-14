@@ -11,10 +11,16 @@ import kotlinx.serialization.json.*
 @Serializable data class AgentBackend(val id: String, val name: String, val installed: Boolean = false,
     val available: Boolean = false, val description: String? = null, val installHint: String = "",
     val signedIn: Boolean? = null, val canInstall: Boolean = false, val curated: Boolean = false,
-    val registry: String? = null, val node: String? = null) {
+    val registry: String? = null, val node: String? = null,
+    /** Its extra logins, for an agent that can have them (null otherwise, and from older hosts). */
+    val accounts: List<AgentAccount>? = null) {
     /** Runs on Node.js and the computer has none yet. */
     val needsNode: Boolean get() = node == "missing"
 }
+/** One more login to an agent, beside the one the computer already has. [name]: who it signs in, once it has. */
+@Serializable data class AgentAccount(val id: String, val name: String? = null, val signedIn: Boolean = false)
+/** The logins a bot on this agent can pick: the signed-in ones, and the bot's [own] even when it isn't (so its row shows it). */
+fun AgentBackend.accountChoices(own: String?): List<AgentAccount> = accounts.orEmpty().filter { it.signedIn || it.id == own }
 @Serializable data class AgentAuth(val signedIn: Boolean? = null, val detail: String? = null,
     val methods: List<AgentAuthMethod> = emptyList(), val savedEnv: List<String> = emptyList(), val login: Boolean = false)
 @Serializable data class AgentAuthMethod(val id: String, val name: String, val description: String? = null,

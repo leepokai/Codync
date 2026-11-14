@@ -47,7 +47,8 @@ public enum SharedStore {
             self.suite = suite
         }
 
-        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer"]
+        fileprivate static let names = ["computers", "bots", "usage", "lastComputerId", "composerDrafts", "computerOrder", "shortcutLeadComputer",
+                                        "shareRecipients"]
         fileprivate func key(_ name: String) -> String { accountID == nil ? name : "account.\(id).\(name)" }
         public static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -82,6 +83,12 @@ public enum SharedStore {
         public var composerDrafts: [ComputerID: [String: String]] {
             get { read([ComputerID: [String: String]].self, "composerDrafts") ?? [:] }
             nonmutating set { write(newValue, "composerDrafts") }
+        }
+
+        /// Whom the share sheet sent to lately, the most recent first (`ShareRecipient.remembered(in:)`).
+        public var shareRecipients: [ShareRecipient] {
+            get { read([ShareRecipient].self, "shareRecipients") ?? [] }
+            nonmutating set { write(newValue, "shareRecipients") }
         }
 
         /// The computer whose lead a shortcut that names no bot calls (Settings); nil: the first computer with one.

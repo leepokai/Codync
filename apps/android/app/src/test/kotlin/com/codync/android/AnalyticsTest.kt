@@ -31,6 +31,10 @@ class AnalyticsTest {
         assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
         assertEquals("""{"outcome":"played"}""", json(AnalyticsEvent.VoiceNotePlayed(null)))
         assertEquals("""{"outcome":"failed","error":"load"}""", json(AnalyticsEvent.VoiceNotePlayed(VoiceNoteFailure.Load)))
+        assertEquals("share_sent", AnalyticsEvent.ShareSent(ShareOutcome.Sent, 0, true, false).name)
+        assertEquals("""{"outcome":"queued","files":0,"text":true,"recent":true}""", json(AnalyticsEvent.ShareSent(ShareOutcome.Queued, 0, true, true)))
+        assertEquals("""{"outcome":"failed","error":"read","files":2,"text":false,"recent":false}""",
+            json(AnalyticsEvent.ShareSent(ShareOutcome.Failed, 2, false, false, ShareError.Read)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
         assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",

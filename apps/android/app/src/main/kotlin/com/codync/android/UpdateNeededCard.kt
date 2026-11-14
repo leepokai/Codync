@@ -57,6 +57,7 @@ internal val AppState.mismatch: VersionMismatch? get() {
  * updates itself: it says so, with no instructions, while the link keeps reconnecting.
  */
 @Composable internal fun UpdateNeededCard(state: AppState, mismatch: VersionMismatch, requestUpdate: () -> Unit, modifier: Modifier = Modifier) {
+    val translate = translator()
     val host = state.hostName
     val now = rememberHostUpdateNow(state.hostUpdate)
     val updating = state.cloudUpdating
@@ -65,18 +66,17 @@ internal val AppState.mismatch: VersionMismatch? get() {
         if (updating) Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { Spinner(18.dp) }
         else Symbol("arrow.down.circle", size = 22.dp, tint = Palette.warning)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(when (mismatch) {
+            Text(tr(when (mismatch) {
                 is VersionMismatch.UpdateApp, is VersionMismatch.AppFloor -> "Update this app"
                 is VersionMismatch.UpdateHost -> if (updating) "Your cloud computer is updating…" else "Update Codync on $host"
-            }, style = Type.subheadline.semibold, color = Palette.text)
+            }), style = Type.subheadline.semibold, color = Palette.text)
             when (mismatch) {
                 is VersionMismatch.UpdateApp -> {
                     val context = LocalContext.current
                     val store by AppUpdates.store.collectAsState()
                     // Google Play doesn't have the version this computer needs yet (an unknown version keeps the button: the page says).
                     val inReview = store?.let { AppVersion.isBelow(it, mismatch.minimum) } == true
-                    Text("${state.hello?.text("version")?.let { "$host runs Codync $it and" } ?: host} needs this app to be " +
-                        "${mismatch.minimum} or newer. Your chats are safe on the computer." +
+                    Text(appUpdateDetail(host, mismatch.minimum, translate) +
                         if (inReview) " That version is still in Google Play review; it'll be there soon." else "", style = Type.footnote, color = Palette.secondary)
                     PrimaryButton("Update Codync", Modifier.padding(top = 4.dp), enabled = !inReview) { AppUpdates.open(context) }
                 }
@@ -85,8 +85,10 @@ internal val AppState.mismatch: VersionMismatch? get() {
                     Text(mismatch.reason, style = Type.footnote, color = Palette.secondary)
                     PrimaryButton("Update Codync", Modifier.padding(top = 4.dp)) { AppUpdates.open(context) }
                 }
-                is VersionMismatch.UpdateHost -> if (!updating) {
-                    val notice = hostUpdateNotice(host, mismatch, state.hello?.text("os"), state.canUpdateHost, state.hostUpdate, now)
+                is VersionMismatch.UpdateHost -> if (updating) {
+                    Text(cloudUpdateDetail(mismatch.minimum, translate), style = Type.footnote, color = Palette.secondary)
+                } else {
+                    val notice = hostUpdateNotice(host, mismatch, state.hello?.text("os"), state.canUpdateHost, state.hostUpdate, now, translate)
                     Text(notice.detail, style = Type.footnote, color = Palette.secondary)
                     if (notice.offersUpdate) PrimaryButton("Update now", Modifier.padding(top = 4.dp), action = requestUpdate)
                 }

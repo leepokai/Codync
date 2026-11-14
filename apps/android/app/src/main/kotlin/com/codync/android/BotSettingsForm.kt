@@ -169,6 +169,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
     }
+    accountRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
     row { FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }

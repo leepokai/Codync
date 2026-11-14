@@ -144,6 +144,10 @@ fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     }
     let locked = refused(anyhow::anyhow!("the vault is locked"));
     assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
+
+    let (event, p) = observe(&Caller::Local, "removeAgentAccount", &json!({"account": "a1"})).unwrap();
+    let (_, other) = failed(event, p, &anyhow::anyhow!("removing /Users/me/slot")).expect("reported");
+    assert_eq!(other["error"], "other", "never the error's own words");
 }
 
 #[tokio::test]
@@ -224,6 +228,19 @@ fn connectors_skills_and_agents() {
     assert_eq!(props("agentSetup", &json!({"step": "node"})).map(|(_, p)| p), Some(json!({"client": "local"})));
     let signed = props("agentAuthenticate", &json!({"backend": "codex", "method": "chatgpt"}));
     assert_eq!(signed, Some((Event::AgentSignedIn, json!({"agent": "codex", "client": "local"}))));
+    assert_eq!(props("agentAuth", &json!({"backend": "codex"})), None, "a check of the computer's own login");
+    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "account": "a1"})).unwrap();
+    assert_eq!(event, Event::AgentSignedIn);
+    assert!(answered(event, p.clone(), &json!({"signedIn": false})).is_none(), "still signed out");
+    let p = answered(event, p, &json!({"signedIn": true})).expect("signed in");
+    assert_eq!(Value::Object(p), json!({"agent": "codex", "account": true, "client": "local"}));
+    let added = props("addAgentAccount", &json!({"backend": "claude"}));
+    assert_eq!(
+        added,
+        Some((Event::AgentAccountChanged, json!({"action": "add", "agent": "claude", "client": "local"})))
+    );
+    let removed = props("removeAgentAccount", &json!({"account": "a1"})).map(|(_, p)| p);
+    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the account");
 
     let (event, p) = observe(&Caller::Local, "importConnectors", &json!({"config": "{\"secret\": 1}"})).unwrap();
     let p = answered(event, p, &json!({"items": [{"id": "a"}, {"id": "b"}]})).expect("an import");

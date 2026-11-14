@@ -43,8 +43,9 @@ pub fn signed_in(id: &str) -> Option<bool> {
     SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
 }
 
-/// Agents whose prompt was refused because they asked for auth. Their own account check can still
-/// say signed in after that (`claude auth status` with a revoked token, `WorkBuddy`'s account).
+/// Logins (an agent's own, by the agent's id, or an agent account's, by its id) whose prompt was refused because
+/// the agent asked for auth. Their own account check can still say signed in after that (`claude auth status`
+/// with a revoked token, `WorkBuddy`'s account).
 static PROMPT_REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// The latest prompt for `id` was refused for auth. Stands until a prompt succeeds or a sign-in
@@ -87,22 +88,29 @@ pub async fn refresh_sign_in() {
 /// What `h`'s own CLI says about its sign-in, run with `env` (the keys its agent gets, so both
 /// judge the same login). `None`: it has no such check, isn't installed or didn't answer.
 pub async fn cli_signed_in(h: &Harness, env: &[(String, String)]) -> Option<bool> {
+    let check = h.signed_in?;
+    let out = run_cli(h, check.args, env).await?;
+    Some((check.ok)(out.status.success(), &String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Runs `h`'s own CLI with `args` and `env`. `None`: it isn't installed, didn't answer in time, or the tests
+/// turned the agents' CLIs off.
+pub async fn run_cli(h: &Harness, args: &str, env: &[(String, String)]) -> Option<std::process::Output> {
     if agent_checks_off() {
         return None;
     }
-    let check = h.signed_in?;
     let bin = h.bins.iter().find_map(|b| which(b))?;
     let run = tokio::process::Command::new(bin)
-        .args(check.args.split_whitespace())
+        .args(args.split_whitespace())
         .envs(env.iter().map(|(k, v)| (k, v)))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
     match tokio::time::timeout(Duration::from_secs(15), run).await {
-        Ok(Ok(out)) => Some((check.ok)(out.status.success(), &String::from_utf8_lossy(&out.stdout))),
+        Ok(Ok(out)) => Some(out),
         Ok(Err(e)) => {
-            tracing::info!(backend = h.id, error = %e, "sign-in check failed");
+            tracing::info!(backend = h.id, args, error = %e, "the agent's CLI didn't run");
             None
         }
         Err(_) => None,

@@ -7,13 +7,17 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.46.1
+## 2.47.0
 ### zh-Hant
-- bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。
-- 遠端畫面在 5 分鐘沒有碰 App 後會自動暫停以節省流量，點一下就能繼續，原本的「接手控制」或「交還給 Bot」都會保留。
-- 權限核准卡片與連線請求卡片現在會跟著 app 的語言顯示。
+- 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好，原本輸入框裡的草稿不會被動到。
+- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
+- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
+- 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
+- Claude Code 與 Codex 可以在同一台電腦登入多個賬戶：在智慧體的設定頁「其他賬戶」新增，再到 bot 設定的「智慧體」選擇它要用的賬戶，兩個 bot 就能同時用不同賬戶工作。
 
 ### en-US
-- The Computer tab in bot details starts its picture when you tap it, instead of connecting as soon as it opens.
-- A computer's screen pauses after 5 minutes without you touching the app, to save data. Tap to continue; your Take over or Hand back to bots choice stays.
-- Approval and connection request cards now follow the app's language.
+- Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
+- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
+- Leaving a chat while a voice note is loading no longer lets it start playing afterward.
+- Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
+- Claude Code and Codex can be signed in to more than one account on a computer: add one under Other accounts in the agent's setup, then pick a bot's account under Agent in its settings, so two bots can work at once on different accounts.

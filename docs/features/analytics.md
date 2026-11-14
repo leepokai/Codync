@@ -90,7 +90,9 @@ can be traced from the events around it:
   `analytics: true | false`.
 - **iPhone** (`CodyncKit` analytics client, no SDK) and **Android** (`Analytics.kt`, its port)
   send their own app-level events straight to PostHog. Widgets and the notification extension
-  never send.
+  never send. The iPhone's share extension has neither the install ID nor the Settings switch, so
+  it leaves its `share_sent` in the App Group (`Analytics.queueShare`) and the app sends it on its
+  next trip to the foreground.
 - **The Codync cloud** (Worker, `cloud/src/analytics.ts`) reports only what no device can see: asking
   the provider to wake a sleeping Codync Cloud computer and how long until its host was back. It
   follows that computer's own switch: the host tells the cloud as soon as it turns

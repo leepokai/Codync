@@ -160,12 +160,15 @@ data class PendingSend(
     val replyTo: ReplyQuote? = null,
     /** The voice call it was said in (on-device or speech to text). */
     val call: String? = null,
+    /** What came from another app rather than the user (iOS `EntryData.pasted`), which memory never takes as their own words. */
+    val pasted: List<String> = emptyList(),
 ) {
-    /** The `send` request for it, with the ids of its uploaded files. */
+    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files. */
     fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
         put("botId", botId); put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id) }
         call?.let { put("call", it) }
+        if (pasted.isNotEmpty()) put("pasted", JsonArray(pasted.map(::JsonPrimitive)))
         if (attachments.isNotEmpty()) put("attachments", JsonArray(attachments.map(::JsonPrimitive)))
     }
 }

@@ -36,9 +36,22 @@ fn key(account: &str) -> String {
     format!("rest.{account}")
 }
 
-/// Whose usage a rest is about: the agent's account, or a custom command's own (two custom commands are two agents).
+/// Whose usage a rest is about: the agent's login (the computer's own, or the bot's agent account), or a custom
+/// command's own (two custom commands are two agents). `cfg` is the bot as it runs: its `account` is its agent's.
 pub fn account(cfg: &crate::store::BotConfig) -> String {
-    account_of(&cfg.backend, cfg.command.as_deref())
+    match &cfg.account {
+        Some(id) => format!("{}{ON_ACCOUNT}{id}", cfg.backend),
+        None => account_of(&cfg.backend, cfg.command.as_deref()),
+    }
+}
+
+/// Between the agent and the id of the agent account (`agent::accounts`) a rest is about. Never the start of a
+/// custom command's hash.
+const ON_ACCOUNT: &str = "#account-";
+
+/// The agent account `account` is about; none for the computer's own login.
+fn agent_account(account: &str) -> Option<&str> {
+    account.split_once(ON_ACCOUNT).map(|(_, id)| id)
 }
 
 /// `account` of agent `backend` run by `command`, if a custom one.
@@ -100,14 +113,16 @@ pub fn reset_time(usage: &Usage, backend: &str, now: i64) -> Option<i64> {
     provider.windows.iter().filter(|w| w.percent >= 99.5).filter_map(|w| w.resets_at).filter(|t| *t > now).max()
 }
 
-/// Agent `backend`'s accounts (also ones a command of its own runs) whose last rest was for being signed out.
-pub fn signed_out(store: &Store, backend: &str) -> Vec<String> {
+/// Agent `backend`'s accounts on one login (`agent_account`'s, or the computer's own, which a command of its own
+/// runs on too) whose last rest was for being signed out.
+pub fn signed_out(store: &Store, backend: &str, agent_account: Option<&str>) -> Vec<String> {
     // The prefix also finds agents whose name starts with `backend`'s.
     store
         .kv_prefix(&key(backend))
         .iter()
         .filter_map(|k| k.strip_prefix("rest."))
-        .filter(|a| backend_of(a) == backend && saved(store, a).is_some_and(|r| r.reason == Reason::SignedOut))
+        .filter(|a| backend_of(a) == backend && self::agent_account(a) == agent_account)
+        .filter(|a| saved(store, a).is_some_and(|r| r.reason == Reason::SignedOut))
         .map(str::to_owned)
         .collect()
 }
@@ -135,10 +150,23 @@ mod tests {
             assert_eq!(record(&store, account, Reason::SignedOut, 0, None).map(|r| r.reason), Some(Reason::SignedOut));
         }
         record(&store, "codex", Reason::UsageLimit, 0, None);
-        let mut ended = signed_out(&store, "claude");
+        let mut on_account: crate::store::BotConfig =
+            serde_json::from_value(serde_json::json!({"id": "b", "name": "B", "backend": "claude", "account": "a1"}))
+                .expect("a bot");
+        let a1 = account(&on_account);
+        record(&store, &a1, Reason::SignedOut, 0, None);
+        let mut ended = signed_out(&store, "claude", None);
         ended.sort();
         assert_eq!(ended, ["claude".to_owned(), wrapped], "a command of its own signs in with the agent");
-        assert!(signed_out(&store, "codex").is_empty(), "signing in doesn't give usage back");
+        assert_eq!(
+            signed_out(&store, "claude", Some("a1")),
+            std::slice::from_ref(&a1),
+            "an agent account signs in by itself"
+        );
+        assert_eq!(get(&store, &a1, 0).map(|r| r.until), Some(SIGNED_OUT), "an account of an agent Codync signs in");
+        on_account.account = None;
+        assert_eq!(account(&on_account), "claude");
+        assert!(signed_out(&store, "codex", None).is_empty(), "signing in doesn't give usage back");
         // One Codync can't sign in to looks again sooner.
         assert_eq!(get(&store, "claudette", 0).map(|r| r.until), Some(SIGNED_OUT_ELSEWHERE));
         assert_eq!(record(&store, "claude", Reason::SignedOut, 0, None).map(|r| r.until), Some(SIGNED_OUT));

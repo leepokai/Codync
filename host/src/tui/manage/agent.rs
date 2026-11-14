@@ -59,6 +59,13 @@ impl App {
         }
         rows.push(SetupRow::Check);
         rows.push(SetupRow::Brings);
+        // An account signs in with the agent's own CLI, so only an installed agent has them.
+        if b.is_some_and(|b| b["installed"] == true)
+            && let Some(accounts) = self.accounts(&a.backend)
+        {
+            rows.extend(accounts.iter().cloned().map(SetupRow::Account));
+            rows.push(SetupRow::AddAccount);
+        }
         rows
     }
 
@@ -68,6 +75,14 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') => return None,
             KeyCode::Down | KeyCode::Char('j') => a.cursor = (a.cursor + 1).min(rows.len().saturating_sub(1)),
             KeyCode::Up | KeyCode::Char('k') => a.cursor = a.cursor.saturating_sub(1),
+            KeyCode::Char('x') if !a.busy => {
+                if let Some(SetupRow::Account(account)) = rows.get(a.cursor) {
+                    a.busy = true;
+                    a.error = None;
+                    let body = json!({"account": account["id"]});
+                    self.sheet("removeAgentAccount", body, Reply::Accounts(a.backend.clone()));
+                }
+            }
             KeyCode::Enter if !a.busy => {
                 let backend = a.backend.clone();
                 let (cols, rows_n) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -76,6 +91,20 @@ impl App {
                     Some(SetupRow::Install) => self.start_setup(&backend, "install", None, &size),
                     Some(SetupRow::Node) => self.start_setup(&backend, "node", None, &size),
                     Some(SetupRow::Login) => self.start_setup(&backend, "login", None, &size),
+                    Some(SetupRow::Account(account)) => {
+                        if let Some(id) = account["id"].as_str().filter(|_| account["signedIn"] != true) {
+                            self.sign_in_account(&backend, id);
+                        }
+                    }
+                    Some(SetupRow::AddAccount) => {
+                        a.busy = true;
+                        a.error = None;
+                        self.sheet(
+                            "addAgentAccount",
+                            json!({"backend": backend}),
+                            Reply::AccountAdded(backend.clone()),
+                        );
+                    }
                     Some(SetupRow::Method(m)) => match m["kind"].as_str() {
                         Some("terminal") => self.start_setup(&backend, "login", m["id"].as_str(), &size),
                         Some("envVar") => {
@@ -125,8 +154,31 @@ impl App {
         if let Some(m) = method {
             body["method"] = m.into();
         }
-        self.sheet("agentSetup", body, Reply::Setup);
+        self.sheet("agentSetup", body, Reply::Setup(None));
         self.flash("Opening the terminal…");
+    }
+
+    /// Signs agent `backend`'s account `account` in, in the setup terminal.
+    pub(in crate::tui) fn sign_in_account(&mut self, backend: &str, account: &str) {
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+        let body = json!({"backend": backend, "step": "login", "account": account, "cols": cols, "rows": rows});
+        self.sheet("agentSetup", body, Reply::Setup(Some(account.to_owned())));
+        self.flash("Opening the terminal…");
+    }
+
+    /// An answer that carries agent `backend`'s accounts (`backends`): its sheet shows them.
+    pub(super) fn accounts_changed(&mut self, backend: &str, v: &Value) {
+        if let Some(agents) = v["backends"].as_array() {
+            self.backends.clone_from(agents);
+        }
+        for o in &mut self.overlays {
+            if let Overlay::Agent(a) = o
+                && a.backend == backend
+            {
+                a.busy = false;
+                a.error = None;
+            }
+        }
     }
 
     /// Keys while the setup terminal has the screen: everything goes to it; ^] leaves.
@@ -188,7 +240,13 @@ impl App {
         self.call("refreshBackends", json!({}), After::Backends);
         if let Some(Overlay::Agent(a)) = self.overlays.last_mut() {
             a.busy = true;
-            self.sheet("agentAuth", json!({"backend": sh.backend}), Reply::Auth(sh.backend.clone()));
+            match sh.account {
+                Some(account) => {
+                    let body = json!({"backend": sh.backend, "account": account});
+                    self.sheet("agentAuth", body, Reply::Accounts(sh.backend));
+                }
+                None => self.sheet("agentAuth", json!({"backend": sh.backend}), Reply::Auth(sh.backend.clone())),
+            }
         }
     }
 }
@@ -270,5 +328,47 @@ mod tests {
         assert_eq!(key_bytes(k(KeyCode::Enter, KeyModifiers::NONE)), b"\r");
         assert_eq!(key_bytes(k(KeyCode::Char('b'), KeyModifiers::ALT)), b"\x1bb");
         assert_eq!(key_bytes(k(KeyCode::Up, KeyModifiers::NONE)), b"\x1b[A");
+    }
+
+    #[tokio::test]
+    async fn the_agent_sheet_adds_signs_in_and_removes_other_accounts() {
+        let mut app = crate::tui::app::test_app();
+        let accounts = json!([{"id": "a1", "name": "ada@example.com", "signedIn": true}, {"id": "a2", "name": null, "signedIn": false}]);
+        app.backends = vec![
+            json!({"id": "claude", "installed": true, "signedIn": true, "accounts": accounts}),
+            json!({"id": "gemini", "installed": true, "signedIn": true}),
+            json!({"id": "codex", "installed": false, "accounts": []}),
+        ];
+        let sheet =
+            |backend: &str| AgentSetup { backend: backend.into(), auth: None, busy: false, cursor: 0, error: None };
+        assert!(
+            !app.agent_rows(&sheet("gemini")).iter().any(|r| matches!(r, SetupRow::Account(_) | SetupRow::AddAccount)),
+            "none for an agent that can't have accounts"
+        );
+        assert!(
+            !app.agent_rows(&sheet("codex")).iter().any(|r| matches!(r, SetupRow::AddAccount)),
+            "nor for one that isn't installed"
+        );
+        let rows = app.agent_rows(&sheet("claude"));
+        assert!(matches!(&rows[rows.len() - 3..], [SetupRow::Account(_), SetupRow::Account(_), SetupRow::AddAccount]));
+        let mut press = |cursor: usize, code: KeyCode| {
+            let a = AgentSetup { cursor, ..sheet("claude") };
+            let Some(Overlay::Agent(a)) = app.agent_key(a, KeyEvent::from(code)) else { panic!("the sheet stays") };
+            a.busy
+        };
+        assert!(!press(rows.len() - 3, KeyCode::Enter), "a signed-in account has nothing to run");
+        assert!(press(rows.len() - 3, KeyCode::Char('x')), "x removes the account under the cursor");
+        assert!(!press(0, KeyCode::Char('x')), "and nothing else");
+        assert!(press(rows.len() - 1, KeyCode::Enter), "adding asks the host");
+
+        app.overlays.push(Overlay::Agent(AgentSetup { busy: true, ..sheet("claude") }));
+        app.on_sheet_reply(
+            Reply::Accounts("claude".into()),
+            Ok(json!({"backends": [{"id": "claude", "installed": true, "accounts": []}]})),
+        );
+        let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("the sheet stays") };
+        assert!(!a.busy);
+        assert!(matches!(app.agent_rows(a).last(), Some(SetupRow::AddAccount)));
+        assert_eq!(app.agent_rows(a).iter().filter(|r| matches!(r, SetupRow::Account(_))).count(), 0);
     }
 }

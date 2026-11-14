@@ -12,10 +12,11 @@ import { useTr } from '../../lib/use-language'
 import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
 import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
+import { AgentAccounts } from './AgentAccounts'
 import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
-type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
+type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; account?: string } | { kind: 'keys'; method: AuthMethod }
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
@@ -52,10 +53,11 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  * CLIs it knows. Bots are made from New bot, not here.
  */
 /** `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent is
- *  asked again however signed in it looked. */
-export function AgentSheet({ initial, recheck = false }: { initial: Backend; recheck?: boolean }) {
+ *  asked again however signed in it looked. `signInAccount`: the request is for that agent account,
+ *  so its sign-in opens, not a check of the computer's own login. */
+export function AgentSheet({ initial, recheck = false, signInAccount }: { initial: Backend; recheck?: boolean; signInAccount?: string | null }) {
   const store = useStore()
-  const [route, setRoute] = useState<SetupRoute | null>(null)
+  const [route, setRoute] = useState<SetupRoute | null>(signInAccount ? { kind: 'terminal', method: null, account: signInAccount } : null)
   const [auth, setAuth] = useState<AgentAuth | null>(null)
   const [checking, setChecking] = useState(false)
   const [authenticating, setAuthenticating] = useState<string | null>(null)
@@ -109,18 +111,29 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
     if ((recheck || (setUp && backend.signedIn !== true)) && !nodeMissing) void check()
   }, [])
 
-  // Back from a terminal or key form: see what changed.
-  const hadRoute = useRef(false)
+  /** Asks an account's agent whether its sign-in went through, and as whom. */
+  const checkAccount = async (account: string) => {
+    try {
+      await store.checkAgentAccount(backend.id, account)
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  // Back from a terminal or key form: see what changed, for the login it was about.
+  const lastRoute = useRef<SetupRoute | null>(route)
   useEffect(() => {
-    if (route === null && hadRoute.current) void check()
-    hadRoute.current = route !== null
+    const last = lastRoute.current
+    if (route === null && last?.kind === 'terminal' && last.account) void checkAccount(last.account)
+    else if (route === null && last) void check()
+    lastRoute.current = route
   }, [route])
 
   const back = () => setRoute(null)
   const routed = route === null ? null
     : route.kind === 'install' ? <SetupTerminalView backend={backend} step="install" back={back} />
     : route.kind === 'node' ? <SetupTerminalView backend={backend} step="node" back={back} />
-    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} back={back} />
+    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} account={route.account} back={back} />
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
@@ -219,6 +232,7 @@ export function AgentSheet({ initial, recheck = false }: { initial: Backend; rec
           {signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null}
           {options}
         </CardSection>
+        {backend.accounts && installed ? <AgentAccounts backend={backend} signIn={(account) => setRoute({ kind: 'terminal', method: null, account })} /> : null}
         <AgentBrings backendId={backend.id} />
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>

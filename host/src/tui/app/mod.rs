@@ -1,5 +1,6 @@
 //! TUI state and everything that changes it: host events, keys, mouse, replies.
 
+mod accounts;
 mod analytics;
 mod approvals;
 mod auto_order;
@@ -447,10 +448,10 @@ pub fn mismatch_text(m: &crate::compat::Mismatch, host: &str) -> String {
     let host = if host.is_empty() { "the computer" } else { host };
     match m {
         crate::compat::Mismatch::UpdateApp { minimum } => {
-            format!("Update this app: {host} needs Codync {minimum} or newer here.")
+            format!("Update this app: the app on this computer needs Codync {minimum} or newer ({host} requires it).")
         }
         crate::compat::Mismatch::UpdateHost { version, minimum } => format!(
-            "Update Codync on {host}: it runs {version}, this app needs {minimum} or newer. ^k → Check for updates."
+            "Update Codync on {host}: it runs {version}; that computer needs Codync {minimum} or newer. ^k → Check for updates."
         ),
     }
 }

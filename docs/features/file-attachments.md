@@ -7,7 +7,8 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
   also be dropped on the box or pasted: ⌘V / Ctrl+V on the desktop takes a copied image or file
   (`apps/desktop/src/renderer/views/thread/Composer.tsx`); on the iPhone through Paste in the
   + menu.
-  HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, `Thread/Attachments.swift`). Picked files show as chips above
+  Other apps' share sheets send files to a bot too, on iPhone and Android ([share to a bot](share-to-bot.md)).
+  HEIC/TIFF/BMP become JPEG (`OutgoingFile.prepared`, CodyncKit). Picked files show as chips above
   the text and can be removed; a message can be files only. Group chats take files too: they're
   kept in the group's uploads folder and listed to each member under the message. Up to 100 MB per file.
 - Upload: `upload {botId, uploadId, name, offset, data (base64), done}`, 384 KiB per call so each
@@ -116,6 +117,9 @@ nothing. The terminal UI shows only the card.
 On iPhone, a note preserves an active call or dictation session. Once recording ends,
 the next play resets the audio session to playback and releases it on pause, stop or
 completion; a saved recording category alone does not mean the microphone is active.
+
+On Android, removing a card while its audio is loading or preparing prevents playback;
+any player returned after the card is released is released without starting.
 
 ### A voice note inside its message
 

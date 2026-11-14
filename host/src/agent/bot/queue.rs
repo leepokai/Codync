@@ -94,6 +94,7 @@ impl Actor {
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
+                    || cfg.account != self.cfg.account
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
@@ -374,10 +375,20 @@ impl Actor {
                 Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
             }
         }
-        crate::agent::backends::set_signed_in(&backend, Some(false));
-        // An account check can still say signed in (`claude auth status` with a revoked token): this refusal wins.
-        crate::agent::backends::note_prompt_refused(&backend);
+        self.note_signed_out(&backend);
         self.sign_in_card(&backend, &held)
+    }
+
+    /// Agent `backend` refused the bot's prompt for auth. The login that refused is the bot's account's, or the
+    /// computer's own: only that one reads signed out, also over a check that still says signed in (`claude auth
+    /// status` with a revoked token).
+    pub(super) fn note_signed_out(&self, backend: &str) {
+        if let Some(account) = crate::agent::accounts::of_bot(&self.hub.store, backend, &self.cfg) {
+            crate::agent::accounts::note_signed_in(&self.hub.store, account, false);
+        } else {
+            crate::agent::backends::set_signed_in(backend, Some(false));
+            crate::agent::backends::note_prompt_refused(backend);
+        }
     }
 
     /// The agent's process was already running when this turn started.

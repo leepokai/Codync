@@ -120,10 +120,23 @@ fn apply(saved: &mut BTreeMap<String, String>, changes: &[(String, Option<String
 /// Keys saved for `backend`, as environment for its process, and the grants a cloud computer's proxied ones are on:
 /// the process holds those for as long as it runs (`Acp::hold`); dropping them revokes them.
 pub fn env(store: &Store, backend: &str) -> Result<(Vec<(String, String)>, Grants)> {
-    let mut env: Vec<(String, String)> = visible(store, backend)?.into_iter().collect();
+    env_without(store, backend, &[])
+}
+
+/// [`env`] without the keys `skip` names, each with the address saved for it.
+fn env_without(store: &Store, backend: &str, skip: &[&str]) -> Result<(Vec<(String, String)>, Grants)> {
+    let mut saved = visible(store, backend)?;
+    for key in skip {
+        if saved.remove(*key).is_some()
+            && let Some(address) = proxied::address_of(key)
+        {
+            saved.remove(address);
+        }
+    }
+    let mut env: Vec<(String, String)> = saved.into_iter().collect();
     let mut grants = Grants::default();
     if is_managed(store) {
-        proxied::add(store, backend, &mut env, &mut grants)?;
+        proxied::add(store, backend, skip, &mut env, &mut grants)?;
     }
     Ok((env, grants))
 }
@@ -133,11 +146,17 @@ pub fn saved_value(store: &Store, backend: &str, name: &str) -> Result<Option<St
     Ok(visible(store, backend)?.remove(name))
 }
 
-/// The environment `backend`'s process starts with: the saved keys, and what the harness needs to start (and
-/// [`env`]'s grants).
-pub fn launch_env(store: &Store, backend: &str) -> Result<(Vec<(String, String)>, Grants)> {
-    let (mut env, grants) = env(store, backend)?;
+/// The environment `backend`'s process starts with: the saved keys, what the harness needs to start, and where
+/// `account`'s login is (and [`env`]'s grants).
+pub fn launch_env(store: &Store, backend: &str, account: Option<&str>) -> Result<(Vec<(String, String)>, Grants)> {
+    let slot = crate::agent::accounts::env(store, backend, account)?;
+    // An account's login wins over a key saved for the agent, which the agent would run on instead.
+    let login_keys = if slot.is_empty() { &[] } else { crate::agent::accounts::login_keys(backend) };
+    let (mut env, grants) = env_without(store, backend, login_keys)?;
     backends::apply_process_env(backend, &mut env);
+    // And its folder over one the user saved for the agent.
+    env.retain(|(name, _)| !slot.iter().any(|(set, _)| set == name));
+    env.extend(slot);
     Ok((env, grants))
 }
 

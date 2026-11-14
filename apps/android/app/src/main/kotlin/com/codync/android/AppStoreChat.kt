@@ -180,6 +180,14 @@ fun AppStore.cancelQueued(send: PendingSend) = action("cancel:" + send.nonce) {
     }
 }
 
+/** Sends [text] to chat [botId] outside its message box: a choice card's own answer, or what was said on voice [call]. */
+fun AppStore.sendText(botId: String, text: String, call: String? = null) {
+    if (state.value.loading || text.isBlank()) return
+    val send = PendingSend(UUID.randomUUID().toString(), botId, text.trim(), System.currentTimeMillis(), call = call)
+    lastSentNonce = send.nonce
+    action("save:" + send.nonce) { savePending(send); deliver(send) }
+}
+
 internal suspend fun AppStore.deliver(send: PendingSend) {
     if (!sends.add(send.nonce)) return
     try {
@@ -242,6 +250,9 @@ internal fun holdsOnPhone(cloud: String?, link: LinkState): Boolean = cloud == n
     is LinkState.Failed -> link.status !in listOf(403, 426)
     else -> false
 }
+
+/** The computer can't take a message now, but text still goes: its relay holds it, or with no relay this phone does. */
+internal val AppState.holdsText get() = actualConnection is LinkState.ComputerOffline || holdsOnPhone(computer.cloud, actualConnection)
 
 /** No relay holds it, so taking it back touches only this phone (iOS `BotStore.cancelQueued`). */
 internal fun discardsOnPhone(cloud: String?, status: SendStatus): Boolean = cloud == null || status == SendStatus.Held

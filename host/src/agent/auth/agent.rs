@@ -34,7 +34,7 @@ pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &st
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let (mut env, mut grants) = launch_env(store, backend)?;
+    let (mut env, mut grants) = launch_env(store, backend, None)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;

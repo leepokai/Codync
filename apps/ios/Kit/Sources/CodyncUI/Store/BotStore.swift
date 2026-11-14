@@ -155,6 +155,7 @@ public final class BotStore {
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
@@ -315,19 +316,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

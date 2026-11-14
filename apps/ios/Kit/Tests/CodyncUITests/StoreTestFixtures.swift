@@ -184,7 +184,7 @@ actor FakeRemote: RemoteTransport {
     /// Every later `enqueue` throws `error`.
     func failEnqueue(_ error: any Error) { enqueueError = error }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws {
         if let enqueueError { throw enqueueError }
         enqueued.append(clientNonce)
     }

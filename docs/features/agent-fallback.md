@@ -131,11 +131,26 @@ It is an **index, not the contents**: paths and command lines only, never a diff
 commands and 6 servers, the rest counted ("and 4 more"). The next agent reads a file before changing it and
 `search_history` for what was said.
 
+Alongside this index, a new session receives a **Context Manifest** gathered by rule, without a model call. It covers
+the same `newSession` boundary and the latest relevant turn: the user's constraint wording and paths/URLs/ids; files
+that were created, modified, read, proposed or refused, with path, current bytes, SHA-256 and the reason; commands
+with their tool state and reported exit code; running dev servers, enabled routines and pending approvals. Relative
+paths are inspected only in the bot's workspace and enabled memory folders, with a 64 MiB hash cap, a one-second
+inspection deadline and a two-second actor timeout. Unknown sizes, failed hashes and timed-out collection are named,
+never guessed.
+
+Both the recap and the manifest use the target model's byte allowance. The manifest reserves a short label for every
+row and every collection-stage omission before expanding any row. Each unexpanded file is named with its path, bytes
+and reason; other labels give their byte count and reason. If even all labels cannot fit, the handoff fails with an explicit error,
+keeps the owed recap for a later turn, and sends no prompt without context. The official index and the manifest are
+both shown; the index stays a compact list of completed changes, while the manifest carries the broader evidence and
+its omissions.
+
 What the user asked for is not gathered here. Standing rules reach every session through the bot's
 [memory](context-and-memory.md), which every new session gets whichever agent runs it, and what was said in this chat
 comes from the user's own messages:
 
-- **The latest 12 messages** in full (2,000 bytes each), as before.
+- **The latest messages that fit**, up to 12 in full (2,000 bytes each); with no known window, the latest 12.
 - **The user's earlier messages**, theirs only and cut to 900 bytes (about 300 tokens: 300 CJK characters), as far back as they fit. The bot's earlier
   replies stay in the history; a line says when not everything is repeated.
 
@@ -144,8 +159,9 @@ model with a wider window reads further back itself. The window is the one that 
 bot's own chat ended (`kv` `fallback.window.<bot>.<agent>`); an agent that never finished one there gets the latest 12
 messages alone. A catch-up isn't sized: it repeats at most 20 messages. Tokens are
 counted as three bytes each, which holds for CJK text (a character is three bytes and about a token) and errs on the
-small side for Latin text. The summary, the plan and the ledger always go; the messages share what they leave, and the
-newest message always goes.
+small side for Latin text. The summary, the plan, the ledger and the manifest share the allowance with the messages;
+each section that cannot fit is named with its byte count and reason in an omission notice. When no set of notices
+fits, the handoff fails and no prompt is sent.
 
 ## The bot sets its own
 
@@ -185,5 +201,7 @@ All additive (no `minApp` change):
   reason} | null` and `resting: [{agent, until, reason}]` (agent bots only).
 - Method: `switchBack {botId}`.
 - Notices: `agentSwitch: {from, to, back, reason, resetsAt, carried}`; failure notices' `addFallback: true`.
-- Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap
-  or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished` once per agent the turn ran on.
+- Analytics: `agent_fell_back {agent, reason}`; `handoff_ledger_built {outcome, collection_omitted,
+  files_unavailable}` when the manifest is collected or its collection fails; `handoff_carried {agent, kind, bytes,
+  window_known}` for each recap or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished`
+  once per agent the turn ran on.

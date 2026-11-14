@@ -170,7 +170,7 @@ impl Actor {
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
         if !hidden {
-            self.carry_in();
+            self.carry_in().await?;
         }
         let session = self.turn_session.clone();
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));

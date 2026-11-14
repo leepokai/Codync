@@ -91,3 +91,22 @@ async fn always_allow_answers_the_same_kind_in_the_same_session_only() {
     let fresh = card(send(&host, &bot, "ls").await, "a command in a new session");
     assert_eq!(answer(&host, &bot, &fresh, "once").await, "s2 once");
 }
+
+#[tokio::test]
+async fn a_restarted_agent_asks_again_before_the_same_session_id() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("MiniMax", "always_allow_agent.py", "").await;
+
+    // The user always allows commands in the agent's first session (s1).
+    let first = card(send(&host, &bot, "ls").await, "the first command");
+    assert_eq!(answer(&host, &bot, &first, "always").await, "s1 always");
+
+    // Changing the bot's model restarts the agent. Its new process numbers sessions from the start again, so the
+    // first command comes in as s1 — the id an earlier conversation was always allowed under. It has to ask.
+    host.call("updateBot", json!({"id": bot, "model": "another-model"})).await;
+    let fresh = card(send(&host, &bot, "ls").await, "a command after the agent restarted");
+    assert_eq!(answer(&host, &bot, &fresh, "once").await, "s1 once", "a fresh conversation inherited an approval");
+}

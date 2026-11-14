@@ -200,11 +200,13 @@ struct AgentModelPicker: View {
                             .foregroundStyle(Palette.text)
                             .padding(.vertical, 9).padding(.horizontal, 6)
                             .contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).scrollEdgeBlur()
                     }
                     if choices.isEmpty { Text(L10n.tr("No results")).font(.caption).foregroundStyle(Palette.secondary) }
                 }
-            }.frame(maxHeight: 180)
+            }
+            .scrollEdges()
+            .frame(maxHeight: 180)
             if stage == .models, backend == "custom" || (!loading && catalog?.models.isEmpty != false) {
                 TextField("Default", text: value).plainTextInput().fieldBox()
             }
@@ -254,5 +256,41 @@ struct AgentModelPicker: View {
             failure = "Couldn't load models: \(error.localizedDescription)"
         }
         loading = false
+    }
+}
+
+private extension View {
+    /// Rows fade out under either edge while there is more past it, into the card behind (the desktop's
+    /// `.scroll-edges`); each row adds `scrollEdgeBlur()` to blur there too.
+    func scrollEdges() -> some View { modifier(ScrollEdges()) }
+
+    /// Blurs a row while an edge cuts it. A blur of the row itself, not a material over it, so nothing
+    /// tints the edge and it washes into the card like the bot list's.
+    func scrollEdgeBlur() -> some View {
+        scrollTransition(.interactive) { content, phase in content.blur(radius: abs(phase.value) * 6) }
+    }
+}
+
+private struct ScrollEdges: ViewModifier {
+    @State private var more: Edge.Set = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Edge.Set.self) { geometry in
+                var more: Edge.Set = []
+                if geometry.visibleRect.minY > 1 { more.insert(.top) }
+                if geometry.visibleRect.maxY < geometry.contentSize.height - 1 { more.insert(.bottom) }
+                return more
+            } action: { _, now in
+                withAnimation(Motion.reduced(Motion.fade, reduceMotion)) { more = now }
+            }
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.black.opacity(more.contains(.top) ? 0 : 1), .black], startPoint: .top, endPoint: .bottom).frame(height: 32)
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(more.contains(.bottom) ? 0 : 1)], startPoint: .top, endPoint: .bottom).frame(height: 32)
+                }
+            }
     }
 }

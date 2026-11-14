@@ -4,7 +4,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
@@ -17,6 +17,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
@@ -46,16 +47,16 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
 
 /**
  * Content with glass chrome floating over it (iOS 26 bars over scroll content). `content` is
- * recorded so `chrome`'s glass can refract and blur it; chrome itself is never recorded.
+ * recorded on [ground] so `chrome`'s glass can refract and blur it; chrome itself is never recorded.
+ * The stage takes its content's size within `modifier`'s bounds.
  */
 @Composable fun GlassStage(modifier: Modifier = Modifier, chrome: @Composable BoxScope.() -> Unit = {},
-    content: @Composable BoxScope.() -> Unit) {
-    val ground = Palette.background
+    ground: Color = Palette.background, content: @Composable BoxScope.() -> Unit) {
     val onDraw: ContentDrawScope.() -> Unit = remember(ground) { { drawRect(ground); drawContent() } }
     val backdrop = rememberLayerBackdrop(onDraw = onDraw)
-    Box(modifier) {
-        Box(Modifier.fillMaxSize().layerBackdrop(backdrop), content = content)
-        CompositionLocalProvider(LocalBackdrop provides backdrop) { Box(Modifier.fillMaxSize(), content = chrome) }
+    Box(modifier, propagateMinConstraints = true) {
+        Box(Modifier.layerBackdrop(backdrop), content = content)
+        CompositionLocalProvider(LocalBackdrop provides backdrop) { Box(Modifier.matchParentSize(), content = chrome) }
     }
 }
 
@@ -63,13 +64,12 @@ val LocalBackdrop = staticCompositionLocalOf<Backdrop> { emptyBackdrop() }
 enum class Edge { Top, Bottom }
 
 /**
- * iOS 26's soft scroll edge under a bar: content passing beneath blurs and washes into the
- * background, strongest at the screen's edge, so the bar stays legible over it. Chrome of a
+ * iOS 26's soft scroll edge under a bar: content passing beneath blurs and washes into [ground]
+ * (the stage's), strongest at the screen's edge, so the bar stays legible over it. Chrome of a
  * `GlassStage`, like the bar it sits under.
  */
-@Composable fun ScrollEdge(edge: Edge, height: Dp, modifier: Modifier = Modifier) {
+@Composable fun ScrollEdge(edge: Edge, height: Dp, modifier: Modifier = Modifier, ground: Color = Palette.background) {
     val backdrop = LocalBackdrop.current
-    val ground = Palette.background
     val top = edge == Edge.Top
     Box(modifier.fillMaxWidth().height(height)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -83,6 +83,20 @@ enum class Edge { Top, Bottom }
             val wash = listOf(ground.copy(alpha = 0.85f), ground.copy(alpha = 0.45f))
             drawRect(Brush.verticalGradient(if (top) wash else wash.reversed()))
         }))
+}
+
+/**
+ * A scroll view whose rows blur and wash into [ground] under either edge while there is more past it (the
+ * desktop's `.scroll-edges`). [ground] is what it sits on: the page, or a card's fill.
+ */
+@Composable fun ScrollEdges(state: ScrollableState, modifier: Modifier = Modifier, ground: Color = Palette.background,
+    list: @Composable () -> Unit) {
+    GlassStage(modifier, ground = ground, chrome = {
+        val top by animateFloatAsState(if (state.canScrollBackward) 1f else 0f, Motion.fade(), label = "Top edge")
+        val bottom by animateFloatAsState(if (state.canScrollForward) 1f else 0f, Motion.fade(), label = "Bottom edge")
+        ScrollEdge(Edge.Top, 32.dp, Modifier.graphicsLayer { alpha = top }, ground)
+        ScrollEdge(Edge.Bottom, 32.dp, Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom }, ground)
+    }) { list() }
 }
 
 /** How strongly glass frosts what's behind it. */

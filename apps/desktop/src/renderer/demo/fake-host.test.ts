@@ -21,7 +21,7 @@ const { FakeHost } = await import('./fake-host.ts')
 const { macBook } = await import('./story.ts')
 
 test('sending from a chat marked unread reads it, like the real host', async () => {
-  const host = new FakeHost('2.47.0', macBook)
+  const host = new FakeHost('2.48.0', macBook)
   await host.call('markRead', { botId: 'scout' })
   const { bot: held } = (await host.call('markUnread', { botId: 'scout' })) as { bot: Bot }
   assert.equal(held.keptUnread, true)
@@ -42,7 +42,7 @@ test('sending from a chat marked unread reads it, like the real host', async () 
 })
 
 test('marking an empty chat unread shows no badge, like the real host', async () => {
-  const host = new FakeHost('2.47.0', macBook)
+  const host = new FakeHost('2.48.0', macBook)
   const { bot: created } = (await host.call('createBot', { name: 'Empty', kind: 'agent' })) as { bot: Bot }
   const { bot } = (await host.call('markUnread', { botId: created.id })) as { bot: Bot }
   assert.equal(bot.unread, 0)
@@ -50,7 +50,7 @@ test('marking an empty chat unread shows no badge, like the real host', async ()
 })
 
 test('marking a read chat unread brings back how many replies were unread, like the real host', async () => {
-  const host = new FakeHost('2.47.0', macBook)
+  const host = new FakeHost('2.48.0', macBook)
   const reply = (host as unknown as { add(e: { botId: string; kind: string; data: object }): void }).add.bind(host)
   reply({ botId: 'scout', kind: 'agent', data: { text: 'one', final: true } })
   reply({ botId: 'scout', kind: 'agent', data: { text: 'two', final: true } })
@@ -61,7 +61,7 @@ test('marking a read chat unread brings back how many replies were unread, like 
 })
 
 test('marking a chat unread after a new reply keeps its count and holds it, like the real host', async () => {
-  const host = new FakeHost('2.47.0', macBook)
+  const host = new FakeHost('2.48.0', macBook)
   const reply = (host as unknown as { add(e: { botId: string; kind: string; data: object }): void }).add.bind(host)
   await host.call('markRead', { botId: 'scout' })
   reply({ botId: 'scout', kind: 'agent', data: { text: 'one', final: true } })

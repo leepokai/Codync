@@ -264,7 +264,7 @@ final class CloudSpeechEngine: VoiceEngine {
             let player = try AVAudioPlayer(contentsOf: url)
             try? FileManager.default.removeItem(at: url)
             let generation = speakGeneration
-            let done = PlayDone { [weak self] in Task { @MainActor in self?.played(generation) } }
+            let done = PlayDone { [weak self] _ in Task { @MainActor in self?.played(generation) } }
             player.delegate = done
             playDone = done
             self.player = player
@@ -334,13 +334,4 @@ final class CloudSpeechEngine: VoiceEngine {
         flush(&current)
         return out
     }
-}
-
-/// Player delegate: a clip that played to its end moves on to the next one.
-private final class PlayDone: NSObject, AVAudioPlayerDelegate, Sendable {
-    let onFinish: @Sendable () -> Void
-
-    init(onFinish: @escaping @Sendable () -> Void) { self.onFinish = onFinish }
-
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) { onFinish() }
 }

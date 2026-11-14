@@ -143,11 +143,11 @@ mod tests {
             .downcast::<gst::Pipeline>()
             .unwrap();
         pipeline.set_state(gst::State::Playing).unwrap();
-        let session = Session {
-            pipeline: pipeline.clone(),
-            webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(std::sync::Mutex::default()),
-        };
+        let session = Session::bare(
+            pipeline.clone(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            Some(std::sync::Mutex::default()),
+        );
         (session, pipeline)
     }
 

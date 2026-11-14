@@ -9,8 +9,10 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { AccountRow } from './AccountRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
@@ -151,6 +153,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
         <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
       {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
+      {backend?.accounts && <AccountRow backend={backend} account={draft.account ?? null} onChange={(account) => set('account', account)} />}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>
@@ -250,7 +253,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             <SwitchRow
               title="Use the computer"
               detail={
-                store.screen.platform !== 'windows' && !(store.screen.enabled && store.screen.connected && store.screen.capture && store.screen.input)
+                !controlReady(store.screen)
                   ? 'Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first.'
                   : store.screen.enabled
                   ? 'Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.'

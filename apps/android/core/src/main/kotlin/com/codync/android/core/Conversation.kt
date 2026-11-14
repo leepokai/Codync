@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,8 +33,19 @@ data class Entry(
     val text: String get() = data.text("text").orEmpty()
     val clientNonce: String? get() = data.text("clientNonce")
     val status: String? get() = data.text("status")
+    val isDecision: Boolean get() = kind == "notice" && data["decision"]?.jsonPrimitive?.booleanOrNull == true
+    /** A choice card's status; null for a value this app doesn't know. */
+    val decisionStatus: DecisionStatus? get() = DecisionStatus.entries.firstOrNull { it.wire == status }
+    /** A choice card's options, in order. */
+    val choices: List<String> get() = (data["choices"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    /** The index of a choice card's suggested option. */
+    val recommended: Int? get() = (data["recommended"] as? JsonPrimitive)?.intOrNull
     /** Files the bot shared in this message. */
     val files: List<SharedFile> get() = data["files"]?.let { WireJson.decodeFromJsonElement<List<SharedFile>>(it) }.orEmpty()
+    /** The voice note playing at the top of this reply's bubble: only a host that flagged it and whose one file is a
+     *  sound; anything else (no flag, no file, a file the computer didn't mark playable) keeps the plain file card. */
+    val voiceNote: SharedFile? get() =
+        if (data["voiceNote"]?.jsonPrimitive?.booleanOrNull == true) files.firstOrNull()?.takeIf { it.playsInChat } else null
     /** The artifact a bot published in this message (an artifact card), read leniently: its text stands in for it. */
     val artifact: ArtifactCard? get() = (data["artifact"] as? JsonObject)?.let { runCatching { WireJson.decodeFromJsonElement<ArtifactCard>(it) }.getOrNull() }
     /** A message of the user's waiting behind the bot's work: the computer hasn't given it to the agent yet. */
@@ -93,10 +106,12 @@ private data class EntryFields(
     val final: Boolean? = null, val title: String? = null, val command: String? = null,
     val detail: String? = null, val output: String? = null, val author: String? = null,
     val options: List<PermissionChoice>? = null, val reactions: List<String>? = null,
+    val decision: Boolean? = null, val question: String? = null,
+    val choices: List<String>? = null, val recommended: Int? = null,
     val attachments: List<Attachment>? = null, val files: List<SharedFile>? = null,
     val callSeconds: Long? = null,
 )
-@Serializable private data class PermissionChoice(val optionId: String, val name: String, val kind: String)
+@Serializable internal data class PermissionChoice(val optionId: String, val name: String, val kind: String)
 /** A quoted message: its entry, who wrote it (`user` or a bot id) and its text, cut short by the computer; `artifact` when it
  *  quotes an artifact card (the message is about that artifact). */
 @Serializable data class ReplyQuote(val id: String = "", val author: String = "", val text: String = "", val artifact: String? = null)
@@ -105,12 +120,17 @@ private data class EntryFields(
     val isImage: Boolean get() = isImageName(name)
 }
 
-private fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+fun isImageName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("png", "jpg", "jpeg", "heic", "gif", "webp", "tiff", "bmp")
+fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in listOf("mp3", "m4a", "wav", "aac")
+
+/** The largest shared image the phone fetches whole to show. */
+private const val INLINE_BYTES = 20L * 1024 * 1024
 
 /** A file a bot shared: immutable on the computer, checked against its SHA-256 once downloaded. */
-@Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String) {
-    /** An image small enough to show in the chat (the phone fetches all of it). */
-    val showsAsImage: Boolean get() = isImageName(name) && size <= 20L * 1024 * 1024
+/** [playsInChat]: a sound the chat plays in place, as the computer stamps it; missing (an older computer) means a plain file card. */
+@Serializable data class SharedFile(val id: String, val name: String, val size: Long, val sha256: String, val playsInChat: Boolean = false) {
+    /** An image small enough to show in the chat. */
+    val showsAsImage: Boolean get() = isImageName(name) && size <= INLINE_BYTES
 
     /** Before any of it is read: a name that can't leave its folder and a hash to check. */
     fun validate() {
@@ -140,12 +160,15 @@ data class PendingSend(
     val replyTo: ReplyQuote? = null,
     /** The voice call it was said in (on-device or speech to text). */
     val call: String? = null,
+    /** What came from another app rather than the user (iOS `EntryData.pasted`), which memory never takes as their own words. */
+    val pasted: List<String> = emptyList(),
 ) {
-    /** The `send` request for it, with the ids of its uploaded files. */
+    /** The `send` request for it (the relay mailbox's too), with the ids of its uploaded files. */
     fun body(attachments: List<String> = emptyList()): JsonObject = buildJsonObject {
         put("botId", botId); put("text", text); put("clientNonce", nonce)
         replyTo?.let { put("replyTo", it.id) }
         call?.let { put("call", it) }
+        if (pasted.isNotEmpty()) put("pasted", JsonArray(pasted.map(::JsonPrimitive)))
         if (attachments.isNotEmpty()) put("attachments", JsonArray(attachments.map(::JsonPrimitive)))
     }
 }
@@ -169,6 +192,8 @@ sealed interface MirrorEvent {
     data class Network(val view: NetworkView) : MirrorEvent
     /** The computer took a new name (a cloud computer renamed from any device): live only, its `hello` says it from now on. */
     data class Name(val name: String) : MirrorEvent
+    /** The computer's automatic bot order was switched (from any device): live only, its `hello` says it from now on. */
+    data class AutoOrder(val enabled: Boolean) : MirrorEvent
     data object Resync : MirrorEvent
     data object Ignored : MirrorEvent
 
@@ -189,6 +214,7 @@ sealed interface MirrorEvent {
             // One this app can't read is passed over: the next stream's hello carries the view again.
             "network" -> runCatching { Network(NetworkView.decode(value.getValue("network"))) }.getOrDefault(Ignored)
             "name" -> value.text("name")?.let(::Name) ?: Ignored
+            "autoOrder" -> value["enabled"]?.jsonPrimitive?.booleanOrNull?.let(::AutoOrder) ?: Ignored
             "resync" -> Resync
             // Match the existing clients: unknown events do not advance the cursor.
             else -> Ignored
@@ -205,3 +231,6 @@ data class MirrorSnapshot(
     val screen: JsonObject? = null,
     val icons: Map<String, CustomIcon> = emptyMap(),
 )
+
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+enum class DecisionStatus(val wire: String) { Pending("pending"), Answered("answered"), Expired("expired") }

@@ -2,8 +2,9 @@ import Foundation
 
 public enum HostEvent: Sendable {
     case icons([String: CustomIcon], revision: Int64)
-    /// The stream's first event; `network` is nil from hosts before the network view.
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
+    /// The stream's first event; `network` is nil from hosts before the network view. `catchUp` events follow
+    /// before the live ones (nil from hosts before 2.32.0).
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?, catchUp: Int?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
@@ -17,7 +18,11 @@ public enum HostEvent: Sendable {
     case network(NetworkView)
     /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
     case name(String)
+    /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
+    case autoOrder(Bool)
     case resync
+    /// One this app has no use for.
+    case skipped
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -35,13 +40,14 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model, mode }
+    private enum CodingKeys: String, CodingKey { case model, mode, account }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         if draft.model == nil { try container.encodeNil(forKey: .model) }
         if draft.mode == nil { try container.encodeNil(forKey: .mode) }
+        if draft.account == nil { try container.encodeNil(forKey: .account) }
     }
 }
 
@@ -62,7 +68,8 @@ public struct HostClient: Sendable {
 
     /// Catch-up since `since`, then live updates.
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
-        map(transport.stream(.events(since: since, client: client)), Self.parseEvent)
+        // One this app has no use for still counts toward the catch-up `hello` announced.
+        map(transport.stream(.events(since: since, client: client))) { Self.parseEvent($0) ?? .skipped }
     }
 
     /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
@@ -99,6 +106,7 @@ public struct HostClient: Sendable {
             var type: String
             var hostId: String?
             var rev: Int64?
+            var catchUp: Int?
         }
         struct BotWrap: Decodable { var bot: Bot }
         struct StubWrap: Decodable { var bot: BotStub }
@@ -117,7 +125,7 @@ public struct HostClient: Sendable {
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
             let network = (try? d.decode(NetworkWrap.self, from: data))?.network
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network, catchUp: env.catchUp)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -140,6 +148,9 @@ public struct HostClient: Sendable {
         case "name":
             struct NameWrap: Decodable { var name: String }
             return (try? d.decode(NameWrap.self, from: data)).map { .name($0.name) }
+        case "autoOrder":
+            struct AutoOrderWrap: Decodable { var enabled: Bool }
+            return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
         default:
@@ -268,8 +279,23 @@ public extension HostClient {
     /// Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message.
     static let uploadChunk = 384 * 1024
 
-    /// Sends one file in chunks for a later `send`; `id` names the upload there.
-    func upload(botId: String, id: String, name: String, data: Data) async throws {
+    /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
+    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+        var ids: [String] = []
+        var done = 0
+        for file in files {
+            let id = UUID().uuidString
+            let before = done
+            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            done += file.data.count
+            ids.append(id)
+        }
+        return ids
+    }
+
+    /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
+    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
         struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
@@ -277,6 +303,7 @@ public extension HostClient {
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
             let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
+            sent(offset)
         } while offset < data.count
     }
 
@@ -292,6 +319,11 @@ public extension HostClient {
             if out.count >= res.size { break }
         } while true
         return out
+    }
+
+    /// Whether a bot with a new message moves to the top of the roster.
+    func setAutoOrder(_ enabled: Bool) async throws {
+        let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
     }
 
     /// The user makes this bot the lead, in place of the one before.
@@ -375,6 +407,10 @@ public extension HostClient {
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
     }
 
+    func respondDecision(entryId: String, option: String) async throws {
+        let _: Empty = try await call("respondDecision", ["entryId": entryId, "option": option])
+    }
+
     /// Push tickets are bound to this device's key; `pushKey` lets the host seal notification text (§6.7).
     func registerDevice(ticket: String, relay: String, name: String, pushKey: String?, ctx: String) async throws {
         struct Body: Encodable { var ticket: String; var relay: String; var name: String; var pushKey: String?; var ctx: String }
@@ -422,12 +458,13 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command.
-    func agentSetup(backend: String, step: SetupStep, method: String?, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `account`: the agent
+    /// account a `login` signs in; nil for the computer's own.
+    func agentSetup(backend: String, step: SetupStep, method: String?, account: String? = nil, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var account: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
         // The first sign-in through a registry build can download it.
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, cols: cols, rows: rows), timeout: 300)
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, account: account, cols: cols, rows: rows), timeout: 300)
         return res.term
     }
 
@@ -438,6 +475,27 @@ public extension HostClient {
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
         try await call("agentAuth", ["backend": backend], timeout: 300)
+    }
+
+    /// A new, signed-out account for `backend`, and the agent list with it.
+    func addAgentAccount(_ backend: String) async throws -> (account: AgentAccount, backends: [Backend]) {
+        struct Res: Decodable { var account: AgentAccount; var backends: [Backend] }
+        let res: Res = try await call("addAgentAccount", ["backend": backend])
+        return (res.account, res.backends)
+    }
+
+    /// Asks the account's agent whether its sign-in went through, and as whom.
+    func agentAccountAuth(_ backend: String, account: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuth", ["backend": backend, "account": account], timeout: 300)
+        return res.backends
+    }
+
+    /// Fails while a bot still uses the account.
+    func removeAgentAccount(_ account: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("removeAgentAccount", ["account": account])
+        return res.backends
     }
 
     /// Lets the agent sign itself in; returns once it's done (or gave up).

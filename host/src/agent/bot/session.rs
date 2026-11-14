@@ -134,7 +134,7 @@ impl Actor {
         let mut command = [candidate.resolve(progress).await?.acp()];
         self.hub.set_runtime(&self.id(), |r| r.activity = "Starting agent…".into());
         own_memory::apply(&self.cfg, &mut env, &mut command).await;
-        let conn = start_agent(&command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
+        let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
         })?;
         self.hub.dev_servers.agent_started(&self.cfg.id, &conn.acp, &self.cfg.backend, &command[0]);
@@ -183,7 +183,9 @@ impl Actor {
             };
             let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
-            let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend)?;
+            let account = self.cfg.account.as_deref();
+            let on_account = crate::agent::accounts::prepare(&self.hub.store, &self.cfg.backend, account).await?;
+            let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, account)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
@@ -192,13 +194,14 @@ impl Actor {
             if pi {
                 env.extend(pi_tools::env(&servers).await?);
             }
-            let conn = start_first(candidates, &env, |candidate, env, fallback_left| {
+            let mut conn = start_first(candidates, &env, |candidate, env, fallback_left| {
                 // A local CLI too old for ACP just hangs; don't make the user wait long before the fallback.
                 let budget = Duration::from_secs(if fallback_left { 20 } else { 180 });
                 self.start_candidate(candidate, env, budget, &progress)
             })
             .await?;
             conn.acp.hold(grants);
+            conn.on_account = on_account;
             self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {

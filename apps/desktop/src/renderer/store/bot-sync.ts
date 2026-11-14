@@ -1,4 +1,4 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry, type PairingRequest } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
 import { undoOnFailure } from '../lib/undo-on-failure'
@@ -14,6 +14,8 @@ const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
+/** Raise when the app starts to need a field the rows it cached may lack. */
+const MIRROR_FORMAT = 1
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -26,6 +28,14 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
     if (rest.length) kept.set(id, rest)
   }
   return kept
+}
+
+/**
+ * The mirror format and the host's store schema (its version on a host that sends none): updates of the app or
+ * the host that keep both keep the cached copy and its cursor.
+ */
+function syncStamp(hello: Hello) {
+  return `${MIRROR_FORMAT}:${hello.schema == null ? hello.version : `schema ${hello.schema}`}`
 }
 
 /**
@@ -182,8 +192,11 @@ export class BotSync extends BotMirror {
         }
         if (!alive()) return
         await new Promise<void>((resolve, reject) => {
+          // A refetch the link cut short starts over: only one whole catch-up says what the computer still has.
+          if (this.refetched) this.refetchAll()
           this.requestedSince = this.rev
           this.floors = new Map()
+          let catchUpLeft = 0
           this.closeEvents = client.events(
             this.requestedSince,
             'desktop',
@@ -193,6 +206,13 @@ export class BotSync extends BotMirror {
               backoff = 1000
               this.apply(event)
               this.finishRefresh?.()
+              // An event that restarted the stream leaves the refetch to the new one.
+              if (!alive()) return
+              // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
+              if (event.type === 'hello') catchUpLeft = event.catchUp ?? 0
+              else if (catchUpLeft > 0) catchUpLeft--
+              else return
+              if (catchUpLeft === 0) this.finishRefetch()
             },
             (error) => (error ? reject(error) : resolve()),
           )
@@ -226,21 +246,25 @@ export class BotSync extends BotMirror {
     this.iconsRevision = -1
     this.hello = h
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
+    this.noteSyncStamp(syncStamp(h))
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
     this.changed()
   }
 
+  /** A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed: fetch it all again, underneath what's shown. */
+  private noteSyncStamp(stamp: string) {
+    if (this.cacheStamp !== null && this.cacheStamp !== stamp) this.refetchAll()
+    this.cacheStamp = stamp
+  }
+
   private noteHostVersion(next: { version: string; minApp?: string | null }) {
-    const cached = this.cacheStamp !== null && this.cacheStamp !== `${this.appVersion}/${next.version}`
-    if (cached || (this.hostVersion && this.hostVersion.version !== next.version)) {
-      // A different host version or app build: data may carry new fields, so fetch it all again.
-      this.refetchAll()
+    if (this.hostVersion && this.hostVersion.version !== next.version) {
+      // Another host: its update is done, and what the last one sent no longer says anything.
       this.rewound = false
       this.unreadable = false
       this.hostUpdate = null
     }
-    this.cacheStamp = null
     this.hostVersion = next
   }
 
@@ -301,6 +325,9 @@ export class BotSync extends BotMirror {
       case 'name':
         this.setHostName(event.name)
         break
+      case 'autoOrder':
+        this.showAutoOrder(event.enabled)
+        break
       case 'network':
         this.network = event.network
         break
@@ -344,18 +371,27 @@ export class BotSync extends BotMirror {
     this.historyComplete = new Set()
     this.floors = new Map()
     this.screen = null
+    this.refetched = null
     this.saveCache()
   }
 
-  /**
-   * Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so the
-   * main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which pages
-   * from the oldest one held. Messages still sending stay.
-   */
+  /** Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the catch-up has all arrived (`finishRefetch`). */
   private refetchAll() {
     this.rev = 0
-    this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))
+    this.refetched = new Set()
     this.historyComplete = new Set()
+  }
+
+  /**
+   * The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
+   * ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the
+   * oldest one held. Messages still sending stay.
+   */
+  private finishRefetch() {
+    const kept = this.refetched
+    if (!kept) return
+    this.refetched = null
+    this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-') || kept.has(e.id))
   }
 
   private isBelowFloor(e: Entry) {

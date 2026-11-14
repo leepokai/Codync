@@ -318,9 +318,6 @@ html[data-platform="darwin"] .sidebar-header {
   justify-content: center;
   gap: 14px;
 }
-.empty-detail-crew > :not(:first-child) {
-  margin-left: -10px;
-}
 .empty-detail-message {
   max-width: 420px;
   text-align: center;

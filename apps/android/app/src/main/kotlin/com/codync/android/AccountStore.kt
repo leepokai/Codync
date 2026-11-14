@@ -93,8 +93,10 @@ class AccountStore(application: Application) : AndroidViewModel(application) {
             val complete = withContext(Dispatchers.IO) { local.setupComplete() }
             val last = withContext(Dispatchers.IO) { local.lastComputer() }
             val lead = withContext(Dispatchers.IO) { local.shortcutLead() }
+            // Only a convenience: a damaged list starts over rather than keep the account from opening.
+            val shared = withContext(Dispatchers.IO) { runCatching { local.shareRecipients() }.getOrDefault(emptyList()) }
             mutableState.update { AccountContext(contextId = local.referenceId, generation = it.generation + 1, account = it.account,
-                computers = computers, lastComputerId = last, shortcutLeadComputer = lead, tasks = PushPreferences.tasks(getApplication()),
+                computers = computers, lastComputerId = last, shortcutLeadComputer = lead, shareRecipients = shared, tasks = PushPreferences.tasks(getApplication()),
                 setupComplete = complete || computers.isNotEmpty() || Analytics.onboarded,
                 withoutAccount = userId == null && withoutAccountChosen,
                 error = if (rescan) SCAN_AGAIN else null) }

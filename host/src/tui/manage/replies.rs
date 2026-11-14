@@ -161,14 +161,21 @@ impl App {
                 }
                 self.call("refreshBackends", json!({}), After::Nothing);
             }
-            Reply::Setup => {
+            Reply::Accounts(backend) => self.accounts_changed(&backend, &v),
+            Reply::AccountAdded(backend) => {
+                self.accounts_changed(&backend, &v);
+                if let Some(id) = v["account"]["id"].as_str() {
+                    self.sign_in_account(&backend, id);
+                }
+            }
+            Reply::Setup(account) => {
                 let Some(id) = v["term"].as_str() else { return };
                 let backend = match self.overlays.last() {
                     Some(Overlay::Agent(a)) => a.backend.clone(),
                     _ => String::new(),
                 };
                 let input = self.client.spawn_term(id.to_owned(), self.tx.clone());
-                self.shell = Some(Shell { id: id.to_owned(), input, backend, exited: None, out: vec![] });
+                self.shell = Some(Shell { id: id.to_owned(), input, backend, account, exited: None, out: vec![] });
             }
             Reply::FieldsSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
@@ -269,7 +276,7 @@ impl App {
                 }
                 _ => self.flash(&e),
             },
-            Reply::Auth(backend) => {
+            Reply::Auth(backend) | Reply::Accounts(backend) | Reply::AccountAdded(backend) => {
                 for o in &mut self.overlays {
                     if let Overlay::Agent(a) = o
                         && a.backend == *backend

@@ -59,9 +59,11 @@ A Pi bot gets Codync's tools (messages, memory, routines, connectors, managing t
 
 Signing in to Google Antigravity with `agy` in a terminal doesn't sign in the part Codync runs, so use the sign-in option in Codync's setup sheet for it.
 
+On Windows, Antigravity unpacks itself into a `_MEI…` folder of about 130 MB in `%TEMP%` each time it starts, and removes it when it stops. Earlier versions of Codync ended it before it could, and a forced stop still does: updating Codync or restarting its host while Antigravity runs, signing out of Windows, or a crash. To get that space back, delete the `_MEI…` folders in `%TEMP%` that hold a `google3` folder while no Antigravity bot is working.
+
 WorkBuddy is separate from CodeBuddy Code. Codync runs the CLI bundled in the WorkBuddy app: `WorkBuddy AI.app` (from workbuddy.ai) or `WorkBuddy.app` (from codebuddy.cn) on macOS, or its install folder on Windows (`%LOCALAPPDATA%\Programs\WorkBuddy AI` or `WorkBuddy`). That CLI only ships WorkBuddy's lite build, so Codync starts it the way the app does. It runs on Node.js: if the computer has none, Codync offers to add its own. Codync does not install WorkBuddy, and there is no Linux build, so Codync on Linux doesn't list it. Sign in from Codync: the WorkBuddy app's login stays in the app, so this CLI asks again and opens a browser. A `codebuddy` command on your `PATH` stays CodeBuddy Code.
 
-DeepSeek Harness runs its own `dsh --profile acp` mode. It has no sign-in command: it uses the DeepSeek API key saved in `dsh web`, or `DEEPSEEK_API_KEY` set in `~/.dsh/.env`. After the host or the agent restarts, a DeepSeek Harness bot carries on in the same session.
+DeepSeek Harness runs its own `dsh --profile acp` mode; a `dsh` too old to have it (0.1.0) fails to start with the command that updates it. It has no sign-in command: it uses the DeepSeek API key saved in `dsh web`, or `DEEPSEEK_API_KEY` set in `~/.dsh/.env`. After the host or the agent restarts, a DeepSeek Harness bot carries on in the same session.
 
 Hermes Agent runs its own `hermes acp` mode, with the provider and model you pick in `hermes acp --setup`. On Windows, Codync also finds it in its install folders (`%LOCALAPPDATA%\hermes\bin`) without a `PATH` change. Hermes and Gemini CLI keep a memory of their own that every bot on them shares; see [Memory](/docs/memory#agents-with-a-memory-of-their-own).
 
@@ -112,7 +114,18 @@ The **Sign in** step shows whether the agent is signed in on that computer, with
 
 You can always sign in yourself in a terminal on the computer instead, using the commands in the table above. Sign in as the same user the host runs as.
 
-For an agent Codync knows by name, the chat also tells you when it needs signing in: if the agent isn't signed in when you create the bot, or a turn fails because it signed out, the chat shows a card with **Sign in**. Once you've signed in, Codync sends your waiting message again. Other agents show their own error in the chat.
+For an agent Codync knows by name, the chat also tells you when it needs signing in: if the agent isn't signed in when you create the bot, or a turn fails because it signed out, the chat shows a card with **Sign in**. For a bot on one of the agent's [other accounts](#more-than-one-account), the card opens that account's sign-in. Once you've signed in, Codync sends your waiting message again. Other agents show their own error in the chat.
+
+### More than one account
+
+Claude Code and Codex can be signed in to more than one account on a computer, so two bots can work at the same time on different ones.
+
+- **Add an account:** in the agent's sheet, under **Other accounts**, choose **Add account**. The agent's own sign-in runs in a terminal on the computer, the same way as the first one. The account then shows who it's signed in as. The trash button signs it out and removes it; an account a bot still uses can't be removed.
+- **Pick a bot's account:** in the bot's settings, under **Agent**, choose **Account**. **This computer's sign-in** is the one the computer already had. Changing it restarts the bot's agent; the chat history stays.
+
+In the terminal UI, the agent's sheet lists the accounts under its other rows: `↵` on **Add account** adds one, `↵` on an account that isn't signed in opens its sign-in, and `x` removes the account under the cursor. In the bot's form, `←`/`→` on **Account** steps through the choices.
+
+An account keeps only its sign-in to itself. Your skills, rules, MCP servers and settings are shared with it, and a bot moved to another account carries on its conversation. Codync never reads or stores the sign-in: the agent keeps it, as it does for the first one. The [Usage](#usage-limits) screen shows the computer's own sign-in only.
 
 ## Models and options
 

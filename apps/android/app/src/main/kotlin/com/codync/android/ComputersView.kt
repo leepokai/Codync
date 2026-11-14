@@ -144,6 +144,12 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
     if (BuildConfig.PUSH_CONFIGURED) row {
         ComputerNotificationsRow(state.computer.notifications, store::notifications)
     }
+    val autoOrder = autoOrder(state.hello)
+    if (state.connection is LinkState.Ready && autoOrder != null) row {
+        CodyncSwitch(autoOrder, store::setAutoOrder, Modifier.fillMaxWidth()) {
+            RowLabel("Move active bots to the top", "arrow.up", modifier = Modifier.weight(1f))
+        }
+    }
     row { ConnectionRow(state.computer, store) }
     if (canAddToAccount(signedIn, state)) row { AddToAccount(store) }
     // Kept while an update asked from here restarts the computer: its spinner says it's updating.
@@ -178,8 +184,7 @@ private fun CardRows.computerRows(state: AppState, store: AppStore, inAccount: B
             if (inAccount) Symbol("person.crop.circle.badge.checkmark", size = 20.dp, tint = Palette.tertiary, contentDescription = "In your account")
         }
         if (cloud != null) Text(cloud.runsOn(), style = Type.footnote, color = Palette.secondary)
-        // A sleeping cloud computer is fine: messaging it wakes it.
-        val unreachable = (link is LinkState.ComputerOffline || link is LinkState.Failed) && !state.isUpdating && cloud?.asleep != true
+        val unreachable = state.unreachable
         val ink = when {
             !unreachable -> Palette.secondary
             cloud?.failed == true -> Palette.danger

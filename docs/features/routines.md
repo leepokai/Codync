@@ -90,7 +90,9 @@ message sent meanwhile gets the next one). It runs in a fresh agent session of i
 restart can resume it, and forgotten once the run's outcome is saved). When the run ends, the agent stops if nothing else has a
 session open (it ran just for the run) and nothing it started holds it, see
 [agent processes](../architecture/conversation-runtime.md); otherwise only the run's
-session closes (agents that can close sessions). Either way a frequent schedule
+session closes. On an agent that can't close it (Cursor), or whose close fails, the agent
+stops instead once nothing runs or waits, and the chat reopens its own session on its
+next turn. Either way a frequent schedule
 doesn't keep a set of MCP servers alive per run, except on Codex while another session
 is open: it keeps a closed session's until the agent stops. A successful run alerts with its
 reply through normal encrypted push delivery; a failed or interrupted one leaves a
@@ -241,7 +243,11 @@ acting waiting 1 minute with its event (and running at once on a test run), and 
 that acted waiting for `retryRoutineRun`, which reuses the event once.
 `host/tests/routine_unread_e2e.rs` checks that a routine result counts one unread in the
 main chat, that `markRead` clears it once the run has released its session, and that a
-follow-up reply counts once again when it is final. Unit tests cover
+follow-up reply counts once again when it is final. `host/tests/agent_resources_e2e.rs`
+checks that runs on an agent that can't close sessions (Cursor), whose close fails or that
+only resumes sessions leave no MCP server behind, one in a process group of its own
+included, while the main chat keeps its session, and that a message waiting when a run
+ends keeps the agent until its turn ends. Unit tests cover
 the retry ladder, a queued scheduled fire standing in for the retry, paused routines,
 keeping only the latest failure's event, the user retry's busy/paused refusals and
 deleting the routine (`routines/retry.rs`), waiting retries vs. Stop, the tick and a

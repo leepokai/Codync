@@ -45,6 +45,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
             if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
+            } else if name == crate::chat::decision::TOOL {
+                crate::chat::decision::ask(hub, bot, &b["arguments"]).await?
             } else if name == crate::chat::skills::TOOL {
                 crate::chat::skills::call(hub, bot, &b["arguments"]).await?
             } else if crate::chat::fallbacks::TOOLS.contains(&name) {
@@ -259,7 +261,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "stop" => {
             let bot = str_arg(&b, "botId")?;
             match hub.store.bot(bot)? {
-                Some(row) if row.config.is_group() => hub.groups.stop(hub, bot),
+                Some(row) if row.config.is_group() => crate::chat::group::stop(hub, bot),
                 _ => hub.send_cmd(bot, Cmd::Stop)?,
             }
             json!({})
@@ -293,6 +295,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "react" => {
             let e = hub.react(str_arg(&b, "entryId")?, str_arg(&b, "emoji")?)?;
             json!({"entry": e})
+        }
+        // A press on a decision card (`request_decision`): the choice is the bot's answer and the user's message.
+        "respondDecision" => {
+            crate::chat::decision::respond(hub, str_arg(&b, "entryId")?, str_arg(&b, "option")?).await?
         }
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;

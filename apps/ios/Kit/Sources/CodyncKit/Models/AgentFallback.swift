@@ -2,7 +2,7 @@ import Foundation
 
 // A bot's fallback agents: when its own agent can't answer (out of usage, rate limited, signed out, won't start),
 // the next one carries the same turn on in the same chat (docs/features/agent-fallback.md). Reasons on the wire:
-// usageLimit, outOfCredits, rateLimited, overloaded, signedOut, notStarting, modelMissing.
+// usageLimit, outOfCredits, rateLimited, overloaded, signedOut, notStarting, modelMissing, modeMissing.
 
 /// One step of a bot's fallback chain: another agent and the model to use on it.
 public struct BotFallback: Codable, Hashable, Sendable {
@@ -96,6 +96,8 @@ public extension BotDraft {
     mutating func setAgent(_ backend: String) {
         guard self.backend != backend else { return }
         self.backend = backend
+        // An account belongs to one agent.
+        account = nil
         model = nil
         modelOptions = [:]
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).

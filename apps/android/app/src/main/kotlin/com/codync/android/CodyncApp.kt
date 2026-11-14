@@ -45,8 +45,10 @@ private data class Editing<T>(val computerId: String, val draft: T)
 /**
  * The app's root, as iOS `RootView`: the welcome and pairing until set up, then the tabs, with every sheet
  * on top. Each computer's screens get that computer's store ([computers] holds their states).
+ *
+ * @param launching the launch splash still covers it.
  */
-@Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore) {
+@Composable fun CodyncApp(app: AccountContext, computers: Map<String, AppState>, accounts: AccountStore, launching: Boolean = false) {
     var welcomed by rememberSaveable { mutableStateOf(false) }
     // In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
     var pairingNew by rememberSaveable { mutableStateOf(false) }
@@ -159,8 +161,8 @@ private data class Editing<T>(val computerId: String, val draft: T)
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Pairing))
             PairingView(app, accounts, inModal = true)
         }
-        // Text another app shared: which bot's box it goes to.
-        CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { text -> ShareToBot(text, states, accounts) }
+        // What another app shared: which bot it goes to.
+        CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { shared -> ShareToBot(shared, app, states, accounts) }
         CodyncSheet(showUsage && !app.loading, { showUsage = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Usage))
             UsageSheet(app, states, accounts)
@@ -194,6 +196,11 @@ private data class Editing<T>(val computerId: String, val draft: T)
             OnComputer(target.computerId, computers, accounts) { state, store ->
                 key(app.contextId, app.generation, target.computerId, target.draft.id) { BotEditor(state, target.draft, store) }
             }
+        }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        CodyncSheet(root == Root.Tabs && !launching && WhatsNew.isPresented, { WhatsNew.isPresented = false }) {
+            LaunchedEffect(Unit) { WhatsNew.shown() }
+            WhatsNewSheet(WhatsNew.due)
         }
         // The remote screen opens over the app once its sheets have slid away: any computer's request (chat header, Computers, `codync://screen`).
         val screen = states.firstOrNull { it.screenRequest != null }

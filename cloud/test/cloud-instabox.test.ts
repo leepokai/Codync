@@ -17,7 +17,7 @@ async function creating() {
   const userId = uid();
   await withInstaboxKey(userId);
   instaboxApi("creating");
-  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" });
+  await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" });
   return userId;
 }
 
@@ -37,19 +37,19 @@ describe("an InstaBox key", () => {
   it("is kept once InstaBox takes it and it isn't a workspace admin's", async () => {
     const userId = uid();
     const fetch = instaboxApi();
-    expect((await cc("PUT", userId, userId, PATH, { key: "boat_live_test9abc" })).body.error.message).toBe("That doesn't look like an API key from this provider.");
+    expect((await cc("PUT", userId, PATH, { key: "boat_live_test9abc" })).body.error.message).toBe("That doesn't look like an API key from this provider.");
     expect(fetch).not.toHaveBeenCalled();
 
-    const saved = await cc("PUT", userId, userId, PATH, { key: IBX_KEY });
+    const saved = await cc("PUT", userId, PATH, { key: IBX_KEY });
     expect(saved.body).toEqual({ credential: { hint: "ibk_…a2a2", problem: null, blocking: false, updatedAt: expect.any(Number) } });
     expect(calls(fetch)).toEqual([`GET ${API}/v1/me`, `GET ${API}/v1/orgs/org_1/invites`]);
     expect((fetch.mock.calls[0]![1]!.headers as Record<string, string>).authorization).toBe(`Bearer ${IBX_KEY}`);
 
     instaboxApi("running", { "GET /v1/orgs/org_1/invites": [200, { invites: [] }] });
-    const admin = await cc("PUT", uid(), undefined, PATH, { key: IBX_KEY });
+    const admin = await cc("PUT", uid(), PATH, { key: IBX_KEY });
     expect(admin.body.error.message).toBe("This key can manage your whole account. Make one limited to Codync instead.");
     instaboxApi("running", { "GET /v1/me": [401, { error: { code: "revoked_key", message: "revoked" } }] });
-    expect((await cc("PUT", uid(), undefined, PATH, { key: IBX_KEY })).body.error.message).toBe("This key wasn't accepted. It may have been revoked.");
+    expect((await cc("PUT", uid(), PATH, { key: IBX_KEY })).body.error.message).toBe("This key wasn't accepted. It may have been revoked.");
   });
 });
 
@@ -58,7 +58,7 @@ describe("a cloud computer on InstaBox", () => {
     const userId = uid();
     await withInstaboxKey(userId);
     const create = instaboxApi("creating");
-    const created = await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox" });
+    const created = await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox" });
     // Nothing for *Delete snapshots* to erase: InstaBox keeps no history, and a stopped disk needs no backup.
     expect(created.body.cloudComputer).toMatchObject({ provider: "instabox", providerName: "InstaBox", region: "US", state: "starting", snapshots: false });
     const [url, init] = create.mock.calls[0]!;
@@ -94,17 +94,17 @@ describe("a cloud computer on InstaBox", () => {
     expect((sInit!.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
 
     const paused = instaboxApi("suspended");
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     expect(calls(paused)).toEqual([`GET ${API}/v1/machines/m_test`, `POST ${API}/v1/machines/m_test/start`]);
     expect((paused.mock.calls[1]![1]!.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
     // Running but not ready yet: already starting, nothing to send.
     const booting = instaboxApi("running", {}, false);
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     expect(calls(booting)).toEqual([`GET ${API}/v1/machines/m_test`]);
 
     const gone = instaboxApi("running");
     expect((await call("DELETE", `/v1/computers/${host.cid}`, { token: await clerkToken(userId) })).status).toBe(409);
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${created.body.cloudComputer.cloudComputerId}`)).status).toBe(200);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${created.body.cloudComputer.cloudComputerId}`)).status).toBe(200);
     const [dUrl, dInit] = gone.mock.calls.find(([, i]) => i?.method === "DELETE")!;
     expect(String(dUrl)).toBe(`${API}/v1/machines/m_test`);
     expect(dInit!.headers).toMatchObject({ "X-Confirm-Delete": "m_test" });

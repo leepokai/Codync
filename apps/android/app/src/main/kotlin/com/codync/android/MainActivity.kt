@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         ThinkingDetails.initialize(applicationContext)
         NativeAccounts.initialize(this)
         Analytics.start(applicationContext)
+        WhatsNew.start(applicationContext)
         // Clerk's session, not the UI's copy of it: right as sign-in and sign-out happen.
         Analytics.userId = NativeAccounts::activeUserId
         NotificationDisplay.channels(this)
@@ -94,10 +95,11 @@ class MainActivity : ComponentActivity() {
                             isAppearanceLightNavigationBars = !darkBars
                         }
                     }
-                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts)
+                    var launching by remember { mutableStateOf(true) }
+                    CodyncTheme(dark = dark) { OverlayRoot { CodyncApp(state, computers, accounts, launching)
                         // Held while sign-in restores too: signed out, the app is only the welcome.
                         LaunchLayer(state.loading || state.account.restoring,
-                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) } }
+                            state.computers.all { computers[it.id]?.widgetBotsCurrent == true }) { launching = false } } }
                 }
             }
         }
@@ -116,6 +118,11 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         handle(intent)
     }
+    /** Every touch, seen before (and never taken from) the app: a remote screen pauses when they stop. */
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        AppTouches.touched()
+        return super.dispatchTouchEvent(event)
+    }
     override fun onStart() {
         super.onStart(); accounts.setForeground(true); Analytics.becameActive(applicationContext)
         lifecycleScope.launch { AppUpdates.refresh(applicationContext) }
@@ -128,9 +135,10 @@ class MainActivity : ComponentActivity() {
     }
     private fun handle(intent: Intent?) {
         if (intent?.action == LiveShortcut.ACTION) { accounts.talkToLead(); return }
-        // Text shared from another app, handed over by `ShareActivity`.
+        // Text and files shared from another app, handed over by `ShareActivity` (the files in the clip, with their read grant).
         if (intent?.action == Intent.ACTION_SEND) {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.let(accounts::share)
+            val shared = SharedContent.from(intent, packageName)
+            if (!shared.isEmpty) accounts.share(shared)
             return
         }
         val uri = intent?.data ?: return

@@ -77,6 +77,24 @@ mod tests {
         assert_eq!(chat, ["sent"], "the chat has neither the waiting messages nor a removed one");
     }
 
+    #[test]
+    fn keys_find_the_pending_card_of_their_kind_under_a_newer_card() {
+        let mut app = test_app();
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A"}})));
+        let card = |id: &str, seq: i64, kind: &str, data: serde_json::Value| json!({"type": "entry", "entry": {"id": id, "botId": "a", "seq": seq, "kind": kind, "turn": 1, "data": data}});
+        app.on_msg(Msg::Event(card(
+            "choice",
+            1,
+            "notice",
+            json!({"decision": true, "choices": ["A", "B"], "status": "pending"}),
+        )));
+        app.on_msg(Msg::Event(card("approval", 2, "permission", json!({"status": "pending", "options": []}))));
+        app.selected = Some("a".into());
+        let id = |kind| app.pending_of(kind).map(|e| e.id.clone());
+        assert_eq!(id(super::super::Kind::Decision).as_deref(), Some("choice"), "F-keys still reach the choice");
+        assert_eq!(id(super::super::Kind::Permission).as_deref(), Some("approval"));
+    }
+
     #[tokio::test]
     async fn s_and_d_act_on_a_waiting_message_on_a_host_that_takes_them() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

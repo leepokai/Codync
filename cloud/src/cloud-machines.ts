@@ -28,6 +28,8 @@ export interface CloudMachineRow {
   vault_key_id: string | null;
   /** Its keeper's Ed25519 key (base64url), named by its claim; the only key the vault key goes to. */
   keeper_key: string | null;
+  /** 1 while its host last said its owner shares usage analytics (`analytics.ts`); 0 or null: nothing is sent. */
+  analytics: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -75,6 +77,11 @@ export const machineDeleted = (env: Env, id: string, now: number) => markDeleted
 export const machineFor = (env: Env, computerId: string) =>
   env.DB.prepare("SELECT * FROM cloud_machines WHERE computer_id = ? AND state != 'deleted'").bind(computerId).first<CloudMachineRow>();
 
+/** Records whether the host of `computerId` shares usage analytics, as it says when its owner turns the switch and with
+ * each sleep request. */
+export const setAnalytics = (env: Env, computerId: string, on: boolean) =>
+  env.DB.prepare("UPDATE cloud_machines SET analytics = ? WHERE computer_id = ? AND state != 'deleted'").bind(on ? 1 : 0, computerId).run();
+
 /** How many cloud computers one account may have at once. */
 export const CLOUD_COMPUTER_LIMIT = 3;
 
@@ -91,8 +98,19 @@ export const machineOf = (env: Env, userId: string, id: string) =>
 export const nameComputer = (env: Env, computerId: string, name: string, now: number) =>
   env.DB.prepare("UPDATE computers SET name = ?, updated_at = ? WHERE id = ?").bind(name, now, computerId);
 
+/** Records the machine's state, and `now` as when it entered it; except `stopping` → `stopped`, which keeps when it
+ * went to sleep: its backup is timed from that (`saveBackups`), however late the stop is seen. */
 export const setState = (env: Env, id: string, state: Machine["state"], now: number) =>
-  env.DB.prepare("UPDATE cloud_machines SET state = ?, updated_at = ? WHERE id = ?").bind(state, now, id).run();
+  env.DB.prepare(
+    "UPDATE cloud_machines SET state = ?1, updated_at = CASE WHEN state = 'stopping' AND ?1 = 'stopped' THEN updated_at ELSE ?2 END WHERE id = ?3",
+  )
+    .bind(state, now, id)
+    .run();
+
+/** Puts machine `m` back as it was (its state, and when it entered it) when `hostSleep` recorded it `stopping` for a
+ * sleep its relay refused; a state recorded since stays. */
+export const undoStopping = (env: Env, m: CloudMachineRow) =>
+  env.DB.prepare("UPDATE cloud_machines SET state = ?, updated_at = ? WHERE id = ? AND state = 'stopping'").bind(m.state, m.updated_at, m.id).run();
 
 export const autoStop = (env: Env) => (env.CLOUD_AUTO_STOP_SECONDS ? Number(env.CLOUD_AUTO_STOP_SECONDS) : undefined);
 
@@ -102,13 +120,19 @@ export async function liveMachine(env: Env, m: Pick<CloudMachineRow, "user_id" |
   return d.machine(await providerSend(env, m.user_id, m.provider, d.get(m.provider_id), now));
 }
 
-/** `liveMachine`, with its state recorded (on `m` too) when it changed. */
+/** A stop takes effect within this long of the host asking to sleep (`hostSleep` records `stopping` then). */
+export const STOP_SETTLE_MS = 2 * 60_000;
+
+/** `liveMachine`, with its state recorded (on `m` too) when it changed; except a machine still awake right after its
+ * host asked to sleep, which stays `stopping` until its stop had time to take effect: its host keeps waiting
+ * (`GET /v1/host/sleep`), and a wake waits for the stop instead of taking the host back. */
 export async function refresh(env: Env, m: CloudMachineRow, now: number): Promise<Outcome<Machine>> {
   const live = await liveMachine(env, m, now);
-  if (live.ok && live.value.state !== m.state) {
-    m.state = live.value.state;
-    await setState(env, m.id, m.state, now);
-  }
+  if (!live.ok || live.value.state === m.state) return live;
+  const awake = live.value.state === "running" || live.value.state === "starting";
+  if (awake && m.state === "stopping" && now - m.updated_at < STOP_SETTLE_MS) return live;
+  m.state = live.value.state;
+  await setState(env, m.id, m.state, now);
   return live;
 }
 
@@ -117,47 +141,64 @@ export async function refresh(env: Env, m: CloudMachineRow, now: number): Promis
  * key was refused, or it failed): only its owner can change that, so nothing retries. */
 export type WakeResult = "none" | "started" | "running" | "retry";
 
+/** What a wake asked of the provider came to (`cloud_computer_woken`): `started` (resumed), `restored` (started from
+ * its backup), `refused` (only its owner can fix what the provider turned down), `failed` (anything else). */
+export type WokenOutcome = "started" | "restored" | "refused" | "failed";
+
+/** What made the relay wake it (`cloud_computer_woken`'s `cause`): a device connected, a mailbox message or routine
+ * webhook arrived, an access request came in, the time its host asked for (its next routine), or a wake retried. */
+export type WakeCause = "device" | "message" | "access" | "routine" | "retry";
+
+/** A wake: `result` for the relay, and `woken` when it asked the provider to start the machine (what that came to). */
+export interface Wake {
+  result: WakeResult;
+  woken?: { outcome: WokenOutcome; machine: CloudMachineRow };
+}
+
+/** Asked the provider to start `machine`, which came to `outcome`. */
+const asked = (result: WakeResult, outcome: WokenOutcome, machine: CloudMachineRow): Wake => ({ result, woken: { outcome, machine } });
+const failure = (o: { needsOwner: boolean }): WokenOutcome => (o.needsOwner ? "refused" : "failed");
+
 /** Starts the sleeping cloud machine behind `computerId`. */
-export async function wake(env: Env, computerId: string, now: number): Promise<WakeResult> {
+export async function wake(env: Env, computerId: string, now: number): Promise<Wake> {
   const m = await machineFor(env, computerId);
-  if (!m) return "none";
+  if (!m) return { result: "none" };
   const d = drivers[m.provider];
-  const live = await liveMachine(env, m, now);
-  if (!live.ok) return live.needsOwner ? "none" : "retry";
+  const live = await refresh(env, m, now);
+  if (!live.ok) return { result: live.needsOwner ? "none" : "retry" };
+  // Still stopping, or still awake while its stop takes effect (`refresh`).
+  if (m.state === "stopping") return { result: "retry" };
   const state = live.value.state;
-  if (state === "running" || state === "starting") {
-    if (state !== m.state) await setState(env, m.id, state, now);
-    return state === "running" ? "running" : "started";
-  }
-  if (state === "stopping") return "retry";
+  if (state === "running") return { result: "running" };
+  if (state === "starting") return { result: "started" };
   if (state !== "stopped") {
     console.error(JSON.stringify({ msg: "cloud computer can't wake", computerId, state }));
-    return "none";
+    return { result: "none" };
   }
   const resumed = d.machine(await providerSend(env, m.user_id, m.provider, d.wake(m.provider_id, crypto.randomUUID()), now));
   if (resumed.ok) {
     await setState(env, m.id, resumed.value.state, now);
-    return "started";
+    return asked("started", "started", m);
   }
   if (resumed.code === "backupNeeded" && m.backup) return fromBackup(env, m, now);
   console.log(JSON.stringify({ msg: "cloud computer resume refused", computerId, code: resumed.detail }));
-  return resumed.needsOwner ? "none" : "retry";
+  return asked(resumed.needsOwner ? "none" : "retry", failure(resumed), m);
 }
 
 /** The machine's own snapshot expired: a new one from its backup takes its place (same disk, new provider id). */
-async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<WakeResult> {
+async function fromBackup(env: Env, m: CloudMachineRow, now: number): Promise<Wake> {
   const backup = drivers[m.provider].backup;
-  if (!backup) return "none";
+  if (!backup) return { result: "none" };
   const spec = { name: machineName(env, m.user_id, m.id), size: SIZE, group: GROUP, autoStopSeconds: autoStop(env) };
   const made = drivers[m.provider].machine(await providerSend(env, m.user_id, m.provider, backup.restore(spec, m.backup!, `${m.id}-${m.backup_at}`), now));
   if (!made.ok) {
     console.error(JSON.stringify({ msg: "cloud computer restore from backup failed", machine: m.id, code: made.detail }));
-    return made.retryable ? "retry" : "none";
+    return asked(made.retryable ? "retry" : "none", failure(made), m);
   }
   await env.DB.prepare("UPDATE cloud_machines SET provider_id = ?, state = ?, updated_at = ? WHERE id = ?")
     .bind(made.value.id, made.value.state, now, m.id)
     .run();
-  return "started";
+  return asked("started", "restored", m);
 }
 
 /** Cron: a machine asleep for its provider's `backup.beforeDays` gets a backup (again, if it woke since the last one);
@@ -183,14 +224,13 @@ export async function saveBackups(env: Env, now: number): Promise<void> {
   }
 }
 
-/** Deletes a machine's backup, if it has one; the backup outlives the machine otherwise. */
-export async function dropBackup(env: Env, m: CloudMachineRow): Promise<boolean> {
-  const backup = drivers[m.provider].backup;
-  if (!m.backup || !backup) return true;
-  const gone = drivers[m.provider].done(await providerSend(env, m.user_id, m.provider, backup.drop(m.backup)));
-  if (!gone.ok && gone.code !== "notFound") return false;
-  await env.DB.prepare("UPDATE cloud_machines SET backup = NULL, backup_at = NULL WHERE id = ?").bind(m.id).run();
-  return true;
+/** Deletes a machine's backup, if it has one (one already gone counts); the backup outlives the machine otherwise. */
+export async function dropBackup(env: Env, m: CloudMachineRow): Promise<Outcome<null>> {
+  const d = drivers[m.provider];
+  if (!m.backup || !d.backup) return { ok: true, value: null };
+  const gone = d.deleted(await providerSend(env, m.user_id, m.provider, d.backup.drop(m.backup)));
+  if (gone.ok) await env.DB.prepare("UPDATE cloud_machines SET backup = NULL, backup_at = NULL WHERE id = ?").bind(m.id).run();
+  return gone;
 }
 
 /**

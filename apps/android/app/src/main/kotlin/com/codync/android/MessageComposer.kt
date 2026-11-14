@@ -131,9 +131,8 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     } }
     val online = state.actualConnection is LinkState.Ready
     val empty = text.text.isBlank() && files.isEmpty()
-    // Offline computers still take text: the relay holds it for them, or with no relay this phone does. Files need the computer.
-    val canHold = state.actualConnection is LinkState.ComputerOffline || holdsOnPhone(state.computer.cloud, state.actualConnection)
-    val canSend = !empty && !importing && !queuing && (online || canHold && files.isEmpty())
+    // Offline computers still take text (`holdsText`). Files need the computer.
+    val canSend = !empty && !importing && !queuing && (online || state.holdsText && files.isEmpty())
     val working = bot.isWorking(bot.id)
     val bare = text.text.isEmpty() && files.isEmpty()
     val trailing = when {
@@ -285,8 +284,3 @@ internal fun clipOffersFiles(mimeTypes: List<String>): Boolean =
 
 private fun ClipDescription.mimeTypes(): List<String> = (0 until mimeTypeCount).map(::getMimeType)
 
-fun formatBytes(size: Long): String = when {
-    size >= 1024 * 1024 -> "%.1f MB".format(size / (1024.0 * 1024))
-    size >= 1024 -> "%.0f KB".format(size / 1024.0)
-    else -> "$size bytes"
-}

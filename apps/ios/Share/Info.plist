@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CodyncEnvironment</key><string>$(CODYNC_ENV)</string>
+    <key>CodyncAppGroup</key><string>$(CODYNC_APP_GROUP)</string>
+    <key>CodyncURLScheme</key><string>$(CODYNC_URL_SCHEME)</string>
+	<key>CodyncKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)$(CODYNC_KEYCHAIN_GROUP)</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.share-services</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!-- Text, one link, and up to 10 pictures, videos or files (the photo pickers' limit). -->
+			<key>NSExtensionActivationRule</key>
+			<dict>
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsMovieWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
+				<integer>10</integer>
+			</dict>
+		</dict>
+	</dict>
+	<!-- The computer is reached like the app reaches it: directly on the LAN or Tailscale, else the relay. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_codync._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>ts.net</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

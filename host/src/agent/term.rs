@@ -41,8 +41,11 @@ struct Output {
     exit: Option<i32>,
 }
 
+/// What a terminal is for: an agent, the step, and the agent account a sign-in is for.
+type Key = (String, Step, Option<String>);
+
 pub struct Term {
-    key: (String, Step),
+    key: Key,
     input: mpsc::UnboundedSender<Input>,
     output: Mutex<Output>,
     /// `{"type":"output","data":<base64>}` and `{"type":"exit","code":n}`.
@@ -92,6 +95,24 @@ impl Terms {
         self.0.locked().get(id).cloned()
     }
 
+    /// Whether a sign-in to agent account `account` is open.
+    pub fn signing_in(&self, account: &str) -> bool {
+        let open = |term: &Arc<Term>| term.key.2.as_deref() == Some(account) && term.output.locked().exit.is_none();
+        self.0.locked().values().any(open)
+    }
+
+    /// Runs `command`, which signs `backend`'s account `account` in, or returns the one already running.
+    pub fn sign_in_account(
+        self: &Arc<Self>,
+        backend: &str,
+        account: &str,
+        command: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<String> {
+        self.spawn((backend.to_owned(), Step::Login, Some(account.to_owned())), command, cols, rows)
+    }
+
     /// Starts `step` for `backend` (a sign-in `method` the agent advertised, or
     /// Codync's own command for it), or returns the one already running.
     pub async fn start(
@@ -118,10 +139,10 @@ impl Terms {
                 None => backends::login_command(backend).await?,
             },
         };
-        self.spawn((backend.to_owned(), step), &command, cols, rows)
+        self.spawn((backend.to_owned(), step, None), &command, cols, rows)
     }
 
-    fn spawn(self: &Arc<Self>, key: (String, Step), command: &str, cols: u16, rows: u16) -> Result<String> {
+    fn spawn(self: &Arc<Self>, key: Key, command: &str, cols: u16, rows: u16) -> Result<String> {
         let mut map = self.0.locked();
         if let Some((id, _)) = map.iter().find(|(_, t)| t.key == key && t.output.locked().exit.is_none()) {
             return Ok(id.clone());
@@ -259,9 +280,10 @@ async fn run(
         _ => -1,
     };
     tracing::info!(term = %id, code, "setup terminal finished");
-    // A finished sign-in is believed again, over the prompt its agent refused before.
+    // A finished sign-in is believed again, over the prompt that login (the account's, or the agent's own)
+    // refused before.
     if term.key.1 == Step::Login && code == 0 {
-        backends::clear_prompt_refused(&term.key.0);
+        backends::clear_prompt_refused(term.key.2.as_deref().unwrap_or(&term.key.0));
     }
     term.finish(code);
     tokio::time::sleep(LINGER).await;
@@ -287,7 +309,7 @@ mod tests {
         } else {
             ("[ -t 0 ] && echo tty; read x; echo got-$x", "\n")
         };
-        let id = terms.spawn(("test".into(), Step::Login), command, 80, 24).unwrap();
+        let id = terms.spawn(("test".into(), Step::Login, None), command, 80, 24).unwrap();
         let term = terms.get(&id).unwrap();
         let (_, mut rx) = term.attach();
         terms.write(&id, &B64.encode(format!("hi{enter}"))).unwrap();

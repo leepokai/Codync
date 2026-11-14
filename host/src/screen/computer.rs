@@ -42,7 +42,7 @@ impl Screen {
     /// Marks `bot` as the one using the computer. Returns whether that's news.
     fn claim(&self, bot: &str, read_only: bool) -> Result<bool> {
         let mut c = self.control.locked();
-        if c.user && !read_only {
+        if c.user.is_some() && !read_only {
             bail!(
                 "The user has taken over the screen from their phone. Wait until they hand it back, or ask them what to do."
             );
@@ -209,7 +209,7 @@ mod tests {
         assert!(s.claim("a", false).unwrap());
         assert!(!s.claim("a", false).unwrap());
         assert!(s.claim("b", true).is_err(), "one bot at a time");
-        s.takeover(true);
+        s.takeover("phone", true);
         assert!(s.claim("a", false).is_err());
         assert!(s.claim("a", true).is_ok());
     }

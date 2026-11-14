@@ -139,6 +139,8 @@ public final class BotStore {
     @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
+    /// While everything is fetched again (`refetchAll`): the entries the computer has sent since it began.
+    var refetched: Set<String>?
     /// Events stayed undecodable after the rewind.
     var unreadable = false
     /// This app's marketing version, compared with the host's `minApp`.
@@ -153,6 +155,7 @@ public final class BotStore {
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
@@ -293,8 +296,9 @@ public final class BotStore {
     /// against a late response.
     public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
+    /// Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go.
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        refetched == nil && !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.
@@ -312,19 +316,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

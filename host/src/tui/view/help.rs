@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 75] = [
+const HELP: [(&str, &str, &str); 77] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -44,6 +44,7 @@ const HELP: [(&str, &str, &str); 75] = [
     ("CHAT", "e K", "picking a handoff: edit / keep the chat"),
     ("CHAT", "A", "picking a failure: add a fallback agent"),
     ("CHAT", "↵", "picking a bot message: open its conversation"),
+    ("CHAT", "/  ^f", "find in the chat: ↵ ↓ next · ↑ previous · esc closes"),
     ("CHAT", "esc", "cancel the reply"),
     ("TYPE", "↵", "send"),
     ("TYPE", "⇧↵ alt↵ ^j", "new line"),
@@ -66,10 +67,11 @@ const HELP: [(&str, &str, &str); 75] = [
     ("BOTS", "W", "rename / remove section"),
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
-    ("BOTS", "R", "details: routines, computer"),
+    ("BOTS", "R", "details: agent, routines"),
     ("BOTS", "B", "details: switch back to the bot's own agent"),
+    ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
-    ("BOTS", "⇧← ⇧→", "between details, library, memory and settings"),
+    ("BOTS", "⇧← ⇧→", "between details, computer, library, memory and settings"),
     ("BOTS", "A", "extensions, sign-in"),
     ("BOTS", "x", "delete bot or group"),
     ("VIEW", "t", "trace pane"),

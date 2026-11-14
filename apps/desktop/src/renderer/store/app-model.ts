@@ -60,6 +60,10 @@ export class AppModel extends Observable {
   /** Codync Screen waits for the user to allow it in System Settings → Login Items. */
   screenNeedsApproval = false
   screenError: string | null = null
+  /** The computer whose screen is open in the viewer (another computer: this one's screen is right here). */
+  screenComputer: string | null = null
+  /** The bot the viewer was opened to watch: it starts by looking rather than taking over. */
+  screenWatching: string | null = null
   private screenSynced = false
   /** Whether the account was signed in when last seen; null until its state first arrives. */
   private signedIn: boolean | null = null
@@ -116,6 +120,17 @@ export class AppModel extends Observable {
       this.detach(old.computerId)
     }
     this.changed()
+  }
+
+  openScreen(computerId: string | null, watching: string | null = null) {
+    this.screenComputer = computerId
+    this.screenWatching = computerId ? watching : null
+    this.changed()
+  }
+
+  /** Whether another computer's screen can be opened in the viewer now. */
+  canOpenScreen(store: BotStore) {
+    return store !== this.local && !!store.screen && store.shownConnection.kind === 'online' && !store.mismatch
   }
 
   /** The computer's own host store. */

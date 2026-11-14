@@ -100,9 +100,10 @@ private final class UnavailableStub: CloudComputerStub {
 }
 
 /// An account that may have a cloud computer on two providers but gave neither a key yet. The first key it gives is
-/// refused; each request's path is kept.
+/// refused, and so is the first removal; each request's path is kept.
 private final class KeyStub: CloudComputerStub {
     static let puts = OSAllocatedUnfairLock(initialState: 0)
+    static let deletes = OSAllocatedUnfairLock(initialState: 0)
     static let paths = OSAllocatedUnfairLock(initialState: [String]())
 
     override class func answer(_ request: URLRequest) -> (Int, String) {
@@ -114,11 +115,13 @@ private final class KeyStub: CloudComputerStub {
                 ? (422, #"{"error":{"code":"keyRefused","message":"This key can manage your whole account. Make one limited to Codync instead."}}"#)
                 : (200, #"{"credential":{"hint":"boat_…9abc","problem":null}}"#)
         case "DELETE":
-            return (200, "{}")
+            let n = deletes.withLock { $0 += 1; return $0 }
+            return n == 1 ? (409, #"{"error":{"code":"conflict","message":"A cloud computer still runs on Boat."}}"#) : (200, "{}")
         default:
             let setup = #""setup":{"page":"https://boat.dev/dashboard","commands":"boat env new codync"},"credential":null"#
             return (200, #"{"cloudComputers":[],"available":true,"limit":3,"providers":[{"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",\#(setup)},"#
-                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup)}]}"#)
+                + #"{"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",\#(setup),"#
+                + #""offer":{"label":"Get a free sandbox","detail":"A free plan.","url":"https://nimbus.example/pricing"}}]}"#)
         }
     }
 }
@@ -131,19 +134,29 @@ private final class KeyStub: CloudComputerStub {
     #expect(store.isShown && store.machines.isEmpty && !store.atLimit)
     #expect(store.providers.map(\.name) == ["Boat", "Nimbus"])
     #expect(store.providers.first?.setup.commands == "boat env new codync")
+    // A free plan only where the cloud names one.
+    #expect(store.providers.map(\.offer?.url.absoluteString) == [nil, "https://nimbus.example/pricing"])
     #expect(store.providers.allSatisfy { $0.credential == nil })
     #expect(await store.saveKey("boat_admin_key", provider: "boat") == false)
     #expect(store.error == "This key can manage your whole account. Make one limited to Codync instead.")
-    // Shown under Boat's key, not below every provider.
+    // Shown under Boat's key, not below every provider, nor in New cloud computer (only a removal shows there).
     #expect(store.error(at: .key("boat")) == store.error && store.error(at: .key("nimbus")) == nil && store.error(at: .card) == nil)
+    #expect(store.keyRemovalError == nil)
     #expect(await store.saveKey(" boat_live_key9abc ", provider: "boat"))
     #expect(store.providers.map(\.credential?.hint) == ["boat_…9abc", nil])
     #expect(store.providers.map(\.isReady) == [true, false])
     #expect(store.canRemoveKey("boat") && store.error == nil)
+    // A removal that fails keeps the key and says why, in the key sheet and New cloud computer, until it's seen.
+    await store.removeKey(provider: "boat")
+    #expect(store.providers.first?.credential != nil)
+    #expect(store.keyRemovalError == "A cloud computer still runs on Boat." && store.error(at: .key("boat")) == store.keyRemovalError)
+    store.clearError(at: .key("boat"))
+    #expect(store.keyRemovalError == nil)
     await store.removeKey(provider: "boat")
     #expect(store.providers.allSatisfy { $0.credential == nil })
     #expect(KeyStub.paths.withLock { $0 }.filter { !$0.hasPrefix("GET") }
-        == ["PUT /v1/cloud-credentials/boat", "PUT /v1/cloud-credentials/boat", "DELETE /v1/cloud-credentials/boat"])
+        == ["PUT /v1/cloud-credentials/boat", "PUT /v1/cloud-credentials/boat", "DELETE /v1/cloud-credentials/boat",
+            "DELETE /v1/cloud-credentials/boat"])
 }
 
 /// A running machine, and a sleeping one that hasn't claimed itself in yet; snapshots can't be deleted while one sleeps.

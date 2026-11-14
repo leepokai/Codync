@@ -57,12 +57,24 @@ pub fn names(store: &Store, backend: &str) -> Result<Vec<String>> {
     Ok(client::names(store, &prefix)?.into_iter().filter_map(|s| s.strip_prefix(&prefix).map(str::to_owned)).collect())
 }
 
-/// Adds `backend`'s proxied keys to its process environment: each as the placeholder, with its base-URL variable on
-/// a fresh grant (in `grants`, which the process holds until it ends). Two keys of one provider share its base URL:
-/// the first one's grant serves both (the keeper drops whatever key header the agent sends).
-pub fn add(store: &Store, backend: &str, env: &mut Vec<(String, String)>, grants: &mut Grants) -> Result<()> {
+/// The variable that holds the address key `var` is sent to, when the keeper can stand in for it.
+pub fn address_of(var: &str) -> Option<&'static str> {
+    KEYS.iter().find(|k| k.var == var).map(|k| k.base)
+}
+
+/// Adds `backend`'s proxied keys (but the ones `skip` names) to its process environment: each as the placeholder,
+/// with its base-URL variable on a fresh grant (in `grants`, which the process holds until it ends). Two keys of one
+/// provider share its base URL: the first one's grant serves both (the keeper drops whatever key header the agent
+/// sends).
+pub fn add(
+    store: &Store,
+    backend: &str,
+    skip: &[&str],
+    env: &mut Vec<(String, String)>,
+    grants: &mut Grants,
+) -> Result<()> {
     let saved = names(store, backend)?;
-    for key in KEYS.iter().filter(|k| saved.iter().any(|s| s == k.var)) {
+    for key in KEYS.iter().filter(|k| saved.iter().any(|s| s == k.var) && !skip.contains(&k.var)) {
         env.push((key.var.into(), PLACEHOLDER.into()));
         if !env.iter().any(|(name, _)| name == key.base) {
             env.push((key.base.into(), grants.grant(store, &slot(backend, key.var))?));
@@ -107,7 +119,7 @@ pub fn save(store: &Store, backend: &str, changes: &[(String, Option<String>)]) 
 #[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
-    use super::super::{env, env_slot, saved_env};
+    use super::super::{env_slot, env_without, saved_env};
     use super::*;
     use std::collections::BTreeMap;
 
@@ -144,7 +156,7 @@ mod tests {
             ["ANTHROPIC_API_KEY", "CODEX_HOME", "OPENAI_API_KEY", "OPENAI_BASE_URL"]
         );
 
-        let (vars, grants) = env(&store, "claude").unwrap();
+        let (vars, grants) = env_without(&store, "claude", &[]).unwrap();
         let env: BTreeMap<String, String> = vars.into_iter().collect();
         assert_eq!(env["ANTHROPIC_API_KEY"], PLACEHOLDER);
         let grant = format!("http://127.0.0.1:{}/t/", k.keeper.port);
@@ -158,6 +170,14 @@ mod tests {
         assert!(k.keeper.granted(&token).is_some());
         drop(grants);
         assert!(k.keeper.granted(&token).is_none(), "nobody holds it");
+
+        // On an agent account the agent's login keys stay out, with their address and its grant.
+        crate::agent::accounts::tests::insert(&store, &[("a1", "claude")]);
+        let (vars, grants) = super::super::launch_env(&store, "claude", Some("a1")).unwrap();
+        let env: BTreeMap<String, String> = vars.into_iter().collect();
+        assert!(!env.contains_key("ANTHROPIC_API_KEY") && !env.contains_key("ANTHROPIC_BASE_URL"), "{env:?}");
+        assert!(grants.is_empty() && env.contains_key("CLAUDE_CONFIG_DIR"));
+        assert_eq!(env["OPENAI_API_KEY"], "sk-oai", "not a key Claude Code signs in with");
 
         // A base URL for a key only the keeper has: the key has to be entered again.
         let refused = save_now(&store, &[change("ANTHROPIC_BASE_URL", Some("https://proxy.example"))]).unwrap_err();
@@ -191,7 +211,7 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         k.manage(&store);
         save_now(&store, &[change("GEMINI_API_KEY", Some("g"))]).unwrap();
-        let (vars, grants) = env(&store, "claude").unwrap();
+        let (vars, grants) = env_without(&store, "claude", &[]).unwrap();
         let base = vars.iter().find(|(k, _)| k == "GOOGLE_GEMINI_BASE_URL").unwrap().1.clone();
         let token = base.rsplit('/').next().unwrap().to_owned();
         let (acp, _inbox) = crate::agent::acp::Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &vars).unwrap();
@@ -208,9 +228,13 @@ mod tests {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let saved = serde_json::json!({"ANTHROPIC_API_KEY": "sk-ant", "OTHER": "o"});
         crate::market::vault::write(&store, &env_slot("claude"), &saved.to_string()).unwrap();
-        let (env, grants) = env(&store, "claude").unwrap();
+        let (env, grants) = env_without(&store, "claude", &[]).unwrap();
         assert!(grants.is_empty(), "no grants off a cloud computer");
         assert_eq!(env, [("ANTHROPIC_API_KEY".to_owned(), "sk-ant".to_owned()), ("OTHER".to_owned(), "o".to_owned())]);
+        crate::agent::accounts::tests::insert(&store, &[("a1", "claude")]);
+        let (env, _) = super::super::launch_env(&store, "claude", Some("a1")).unwrap();
+        let names: Vec<&str> = env.iter().map(|(name, _)| name.as_str()).collect();
+        assert!(names.contains(&"OTHER") && !names.contains(&"ANTHROPIC_API_KEY"), "the account's login: {names:?}");
         assert_eq!(saved_env(&store, "claude").unwrap(), ["ANTHROPIC_API_KEY", "OTHER"]);
     }
 }

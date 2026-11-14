@@ -4,12 +4,11 @@
 // `npm run e2e:cloud`) boot the host under test and are forwarded to this computer; InstaBox machines
 // (INSTABOX_API_KEY or INSTABOX_API_KEY_FILE) reach this cloud through a Cloudflare quick tunnel, which then serves
 // every machine, and fetch CODYNC_HOST_LINUX_BIN (else the released host) through a second one. Ctrl-C deletes the
-// test machines and stops everything. Run with `npm run cloud:stack`; also: CLOUD_COMPUTER_USERS (dev Clerk user ids
-// allowed a cloud computer, default `*`), CODYNC_STACK_PORT (a fixed port, so a simulator launched once keeps
-// working), CODYNC_SLEEP_IDLE_SECS (a short idle time to watch sleep happen). Without a provider key it is a plain local
-// cloud with cloud computers off, as a worktree sandbox runs it (`npm run dev` in apps/desktop, which also sets
-// CODYNC_STACK_DIR, a folder that keeps its D1 and device certificate key across runs, and CODYNC_STACK_INFO, a file this
-// writes `{url, certPub}` to once the cloud answers).
+// test machines and stops everything. Run with `npm run cloud:stack`; also: CODYNC_STACK_PORT (a fixed port, so a
+// simulator launched once keeps working), CODYNC_SLEEP_IDLE_SECS (a short idle time to watch sleep happen). Without a
+// provider key it is a plain local cloud with cloud computers off, as a worktree sandbox runs it (`npm run dev` in
+// apps/desktop, which also sets CODYNC_STACK_DIR, a folder that keeps its D1 and device certificate key across runs, and
+// CODYNC_STACK_INFO, a file this writes `{url, certPub}` to once the cloud answers).
 
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -54,9 +53,8 @@ const hostCloudUrl = ibx ? await tunnel(cloud) : cloud.url;
 const filesUrl = HOST_LINUX_BIN && (ibx ? await tunnel(cloud, `http://127.0.0.1:${filesPort}`) : `http://127.0.0.1:${filesPort}`);
 await cloud.start(
   {
-    CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}`,
-    // Without a provider key nobody gets a cloud computer: one made here could never reach this cloud.
-    ...(providers ? { CLOUD_COMPUTER_USERS: process.env.CLOUD_COMPUTER_USERS ?? "*" } : {}),
+    // Without a provider key nobody gets a cloud computer (no sealing keys): one made here could never reach this cloud.
+    ...(providers ? { CLOUD_SECRET_KEYS: `k1:${randomBytes(32).toString("base64")}` } : {}),
     CLOUD_AUTO_STOP_SECONDS: "7200",
     CLOUD_MACHINE_PREFIX: TEST_PREFIX,
     CLOUD_HOST_ENV: [`CODYNC_CLOUD_URL=${hostCloudUrl}`, `CODYNC_DEVICE_CERT_KEY=${cloud.certPub}`, "CODYNC_ANALYTICS_ENV=dev", ...(idle ? [`CODYNC_SLEEP_IDLE_SECS=${idle}`] : [])].join(" "),

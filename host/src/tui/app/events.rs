@@ -70,6 +70,7 @@ impl App {
                     name.clone_into(&mut self.host);
                 }
             }
+            Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
@@ -83,6 +84,7 @@ impl App {
                     if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
                     }
+                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -119,6 +121,7 @@ impl App {
             self.drafts.remove(id);
             self.files.remove(id);
             if self.selected.as_deref() == Some(id) {
+                self.close_find();
                 self.selected = None;
                 self.reply = None;
                 self.pick = None;
@@ -243,9 +246,11 @@ impl App {
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
+                self.auto_order = v["autoOrder"].as_bool();
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
+            After::AutoOrder => self.auto_order_set(&v),
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
@@ -370,6 +375,7 @@ impl App {
                 }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
+                    self.kofi_sent(&bot, &e);
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");

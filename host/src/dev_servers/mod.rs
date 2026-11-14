@@ -19,7 +19,7 @@ pub use tools::{BRIEF, START, TOOLS, call, tools};
 
 use crate::LockExt;
 use crate::agent::acp::Acp;
-use crate::agent::process::Process;
+use crate::agent::process::{Process, UNWIND};
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::Store;
@@ -37,10 +37,11 @@ use tokio::sync::{Notify, watch};
 const KV_PREFIX: &str = "dev-server:";
 /// Running at once per bot: a loop of retries can't fill the computer.
 const MAX_RUNNING: usize = 5;
-/// What a server gets to stop by itself before the rest of its tree is killed.
+/// What a server gets to stop by itself before the rest of its tree is ended.
 const STOP_GRACE: Duration = Duration::from_secs(3);
-/// How long a stop waits: the grace, then a moment for what's left to be killed.
-const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + 2);
+/// How long a stop waits: the grace, the rest of the tree ending from its leaves up, then a moment for what's left to be
+/// killed.
+const STOP_WAIT: Duration = Duration::from_secs(STOP_GRACE.as_secs() + UNWIND.as_secs() + 2);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -225,6 +226,20 @@ impl DevServers {
             servers.extend(found.iter().map(Detected::view));
         }
         json!(servers)
+    }
+
+    /// The servers the host runs for `bot` that run or are starting, oldest first: each one's name and ports. What its
+    /// agent left running through its own shell isn't among them: that ends with the agent.
+    pub fn active(&self, bot: &str) -> Vec<(String, Vec<u16>)> {
+        let mut own: Vec<(i64, String, Vec<u16>)> = self
+            .live
+            .locked()
+            .values()
+            .filter(|live| live.saved.bot == bot && live.status.active())
+            .map(|live| (live.saved.created_at, live.saved.name.clone(), live.ports.iter().map(|p| p.port).collect()))
+            .collect();
+        own.sort_by_key(|(created_at, ..)| *created_at);
+        own.into_iter().map(|(_, name, ports)| (name, ports)).collect()
     }
 
     /// `command`: the line it was started with, on `backend`'s harness.

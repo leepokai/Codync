@@ -1,12 +1,13 @@
 //! Idle agents give their resources back. A session unused for [`IDLE`] is closed (a routine run's
-//! as soon as the run ends); once every session is idle, or a routine run ends with none other open,
-//! the agent stops with its process group.
+//! as soon as the run ends); once every session is idle, or a routine run ends with none other open
+//! or with its session left open (an agent that can't close one), the agent stops with everything it started.
 //! The next message starts the agent again and reopens the session, so the conversation carries on.
 //! Agents that can't reopen a session keep everything: stopping them would lose the conversation.
 //! An agent whose keeper grants are gone (a cloud computer's keeper started again) starts again too.
 
 use super::Actor;
 use super::background_work::background_work;
+use crate::analytics::Retired;
 use serde_json::json;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -44,17 +45,21 @@ enum Release {
     Nothing,
     /// These sessions; the agent keeps running the rest.
     Sessions(Vec<String>),
-    /// The agent process, with everything in its process group.
-    Agent,
+    /// The agent process, with everything it started (every process group in its session), and why.
+    Agent(Retired),
 }
 
 /// `used`: each live session's last use. Only an agent that can close sessions releases them one
-/// by one; any agent that can reopen them is stopped once all are idle.
-fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, now: Instant) -> Release {
+/// by one; any agent that can reopen them is stopped once all are idle, or while it holds a `spent`
+/// session ([`Actor::stop_spent`] stops it at a turn's end unless something runs detached, then this tries again).
+fn plan(used: &HashMap<String, Instant>, started: Instant, can_close: bool, spent: bool, now: Instant) -> Release {
+    if spent {
+        return Release::Agent(Retired::SessionNotClosed);
+    }
     let mut idle: Vec<String> =
         used.iter().filter(|(_, at)| now.duration_since(**at) >= IDLE).map(|(sid, _)| sid.clone()).collect();
     if idle.len() == used.len() && now.duration_since(started) >= IDLE {
-        Release::Agent
+        Release::Agent(Retired::Idle)
     } else if can_close && !idle.is_empty() {
         idle.sort();
         Release::Sessions(idle)
@@ -79,17 +84,12 @@ impl Actor {
         if conn.sessions.reopen.is_none() {
             return;
         }
-        let release = plan(&conn.loaded, conn.started, conn.sessions.close, Instant::now());
+        let release = plan(&conn.loaded, conn.started, conn.sessions.close, conn.spent, Instant::now());
         if release == Release::Nothing || background_work(&conn.acp).await {
             return;
         }
         match release {
-            Release::Agent => {
-                tracing::info!(bot = %self.cfg.id, "stopping an idle agent");
-                if let Some(conn) = self.conn.take() {
-                    conn.acp.kill().await;
-                }
-            }
+            Release::Agent(reason) => self.retire(reason).await,
             Release::Sessions(sessions) => {
                 for sid in sessions {
                     self.close_session(&sid).await;
@@ -114,6 +114,7 @@ impl Actor {
         self.turn.is_none()
             && self.queue.is_empty()
             && self.perms.is_empty()
+            && self.asked.is_empty()
             && self.active_request.is_none()
             && self.active_group.is_none()
             && self.active_routine.is_none()
@@ -123,7 +124,9 @@ impl Actor {
 
     /// A routine run's session is spent once the run is. When it was the only session open and nothing waits, the
     /// agent ran just for the run and stops with it, with everything it started; otherwise the session alone closes,
-    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`].
+    /// so a bot on a short schedule doesn't hold a set of MCP servers per run until [`IDLE`]. One the agent couldn't
+    /// close (Cursor can't) goes with the agent instead, once nothing runs or waits ([`Self::stop_spent`]): the main
+    /// chat reopens its own session on its next turn.
     pub(super) async fn release_spent(&mut self, sid: &str) {
         let Some(conn) = &self.conn else { return };
         if conn.sessions.reopen.is_none() {
@@ -131,13 +134,33 @@ impl Actor {
         }
         let alone = conn.loaded.keys().all(|s| s == sid) && self.queue.is_empty();
         if alone && !background_work(&conn.acp).await {
-            tracing::info!(bot = %self.cfg.id, "stopping the agent after its routine run");
-            if let Some(conn) = self.conn.take() {
-                conn.acp.kill().await;
-            }
-        } else {
-            self.close_reopenable(sid).await;
+            self.retire(Retired::RoutineFinished).await;
+            return;
         }
+        self.close_reopenable(sid).await;
+        if let Some(conn) = self.conn.as_mut()
+            && conn.loaded.contains_key(sid)
+        {
+            conn.spent = true;
+        }
+    }
+
+    /// Stops an agent holding a spent session (`release_spent`) once nothing runs or waits, unless something runs
+    /// detached under it: then the idle check tries again.
+    pub(super) async fn stop_spent(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        if conn.spent && self.turn.is_none() && self.queue.is_empty() && !background_work(&conn.acp).await {
+            self.retire(Retired::SessionNotClosed).await;
+        }
+    }
+
+    /// Stops the agent with everything it started, to give that back; the next turn starts it again and reopens its
+    /// session.
+    async fn retire(&mut self, reason: Retired) {
+        let Some(conn) = self.conn.take() else { return };
+        tracing::info!(bot = %self.cfg.id, ?reason, "stopping the agent");
+        crate::analytics::agent_retired(&self.hub, &self.cfg.backend, reason);
+        conn.acp.kill().await;
     }
 
     /// Closes a session the agent can reopen when it's next needed, like one a turn failed in (see
@@ -187,15 +210,23 @@ mod tests {
         let used =
             |rows: &[(&str, Instant)]| rows.iter().map(|(s, at)| ((*s).to_owned(), *at)).collect::<HashMap<_, _>>();
         assert_eq!(
-            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, now),
+            plan(&used(&[("main", fresh), ("t1", stale)]), started, true, false, now),
             Release::Sessions(vec!["t1".into()])
         );
-        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, now), Release::Agent);
-        assert_eq!(plan(&used(&[]), started, true, now), Release::Agent);
+        assert_eq!(plan(&used(&[("main", fresh), ("t1", stale)]), started, false, false, now), Release::Nothing);
+        let idle = Release::Agent(Retired::Idle);
+        assert_eq!(plan(&used(&[("main", stale), ("t1", stale)]), started, false, false, now), idle);
+        assert_eq!(plan(&used(&[]), started, true, false, now), idle);
         // A just-started agent isn't stopped before it had a chance to be used.
-        assert_eq!(plan(&used(&[]), now, true, now), Release::Nothing);
-        assert_eq!(plan(&used(&[("main", fresh)]), started, true, now), Release::Nothing);
+        assert_eq!(plan(&used(&[]), now, true, false, now), Release::Nothing);
+        assert_eq!(plan(&used(&[("main", fresh)]), started, true, false, now), Release::Nothing);
+    }
+
+    #[test]
+    fn a_spent_session_stops_the_agent_however_fresh_its_chat() {
+        let now = Instant::now();
+        let used = HashMap::from([("main".to_owned(), now), ("run".to_owned(), now)]);
+        assert_eq!(plan(&used, now, false, true, now), Release::Agent(Retired::SessionNotClosed));
     }
 
     #[test]

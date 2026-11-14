@@ -55,6 +55,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class CloudKeySaved(val outcome: CloudKeyOutcome, val provider: String) : AnalyticsEvent("cloud_key_saved") {
         override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
     }
+    /** The user opened a provider's free plan from its key sheet ([provider]: the cloud's id for it; iOS `cloudOfferOpened`). */
+    data class CloudOfferOpened(val provider: String) : AnalyticsEvent("cloud_offer_opened") {
+        override val properties get() = mapOf("provider" to JsonPrimitive(provider))
+    }
     /** The user made a Codync Cloud computer on a provider ([provider]: the cloud's id for it; iOS `cloudComputerCreated`). */
     data class CloudComputerCreated(val outcome: CloudCreateOutcome, val provider: String) : AnalyticsEvent("cloud_computer_created") {
         override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
@@ -62,6 +66,18 @@ internal sealed class AnalyticsEvent(val name: String) {
     /** The user renamed one of their Codync Cloud computers; never the name (iOS `cloudComputerRenamed`). */
     data class CloudComputerRenamed(val outcome: CloudRenameOutcome) : AnalyticsEvent("cloud_computer_renamed") {
         override val properties get() = mapOf("outcome" to outcome.json)
+    }
+    /** The user deleted one of their Codync Cloud computers ([provider]: the cloud's id for the one it ran on; iOS `cloudComputerDeleted`). */
+    data class CloudComputerDeleted(val outcome: CloudDeleteOutcome, val provider: String) : AnalyticsEvent("cloud_computer_deleted") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
+    }
+    /** The user deleted a Codync Cloud computer's snapshots ([provider]: the cloud's id for the one it runs on; iOS `cloudSnapshotsDeleted`). */
+    data class CloudSnapshotsDeleted(val outcome: CloudDeleteOutcome, val provider: String) : AnalyticsEvent("cloud_snapshots_deleted") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
+    }
+    /** The user removed the key to their own account with [provider] (the cloud's id for it; iOS `cloudKeyRemoved`). */
+    data class CloudKeyRemoved(val outcome: CloudRemoveOutcome, val provider: String) : AnalyticsEvent("cloud_key_removed") {
+        override val properties get() = mapOf("outcome" to outcome.json, "provider" to JsonPrimitive(provider))
     }
     /** Signing in took the signed-out pairings ([MovedKeys]). */
     data class SignedOutPairingsMoved(val computers: Int, val keys: MovedKeys) : AnalyticsEvent("signed_out_pairings_moved") {
@@ -91,6 +107,8 @@ internal sealed class AnalyticsEvent(val name: String) {
     data object ReviewLinkOpened : AnalyticsEvent("review_link_opened") {
         override val properties get() = mapOf("source" to JsonPrimitive("settings"))
     }
+    /** The What's new window is on screen after an update (iOS `whatsNewShown`). */
+    data object WhatsNewShown : AnalyticsEvent("whats_new_shown")
     data class LinkOpened(val link: OutboundLink) : AnalyticsEvent("link_opened") {
         override val properties get() = mapOf("link" to link.json)
     }
@@ -106,9 +124,44 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
     }
+    /** A computer's screen stopped streaming after a while with nobody touching the app: the bot details' picture
+     * ([AnalyticsScreen.BotComputer]) or the full viewer ([AnalyticsScreen.RemoteScreen]). */
+    data class RemoteScreenPaused(val screen: AnalyticsScreen) : AnalyticsEvent("remote_screen_paused") {
+        override val properties get() = mapOf("screen" to screen.json)
+    }
+    /** A picture in a chat or the Library opened full size. Never the picture or its name. */
+    data object ImagePreviewOpened : AnalyticsEvent("image_preview_opened")
+    /**
+     * Something done to a picture (at most one `zoom` per opening), where from, and how it went: `error` is set only when it
+     * failed. Never the picture or its name.
+     */
+    data class ImagePreviewAction(val action: ImageAction, val from: ImageFrom, val error: ImageError? = null) : AnalyticsEvent("image_preview_action") {
+        override val properties get() = mapOf("action" to action.json, "from" to from.json,
+            "outcome" to JsonPrimitive(if (error == null) "done" else "failed")) + listOfNotNull(error?.let { "error" to it.json })
+    }
     /** A dev server opened, or its address copied; the host reports what it does itself. */
     data class DevServerAction(val use: DevServerUse) : AnalyticsEvent("dev_server_action") {
         override val properties get() = mapOf("action" to use.json)
+    }
+    /** A voice note started from its beginning, or which step broke ([failure]); never which note. */
+    data class VoiceNotePlayed(val failure: VoiceNoteFailure?) : AnalyticsEvent("voice_note_played") {
+        override val properties get() =
+            mapOf("outcome" to JsonPrimitive(if (failure == null) "played" else "failed")) + listOfNotNull(failure?.let { "error" to it.json })
+    }
+    /**
+     * Something another app shared went to a bot (`ShareToBot`), was held for its offline computer, or failed ([error]
+     * set only then): how many files, whether it had text, whether the bot came from Recent. Never names or content.
+     */
+    data class ShareSent(val outcome: ShareOutcome, val files: Int, val text: Boolean, val recent: Boolean, val error: ShareError? = null) :
+        AnalyticsEvent("share_sent") {
+        override val properties get() = mapOf("outcome" to outcome.json) + listOfNotNull(error?.let { "error" to it.json }) +
+            mapOf("files" to JsonPrimitive(files), "text" to JsonPrimitive(text), "recent" to JsonPrimitive(recent))
+    }
+    /** Find in a conversation opened (iOS `conversationFindOpened`). */
+    data object ConversationFindOpened : AnalyticsEvent("conversation_find_opened")
+    /** A search in the find bar settled: whether it found anything, never the text (iOS `conversationFindSearched`). */
+    data class ConversationFindSearched(val found: Boolean) : AnalyticsEvent("conversation_find_searched") {
+        override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
 }
 
@@ -164,6 +217,24 @@ internal enum class CloudCreateOutcome(override val wire: String) : CatalogValue
 
 internal enum class CloudRenameOutcome(override val wire: String) : CatalogValue {
     Renamed("renamed"), Failed("failed")
+}
+
+/** [Deleted]; [Refused]: the cloud said no (`409`: its snapshots while it sleeps); [Failed]: anything else. */
+internal enum class CloudDeleteOutcome(override val wire: String) : CatalogValue {
+    Deleted("deleted"), Refused("refused"), Failed("failed");
+
+    companion object {
+        fun of(error: Throwable): CloudDeleteOutcome = if (error is CloudError && error.status == 409) Refused else Failed
+    }
+}
+
+/** [Removed]; [Refused]: the cloud said no (`409`: a computer still runs on that provider); [Failed]: anything else. */
+internal enum class CloudRemoveOutcome(override val wire: String) : CatalogValue {
+    Removed("removed"), Refused("refused"), Failed("failed");
+
+    companion object {
+        fun of(error: Throwable): CloudRemoveOutcome = if (error is CloudError && error.status == 409) Refused else Failed
+    }
 }
 
 internal enum class AddToAccountFailure(override val wire: String) : CatalogValue {
@@ -240,6 +311,15 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
 }
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
+internal enum class VoiceNoteFailure(override val wire: String) : CatalogValue { Load("load"), Playback("playback") }
+
+internal enum class ShareOutcome(override val wire: String) : CatalogValue { Sent("sent"), Queued("queued"), Failed("failed") }
+
+/**
+ * What stopped a share on Android: a file it couldn't copy in ([Read]), or the message it couldn't hand to the chat
+ * ([Send]). The chat's own send reports the rest; the iPhone, sending from its share sheet, also has the catalog's others.
+ */
+internal enum class ShareError(override val wire: String) : CatalogValue { Read("read"), Send("send") }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),
@@ -247,10 +327,22 @@ internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     Cloud("cloud"),
 }
 
+internal enum class ImageAction(override val wire: String) : CatalogValue {
+    Zoom("zoom"), CopyImage("copy_image"), CopyName("copy_name"), Download("download"),
+}
+
+/** Where a picture action was done: the full-size viewer, or a picture's long-press menu in a chat or the Library. */
+internal enum class ImageFrom(override val wire: String) : CatalogValue { Viewer("viewer"), Menu("menu") }
+
+/** Why a picture action failed: its file isn't there, couldn't be read, the clipboard refused it, or a download failed. */
+internal enum class ImageError(override val wire: String) : CatalogValue {
+    Unavailable("unavailable"), Convert("convert"), Clipboard("clipboard"), Transfer("transfer")
+}
+
 /** `screen_viewed` values (the catalog's *Screens* table, iOS/Android column). */
 internal enum class AnalyticsScreen(override val wire: String) : CatalogValue {
     Bots("bots"), State("state"), Chat("chat"), Trace("trace"), BotDetails("bot_details"), Memory("memory"),
     Routines("routines"), Marketplace("marketplace"), Settings("settings"), Computers("computers"), Usage("usage"),
     Account("account"), Pairing("pairing"), VoiceSettings("voice_settings"), RemoteScreen("remote_screen"),
-    Library("library"), Artifact("artifact"), Network("network"),
+    Library("library"), Artifact("artifact"), Network("network"), BotComputer("bot_computer"),
 }

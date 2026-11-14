@@ -10,10 +10,12 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::tr;
 use serde_json::Value;
 
+mod computer_view;
 mod gear_view;
 mod library_view;
 mod market_view;
 mod memory_view;
+pub use computer_view::draw as computer;
 pub use gear_view::draw as gear;
 pub use library_view::draw as library;
 pub use market_view::draw as market;
@@ -64,7 +66,7 @@ fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
-/// A bot's pages on the top line (Details, Library, Memory, Settings) with this one marked.
+/// A bot's pages on the top line (Details, Computer, Library, Memory, Settings) with this one marked.
 /// Returns the area under it.
 pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
     let t = theme();
@@ -113,13 +115,6 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
         let used = line + 2 - inner.y;
         inner = Rect::new(inner.x, inner.y + used, inner.width, inner.height.saturating_sub(used));
     }
-    if !app.screen.is_null() {
-        let on = app.bots.get(&l.bot).is_some_and(|b| b.computer);
-        put(buf, inner.x, inner.y, inner.width, &tr("Use the computer"), t.text.patch(t.panel));
-        let x = rput(buf, inner.right(), inner.y, "  u switches", t.dim.patch(t.panel));
-        rput(buf, x, inner.y, if on { "◉ On" } else { "○ Off" }, if on { t.text } else { t.secondary }.patch(t.panel));
-        inner = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
-    }
     put(buf, inner.x, inner.y, inner.width, &tr("Routines"), t.bold.patch(t.panel));
     let list_h = usize::from(inner.height.saturating_sub(3)) / 2;
     match &l.items {
@@ -159,8 +154,13 @@ pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
                     &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
                     t.dim.patch(base),
                 );
-                let when: Vec<&str> =
-                    it["triggerDescriptions"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let when: Vec<String> = it["triggerDescriptions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|text| tr(text).into_owned())
+                    .collect();
                 let (line, style) = match it["lastError"].as_str() {
                     Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
                     None => (when.join(" · "), t.secondary),
@@ -241,9 +241,11 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
     let name = b.map_or(a.backend.as_str(), |b| s(b, "name"));
     let rows = app.agent_rows(a);
-    let r = centered(area, 80, u(rows.len() * 2 + 11).max(14));
+    let accounts = usize::from(app.accounts(&a.backend).is_some()) * 2;
+    let r = centered(area, 80, u(rows.len() * 2 + accounts + 11).max(14));
     let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
     let mut y = inner.y;
+    let mut headed = false;
     if let Some(d) = b.map(|b| s(b, "description")).filter(|d| !d.is_empty()) {
         let shown = tr(d);
         put(
@@ -290,8 +292,14 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     }
     y += 1;
     for (i, rw) in rows.iter().enumerate() {
-        if y + 1 >= inner.bottom().saturating_sub(2) {
+        let heading = !headed && matches!(rw, SetupRow::Account(_) | SetupRow::AddAccount);
+        if y + 1 + u16::from(heading) * 2 >= inner.bottom().saturating_sub(2) {
             break;
+        }
+        if heading {
+            headed = true;
+            put(buf, inner.x, y + 1, inner.width, &tr("Other accounts"), t.secondary.patch(t.panel));
+            y += 2;
         }
         let base = row(buf, inner, y, i == a.cursor);
         let (icon, title, detail) = match rw {
@@ -317,6 +325,15 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
             ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
             SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
+            SetupRow::Account(account) => {
+                let detail = if account["signedIn"] == true {
+                    tr("Signed in").into_owned()
+                } else {
+                    format!("{} · ↵ {}", tr("Not signed in"), tr("Sign in"))
+                };
+                ("◎", account["name"].as_str().unwrap_or("New account").to_owned(), detail)
+            }
+            SetupRow::AddAccount => ("+", "Add account".to_owned(), format!("In a terminal on {}.", app.host)),
         };
         let title = tr(&title);
         let detail = tr(&detail);
@@ -332,7 +349,12 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         );
         y += 1;
     }
-    footer(buf, inner, a.error.as_deref(), "↑↓ move · ↵ run · esc back");
+    let keys = tr("↑↓ move · ↵ run · esc back");
+    let keys = match rows.get(a.cursor) {
+        Some(SetupRow::Account(_)) => format!("{keys} · x {}", tr("Remove account")),
+        _ => keys.into_owned(),
+    };
+    footer(buf, inner, a.error.as_deref(), &keys);
 }
 
 pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {

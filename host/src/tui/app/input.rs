@@ -19,7 +19,9 @@ impl App {
         let s = s.replace("\r\n", "\n").replace('\r', "\n");
         if let Some(ed) = self.top_editor() {
             ed.insert(&s);
-        } else if let Some(key) = self.selected.clone() {
+        } else if !self.paste_find(&s)
+            && let Some(key) = self.selected.clone()
+        {
             self.typing = true;
             self.focus = Focus::Chat;
             // A file dragged onto the terminal pastes its path: attach it.
@@ -76,6 +78,10 @@ impl App {
         }
         if !self.overlays.is_empty() {
             self.overlay_key(k);
+            return;
+        }
+        if self.find.is_some() {
+            self.find_key(k);
             return;
         }
         if self.typing {
@@ -196,6 +202,8 @@ impl App {
             KeyCode::Char('I') if self.error.is_some() && self.bots.is_empty() => self.install_host(),
             KeyCode::Char('I') if self.bot().is_some_and(|b| b.lead) => self.overlays.push(Overlay::LeadAgent(0)),
             KeyCode::Char('?') => self.overlays.push(Overlay::Help(Editor::default())),
+            KeyCode::Char('/') if !roster_page => self.open_find(),
+            KeyCode::Char('f') if ctrl && !roster_page => self.open_find(),
             KeyCode::Char('!') => self.jump(Mark::Need),
             KeyCode::Char('u') => self.jump(Mark::Unread),
             KeyCode::Char('[') => self.move_bot(-1),
@@ -206,10 +214,11 @@ impl App {
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
-                let pending = if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.options())) };
+                let pending =
+                    if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.answer_options())) };
                 match pending {
                     Some((entry, opts)) if !opts.is_empty() => {
-                        if let Some((option, _, _)) = opts.get(i) {
+                        if let Some(option) = opts.get(i) {
                             self.answer(&entry, option);
                         }
                     }
@@ -220,7 +229,17 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N')) if !roster_page && self.pending().is_some() => {
+            KeyCode::F(n @ 1..=12) if !roster_page => {
+                if let Some((id, option)) = self
+                    .pending_of(Kind::Decision)
+                    .and_then(|e| e.choices().get(usize::from(n - 1)).cloned().map(|option| (e.id.clone(), option)))
+                {
+                    self.answer(&id, &option);
+                }
+            }
+            KeyCode::Char(c @ ('y' | 'a' | 'n' | 'N'))
+                if !roster_page && self.pending_of(Kind::Permission).is_some() =>
+            {
                 self.answer_kind(c);
             }
             KeyCode::Char('n') => self.new_bot(),
@@ -310,6 +329,7 @@ impl App {
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
             KeyCode::Char('R') => self.open_routines(),
+            KeyCode::Char('O') => self.open_computer(),
             KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),
             KeyCode::Char('r' | 'v') if !roster_page && self.selected.is_some() => {

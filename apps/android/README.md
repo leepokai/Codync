@@ -111,6 +111,8 @@ uses a temporary copy rather than exposing the private cache.
 Ed25519/X25519 seeds use Android Keystore AES-GCM wrapping; no global crypto
 provider is replaced. Local data is excluded from backup and device transfer.
 The mirror commits updates, send reconciliation and the event cursor together.
+It loads only a window of each chat into memory (`Residency`); older rows stay on disk
+until the reader scrolls back ([chat messages](../../docs/features/chat-messages.md)).
 Context retirement joins writers before changing identity or closing databases.
 A changed host identity produces an error rather than silently trusting new keys.
 

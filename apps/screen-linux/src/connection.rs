@@ -42,18 +42,20 @@ mod tests {
 
     fn session() -> Session {
         gst::init().unwrap();
-        Session {
-            pipeline: gst::Pipeline::new(),
-            webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(std::sync::Mutex::default()),
-        }
+        Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            Some(std::sync::Mutex::default()),
+        )
     }
 
     #[tokio::test]
     async fn connection_notifications_ignore_closed_and_replaced_native_peers() {
         let (out, mut events) = mpsc::unbounded_channel();
         let helper = Arc::new(Helper {
-            portal: Arc::new(Mutex::new(None)),
+            backend: Arc::new(Mutex::new(None)),
+            portals: std::sync::atomic::AtomicBool::new(true),
+            held: std::sync::Mutex::default(),
             last_status: Mutex::new(None),
             sessions: crate::sessions::Sessions::default(),
             out,

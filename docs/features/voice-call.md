@@ -102,8 +102,8 @@ on-device (its window doesn't reach the host).
 
 ### Voice input shortcut
 
-Desktop on macOS, set in **Settings → General → System** (*Voice input shortcut*: off, the right ⌘
-twice (the default) or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app, a
+Desktop on macOS, set in **Settings → General → System** (*Voice input shortcut*: off (the default), the right ⌘
+twice or the left ⌘ twice; `voiceShortcut` in `host-prefs.json`). From any app, a
 double tap of that key starts dictation into the [notch island](notch-island.md)'s message field
 while the island is on, else into the chat window's composer (when no chat is open, the lead, or the top bot where
 no computer has one).

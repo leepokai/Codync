@@ -1,12 +1,15 @@
 """Keep two descendant generations holding ACP stdout after the leader exits."""
 
 import json
+import os
 import subprocess
 import sys
 import time
 
 if len(sys.argv) > 1:
     if sys.argv[1] == "child":
+        if os.name != "nt":
+            os.setpgrp()  # An MCP server may lead a process group of its own, as Codex's do.
         subprocess.Popen([sys.executable, "-u", __file__, "leaf"], stdin=subprocess.DEVNULL, stdout=sys.stdout, stderr=sys.stderr)
     if sys.argv[1] == "leaf":
         print(json.dumps({"jsonrpc": "2.0", "method": "ready"}), flush=True)

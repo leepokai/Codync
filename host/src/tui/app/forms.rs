@@ -6,8 +6,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle,
-    merge_toggles,
+    After, App, COLORS, Editor, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle, merge_toggles,
 };
 use crate::tui::manage::Page;
 
@@ -39,6 +38,7 @@ impl App {
             name: Editor::with(&b.name),
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
+            account: b.account.clone(),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
             model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             fast: b.fast_mode,
@@ -100,11 +100,11 @@ impl App {
                 self.save_form(&mut f);
             }
             KeyCode::Tab | KeyCode::Down => {
-                f.field = (f.field + 1) % FIELDS.len();
+                f.field = self.step_field(&f, 1);
                 f.sub = 0;
             }
             KeyCode::BackTab | KeyCode::Up => {
-                f.field = (f.field + FIELDS.len() - 1) % FIELDS.len();
+                f.field = self.step_field(&f, -1);
                 f.sub = 0;
             }
             KeyCode::Enter
@@ -120,7 +120,8 @@ impl App {
                 self.open_folder(&start);
                 return None;
             }
-            KeyCode::Enter if field == Field::Agent => {
+            // An account is added and signed in on the agent's own sheet.
+            KeyCode::Enter if matches!(field, Field::Agent | Field::Account) => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_agent(&backend, false);
@@ -149,6 +150,7 @@ impl App {
                 if matches!(
                     field,
                     Field::Agent
+                        | Field::Account
                         | Field::Fast
                         | Field::SelfFallbacks
                         | Field::Approvals
@@ -176,6 +178,7 @@ impl App {
                             // Another agent's model ids mean nothing here, and it can't be its own fallback.
                             f.model.clear();
                             f.model_options = Default::default();
+                            f.account = None;
                             let own = f.backend.clone();
                             f.fallbacks.retain(|x| x.backend != own);
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
@@ -183,6 +186,7 @@ impl App {
                             self.want_models(&f.backend);
                         }
                     }
+                    Field::Account if !space => self.cycle_account(&mut f, d),
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
                     Field::Approvals => self.cycle_approval(&mut f, d),
@@ -278,6 +282,7 @@ impl Form {
             "name": self.name.text.trim(),
             "description": self.instructions.text.trim(),
             "backend": self.backend,
+            "account": self.account,
             "cwd": self.cwd,
             "permission": if self.auto { "auto" } else { "ask" },
             "mode": self.mode,
@@ -357,7 +362,7 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, Bot, test_app};
+    use super::super::{AgentModel, Bot, FIELDS, test_app};
     use super::*;
 
     #[tokio::test]

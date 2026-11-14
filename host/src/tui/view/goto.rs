@@ -81,18 +81,11 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                     let shown = tr(label);
                     put(buf, inner.x + 2, y, inner.width, &shown, style);
                     let language = super::super::l10n::language_title();
-                    let hint = match (a, app.analytics) {
-                        (Action::Analytics, Some(true)) => "on",
-                        (Action::Analytics, Some(false)) => "off",
-                        (Action::Analytics, None) => "",
-                        (Action::Language, _) => language.as_ref(),
-                        (Action::ThinkingDetails, _) => {
-                            if super::super::details::enabled() {
-                                "on"
-                            } else {
-                                "off"
-                            }
-                        }
+                    let hint = match a {
+                        Action::Analytics => on_off(app.analytics),
+                        Action::AutoOrder => on_off(app.auto_order),
+                        Action::Language => language.as_ref(),
+                        Action::ThinkingDetails => on_off(Some(super::super::details::enabled())),
                         _ => key,
                     };
                     rput(buf, inner.right(), y, hint, t.dim.patch(base));
@@ -146,5 +139,14 @@ fn action_row(buf: &mut Buffer, inner: Rect, list_top: u16, y: &mut u16, titled:
         t.bold.patch(t.sel)
     } else {
         t.secondary.patch(t.panel)
+    }
+}
+
+/// A switch's hint in the palette: blank until the host says where it stands.
+fn on_off(v: Option<bool>) -> &'static str {
+    match v {
+        Some(true) => "on",
+        Some(false) => "off",
+        None => "",
     }
 }

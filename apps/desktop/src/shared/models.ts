@@ -19,6 +19,8 @@ export interface Bot {
   avatarShape: string
   backend: string
   command?: string | null
+  /** The agent account it runs on; absent for the login the computer already has. */
+  account?: string | null
   cwd: string
   /** Host-allocated personal workspace rather than a user-selected project. */
   managedWorkspace: boolean
@@ -104,6 +106,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     avatarShape: raw.avatarShape ?? 'blob',
     backend: raw.backend ?? 'custom',
     command: raw.command ?? null,
+    account: raw.account ?? null,
     cwd: raw.cwd ?? '',
     managedWorkspace: raw.managedWorkspace ?? false,
     permission: raw.permission ?? 'ask',
@@ -160,7 +163,7 @@ export interface Fallback {
   modelOptions: Record<string, string>
 }
 
-/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing */
+/** Why an agent can't answer: usageLimit · outOfCredits · rateLimited · overloaded · signedOut · notStarting · modelMissing · modeMissing */
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
@@ -243,13 +246,29 @@ export interface Attachment {
   size: number
 }
 
-export interface SharedFile extends Attachment { sha256: string }
+export interface SharedFile extends Attachment {
+  sha256: string
+  /** A sound the chat plays in place, as the host stamps it; missing (an older host) means a plain file card. */
+  playsInChat?: boolean
+}
 
 export const isImageName = (name: string) =>
   ['png', 'jpg', 'jpeg', 'heic', 'gif', 'webp', 'tiff', 'bmp'].includes(name.split('.').pop()?.toLowerCase() ?? '')
 
-/** A shared image small enough to show in the chat (the whole file is fetched for it). */
-export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= 20 * 1024 * 1024
+export const isAudioName = (name: string) => ['mp3', 'm4a', 'wav', 'aac'].includes(name.split('.').pop()?.toLowerCase() ?? '')
+
+/** The largest shared image a chat fetches whole to show. */
+const INLINE_BYTES = 20 * 1024 * 1024
+
+/** A shared image small enough to show in the chat. */
+export const showsAsImage = (file: SharedFile) => isImageName(file.name) && file.size <= INLINE_BYTES
+
+
+/** The voice note playing at the top of a message's bubble; none when its files show as their own cards. */
+export const voiceNoteOf = (data: EntryData) => {
+  const file = data.voiceNote ? data.files?.[0] : undefined
+  return file?.playsInChat ? file : undefined
+}
 
 export interface ConnectionRequest {
   [key: string]: unknown
@@ -303,6 +322,9 @@ export interface AgentSwitch {
   carried: string | null
 }
 
+/** A choice card's (`request_decision`) lifecycle, as the host writes it in `status`. */
+export type DecisionStatus = 'pending' | 'answered' | 'expired'
+
 export interface EntryData {
   /** Structured conversation data added to the existing team-tool notice. */
   botMessage?: BotMessage
@@ -342,6 +364,14 @@ export interface EntryData {
   locations?: { path: string; line?: number }[]
   options?: PermissionOption[]
   selected?: string
+  /** An additive notice card; older clients still display its text. Its `status` is a `DecisionStatus`. */
+  decision?: boolean
+  /** What the bot asks the user to choose (`request_decision`). */
+  question?: string
+  /** decision: the choices, in the order the bot offered them. */
+  choices?: string[]
+  /** decision: which choice the bot suggests (`choices`' index). */
+  recommended?: number | null
   command?: string
   detail?: string
   cwd?: string
@@ -356,6 +386,8 @@ export interface EntryData {
   botReactions?: BotReaction[]
   attachments?: Attachment[]
   files?: SharedFile[]
+  /** agent: `files` holds the voice note of this message, which plays at the top of its bubble. */
+  voiceNote?: boolean
   /** agent: an artifact the bot published (or updated) in this turn. */
   artifact?: ArtifactCard
   callSeconds?: number
@@ -475,7 +507,20 @@ export interface Backend {
   canInstall?: boolean
   /** Only for an agent that runs on Node.js, on a computer without its own: Codync's copy is missing or added. */
   node?: 'missing' | 'added' | null
+  /** Its extra logins, for an agent that can have them (absent otherwise, and from older hosts). */
+  accounts?: AgentAccount[]
 }
+
+/** One more login to an agent, beside the one the computer already has. `name`: who it signs in, once it has. */
+export interface AgentAccount {
+  id: string
+  name: string | null
+  signedIn: boolean
+}
+
+/** The accounts a bot on `backend` can pick. One that isn't signed in can't run a bot; `picked`, the bot's own, stays listed so its row shows it. */
+export const accountChoices = (backend: Backend, picked: string | null): AgentAccount[] =>
+  (backend.accounts ?? []).filter((a) => a.signedIn || a.id === picked)
 
 export interface ScreenDisplay {
   id: number
@@ -524,6 +569,8 @@ export interface Hello {
   hostId: string
   name: string
   version: string
+  /** The host's store schema, which the mirror's rows were synced under (absent from older hosts). */
+  schema?: number
   os: string
   device?: string
   home?: string
@@ -542,6 +589,8 @@ export interface Hello {
   cloud?: string | null
   /** Product analytics on this computer: on unless its owner turned it off. */
   analytics?: boolean
+  /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
+  autoOrder?: boolean
 }
 
 export interface PairingInfo {
@@ -672,6 +721,8 @@ export interface BotDraft {
   avatarShape: string
   backend: string
   command?: string | null
+  /** Null for the login the computer already has: sent as is, so the host clears it. */
+  account?: string | null
   cwd: string
   permission: string
   /** Null for the agent's default: sent as is, so the host clears it. */
@@ -707,6 +758,7 @@ export function draftOf(bot: Bot): BotDraft {
     avatarShape: bot.avatarShape,
     backend: bot.backend,
     command: bot.command ?? null,
+    account: bot.account ?? null,
     cwd: bot.managedWorkspace ? '' : bot.cwd,
     permission: bot.permission,
     mode: bot.mode,

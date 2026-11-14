@@ -7,6 +7,7 @@ export type Screen =
   | 'chat'
   | 'trace'
   | 'bot_details'
+  | 'bot_computer'
   | 'memory'
   | 'routines'
   | 'marketplace'
@@ -19,9 +20,17 @@ export type Screen =
   | 'computer_access'
   | 'library'
   | 'artifact'
+  | 'remote_screen'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
+
+/** What was done in the full-size picture viewer. */
+export type ImageAction = 'zoom' | 'copy_image' | 'copy_name' | 'download'
+/** Where it was done: inside the full-size viewer, or from a picture's menu in a chat or the Library. */
+export type ImageFrom = 'viewer' | 'menu'
+/** Why a picture copy or download failed: its bytes weren't there, couldn't be converted, the clipboard refused them, or the transfer broke. */
+export type ImageFailure = 'unavailable' | 'convert' | 'clipboard' | 'transfer'
 
 export type SignInProvider = 'apple' | 'google' | 'github'
 
@@ -54,7 +63,14 @@ export type AnalyticsEvent =
   | { event: 'star_prompt_answered'; ask: 'first' | 'second'; starred: boolean }
   | { event: 'link_opened'; link: Link }
   | { event: 'dev_server_action'; action: 'open' | 'copy' }
+  | { event: 'voice_note_played'; outcome: 'played' }
+  | { event: 'voice_note_played'; outcome: 'failed'; error: 'load' | 'playback' }
   | { event: 'screen_viewed'; screen: Screen }
+  | { event: 'remote_screen_paused'; screen: 'bot_computer' | 'remote_screen' }
+  | { event: 'image_preview_opened' }
+  | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
+  | { event: 'conversation_find_opened' }
+  | { event: 'conversation_find_searched'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure }
   | { event: 'window_recovery'; outcome: WindowRecoveryOutcome }
@@ -63,7 +79,14 @@ export type AnalyticsEvent =
   | { event: 'join_offer_answered'; outcome: 'added' | 'kept_out' | 'failed' }
   | { event: 'cloud_key_saved'; outcome: 'saved' | 'refused' | 'failed'; provider: string }
   | { event: 'cloud_computer_created'; outcome: 'created' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_offer_opened'; provider: string }
   | { event: 'cloud_computer_renamed'; outcome: 'renamed' | 'failed' }
+  | { event: 'cloud_computer_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_snapshots_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
+  | { event: 'cloud_key_removed'; outcome: 'removed' | 'refused' | 'failed'; provider: string }
+  | { event: 'kofi_invite_shown' }
+  | { event: 'kofi_invite_answered'; opened: boolean }
+  | { event: 'whats_new_shown' }
 
 /** `track`'s body: the event with its properties, from the desktop app. */
 export const trackBody = (event: AnalyticsEvent) => ({ ...event, app: 'desktop' as const })

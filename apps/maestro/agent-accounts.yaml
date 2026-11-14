@@ -1,0 +1,72 @@
+# Agent accounts on the phones (docs/features/agent-accounts.md): a bot's details show the account it runs on under
+# Agent and move it back to the computer's own sign-in; the agent's setup lists the account as "New account", "Not
+# signed in", and removes it once no bot uses it (before that the host refuses). Nothing here signs in: the account
+# stays signed out, and the computer's own login is never touched. The phone must already be signed in and paired with
+# the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose
+# clearState undoes that. The computer needs Claude Code or Codex installed (both, for the two phones in one run: see
+# agent-accounts.js); without, the flow does nothing.
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags agents \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - agents
+onFlowComplete:
+  - runScript:
+      file: agent-accounts.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: agent-accounts.js
+- runFlow:
+    when:
+      true: ${output.accounts != null}
+    commands:
+      - runScript:
+          file: agent-accounts.js
+          env:
+            STEP: refused
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.ios.dev
+                arguments:
+                  "-reviewInvitationOff": true
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.android.dev
+      - tapOn: ${output.accounts.name}
+      - tapOn: "${output.accounts.name}, view details"
+      - tapOn: "Details"
+      # The Account row under Agent: the bot's own account stays listed while it's signed out.
+      - scrollUntilVisible:
+          element: "New account"
+          centerElement: true
+      - tapOn: "New account"
+      - tapOn: "This computer's sign-in"
+      - assertVisible: "This computer's sign-in"
+      - runScript:
+          file: agent-accounts.js
+          env:
+            STEP: moved
+      # Add account… opens the agent's setup, which lists the account and removes it now that no bot uses it.
+      - tapOn: "This computer's sign-in"
+      - tapOn: "Add account…"
+      - scrollUntilVisible:
+          element: "Not signed in"
+          centerElement: true
+      - assertVisible: "Other accounts"
+      - assertVisible: "New account"
+      - takeScreenshot: agent-accounts
+      - tapOn: "Remove account"
+      - extendedWaitUntil:
+          notVisible: "Not signed in"
+          timeout: 20000
+      - runScript:
+          file: agent-accounts.js
+          env:
+            STEP: removed

@@ -44,11 +44,13 @@ import java.util.UUID
 /**
  * Installing or signing in to an agent, or adding Node.js, live (iOS `SetupTerminalView`): the
  * command runs in a terminal on the computer and this screen is that terminal (links open here).
- * `backend` is null only for the `node` step, which belongs to the computer.
+ * `backend` is null only for the `node` step, which belongs to the computer. `account` is the agent account a
+ * sign-in is for; none signs in the computer's own login.
  */
-@Composable internal fun SetupTerminal(backend: AgentBackend?, step: String, method: AgentAuthMethod?, state: AppState, store: AppStore, back: () -> Unit) {
+@Composable internal fun SetupTerminal(backend: AgentBackend?, step: String, method: AgentAuthMethod?, state: AppState, store: AppStore,
+    account: String? = null, back: () -> Unit) {
     val owner = rememberSaveable { UUID.randomUUID().toString() }
-    val session = remember(owner) { store.setupTerminal(owner, backend?.id.orEmpty(), step, method?.id) }
+    val session = remember(owner) { store.setupTerminal(owner, backend?.id.orEmpty(), step, method?.id, account) }
     val status by session.state.collectAsState()
     var renderer by remember { mutableStateOf<TerminalRenderer?>(null) }
     var renderError by remember { mutableStateOf(false) }

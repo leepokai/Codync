@@ -23,12 +23,27 @@ const BOAT_ACTIONS = ["sandbox.create", "sandbox.read", "sandbox.stop", "sandbox
  * Secrets or workspace settings. InstaBox can't limit a key to some machines. */
 const INSTABOX_SCOPES = ["machines:read", "machines:write", "machines:delete"];
 
+/** A provider's own free plan, shown beside its key (the apps translate `label` and `detail`). */
+interface ProviderOffer {
+  label: string;
+  detail: string;
+  url: string;
+}
+
+interface ProviderInfo {
+  name: string;
+  region: string;
+  keyPrompt: string;
+  setup: { page: string; commands: string };
+  offer?: ProviderOffer;
+}
+
 /**
- * Every provider the apps offer, in this order, with what they show: where it runs, and how to make the key (worded
- * here, so a new provider or new steps reach every app without a release). Boat limits a key to an environment by its
- * id, not its name (the name gets `api_key_sandbox_forbidden`).
+ * Every provider the apps offer, in this order, with what they show: where it runs, how to make the key, and its free
+ * plan if it has one (worded here, so a new provider or new steps reach every app without a release). Boat limits a key
+ * to an environment by its id, not its name (the name gets `api_key_sandbox_forbidden`).
  */
-export const PROVIDERS: Record<Provider, { name: string; region: string; keyPrompt: string; setup: { page: string; commands: string } }> = {
+export const PROVIDERS: Record<Provider, ProviderInfo> = {
   boat: {
     name: "Boat",
     region: "EU",
@@ -55,6 +70,12 @@ export const PROVIDERS: Record<Provider, { name: string; region: string; keyProm
         `instabox keys create --name codync --scope ${INSTABOX_SCOPES.join(",")}`,
         "# The key reaches every machine in this workspace",
       ].join("\n"),
+    },
+    // InstaBox's pricing page, 2026-11-09: the Free plan is $0 with one machine, 4 vCPU / 8 GiB, 20 GiB disk.
+    offer: {
+      label: "Get a free sandbox",
+      detail: "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).",
+      url: "https://instabox.sh/pricing",
     },
   },
 };

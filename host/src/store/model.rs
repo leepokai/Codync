@@ -75,6 +75,9 @@ pub struct BotConfig {
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// The agent account it runs on (`agent::accounts`). None: the login this computer already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub cwd: String,
@@ -226,6 +229,13 @@ pub struct Entry {
     pub data: Value,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl Entry {
+    /// A message the chat shows as one: the user's, or an agent's finished reply.
+    pub fn is_message(&self) -> bool {
+        self.kind == EntryKind::User.as_str() || (self.kind == EntryKind::Agent.as_str() && self.data["final"] == true)
+    }
 }
 
 /// A message's text, or the names of its files when it has none.

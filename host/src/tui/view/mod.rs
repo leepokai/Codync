@@ -11,7 +11,7 @@ mod analytics;
 mod bot_chat;
 mod buffer;
 mod chat;
-mod computer_access;
+pub(super) mod computer_access;
 mod dev_servers;
 mod fallbacks;
 mod forms;
@@ -32,6 +32,7 @@ mod time;
 mod trace;
 mod transcript;
 mod usage;
+mod whats_new;
 
 pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, window};
 pub(super) use chat::composer_lines;

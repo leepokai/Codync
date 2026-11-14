@@ -41,7 +41,7 @@ export function optionLabel(o: PermissionOption) {
     case 'allow_always':
       return trNow('Always allow')
     case 'reject_once':
-      return 'Deny'
+      return trNow('Deny')
     case 'reject_always':
       return trNow('Never')
     default:
@@ -124,7 +124,7 @@ function outcome(entry: Entry) {
       }
     }
     case 'cancelled':
-      return 'Cancelled'
+      return trNow('Cancelled')
     default:
       return trNow('Expired — the agent moved on')
   }

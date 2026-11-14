@@ -1,9 +1,10 @@
 # Computers → Codync Cloud → "+" (New cloud computer): every provider with what it needs and its logo, the suggested name,
-# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row opens only
-# InstaBox's key sheet with its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
-# one closes the sheet with Boat picked and its hint shown; Boat's key button opens it again, and Remove key works.
-# Needs a cloud that offers this account Codync Cloud (dev-api doesn't): `npm run cloud:stack` in cloud/
-# (docs/guides/cloud-computer-testing.md), the phone signed in with `npm run phone-account` and pointed at it (iPhone:
+# and Create off without a usable key. Each provider's key is reached only through it: InstaBox's row (its free plan
+# without a key) opens only InstaBox's key sheet with its free plan and its own steps; Boat's opens Boat's, where a key Boat turns down shows what to fix, and a kept
+# one closes the sheet with Boat picked and its hint shown; Boat's row's ⋯ (More) offers its key and Remove key, which works.
+# Needs a cloud that offers Codync Cloud: dev-api offers it to every account, or, to stay off the shared dev or when the
+# branch changes cloud/, `npm run cloud:stack` in cloud/ with a provider key (docs/guides/cloud-computer-testing.md);
+# the phone signed in with `npm run phone-account` and pointed at it (iPhone:
 # SIMCTL_CHILD_CODYNC_CLOUD_URL=<url> on that command, which this flow's launch keeps; Android: built with
 # -PcodyncCloudUrl=<url> with -PcodyncClerkPublishableKey and -PcodyncPushRelayUrl, plus adb reverse), an account with no
 # cloud computer, and BOAT_KEY, a key its Boat takes. An account saves at most 5 keys a minute: run the phones one after
@@ -68,23 +69,28 @@ env:
 - extendedWaitUntil:
     visible: "Name your cloud computer"
     timeout: 10000
-# Keys an earlier run left go first, each from its key button.
+# Keys an earlier run left go first, each from its row's ⋯ (More; only a provider with a key has one).
 - repeat:
     while:
-      visible: "(Boat|InstaBox) API key"
+      visible:
+        text: "More"
+        below: "Provider"
     commands:
-      - tapOn: "(Boat|InstaBox) API key"
+      - tapOn:
+          text: "More"
+          below: "Provider"
       - tapOn: "Remove key"
+      - waitForAnimationToEnd
       - extendedWaitUntil:
           notVisible: "Remove key"
           timeout: 15000
-      - tapOn: "Close"
-      - waitForAnimationToEnd
 
-# Every provider asks for a key, the suggested name stands in for an empty one, and nothing can be created yet.
+# Every provider asks for a key (InstaBox points to its free plan), the suggested name stands in for an empty one, and
+# nothing can be created yet.
 - extendedWaitUntil:
     visible: ".*Add a key first"
     timeout: 10000
+- assertVisible: ".*Free sandbox available"
 - assertVisible: "Boat.*"
 - assertVisible: "InstaBox.*"
 - assertVisible: "Cloud computer"
@@ -100,14 +106,16 @@ env:
       - assertVisible:
           id: "cloudProvider.instabox"
 
-# InstaBox's row opens InstaBox's key alone, with its own steps (the command lines are one text; on the iPhone they
-# scroll sideways, wider than the screen, so the text is never all in view).
+# InstaBox's row opens InstaBox's key alone, with its free plan and its own steps (the command lines are one text; on
+# the iPhone they scroll sideways, wider than the screen, so the text is never all in view).
 - tapOn: "InstaBox.*"
 - extendedWaitUntil:
     visible: "How to make a key"
     timeout: 10000
 - assertVisible: "InstaBox API key"
 - assertNotVisible: "Boat API key"
+- assertVisible: "InstaBox's free plan includes one machine.*"
+- assertVisible: "Get a free sandbox"
 - tapOn: "How to make a key"
 - scrollUntilVisible:
     element: "(?s).*instabox keys create --name codync --scope machines:read,machines:write,machines:delete.*"
@@ -125,6 +133,7 @@ env:
     visible: "How to make a key"
     timeout: 10000
 - assertNotVisible: "InstaBox API key"
+- assertNotVisible: "Get a free sandbox"
 - tapOn:
     text: "(Boat API key|boat_…)"
     above: "How to make a key"
@@ -175,20 +184,19 @@ env:
           text: "Boat"
           checked: true
 
-# Its key button opens it again: Remove key goes back to pasting one, and nothing is left to create on.
-- tapOn: "Boat API key"
+# Its row's ⋯ offers its key again and Remove key, which goes back to pasting one: nothing is left to create on.
+- tapOn:
+    text: "More"
+    below: "Provider"
 - extendedWaitUntil:
     visible: "Remove key"
     timeout: 10000
+- assertVisible: "Boat API key"
 - tapOn: "Remove key"
 - extendedWaitUntil:
-    notVisible: "Remove key"
+    visible: ".*Add a key first"
     timeout: 15000
-- tapOn: "Close"
-- extendedWaitUntil:
-    notVisible: "How to make a key"
-    timeout: 10000
-- assertNotVisible: "Boat API key"
+- assertNotVisible: "Remove key"
 - assertVisible:
     text: "Create"
     enabled: false

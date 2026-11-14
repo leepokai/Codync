@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { draftOf, isChat, isReplyable, normalizeBot, quoteOf, type Entry } from './models.ts'
+import { accountChoices, draftOf, isChat, isReplyable, normalizeBot, quoteOf, voiceNoteOf, type Backend, type Entry, type SharedFile } from './models.ts'
+
+test('a bot keeps its agent account through the settings draft, and picks among the signed-in ones', () => {
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude', account: 'a2' })).account, 'a2')
+  assert.equal(draftOf(normalizeBot({ id: 'b', backend: 'claude' })).account, null, 'sent as null, so the host clears it')
+  const accounts = [{ id: 'a1', name: 'ada@example.com', signedIn: true }, { id: 'a2', name: null, signedIn: false }]
+  const claude = { id: 'claude', accounts } as Backend
+  assert.deepEqual(accountChoices(claude, null).map((a) => a.id), ['a1'])
+  assert.deepEqual(accountChoices(claude, 'a2').map((a) => a.id), ['a1', 'a2'], 'its own stays listed')
+  assert.deepEqual(accountChoices({ id: 'gemini' } as Backend, null), [])
+})
 
 test('a bot keeps its Fast mode through the settings draft', () => {
   const bot = normalizeBot({ id: 'b', backend: 'codex', fastMode: true })
@@ -63,4 +73,14 @@ test('a quote names who wrote it and falls back to file names', () => {
   assert.equal(quoteOf(message('agent', { text: 'yo', final: true })).author, 'b')
   assert.equal(quoteOf(message('user', { text: '', attachments: [{ id: 'a', name: 'a.png', size: 1 }, { id: 'c', name: 'c.pdf', size: 1 }] })).text, 'a.png, c.pdf')
   assert.equal(quoteOf(message('user', { text: 'x'.repeat(900) })).text.length, 500)
+})
+
+test("a message's voice note plays in its bubble only when the computer marks its sound playable", () => {
+  const file = (name: string, playsInChat?: boolean): SharedFile => ({ id: 'f1', name, size: 1000, sha256: 'a'.repeat(64), playsInChat })
+  const note = file('note.m4a', true)
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [note] }), note)
+  assert.equal(voiceNoteOf({ text: 'note.m4a (1000 bytes)', files: [note] }), undefined)
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [file('plan.pdf', false)] }), undefined)
+  // An older computer doesn't mark it: the plain file card, whatever the name says.
+  assert.equal(voiceNoteOf({ text: 'Here is the plan.', voiceNote: true, files: [file('note.m4a')] }), undefined)
 })

@@ -175,10 +175,10 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     }
     if kind == RequestKind::Agent {
         let backend = text(request, "backend")?;
-        if crate::agent::auth::check(&hub.store, backend).await?["signedIn"] != true {
+        let bot = request["botId"].as_str().unwrap_or(&e.bot_id);
+        if !super::agent_sign_in::confirm(hub, bot, backend).await? {
             bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
         }
-        super::agent_sign_in::agent_signed_in(hub, backend)?;
         return Ok(json!({"entry": hub.store.entry(id)}));
     }
     if kind == RequestKind::Login {

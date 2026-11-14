@@ -64,7 +64,7 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
-        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: true) }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.account == nil, signInAccount: request.account) }
         .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
     }
@@ -91,14 +91,14 @@ struct ConnectionRequestCard: View {
         if pending {
             HStack(spacing: 6) {
                 if busy { Spinner() }
-                Button(connectTitle) { connect() }
+                Button(L10n.tr(connectTitle)) { connect() }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
             }
         } else {
             HStack(spacing: 6) {
                 if request.status == "ready" { Image(systemName: "checkmark").fontWeight(.semibold) }
-                Text(request.status == "ready" ? doneTitle : "Cancelled")
+                Text(L10n.tr(request.status == "ready" ? doneTitle : "Cancelled"))
             }
             .font(.subheadline)
             .foregroundStyle(Palette.secondary)

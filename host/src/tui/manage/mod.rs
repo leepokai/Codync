@@ -8,6 +8,7 @@
 mod agent;
 mod analytics;
 mod bot_chat;
+mod computer;
 mod dev_servers;
 mod fields;
 mod gear;
@@ -21,6 +22,7 @@ mod network_setup;
 mod pages;
 mod replies;
 mod routines;
+mod scroll;
 mod skill;
 mod when;
 
@@ -30,11 +32,12 @@ pub use fields::{handoff_fields, section_fields};
 pub use gear::{Gear, GearRow};
 pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
-pub use memory::{MemoryMode, MemorySheet, Scroll, Section};
+pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
 pub use network_rules::{RuleField, RuleForm};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
+pub use scroll::Scroll;
 pub use skill::SkillSheet;
 pub use when::complete_zone;
 
@@ -81,7 +84,12 @@ pub enum Reply {
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
-    Setup,
+    /// The setup terminal opened; for an account's sign-in, that account.
+    Setup(Option<String>),
+    /// An agent's accounts changed (`backends` comes with the answer), on its sheet.
+    Accounts(String),
+    /// `addAgentAccount` for that agent: the new account signs in next.
+    AccountAdded(String),
     FieldsSaved,
     /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
     SectionRenamed {
@@ -194,6 +202,10 @@ pub enum SetupRow {
     Check,
     /// Opens the read-only lists of what this agent already brings.
     Brings,
+    /// One of the agent's other accounts: ↵ signs it in, `x` removes it.
+    Account(Value),
+    /// Adds an account; its sign-in follows.
+    AddAccount,
 }
 
 pub struct Input {
@@ -255,6 +267,8 @@ pub struct Shell {
     /// Keys in the order typed (one sender, one request at a time).
     pub input: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pub backend: String,
+    /// The account it signs in; `None`: the computer's own sign-in.
+    pub account: Option<String>,
     pub exited: Option<i64>,
     /// Output not yet written to the screen.
     pub out: Vec<u8>,

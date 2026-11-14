@@ -8,7 +8,7 @@ use super::super::manage::{
     AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, Library, Market, MemorySheet,
     NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
-use super::{Editor, Mark};
+use super::{Editor, Mark, WhatsNew};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
@@ -60,13 +60,14 @@ pub enum Action {
     CheckUpdate,
     Analytics,
     AboutAnalytics,
+    AutoOrder,
     Language,
     ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 19] = [
+pub const ACTIONS: [(&str, &str, Action); 20] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -74,6 +75,7 @@ pub const ACTIONS: [(&str, &str, Action); 19] = [
     ("Details of this bot…", "R", Action::Details),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
+    ("Move active bots to the top", "", Action::AutoOrder),
     ("Pair a phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
@@ -172,6 +174,8 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
+    /// Which of the agent's logins the bot runs on; only for an agent that can have accounts.
+    Account,
     Model,
     ModelOptions,
     Fast,
@@ -191,10 +195,11 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 21] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
+    Field::Account,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -226,6 +231,8 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
+    /// The agent account it runs on; `None`: the computer's own sign-in.
+    pub account: Option<String>,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -354,6 +361,8 @@ pub enum Overlay {
     DevServers(DevServersSheet),
     Routines(RoutineList),
     Routine(Box<RoutineForm>),
+    /// A bot's Computer page, by the bot's id.
+    Computer(String),
     Library(Library),
     Gear(Gear),
     Market(Box<Market>),
@@ -362,6 +371,7 @@ pub enum Overlay {
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    WhatsNew(WhatsNew),
 }
 
 pub struct Toast {

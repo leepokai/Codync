@@ -29,8 +29,23 @@ class AnalyticsTest {
         assertEquals("""{"reason":"declined"}""", json(AnalyticsEvent.AddToAccountFailed(AddToAccountFailure.Declined)))
         assertEquals("dev_server_action", AnalyticsEvent.DevServerAction(DevServerUse.Copy).name)
         assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
+        assertEquals("""{"outcome":"played"}""", json(AnalyticsEvent.VoiceNotePlayed(null)))
+        assertEquals("""{"outcome":"failed","error":"load"}""", json(AnalyticsEvent.VoiceNotePlayed(VoiceNoteFailure.Load)))
+        assertEquals("share_sent", AnalyticsEvent.ShareSent(ShareOutcome.Sent, 0, true, false).name)
+        assertEquals("""{"outcome":"queued","files":0,"text":true,"recent":true}""", json(AnalyticsEvent.ShareSent(ShareOutcome.Queued, 0, true, true)))
+        assertEquals("""{"outcome":"failed","error":"read","files":2,"text":false,"recent":false}""",
+            json(AnalyticsEvent.ShareSent(ShareOutcome.Failed, 2, false, false, ShareError.Read)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
+        assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",
+            json(AnalyticsEvent.ImagePreviewAction(ImageAction.CopyImage, ImageFrom.Menu)))
+        assertEquals("""{"action":"zoom","from":"viewer","outcome":"done"}""", json(AnalyticsEvent.ImagePreviewAction(ImageAction.Zoom, ImageFrom.Viewer)))
+        // `error` is only there when the action failed, and is one of the catalog's categories.
+        for ((error, wire) in listOf(ImageError.Unavailable to "unavailable", ImageError.Convert to "convert", ImageError.Clipboard to "clipboard",
+            ImageError.Transfer to "transfer")) {
+            assertEquals("""{"action":"download","from":"viewer","outcome":"failed","error":"$wire"}""",
+                json(AnalyticsEvent.ImagePreviewAction(ImageAction.Download, ImageFrom.Viewer, error)))
+        }
         assertEquals("""{"computers":2,"keys":"moved"}""", json(AnalyticsEvent.SignedOutPairingsMoved(2, MovedKeys.Moved)))
         assertEquals("""{"computers":1,"keys":"rescan"}""", json(AnalyticsEvent.SignedOutPairingsMoved(1, MovedKeys.Rescan)))
         assertEquals("""{"engine":"gemini","reconnects":1,"stuck":"none","failure":"connection","ready_ms":1200}""",
@@ -55,6 +70,7 @@ class AnalyticsTest {
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(CloudError(429, "rateLimited")))
         assertEquals(CloudKeyOutcome.Failed, CloudKeyOutcome.of(IOException("Offline")))
         assertEquals("""{"outcome":"refused","provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudKeySaved(CloudKeyOutcome.Refused, "instabox").properties).toString())
+        assertEquals("""{"provider":"instabox"}""", JsonObject(AnalyticsEvent.CloudOfferOpened("instabox").properties).toString())
     }
 
     @Test fun `a cloud computer the cloud refuses is told apart from one that failed`() {
@@ -69,6 +85,19 @@ class AnalyticsTest {
         val renamed = AnalyticsEvent.CloudComputerRenamed(CloudRenameOutcome.Failed)
         assertEquals("cloud_computer_renamed", renamed.name)
         assertEquals("""{"outcome":"failed"}""", JsonObject(renamed.properties).toString())
+        val deleted = AnalyticsEvent.CloudComputerDeleted(CloudDeleteOutcome.Deleted, "boat")
+        assertEquals("cloud_computer_deleted", deleted.name)
+        assertEquals("""{"outcome":"deleted","provider":"boat"}""", JsonObject(deleted.properties).toString())
+        val snapshots = AnalyticsEvent.CloudSnapshotsDeleted(CloudDeleteOutcome.Failed, "instabox")
+        assertEquals("cloud_snapshots_deleted", snapshots.name)
+        assertEquals("""{"outcome":"failed","provider":"instabox"}""", JsonObject(snapshots.properties).toString())
+        val removed = AnalyticsEvent.CloudKeyRemoved(CloudRemoveOutcome.Removed, "boat")
+        assertEquals("cloud_key_removed", removed.name)
+        assertEquals("""{"outcome":"removed","provider":"boat"}""", JsonObject(removed.properties).toString())
+        assertEquals(CloudDeleteOutcome.Refused, CloudDeleteOutcome.of(CloudError(409, "conflict", "It's asleep.")))
+        assertEquals(CloudDeleteOutcome.Failed, CloudDeleteOutcome.of(CloudError(503, "providerUnavailable")))
+        assertEquals(CloudRemoveOutcome.Refused, CloudRemoveOutcome.of(CloudError(409, "conflict")))
+        assertEquals(CloudRemoveOutcome.Failed, CloudRemoveOutcome.of(IOException("Offline")))
     }
 
     @Test fun `a crash keeps its type and Codync frames but never its message`() {

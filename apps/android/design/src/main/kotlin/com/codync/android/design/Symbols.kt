@@ -24,6 +24,7 @@ import androidx.annotation.DrawableRes
     "arrow.turn.down.right" -> R.drawable.sf_arrow_turn_down_right
     "arrow.up" -> R.drawable.sf_arrow_up
     "arrow.up.doc.on.clipboard" -> R.drawable.sf_arrow_up_doc_on_clipboard
+    "arrow.up.left.and.arrow.down.right" -> R.drawable.sf_arrow_up_left_and_arrow_down_right
     "arrow.up.right" -> R.drawable.sf_arrow_up_right
     "arrowshape.turn.up.left" -> R.drawable.sf_arrowshape_turn_up_left
     "battery.100percent" -> R.drawable.sf_battery_100percent
@@ -129,6 +130,7 @@ import androidx.annotation.DrawableRes
     "option" -> R.drawable.sf_option
     "paintbrush" -> R.drawable.sf_paintbrush
     "paintpalette" -> R.drawable.sf_paintpalette
+    "pause.circle" -> R.drawable.sf_pause_circle
     "pause.fill" -> R.drawable.sf_pause_fill
     "pencil" -> R.drawable.sf_pencil
     "person.2" -> R.drawable.sf_person_2

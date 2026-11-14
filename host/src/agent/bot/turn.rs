@@ -307,7 +307,7 @@ impl Actor {
                 self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
             }
             (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
-            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
+            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg),
             _ => {}
         }
         let failure = done.as_ref().err().filter(|_| !self.stop_requested);
@@ -414,6 +414,7 @@ impl Actor {
         self.files.cancel();
         self.flush(true);
         self.seg = Seg::None;
+        self.expire_decisions(crate::chat::decision::Expiry::TurnEnded);
         let client = self.conn.as_ref().map(|c| c.acp.clone());
         for (id, answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {

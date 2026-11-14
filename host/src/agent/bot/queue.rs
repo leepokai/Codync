@@ -19,7 +19,11 @@ impl Actor {
             }
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
-            Cmd::Send { lane, entry_id, text } => self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await,
+            Cmd::Send { lane, entry_id, text } => {
+                if !self.try_decision_message(&lane, &entry_id) {
+                    self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
+                }
+            }
             Cmd::Steer { entry_id } => self.steer(entry_id).await,
             Cmd::Steered { entry_id, outcome } => self.steer_answered(&entry_id, &outcome, done_tx).await,
             Cmd::Unqueue { entry_id } => self.unqueue(&entry_id),
@@ -41,10 +45,17 @@ impl Actor {
             Cmd::SendToUser { text, reply } => {
                 let _ = reply.send(self.send_to_user(text));
             }
+            Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
+            Cmd::Decision { entry_id, choice, reply } => {
+                if !reply.is_closed() {
+                    let answer = self.decided(&entry_id, &choice, None);
+                    let _ = reply.send(answer);
+                }
+            }
             Cmd::React { emoji, to, reply } => {
                 let _ = reply.send(self.react(&emoji, to.as_deref()));
             }
-            Cmd::SendFile { path, name, cancelled, reply } => self.begin_file(path, name, cancelled, reply),
+            Cmd::SendFile { path, name, text, cancelled, reply } => self.begin_file(path, name, text, cancelled, reply),
             Cmd::PostArtifact { data, reply } => {
                 let _ = reply.send(self.post_artifact(data));
             }
@@ -83,6 +94,7 @@ impl Actor {
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
+                    || cfg.account != self.cfg.account
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
@@ -163,6 +175,7 @@ impl Actor {
             return;
         }
         self.stop_requested = true;
+        self.expire_decisions(crate::chat::decision::Expiry::Stopped);
         self.cancel_deadline.get_or_insert_with(|| Instant::now() + CANCEL_GRACE);
         self.files.cancel();
         let ids: Vec<String> = self.perms.keys().cloned().collect();
@@ -268,10 +281,8 @@ impl Actor {
                     if turn.reply.is_closed() || !(turn.late || self.hub.groups.current(&turn.lane, turn.epoch)) {
                         continue;
                     }
-                    if turn.late
-                        && let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg)
-                    {
-                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "late room turn dropped");
+                    if let Err(error) = crate::chat::group::refresh(&self.hub, &mut turn, &self.cfg.id) {
+                        tracing::warn!(bot = self.cfg.id, error = format!("{error:#}"), "room turn dropped");
                         continue;
                     }
                     let (lane, prompt) = (turn.lane.clone(), turn.prompt.clone());
@@ -364,10 +375,20 @@ impl Actor {
                 Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
             }
         }
-        crate::agent::backends::set_signed_in(&backend, Some(false));
-        // An account check can still say signed in (`claude auth status` with a revoked token): this refusal wins.
-        crate::agent::backends::note_prompt_refused(&backend);
+        self.note_signed_out(&backend);
         self.sign_in_card(&backend, &held)
+    }
+
+    /// Agent `backend` refused the bot's prompt for auth. The login that refused is the bot's account's, or the
+    /// computer's own: only that one reads signed out, also over a check that still says signed in (`claude auth
+    /// status` with a revoked token).
+    pub(super) fn note_signed_out(&self, backend: &str) {
+        if let Some(account) = crate::agent::accounts::of_bot(&self.hub.store, backend, &self.cfg) {
+            crate::agent::accounts::note_signed_in(&self.hub.store, account, false);
+        } else {
+            crate::agent::backends::set_signed_in(backend, Some(false));
+            crate::agent::backends::note_prompt_refused(backend);
+        }
     }
 
     /// The agent's process was already running when this turn started.

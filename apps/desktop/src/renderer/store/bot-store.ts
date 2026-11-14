@@ -2,6 +2,7 @@ import {
   isWorking,
   needsInput,
   normalizeBot,
+  type AgentAccount,
   type Bot,
   type BotDraft,
   type DirListing,
@@ -19,6 +20,7 @@ import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
+import { noteFirstPrompt } from '../lib/use-kofi-invite'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -93,7 +95,10 @@ export class BotStore extends BotSync {
         this.upsert(e)
         this.changed()
         // Only once it arrived, so a resend counts once.
-        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        if (!call) {
+          noteFirstPrompt(botId, e.createdAt)
+          prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        }
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
@@ -218,6 +223,22 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */
+  get autoOrder() {
+    return this.hello?.autoOrder
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setAutoOrder(enabled: boolean) {
+    this.showAutoOrder(enabled)
+    try {
+      await (await this.ready()).call('setAutoOrder', { enabled })
+    } catch (e) {
+      this.showAutoOrder(!enabled)
+      throw e
+    }
+  }
+
   /** Toggles the user's reaction; shown at once, then replaced by the host's copy. */
   react(entry: Entry, emoji: string) {
     const list = this.entries.get(entry.botId)
@@ -257,6 +278,16 @@ export class BotStore extends BotSync {
   respond(entry: Entry, option: string | null) {
     this.answer(entry, option ?? '', async (c) => {
       await c.call('respondPermission', { entryId: entry.id, optionId: option })
+      // The card's own update follows on the events stream; hold the spinner until then.
+      await sleep(2000)
+    })
+  }
+
+  /** Presses one of a choice card's options (`request_decision`): the choice is the bot's answer and the user's
+   *  next message, both from the computer. */
+  decide(entry: Entry, option: string) {
+    this.answer(entry, option, async (c) => {
+      await c.call('respondDecision', { entryId: entry.id, option })
       // The card's own update follows on the events stream; hold the spinner until then.
       await sleep(2000)
     })
@@ -430,13 +461,34 @@ export class BotStore extends BotSync {
     return bot
   }
 
+  /** Shows the agent list a call answered with. */
+  private showBackends(backends: Hello['backends']) {
+    if (!this.hello) return
+    this.hello = { ...this.hello, backends }
+    this.changed()
+  }
+
   async refreshBackends() {
     if (!this.client || !this.hello) return
     try {
-      const res = await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)
-      this.hello = { ...this.hello, backends: res.backends }
-      this.changed()
+      this.showBackends((await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)).backends)
     } catch {}
+  }
+
+  /** A new, signed-out account for agent `backend`: its id. A `login` setup with it signs it in. */
+  async addAgentAccount(backend: string) {
+    const added = await (await this.ready()).call<{ account: AgentAccount; backends: Hello['backends'] }>('addAgentAccount', { backend })
+    this.showBackends(added.backends)
+    return added.account.id
+  }
+
+  /** Asks the account's agent whether it's signed in, and as whom. */
+  async checkAgentAccount(backend: string, account: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, account }, 60_000)).backends)
+  }
+
+  async removeAgentAccount(account: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeAgentAccount', { account }, 60_000)).backends)
   }
 
   async selectWorkspace(path: string) {
@@ -468,7 +520,8 @@ export class BotStore extends BotSync {
   }
 
   async loadOlder(botId: string) {
-    if (!this.client || this.historyComplete.has(botId)) return
+    // Held while everything is fetched again, like `canLoadOlder`.
+    if (!this.client || this.refetched || this.historyComplete.has(botId)) return
     const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)

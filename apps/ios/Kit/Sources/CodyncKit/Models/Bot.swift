@@ -15,6 +15,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var customIcon: CustomIcon?
     public var backend: String
     public var command: String?
+    /// The agent account it runs on; nil for the login the computer already has.
+    public var account: String?
     public var cwd: String
     /// Host-allocated personal workspace rather than a user-selected project.
     public var managedWorkspace: Bool = false
@@ -121,6 +123,7 @@ extension Bot {
         customIcon = try c.decodeIfPresent(CustomIcon.self, forKey: .customIcon)
         backend = try c.decodeIfPresent(String.self, forKey: .backend) ?? "custom"
         command = try c.decodeIfPresent(String.self, forKey: .command)
+        account = try? c.decodeIfPresent(String.self, forKey: .account)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""
         managedWorkspace = try c.decodeIfPresent(Bool.self, forKey: .managedWorkspace) ?? false
         permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "ask"

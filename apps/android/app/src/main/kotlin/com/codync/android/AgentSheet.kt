@@ -44,8 +44,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.decodeFromJsonElement
 
-/** A step inside the agent's sheet: a terminal for install / Node.js / sign-in, or its keys. */
-private data class SetupRoute(val step: String, val method: AgentAuthMethod? = null)
+/** A step inside the agent's sheet: a terminal for install / Node.js / sign-in (of `account`, when it's one's), or its keys. */
+private data class SetupRoute(val step: String, val method: AgentAuthMethod? = null, val account: String? = null)
 
 /** The computer's agents, live: an install or sign-in updates the host's list. */
 internal fun agentBackends(state: AppState): List<AgentBackend> =
@@ -57,12 +57,13 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
 /**
  * Getting an agent ready on the computer (iOS `AgentSheet`): install it, add Node.js when it runs
  * on Node and the computer has none, then sign in. `recheck` (a chat's sign-in request) asks the
- * agent again however signed in it looked.
+ * agent again however signed in it looked. `signInAccount`: the request is for that agent account,
+ * so its sign-in opens, not a check of the computer's own login.
  */
-@Composable internal fun AgentSheet(initial: AgentBackend, state: AppState, store: AppStore, recheck: Boolean = false) {
+@Composable internal fun AgentSheet(initial: AgentBackend, state: AppState, store: AppStore, recheck: Boolean = false, signInAccount: String? = null) {
     val scope = rememberCoroutineScope()
     val backend = agentBackends(state).firstOrNull { it.id == initial.id } ?: initial
-    var route by remember { mutableStateOf<SetupRoute?>(null) }
+    var route by remember { mutableStateOf(signInAccount?.let { SetupRoute("login", account = it) }) }
     var auth by remember { mutableStateOf<AgentAuth?>(null) }
     var checking by remember { mutableStateOf(false) }
     var authenticating by remember { mutableStateOf<String?>(null) }
@@ -80,7 +81,15 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
     // A known "signed in" needs no agent start; one set up asks the agent (which can't start without its Node.js).
     // Opening never downloads one: that waits for Set up.
     LaunchedEffect(Unit) { if ((recheck || (setUp(backend, auth) && backend.signedIn != true)) && !backend.needsNode) check() }
-    val back = { route = null; check() }
+    fun checkAccount(account: String) {
+        scope.launch {
+            try { store.checkAgentAccount(backend.id, account) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { error = failure.message ?: "Couldn't check this agent." }
+        }
+    }
+    // Back from a terminal or key form: see what changed, for the login it was about.
+    val back = { val account = route?.account; route = null; if (account != null) checkAccount(account) else check() }
     AnimatedContent(route, transitionSpec = {
         val forward = targetState != null
         (slideInHorizontally(Motion.layoutOffset) { if (forward) it else -it } + fadeIn(Motion.fade())) togetherWith
@@ -100,7 +109,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
             shown.step == "keys" -> AgentKeysForm(backend, requireNotNull(shown.method), auth?.savedEnv.orEmpty(), state, store, back) { auth = it }
-            else -> SetupTerminal(backend.takeUnless { shown.step == "node" }, shown.step, shown.method, state, store, back)
+            else -> SetupTerminal(backend.takeUnless { shown.step == "node" }, shown.step, shown.method, state, store, shown.account, back)
         }
     }
 }
@@ -177,6 +186,7 @@ internal fun agentRegistry(state: AppState, agent: String) = agentBackends(state
                 }
             }
         }
+        if (backend.accounts != null && backend.installed) AgentAccounts(backend, host, store) { go(SetupRoute("login", account = it)) }
         AgentBrings(backend.id, store, state.connection is LinkState.Ready)
         error?.let { CardSection { row { SelectionContainer { ErrorRow(it) } } } }
     }
@@ -194,7 +204,7 @@ private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, 
     else -> "Couldn't tell. Skip this if you've already signed in on $host."
 }
 
-@Composable private fun OptionRow(title: String, detail: String, icon: String, busy: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
+@Composable internal fun OptionRow(title: String, detail: String, icon: String, busy: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
     Row(Modifier.fillMaxWidth().plainButton(enabled = enabled, action = action), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.width(26.dp), contentAlignment = Alignment.Center) { Symbol(icon, size = 20.dp, tint = Palette.secondary) }
@@ -219,12 +229,14 @@ private fun statusText(backend: AgentBackend, setUp: Boolean, auth: AgentAuth?, 
             Text(tr(title), style = Type.body.medium, color = Palette.text)
             Text(tr(detail), style = Type.subheadline, color = Palette.secondary)
         }
-        action?.let { (label, run) ->
-            Text(tr(label), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(action = run).padding(horizontal = 14.dp, vertical = 7.dp),
-                style = Type.subheadline.semibold, color = Palette.text)
-        }
+        action?.let { (label, run) -> StepAction(label, action = run) }
     }
 }
+
+/** The capsule action at the end of a setup row. */
+@Composable internal fun StepAction(label: String, enabled: Boolean = true, action: () -> Unit) =
+    Text(tr(label), Modifier.clip(Capsule()).background(Palette.bubbleAgent).plainButton(enabled = enabled, action = action).padding(horizontal = 14.dp, vertical = 7.dp),
+        style = Type.subheadline.semibold, color = Palette.text)
 
 /** Keys an agent reads from its environment, kept on the computer (iOS `AgentKeysForm`). */
 @Composable private fun AgentKeysForm(backend: AgentBackend, method: AgentAuthMethod, saved: List<String>, state: AppState, store: AppStore,

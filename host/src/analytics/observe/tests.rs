@@ -74,6 +74,10 @@ fn settings_routines_screen_and_devices() {
         Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
     );
     assert_eq!(
+        setting("setAutoOrder", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("auto_order"), json!(true)))
+    );
+    assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
         Some((Event::NetworkJoined, json!({"via": "invite", "client": "local"})))
     );
@@ -140,6 +144,10 @@ fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     }
     let locked = refused(anyhow::anyhow!("the vault is locked"));
     assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
+
+    let (event, p) = observe(&Caller::Local, "removeAgentAccount", &json!({"account": "a1"})).unwrap();
+    let (_, other) = failed(event, p, &anyhow::anyhow!("removing /Users/me/slot")).expect("reported");
+    assert_eq!(other["error"], "other", "never the error's own words");
 }
 
 #[test]
@@ -157,6 +165,13 @@ fn connectors_skills_and_agents() {
     );
     assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
     assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+    let sent =
+        |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "send_file", "arguments": arguments}));
+    assert_eq!(
+        sent(json!({"path": "/secret/note.m4a", "text": "never sent"})),
+        Some((Event::VoiceNoteSent, json!({"client": "local"})))
+    );
+    assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -176,6 +191,19 @@ fn connectors_skills_and_agents() {
     assert_eq!(props("agentSetup", &json!({"step": "node"})).map(|(_, p)| p), Some(json!({"client": "local"})));
     let signed = props("agentAuthenticate", &json!({"backend": "codex", "method": "chatgpt"}));
     assert_eq!(signed, Some((Event::AgentSignedIn, json!({"agent": "codex", "client": "local"}))));
+    assert_eq!(props("agentAuth", &json!({"backend": "codex"})), None, "a check of the computer's own login");
+    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "account": "a1"})).unwrap();
+    assert_eq!(event, Event::AgentSignedIn);
+    assert!(answered(event, p.clone(), &json!({"signedIn": false})).is_none(), "still signed out");
+    let p = answered(event, p, &json!({"signedIn": true})).expect("signed in");
+    assert_eq!(Value::Object(p), json!({"agent": "codex", "account": true, "client": "local"}));
+    let added = props("addAgentAccount", &json!({"backend": "claude"}));
+    assert_eq!(
+        added,
+        Some((Event::AgentAccountChanged, json!({"action": "add", "agent": "claude", "client": "local"})))
+    );
+    let removed = props("removeAgentAccount", &json!({"account": "a1"})).map(|(_, p)| p);
+    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the account");
 
     let (event, p) = observe(&Caller::Local, "importConnectors", &json!({"config": "{\"secret\": 1}"})).unwrap();
     let p = answered(event, p, &json!({"items": [{"id": "a"}, {"id": "b"}]})).expect("an import");
@@ -188,6 +216,21 @@ fn connectors_skills_and_agents() {
         (event, Value::Object(p)),
         (Event::ConnectorInstalled, json!({"connector": "composio", "client": "local"}))
     );
+}
+
+#[test]
+fn decision_events_are_reported_only_by_the_actor_after_delivery() {
+    assert_eq!(
+        props(
+            "chatCall",
+            &json!({"botId": "b", "name": "request_decision", "arguments": {
+            "question": "Ship now or wait?", "options": ["Ship", "Wait"], "recommended": "Wait" }})
+        ),
+        None,
+        "API entry is not card publication"
+    );
+    assert_eq!(props("chatCall", &json!({"name": "request_decision"})).map(|(_, p)| p["options"].clone()), None);
+    assert_eq!(props("respondDecision", &json!({"entryId": "e", "option": "Ship"})), None);
 }
 
 #[test]

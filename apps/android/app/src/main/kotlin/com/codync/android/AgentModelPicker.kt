@@ -98,7 +98,10 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                     if (loading) Spinner(12.dp) else IconButton(if (failure == null) "Refresh model list" else "Retry model list", "arrow.clockwise") { retry++; onReload() }
                 }
                 val choices = (if (stage == PickerStage.Agents) agents else modelChoices).filter { it.second.contains(query, ignoreCase = true) }
-                Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
+                val scroll = rememberScrollState()
+                // The rows blur under the edges into the card's fill (an outlined card has none: the page shows).
+                val ground = if (LocalCardStyle.current == CardStyle.Outlined) Palette.background else Palette.surface
+                ScrollEdges(scroll, Modifier.heightIn(max = 180.dp), ground) { Column(Modifier.verticalScroll(scroll)) {
                     for ((id, name) in choices) Row(Modifier.fillMaxWidth().clickable {
                         if (stage == PickerStage.Agents) { if (id != backend) chooseAgent?.invoke(id); open(PickerStage.Models) }
                         else { if (id != value) choose(id.ifEmpty { null }, emptyMap()); open(PickerStage.Settings) }
@@ -107,7 +110,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
                         if (id == if (stage == PickerStage.Agents) backend else value) Symbol("checkmark", size = 12.dp, tint = Palette.text)
                     }
                     if (choices.isEmpty()) Text("No results", style = Type.caption, color = Palette.secondary)
-                }
+                } }
                 if (stage == PickerStage.Models && (backend == "custom" || (!loading && catalog?.models.isNullOrEmpty())))
                     PlainTextField(value, { choose(it.ifEmpty { null }, emptyMap()) }, prompt = "Default", singleLine = true)
             }

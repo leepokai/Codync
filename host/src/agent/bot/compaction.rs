@@ -80,11 +80,11 @@ impl Actor {
             return life;
         }
         // The key its process starts with (saved for the agent, or its login profile's), or the host's own it
-        // inherits.
+        // inherits: on the default login only, a login profile's process starts without that one.
         let (store, backend) = (&self.hub.store, self.cfg.backend.as_str());
         let profile = crate::agent::login_profiles::of_bot(store, backend, &self.cfg);
         let api_key = crate::agent::auth::launch_sets(store, backend, profile, "ANTHROPIC_API_KEY")
-            || std::env::var_os("ANTHROPIC_API_KEY").is_some();
+            || (profile.is_none() && std::env::var_os("ANTHROPIC_API_KEY").is_some());
         if self.adapter() == Adapter::Claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
     }
 

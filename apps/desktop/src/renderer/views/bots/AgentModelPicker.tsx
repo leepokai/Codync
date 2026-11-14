@@ -83,12 +83,11 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
             <input aria-label={tr(stage === 'agents' ? 'Search agents' : 'Search models')} placeholder={tr(stage === 'agents' ? 'Search agents' : 'Search models')} value={query} onChange={(e) => setQuery(e.target.value)} />
             {loading ? <Spinner size={12} /> : <IconButton title={tr(failure ? 'Retry model list' : 'Refresh model list')} icon="arrow.clockwise" onClick={models.reload} />}
           </HStack>
-          <div className="agent-picker-list">
+          {choices.length ? <div className="agent-picker-list scroll-edges">
             {choices.map((o) => <button key={o.id} className="agent-picker-item" aria-pressed={o.id === (stage === 'agents' ? backend : value)} onClick={() => pick(o.id)}>
               {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
             </button>)}
-            {!choices.length && <Text size="caption" tone="secondary">{tr('No results')}</Text>}
-          </div>
+          </div> : <Text size="caption" tone="secondary">{tr('No results')}</Text>}
           {stage === 'models' && (backend === 'custom' || (!loading && !catalog?.models.length)) && <input className="field-box" aria-label={tr('Model')} placeholder={tr('Default')} value={selection ?? ''} onChange={(e) => onChange(e.target.value || null)} />}
         </VStack>}
         {selected?.optionsError && <Text size="caption" tone="attention">{selected.optionsError}</Text>}

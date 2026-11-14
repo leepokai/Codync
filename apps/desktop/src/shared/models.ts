@@ -8,6 +8,8 @@ import { normalizeDevServer, type DevServer } from './dev-servers.ts'
 export type BotStatus = 'idle' | 'working' | 'needsInput' | 'error'
 
 export interface Bot {
+  /** Missing on older hosts; null when no goal has been set. */
+  goal?: { id: string; text: string; maxTurns: number; maxMinutes: number; startedAt: number; turns: number; stopped: string | null } | null
   customIcon?: import('./custom-icons').CustomIcon
   id: string
   /** `agent`, or `group`: several bots and the user in one chat. */
@@ -121,6 +123,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     agentStep: raw.agentStep ?? null,
     resting: raw.resting ?? [],
     devServers: (raw.devServers ?? []).map(normalizeDevServer),
+    goal: raw.goal,
     pinned: raw.pinned ?? false,
     lead: raw.lead ?? false,
     position: raw.position ?? 0,

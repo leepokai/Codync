@@ -35,6 +35,7 @@
     "event:bot.bot.devServers[].startedAt": "number",
     "event:bot.bot.devServers[].status": "string",
     "event:bot.bot.fallbacks": "array",
+    "event:bot.bot.goal": "null",
     "event:bot.bot.fastMode": "bool",
     "event:bot.bot.fastModeIssue": "null",
     "event:bot.bot.fastModeSupport": "string",

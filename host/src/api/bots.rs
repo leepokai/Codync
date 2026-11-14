@@ -306,6 +306,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "respondDecision" => {
             crate::chat::decision::respond(hub, str_arg(&b, "entryId")?, str_arg(&b, "option")?).await?
         }
+        // Goal mode: the conversation's goal, its limits, and stopping it.
+        "setGoal" => crate::chat::goal::set(hub, str_arg(&b, "botId")?, &b)?,
+        "stopGoal" => crate::chat::goal::stop(hub, str_arg(&b, "botId")?)?,
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;
             let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;

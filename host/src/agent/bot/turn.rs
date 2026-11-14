@@ -111,7 +111,7 @@ impl Actor {
         self.lane = lane.clone();
         self.turn = Some(turn);
         // Only the user's own words feed memory: not another bot's, a room's or a routine's.
-        let from_user = !hidden && self.source() == TurnSource::User;
+        let from_user = !hidden && self.goal_step.is_none() && self.source() == TurnSource::User;
         self.turn_text = from_user.then(|| text.to_owned());
         self.turn_entries = if from_user { entry_ids.to_vec() } else { Vec::new() };
         // A room turn answers the user's message in the room; another turn, the messages it was given.
@@ -151,7 +151,8 @@ impl Actor {
             self.active_request.is_none()
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
-                && self.host_turn.is_none_or(HostTurn::resumed),
+                && self.host_turn.is_none_or(HostTurn::resumed)
+                && self.goal_step.is_none(),
         );
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
@@ -233,6 +234,10 @@ impl Actor {
             self.set_inflight(true);
         }
         // From here what changes in its memory folders is the bot's, however it changed them.
+        if !self.goal_can_prompt() {
+            let _ = done_tx.send(Ok(json!({"stopReason": "cancelled"})));
+            return Ok(());
+        }
         memory::turns::begin_turn(&self.cfg.id, &sid, self.hub.runtime(&self.cfg.id).message);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
@@ -263,6 +268,13 @@ impl Actor {
         let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
+        // send_message can consume the public reply; the agent's closing marker still counts.
+        let goal_closing = self
+            .goal_step
+            .as_ref()
+            .and(self.last_text.as_ref())
+            .and_then(|id| self.hub.store.entry(id))
+            .and_then(|e| e.data["text"].as_str().map(str::to_owned));
         let routine = self.active_routine.is_some();
         let grouped = self.active_group.is_some() || routine;
         let delegated = self.active_request.is_some();
@@ -387,6 +399,7 @@ impl Actor {
             r.session = None;
         });
         self.hub.team.end_turn(&self.cfg.id);
+        self.goal_ended(stopped, failed || stop_reason != "end_turn", final_text.as_deref(), goal_closing.as_deref());
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
@@ -467,6 +480,8 @@ impl Actor {
             TurnSource::Group
         } else if self.active_request.is_some() || self.reply_hops.is_some() {
             TurnSource::Bot
+        } else if self.goal_step.is_some() {
+            TurnSource::Host
         } else {
             self.host_turn.map_or(TurnSource::User, HostTurn::source)
         }

@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
+            Cmd::Goal(id) => self.enqueue(Queued::Goal(id), done_tx).await,
             Cmd::RefreshTools => {
                 self.tools_changed = true;
             }
@@ -149,6 +150,7 @@ impl Actor {
     }
 
     pub(super) async fn stop(&mut self) {
+        crate::chat::goal::finish(&self.hub, &self.cfg.id, None, crate::chat::goal::Stopped::Manual);
         self.hub.team.end_turn(&self.cfg.id);
         if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
@@ -268,6 +270,11 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::Goal(_)) => {
+                    let Some(Queued::Goal(id)) = self.queue.pop_front() else { unreachable!("goal step") };
+                    self.dequeue_goal(id, done_tx).await;
+                    continue;
+                }
                 Some(Queued::Prompt { .. }) => {
                     let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
@@ -356,6 +363,10 @@ impl Actor {
     pub(super) fn start_failed(&mut self, e: &anyhow::Error) {
         if self.turn.is_some() {
             self.report_turn(false, Some(e), "start_failed");
+        }
+        if let Some(step) = self.goal_step.take() {
+            let why = step.stopped.unwrap_or(crate::chat::goal::Stopped::Failed);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), why);
         }
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);

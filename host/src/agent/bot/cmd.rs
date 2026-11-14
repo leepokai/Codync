@@ -8,6 +8,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub enum Cmd {
+    /// Continue this generation of the conversation's goal.
+    Goal(String),
     RefreshTools,
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
@@ -111,6 +113,7 @@ pub enum Cmd {
 }
 
 pub(super) enum Queued {
+    Goal(String),
     Routine(String),
     FollowUp(String),
     User {

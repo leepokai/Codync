@@ -15,6 +15,7 @@ import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { DevServersSection } from './DevServersSection'
 import { ComputerTab } from './ComputerTab'
+import { GoalSection } from './GoalSection'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -65,6 +66,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
               {tab === 'details' ? (
                 <>
                   {bot ? <DevServersSection bot={bot} /> : null}
+                  {bot ? <GoalSection key={bot.id} bot={bot} /> : null}
                   <BotSettingsPanel botId={botId} part="often" />
                   <RoutinesView botId={botId} initialId={routineId} />
                 </>

@@ -115,6 +115,8 @@ host answers and sends it once the host is up.
 | `reaction_added` | host | `react` | — |
 | `handoff_answered` | host | `editHandoff`, `keepConversation` | `action` (`edit`/`keep`) |
 | `routine_saved` | host | `saveRoutine` | — |
+| `goal_started` | host | `setGoal` starts a conversation goal | No goal text |
+| `goal_stopped` | host | A conversation goal stops | `reason`: `done`, `needsUser`, `failed`, `user`, `limit`, `usage`, `stopped`; no goal text |
 | `routine_toggled` | host | `setRoutineEnabled` | `enabled` |
 | `routine_deleted` | host | `deleteRoutine` | — |
 | `routine_run` | host | `runRoutine` | — |

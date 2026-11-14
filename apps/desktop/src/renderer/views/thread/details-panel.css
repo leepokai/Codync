@@ -54,8 +54,9 @@
 }
 
 /* The sheet opens with the focus in this column, so the keys scroll it. It is a scroller, not a
-   control: a ring here would trace the whole card, so it takes none (as the card itself does). */
-.details-scroll:focus {
+   control: a ring here would trace the whole card, so the sheet takes none. Scope it to the
+   sheet: the docked panel keeps the browser's focus ring for keyboard users. */
+.modal-content > .details-panel > .details-scroll:focus {
   outline: none;
 }
 

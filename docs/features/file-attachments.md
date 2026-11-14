@@ -117,6 +117,9 @@ On iPhone, a note preserves an active call or dictation session. Once recording 
 the next play resets the audio session to playback and releases it on pause, stop or
 completion; a saved recording category alone does not mean the microphone is active.
 
+On Android, removing a card while its audio is loading or preparing prevents playback;
+any player returned after the card is released is released without starting.
+
 ### A voice note inside its message
 
 `send_file {path, text}` sends a message that carries a voice note: one final agent entry

@@ -199,3 +199,16 @@ async fn a_long_field_help_wraps_to_a_second_row() {
     let drawn = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>();
     assert!(drawn.contains("50K–960K"), "the sizes one can type, after a description longer than a row");
 }
+
+#[test]
+fn update_notices_name_the_side_that_needs_updating() {
+    use crate::compat::Mismatch;
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateApp { minimum: "2.46.3".into() }, "Office Mac"),
+        "Update this app: the app on this computer needs Codync 2.46.3 or newer (Office Mac requires it)."
+    );
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateHost { version: "2.20.0".into(), minimum: "2.46.3".into() }, "Office Mac"),
+        "Update Codync on Office Mac: it runs 2.20.0; that computer needs Codync 2.46.3 or newer. ^k → Check for updates."
+    );
+}

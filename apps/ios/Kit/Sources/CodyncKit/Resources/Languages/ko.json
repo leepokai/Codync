@@ -2036,5 +2036,11 @@
   "Click to see the screen": "클릭하여 화면 보기",
   "Tap to see the screen": "탭하여 화면 보기",
   "Paused. Click to continue.": "일시 정지됨. 클릭하여 계속하기.",
-  "Paused. Tap to continue.": "일시 정지됨. 탭하여 계속하기."
+  "Paused. Tap to continue.": "일시 정지됨. 탭하여 계속하기.",
+  "Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.": "클라우드 컴퓨터가 Codync {minimum} 이상으로 업데이트 중입니다. 완료되면 이 앱이 다시 연결됩니다.",
+  "Updating Codync on {host}. This takes a few minutes.": "{host}의 Codync를 업데이트하는 중입니다. 몇 분 걸립니다.",
+  "The app on this computer needs to be {minimum} or newer ({host} requires it).": "이 컴퓨터의 앱을 {minimum} 이상으로 업데이트해야 합니다({host} 요구 사항).",
+  "Codync on {host} is {version}; that computer needs Codync {minimum} or newer.": "{host}의 Codync는 {version}입니다. 그 컴퓨터의 Codync를 {minimum} 이상으로 업데이트해야 합니다.",
+  "{host} needs Codync {version} or newer.": "{host}에는 Codync {version} 이상이 필요합니다.",
+  "This app needs to be {minimum} or newer ({host} requires it).": "이 앱을 {minimum} 이상으로 업데이트해야 합니다({host} 요구 사항)."
 }

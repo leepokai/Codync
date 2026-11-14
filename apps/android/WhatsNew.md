@@ -14,6 +14,15 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
 
+## 2.46.2
+### zh-Hant
+- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
+- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
+
+### en-US
+- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
+- Leaving a chat while a voice note is loading no longer lets it start playing afterward.
+
 ## 2.46.1
 ### zh-Hant
 - bot 詳細資料的「電腦」分頁改成點一下才開始顯示畫面，不會一打開就連線。

@@ -14,6 +14,8 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 備援可以選同一個智慧體的另一個登入設定：一個的額度用完，bot 會換到下一個繼續。
 - 電腦重新啟動或 App、Codync 更新後，iPhone 只接收新的訊息，不再重新載入每個聊天。
 - 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
+- Bot 說「晚點回來看」時會真的設定跟進：聊天裡會出現「20 分鐘後跟進」的提示，時間到了它會自己回到聊天告訴你結果，還沒有進展就不打擾你。
+- 例行任務會記住上次做到哪裡，分批進行的工作下次會接著做。
 
 ### en-US
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
@@ -22,3 +24,5 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - A fallback can be the same agent on another of its login profiles: when one runs out of usage, the bot carries on with the next.
 - After your computer restarts or the app or Codync updates, the iPhone catches up on only what's new instead of reloading every chat.
 - Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
+- A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet.
+- A routine remembers where its last run stopped, so work done in parts carries on from there.

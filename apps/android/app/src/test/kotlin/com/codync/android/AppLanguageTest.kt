@@ -98,6 +98,26 @@ class AppLanguageTest {
         assertEquals(expected, translate(sentence, AppLanguage.Zh, systemIsChinese = false, table))
         assertEquals(expected, translate(sentence, AppLanguage.Zh, systemIsChinese = false, table))
     }
+    @Test fun followUpNoticesTranslateAroundTheWaitAndKeepTheNote() {
+        val table = mapOf(
+            "Follow-up in {when}: {note}" to "{when}后跟进：{note}",
+            "1 minute" to "1 分钟",
+            "{count} minutes" to "{count} 分钟",
+            "about {count} hours" to "约 {count} 小时",
+            "about {count} days" to "约 {count} 天",
+            "Follow-up · {note}" to "跟进 · {note}",
+            "Settings" to "设置",
+        )
+        fun zh(text: String) = translate(text, AppLanguage.Zh, false, table)
+        assertEquals("1 分钟后跟进：Settings", zh("Follow-up in 1 minute: Settings"))
+        assertEquals("20 分钟后跟进：Settings", zh("Follow-up in 20 minutes: Settings"))
+        // A note that reads like another wait stays a note: the wait ends at the first colon.
+        assertEquals("约 3 小时后跟进：look again in 5 minutes: maybe",
+            zh("Follow-up in about 3 hours: look again in 5 minutes: maybe"))
+        assertEquals("1 分钟后跟进：wait 5 minutes: then check", zh("Follow-up in 1 minute: wait 5 minutes: then check"))
+        assertEquals("约 2 天后跟进：rerun if 3 hours: passed", zh("Follow-up in about 2 days: rerun if 3 hours: passed"))
+        assertEquals("跟进 · Settings", zh("Follow-up · Settings"))
+    }
     @Test fun filledTemplatesPreserveNamesMessagesAndNestedHints() {
         val table = mapOf(
             "Routine · {name}" to "例行任务 · {name}",

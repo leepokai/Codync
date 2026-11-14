@@ -2066,5 +2066,12 @@
   "Add variable": "添加变量",
   "Import from login shell": "从登录 shell 导入",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "选择这个登录配置要使用的变量。它们的值会立即复制并保存在 {name} 上。",
-  "Values are kept on {name} only and never shown again.": "值只保存在 {name} 上，不会再次显示。"
+  "Values are kept on {name} only and never shown again.": "值只保存在 {name} 上，不会再次显示。",
+  "Follow-up in {when}: {note}": "{when}后跟进：{note}",
+  "1 minute": "1 分钟",
+  "{count} minutes": "{count} 分钟",
+  "about {count} hours": "约 {count} 小时",
+  "about {count} days": "约 {count} 天",
+  "Follow-up · {note}": "跟进 · {note}",
+  "Follow-up cancelled: {note}": "已取消跟进：{note}"
 }

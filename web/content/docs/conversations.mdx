@@ -150,6 +150,22 @@ Type `/` at the start of a message to see the bot's commands:
 
 Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
 
+## Follow-ups
+
+When something needs another look later (a build that's still running, a reply that hasn't arrived), a bot can set itself a follow-up instead of only saying it will check back. Ask in plain words:
+
+> Check the deploy again in 20 minutes and tell me if it failed.
+
+- A line in the chat confirms it, such as "Follow-up in 20 minutes: Check the deploy". If there's no such line, no follow-up was set.
+- When it's due, a "Follow-up · Check the deploy" line appears and the bot takes one turn in the same chat, with everything said before. Its reply notifies you like any other. If there's nothing worth telling you yet, it stays silent, and it can set another follow-up to keep watching.
+- A follow-up happens once. For something that repeats, ask for a [routine](/docs/routines).
+- Follow-ups work in a bot's own chat. In a [group](/docs/groups), or while it answers [another bot](/docs/teamwork), the bot can't set one: it tells you it can't check back from there. Ask it in its own chat.
+- To see what's waiting or to cancel one, ask the bot. Stopping the bot also drops a follow-up that was due and waiting for its turn; ones set for later stay.
+
+A follow-up can wait from 1 minute to 30 days, and a bot can have 10 waiting at once. A bot that sets a new follow-up each time one comes due stops after 25 in a row and asks you whether to keep watching.
+
+Follow-ups run on your computer, so the host has to be running and the computer awake. While one is waiting, Codync keeps the computer from going to sleep when idle. One that came due while the computer was off or asleep happens as soon as it's back.
+
 ## Fresh conversations
 
 When a conversation in a bot's own chat has grown long, Codync may start the agent over with a summary instead of carrying all of it. The chat then shows a card saying why: the conversation is long and has gone quiet, you've been away a while after several summaries, or summarizing no longer frees enough room. Your next message starts the fresh conversation.

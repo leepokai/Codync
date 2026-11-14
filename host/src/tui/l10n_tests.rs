@@ -94,6 +94,28 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
 }
 
 #[test]
+fn follow_up_notices_translate_around_the_wait_and_keep_the_note() {
+    assert_eq!(translate_with("Follow-up in 1 minute: Settings", &HANS), "1 分钟后跟进：Settings");
+    assert_eq!(translate_with("Follow-up in 20 minutes: Settings", &HANS), "20 分钟后跟进：Settings");
+    // A note that reads like another wait stays a note: the wait ends at the first colon.
+    assert_eq!(
+        translate_with("Follow-up in about 3 hours: look again in 5 minutes: maybe", &HANS),
+        "约 3 小时后跟进：look again in 5 minutes: maybe"
+    );
+    assert_eq!(
+        translate_with("Follow-up in 1 minute: wait 5 minutes: then check", &HANS),
+        "1 分钟后跟进：wait 5 minutes: then check"
+    );
+    assert_eq!(
+        translate_with("Follow-up in about 2 days: rerun if 3 hours: passed", &HANS),
+        "约 2 天后跟进：rerun if 3 hours: passed"
+    );
+    assert_eq!(translate_with("Follow-up in about 2 days: Plan", &HANS), "约 2 天后跟进：Plan");
+    assert_eq!(translate_with("Follow-up · Plan", &HANS), "跟进 · Plan");
+    assert_eq!(translate_with("Follow-up cancelled: Plan", &HANS), "已取消跟进：Plan");
+}
+
+#[test]
 fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
     assert_eq!(translate_with("Created bot connected", &HANS), "已创建机器人 connected");
     assert!(translate_with("Created bot Reviewer", &HANS).ends_with("Reviewer"));

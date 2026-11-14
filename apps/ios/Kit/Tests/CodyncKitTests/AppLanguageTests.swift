@@ -193,6 +193,22 @@ extension AppLanguageTests {
         store.removeObject(forKey: AppLanguage.storageKey)
     }
 
+    @Test func followUpNoticesTranslateAroundTheWaitAndKeepTheNote() {
+        func hant(_ text: String) -> String { L10n.tr(text, preference: .zhHant, systemIsChinese: false) }
+        #expect(hant("Follow-up in 1 minute: Settings") == "1 分鐘後跟進：Settings")
+        #expect(hant("Follow-up in 20 minutes: Settings") == "20 分鐘後跟進：Settings")
+        // A note that reads like another wait stays a note: the wait ends at the first colon.
+        #expect(hant("Follow-up in about 3 hours: look again in 5 minutes: maybe")
+            == "約 3 小時後跟進：look again in 5 minutes: maybe")
+        #expect(hant("Follow-up in 1 minute: wait 5 minutes: then check")
+            == "1 分鐘後跟進：wait 5 minutes: then check")
+        #expect(hant("Follow-up in about 2 days: rerun if 3 hours: passed")
+            == "約 2 天後跟進：rerun if 3 hours: passed")
+        #expect(hant("Follow-up in about 2 days: Plan") == "約 2 天後跟進：Plan")
+        #expect(hant("Follow-up · Plan") == "跟進 · Plan")
+        #expect(hant("Follow-up cancelled: Plan") == "已取消跟進：Plan")
+    }
+
     @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {
         func ru(_ text: String) -> String { L10n.tr(text, preference: .ru, systemIsChinese: false) }
         #expect(ru("Created bot connected") == "Создан бот connected")

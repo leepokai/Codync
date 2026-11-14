@@ -36,7 +36,7 @@ mod turn;
 mod updates;
 
 pub use cmd::Cmd;
-use cmd::Queued;
+use cmd::{HostTurn, Queued};
 pub use compaction::{context_window, offers_threshold};
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
@@ -77,7 +77,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     // A turn the previous host process never finished (crash, update, restart), unless
     // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
     let interrupted = hub.store.kv_get(&inflight_key(&cfg.id)).and_then(|v| {
-        let started: i64 = v.parse().ok()?;
+        let started: i64 = v.trim_end_matches(INFLIGHT_FOLLOW_UP).parse().ok()?;
         (now_ms() - started < STALE_RESUME_MS).then(|| Lane::main(&cfg.id))
     });
     let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
@@ -119,7 +119,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         held_done: None,
         active_request: None,
         reply_hops: None,
-        active_prompt: false,
+        host_turn: None,
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
@@ -308,8 +308,8 @@ struct Actor {
     active_request: Option<crate::chat::team::BotRequest>,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
-    /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`).
-    active_prompt: bool,
+    /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
+    host_turn: Option<HostTurn>,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
@@ -494,9 +494,13 @@ const CANCEL_GRACE: Duration = Duration::from_secs(15);
 /// An interrupted turn older than this isn't resumed.
 const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
 
+/// Where a running turn in the bot's own chat is marked, with the time it started.
 fn inflight_key(bot_id: &str) -> String {
     format!("turn.inflight.{bot_id}")
 }
+
+/// Ends the mark of a follow-up's turn, which is resumed as one.
+const INFLIGHT_FOLLOW_UP: &str = " follow_up";
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {

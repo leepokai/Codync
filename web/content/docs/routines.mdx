@@ -54,6 +54,8 @@ If the bot set up triggers the editor doesn't offer, the editor shows them as **
 
 A routine can have several triggers; it runs when any of them fires.
 
+For one more look at something in a conversation you're already having ("check the build in 20 minutes"), the bot sets a [follow-up](/docs/conversations#follow-ups) instead of a one-time routine: it happens in the same chat and leaves nothing behind.
+
 ## Test, pause, delete
 
 - **Test run** (the play button in the editor; `r` in the terminal UI's list) runs the routine now. It does the real task, side effects included, and works on a paused routine. If a retry is waiting, Test run runs it now. The bot doesn't test a routine it just created unless you ask it to.
@@ -73,10 +75,19 @@ The routine list also shows what each routine is doing, such as Queued, Running,
 
 ### How a run works
 
-- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own. When the run ends, its session closes and, on most agents, the connectors it started stop; Codex keeps them until the agent next stops. An agent that can't close a session, like Cursor, restarts instead once the bot has nothing else running; your next message picks the conversation up where it was, after a few seconds' start.
+- **A fresh session.** Each run starts a session of its own. It doesn't see your conversation with the bot, so write instructions that stand on their own. What a routine carries from one run to the next is its [progress note](#progress-from-one-run-to-the-next). When the run ends, its session closes and, on most agents, the connectors it started stop; Codex keeps them until the agent next stops. An agent that can't close a session, like Cursor, restarts instead once the bot has nothing else running; your next message picks the conversation up where it was, after a few seconds' start.
 - **One thing at a time.** A bot runs one routine at a time, and routine runs take turns with your conversation. A message you send during a run waits until the run ends.
 - **No backlog.** Runs that came due while the host couldn't run them don't pile up. The routine runs once, then keeps its schedule.
 - **Approvals.** Unless the bot's **Permissions** are **Approve automatically**, a run that needs approval waits for you on a card in the chat, within its timeout.
+
+### Progress from one run to the next
+
+Because each run starts fresh, a routine keeps a short progress note: where its runs stand and what's left. Every run reads it first, and a run that did part of a job rewrites it before it ends. That lets a routine work through something in parts ("ten issues each hour until the backlog is empty") and pick up where the last run stopped.
+
+- The bot keeps the note itself; there's nothing to set up. To see it or start over, ask the bot in its chat ("where is the backlog routine up to?", "start that routine from the beginning").
+- Each save replaces the whole note, and it holds at most 2,000 tokens (about 8,000 English characters, or 2,000 Chinese ones), so it stays a position rather than a history. What each run reported stays in the chat.
+- It belongs to the routine: editing the routine keeps it, deleting the routine deletes it.
+- Codync refuses a note with hidden characters, passwords or keys, or text that reads like instructions to an assistant, because the next run reads it.
 
 ## Failed runs and retries
 

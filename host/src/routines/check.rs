@@ -1,7 +1,7 @@
 //! A routine body as `save` takes it, checked before anything is saved; `chat::manage` checks one this way before
 //! its approval card goes up.
 
-use super::{Routine, Routines, ScheduleDraft, State, Trigger, required};
+use super::{Routine, Routines, ScheduleDraft, State, Trigger, own, required};
 use crate::{LockExt, store::now_ms};
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
@@ -47,13 +47,7 @@ impl Checked {
 /// one-time trigger that routine already has.
 pub(super) fn replaced(s: &State, bot: &str, body: &Value, triggers: &[Trigger], now: i64) -> Result<Option<Routine>> {
     let old = match body["id"].as_str() {
-        Some(id) => Some(
-            s.routines
-                .iter()
-                .find(|r| r.id == id && r.bot_id == bot && !r.deleted)
-                .cloned()
-                .context("routine not found")?,
-        ),
+        Some(id) => Some(own(&s.routines, bot, id)?.clone()),
         None => None,
     };
     for trigger in triggers {

@@ -1,0 +1,40 @@
+# A follow-up a bot sets is a line in its chat, and on the phones in 繁體中文 it reads translated around the note the bot
+# wrote. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`; the iPhone gets 繁體中文 from its launch
+# arguments, Android from its language file, written before the run:
+#   adb shell run-as com.pokai.Codync.android.dev sh -c 'mkdir -p shared_prefs && echo "<map><string name=\"appLanguage\">zh-Hant</string></map>" > shared_prefs/codync-language.xml'
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags follow-ups \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e ROUTINE_AGENT="$PWD/host/tests/fixtures/routine_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - follow-ups
+onFlowComplete:
+  - runScript:
+      file: follow-ups.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: follow-ups.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+            "-appLanguage": "zh-Hant"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "30 分鐘後跟進：Look at the build"
+    timeout: 20000

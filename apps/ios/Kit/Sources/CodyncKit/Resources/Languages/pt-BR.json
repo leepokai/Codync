@@ -2066,5 +2066,12 @@
   "Add variable": "Adicionar variável",
   "Import from login shell": "Importar do shell de login",
   "Pick the variables this login profile should use. Their values are copied now and kept on {name}.": "Escolha as variáveis que este perfil de login deve usar. Os valores são copiados agora e guardados em {name}.",
-  "Values are kept on {name} only and never shown again.": "Os valores ficam só em {name} e nunca são mostrados de novo."
+  "Values are kept on {name} only and never shown again.": "Os valores ficam só em {name} e nunca são mostrados de novo.",
+  "Follow-up in {when}: {note}": "Acompanhamento em {when}: {note}",
+  "1 minute": "1 minuto",
+  "{count} minutes": "{count} minutos",
+  "about {count} hours": "cerca de {count} horas",
+  "about {count} days": "cerca de {count} dias",
+  "Follow-up · {note}": "Acompanhamento · {note}",
+  "Follow-up cancelled: {note}": "Acompanhamento cancelado: {note}"
 }

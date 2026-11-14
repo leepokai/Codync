@@ -27,6 +27,8 @@ pub enum TurnSource {
     Bot,
     /// The host's own turn, with no message of the user's (the lead opening a call).
     Host,
+    /// A follow-up the bot set for itself came due.
+    FollowUp,
 }
 
 /// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
@@ -55,6 +57,7 @@ pub fn turn_finished(
         TurnSource::Group => "group",
         TurnSource::Bot => "bot",
         TurnSource::Host => "host",
+        TurnSource::FollowUp => "follow_up",
     };
     let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
     if let Some((kind, rpc)) = failure {

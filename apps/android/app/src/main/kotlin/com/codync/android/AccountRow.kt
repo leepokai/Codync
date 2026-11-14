@@ -25,18 +25,20 @@ internal fun CardRows.accountRow(state: AppState, store: AppStore, draft: BotDra
 }
 
 /**
- * Which of the agent's logins a bot runs on: the one the computer already has, or one of its other
- * accounts. "Add account…" opens the agent's setup, where a new one signs in.
+ * Which of the agent's accounts a bot runs on: the default one (the login the computer already has), or one of its other
+ * accounts. "Add account…" opens the agent's setup, where a new one signs in. [free]: the accounts that can be picked
+ * (null: the default one), when not all can: a fallback's, whose chain has the others.
  */
-@Composable private fun AccountPicker(backend: AgentBackend, account: String?, state: AppState, store: AppStore, select: (String?) -> Unit) {
+@Composable internal fun AccountPicker(backend: AgentBackend, account: String?, state: AppState, store: AppStore, free: List<String?>? = null,
+    select: (String?) -> Unit) {
     var adding by remember { mutableStateOf(false) }
-    val choices = backend.accountChoices(account)
-    val own = tr("This computer's sign-in")
+    val choices = backend.accountChoices(account).filter { free == null || it.id in free }
+    val own = backend.ownAccount?.name ?: tr("Default account")
     val unnamed = tr("New account")
     val current = if (account == null) own else choices.firstOrNull { it.id == account }?.name ?: unnamed
     ValueRow("Account") {
         DropdownMenu({
-            listOf(MenuItem(own, selected = account == null, verbatim = true) { select(null) }) +
+            listOfNotNull(MenuItem(own, selected = account == null, verbatim = true) { select(null) }.takeIf { free == null || null in free }) +
                 choices.map { MenuItem(it.name ?: unnamed, selected = it.id == account, verbatim = true) { select(it.id) } } +
                 MenuItem("Add account…", divider = true) { adding = true }
         }, label = "${tr("Account")}: $current") {

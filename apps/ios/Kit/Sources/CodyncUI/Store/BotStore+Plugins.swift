@@ -86,6 +86,13 @@ extension BotStore {
         try await ready().agentGear(backend: backend)
     }
 
+    /// The agent list a reply carries replaces the one on screen. The reply is awaited before this is called:
+    /// `hello?.backends = try await …` tells the screens of the change as the request leaves, so they draw the old
+    /// list again and miss the new one.
+    private func showBackends(_ backends: [Backend]) {
+        hello?.backends = backends
+    }
+
     /// A new, signed-out account for `backend`; its sign-in follows.
     func addAgentAccount(_ backend: String) async throws -> AgentAccount {
         let added = try await ready().addAgentAccount(backend)
@@ -95,12 +102,22 @@ extension BotStore {
 
     /// After an account's sign-in terminal closes: whether it went through, and as whom.
     func checkAgentAccount(_ backend: String, account: String) async throws {
-        hello?.backends = try await ready().agentAccountAuth(backend, account: account)
+        showBackends(try await ready().agentAccountAuth(backend, account: account))
+    }
+
+    /// For an agent that signs its accounts in itself: waits for the browser sign-in on the computer.
+    func signInAgentAccount(_ backend: String, account: String) async throws {
+        showBackends(try await ready().signInAgentAccount(backend, account: account))
+    }
+
+    /// Names an account (`account` nil: the default one); an empty name clears it.
+    func renameAgentAccount(_ backend: String, account: String?, name: String) async throws {
+        showBackends(try await ready().renameAgentAccount(backend, account: account, name: name))
     }
 
     /// Fails, in words to show, while a bot still uses the account.
     func removeAgentAccount(_ account: String) async throws {
-        hello?.backends = try await ready().removeAgentAccount(account)
+        showBackends(try await ready().removeAgentAccount(account))
     }
 
     /// Re-detects agents on the computer (after an install or sign-in).

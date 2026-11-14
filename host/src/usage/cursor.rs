@@ -130,7 +130,7 @@ fn token_text(raw: &str) -> String {
 }
 
 fn jwt_sub(token: &str) -> Option<String> {
-    let claims = super::jwt_claims(token)?;
+    let claims = codync_accounts::jwt_claims(token)?;
     let sub = claims["sub"].as_str().filter(|s| !s.is_empty())?;
     Some(sub.to_owned())
 }

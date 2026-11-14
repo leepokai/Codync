@@ -3,18 +3,40 @@
 //! without a word. Folders are linked, so both sides see one copy; files the agent rewrites by rename (which
 //! replaces a link) are copied before each start.
 
-use anyhow::{Context, Result};
+use crate::Error;
+use crate::identity::read_json;
 use serde_json::Value;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
 #[derive(Clone, Copy)]
-pub(super) enum Shared {
+pub(crate) enum Shared {
     /// Claude Code keeps runtime state of its own beside the setup, so only what's named here is shared.
     Claude,
-    /// Everything in the agent's home is linked except these, which hold the login (Codex).
-    AllBut(&'static [&'static str]),
+    /// Everything in the agent's home is linked except `private`, which holds the login (Codex). `sessions` is
+    /// linked even before the user has it.
+    AllBut { private: &'static [&'static str], sessions: &'static str },
+    /// Google Antigravity: everything but its ACP server's folder, where only the conversations are shared.
+    Antigravity,
+    /// The slot holds only the login: the agent's setup lives elsewhere and every account reads it (`OpenCode`).
+    Nothing,
+}
+
+type Result<T = ()> = std::result::Result<T, Error>;
+
+/// An I/O failure on `path`, with what was being done.
+fn failed(doing: &'static str, path: &Path) -> impl FnOnce(std::io::Error) -> Error {
+    let path = path.to_path_buf();
+    move |source| Error::Slot { doing, path, source }
+}
+
+/// The ACP server's folder in Antigravity's home, and what of it every account shares.
+const ANTIGRAVITY_SERVER: &str = "antigravity-acp";
+const ANTIGRAVITY_SHARED: [&str; 2] = ["conversations", "brain"];
+
+pub(crate) fn make(folder: &Path) -> Result {
+    fs::create_dir_all(folder).map_err(failed("creating", folder))
 }
 
 /// Claude Code's setup folders: linked when the user has them.
@@ -25,12 +47,22 @@ const CLAUDE_SESSIONS: [&str; 8] =
 const CLAUDE_FILES: [&str; 2] = ["CLAUDE.md", "keybindings.json"];
 /// Settings that choose a login: an account keeps its own.
 const CLAUDE_LOGIN_SETTINGS: [&str; 3] = ["apiKeyHelper", "forceLoginMethod", "forceLoginOrgUUID"];
-pub(super) const CLAUDE_LOGIN_ENV: [&str; 3] = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"];
+pub(crate) const CLAUDE_LOGIN_ENV: [&str; 3] = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"];
 
 /// Makes `slot` share `home` (the agent's folder in `user_home`).
-pub(super) fn share(shared: Shared, user_home: &Path, home: &Path, slot: &Path) -> Result<()> {
-    fs::create_dir_all(slot).with_context(|| format!("creating {}", slot.display()))?;
+pub(crate) fn share(shared: Shared, user_home: &Path, home: &Path, slot: &Path) -> Result {
+    make(slot)?;
     match shared {
+        Shared::Nothing => Ok(()),
+        Shared::Antigravity => {
+            link_all_but(home, slot, &[ANTIGRAVITY_SERVER])?;
+            let (server, own) = (home.join(ANTIGRAVITY_SERVER), slot.join(ANTIGRAVITY_SERVER));
+            make(&own)?;
+            for name in ANTIGRAVITY_SHARED {
+                link_shared(&server.join(name), &own.join(name))?;
+            }
+            Ok(())
+        }
         Shared::Claude => {
             for name in CLAUDE_SETUP {
                 link(&home.join(name), &slot.join(name))?;
@@ -45,24 +77,29 @@ pub(super) fn share(shared: Shared, user_home: &Path, home: &Path, slot: &Path) 
             // Without `CLAUDE_CONFIG_DIR` Claude Code keeps this file beside its folder, with it inside.
             claude_mcp_servers(&user_home.join(".claude.json"), &slot.join(".claude.json"))
         }
-        Shared::AllBut(private) => {
-            link_shared(&home.join("sessions"), &slot.join("sessions"))?;
-            let Ok(entries) = fs::read_dir(home) else { return Ok(()) };
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                if !private.iter().any(|p| name == *p) {
-                    link(&entry.path(), &slot.join(&name))?;
-                }
-            }
-            Ok(())
+        Shared::AllBut { private, sessions } => {
+            link_shared(&home.join(sessions), &slot.join(sessions))?;
+            link_all_but(home, slot, private)
         }
     }
 }
 
+/// Links everything in `home` into `slot`, except `private`.
+fn link_all_but(home: &Path, slot: &Path, private: &[&str]) -> Result {
+    let Ok(entries) = fs::read_dir(home) else { return Ok(()) };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !private.iter().any(|p| name == *p) {
+            link(&entry.path(), &slot.join(&name))?;
+        }
+    }
+    Ok(())
+}
+
 /// Links a folder both sides must share. One the user doesn't have yet is made first: left to the agent, the
 /// slot's would be a folder of its own that is never shared, and goes with the account.
-fn link_shared(source: &Path, target: &Path) -> Result<()> {
-    fs::create_dir_all(source).with_context(|| format!("creating {}", source.display()))?;
+fn link_shared(source: &Path, target: &Path) -> Result {
+    make(source)?;
     link(source, target)
 }
 
@@ -70,7 +107,7 @@ fn link_shared(source: &Path, target: &Path) -> Result<()> {
 /// only thing replaced.
 // ponytail: a file the agent rewrote by rename (Codex's `config.toml`) is its own copy from then on. Upgrade:
 // merge the slot's changes back into the user's file, then link again.
-fn link(source: &Path, target: &Path) -> Result<()> {
+fn link(source: &Path, target: &Path) -> Result {
     let Ok(meta) = fs::metadata(source) else { return Ok(()) };
     match fs::symlink_metadata(target) {
         Ok(existing) if existing.is_dir() && !existing.is_symlink() => {
@@ -81,9 +118,9 @@ fn link(source: &Path, target: &Path) -> Result<()> {
         }
         Ok(_) => return Ok(()),
         Err(e) if e.kind() == ErrorKind::NotFound => {}
-        Err(e) => return Err(e).with_context(|| format!("reading {}", target.display())),
+        Err(e) => return Err(failed("reading", target)(e)),
     }
-    make_link(source, target, meta.is_dir()).with_context(|| format!("linking {}", target.display()))
+    make_link(source, target, meta.is_dir()).map_err(failed("linking", target))
 }
 
 #[cfg(unix)]
@@ -111,30 +148,35 @@ fn make_link(source: &Path, target: &Path, dir: bool) -> std::io::Result<()> {
 }
 
 /// Makes `target` the same file as `source`, when there is one.
-fn copy(source: &Path, target: &Path) -> Result<()> {
+fn copy(source: &Path, target: &Path) -> Result {
     match fs::read(source) {
         Ok(bytes) => write_if_changed(target, &bytes),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e).with_context(|| format!("reading {}", source.display())),
+        Err(e) => Err(failed("reading", source)(e)),
     }
 }
 
-fn write_if_changed(target: &Path, bytes: &[u8]) -> Result<()> {
+fn write_if_changed(target: &Path, bytes: &[u8]) -> Result {
     if fs::read(target).is_ok_and(|current| current == bytes) {
         return Ok(());
     }
-    fs::write(target, bytes).with_context(|| format!("writing {}", target.display()))
+    fs::write(target, bytes).map_err(failed("writing", target))
+}
+
+/// JSON as the agents write it. A `Value` always serializes.
+fn pretty(value: &Value) -> Vec<u8> {
+    serde_json::to_vec_pretty(value).unwrap_or_default()
 }
 
 fn read_object(path: &Path) -> Option<Value> {
-    super::read_json(path).filter(Value::is_object)
+    read_json(path).filter(Value::is_object)
 }
 
 /// The user's settings, without the ones that would sign the account in as someone else.
-fn claude_settings(source: &Path, target: &Path) -> Result<()> {
+fn claude_settings(source: &Path, target: &Path) -> Result {
     let Some(mut settings) = read_object(source) else { return Ok(()) };
     without_login(&mut settings);
-    write_if_changed(target, &serde_json::to_vec_pretty(&settings)?)
+    write_if_changed(target, &pretty(&settings))
 }
 
 fn without_login(settings: &mut Value) {
@@ -147,7 +189,7 @@ fn without_login(settings: &mut Value) {
 
 /// The user's own MCP servers are in a file that also says who is signed in, so only that one key is carried
 /// over. The file is written only when the servers changed: Claude Code writes it too while it runs.
-fn claude_mcp_servers(source: &Path, target: &Path) -> Result<()> {
+fn claude_mcp_servers(source: &Path, target: &Path) -> Result {
     let Some(servers) = read_object(source).and_then(|mut v| v.get_mut("mcpServers").map(Value::take)) else {
         return Ok(());
     };
@@ -156,18 +198,30 @@ fn claude_mcp_servers(source: &Path, target: &Path) -> Result<()> {
         return Ok(());
     }
     state["mcpServers"] = servers;
-    write_if_changed(target, &serde_json::to_vec_pretty(&state)?)
+    write_if_changed(target, &pretty(&state))
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
-    fn scratch() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("codync-account-slot-{}", uuid::Uuid::new_v4()));
+    pub(crate) fn scratch() -> std::path::PathBuf {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("codync-account-slot-{}-{n}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    /// Whether a file put in `mine` shows up in `theirs`: the two are one folder.
+    fn shares(mine: &Path, theirs: &Path) -> bool {
+        let probe = mine.join(".probe");
+        fs::write(&probe, "x").expect("a file in the folder");
+        let seen = theirs.join(".probe").exists();
+        fs::remove_file(probe).expect("removed");
+        seen
     }
 
     fn home() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
@@ -178,7 +232,6 @@ mod tests {
         (root, home, slot)
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_claude_slot_shares_setup_and_sessions_but_not_the_login() {
         let (root, home, slot) = home();
@@ -217,20 +270,18 @@ mod tests {
         assert_eq!(state["oauthAccount"]["emailAddress"], "work@example.com", "the account stays signed in as itself");
     }
 
-    #[cfg(unix)]
     #[test]
     fn session_folders_the_user_lacks_are_made_so_both_sides_share_them() {
         let root = scratch();
         let (home, slot) = (root.join(".claude"), root.join("slot"));
         share(Shared::Claude, &root, &home, &slot).expect("share");
-        assert!(slot.join("projects").is_symlink() && home.join("projects").is_dir());
+        assert!(shares(&slot.join("projects"), &home.join("projects")));
         assert!(!home.join("skills").exists(), "setup the user doesn't have isn't made up");
         let (home, slot) = (root.join(".codex"), root.join("codex-slot"));
-        share(Shared::AllBut(&["auth.json"]), &root, &home, &slot).expect("share");
-        assert!(slot.join("sessions").is_symlink() && home.join("sessions").is_dir());
+        share(Shared::AllBut { private: &["auth.json"], sessions: "sessions" }, &root, &home, &slot).expect("share");
+        assert!(shares(&slot.join("sessions"), &home.join("sessions")));
     }
 
-    #[cfg(unix)]
     #[test]
     fn sharing_again_keeps_what_the_slot_made_its_own() {
         let (root, home, slot) = home();
@@ -238,11 +289,38 @@ mod tests {
         fs::create_dir_all(slot.join("projects")).expect("an empty folder the agent made");
         share(Shared::Claude, &root, &home, &slot).expect("share");
         share(Shared::Claude, &root, &home, &slot).expect("share again");
-        assert!(slot.join("skills/own").is_dir() && !slot.join("skills").is_symlink());
-        assert!(slot.join("projects").is_symlink(), "an empty folder becomes the shared one");
+        assert!(slot.join("skills/own").is_dir(), "its own skills stay");
+        assert!(!home.join("skills/own").exists());
+        fs::write(slot.join("projects/s.jsonl"), "{}").expect("a session");
+        assert!(home.join("projects/s.jsonl").exists(), "an empty folder becomes the shared one");
     }
 
-    #[cfg(unix)]
+    #[test]
+    fn an_antigravity_slot_shares_conversations_but_keeps_its_servers_sign_in() {
+        let root = scratch();
+        let (home, slot) = (root.join(".gemini"), root.join("slot"));
+        fs::create_dir_all(home.join("skills")).expect("skills");
+        fs::create_dir_all(home.join("antigravity-acp/conversations")).expect("conversations");
+        fs::write(home.join("antigravity-acp/acp_token.json"), "secret").expect("login");
+        fs::write(home.join("antigravity-acp/settings.json"), "{}").expect("which sign-in");
+        share(Shared::Antigravity, &root, &home, &slot).expect("share");
+        assert!(shares(&slot.join("skills"), &home.join("skills")));
+        let server = slot.join("antigravity-acp");
+        assert!(!shares(&server, &home.join("antigravity-acp")), "its own folder");
+        let theirs = home.join("antigravity-acp");
+        assert!(shares(&server.join("conversations"), &theirs.join("conversations")));
+        assert!(shares(&server.join("brain"), &theirs.join("brain")));
+        assert!(!server.join("acp_token.json").exists() && !server.join("settings.json").exists());
+    }
+
+    #[test]
+    fn a_slot_that_holds_only_the_login_takes_nothing_from_the_users_home() {
+        let root = scratch();
+        fs::create_dir_all(root.join("skills")).expect("the user's own");
+        share(Shared::Nothing, &root, &root, &root.join("slot")).expect("share");
+        assert_eq!(fs::read_dir(root.join("slot")).expect("the slot").count(), 0);
+    }
+
     #[test]
     fn a_slot_that_shares_all_but_the_login_links_everything_else() {
         let root = scratch();
@@ -250,8 +328,9 @@ mod tests {
         fs::create_dir_all(home.join("sessions")).expect("sessions");
         fs::write(home.join("config.toml"), "model = \"gpt\"").expect("config");
         fs::write(home.join("auth.json"), "secret").expect("login");
-        share(Shared::AllBut(&["auth.json"]), &root, &home, &slot).expect("share");
-        assert!(slot.join("sessions").is_symlink() && slot.join("config.toml").is_symlink());
+        share(Shared::AllBut { private: &["auth.json"], sessions: "sessions" }, &root, &home, &slot).expect("share");
+        assert!(shares(&slot.join("sessions"), &home.join("sessions")));
+        assert_eq!(fs::read_to_string(slot.join("config.toml")).expect("the user's config"), "model = \"gpt\"");
         assert!(!slot.join("auth.json").exists());
     }
 }

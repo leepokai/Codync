@@ -1,9 +1,9 @@
 //! How long an agent rests after it couldn't answer. Usage belongs to the agent's account, not to one bot, so a
 //! rest is the computer's: once one bot finds Claude Code out of usage, every bot skips it until it resets. A usage
 //! limit rests until the reset time the agent reported (`usage`); other failures rest longer each time in a row.
-//! Kept in `kv` (`rest.<account>`, see `account`), so a host restart remembers them.
+//! Kept in `kv` (`rest.<login>`, see `login`), so a host restart remembers them.
 
-use super::Reason;
+use super::{Reason, login};
 use crate::store::Store;
 use crate::usage::Usage;
 use serde::{Deserialize, Serialize};
@@ -36,43 +36,6 @@ fn key(account: &str) -> String {
     format!("rest.{account}")
 }
 
-/// Whose usage a rest is about: the agent's login (the computer's own, or the bot's agent account), or a custom
-/// command's own (two custom commands are two agents). `cfg` is the bot as it runs: its `account` is its agent's.
-pub fn account(cfg: &crate::store::BotConfig) -> String {
-    match &cfg.account {
-        Some(id) => format!("{}{ON_ACCOUNT}{id}", cfg.backend),
-        None => account_of(&cfg.backend, cfg.command.as_deref()),
-    }
-}
-
-/// Between the agent and the id of the agent account (`agent::accounts`) a rest is about. Never the start of a
-/// custom command's hash.
-const ON_ACCOUNT: &str = "#account-";
-
-/// The agent account `account` is about; none for the computer's own login.
-fn agent_account(account: &str) -> Option<&str> {
-    account.split_once(ON_ACCOUNT).map(|(_, id)| id)
-}
-
-/// `account` of agent `backend` run by `command`, if a custom one.
-pub fn account_of(backend: &str, command: Option<&str>) -> String {
-    use sha2::{Digest as _, Sha256};
-    use std::fmt::Write as _;
-    let Some(command) = command.map(str::trim).filter(|c| !c.is_empty()) else {
-        return backend.to_owned();
-    };
-    let hash = Sha256::digest(command);
-    hash[..6].iter().fold(format!("{backend}#"), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    })
-}
-
-/// The agent `account` runs.
-fn backend_of(account: &str) -> &str {
-    account.split_once('#').map_or(account, |(backend, _)| backend)
-}
-
 /// `account`'s last rest, over or not.
 fn saved(store: &Store, account: &str) -> Option<Rest> {
     serde_json::from_str(&store.kv_get(&key(account))?).ok()
@@ -93,7 +56,7 @@ pub fn record(store: &Store, account: &str, reason: Reason, now: i64, resets_at:
         Reason::ModelMissing | Reason::ModeMissing => return None,
         Reason::UsageLimit => resets_at.filter(|t| *t > now).map_or(UNKNOWN_RESET, |t| t - now),
         Reason::OutOfCredits => OUT_OF_CREDITS,
-        Reason::SignedOut if crate::agent::backends::harness(backend_of(account)).is_some() => SIGNED_OUT,
+        Reason::SignedOut if crate::agent::backends::harness(login::backend_of(account)).is_some() => SIGNED_OUT,
         Reason::SignedOut => SIGNED_OUT_ELSEWHERE,
         Reason::NotStarting => NOT_STARTING,
         Reason::RateLimited | Reason::Overloaded => BACKOFF[(failures as usize - 1).min(BACKOFF.len() - 1)],
@@ -121,7 +84,7 @@ pub fn signed_out(store: &Store, backend: &str, agent_account: Option<&str>) -> 
         .kv_prefix(&key(backend))
         .iter()
         .filter_map(|k| k.strip_prefix("rest."))
-        .filter(|a| backend_of(a) == backend && self::agent_account(a) == agent_account)
+        .filter(|a| login::backend_of(a) == backend && login::agent_account(a) == agent_account)
         .filter(|a| saved(store, a).is_some_and(|r| r.reason == Reason::SignedOut))
         .map(str::to_owned)
         .collect()
@@ -145,7 +108,7 @@ mod tests {
     #[test]
     fn signing_in_ends_only_a_signed_out_rest() {
         let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
-        let wrapped = account_of("claude", Some("claude-wrapper"));
+        let wrapped = login::key("claude", Some("claude-wrapper"), None);
         for account in ["claude", wrapped.as_str(), "claudette"] {
             assert_eq!(record(&store, account, Reason::SignedOut, 0, None).map(|r| r.reason), Some(Reason::SignedOut));
         }
@@ -153,7 +116,7 @@ mod tests {
         let mut on_account: crate::store::BotConfig =
             serde_json::from_value(serde_json::json!({"id": "b", "name": "B", "backend": "claude", "account": "a1"}))
                 .expect("a bot");
-        let a1 = account(&on_account);
+        let a1 = login::of(&on_account);
         record(&store, &a1, Reason::SignedOut, 0, None);
         let mut ended = signed_out(&store, "claude", None);
         ended.sort();
@@ -165,7 +128,7 @@ mod tests {
         );
         assert_eq!(get(&store, &a1, 0).map(|r| r.until), Some(SIGNED_OUT), "an account of an agent Codync signs in");
         on_account.account = None;
-        assert_eq!(account(&on_account), "claude");
+        assert_eq!(login::of(&on_account), "claude");
         assert!(signed_out(&store, "codex", None).is_empty(), "signing in doesn't give usage back");
         // One Codync can't sign in to looks again sooner.
         assert_eq!(get(&store, "claudette", 0).map(|r| r.until), Some(SIGNED_OUT_ELSEWHERE));
@@ -193,11 +156,11 @@ mod tests {
         let mut custom: crate::store::BotConfig =
             serde_json::from_value(serde_json::json!({"id": "b", "name": "B", "backend": "custom", "command": "a"}))
                 .expect("a bot");
-        let a = account(&custom);
+        let a = login::of(&custom);
         custom.command = Some("b".into());
-        assert!(a.starts_with("custom#") && a != account(&custom), "two custom commands are two agents");
+        assert!(a.starts_with("custom#") && a != login::of(&custom), "two custom commands are two agents");
         custom.backend = "codex".into();
         custom.command = None;
-        assert_eq!(account(&custom), "codex");
+        assert_eq!(login::of(&custom), "codex");
     }
 }

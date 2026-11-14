@@ -47,8 +47,8 @@ data class BotDraft(
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
     fun toggleNotifications(): BotDraft = copy(notify = !(notify ?: true))
-    /** On agent [id]: its account and model start over, and it leaves the fallbacks (each agent appears once in the chain). */
-    fun withAgent(id: String): BotDraft = copy(backend = id, account = null, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.backend != id },
+    /** On agent [id], on the computer's own login: its model starts over, and a fallback on that login goes (each login is in the chain once). */
+    fun withAgent(id: String): BotDraft = copy(backend = id, account = null, model = null, modelOptions = emptyMap(), fallbacks = fallbacks?.filter { it.login != Login(id) },
         // A picked mode becomes the new agent's Auto mode (or, without one, asking).
         mode = mode?.let { AgentMode.AUTO })
     fun body(): JsonObject {

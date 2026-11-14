@@ -101,6 +101,20 @@ impl App {
                 let body = json!({"botId": bot, "artifactId": artifact, "title": values["title"]});
                 self.sheet("renameArtifact", body, Reply::FieldsSaved);
             }
+            Submit::RenameAccount { backend, account } => {
+                let name: String = values
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(codync_accounts::LABEL_MAX)
+                    .collect();
+                let mut body = json!({"backend": backend, "name": name});
+                if let Some(account) = account {
+                    body["account"] = account.as_str().into();
+                }
+                self.sheet("renameAgentAccount", body, Reply::FieldsSaved);
+            }
         }
     }
 }

@@ -100,7 +100,7 @@ pub enum Event {
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
-    /// An agent account was added or removed (`action`); never its name or who it signs in.
+    /// An agent account was added, renamed or removed (`action`); never its name or who it signs in.
     AgentAccountChanged,
     SettingChanged,
     /// The desktop app's ask before Reach from anywhere turns on for a computer in no account.

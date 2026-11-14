@@ -2046,11 +2046,14 @@
   "Couldn't send. Try again.": "傳送失敗，請再試一次。",
   "Uploading {sent} of {total}": "正在上傳 {sent}/{total}",
   "Couldn't read this file": "無法讀取這個檔案",
-  "Other accounts": "其他賬戶",
-  "A bot picks its account under Agent in its settings. Bots that pick none use the sign-in above.": "機器人在自己設定的「智慧體」裡選擇賬戶。沒有選擇的機器人使用上面的登入。",
   "Remove account": "移除賬戶",
   "Signs in another {name} account in a terminal on {other}.": "在 {other} 的終端裡登入另一個 {name} 賬戶。",
-  "This computer's sign-in": "這臺電腦的登入",
   "Add account…": "新增賬戶…",
-  "New account": "新賬戶"
+  "New account": "新賬戶",
+  "Signs in another {name} account in a browser on {other}.": "在 {other} 的瀏覽器裡登入另一個 {name} 賬戶。",
+  "Accounts": "賬戶",
+  "Default account": "預設賬戶",
+  "Account name": "賬戶名稱",
+  "Rename account": "重新命名賬戶",
+  "A bot picks its account under Agent in its settings. Bots that pick none use the default account.": "機器人在自己設定的「智慧體」裡選擇賬戶。沒有選擇的機器人使用預設賬戶。"
 }

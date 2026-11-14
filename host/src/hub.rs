@@ -64,6 +64,9 @@ pub struct Runtime {
 pub struct AgentStep {
     pub step: usize,
     pub agent: String,
+    /// The agent account the step runs on; none for the computer's own login.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
     pub model: Option<String>,
     pub since: i64,
     pub reason: Option<crate::agent::fallback::Reason>,
@@ -71,7 +74,14 @@ pub struct AgentStep {
 
 impl AgentStep {
     pub fn new(cfg: &BotConfig, step: usize, reason: Option<crate::agent::fallback::Reason>) -> Self {
-        Self { step, agent: cfg.backend.clone(), model: cfg.model.clone(), since: crate::store::now_ms(), reason }
+        Self {
+            step,
+            agent: cfg.backend.clone(),
+            account: cfg.account.clone(),
+            model: cfg.model.clone(),
+            since: crate::store::now_ms(),
+            reason,
+        }
     }
 }
 

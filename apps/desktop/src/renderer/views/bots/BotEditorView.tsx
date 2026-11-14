@@ -144,7 +144,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
     </Field>
   )
-  const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
       onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}

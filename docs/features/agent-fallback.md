@@ -6,9 +6,10 @@ The bot goes back to its own agent once that one recovers ([#184](https://github
 
 The chain is of **agents** (Claude Code → Codex → Gemini CLI), not of models. Falling back between one agent's models
 stays that agent's own setting (Claude Code's `fallbackModel`). Only Codync can move a conversation from one agent to
-another.
+another. A step can also be the same agent on another of its [accounts](agent-accounts.md) (Claude Code → Claude
+Code on a second account): the chain has each login once, and steps, parked sessions and rests go by login.
 
-Code: `host/src/agent/fallback/` (the chain, `reason`, `rest`, `carry`), `host/src/agent/bot/fallback.rs` (the
+Code: `host/src/agent/fallback/` (the chain, `login`, `reason`, `rest`, `carry`), `host/src/agent/bot/fallback.rs` (the
 actor's side; each agent's parked session in `fallback/park.rs`), `host/src/chat/fallbacks.rs` (the bot's own tools).
 
 ## What other projects taught
@@ -40,10 +41,12 @@ What their issues taught, and the answer here:
 
 ## The chain
 
-- Per bot: its agent and model (step 0), then `fallbacks`, up to 3, each `{backend, model, modelOptions}` (a custom
-  `command` is accepted on the wire, not offered in the apps). Empty by default.
-- Each agent appears once, the bot's own included. Making a fallback the bot's own agent drops it from the list
-  (`fallback::tidy`).
+- Per bot: its agent and model (step 0), then `fallbacks`, up to 3, each `{backend, account, model, modelOptions}` (a
+  custom `command` is accepted on the wire, not offered in the apps). Empty by default.
+- Each login appears once, the bot's own included (`fallback::login`: the agent, a custom command's own, or
+  `<agent>#account-<id>` on an [agent account](agent-accounts.md)). So an agent comes again only on another of its
+  accounts: Claude Code → Claude Code on a second account → Codex. Making a fallback's login the bot's own drops it
+  from the list (`fallback::tidy`).
 - Everything else is the bot's for every step: folder, approvals, connectors, skills, computer use, memory, fast mode
   where the step's agent has it (`fallback::effective`). Its mode too ([agent modes](marketplace.md#agent-modes)):
   `auto` is each step's own Auto mode. A fallback step whose agent lacks any other mode runs in its stand-in
@@ -74,7 +77,7 @@ on. CodeBuddy's CLI (CodeBuddy Code, WorkBuddy) answers a failed prompt as a ref
 signed-out WorkBuddy moves on. codex-acp still sends its 429s and overloads as reply text ([codex-acp#647](https://github.com/agentclientprotocol/codex-acp/issues/647)),
 so only its usage limit moves a Codex bot on today.
 
-**Rests** (`fallback::rest`, `kv` `rest.<account>`: the agent, a custom command's own, or the agent on an
+**Rests** (`fallback::rest`, `kv` `rest.<login>`: the agent, a custom command's own, or the agent on an
 [agent account](agent-accounts.md), `<agent>#account-<id>`) are the computer's: once one
 bot finds Claude Code out of usage, every bot on that login skips it until it resets. Each login rests by itself: a usage
 limit or sign-out on an agent account leaves the computer's own login, and the bots on it, alone, and the other way
@@ -154,16 +157,21 @@ The `chat` server's `list_agents` (agents on this computer, signed in, resting; 
 limits. On by default; the user turns it off per bot ("Let the bot change its fallbacks", `selfFallbacks`). A notice
 in its chat records each change. A bot that manages the team sets any bot's with `update_bot`'s `fallbacks`, its own
 only while `selfFallbacks` is on. Both name agents and models only: an agent already in the list keeps its custom
-command, and its model options while the model stays.
+command, its account, and its model options while the model stays. An agent that is in the list again on another
+account keeps them in order (the n-th step of an agent is the n-th saved one of it), and the notice names each
+step's account ("Fallbacks set: Claude Code (Work)").
 
 ## Apps
 
 iPhone, Android, desktop and terminal show the same things:
 
 - **Details → Agent card**: while on a fallback, a first row "Using Codex until Claude Code resets at 3:00 PM" with
-  **Switch back**; under Model and Fast mode, **Fallbacks** with an info button and **+** (an Add fallback sheet with
-  the Agent and Model pickers, the bot's own agent and those already listed left out); a row per fallback with its
-  number, logo, "Agent · Model", "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip,
+  **Switch back** (a login on an account goes by it, "Claude Code (Work)", and when both are one agent so does the
+  computer's own, "Claude Code (Default account)"); under Model and Fast mode, **Fallbacks** with an info button and
+  **+** (an Add fallback sheet with the Agent and Model pickers and, for an agent with accounts, an Account picker:
+  it offers the logins the chain doesn't have yet, signed in, so the bot's own agent is offered on its other
+  accounts and an agent with no login left is left out); a row per fallback with its
+  number, logo, "Agent · Model" ("Agent (account) · Model" on an account), "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip,
   and a ⋯ menu (Move up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its
   fallbacks" switch. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
@@ -173,7 +181,7 @@ iPhone, Android, desktop and terminal show the same things:
   sign-in sheet. A failure with
   `addFallback` offers **Add a fallback**, which opens the Agent card.
 - **Terminal**: the bot form's Fallbacks field (←→ pick, space adds the next free agent or cycles a fallback's model,
-  `a` changes its agent, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them); Details shows the agent in use and the chain,
+  `a` changes its agent, `c` changes its account, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them); Details shows the agent in use and the chain,
   `B` switches back; in the chat `↪` lines unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
   (in a group, the member whose agent failed).
 
@@ -181,9 +189,16 @@ iPhone, Android, desktop and terminal show the same things:
 
 All additive (no `minApp` change):
 
-- Bot: `fallbacks`, `selfFallbacks` (settings; `createBot`/`updateBot`); `agentStep: {step, agent, model, since,
-  reason} | null` and `resting: [{agent, until, reason}]` (agent bots only).
+- Bot: `fallbacks` (each `{backend, account, model, modelOptions}`), `selfFallbacks` (settings;
+  `createBot`/`updateBot`); `agentStep: {step, agent, account, model, since, reason} | null` and `resting: [{agent,
+  account, until, reason}]` (agent bots only). `account` is an [agent account](agent-accounts.md)'s id, `null` for
+  the computer's own login.
+- A fallback's `account` is always sent, `null` for none. A step that comes without the key (an app from before
+  fallbacks had accounts sends the whole list on every save) keeps its saved account, the n-th step of an agent
+  taking the n-th saved one's (`hub::patch`), so an older app never clears one.
 - Method: `switchBack {botId}`.
 - Notices: `agentSwitch: {from, to, back, reason, resetsAt, carried}`; failure notices' `addFallback: true`.
 - Analytics: `agent_fell_back {agent, reason}`; `handoff_carried {agent, kind, bytes, window_known}` for each recap
   or catch-up (`window_known`: a recap sized to the agent's window); `turn_finished` once per agent the turn ran on.
+  Both carry `account: true` when an agent account is involved (the step left or the one taking over; never which
+  account), which tells a move to another account of the same agent from one to another agent.

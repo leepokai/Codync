@@ -50,3 +50,17 @@ private let backendJSON = #""id":"claude","name":"Claude Code","available":true,
     draft.setAgent("codex")
     #expect(draft.account == nil)
 }
+
+@Test func backendDecodesTheDefaultAccountAndAccountLabels() throws {
+    let backend: Backend = try decode("""
+    {\(backendJSON),"accountSignIn":"browser","ownAccount":{"name":"Work","label":"Work","email":"me@example.com"},
+     "accounts":[{"id":"a1","name":"Side","label":"Side","email":"side@example.com","signedIn":true},{"id":"a2","name":"x@example.com","email":"x@example.com","label":null,"signedIn":true}]}
+    """)
+    #expect(backend.ownAccount?.name == "Work" && backend.ownAccount?.label == "Work" && backend.ownAccount?.email == "me@example.com")
+    #expect(backend.accounts?.first?.label == "Side" && backend.accounts?.first?.email == "side@example.com")
+    #expect(backend.accounts?.last?.label == nil && backend.accountsSignInInBrowser)
+    // Unnamed, unknown and odd shapes still decode; older hosts send none.
+    let bare: Backend = try decode("{\(backendJSON),\"ownAccount\":{\"name\":null,\"label\":7}}")
+    #expect(bare.ownAccount != nil && bare.ownAccount?.name == nil && bare.ownAccount?.label == nil)
+    #expect((try decode("{\(backendJSON)}") as Backend).ownAccount == nil)
+}

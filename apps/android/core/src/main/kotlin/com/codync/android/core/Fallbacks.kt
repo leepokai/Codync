@@ -2,13 +2,51 @@ package com.codync.android.core
 
 import kotlinx.serialization.Serializable
 
-/** One step of a bot's fallback chain: another agent, and the model to use on it. */
+/** A login of the chain: an agent on one of its accounts, or (no account) on the login the computer already has. */
+data class Login(val backend: String, val account: String? = null)
+
+/** One step of a bot's fallback chain: an agent (the bot's own too, on another [account]), and the model to use on it. */
 @Serializable
-data class Fallback(val backend: String = "", val command: String? = null, val model: String? = null, val modelOptions: Map<String, String> = emptyMap())
+data class Fallback(val backend: String = "", val command: String? = null, val model: String? = null, val modelOptions: Map<String, String> = emptyMap(),
+    val account: String? = null) {
+    val login: Login get() = Login(backend, account)
+}
 
 /** The fallback a bot runs on right now (`agentStep`): its step, agent and model, since when, and why it left the one before. */
 @Serializable
-data class AgentStep(val step: Int = 0, val agent: String = "", val model: String? = null, val since: Long = 0, val reason: String? = null)
+data class AgentStep(val step: Int = 0, val agent: String = "", val model: String? = null, val since: Long = 0, val reason: String? = null,
+    val account: String? = null) {
+    val login: Login get() = Login(agent, account)
+}
+
+/** The login the bot is set to run on. */
+val Bot.login: Login get() = Login(backend, account)
+
+/** [login]'s rest, unless it's over. */
+fun Bot.restOf(login: Login, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { Login(it.agent, it.account) == login && it.until > now }
+
+/**
+ * The Agent card's first line while the bot runs on a fallback; null on its own agent. [name] says what to call a login
+ * ("Claude Code (Work)" on an account), the computer's own by its account too when asked, which tells two logins of one
+ * agent apart; [clock] writes a time.
+ */
+fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): String? {
+    val step = agentStep?.login ?: return null
+    val same = step.backend == backend
+    val (to, own) = name(step, same) to name(login, same)
+    val rest = restOf(login, now)
+    return if (rest != null) "Using $to until $own resets at ${clock(rest.until)}" else "Using $to while $own can't answer"
+}
+
+/** The login the draft is set to run on. */
+val BotDraft.login: Login get() = Login(backend, account)
+
+/** The logins the chain has, the bot's own first: each is in it once, so an agent comes again only on another of its accounts. */
+val BotDraft.logins: List<Login> get() = listOf(login) + fallbacks.orEmpty().map { it.login }
+
+/** The logins of this agent a new step can still take: the computer's own (first, as null) and its signed-in accounts, without the ones in [taken]. */
+fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
+    (listOf<String?>(null) + accounts.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }
 
 /** The agent the bot runs on right now: its fallback's while it's on one. */
 val Bot.runningAgent: String get() = agentStep?.agent ?: backend
@@ -16,9 +54,9 @@ val Bot.runningAgent: String get() = agentStep?.agent ?: backend
 /** The bots run more than one agent, so the roster marks each with its agent's logo. */
 fun List<Bot>.mixesAgents(): Boolean = filter { it.kind != "group" }.mapTo(HashSet()) { it.runningAgent }.size > 1
 
-/** An agent of a bot's chain that rests until `until` (ms): `usageLimit`, `rateLimited`, `signedOut`… */
+/** A login of a bot's chain that rests until `until` (ms): `usageLimit`, `rateLimited`, `signedOut`… */
 @Serializable
-data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "") {
+data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "", val account: String? = null) {
     /** Its line under the agent, with `until` as [time]: "Usage resets 3:00 PM", "Resting until 3:00 PM". */
     fun line(time: String): String = if (reason == "usageLimit") "Usage resets $time" else "Resting until $time"
 }

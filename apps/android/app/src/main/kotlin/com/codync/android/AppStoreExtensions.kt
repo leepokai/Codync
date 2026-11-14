@@ -198,6 +198,12 @@ suspend fun AppStore.addAgentAccount(backend: String): AgentAccount {
 /** Asks the account's agent whether its sign-in went through, and as whom. */
 suspend fun AppStore.checkAgentAccount(backend: String, account: String) =
     showBackends(hostQuery("agentAuth", body("backend" to backend, "account" to account), 60_000))
+/** Signs an account in through its agent, in a browser on the computer; the host answers once that's done (or given up on). */
+suspend fun AppStore.signInAgentAccount(backend: String, account: String) =
+    showBackends(hostQuery("agentAuthenticate", body("backend" to backend, "account" to account), 660_000))
+/** Names an account, or without one the login the computer already has; an empty name clears it. */
+suspend fun AppStore.renameAgentAccount(backend: String, account: String?, name: String) =
+    showBackends(hostQuery("renameAgentAccount", body("backend" to backend, "account" to account, "name" to name)))
 /** The host refuses while a bot still uses the account, and says so. */
 suspend fun AppStore.removeAgentAccount(account: String) = showBackends(hostQuery("removeAgentAccount", body("account" to account), 60_000))
 suspend fun AppStore.installConnector(item: MarketConnector, option: InstallOption, inputs: Map<String, String>): InstalledConnector {

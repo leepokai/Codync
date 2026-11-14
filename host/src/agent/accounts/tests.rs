@@ -1,12 +1,15 @@
 use super::*;
+use std::path::Path;
 
 /// Adds signed-out accounts `(id, agent)` to `store`.
 pub(crate) fn insert(store: &Store, accounts: &[(&str, &str)]) {
     change(store, |all| {
         all.extend(accounts.iter().map(|(id, backend)| Account {
             id: (*id).to_owned(),
-            backend: (*backend).to_owned(),
+            agent: (*backend).to_owned(),
+            label: None,
             email: None,
+            number: 0,
             signed_in: false,
         }));
         Ok(())
@@ -33,8 +36,8 @@ fn an_account_points_its_own_agent_at_its_folder_and_no_other() {
     assert_eq!(env[1], (ACCOUNT_VAR.to_owned(), "a1".to_owned()));
     // The registry id of the same agent is the same agent.
     assert_eq!(super::env(&store, "claude-acp", Some("a1")).expect("env").len(), 2);
-    assert!(super::env(&store, "claude", None).expect("own login").is_empty());
-    assert!(super::env(&store, "codex", Some("a1")).expect("a fallback's agent").is_empty());
+    assert_eq!(super::env(&store, "claude", None).expect("own login"), Vec::new());
+    assert_eq!(super::env(&store, "codex", Some("a1")).expect("a fallback's agent"), Vec::new());
     assert!(super::env(&store, "claude", Some("gone")).is_err(), "never the wrong login in silence");
     let on_account = bot("claude", Some("a1"));
     assert_eq!(of_bot(&store, "claude", &on_account), Some("a1"));
@@ -88,10 +91,58 @@ fn agents_that_can_have_accounts_list_theirs_by_who_they_sign_in() {
     assert_eq!(
         agents[0]["accounts"],
         json!([
-            {"id": "a1", "name": "work@example.com", "signedIn": true},
-            {"id": "a2", "name": null, "signedIn": false},
+            {"id": "a1", "name": "work@example.com", "label": null, "email": "work@example.com", "signedIn": true},
+            {"id": "a2", "name": null, "label": null, "email": null, "signedIn": false},
         ])
     );
     assert_eq!(agents[1]["accounts"], json!([]), "none yet, but it can have them");
     assert!(agents[2].get("accounts").is_none());
+}
+
+#[test]
+fn the_user_names_an_account_and_the_computers_own_login() {
+    let store = store_with(&[("a1", "claude")]);
+    rename(&store, "claude", Some("a1"), "  Work ").expect("named");
+    rename(&store, "claude-acp", None, "Personal").expect("the computer's own, by its registry id too");
+    let mut agents = vec![json!({"id": "claude"}), json!({"id": "codex"})];
+    annotate(&store, &mut agents);
+    assert_eq!(agents[0]["accounts"][0]["name"], "Work");
+    assert_eq!(agents[0]["ownAccount"]["label"], "Personal");
+    assert_eq!(agents[0]["accountSignIn"], "terminal");
+    assert_eq!(agents[1]["ownAccount"]["label"], Value::Null, "another agent's own login");
+    rename(&store, "claude", Some("a1"), "").expect("an empty name clears it");
+    rename(&store, "claude", None, " ").expect("cleared");
+    annotate(&store, &mut agents);
+    assert_eq!((&agents[0]["accounts"][0]["name"], &agents[0]["ownAccount"]["label"]), (&Value::Null, &Value::Null));
+    assert!(rename(&store, "cursor", None, "x").is_err(), "an agent with one login");
+    assert!(rename(&store, "claude", Some("gone"), "x").is_err());
+}
+
+#[test]
+fn a_fallback_keeps_only_an_account_of_its_own_agent() {
+    let store = store_with(&[("a1", "claude"), ("c1", "codex")]);
+    let mut cfg: BotConfig = serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "fallbacks": [
+        {"backend": "claude", "account": "a1"},
+        {"backend": "codex", "account": "a1"},
+        {"backend": "codex", "account": "c1", "command": "my-codex --acp"},
+    ]}))
+    .expect("bot");
+    settle(&store, &mut cfg).expect("settled");
+    let accounts: Vec<_> = cfg.fallbacks.iter().map(|f| f.account.as_deref()).collect();
+    assert_eq!(accounts, [Some("a1"), None, None], "another agent's account and a custom command's go");
+    cfg.fallbacks[0].account = Some("gone".into());
+    assert!(settle(&store, &mut cfg).is_err());
+}
+
+#[test]
+fn an_account_is_in_use_by_a_bot_on_it_and_by_one_that_falls_back_to_it() {
+    let store = store_with(&[("a1", "claude"), ("a2", "claude")]);
+    let save = |cfg: Value| store.save_bot(&serde_json::from_value(cfg).expect("bot")).expect("saved");
+    save(json!({"id": "own", "name": "Own", "backend": "claude", "account": "a1"}));
+    save(
+        json!({"id": "step", "name": "Step", "backend": "claude", "fallbacks": [{"backend": "claude", "account": "a2"}]}),
+    );
+    assert_eq!(users(&store, "a1").expect("bots"), ["Own"]);
+    assert_eq!(users(&store, "a2").expect("bots"), ["Step"], "removing it would leave a fallback no save accepts");
+    assert_eq!(users(&store, "gone").expect("bots"), Vec::<String>::new());
 }

@@ -4,7 +4,7 @@
 
 use crate::agent::fallback::{self, MAX_FALLBACKS, rest};
 use crate::hub::Hub;
-use crate::store::{EntryKind, Fallback, Lane, now_ms};
+use crate::store::{EntryKind, Fallback, Lane, Store, now_ms};
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -92,7 +92,7 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
                 let text = if saved.is_empty() {
                     "Fallbacks removed".to_owned()
                 } else {
-                    format!("Fallbacks set: {}", describe(&saved))
+                    format!("Fallbacks set: {}", describe(&hub.store, &saved))
                 };
                 hub.add_entry(&Lane::main(&bot), EntryKind::Notice, hub.store.max_turn(&bot), &json!({"text": text}));
                 anyhow::Ok(saved)
@@ -105,30 +105,31 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
 }
 
 /// `[{agent, model?}]`, as the bots' tools take it, into fallbacks. An agent already in `current` keeps what the tools
-/// don't show: its custom command, and its model's options while the model stays.
+/// don't show: its custom command, its account, and its model's options while the model stays. An agent that is
+/// there again (on another account) keeps them in order (`fallback::saved_steps`).
 pub fn parse(list: &Value, current: &[Fallback]) -> Result<Vec<Fallback>> {
     let items = list.as_array().context("fallbacks must be a list")?;
     if items.len() > MAX_FALLBACKS {
         bail!("at most {MAX_FALLBACKS} fallbacks");
     }
-    items
+    let agents: Vec<&str> = items
         .iter()
-        .map(|item| {
-            let agent = item["agent"]
-                .as_str()
-                .map(str::trim)
-                .filter(|a| !a.is_empty())
-                .context("each fallback needs an agent")?;
+        .map(|item| item["agent"].as_str().map(str::trim).filter(|a| !a.is_empty()))
+        .map(|agent| agent.context("each fallback needs an agent"))
+        .collect::<Result<_>>()?;
+    let steps = items.iter().zip(&agents).zip(fallback::saved_steps(current, &agents));
+    Ok(steps
+        .map(|((item, agent), kept)| {
             let model = item["model"].as_str().map(str::trim).filter(|m| !m.is_empty()).map(str::to_owned);
-            let kept = current.iter().find(|f| f.backend == agent);
-            Ok(Fallback {
-                backend: agent.to_owned(),
+            Fallback {
+                backend: (*agent).to_owned(),
                 command: kept.and_then(|f| f.command.clone()),
+                account: kept.and_then(|f| f.account.clone()),
                 model_options: kept.filter(|f| f.model == model).map(|f| f.model_options.clone()).unwrap_or_default(),
                 model,
-            })
+            }
         })
-        .collect()
+        .collect())
 }
 
 /// `[{agent, model}]` for the bots' tools.
@@ -136,13 +137,20 @@ pub fn wire(list: &[Fallback]) -> Value {
     json!(list.iter().map(|f| json!({"agent": f.backend, "model": f.model})).collect::<Vec<_>>())
 }
 
-/// "Codex · gpt-5.5, Gemini CLI".
-pub fn describe(list: &[Fallback]) -> String {
+/// "Codex · gpt-5.5, Claude Code (Work)": each agent, with the agent account it runs on and its model.
+pub fn describe(store: &Store, list: &[Fallback]) -> String {
     let names: Vec<String> = list
         .iter()
-        .map(|f| match &f.model {
-            Some(m) => format!("{} · {m}", fallback::name(&f.backend)),
-            None => fallback::name(&f.backend),
+        .map(|f| {
+            let agent = fallback::name(&f.backend);
+            let agent = match crate::agent::accounts::name_of(store, &f.backend, f.account.as_deref()) {
+                Some(account) => format!("{agent} ({account})"),
+                None => agent,
+            };
+            match &f.model {
+                Some(m) => format!("{agent} · {m}"),
+                None => agent,
+            }
         })
         .collect();
     if names.is_empty() { "none".into() } else { names.join(", ") }
@@ -161,7 +169,22 @@ mod tests {
         assert_eq!(wire(&list), json!([{"agent": "codex", "model": "gpt-5.5"}, {"agent": "gemini", "model": null}]));
         assert!(parse(&json!([{"model": "o3"}]), &[]).is_err());
         assert!(parse(&json!([{"agent": "a"}, {"agent": "b"}, {"agent": "c"}, {"agent": "d"}]), &[]).is_err());
-        assert_eq!(describe(&[]), "none");
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        assert_eq!(describe(&store, &[]), "none");
+    }
+
+    #[test]
+    fn an_agent_there_twice_keeps_each_steps_account() {
+        let on =
+            |account: &str| Fallback { backend: "claude".into(), account: Some(account.into()), ..Fallback::default() };
+        let current = [on("a1"), Fallback { backend: "codex".into(), ..Fallback::default() }, on("a2")];
+        let restated = json!([{"agent": "claude", "model": "opus"}, {"agent": "claude"}, {"agent": "codex"}]);
+        let list = parse(&restated, &current).unwrap();
+        let accounts: Vec<_> = list.iter().map(|f| f.account.as_deref()).collect();
+        assert_eq!(accounts, [Some("a1"), Some("a2"), None]);
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        crate::agent::accounts::tests::insert(&store, &[("a1", "claude")]);
+        assert_eq!(describe(&store, &list[..2]), "Claude Code (Account 2) · opus, Claude Code", "a2 is gone");
     }
 
     #[test]
@@ -169,6 +192,7 @@ mod tests {
         let current = [Fallback {
             backend: "codex".into(),
             command: Some("python3 standin".into()),
+            account: None,
             model: Some("gpt-5.5".into()),
             model_options: [("reasoning_effort".to_owned(), "high".to_owned())].into(),
         }];
@@ -184,7 +208,7 @@ mod tests {
     async fn a_bot_sets_its_fallbacks_unless_the_user_turned_that_off() {
         let dir = std::env::temp_dir().join(format!("codync-fallbacks-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         let cfg: crate::store::BotConfig =
             serde_json::from_value(json!({"id": "b", "name": "B", "backend": "claude", "cwd": dir.to_string_lossy()}))
                 .unwrap();

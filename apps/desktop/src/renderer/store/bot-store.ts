@@ -487,6 +487,16 @@ export class BotStore extends BotSync {
     this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, account }, 60_000)).backends)
   }
 
+  /** Has the account's agent sign it in itself, in a browser on the computer; answers once that's done. */
+  async signInAgentAccount(backend: string, account: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuthenticate', { backend, account }, 660_000)).backends)
+  }
+
+  /** Names an account, or with `null` the login the computer already has; an empty name clears it. */
+  async renameAgentAccount(backend: string, account: string | null, name: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('renameAgentAccount', { backend, account, name })).backends)
+  }
+
   async removeAgentAccount(account: string) {
     this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeAgentAccount', { account }, 60_000)).backends)
   }

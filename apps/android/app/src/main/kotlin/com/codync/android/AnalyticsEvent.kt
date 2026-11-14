@@ -148,6 +148,15 @@ internal sealed class AnalyticsEvent(val name: String) {
         override val properties get() =
             mapOf("outcome" to JsonPrimitive(if (failure == null) "played" else "failed")) + listOfNotNull(failure?.let { "error" to it.json })
     }
+    /**
+     * Something another app shared went to a bot (`ShareToBot`), was held for its offline computer, or failed ([error]
+     * set only then): how many files, whether it had text, whether the bot came from Recent. Never names or content.
+     */
+    data class ShareSent(val outcome: ShareOutcome, val files: Int, val text: Boolean, val recent: Boolean, val error: ShareError? = null) :
+        AnalyticsEvent("share_sent") {
+        override val properties get() = mapOf("outcome" to outcome.json) + listOfNotNull(error?.let { "error" to it.json }) +
+            mapOf("files" to JsonPrimitive(files), "text" to JsonPrimitive(text), "recent" to JsonPrimitive(recent))
+    }
     /** Find in a conversation opened (iOS `conversationFindOpened`). */
     data object ConversationFindOpened : AnalyticsEvent("conversation_find_opened")
     /** A search in the find bar settled: whether it found anything, never the text (iOS `conversationFindSearched`). */
@@ -303,6 +312,14 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
 internal enum class VoiceNoteFailure(override val wire: String) : CatalogValue { Load("load"), Playback("playback") }
+
+internal enum class ShareOutcome(override val wire: String) : CatalogValue { Sent("sent"), Queued("queued"), Failed("failed") }
+
+/**
+ * What stopped a share on Android: a file it couldn't copy in ([Read]), or the message it couldn't hand to the chat
+ * ([Send]). The chat's own send reports the rest; the iPhone, sending from its share sheet, also has the catalog's others.
+ */
+internal enum class ShareError(override val wire: String) : CatalogValue { Read("read"), Send("send") }
 
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),

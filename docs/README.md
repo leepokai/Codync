@@ -51,6 +51,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
+- [Share to a bot](features/share-to-bot.md) (other apps' share sheets send text, links and files to a bot, on iPhone and Android)
 - [Artifacts and the Library](features/artifacts.md)
 - [Remote screen](features/remote-screen.md) and [computer use](features/computer-use.md)
 - [Computer identity and list ordering](features/computer-order.md)

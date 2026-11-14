@@ -150,8 +150,8 @@ struct Recorder: RemoteTransport {
     }
     func waitForRoute() async throws { try await channel.waitForRoute() }
     func computerUpdates() -> AsyncStream<Computer> { channel.computerUpdates() }
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws {
-        try await channel.enqueue(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo)
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws {
+        try await channel.enqueue(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, pasted: pasted)
     }
     func cancelQueued(clientNonce: String) async -> MailboxCancel { await channel.cancelQueued(clientNonce: clientNonce) }
     func listQueued() async throws -> [QueuedItem] { try await channel.listQueued() }

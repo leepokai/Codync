@@ -1,0 +1,35 @@
+[
+  {
+    "component": "Vosk Android",
+    "version": "0.3.75",
+    "source": "https://github.com/alphacep/vosk-api",
+    "license": "Apache-2.0",
+    "licenseFile": "vosk-APACHE-2.0.txt",
+    "files": {
+      "vosk-APACHE-2.0.txt": "bb618af833c817ab01c1564bd3ec75ba4b4f9cf30910a4a2168e30a674ee8cc6"
+    }
+  },
+  {
+    "component": "Java Native Access",
+    "version": "5.18.1",
+    "source": "https://github.com/java-native-access/jna/tree/5.18.1",
+    "license": "Apache-2.0",
+    "licenseFile": "jna-APACHE-2.0.txt",
+    "noticeFile": "jna-NOTICE.txt",
+    "files": {
+      "jna-APACHE-2.0.txt": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+      "jna-NOTICE.txt": "07c938b23950ab7d47a24ef35f9f5da3a05ae164278dc959ad6994135ed59ff1"
+    }
+  },
+  {
+    "component": "Vosk offline English model",
+    "version": "vosk-model-small-en-us-0.15",
+    "source": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+    "license": "Apache-2.0",
+    "licenseFile": "vosk-APACHE-2.0.txt",
+    "sha256": "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498",
+    "files": {
+      "vosk-APACHE-2.0.txt": "bb618af833c817ab01c1564bd3ec75ba4b4f9cf30910a4a2168e30a674ee8cc6"
+    }
+  }
+]

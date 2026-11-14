@@ -1,4 +1,4 @@
-use super::{install, release};
+use super::{APP_POLL_TTL_MS, APP_REQUEST_TTL_MS, install, recent, release};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signer as _, SigningKey};
 use std::{
@@ -20,11 +20,13 @@ impl Drop for Directory {
     }
 }
 
+const GITHUB: &str = "https://github.com/leepokai/Codync/releases";
+
 fn manifest() -> release::Release {
     release::Release {
         version: "3.0.0".into(),
         platform: "linux-arm64".into(),
-        url: format!("{}/download/v3.0.0/codync-host-linux-arm64.tar.gz", release::RELEASES),
+        url: format!("{GITHUB}/download/v3.0.0/codync-host-linux-arm64.tar.gz"),
         sha256: "a".repeat(64),
         size: 12,
     }
@@ -34,41 +36,38 @@ fn manifest() -> release::Release {
 fn only_signed_platform_matched_manifests_are_accepted() {
     let key = SigningKey::from_bytes(&[17; 32]);
     let public = B64.encode(key.verifying_key().as_bytes());
-    let bytes = serde_json::to_vec(&manifest()).unwrap();
-    let signature = B64.encode(key.sign(&bytes).to_bytes());
-    assert_eq!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64").unwrap().version, "3.0.0");
-    assert!(release::verify_manifest(&bytes, &signature, &public, "macos-arm64").is_err());
+    let signed = |release: &release::Release| {
+        let bytes = serde_json::to_vec(release).unwrap();
+        let signature = B64.encode(key.sign(&bytes).to_bytes());
+        (bytes, signature)
+    };
+    let (bytes, signature) = signed(&manifest());
+    assert_eq!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64", GITHUB).unwrap().version, "3.0.0");
+    assert!(release::verify_manifest(&bytes, &signature, &public, "macos-arm64", GITHUB).is_err());
     let mut altered = bytes.clone();
     altered[0] ^= 1;
-    assert!(release::verify_manifest(&altered, &signature, &public, "linux-arm64").is_err());
+    assert!(release::verify_manifest(&altered, &signature, &public, "linux-arm64", GITHUB).is_err());
     let other = B64.encode(SigningKey::from_bytes(&[18; 32]).verifying_key().as_bytes());
-    assert!(release::verify_manifest(&bytes, &signature, &other, "linux-arm64").is_err());
+    assert!(release::verify_manifest(&bytes, &signature, &other, "linux-arm64", GITHUB).is_err());
     let mut redirected = manifest();
     redirected.url = "https://example.com/host.tar.gz".into();
-    let redirected = serde_json::to_vec(&redirected).unwrap();
-    let signature = B64.encode(key.sign(&redirected).to_bytes());
-    assert!(release::verify_manifest(&redirected, &signature, &public, "linux-arm64").is_err());
+    let (redirected, redirected_signature) = signed(&redirected);
+    assert!(release::verify_manifest(&redirected, &redirected_signature, &public, "linux-arm64", GITHUB).is_err());
+    // A dev channel build, signed with the same key, never installs on a host that follows GitHub, nor the reverse.
+    let dev = "https://dev-releases.codync.dev";
+    let mut dev_build = manifest();
+    dev_build.url = format!("{dev}/download/v3.0.0/codync-host-linux-arm64.tar.gz");
+    let (dev_build, dev_signature) = signed(&dev_build);
+    assert!(release::verify_manifest(&dev_build, &dev_signature, &public, "linux-arm64", GITHUB).is_err());
+    assert!(release::verify_manifest(&dev_build, &dev_signature, &public, "linux-arm64", dev).is_ok());
+    assert!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64", dev).is_err());
 }
 
 #[test]
-fn only_signed_compat_files_for_the_release_are_accepted() {
-    let key = SigningKey::from_bytes(&[17; 32]);
-    let public = B64.encode(key.verifying_key().as_bytes());
-    let sign = |bytes: &[u8]| B64.encode(key.sign(bytes).to_bytes());
-    let compat = br#"{"version": "3.0.0", "minApp": "2.9.0"}"#;
-    assert_eq!(release::verify_compat(compat, &sign(compat), &public, "3.0.0").unwrap(), "2.9.0");
-    // Another release's file, a forged one, or one without a readable minApp is refused.
-    assert!(release::verify_compat(compat, &sign(compat), &public, "3.0.1").is_err());
-    let other = B64.encode(SigningKey::from_bytes(&[18; 32]).verifying_key().as_bytes());
-    assert!(release::verify_compat(compat, &sign(compat), &other, "3.0.0").is_err());
-    let mut altered = compat.to_vec();
-    altered[30] = b'8';
-    assert!(release::verify_compat(&altered, &sign(compat), &public, "3.0.0").is_err());
-    let bad = br#"{"version": "3.0.0", "minApp": "soon"}"#;
-    assert!(release::verify_compat(bad, &sign(bad), &public, "3.0.0").is_err());
-    // A signed release manifest isn't a compat file.
-    let manifest = serde_json::to_vec(&manifest()).unwrap();
-    assert!(release::verify_compat(&manifest, &sign(&manifest), &public, "3.0.0").is_err());
+fn the_update_worker_follows_the_hosts_release_channel() {
+    let command = super::job_command(std::path::Path::new("/bin/codync-host"), &["update".to_owned()]);
+    let channel = format!("CODYNC_RELEASES_URL={}", release::releases());
+    assert!(command.get_args().any(|a| a.to_string_lossy().ends_with(&channel)));
 }
 
 fn archive(symlink: bool) -> Vec<u8> {
@@ -196,4 +195,14 @@ fn app_and_homebrew_binaries_keep_their_installation_owner() {
         install::method(std::path::Path::new("/opt/homebrew/Cellar/codync-host/2.2.1/bin/codync-host")),
         install::Method::Homebrew
     );
+}
+
+#[test]
+fn app_requests_and_polls_count_only_while_recent() {
+    let at = 1_000_000;
+    for ttl in [APP_REQUEST_TTL_MS, APP_POLL_TTL_MS] {
+        assert_eq!(recent(at, at + ttl - 1, ttl), Some(at));
+        assert_eq!(recent(at, at + ttl, ttl), None, "an app opened later doesn't act on an old request");
+        assert_eq!(recent(0, at, ttl), None, "never asked, never polled");
+    }
 }

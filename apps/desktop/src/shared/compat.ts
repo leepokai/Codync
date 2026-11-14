@@ -6,7 +6,10 @@ export type VersionMismatch =
   | { kind: 'updateHost'; version: string; minimum: string }
 
 /** The oldest host this app works with. */
-export const MIN_HOST = '2.12.0'
+export const MIN_HOST = '2.26.0'
+
+/** `Codync-App`, sent on every request to the Codync cloud: it keeps an account's cloud computer on a host this app can use. */
+export const appHeader = (appVersion: string) => `desktop/${appVersion}; minHost=${MIN_HOST}`
 
 /** `major.minor.patch`, ignoring a leading `v` and any pre-release or build suffix. */
 export function parseVersion(version: string): number[] | null {

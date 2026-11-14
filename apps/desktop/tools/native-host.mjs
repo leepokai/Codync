@@ -21,20 +21,33 @@ const out = join(root, 'build/native')
 const tool = (name) => execFileSync('rustup', ['which', name], { cwd: host, encoding: 'utf8' }).trim()
 const [cargo, rustc] = [tool('cargo'), tool('rustc')]
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: 'inherit', env: { ...process.env, CODYNC_ENV: env, RUSTC: rustc } })
-// Codync Dev builds in the host's `dev-app` profile: seconds to rebuild instead of minutes.
-const profile = env === 'dev' ? 'dev-app' : 'release'
+// Codync Dev builds in the host's `dev-app` profile: seconds to rebuild instead of minutes. Windows CI
+// dry runs pick it too through CODYNC_HOST_PROFILE (release-desktop.yml), since nothing they build ships.
+const profile = process.env.CODYNC_HOST_PROFILE ?? (env === 'dev' ? 'dev-app' : 'release')
+if (!['dev-app', 'release'].includes(profile)) throw new Error(`unknown host profile ${profile}`)
 const build = (target) => run(cargo, ['build', '--profile', profile, '--manifest-path', join(host, 'Cargo.toml'), '--target', target])
 const built = (target, name) => join(host, 'target', target, profile, name)
+// Keychain trusts a certificate across rebuilds, but an ad hoc signature only for that one build. A Mac without
+// this certificate keeps the ad hoc signature, and Codync Dev's host asks for its key again after each rebuild.
+const signDevHost = (file) => {
+  try {
+    execFileSync('codesign', ['--force', '--timestamp=none', '--identifier', 'codync-host', '--sign', 'Apple Development: Pokai Lee (6KFK5J2LB4)', file], { stdio: 'pipe', timeout: 60_000 })
+  } catch (e) {
+    console.log(`host: keeping the ad hoc signature (${String(e.stderr ?? e.message).trim()})`)
+  }
+}
 mkdirSync(out, { recursive: true })
 if (process.platform === 'win32') {
-  const target = 'x86_64-pc-windows-msvc'
+  const target = process.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc'
   build(target)
   for (const exe of ['codync-host.exe', 'codync-hostw.exe']) copyFileSync(built(target, exe), join(out, env === 'dev' && exe === 'codync-hostw.exe' ? 'codync-dev-hostw.exe' : exe))
+  // The pinned driver has no Windows ARM64 build; Windows 11 runs these x64 helpers through Prism.
   run(process.execPath, [join(root, '../../packaging/cua-driver/fetch.mjs'), 'windows-x86_64', out])
 } else {
   const native = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
   const targets = env === 'dev' ? [native] : ['aarch64-apple-darwin', 'x86_64-apple-darwin']
   for (const target of targets) build(target)
   run('lipo', ['-create', '-output', join(out, 'codync-host'), ...targets.map((t) => built(t, 'codync-host'))])
+  if (env === 'dev') signDevHost(join(out, 'codync-host'))
 }
 console.log(`host: ${env}`)

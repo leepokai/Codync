@@ -19,6 +19,11 @@ const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 /// dies with it, and the service must outlive the app that installed it).
 const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 
+/// Whether the service runner (`codync-hostw.exe`) started this process; it sets `CODYNC_SERVICE`.
+pub fn started_by_service() -> bool {
+    std::env::var_os("CODYNC_SERVICE").is_some()
+}
+
 /// Stops the running service. Its configuration stays for a later start; a
 /// manually started `codync-host serve` is left alone.
 pub fn stop() -> Result<()> {

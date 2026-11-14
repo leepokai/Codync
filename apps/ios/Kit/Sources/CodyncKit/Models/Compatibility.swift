@@ -8,10 +8,12 @@ public enum VersionMismatch: Equatable, Sendable {
     case updateApp(minimum: String)
     /// The host is older than `minHost`.
     case updateHost(version: String, minimum: String)
+    /// The Codync cloud's emergency floor turned this app version away (`AppFloor`); `reason` says why.
+    case appFloor(reason: String)
 
     /// The oldest host this app works with. Raise it only when the app starts depending on
     /// something older hosts don't have (an optional feature hides its control instead).
-    public static let minHost = "2.12.0"
+    public static let minHost = "2.26.0"
 
     /// Checks this app (`app`) against a host's version and `minApp` (nil from hosts that predate it).
     public static func check(app: String, minHost: String = minHost, hostVersion: String, minApp: String?) -> VersionMismatch? {
@@ -66,13 +68,17 @@ public enum AppStoreRelease {
     public static let appID = "6760984418"
     public static let page = URL(string: "https://apps.apple.com/app/id\(appID)")!
 
+    public static let reviewPage = URL(string: "https://apps.apple.com/app/id\(appID)?action=write-review")!
+
     /// The version live in the App Store; nil when the lookup has no result.
     public static func latestVersion(session: URLSession = .shared) async throws -> String? {
         struct Lookup: Decodable {
             struct Result: Decodable { var version: String? }
             var results: [Result]
         }
-        var request = URLRequest(url: URL(string: "https://itunes.apple.com/lookup?id=\(appID)")!)
+        // Apple's CDN keeps the bare URL for up to a day after a release; a query string of its own skips it.
+        let url = URL(string: "https://itunes.apple.com/lookup?id=\(appID)&_=\(Int(Date.now.timeIntervalSince1970))")!
+        var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)

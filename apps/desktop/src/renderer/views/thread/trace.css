@@ -1,0 +1,21 @@
+/* The "Full conversation" sheet (TraceView.tsx). */
+.trace-content {
+  padding: 14px;
+  font-size: var(--text-callout);
+}
+.trace-turn-title {
+  padding-left: 4px;
+}
+/* A label's icon sits centered on its first line of caption text. */
+.trace-label-icon {
+  min-height: calc(var(--text-caption) * 1.25);
+}
+.trace-label-text {
+  min-width: 0;
+}
+.trace-plan-done {
+  text-decoration: line-through;
+}
+.trace-thought {
+  white-space: pre-wrap;
+}

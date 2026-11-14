@@ -14,16 +14,18 @@ use std::sync::Arc;
 pub const INSTRUCTIONS: &str = "Connect external services with search_connectors, list_connectors and request_connection. To update an installed connector's key use request_secret. To sign in to a website or app on the screen, check list_logins, ask with request_login if it's missing, then type it with the computer tool type_login. Requests appear as secure cards in the user's conversation. Never ask for passwords or keys in ordinary chat or tool arguments. After requesting, finish your turn and wait; Codync resumes you after the user completes setup.";
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-enum RequestKind {
+pub(super) enum RequestKind {
     Connection,
     Secret,
     App,
     Login,
+    /// The bot's own agent (Claude Code…) needs signing in; posted by the host, not a tool.
+    Agent,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-enum RequestStatus {
+pub(super) enum RequestStatus {
     Pending,
     Ready,
     Cancelled,
@@ -33,7 +35,7 @@ fn has_status(request: &Value, status: RequestStatus) -> bool {
     serde_json::from_value::<RequestStatus>(request["status"].clone()).ok() == Some(status)
 }
 
-const MAX_AGE: i64 = 24 * 60 * 60 * 1000;
+pub(super) const MAX_AGE: i64 = 24 * 60 * 60 * 1000;
 static MUTATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub fn tools() -> Value {
@@ -78,8 +80,15 @@ pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result
             }
             let lane = hub.runtime(bot).lane.unwrap_or_else(|| Lane::main(bot));
             let reason: String = text(args, "reason")?.chars().take(400).collect();
+            // The card shows the app's own name and logo when Composio lists it.
+            let listed = super::composio::toolkits(&hub.store, &toolkit, "")
+                .await
+                .ok()
+                .and_then(|v| v["items"].as_array()?.iter().find(|t| t["slug"] == toolkit.as_str()).cloned());
+            let title = listed.as_ref().and_then(|t| t["name"].as_str()).unwrap_or(&toolkit).to_owned();
+            let logo = listed.as_ref().map_or(Value::Null, |t| t["logo"].clone());
             let entry = hub.add_entry(&lane,EntryKind::Notice,hub.store.max_turn(bot),&json!({"text":reason,"connectionRequest":{
-                "kind":RequestKind::App,"status":RequestStatus::Pending,"title":toolkit,"botId":bot,"toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)
+                "kind":RequestKind::App,"status":RequestStatus::Pending,"title":title,"logo":logo,"botId":bot,"toolkit":toolkit,"connectorId":format!("{}{}",super::composio::PREFIX,toolkit)
             }})).ok_or_else(|| anyhow!("Could not save connection request"))?;
             Ok(json!({"requestId":entry.id,"status":"waitingForUser"}))
         }
@@ -138,7 +147,9 @@ fn pending(hub: &Hub, id: &str, cancelling: bool) -> Result<Entry> {
     if !has_status(&e.data["connectionRequest"], RequestStatus::Pending) {
         bail!("This request is already completed or cancelled");
     }
-    if !cancelling && now_ms() - e.created_at > MAX_AGE {
+    // An agent sign-in card doesn't expire; each message it holds does (`agent_sign_in`).
+    let agent = serde_json::from_value(e.data["connectionRequest"]["kind"].clone()).ok() == Some(RequestKind::Agent);
+    if !cancelling && !agent && now_ms() - e.created_at > MAX_AGE {
         bail!("This request expired. Ask the bot for a new request.");
     }
     let bot = text(&e.data["connectionRequest"], "botId")?;
@@ -161,6 +172,13 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
         let mut data = e.data.clone();
         data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Cancelled)?;
         return Ok(json!({"entry":hub.set_entry(id, &data).ok_or_else(|| anyhow!("Could not cancel request"))?}));
+    }
+    if kind == RequestKind::Agent {
+        let backend = text(request, "backend")?;
+        if !super::agent_sign_in::confirm(hub, backend, request["loginProfile"].as_str()).await? {
+            bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
+        }
+        return Ok(json!({"entry": hub.store.entry(id)}));
     }
     if kind == RequestKind::Login {
         let login = super::logins::save(
@@ -189,7 +207,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
             }
             if kind == RequestKind::Secret {
                 let value = text(args, "value")?;
-                if value.len() > 64 * 1024 {
+                if value.len() > super::MAX_CREDENTIAL_BYTES {
                     bail!("Credential is too large");
                 }
                 let field = text(request, "field")?.to_owned();
@@ -228,12 +246,14 @@ fn complete(hub: &Arc<Hub>, e: &Entry, id: &str, note: String) -> Result<Value> 
     let mut data = e.data.clone();
     data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
     let entry = hub.set_entry(id, &data).ok_or_else(|| anyhow!("Could not complete request"))?;
-    let lane = Lane { chat: e.bot_id.clone(), thread: e.thread_id.clone() };
+    let lane = Lane::main(&e.bot_id);
     let (ack, added) = hub.add_entry_once(
         &format!("connection-ack-{id}"),
         &lane,
         EntryKind::User,
-        &json!({"text":note,"status":"queued"}),
+        0,
+        // Written for the user, not by them: memory doesn't take it as their words.
+        &json!({"text":note,"status":"queued","from":"host"}),
     )?;
     if added {
         hub.send_cmd(&bot, Cmd::Send { lane, entry_id: ack.id, text: note })?;
@@ -242,19 +262,20 @@ fn complete(hub: &Arc<Hub>, e: &Entry, id: &str, note: String) -> Result<Value> 
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::store::{BotConfig, Store};
     use std::path::{Path, PathBuf};
 
-    fn fixture() -> (Arc<Hub>, PathBuf) {
+    pub(in crate::market) fn fixture() -> (Arc<Hub>, PathBuf) {
         let dir = std::env::temp_dir().join(format!("codync-credentials-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(Path::new(":memory:")).unwrap();
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
-        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":format!("python3 -u '{}'",agent.display()),"notify":false})).unwrap();
+        let cfg: BotConfig = serde_json::from_value(json!({"id":"bot","name":"bot","backend":"fixture","cwd":dir,"command":crate::shell::python(&agent),"notify":false})).unwrap();
         store.save_bot(&cfg).unwrap();
-        let c: super::super::Connector = serde_json::from_value(json!({"id":"fixture","name":"Fixture","command":"python3","args":[PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py")]})).unwrap();
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        let c: super::super::Connector = serde_json::from_value(json!({"id":"fixture","name":"Fixture","command":python,"args":[PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/credential_mcp.py")]})).unwrap();
         super::super::save_connectors(&store, &[c]).unwrap();
         let hub = Hub::new(
             store,
@@ -290,14 +311,14 @@ mod tests {
         assert_eq!(history.iter().filter(|e| e.id == format!("connection-ack-{id}")).count(), 1);
         assert!(!serde_json::to_string(&history).unwrap().contains("test-private-key"));
         hub.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn remote_control_devices_cannot_retrieve_credentials_or_forge_requests() {
         let caller =
             crate::api::devices::Caller::Device { key: "test".into(), scopes: vec![crate::store::Scope::Control] };
-        for method in ["connectorRuntime", "connectorTarget", "connectorCall"] {
+        for method in ["connectorRuntime", "connectorTarget", "connectorCall", "updateConnector"] {
             assert!(crate::api::devices::permit(&caller, method).is_err());
         }
         assert!(crate::api::devices::permit(&caller, "connectorRequestFinish").is_ok());
@@ -326,7 +347,7 @@ mod tests {
         let history = serde_json::to_string(&history).unwrap();
         assert!(history.contains("type_login") && !history.contains("hunter2-private"));
         hub.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
@@ -345,7 +366,7 @@ mod tests {
         assert!(finish(&hub, &json!({"entryId":id,"value":"test-private-key"})).await.is_err());
         assert!(connectors(&hub.store).unwrap()[0].env.is_empty());
         hub.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
@@ -365,6 +386,6 @@ mod tests {
         assert_eq!(hub.store.bot("bot").unwrap().unwrap().config.connectors.len(), 0);
         assert!(hub.store.entry(&format!("connection-ack-{id}")).is_none());
         hub.shutdown().await;
-        std::fs::remove_dir_all(dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

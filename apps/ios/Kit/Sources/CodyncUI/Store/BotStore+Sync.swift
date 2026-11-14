@@ -16,16 +16,30 @@ extension BotStore {
                     // Reached, but nothing to sync until one side updates. A host update restarts
                     // the link (and this loop) anyway; this catches one that doesn't.
                     setConnection(.online)
-                    try await Task.sleep(for: Self.mismatchRecheck)
+                    try await Task.sleep(for: hostUpdateOffer() == .updating ? Self.updatingRecheck : Self.mismatchRecheck)
                     continue
                 }
+                // A refetch the link cut short starts over: only one whole catch-up says what the computer still has.
+                if refetched != nil { refetchAll() }
                 requestedSince = rev
                 windowFloors = [:]
+                var catchUpLeft = 0
                 for try await event in client.events(since: requestedSince, client: "ios") {
                     guard !Task.isCancelled, !retired else { return }
                     setConnection(.online)
                     backoff = 1
                     apply(event)
+                    // An event that restarted the stream leaves the refetch to the new one.
+                    guard !Task.isCancelled else { return }
+                    if case let .hello(_, _, _, _, _, catchUp) = event {
+                        // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
+                        catchUpLeft = catchUp ?? 0
+                    } else if catchUpLeft > 0 {
+                        catchUpLeft -= 1
+                    } else {
+                        continue
+                    }
+                    if catchUpLeft == 0 { finishRefetch() }
                 }
             } catch is CancellationError {
                 return
@@ -44,6 +58,8 @@ extension BotStore {
 
     /// Asked on every (re)connect: the host may have been updated while this app was away.
     private func refreshHello(_ client: HostClient) async throws {
+        iconsEpoch &+= 1
+        let epoch = iconsEpoch
         let h: Hello
         do {
             h = try await client.hello()
@@ -59,26 +75,37 @@ extension BotStore {
         }
         guard !Task.isCancelled, !retired else { return }
         // hello first: whatever the version change shows (notices, reminders) reads it.
+        guard epoch == iconsEpoch else { return }
+        iconsRevision = -1
         hello = h
+        applyIcons(h.icons ?? [:], revision: h.iconsRevision ?? 0)
+        noteSyncStamp(Self.syncStamp(h))
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
     }
 
+    /// A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed:
+    /// fetch it all again, underneath what's shown.
+    private func noteSyncStamp(_ stamp: String) {
+        if let cacheStamp, cacheStamp != stamp { refetchAll() }
+        cacheStamp = stamp
+    }
+
     private func noteHostVersion(_ new: HostVersion) {
-        let cached = cacheStamp.map { $0 != "\(Self.appBuild)/\(new.version)" } ?? false
-        if cached || (hostVersion.map { $0.version != new.version } ?? false) {
-            // A different host version or app build: data may carry new fields, so fetch it all again.
-            refetchAll()
+        if let hostVersion, hostVersion.version != new.version {
+            // Another host: its update is done, and what the last one sent no longer says anything.
             rewound = false
             unreadable = false
+            hostUpdate = nil
         }
-        cacheStamp = nil
         // An update notice may appear or go away with it.
         if new != hostVersion { Motion.animate { hostVersion = new } }
     }
 
     private func apply(_ event: HostEvent) {
         switch event {
-        case let .hello(id, hostRev, newUsage, newScreen):
+        case let .icons(icons, revision):
+            applyIcons(icons, revision: revision)
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork, _):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -86,23 +113,18 @@ extension BotStore {
             hostId = id
             setUsage(newUsage)
             screen = newScreen
+            network = newNetwork
             let hostRewound = hostRev < rev
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
             bump(rev)
-        case let .bot(bot):
-            let neededInput = bots[bot.id]?.needsInput == true
-            bots[bot.id] = bot
+        case .bot(let received):
+            let bot = putHostBot(received)
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
             if bot.unread > 0 { acknowledgeVisibleConversations(bot.id) }
-            if bot.needsInput && !neededInput {
-                for call in Array(voiceCalls.values) where call.botId == bot.id {
-                    call.announce("\(bot.name) needs your approval in the chat.")
-                }
-            }
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil
@@ -116,25 +138,31 @@ extension BotStore {
                 bump(e.rev)
                 break
             }
-            let known = entries[e.botId]?.first(where: { $0.id == e.id })
             upsert(e)
+            if let card = e.data.artifact { artifacts.announce(card) }
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
-            let calls = Array(voiceCalls.values).filter { $0.botId == e.botId && e.rev > $0.startRev }
-            if e.kind == "agent", e.threadId == nil, e.data.final == true, known?.data.final != true, let text = e.data.text {
-                calls.forEach { $0.speak(spokenReply(e, text)) }
-            }
-            // A group has no status of its own: its members' approvals arrive as cards.
-            if e.kind == "permission", known == nil, e.data.status == "pending", bots[e.botId]?.isGroup == true {
-                let name = e.data.author.flatMap { bots[$0]?.name } ?? "A bot"
-                calls.forEach { $0.announce("\(name) needs your approval in the chat.") }
-            }
+        case let .call(cue):
+            // The computer decides what the voice hears; this device hands each cue over once.
+            guard let id = UUID(uuidString: cue.call), let call = voiceCalls[id], cue.seq > heardCues[id, default: 0] else { break }
+            heardCues[id] = cue.seq
+            call.hear(cue)
         case let .usage(u):
             setUsage(u)
         case let .screen(s):
             screen = s
+        case let .network(view):
+            network = view
+        case let .name(name):
+            hello?.name = name
+        case let .autoOrder(on):
+            hello?.autoOrder = on
+        case let .artifact(artifact):
+            artifacts.upsert(artifact)
         case .resync:
             restartEvents()
+        case .skipped:
+            break
         case let .undecodable(type):
             // Never skip past data we couldn't read: rewind once and fetch everything again.
             log.error("undecodable \(type) event")
@@ -151,13 +179,8 @@ extension BotStore {
         scheduleSave()
     }
 
-    /// In a group, a reply is said with its speaker's name.
-    private func spokenReply(_ e: Entry, _ text: String) -> String {
-        guard bots[e.botId]?.isGroup == true, let name = e.data.author.flatMap({ bots[$0]?.name }) else { return text }
-        return "\(name): \(text)"
-    }
-
     private func resetMirror() {
+        iconsRevision = -1
         composerDrafts = [:]
         persistComposerDrafts()
         bots = [:]
@@ -169,17 +192,26 @@ extension BotStore {
         historyComplete = []
         windowFloors = [:]
         screen = nil
+        refetched = nil
         saveCache()
     }
 
-    /// Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so
-    /// the main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which
-    /// pages from the oldest one held. Threads (loaded whole when opened) and messages still sending stay.
+    /// Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the
+    /// catch-up has all arrived (`finishRefetch`).
     private func refetchAll() {
         rev = 0
-        entries = entries.mapValues { $0.filter { $0.threadId != nil || $0.id.hasPrefix("local-") } }
-            .filter { !$0.value.isEmpty }
+        refetched = []
         historyComplete = []
+    }
+
+    /// The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
+    /// ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the
+    /// oldest one held. Messages still sending stay.
+    private func finishRefetch() {
+        guard let kept = refetched else { return }
+        refetched = nil
+        entries = entries.mapValues { $0.filter { $0.id.hasPrefix("local-") || kept.contains($0.id) } }
+            .filter { !$0.value.isEmpty }
     }
 
     /// Resubscribes from the current `rev` on the same link.
@@ -194,26 +226,27 @@ extension BotStore {
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
     }
 
-    /// Per bot, the lowest synced main-chat `seq` in the mirror (optimistic entries don't count).
+    /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).
     /// Only entries the mirror had at `requestedSince`: newer ones (a send's RPC response landing
     /// before this hello) come again in this catch-up and say nothing about the window.
     private func loadedFloors() -> [String: Int64] {
         entries.compactMapValues { list in
-            list.filter { $0.threadId == nil && $0.seq > 0 && $0.seq != .max && $0.rev <= requestedSince }.map(\.seq).min()
+            list.filter { $0.seq > 0 && $0.seq != .max && $0.rev <= requestedSince }.map(\.seq).min()
         }
     }
 
-    /// An entry event the mirror doesn't hold, in the main chat, below the floor the mirror had
+    /// An entry event the mirror doesn't hold, below the floor the mirror had
     /// when this connection started: it existed before the window and arrives only because its
     /// rev was bumped (a rewrite, a reaction). Inserting it would hide the gap from `loadOlder`,
     /// which pages from the oldest loaded `seq`; history paging brings it. `seq` follows insert
     /// order, so anything created since the mirror was last synced sits above the floor.
     static func isOutsideLoadedWindow(_ e: Entry, floor: Int64?, held: Bool) -> Bool {
-        guard e.threadId == nil, !held, let floor else { return false }
+        guard !held, let floor else { return false }
         return e.seq < floor
     }
 
     func upsert(_ e: Entry) {
+        refetched?.insert(e.id)
         var list = entries[e.botId] ?? []
         if let i = list.firstIndex(where: { $0.id == e.id }) {
             // A late API response mustn't undo a newer SSE update.

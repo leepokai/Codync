@@ -9,6 +9,8 @@ struct PairingView<Leading: View>: View {
     var inModal = false
     /// Finish onboarding without pairing; modal pairing simply closes when skipped.
     var onSkip: (() -> Void)? = nil
+    /// On past the install page: the user is pairing this way now.
+    var onContinue: (() -> Void)? = nil
     /// Top-left on the first page (back to the welcome, the account switcher).
     @ViewBuilder var leading: Leading
 
@@ -36,7 +38,7 @@ struct PairingView<Leading: View>: View {
             ZStack {
                 switch step {
                 case .install:
-                    InstallPage(os: $os) { go(.scan) }
+                    InstallPage(os: $os) { onContinue?(); go(.scan) }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 case .scan:
                     ScanPage(os: os) { if inModal { dismissModal() } }
@@ -47,21 +49,13 @@ struct PairingView<Leading: View>: View {
             .clipped()
 
             if step == .scan {
-                Button {
-                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
-                        if inModal { dismissModal() } else { onSkip?() }
-                    }
-                } label: {
-                    Text("Skip").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
-                }
-                .buttonStyle(.secondary)
-                .accessibilityHint("Pair a computer later from Computers & settings.")
-                .padding(.horizontal, 24)
-                .padding(.bottom, 12)
-                .transition(.opacity)
+                SkipSetupButton { if inModal { dismissModal() } else { onSkip?() } }
+                    .transition(.opacity)
             }
         }
         .background(Palette.background)
+        // First run, each page is an onboarding step; afterwards, the whole sheet is one screen.
+        .tracked(inModal ? .screenViewed(.pairing) : .onboardingStepViewed(step == .install ? .install : .scan))
     }
 
     private func go(_ next: Step) {
@@ -73,13 +67,43 @@ extension PairingView where Leading == EmptyView {
     init(inModal: Bool) { self.init(inModal: inModal) { EmptyView() } }
 }
 
+/// Past the setup pages without a computer, at the foot of the page.
+struct SkipSetupButton: View {
+    let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            withAnimation(Motion.reduced(Motion.layout, reduceMotion), action)
+        } label: {
+            Text(L10n.tr("Skip")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+        }
+        .buttonStyle(.secondary)
+        .accessibilityHint("Pair a computer later from Manage computers.")
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+}
+
+extension Text {
+    /// A setup page's big title.
+    func pageTitle() -> some View {
+        font(.system(size: 30, weight: .semibold)).tracking(-0.5).foregroundStyle(Palette.text)
+    }
+}
+
 private enum ComputerOS: Hashable { case mac, linux }
 
 // MARK: - Install
 
 private struct InstallPage: View {
+    /// The website: its first button downloads for whatever the computer runs.
+    private static let websiteLink = "https://www.codync.dev"
+
     @Binding var os: ComputerOS
     let next: () -> Void
+    @Environment(AccountSession.self) private var account
+    @State private var linkCopied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -97,13 +121,29 @@ private struct InstallPage: View {
                     .padding(.top, 8)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Install Codync\non your computer")
-                            .font(.system(size: 30, weight: .semibold))
-                            .tracking(-0.5)
-                            .foregroundStyle(Palette.text)
-                        Text("Your bots run there. This iPhone is how you talk to them.")
+                        Text(L10n.tr("Install Codync\non your computer")).pageTitle()
+                        Text(L10n.tr("Your bots run there. This iPhone is how you talk to them."))
                             .font(.body)
                             .foregroundStyle(Palette.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Hint("Open the website on your computer to download Codync")
+                        Button {
+                            copyToClipboard(Self.websiteLink, records: .installLink, copied: $linkCopied)
+                        } label: {
+                            Label(L10n.tr(linkCopied ? "Copied" : "Copy website link"), systemImage: linkCopied ? "checkmark" : "doc.on.doc")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .contentTransition(.opacity)
+                        }
+                        .buttonStyle(.secondary)
+                        // The same account is what lets this phone find the computer afterwards.
+                        if let email = account.email {
+                            Text(L10n.tr("Sign in there with {email} and add it to your account, and it shows up here.").replacingOccurrences(of: "{email}", with: email))
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.secondary)
+                        }
                     }
 
                     SegmentedChoice(selection: $os, options: [(.mac, "Mac"), (.linux, "Linux")])
@@ -112,23 +152,21 @@ private struct InstallPage: View {
                         // Copied here, pasted on the computer (Universal Clipboard or a message to yourself).
                         if os == .mac {
                             Hint("Install with Homebrew")
-                            CommandBlock("brew install --cask leepokai/codync/codync")
+                            CommandBlock("brew install --cask leepokai/codync/codync", records: .installCommand)
                             Hint("or download the Mac app")
-                            CommandBlock("https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg")
+                            CommandBlock("https://github.com/leepokai/Codync/releases/latest/download/codync-macos.dmg", records: .installCommand)
                         } else {
                             Hint("Run the installer")
-                            CommandBlock("curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh\ncodync-host install")
+                            CommandBlock("curl -fsSL https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh | sh\ncodync-host install", records: .installCommand)
                             Hint("or install with Homebrew")
-                            CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install")
+                            CommandBlock("brew install leepokai/codync/codync-host\ncodync-host install", records: .installCommand)
                         }
-                        Text(os == .mac
+                        Text(L10n.tr(os == .mac
                              ? "Open Codync and it sets up the host on its own."
-                             : "codync-host install keeps it running in the background.")
+                             : "codync-host install keeps it running in the background."))
                             .font(.subheadline)
                             .foregroundStyle(Palette.secondary)
                             .contentTransition(.opacity)
-                        Hint("Every install option")
-                        CommandBlock("https://www.codync.dev/#install")
                     }
                     .animation(Motion.layout, value: os)
 
@@ -139,7 +177,7 @@ private struct InstallPage: View {
             }
 
             Button(action: next) {
-                Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                Text(L10n.tr("Continue")).font(.headline).frame(maxWidth: .infinity, minHeight: 50)
             }
             .buttonStyle(.primary)
             .padding(.horizontal, 24)
@@ -154,16 +192,31 @@ private struct Hint: View {
     init(_ text: String) { self.text = text }
 
     var body: some View {
-        Text(text).font(.footnote).foregroundStyle(Palette.secondary).transition(.opacity)
+        Text(L10n.tr(text)).font(.footnote).foregroundStyle(Palette.secondary).transition(.opacity)
     }
 }
 
-/// A terminal command with a copy button.
+/// Copies `text`, counts as opening `records`, and says so through `copied` for a moment.
+@MainActor private func copyToClipboard(_ text: String, records: AnalyticsEvent.Link?, copied: Binding<Bool>) {
+    UIPasteboard.general.string = text
+    if let records { Analytics.shared.capture(.linkOpened(records)) }
+    withAnimation(Motion.morph) { copied.wrappedValue = true }
+    Task {
+        try? await Task.sleep(for: .seconds(1.5))
+        withAnimation(Motion.morph) { copied.wrappedValue = false }
+    }
+}
+
+/// A terminal command or link with a copy button; copying it counts as opening `records`.
 private struct CommandBlock: View {
     let command: String
+    let records: AnalyticsEvent.Link?
     @State private var copied = false
 
-    init(_ command: String) { self.command = command }
+    init(_ command: String, records: AnalyticsEvent.Link? = nil) {
+        self.command = command
+        self.records = records
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -175,12 +228,7 @@ private struct CommandBlock: View {
                 .padding(.vertical, 6)
                 .contentTransition(.opacity)
             IconButton(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                UIPasteboard.general.string = command
-                withAnimation(Motion.morph) { copied = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    withAnimation(Motion.morph) { copied = false }
-                }
+                copyToClipboard(command, records: records, copied: $copied)
             }
             .contentTransition(.symbolEffect(.replace))
         }
@@ -205,6 +253,8 @@ private struct ScanPage: View {
     @State private var pairing = false
     @State private var pasted = ""
     @State private var error: String?
+    /// The phone couldn't reach the computer (not a refusal from it or the cloud): the network hint helps.
+    @State private var unreachable = false
     /// Bumped after a failed pair so the scanner starts looking again.
     @State private var attempt = 0
     @State private var tailscaleOn = Tailscale.isConnected
@@ -213,13 +263,10 @@ private struct ScanPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Scan the pairing code")
-                        .font(.system(size: 30, weight: .semibold))
-                        .tracking(-0.5)
-                        .foregroundStyle(Palette.text)
+                    Text(L10n.tr("Scan the pairing code")).pageTitle()
                     Text(os == .mac
-                         ? "On your Mac, click Codync in the menu bar, then Pair iPhone."
-                         : "On your computer, run this in a terminal:")
+                         ? L10n.tr("On your Mac, click Codync in the menu bar, then Pair iPhone.")
+                         : L10n.tr("On your computer, run this in a terminal:"))
                         .font(.body)
                         .foregroundStyle(Palette.secondary)
                     if os == .linux { CommandBlock("codync-host pair") }
@@ -228,7 +275,7 @@ private struct ScanPage: View {
                 viewfinder
 
                 HStack {
-                    TextField("Or paste a \(AppEnvironment.current.urlScheme)://pair link", text: $pasted)
+                    TextField(L10n.tr("Pairing link or code"), text: $pasted)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.callout.monospaced())
@@ -243,28 +290,36 @@ private struct ScanPage: View {
 
                 if let error {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(error).font(.footnote).foregroundStyle(Palette.danger)
+                        Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger)
                         // The usual cause: the phone has no road to the computer yet.
-                        Label("Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer.",
+                        if unreachable { Label(L10n.tr(account.isSignedIn
+                                                       ? "Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale, or that “Reach from anywhere” is on in Codync on the computer."
+                                                       : "Check that this iPhone and the computer are on the same Wi-Fi or both on Tailscale."),
                               systemImage: "wifi.exclamationmark")
                             .font(.footnote)
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(Palette.secondary) }
+                        if unreachable { Label(L10n.tr("Also check that Local Network is on for Codync in iOS Settings, and that the Wi-Fi isn't a guest network."),
+                              systemImage: "lock.shield")
+                            .font(.footnote)
+                            .foregroundStyle(Palette.secondary) }
                     }
                     .transition(.opacity)
                 }
 
-                // Signed in, account computers show up and ask for access themselves.
+                // Signed in, account computers show up in Computers, where a tap asks one for access.
                 if account.isConfigured && !account.isSignedIn { SignInButtons() }
 
                 // How it connects is never a choice here: every paired computer gets every route.
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Connects on Wi-Fi, over Tailscale, or from anywhere through Cloudflare, on its own. End-to-end encrypted.",
-                          systemImage: "lock.fill")
+                    Label(L10n.tr(RelayCopy.pairing(pasted: pasted, signedIn: account.isSignedIn)), systemImage: "lock.fill")
                     if tailscaleOn {
-                        Label("Tailscale is on: Codync connects over it directly.", systemImage: "checkmark.circle.fill")
+                        Label(L10n.tr("Tailscale is on: Codync connects over it directly."), systemImage: "checkmark.circle.fill")
                     } else {
-                        Button { openURL(Tailscale.downloadURL) } label: {
-                            Label("Use Tailscale? Direct and faster away from home.", systemImage: "arrow.up.right")
+                        Button {
+                            Analytics.shared.capture(.linkOpened(.tailscale))
+                            openURL(Tailscale.downloadURL)
+                        } label: {
+                            Label(L10n.tr("Use Tailscale? Direct and faster away from home."), systemImage: "arrow.up.right")
                         }
                         .buttonStyle(PressScale())
                     }
@@ -286,39 +341,58 @@ private struct ScanPage: View {
             if DataScannerViewController.isSupported {
                 QRScanner { code in pair(code) }
                     .id(attempt)
+                // VisionKit's own hint follows the app's localizations, which stay English.
+                if !pairing {
+                    Text(L10n.tr("Find nearby barcodes."))
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.55), radius: 8)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                        .allowsHitTesting(false)
+                }
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 44, weight: .light))
-                    Text("Camera not available. Paste the link below.").font(.footnote)
+                    Text(L10n.tr("Camera not available. Paste the link below.")).font(.footnote)
                 }
                 .foregroundStyle(Palette.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Palette.surface)
             }
             if pairing {
-                Palette.background.opacity(0.7)
-                Spinner(size: 28)
+                Palette.background
+                VStack(spacing: 16) {
+                    Spinner(size: 28)
+                    // A computer in no account asks its user first, showing the same code.
+                    if let code = app.accounts.pairingCheck {
+                        Text(L10n.tr("If the computer asks, check it shows {code}.")
+                            .replacingOccurrences(of: "{code}", with: "\(code.prefix(3))\u{00A0}\(code.suffix(3))"))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(Palette.text)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .transition(.opacity)
+                    }
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .animation(Motion.fade, value: pairing)
+        .animation(Motion.fade, value: app.accounts.pairingCheck)
     }
 
     private func pair(_ text: String) {
-        let p: Pairing
-        do {
-            p = try Pairing.parse(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        } catch {
-            show(error)
-            return
-        }
+        // A short code works once: Return pressed again while it resolves mustn't spend it twice.
+        guard !pairing else { return }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { error = nil }
         pairing = true
         Task {
             defer { pairing = false }
             do {
-                _ = try await app.pair(p)
+                let p = try await app.pairing(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
+                _ = try await app.pair(p, via: .qr)
                 pasted = ""
                 paired()
             } catch {
@@ -329,7 +403,11 @@ private struct ScanPage: View {
 
     private func show(_ error: Error) {
         attempt += 1
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { self.error = error.localizedDescription }
+        let reason = AnalyticsEvent.PairingFailure(error)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) {
+            self.error = error.localizedDescription
+            unreachable = reason == .unreachable || reason == .timeout
+        }
     }
 }
 
@@ -341,6 +419,7 @@ struct QRScanner: UIViewControllerRepresentable {
         let vc = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: [.qr])],
             qualityLevel: .fast,
+            isGuidanceEnabled: false,
             isHighlightingEnabled: true
         )
         vc.delegate = context.coordinator

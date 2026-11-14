@@ -33,9 +33,9 @@ struct RoutineWebhookPanel: View {
                     .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let error {
-                Text(error).font(.caption).foregroundStyle(Palette.danger).padding(.leading, 4)
+                Text(L10n.tr(error)).font(.caption).foregroundStyle(Palette.danger).padding(.leading, 4)
             } else {
-                Text("Loading webhook…").font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
+                Text(L10n.tr("Loading webhook…")).font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
             }
         }
         .task(id: routineId) { await load(rotate: false) }
@@ -47,7 +47,9 @@ struct RoutineWebhookPanel: View {
 
     private func note(_ webhook: RoutineWebhook) -> String {
         guard webhook.url != nil else {
-            return "The Codync cloud is off, so only this computer can send to it."
+            return webhook.needsAccount == true
+                ? "This computer isn't in an account, so only it can send to this address. Add it to your account for a public one."
+                : "The Codync cloud is off, so only this computer can send to it."
         }
         return "POST with Authorization: Bearer <key>. For GitHub, use content type application/json and the key as the secret. "
             + "Deliveries wait up to 72 hours while this computer is off. They pass through the Codync cloud, which can read them."

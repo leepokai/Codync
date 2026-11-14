@@ -8,7 +8,11 @@ struct AccountSwitcherButton: View {
     var body: some View {
         Button { account.showSwitcher = true } label: {
             HStack(spacing: 4) {
-                AccountAvatar(url: account.avatarURL, email: account.email, size: 30)
+                if account.isBusy || !account.isReady {
+                    Spinner(size: 18).frame(width: 30, height: 30)
+                } else {
+                    AccountAvatar(url: account.avatarURL, email: account.email, size: 30)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Palette.secondary)
@@ -19,12 +23,12 @@ struct AccountSwitcherButton: View {
     }
 }
 
-/// Who you're signed in as, the other accounts on this iPhone, and the way to the computers.
+/// Who you're signed in as, and the other accounts on this iPhone.
 struct AccountSwitcherView: View {
     @Environment(AppStore.self) private var app
     @Environment(AccountSession.self) private var account
-    @State private var showSettings = false
     @State private var confirmSignOut = false
+    @State private var confirmDelete = false
     @State private var pairing = false
     @State private var addingAccount = false
 
@@ -33,7 +37,7 @@ struct AccountSwitcherView: View {
             Button { pairing = true } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "qrcode.viewfinder").font(.system(size: 22))
-                    Text("Scan a computer's code").font(.body.weight(.medium))
+                    Text(L10n.tr("Scan a computer's code")).font(.body.weight(.medium))
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
                 }
@@ -53,14 +57,15 @@ struct AccountSwitcherView: View {
                 if addingAccount { SignInButtons().transition(.opacity.combined(with: .move(edge: .top))) }
             }
 
-            CardSection {
-                Button { showSettings = true } label: {
-                    RowLabel("Computers", systemImage: "desktopcomputer", chevron: true)
-                }
-                .buttonStyle(.plain)
-                if account.isSignedIn {
+            if account.isSignedIn {
+                CardSection {
                     Button { confirmSignOut = true } label: {
                         RowLabel("Sign out", systemImage: "rectangle.portrait.and.arrow.right", tint: Palette.danger)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(account.isBusy)
+                    Button { confirmDelete = true } label: {
+                        RowLabel("Delete account", systemImage: "trash", tint: Palette.danger)
                     }
                     .buttonStyle(.plain)
                     .disabled(account.isBusy)
@@ -68,7 +73,7 @@ struct AccountSwitcherView: View {
             }
 
             if let message = account.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.tr(message), systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(Palette.danger)
                     .transition(.opacity)
@@ -78,7 +83,7 @@ struct AccountSwitcherView: View {
             ModalHeader("Account") {
                 if account.isBusy {
                     ThinkingOrb(state: .connecting, size: 20)
-                        .accessibilityHidden(false).accessibilityLabel("Signing in")
+                        .accessibilityHidden(false).accessibilityLabel(L10n.tr("Signing in"))
                         .transition(.opacity)
                 }
             }
@@ -87,13 +92,16 @@ struct AccountSwitcherView: View {
         }
         .animation(Motion.layout, value: account.userID)
         .animation(Motion.fade, value: account.errorMessage)
+        .tracked(.screenViewed(.account))
         .onChange(of: account.userID) { _, _ in withAnimation(Motion.layout) { addingAccount = false } }
-        .hidesSystemNavigationBar()
-        .navigationDestination(isPresented: $showSettings) { SettingsView(pushed: true) }
         .codyncSheet(isPresented: $pairing) { PairingView(inModal: true) }
         .codyncDialog("Sign out of \(account.email ?? "this account")?", isPresented: $confirmSignOut,
-                      message: "This iPhone forgets the account's computers. Your bots stay on them.") {
+                      message: "This iPhone stops getting the account's notifications and keeps its computers, so signing back in needs no scan. To take it off them, use Start over in Settings instead.") {
             [DialogAction("Sign out", destructive: true) { Task { await app.signOut() } }]
+        }
+        .codyncDialog("Delete your Codync account?", isPresented: $confirmDelete,
+                      message: "Your account, its list of computers and every device's access through it are deleted. Your computers keep their bots and chats. This can't be undone.") {
+            [DialogAction("Delete account", destructive: true) { Task { await app.deleteAccount() } }]
         }
     }
 
@@ -121,7 +129,7 @@ struct AccountSwitcherView: View {
                 if account.isConfigured {
                     SignInButtons()
                 } else {
-                    Label("QR pairing only in this build", systemImage: "qrcode")
+                    Label(L10n.tr("QR pairing only in this build"), systemImage: "qrcode")
                         .font(.footnote)
                         .foregroundStyle(Palette.secondary)
                 }
@@ -163,59 +171,6 @@ struct AccountSwitcherView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-    }
-}
-
-/// Google's mark plus the one line it needs; used wherever sign-in is offered.
-struct GoogleSignInButton: View {
-    @Environment(AccountSession.self) private var account
-
-    var body: some View {
-        Button { Task { await account.signIn() } } label: {
-            ZStack {
-                HStack(spacing: 10) {
-                    Image("google").resizable().frame(width: 20, height: 20)
-                    Text("Continue with Google")
-                }
-                .opacity(account.isBusy ? 0 : 1)
-                if account.isBusy { Spinner(size: 18) }
-            }
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: 50)
-        }
-        .buttonStyle(.secondary)
-        .disabled(account.isBusy)
-        .animation(Motion.fade, value: account.isBusy)
-    }
-}
-
-/// An icon and a short name, with a chevron when it leads somewhere.
-private struct RowLabel: View {
-    let title: String
-    let systemImage: String
-    var tint: Color = Palette.text
-    var chevron = false
-
-    init(_ title: String, systemImage: String, tint: Color = Palette.text, chevron: Bool = false) {
-        self.title = title
-        self.systemImage = systemImage
-        self.tint = tint
-        self.chevron = chevron
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17))
-                .frame(width: 26)
-            Text(title)
-            Spacer(minLength: 8)
-            if chevron {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
-            }
-        }
-        .foregroundStyle(tint)
-        .contentShape(Rectangle())
     }
 }
 

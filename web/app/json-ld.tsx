@@ -1,5 +1,5 @@
-import { APP_STORE, DISCORD, DMG_FILE, EMAIL, GITHUB, PRODUCT_HUNT } from "./links";
-import { DESCRIPTION, SITE } from "./site";
+import { APP_STORE, DMG_FILE, GITHUB } from "./links";
+import { ABOUT, SITE } from "./site";
 
 // Structured data so search and AI answer engines read Codync as a free, open-source app.
 const graph = {
@@ -10,23 +10,13 @@ const graph = {
       "@id": `${SITE}/#website`,
       url: SITE,
       name: "Codync",
-      publisher: { "@id": `${SITE}/#org` },
-    },
-    {
-      "@type": "Organization",
-      "@id": `${SITE}/#org`,
-      name: "Codync",
-      url: SITE,
-      logo: `${SITE}/icon.png`,
-      email: EMAIL,
-      sameAs: [GITHUB, APP_STORE, PRODUCT_HUNT, DISCORD],
     },
     {
       "@type": "SoftwareApplication",
       "@id": `${SITE}/#app`,
       name: "Codync",
       url: SITE,
-      description: DESCRIPTION,
+      description: ABOUT,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "macOS, Windows, Linux, iOS",
       image: `${SITE}/icon.png`,
@@ -35,7 +25,6 @@ const graph = {
       license: "https://www.apache.org/licenses/LICENSE-2.0",
       isAccessibleForFree: true,
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      publisher: { "@id": `${SITE}/#org` },
       sameAs: [GITHUB, APP_STORE],
     },
   ],

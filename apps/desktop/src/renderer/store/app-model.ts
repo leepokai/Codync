@@ -1,10 +1,14 @@
-import type { HostSnapshot } from '@shared/ipc'
-import type { AccessRequest, Bot, Computer } from '@shared/models'
-import { LoopbackTransport } from '../client/host-client'
+import { trackBody } from '@shared/analytics'
+import type { HostSnapshot, LocalHost } from '@shared/ipc'
+import type { AccessRequest, Bot, Computer, PairingRequest } from '@shared/models'
+import { HostError, LoopbackTransport } from '../client/host-client'
 import { Observable } from '../lib/observable'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { account } from './account'
+import { analytics } from './analytics'
 import { BotStore } from './bot-store'
 import { CloudModel } from './cloud'
+import { CloudComputerModel } from './cloud-computer'
 import { DeviceComputerOrder } from './computer-order'
 import { ComputerAccess } from './computer-access'
 
@@ -35,6 +39,13 @@ export interface Approval {
   request: AccessRequest
 }
 
+/** A signed-in phone asking a computer this app manages, in no account, to let it in and join its account. */
+export interface PairingAsk {
+  id: string
+  store: BotStore
+  request: PairingRequest
+}
+
 /**
  * The window's model: this computer's own host (from the main process), one `BotStore` per
  * computer, the selection, and what the menu bar shows. Mirrors kit's `AccountStore`.
@@ -44,28 +55,36 @@ export class AppModel extends Observable {
   computers: Computer[] = []
   stores = new Map<string, BotStore>()
   selection: BotRef | null = null
+  refreshing = false
   lastError: string | null = null
   /** Codync Screen waits for the user to allow it in System Settings → Login Items. */
   screenNeedsApproval = false
   screenError: string | null = null
+  /** The computer whose screen is open in the viewer (another computer: this one's screen is right here). */
+  screenComputer: string | null = null
+  /** The bot the viewer was opened to watch: it starts by looking rather than taking over. */
+  screenWatching: string | null = null
   private screenSynced = false
-  private opened = false
   /** Whether the account was signed in when last seen; null until its state first arrives. */
   private signedIn: boolean | null = null
   /** Approvals closed with "later"; they come back when the request changes (its code arrives). */
   private deferred = new Set<string>()
+  private answeredPairings = new Set<string>()
   private storeSubscriptions = new Map<string, () => void>()
 
   /** The signed-in account's side of this computer (claims, cloud default, account computers). */
   readonly computerAccess: ComputerAccess
   readonly computerOrder: DeviceComputerOrder
   readonly cloud: CloudModel
+  /** The account's Codync Cloud computer (Settings → Computers & devices). */
+  readonly cloudComputer: CloudComputerModel
 
   constructor(private mirrors = true) {
     super()
     this.computerAccess = new ComputerAccess(this)
     this.computerOrder = new DeviceComputerOrder()
     this.cloud = new CloudModel(this)
+    this.cloudComputer = new CloudComputerModel(this)
     account.subscribe(() => this.noteAccount())
   }
 
@@ -76,6 +95,11 @@ export class AppModel extends Observable {
 
   async start() {
     window.codync.host.onChange((s) => this.setHost(s))
+    if (this.mirrors) {
+      // Once per launch; it goes out when this computer's host first answers.
+      analytics.track({ event: 'app_opened', at_login: window.codync.openedAtLogin })
+      window.codync.app.onCommand((c) => c.kind === 'windowOpened' && analytics.track({ event: 'window_opened' }))
+    }
     this.setHost(await window.codync.host.snapshot())
   }
 
@@ -83,6 +107,7 @@ export class AppModel extends Observable {
     const old = this.host.local
     this.host = snapshot
     const local = snapshot.local
+    this.connectAnalytics(local)
     if (!this.mirrors) return this.changed()
     if (local && (old?.computerId !== local.computerId || old.token !== local.token || !this.stores.has(local.computerId))) {
       if (old && old.computerId !== local.computerId) this.detach(old.computerId)
@@ -90,14 +115,22 @@ export class AppModel extends Observable {
       const computer: Computer = cached ?? { id: local.computerId, name: 'This computer', signKey: '', urls: [] }
       const store = new BotStore(computer, true, () => new LoopbackTransport(local.baseURL, local.token))
       this.attach(computer, store)
-      store.subscribe(() => {
-        this.syncScreen(store)
-        this.noteOpened(store)
-      })
+      store.subscribe(() => this.syncScreen(store))
     } else if (!local && old) {
       this.detach(old.computerId)
     }
     this.changed()
+  }
+
+  openScreen(computerId: string | null, watching: string | null = null) {
+    this.screenComputer = computerId
+    this.screenWatching = computerId ? watching : null
+    this.changed()
+  }
+
+  /** Whether another computer's screen can be opened in the viewer now. */
+  canOpenScreen(store: BotStore) {
+    return store !== this.local && !!store.screen && store.shownConnection.kind === 'online' && !store.mismatch
   }
 
   /** The computer's own host store. */
@@ -136,17 +169,46 @@ export class AppModel extends Observable {
     this.changed()
   }
 
+  /** ⌘R, as the iPhone's pull to refresh: reconnect every computer and reload the account's computers. */
+  async refresh() {
+    if (this.refreshing) return
+    this.refreshing = true
+    this.changed()
+    try {
+      // Keep even a local refresh visible long enough to acknowledge the shortcut.
+      const results = await Promise.allSettled([
+        new Promise((resolve) => setTimeout(resolve, 600)),
+        ...[...this.stores.values()].map((store) => store.refreshStream()),
+        this.cloud.refresh(),
+      ])
+      const failure = results.find((result) => result.status === 'rejected')
+      if (failure?.status === 'rejected') this.setError(String(failure.reason instanceof Error ? failure.reason.message : failure.reason))
+    } finally {
+      this.refreshing = false
+      this.changed()
+    }
+  }
+
   store(id: string) {
     return this.stores.get(id) ?? null
   }
 
   /** Every computer's visible bots, computer by computer, each in its roster order. */
   get roster(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.roster)
+  }
+
+  /** Every computer's bots hidden from the roster, computer by computer, by name. */
+  get hiddenBots(): RosterItem[] {
+    return this.botsOnEveryComputer((store) => store.hiddenBots)
+  }
+
+  private botsOnEveryComputer(bots: (store: BotStore) => Bot[]): RosterItem[] {
     const items: RosterItem[] = []
     for (const computer of this.computers) {
       const store = this.stores.get(computer.id)
       if (!store) continue
-      for (const bot of store.roster) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
+      for (const bot of bots(store)) items.push({ ref: { computerId: computer.id, botId: bot.id }, bot, computer: store.computer, store })
     }
     return items
   }
@@ -160,9 +222,9 @@ export class AppModel extends Observable {
     return this.selection ? this.store(this.selection.computerId) : null
   }
 
-  /** Computers this app manages over loopback (itself and SSH tunnels): they take approvals and pairing. */
+  /** Computers this app manages over loopback (itself and SSH tunnels), this one first: they take approvals and pairing. */
   get managedStores() {
-    return [...this.stores.values()].filter((s) => s.isLoopback)
+    return [...this.stores.values()].filter((s) => s.isLoopback).sort((a, b) => Number(b === this.local) - Number(a === this.local))
   }
 
   get approvals(): Approval[] {
@@ -190,6 +252,24 @@ export class AppModel extends Observable {
   async decide(a: Approval, approve: boolean) {
     const client = await a.store.ready()
     await client.call('decideAccessRequest', { requestId: a.request.requestId, approve }, 30_000)
+  }
+
+  /** Phones waiting to be let in, without those answered here (the host's event takes them off a moment later). */
+  get pairingAsks(): PairingAsk[] {
+    return this.managedStores
+      .flatMap((store) => store.pairingRequests.map((request) => ({ id: `${store.computer.id}/${request.requestId}`, store, request })))
+      .filter((ask) => !this.answeredPairings.has(ask.id))
+  }
+
+  decidePairing(ask: PairingAsk, approve: boolean, join?: boolean) {
+    this.answeredPairings.add(ask.id)
+    this.changed()
+    const answer = ask.store.ready().then((client) => client.call('decidePairing', { requestId: ask.request.requestId, approve, join }, 30_000))
+    // The host may not have the answer: the question comes back.
+    return undoOnFailure(answer, () => {
+      this.answeredPairings.delete(ask.id)
+      this.changed()
+    }, (message) => this.setError(message))
   }
 
   get needsAttention() {
@@ -233,18 +313,26 @@ export class AppModel extends Observable {
     })
   }
 
-  /** `app_opened` once per launch, when this computer's host first answers. */
-  private noteOpened(store: BotStore) {
-    if (this.opened || !store.hello) return
-    this.opened = true
-    store.track('app_opened')
+  /** App-level analytics go out through this computer's host (`track`) once it answers; null holds them. */
+  private connectAnalytics(local: LocalHost | null) {
+    if (!local) return analytics.connect(null)
+    const transport = new LoopbackTransport(local.baseURL, local.token)
+    analytics.connect(async (event) => {
+      try {
+        await transport.call('track', trackBody(event), 10_000)
+      } catch (error) {
+        // Unreachable: kept for the next try. Refused (a host without this event): dropped.
+        if (error instanceof HostError && error.isTransient) throw error
+        console.warn(`track ${event.event} failed`, error)
+      }
+    })
   }
 
   /** Sign-in and sign-out, not the state restored at launch. */
   private noteAccount() {
     if (!account.isReady) return
     const now = account.isSignedIn
-    if (this.signedIn !== null && now !== this.signedIn) this.local?.track(now ? 'signed_in' : 'signed_out')
+    if (this.signedIn !== null && now !== this.signedIn) analytics.track(now ? { event: 'signed_in', provider: account.provider ?? undefined } : { event: 'signed_out' })
     this.signedIn = now
   }
 

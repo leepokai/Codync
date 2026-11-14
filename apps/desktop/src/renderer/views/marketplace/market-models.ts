@@ -18,14 +18,17 @@ export interface InstalledConnector {
   logo?: string | null
   /** Remote servers: `none`, `signedOut` (waits for sign-in; bots don't get it yet) or `signedIn`. */
   auth?: string | null
+  /** Set up with a saved token where signing in works now (GitHub): offer the sign-in. Older hosts omit it. */
+  canSignIn?: boolean
 }
 
 export const needsSignIn = (c: InstalledConnector) => c.auth === 'signedOut'
 
-/** Where a connector's sign-in page is and who catches its return: `app` or `host`. */
+/** Where a connector's sign-in page is and who catches its return: `app` or `host`; `code`: what to type there (GitHub). */
 export interface ConnectorSignIn {
   url: string
   callback: string
+  code?: string | null
 }
 
 export interface ComposioStatus {
@@ -123,6 +126,12 @@ export interface ConnectionRequest {
   location?: string | null
   /** Login requests: the website's domain or the app's name. */
   site?: string | null
+  /** Agent sign-in requests: the agent (backend id) to sign in to. */
+  backend?: string | null
+  /** Agent sign-in requests: the login profile to sign in, when it isn't the computer's own login. */
+  loginProfile?: string | null
+  /** App requests: the app's logo, when Composio lists it. */
+  logo?: string | null
 }
 
 /** A saved website or app login; the password stays on the computer. */
@@ -190,7 +199,8 @@ export const market = {
     (await c.call<{ connector: InstalledConnector }>('installConnector', body, s(45))).connector,
   /** Adds every server in a pasted MCP config (`mcpServers` / `servers` JSON, or one server's entry). */
   importConnectors: async (c: HostClient, config: string) => (await c.call<{ items: InstalledConnector[] }>('importConnectors', { config }, s(60))).items,
-  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id }, s(60)),
+  // `showsCode`: this app shows a device sign-in's code, so the host may answer with one.
+  connectorSignIn: (c: HostClient, id: string) => c.call<ConnectorSignIn>('connectorSignIn', { id, showsCode: true }, s(60)),
   finishConnectorSignIn: async (c: HostClient, state: string, code: string | null, error: string | null) =>
     (await c.call<{ connector: InstalledConnector }>('connectorSignInFinish', { state, code, error }, s(60))).connector,
   removeConnector: (c: HostClient, id: string) => c.call('removeConnector', { id }),
@@ -211,8 +221,8 @@ export const market = {
   skillDetails: async (c: HostClient, which: { id: string } | { source: string }) => (await c.call<{ markdown: string }>('skillDetails', which, s(60))).markdown,
   connectorInfo: (c: HostClient, registryName: string) => c.call<MarketConnector>('connectorInfo', { registryName }, s(60)),
   verifyConnector: (c: HostClient, id: string) => c.call<{ status: string }>('connectorVerify', { id }, s(120)),
-  finishConnectionRequest: (c: HostClient, entryId: string, opts: { connectorId?: string; value?: string; username?: string; cancel?: boolean } = {}) =>
-    c.call('connectorRequestFinish', { entryId, connectorId: opts.connectorId ?? null, value: opts.value ?? null, username: opts.username ?? null, cancel: opts.cancel ?? false }, s(120)),
+  finishConnectionRequest: (c: HostClient, entryId: string, opts: { connectorId?: string; value?: string; username?: string } = {}) =>
+    c.call('connectorRequestFinish', { entryId, connectorId: opts.connectorId ?? null, value: opts.value ?? null, username: opts.username ?? null }, s(120)),
   logins: async (c: HostClient) => (await c.call<{ items: SavedLogin[] }>('credentialLogins', {}, s(60))).items,
   saveLogin: (c: HostClient, site: string, username: string, password: string) => c.call('credentialSaveLogin', { site, username, password }, s(60)),
   removeLogin: (c: HostClient, id: string) => c.call('credentialRemoveLogin', { id }, s(60)),
@@ -222,8 +232,8 @@ export const market = {
 
   // Agent setup terminals
   /** The first sign-in through a registry build can download it. */
-  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number) =>
-    (await c.call<{ term: string }>('agentSetup', { backend, step, method, cols, rows }, s(300))).term,
+  agentSetup: async (c: HostClient, backend: string, step: SetupStep, method: string | null, cols: number, rows: number, loginProfile?: string) =>
+    (await c.call<{ term: string }>('agentSetup', { backend, step, method, loginProfile, cols, rows }, s(300))).term,
   agentAuth: (c: HostClient, backend: string) => c.call<AgentAuth>('agentAuth', { backend }, s(300)),
   agentAuthenticate: (c: HostClient, backend: string, method: string) => c.call<AgentAuth>('agentAuthenticate', { backend, method }, s(660)),
   setAgentEnv: (c: HostClient, backend: string, vars: Record<string, string>) => c.call<AgentAuth>('setAgentEnv', { backend, vars }, s(300)),
@@ -232,13 +242,12 @@ export const market = {
   termClose: (c: HostClient, term: string) => c.call('termClose', { term }),
 }
 
-/** Keep fetched catalog metadata in memory, but create rows only as the user requests them. */
+/** Keep fetched catalog metadata in memory. The Extensions tabs scroll through it. */
 export interface MarketplacePage<T> {
   items: T[]
-  visibleCount: number
 }
 
-export const emptyPage = <T>(): MarketplacePage<T> => ({ items: [], visibleCount: 12 })
+export const emptyPage = <T>(): MarketplacePage<T> => ({ items: [] })
 
 export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) => string): MarketplacePage<T> {
   const known = new Set(page.items.map(id))
@@ -246,9 +255,15 @@ export function appendPage<T>(page: MarketplacePage<T>, more: T[], id: (t: T) =>
 }
 
 export const replacePage = <T>(items: T[], id: (t: T) => string) => appendPage(emptyPage<T>(), items, id)
-export const revealMore = <T>(page: MarketplacePage<T>): MarketplacePage<T> => ({ ...page, visibleCount: Math.min(page.items.length, page.visibleCount + 12) })
-export const visible = <T>(page: MarketplacePage<T>) => page.items.slice(0, page.visibleCount)
-export const hasHiddenItems = <T>(page: MarketplacePage<T>) => page.items.length > page.visibleCount
+
+export type ExtensionSection = 'agents' | 'connectors' | 'skills'
+
+/** Each section with the line saying where its items come from. */
+export const EXTENSION_SECTIONS: { id: ExtensionSection; label: string; source: string }[] = [
+  { id: 'agents', label: 'Agents', source: 'Agents come from the ACP registry and install on {name}.' },
+  { id: 'connectors', label: 'Connectors', source: 'Connectors come from the official MCP Registry and install on {name}.' },
+  { id: 'skills', label: 'Skills', source: 'Skills come from Anthropic and install on {name}.' },
+]
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

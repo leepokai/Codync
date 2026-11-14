@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Codync.Base" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
+    <style name="Theme.Codync" parent="Theme.Codync.Base" />
+</resources>
+

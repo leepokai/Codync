@@ -8,7 +8,37 @@ import Testing
     #expect(listing.routines[0].triggers[0].timeZone == "Asia/Taipei")
     #expect(listing.routines[0].triggers[1].type == "webhook")
     #expect(listing.runs[0].isActive)
-    #expect(listing.runs[0].rootId == nil)
+}
+
+@Test func aListingCarriesTheFollowUpsStillWaitingAndAnOlderHostsHasNone() throws {
+    let data = Data(#"{"routines":[],"runs":[],"followUps":[{"id":"f","botId":"b","at":1794650400000,"note":"Check the build","createdAt":1794649200000,"chain":0}]}"#.utf8)
+    let listing = try JSONDecoder().decode(RoutineListing.self, from: data)
+    #expect(listing.followUps?.first?.note == "Check the build")
+    let older = try JSONDecoder().decode(RoutineListing.self, from: Data(#"{"routines":[],"runs":[]}"#.utf8))
+    #expect(older.followUps == nil)
+}
+
+@Test func aWaitingFollowUpSaysWhenItHappens() {
+    let now = Date(timeIntervalSince1970: 1_794_650_400)
+    func followUp(after seconds: TimeInterval) -> FollowUp {
+        let at = Int64((now.timeIntervalSince1970 + seconds) * 1000)
+        return FollowUp(id: "f", botId: "b", at: at, note: "Check the build", createdAt: 0)
+    }
+    let calendar = Calendar.current
+    // The app language's way of writing a time, whatever the phone's is.
+    let locale = Locale(identifier: "zh-Hant")
+    func written(_ date: Date, _ day: Date.FormatStyle.DateStyle) -> String {
+        let time = date.formatted(Date.FormatStyle(date: day, time: .shortened).locale(locale))
+        return L10n.tr("Follow-up at {time}").replacingOccurrences(of: "{time}", with: time)
+    }
+    let soon = now.addingTimeInterval(60)
+    // A minute on is today unless `now` is the day's last minute.
+    let sameDay = calendar.isDate(soon, inSameDayAs: now)
+    #expect(followUp(after: 60).line(locale: locale, now: now, calendar: calendar) == written(soon, sameDay ? .omitted : .abbreviated))
+    #expect(followUp(after: 86_400).line(locale: locale, now: now, calendar: calendar)
+        == written(now.addingTimeInterval(86_400), .abbreviated))
+    // Due, and waiting its turn behind what the bot is doing.
+    #expect(followUp(after: -1).line(locale: locale, now: now, calendar: calendar) == L10n.tr("Follow-up due now"))
 }
 
 @Test func routineTranscriptLinkSurvivesRoundTrip() throws {
@@ -37,6 +67,18 @@ import Testing
     #expect(draft.at == 1_779_000_000_001)
 }
 
+@Test func routineTimeOfDayRoundTripsHourAndMinute() throws {
+    var draft = RoutineScheduleDraft()
+    draft.hour = 23
+    draft.minute = 47
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .gmt
+    #expect(calendar.dateComponents([.hour, .minute], from: draft.timeOfDay) == DateComponents(hour: 23, minute: 47))
+    draft.timeOfDay = try #require(calendar.date(from: DateComponents(year: 2030, month: 3, day: 9, hour: 6, minute: 5)))
+    #expect(draft.hour == 6)
+    #expect(draft.minute == 5)
+}
+
 @Test func routineWebhookDecodesWithAndWithoutTheCloud() throws {
     let cloud = Data(#"{"url":"https://api.codync.dev/v1/hooks/c/r","localUrl":"http://127.0.0.1:19222/hooks/routines/r","key":"k","connected":true}"#.utf8)
     let local = Data(#"{"url":null,"localUrl":"http://127.0.0.1:19222/hooks/routines/r","key":"k","connected":false}"#.utf8)
@@ -44,4 +86,68 @@ import Testing
     let off = try JSONDecoder().decode(RoutineWebhook.self, from: local)
     #expect(off.url == nil)
     #expect(off.localUrl.hasSuffix("/hooks/routines/r"))
+}
+
+@Test func routineTimeoutReadsAsADuration() {
+    #expect(Routine.timeoutText("3600") == "1 hour")
+    #expect(Routine.timeoutText("7200") == "2 hours")
+    #expect(Routine.timeoutText("1800") == "30 minutes")
+    #expect(Routine.timeoutText("60") == "1 minute")
+    #expect(Routine.timeoutText("90") == "90 seconds")
+    #expect(Routine.timeoutText("1") == "1 second")
+    #expect(Routine.timeoutText("1.5") == "1.5s")
+    #expect(Routine.timeoutText("") == "s")
+    #expect(Routine.timeoutText("3600", locale: Locale(identifier: "it")) == "1 ora")
+}
+
+@Test func hostScheduleSentencesMatchTheirCatalogTemplates() {
+    #expect(L10n.tr("Every day at 09:00, 18:00 · Europe/Rome", preference: .it) == "Ogni giorno alle 09:00, 18:00 · Europe/Rome")
+    #expect(L10n.tr("Every Monday at 09:00 · Europe/Rome", preference: .it) == "Ogni lunedì alle 09:00 · Europe/Rome")
+}
+
+@Test func timeZoneSearchIsFuzzyAndRanksWordStartsFirst() {
+    let zones = ["America/New_York", "Asia/Taipei", "Asia/Tokyo", "Europe/Berlin", "America/Argentina/Buenos_Aires"]
+    #expect(TimeZones.search("taipei", in: zones) == ["Asia/Taipei"])
+    #expect(TimeZones.search("TAIPEI", in: zones) == ["Asia/Taipei"])
+    #expect(TimeZones.search("new york", in: zones) == ["America/New_York"])
+    #expect(TimeZones.search("new_york", in: zones) == ["America/New_York"])
+    #expect(TimeZones.search("asia tai", in: zones) == ["Asia/Taipei"])
+    #expect(TimeZones.search("buenos-aires", in: zones) == ["America/Argentina/Buenos_Aires"])
+    // A name that starts with the query, then word starts, then text inside a word, then letters in order.
+    #expect(TimeZones.search("a", in: zones) == ["America/Argentina/Buenos_Aires", "America/New_York", "Asia/Taipei", "Asia/Tokyo"])
+    #expect(TimeZones.search("ai", in: zones) == ["America/Argentina/Buenos_Aires", "Asia/Taipei", "America/New_York", "Asia/Tokyo"])
+    #expect(TimeZones.search("nyk", in: zones) == ["America/New_York"])
+    #expect(TimeZones.search("  ", in: zones) == zones)
+    #expect(TimeZones.search("xyz", in: zones).isEmpty)
+    #expect(TimeZones.offset("Asia/Taipei") == "GMT+8")
+}
+
+@Test func routineRepeatKeepsTheFiveChoicesAndOpensTheRestAsCustom() {
+    #expect(RoutineScheduleDraft.repeatChoices.map(\.id) == ["hourly", "daily", "weekdays", "weekly", "custom"])
+    var draft = RoutineScheduleDraft()
+    for style in ["hourly", "daily", "weekdays", "weekly", "custom"] {
+        draft.calendarStyle = style
+        #expect(draft.forMobileEditor().calendarStyle == style)
+    }
+    for style in ["minutes", "days", "monthly"] {
+        draft.calendarStyle = style
+        #expect(draft.forMobileEditor().calendarStyle == "custom")
+    }
+    for (kind, shown) in [("cron", "cron"), ("webhook", "webhook"), ("interval", "keep"), ("once", "keep")] {
+        draft.kind = kind
+        #expect(draft.forMobileEditor().kind == shown)
+    }
+}
+
+@Test func customStartsFromTheCronTheHostCompiled() {
+    var draft = RoutineScheduleDraft()
+    draft.calendarStyle = "weekdays"
+    draft.expression = "0 8 * * *"
+    #expect(draft.repeating("custom", compiled: "0 9 * * 1-5").expression == "0 9 * * 1-5")
+    #expect(draft.repeating("custom", compiled: nil).expression == "")
+    #expect(draft.repeating("daily", compiled: "0 9 * * 1-5").expression == "0 8 * * *")
+    #expect(draft.repeating("weekdays", compiled: "x") == draft)
+    let cron = RoutineTrigger(type: "cron", expression: "0 9 * * 1-5", timeZone: "UTC")
+    #expect(RoutineSchedulePreview(draft: draft, triggers: [cron], summary: "").cronExpression == "0 9 * * 1-5")
+    #expect(RoutineSchedulePreview(draft: draft, triggers: [RoutineTrigger(type: "webhook")], summary: "").cronExpression == nil)
 }

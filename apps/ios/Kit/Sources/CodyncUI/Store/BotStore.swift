@@ -21,15 +21,19 @@ public enum SendProgress: Sendable {
 @MainActor
 @Observable
 public final class BotStore {
+    public internal(set) var icons: [String: CustomIcon] = [:]
+    var iconsRevision: Int64 = -1
+    var iconsEpoch: UInt64 = 0
     public enum Connection: Equatable {
         case unpaired
         case connecting
         case online
         /// The relay says the computer isn't connected; messages can wait in its mailbox.
         case computerOffline(lastSeen: Date?)
-        /// Can't reach the computer at all (no direct route, no relay).
+        /// Can't reach the computer at all (no direct route, no relay), or it can't confirm this
+        /// device's access for now.
         case offline(String)
-        /// Revoked, lease expired, or the computer's identity changed.
+        /// Revoked, or the computer's identity changed.
         case unauthorized(String)
     }
 
@@ -57,24 +61,39 @@ public final class BotStore {
     public internal(set) var hello: Hello?
     /// The host's version and `minApp`, kept even when the rest of its `hello` can't be read.
     public internal(set) var hostVersion: HostVersion?
+    /// An update this phone asked of the computer; cleared when its version changes.
+    public internal(set) var hostUpdate: HostUpdate?
+    /// Who runs it when it's a Codync Cloud computer, as the account lists it; nil for the user's own.
+    public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
+    /// The newest order still to send, and the task sending them (`setUsageOrder`).
+    @ObservationIgnored var usageOrderWaiting: [String]?
+    @ObservationIgnored var usageOrderSending: Task<Void, Never>?
     /// The computer's remote screen (`nil`: the host predates it).
     public internal(set) var screen: ScreenState?
+    /// The computer's network of the user's computers (`nil`: the host predates it).
+    public internal(set) var network: NetworkView?
     /// Installed on the computer, for the Plugins screen and bot settings.
     public internal(set) var installedConnectors: [InstalledConnector] = []
     public internal(set) var installedSkills: [InstalledSkill] = []
     /// Bots whose older history has been fully paged in.
     public internal(set) var historyComplete: Set<String> = []
     var composerDrafts: [String: String] = [:]
-    public var routineDrafts: [String: String] = [:]
+    /// What was pasted into each draft, sent along so memory never takes it as the user's own words.
+    @ObservationIgnored var composerPasted: [String: [String]] = [:]
     public let fileDownloads = FileDownloads()
+    var artifacts = ArtifactCache()
     public var lastError: String?
     /// The open conversation (navigation path).
     public var selection: String?
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
+
+    /// A Shortcuts request, consumed by the matching conversation.
+    public internal(set) var voiceCallRequest: String?
+    @ObservationIgnored var preparingVoiceCall: UUID?
 
     // Platform hooks (push registration, Live Activities, widgets).
     /// Each time the channel becomes ready.
@@ -83,34 +102,45 @@ public final class BotStore {
     public var onUsageChanged: (@MainActor (ComputerID, Usage) -> Void)?
     /// A message to the bot from this phone moved along (the Live Activity follows it).
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
+    /// A prompt reached the computer or its mailbox.
+    var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
     /// A bot appeared, changed or went away.
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
 
     public let storage: SharedStore.Context
-    let makeTransport: @MainActor () async throws -> any HostTransport
+    /// Opens a channel to the computer as it is now: its route, and the addresses and keys merged since.
+    let makeTransport: @MainActor (Computer) async throws -> any HostTransport
     var transport: (any HostTransport)?
     var retired = false
     /// Files of messages not delivered yet (by client nonce), kept for a retry.
     @ObservationIgnored var outgoingFiles: [String: [OutgoingFile]] = [:]
+    /// The message sent from here last: its row in the queue scrolls into view (`QueuedMessages`).
+    @ObservationIgnored var lastSentNonce: String?
+    /// Section moves shown but not answered yet, oldest first.
+    @ObservationIgnored var pendingSectionMoves: [SectionMove] = []
 
     var rev: Int64 = 0
     var hostId: String?
     var streamTask: Task<Void, Never>?
     var eventsTask: Task<Void, Never>?
     var isActive = true
+    /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {
-        let botId: String
-        let startRev: Int64
-        let speak: @MainActor (String) -> Void
-        /// A notice from the computer (approval needed), as opposed to the bot's reply.
-        let announce: @MainActor (String) -> Void
+        let hear: @MainActor (CallCue) -> Void
         let end: @MainActor () -> Void
     }
     @ObservationIgnored var voiceCalls: [UUID: VoiceCall] = [:]
+    /// The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again.
+    @ObservationIgnored var heardCues: [UUID: Int64] = [:]
+    @ObservationIgnored var shortcutSends = 0
+    /// Calls whose end is still on its way to the computer.
+    @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
+    /// While everything is fetched again (`refetchAll`): the entries the computer has sent since it began.
+    var refetched: Set<String>?
     /// Events stayed undecodable after the rewind.
     var unreadable = false
     /// This app's marketing version, compared with the host's `minApp`.
@@ -122,26 +152,28 @@ public final class BotStore {
     /// a spinner on it and takes no second answer.
     public internal(set) var answering: [String: String] = [:]
 
-    @ObservationIgnored var readingViews: [UUID: ReadingScope] = [:]
+    /// The chats on screen, by the view showing each.
+    @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
     public convenience init(computer: Computer, storage: SharedStore.Context) {
-        self.init(computer: computer, storage: storage) {
-            try await HostConnector.connect(computer, identity: try DeviceIdentity.load(context: storage))
+        self.init(computer: computer, storage: storage) { current in
+            try await HostConnector.connect(current, identity: try DeviceIdentity.load(context: storage))
         }
     }
 
     init(computer: Computer, storage: SharedStore.Context,
          appVersion: String = AppVersion.current,
-         transport: @escaping @MainActor () async throws -> any HostTransport) {
+         transport: @escaping @MainActor (Computer) async throws -> any HostTransport) {
         self.appVersion = appVersion
         self.computer = computer
         self.storage = storage
         makeTransport = transport
         usage = storage.usage[computer.id] ?? Usage()
-        composerDrafts = storage.composerDrafts[computer.id] ?? [:]
+        composerDrafts = Self.chatDrafts(storage.composerDrafts[computer.id] ?? [:])
         loadCache()
     }
 
@@ -161,6 +193,15 @@ public final class BotStore {
         if case .computerOffline = heldDrop ?? connection { computer.boxKey != nil && transport is any RemoteTransport } else { false }
     }
 
+    /// Can't reach a computer with no relay: text waits on this phone until it can (`sendHeld`).
+    public var holdsOnPhone: Bool {
+        guard computer.cloud == nil else { return false }
+        switch connection {
+        case .connecting, .offline: return true
+        default: return false
+        }
+    }
+
     /// What headers show: a reconnect the grace period keeps quiet reads "Connecting…"
     /// as soon as an action is waiting on it.
     public var shownConnection: Connection { waiting > 0 && connection == .online ? .connecting : connection }
@@ -171,6 +212,7 @@ public final class BotStore {
     /// (docs/reference/compatibility.md). `nil` until the host has answered, and whenever
     /// a version can't be read: an unknown is never a reason to lock someone out.
     public var mismatch: VersionMismatch? {
+        if let reason = AppFloor.shared.reason { return .appFloor(reason: reason) }
         guard let hostVersion else { return nil }
         if let found = VersionMismatch.check(app: appVersion, hostVersion: hostVersion.version, minApp: hostVersion.minApp) {
             return found
@@ -183,41 +225,89 @@ public final class BotStore {
         return nil
     }
 
-    /// Roster order: pinned first, then where the user dragged them, then most recent activity.
+    /// A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's
+    /// `Codync-App` header asks for it), so it reads as updating, not as something for the user to do.
+    public var isCloudUpdating: Bool {
+        if case .updateHost = mismatch { cloudHosting != nil } else { false }
+    }
+
+    /// A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline.
+    public var isAsleep: Bool {
+        if case .computerOffline = connection { cloudHosting?.state.isAsleep == true } else { false }
+    }
+
+        /// Roster order: the lead, pinned bots, then where the user dragged them, then most recent activity.
     public var roster: [Bot] {
         bots.values.filter { !$0.hidden }.sorted {
-            if $0.pinned != $1.pinned { return $0.pinned }
+            if $0.band != $1.band { return $0.band < $1.band }
             if $0.position != $1.position { return $0.position < $1.position }
             return $0.lastAt > $1.lastAt
         }
     }
+
+    /// The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+    /// `hello`: it names the logos, and without it every badge would be the same generic one.
+    public var mixesAgents: Bool { hello != nil && bots.values.filter { !$0.hidden }.mixesAgents }
+
+    /// Every section on this computer by name, hidden and pinned bots' too (a row's "Move to section").
+    public var sections: [String] { RosterSection.sorted(Set(bots.values.compactMap(\.section))) }
+
+    /// Roster sections came with host 2.32.0: an older one drops a bot's `section` and has no
+    /// `renameSection`, so its bots offer no "Move to section". Unknown until the host answers.
+    public var supportsSections: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.sectionsHost) } ?? false
+    }
+
+    /// From host 2.33.0 the user picks the lead (`setLead`) and may delete it; an older host refuses both.
+    public var supportsLeadChoice: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.leadChoiceHost) } ?? false
+    }
+
+    static let leadChoiceHost = "2.33.0"
+
+    /// From host 2.39.0 a queued message can be sent now (`steer`) or taken back (`unqueue`); an older host has neither.
+    public var supportsQueueActions: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.queueActionsHost) } ?? false
+    }
+
+    static let queueActionsHost = "2.39.0"
+
+    static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).
     public func backendName(_ id: String) -> String {
         hello?.backends.first { $0.id == id }?.name ?? BackendInfo.name(id)
     }
 
-    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
-
-    /// A bot's or group's main chat (thread replies are left out).
-    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == nil } }
-
-    /// Everything in a chat, threads included (the full conversation).
-    public func allEntries(_ botId: String) -> [Entry] { entries[botId] ?? [] }
-
-    /// A catch-up full of thread replies can leave only a few main-chat entries, or none.
-    public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && allEntries(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+    /// The ACP registry id an agent's logo is under.
+    func agentRegistry(_ id: String) -> String {
+        hello?.backends.first { $0.id == id }?.registry ?? id
     }
 
-    /// The replies in the thread on `root`, oldest first.
-    public func replies(_ botId: String, root: String) -> [Entry] { (entries[botId] ?? []).filter { $0.threadId == root } }
+    /// An agent as the Agent pickers list it.
+    func agentLabel(_ backend: Backend) -> String {
+        backend.available ? backend.name : "\(backend.name) (not installed)"
+    }
+
+    public var hiddenBots: [Bot] { bots.values.filter(\.hidden).sorted { $0.name < $1.name } }
+
+    /// Everything in a bot's or group's chat this device has, oldest first (trace included).
+    /// A chat as the views read it. A message taken back (`unqueue`) stays only in `entries`, for `upsert`'s rev guard
+    /// against a late response.
+    public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
+
+    /// Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go.
+    public func canLoadOlder(_ botId: String) -> Bool {
+        refetched == nil && !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+    }
 
     /// A group's bots that still exist.
     public func members(of group: Bot) -> [Bot] { group.members.compactMap { bots[$0] } }
 
-    /// Display name of an entry's author in a group chat.
-    public func authorName(_ id: String?) -> String { id.flatMap { bots[$0]?.name } ?? "A deleted bot" }
+    /// Display name of an entry's author; `fallback` for one that isn't this computer's (a bot on another computer).
+    public func authorName(_ id: String?, fallback: String? = nil) -> String {
+        id.flatMap { bots[$0]?.name } ?? fallback ?? "A deleted bot"
+    }
 
     func updateComputer(_ change: (inout Computer) -> Void) {
         var c = computer
@@ -226,19 +316,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

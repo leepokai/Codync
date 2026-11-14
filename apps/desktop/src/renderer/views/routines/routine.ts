@@ -1,3 +1,5 @@
+import { trNow } from '../../lib/l10n.ts'
+
 // Routines (kit Routine.swift, RoutineScheduleDraft.swift). The host hydrates, compiles,
 // validates and describes schedules; the app only keeps form values.
 
@@ -35,14 +37,61 @@ export interface RoutineRun {
   createdAt: number
   finishedAt?: number | null
   detail?: string | null
-  rootId?: string | null
+  /** A retry of a run that failed before acting waits until then. */
+  notBefore?: number | null
 }
 
 export const isActiveRun = (run: RoutineRun) => ['pending', 'starting', 'running', 'recovering'].includes(run.status)
 
+/** A run's status in the routines list; a waiting retry says when it goes. */
+export function runLabel(run: RoutineRun, now = Date.now()) {
+  switch (run.status) {
+    case 'pending':
+      if (run.notBefore && run.notBefore > now) {
+        const at = new Date(run.notBefore).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        return trNow('Retrying at {time}').replaceAll('{time}', () => at)
+      }
+      return run.notBefore ? trNow('Retrying') : trNow('Queued')
+    case 'starting':
+      return trNow('Starting')
+    case 'running':
+      return trNow('Running')
+    case 'recovering':
+      return trNow('Resuming after restart')
+    case 'failed':
+      return trNow('Failed')
+    case 'interrupted':
+      return trNow('Interrupted')
+    default:
+      return run.status.charAt(0).toUpperCase() + run.status.slice(1)
+  }
+}
+
+/** A deadline a bot set for itself: one later turn in its own chat, then it is gone. */
+export interface FollowUp {
+  id: string
+  botId: string
+  /** When it is due (Unix ms). */
+  at: number
+  note: string
+  createdAt: number
+}
+
+/** When a waiting follow-up happens, for its row: the time today, the date too on another day, as `locale` writes them. */
+export function followUpLine(followUp: FollowUp, locale: string, now = Date.now()) {
+  // Due and waiting its turn behind what the bot is doing.
+  if (followUp.at <= now) return trNow('Follow-up due now')
+  const at = new Date(followUp.at)
+  const today = at.toDateString() === new Date(now).toDateString()
+  const when = today ? at.toLocaleTimeString(locale, { timeStyle: 'short' }) : at.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
+  return trNow('Follow-up at {time}').replaceAll('{time}', () => when)
+}
+
 export interface RoutineListing {
   routines: Routine[]
   runs: RoutineRun[]
+  /** The follow-ups still waiting; a host from before them sends none. */
+  followUps?: FollowUp[]
 }
 
 /** `url` is public through the Codync cloud (null while the cloud is off), `localUrl` works on the host itself. */
@@ -51,6 +100,8 @@ export interface RoutineWebhook {
   localUrl: string
   key: string
   connected: boolean
+  /** In no account, so public deliveries can't reach it. */
+  needsAccount?: boolean
 }
 
 /** Form values only. */
@@ -97,5 +148,40 @@ export interface RoutineSchedulePreview {
   nextRunAt?: number | null
   warning?: string | null
 }
+
+/**
+ * The Repeat choices: the host's calendar styles the editor offers. A schedule in any other
+ * style (every few minutes, several days, monthly) opens as Custom, its cron as written.
+ */
+export const repeatChoices = [
+  { id: 'hourly', label: 'Hourly' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'weekdays', label: 'Weekdays' },
+  { id: 'weekly', label: 'Weekly' },
+  { id: 'custom', label: 'Custom' },
+] as const
+
+export type RepeatChoice = (typeof repeatChoices)[number]['id']
+
+export const repeatChoice = (style: string): RepeatChoice => repeatChoices.find((c) => c.id === style)?.id ?? 'custom'
+
+/** The cron the host compiled for a checked schedule, to start Custom from the same times. */
+export const compiledCron = (preview: RoutineSchedulePreview | null) => {
+  const [trigger] = preview?.triggers ?? []
+  return trigger?.type === 'cron' ? (trigger.expression ?? null) : null
+}
+
+/** A timeout in seconds as people say it ("1 hour", "30 minutes", "90 seconds"); other text as typed. */
+export function durationText(text: string, locale = 'en') {
+  const value = text.trim()
+  if (!/^\d+$/.test(value) || Number(value) === 0) return `${value}s`
+  const seconds = Number(value)
+  const unit = seconds % 3600 === 0 ? 'hour' : seconds % 60 === 0 ? 'minute' : 'second'
+  const amount = unit === 'hour' ? seconds / 3600 : unit === 'minute' ? seconds / 60 : seconds
+  return new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(amount)
+}
+
+/** When it runs: each schedule line through `tr`, joined. */
+export const scheduleLine = (routine: Routine, tr: (text: string) => string) => routine.triggerDescriptions.map((line) => tr(line)).join(' · ')
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

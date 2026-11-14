@@ -1,18 +1,22 @@
 import type { UsageProvider, UsageWindow } from '@shared/models'
 import { prefs, usePref } from '../../lib/prefs'
-import { UsageBar } from '../settings/UsageLimits'
+import { usePixelRatio } from '../../lib/theme'
+import { useResetLine, useTr } from '../../lib/use-language'
+import { UsageBar } from '../usage/UsageBar'
 import { mascotDataURL } from '../usage/ProviderMascot'
-import { providerTintCSS, resetDescription, tightest, windowTitle } from '../usage/usage-model'
+import { tightest, tightestLogin } from '../usage/usage-logins'
+import { providerTintCSS, resetDescription, usedText, windowReading, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
 
-// Codync's own part of the island: the plan limits the menu bar already tracks (local usage
-// only), as a meter in the header and a Usage tab.
+// Codync's own part of the island: this computer's plan limits, the login nearest a limit per
+// agent, as a meter in the header and a Usage tab.
 
 /** A provider's character for the black island, whatever the system appearance. */
 function Mascot({ provider, size }: { provider: UsageProvider; size: number }) {
   const [style] = usePref(prefs.usageIconStyle)
-  const src = mascotDataURL(provider, size, style, true)
-  return src ? <img src={src} alt="" width={size} height={size} style={{ flex: 'none' }} /> : null
+  const ratio = usePixelRatio()
+  const src = mascotDataURL(provider, size, style, true, ratio)
+  return src ? <img src={src} alt="" width={size} height={size} className="island-mascot" /> : null
 }
 
 /** The limit closest to running out, across providers. */
@@ -27,15 +31,20 @@ function tightestOverall(usage: UsageProvider[]): { provider: UsageProvider; win
 
 /** Header: the tightest limit as its provider's character, a short bar and the percent; opens Usage. */
 export function UsageMeter({ model }: { model: IslandModel }) {
+  const tr = useTr()
+  const line = useResetLine()
   const top = tightestOverall(model.summary.usage)
   if (!top) return null
   const { provider, window } = top
+  const title = tr(windowTitle(window))
   const reset = resetDescription(window)
+  const spoken = reset ? line(reset) : ''
+  const used = usedText(window.percent, tr)
   return (
     <button
       className="island-meter"
-      title={`${provider.name} · ${windowTitle(window)} · ${Math.round(window.percent)}%${reset ? ` · ${reset}` : ''}`}
-      aria-label={`Usage: ${provider.name} ${windowTitle(window)} ${Math.round(window.percent)} percent`}
+      title={`${provider.name} · ${title} · ${used}${spoken ? ` · ${spoken}` : ''}`}
+      aria-label={`${tr('Usage')}: ${provider.name} ${title} ${used}`}
       onClick={() => model.setTab('usage')}
     >
       <Mascot provider={provider} size={15} />
@@ -47,15 +56,20 @@ export function UsageMeter({ model }: { model: IslandModel }) {
   )
 }
 
-/** Every provider's limits side by side, each window a bar with when it resets. */
+/**
+ * The two providers closest to a limit side by side, each window a bar with when it resets. The
+ * header meter's provider is always one of them; ones with notes only come last.
+ */
 export function UsageView({ model }: { model: IslandModel }) {
-  const usage = model.summary.usage
+  const usage = [...model.summary.usage].sort((a, b) => (tightest(b)?.percent ?? -1) - (tightest(a)?.percent ?? -1))
+  const tr = useTr()
+  const line = useResetLine()
   if (!usage.length) {
     return (
       <div className="island-card island-empty">
         <span className="island-empty-text">
           <span className="island-title">No usage yet.</span>
-          <span className="island-subtitle">Claude Code and Codex limits show up here once a bot has used them.</span>
+          <span className="island-subtitle">{tr('Plan limits show up here once an agent reports them.')}</span>
         </span>
       </div>
     )
@@ -68,12 +82,18 @@ export function UsageView({ model }: { model: IslandModel }) {
             <Mascot provider={provider} size={20} />
             <span className="island-agent-name">{provider.name}</span>
           </div>
-          {provider.windows.slice(0, 3).map((w) => (
+          {tightestLogin(provider).windows.slice(0, 3).map((w) => (
             <div key={w.id} className="island-usage-row">
-              <span className="island-usage-title">{windowTitle(w)}</span>
-              <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
-              <span className="island-usage-value">{`${Math.round(w.percent)}%`}</span>
-              <span className="island-usage-reset">{resetDescription(w)?.replace('resets ', '') ?? ''}</span>
+              <span className="island-usage-title">{tr(windowTitle(w))}</span>
+              {w.text ? (
+                <span className="island-usage-note">{w.text}</span>
+              ) : (
+                <>
+                  <UsageBar percent={w.percent} tint={providerTintCSS(provider.id)} />
+                  <span className="island-usage-value">{windowReading(w, tr)}</span>
+                  <span className="island-usage-reset">{line(resetDescription(w) ?? '')}</span>
+                </>
+              )}
             </div>
           ))}
         </div>

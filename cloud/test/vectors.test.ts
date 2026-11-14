@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
 import { claimCanonical as workerClaimCanonical } from "../src/api";
 import { computerIdFor, fromB64url, sigCanonical, verifyEd25519, verifySig } from "../src/auth";
-import { parseAcl } from "../src/relay";
+import { parseAcl } from "../src/relay-wire";
 import * as ref from "./ref";
 
 const u = ref.unb64url;
@@ -132,6 +132,10 @@ describe("SAS, offer, claim, push", () => {
     const nH = u(V.sas.hostNonce);
     expect(ref.b64url(ref.sasCommit(device.pub, nD))).toBe(V.sas.commit);
     expect(ref.sasCode(hostSign.pub, device.pub, nD, nH)).toBe(V.sas.code);
+  });
+
+  it("pairing check", () => {
+    expect(ref.pairCheck(device.pub, hostSign.pub)).toBe(V.pairCheck.code);
   });
 
   it("offer id", () => {

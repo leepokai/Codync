@@ -5,7 +5,7 @@ import Halftone from "./halftone";
 import Phone from "./phone";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 import type { AgentPage } from "../agents/agents";
-import AppStoreButton from "./app-store-button";
+import { AppStoreButton, PlayStoreButton } from "./store-buttons";
 import { DMG } from "../links";
 
 // One page per agent people want on their phone ("Claude Code app for iPhone").
@@ -47,6 +47,7 @@ export default function AgentLanding({ page }: { page: AgentPage }) {
                 Download for Mac
               </a>
               <AppStoreButton />
+              <PlayStoreButton />
             </div>
           </div>
         </section>

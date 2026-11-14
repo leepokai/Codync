@@ -1,60 +1,59 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import type { Backend } from '@shared/models'
-import { Button, CardForm, CardSection, DropdownMenu, IconButton, Spinner } from '../../components/Controls'
+import { Button, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Dialog, useDismiss } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { Dialog, SheetPage, useDismiss } from '../../components/Overlay'
+import { HStack, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
+import { useScreenViewed } from '../../store/analytics'
 import { ComputerBadge } from '../ComputerBadge'
-import { AgentSheet, AgentTile, NodeNotice } from './AgentSheet'
-import { ComposioSection } from './ComposioViews'
+import { AgentSheet } from './AgentSheet'
 import { CredentialsView } from './CredentialsView'
 import { CustomConnectorSheet, InstallConnectorSheet, NewSkillSheet } from './ConnectorSheets'
 import { SetupTerminalView } from './SetupTerminal'
 import { SkillSheet, type SkillRef } from './SkillSheet'
-import {
-  appendPage, emptyPage, errorText, hasHiddenItems, market, needsSignIn, replacePage, revealMore, visible,
-  type MarketConnector, type MarketSkill,
-} from './market-models'
-import { AppLogo, FormSheet, ItemGrid, MarketRow, MarketSection, ScreenHeader, ServiceLogo, SkeletonGrid, SkillGlyph, SlideStack, TileIcon } from './pieces'
+import { useModel } from '../../lib/observable'
+import { ConnectorCatalog } from './connector-catalog'
+import { errorText, market, needsSignIn, type ExtensionSection, type MarketConnector, type MarketSkill } from './market-models'
+import { AgentsPanel, ConnectorsPanel, MarketPanel, SkillsPanel } from './MarketplacePanel'
+import { AppLogo, ExtensionTabs, FormSheet, ItemGrid, ItemRow, MarketSection, ScreenHeader, ServiceLogo, SkillGlyph, SlideStack } from './pieces'
 import { usePlugins } from './plugins'
-
-const connectorId = (c: MarketConnector) => c.name
+import { useTr } from '../../lib/use-language'
 
 /**
- * The Marketplace (Grok Bot's layout): one page of agents, connectors and
- * skills for the bots on one computer (the store in context). Installing happens on that
- * computer; each bot turns connectors and skills on in its settings.
- * With more than one computer, the header switches between them (the caller swaps the store).
+ * Extensions for the bots on one computer (the store in context): Agents, Connectors
+ * and Skills, one at a time. Each list scrolls; the connectors load more from the registry as
+ * their end comes into view (`ConnectorCatalog`). Installing happens on that computer; each bot
+ * turns connectors and skills on in its settings. Each computer has its own, opened
+ * from its heading in the sidebar.
  */
-export function MarketplaceView({ computers, computer, onComputer, appsFirst = false }: { appsFirst?: boolean; computers: { id: string; name: string }[]; computer: string; onComputer: (id: string) => void }) {
+export function MarketplaceView() {
   const store = useStore()
+  const tr = useTr()
   const plugins = usePlugins(store)
   const dismiss = useDismiss()
+  useScreenViewed('marketplace')
   const [search, setSearch] = useState('')
-  /** Bumped on each submitted search, so every section searches again. */
-  const [searchToken, setSearchToken] = useState(0)
-  const [connectors, setConnectors] = useState(emptyPage<MarketConnector>)
-  /** The registry page after the ones shown; null at the end. */
-  const [connectorCursor, setConnectorCursor] = useState<string | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [catalog] = useState(() => new ConnectorCatalog<MarketConnector>(
+    (c) => c.name,
+    async (q, cursor) => market.marketConnectors(await store.ready(), q, cursor),
+  ))
+  const connectors = useModel(catalog)
   const [skills, setSkills] = useState<MarketSkill[]>([])
-  const [loadingConnectors, setLoadingConnectors] = useState(true)
   const [loadingSkills, setLoadingSkills] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [installing, setInstalling] = useState<MarketConnector | null>(null)
+  const [viewingConnector, setViewingConnector] = useState<MarketConnector | null>(null)
   const [busySkill, setBusySkill] = useState<string | null>(null)
   const [addingConnector, setAddingConnector] = useState(false)
   const [writingSkill, setWritingSkill] = useState(false)
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const [agent, setAgent] = useState<Backend | null>(null)
   const [addingNode, setAddingNode] = useState(false)
-  /** Agents shown before "Load more agents" (two rows of the grid). */
-  const [agentLimit, setAgentLimit] = useState(10)
+  const [section, setSection] = useState<ExtensionSection>('agents')
   const [showInstalled, setShowInstalled] = useState(false)
   const [showCredentials, setShowCredentials] = useState(false)
-  const request = useRef(0)
-  const connectorQuery = useRef('')
 
   const query = search.trim()
   const matches = (text: string | null | undefined) => (text ?? '').toLowerCase().includes(query.toLowerCase())
@@ -62,55 +61,14 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
   const agents = query ? allAgents.filter((b) => matches(b.name)) : allAgents
   const shownSkills = query ? skills.filter((s) => matches(s.name) || matches(s.description)) : skills
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
-
-  const loadConnectors = async (q = query) => {
-    const id = ++request.current
-    connectorQuery.current = q
-    setLoadingConnectors(true)
-    setLoadingMore(false)
-    try {
-      const page = await market.marketConnectors(await store.ready(), q)
-      if (request.current !== id) return
-      setConnectors(replacePage(page.items, connectorId))
-      setConnectorCursor(page.next)
-      setError(null)
-    } catch (e) {
-      if (request.current !== id) return
-      setConnectors(emptyPage())
-      setConnectorCursor(null)
-      setError(errorText(e))
-    } finally {
-      if (request.current === id) setLoadingConnectors(false)
-    }
-  }
-
-  const loadMoreConnectors = async () => {
-    if (loadingMore || loadingConnectors) return
-    if (hasHiddenItems(connectors)) {
-      setConnectors(revealMore)
-      return
-    }
-    if (!connectorCursor) return
-    const id = request.current
-    setLoadingMore(true)
-    try {
-      const page = await market.marketConnectors(await store.ready(), connectorQuery.current, connectorCursor)
-      if (request.current !== id) return
-      setConnectors((old) => revealMore(appendPage(old, page.items, connectorId)))
-      setConnectorCursor(page.next)
-      setError(null)
-    } catch (e) {
-      if (request.current === id) setError(errorText(e))
-    } finally {
-      if (request.current === id) setLoadingMore(false)
-    }
-  }
+  const installedConnectorPreview = plugins.installedConnectors.slice(0, 3)
+  const installedSkillPreview = plugins.installedSkills.slice(0, Math.max(0, 3 - installedConnectorPreview.length))
 
   useEffect(() => {
     void plugins.refresh()
     // Picks up CLIs installed or signed in outside Codync.
     void store.refreshBackends()
-    void loadConnectors('')
+    void connectors.load('')
     void (async () => {
       try {
         setSkills(await market.marketSkills(await store.ready()))
@@ -119,13 +77,12 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       }
       setLoadingSkills(false)
     })()
-    return () => void request.current++
+    return () => connectors.cancel()
     // Mount only, like the view's `.task`s.
   }, [])
 
   const submit = (q: string) => {
-    setSearchToken((t) => t + 1)
-    void loadConnectors(q)
+    void connectors.load(q)
   }
 
   const installSkill = async (s: MarketSkill) => {
@@ -141,39 +98,31 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
   const header = (
     <div className="market-heading">
       {/* Everything here lives on one computer; say which. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+      <HStack gap={10} shrink>
         <ComputerBadge computer={store.computer} size={32} />
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, whiteSpace: 'nowrap' }}>
-          <span style={{ ...font('title', 'semibold'), color: 'var(--text)' }}>Extensions</span>
-          {computers.length > 1 ? (
-            <DropdownMenu
-              title="Switch computer"
-              style={{ display: 'flex', alignItems: 'center', gap: 4, ...font('subheadline'), color: 'var(--secondary)', minWidth: 0 }}
-              items={() => computers.map((c) => ({ title: c.name, selected: c.id === computer, action: () => onComputer(c.id) }))}
-            >
-              <span aria-label={`Computer: ${store.hostName}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{store.hostName}</span>
-              <Icon name="chevron.down" size={10} weight="semibold" />
-            </DropdownMenu>
-          ) : (
-            <span style={{ ...font('subheadline'), color: 'var(--secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{store.hostName}</span>
-          )}
-        </div>
-      </div>
-      <span style={{ flex: 1 }} />
-      <Button kind="secondary" onClick={() => setShowCredentials(true)}><Icon name="lock.shield" size={12} />Credentials</Button>
+        <VStack shrink className="market-heading-titles">
+          <Text size="title" weight="semibold" tone="text">{tr(`Extensions`)}</Text>
+          <Text size="subheadline" tone="secondary" truncate>{store.hostName}</Text>
+        </VStack>
+      </HStack>
+      <Spacer />
+      <Button kind="secondary" onClick={() => setShowCredentials(true)}><Icon name="lock.shield" size={12} />{tr('Credentials')}</Button>
       {installedCount > 0 ? (
-        <button className="press" style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }} onClick={() => setShowInstalled(true)}>
-          <span style={{ display: 'flex' }}>
-            {plugins.installedConnectors.slice(0, 3).map((c, i) => (
-              <span key={c.id} style={{ marginLeft: i ? -8 : 0, display: 'flex' }}>
-                <ServiceLogo name={c.name} registryName={c.registryName} size={26} />
-              </span>
+        <button className="press market-installed" onClick={() => setShowInstalled(true)}>
+          <HStack as="span" align="center" className="market-installed-logos">
+            {installedConnectorPreview.map((c) => (
+              <ServiceLogo key={c.id} name={c.name} registryName={c.registryName} size={26} />
             ))}
-          </span>
-          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', color: 'var(--secondary)', whiteSpace: 'nowrap' }}>
-            <span>{installedCount} installed</span>
-            <span style={font('caption')}>Connectors & skills</span>
-          </span>
+            {installedSkillPreview.map((s) => (
+              <div key={s.id} className="market-logo market-installed-skill">
+                <SkillGlyph />
+              </div>
+            ))}
+          </HStack>
+          <VStack as="span" align="flex-start" className="market-installed-text">
+            <Text tone="secondary">{tr('{count} installed').replaceAll('{count}', String(installedCount))}</Text>
+            <Text size="caption" tone="secondary">{tr(`Connectors & skills`)}</Text>
+          </VStack>
           <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />
         </button>
       ) : null}
@@ -185,25 +134,21 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       <Icon name="magnifyingglass" size={13} color="var(--secondary)" />
       <input
         value={search}
-        placeholder="Search agents, connectors and skills"
-        aria-label="Search agents, connectors and skills"
+        placeholder={tr('Search agents, connectors and skills')}
+        aria-label={tr('Search agents, connectors and skills')}
         spellCheck={false}
-        onChange={(e) => {
-          setSearch(e.target.value)
-          setAgentLimit(10)
-        }}
+        onChange={(e) => setSearch(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit(search.trim())
         }}
       />
       {search ? (
         <button
-          aria-label="Clear search"
-          title="Clear search"
-          style={{ display: 'flex', color: 'var(--tertiary)' }}
+          aria-label={tr('Clear search')}
+          title={tr('Clear search')}
+          className="market-search-clear"
           onClick={() => {
             setSearch('')
-            setAgentLimit(10)
             submit('')
           }}
         >
@@ -213,99 +158,42 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
     </div>
   )
 
-  const centered = (node: ReactNode) => <div style={{ display: 'flex', justifyContent: 'center' }}>{node}</div>
-
   const page = (
     <div className="market-page">
-      <div className="market-scroll">
-        <div className="market-page-content">
-          {header}
-          {searchField}
-          {appsFirst ? <ComposioSection query={query} searchToken={searchToken} /> : null}
-          {agents.length > 0 ? (
-            <MarketSection title={query ? `Agents matching “${query}”` : 'Agents'}>
-              {allAgents.some((b) => b.node === 'missing') ? <NodeNotice onAdd={() => setAddingNode(true)} /> : null}
-              <div className="agent-grid">
-                {agents.slice(0, agentLimit).map((b) => <AgentCard key={b.id} backend={b} onClick={() => setAgent(b)} />)}
-              </div>
-              {agents.length > agentLimit ? centered(<Button kind="secondary" onClick={() => setAgentLimit((n) => n + 10)}>Load more agents</Button>) : null}
-            </MarketSection>
-          ) : null}
-          <MarketSection title="Connectors">
-            {loadingConnectors ? (
-              <SkeletonGrid />
-            ) : connectors.items.length === 0 ? (
-              <span style={{ color: 'var(--secondary)' }}>{query ? `No connectors match “${query}”.` : "Couldn't load connectors."}</span>
-            ) : (
-              <>
-                <ItemGrid>
-                  {visible(connectors).map((c) => (
-                    <MarketRow
-                      key={c.name}
-                      title={c.title}
-                      subtitle={c.description ?? c.name}
-                      added={c.installed}
-                      icon={<ServiceLogo website={c.website} name={c.title} registryName={c.name} />}
-                      onAdd={() => setInstalling(c)}
-                    />
-                  ))}
-                </ItemGrid>
-                {hasHiddenItems(connectors) || connectorCursor
-                  ? centered(
-                      <Button kind="secondary" disabled={loadingMore} onClick={() => void loadMoreConnectors()}>
-                        {loadingMore ? 'Loading…' : 'Load more connectors'}
-                      </Button>,
-                    )
-                  : null}
-              </>
-            )}
-          </MarketSection>
-          {!appsFirst ? <ComposioSection query={query} searchToken={searchToken} /> : null}
-          <MarketSection title="Skills">
-            {loadingSkills ? (
-              <SkeletonGrid />
-            ) : (
-              <ItemGrid>
-                {shownSkills.map((s) => (
-                  <MarketRow
-                    key={s.source}
-                    title={s.name}
-                    subtitle={s.description}
-                    added={s.installed || plugins.installedSkills.some((i) => i.id === s.source.toLowerCase())}
-                    busy={busySkill === s.source}
-                    icon={<SkillGlyph />}
-                    onAdd={() => void installSkill(s)}
-                    onOpen={() => setViewingSkill(s)}
-                  />
-                ))}
-              </ItemGrid>
-            )}
-          </MarketSection>
-          <MarketSection title="Make your own">
-            <ItemGrid>
-              <MarketRow
-                title="Custom connector"
-                subtitle="Any MCP server: a command or a URL"
-                added={false}
-                addLabel="New"
-                icon={<TileIcon name="point.3.connected.trianglepath.dotted" />}
-                onAdd={() => setAddingConnector(true)}
-              />
-              <MarketRow
-                title="Your own skill"
-                subtitle="Write instructions a bot can follow"
-                added={false}
-                addLabel="New"
-                icon={<TileIcon name="square.and.pencil" />}
-                onAdd={() => setWritingSkill(true)}
-              />
-            </ItemGrid>
-          </MarketSection>
-          {error ? <span style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
-          <span style={{ ...font('footnote'), color: 'var(--tertiary)' }}>
-            Connectors come from the official MCP Registry, apps through Composio, skills from Anthropic, agents from the ACP registry. Everything installs on {store.hostName}.
-          </span>
-        </div>
+      <div className="market-frame">
+        {header}
+        {searchField}
+        <ExtensionTabs selection={section} onChange={setSection} />
+        <MarketPanel section={section} hostName={store.hostName} error={error ?? connectors.error}>
+          {section === 'agents' ? (
+            <AgentsPanel
+              agents={agents}
+              query={query}
+              needsNode={allAgents.some((b) => b.node === 'missing')}
+              onAddNode={() => setAddingNode(true)}
+              onAgent={setAgent}
+            />
+          ) : section === 'connectors' ? (
+            <ConnectorsPanel
+              catalog={connectors}
+              query={query}
+              onAddConnector={() => setAddingConnector(true)}
+              onInstall={setInstalling}
+              onView={setViewingConnector}
+            />
+          ) : (
+            <SkillsPanel
+              skills={shownSkills}
+              loading={loadingSkills}
+              query={query}
+              installedSkillIds={plugins.installedSkills.map((s) => s.id)}
+              busySkill={busySkill}
+              onWriteSkill={() => setWritingSkill(true)}
+              onInstallSkill={(s) => void installSkill(s)}
+              onViewSkill={setViewingSkill}
+            />
+          )}
+        </MarketPanel>
       </div>
       {/* Dismissing slides the sheet away; clearing the caller's state would cut it off. */}
       <div className="market-close">
@@ -318,7 +206,10 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
     <>
       <SlideStack base={page} top={showCredentials ? <CredentialsView onBack={() => setShowCredentials(false)} /> : showInstalled ? <InstalledView back={() => setShowInstalled(false)} /> : null} />
       <FormSheet open={installing !== null} onClose={() => setInstalling(null)}>
-        {installing ? <InstallConnectorSheet key={installing.name} item={installing} done={() => void loadConnectors(connectorQuery.current)} /> : null}
+        {installing ? <InstallConnectorSheet key={installing.name} item={installing} done={() => void connectors.reload()} /> : null}
+      </FormSheet>
+      <FormSheet open={viewingConnector !== null} onClose={() => setViewingConnector(null)}>
+        {viewingConnector ? <InstallConnectorSheet key={viewingConnector.name} item={viewingConnector} addsAtOnce={false} done={() => void connectors.reload()} /> : null}
       </FormSheet>
       <FormSheet open={addingConnector} onClose={() => setAddingConnector(false)}>
         <CustomConnectorSheet />
@@ -329,39 +220,21 @@ export function MarketplaceView({ computers, computer, onComputer, appsFirst = f
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
         {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
       </FormSheet>
-      <FormSheet open={addingNode} onClose={() => setAddingNode(false)} width={560} height={560}>
+      <FormSheet open={addingNode} onClose={() => setAddingNode(false)} width={560} height={560} fixed>
         {addingNode ? <SetupTerminalView backend={null} step="node" back={() => setAddingNode(false)} /> : null}
       </FormSheet>
-      <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560}>
+      <FormSheet open={agent !== null} onClose={() => setAgent(null)} width={560} height={560} fixed>
         {agent ? <AgentSheet key={agent.id} initial={agent} /> : null}
       </FormSheet>
     </>
   )
 }
 
-function AgentCard({ backend, onClick }: { backend: Backend; onClick: () => void }) {
-  const status = backend.installed !== true && backend.curated === true ? 'Not installed'
-    : backend.node === 'missing' ? 'Needs Node.js'
-    : backend.installed !== true ? 'Sets up on first use'
-    : backend.signedIn === false ? 'Not signed in'
-    : 'Installed'
-  return (
-    <button className="agent-card" title={backend.name} onClick={onClick}>
-      <AgentTile registry={backend.registry ?? backend.id} icon={24} tile={40} radius={11} />
-      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, minWidth: 0 }}>
-        <span style={{ ...font('subheadline', 'semibold'), color: 'var(--text)', ...ellipsis }}>{backend.name}</span>
-        <span style={{ ...font('caption'), color: 'var(--secondary)', ...ellipsis }}>{status}</span>
-      </span>
-    </button>
-  )
-}
-
-const ellipsis = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' } as const
-
 // MARK: - Installed
 
 function InstalledView({ back }: { back: () => void }) {
   const store = useStore()
+  const tr = useTr()
   const plugins = usePlugins(store)
   const [removing, setRemoving] = useState<{ id: string; name: string; isSkill: boolean } | null>(null)
   const [signingIn, setSigningIn] = useState<string | null>(null)
@@ -388,98 +261,89 @@ function InstalledView({ back }: { back: () => void }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ScreenHeader title="Connectors & skills" onBack={back} />
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <CardForm>
-          {empty ? <EmptyState icon="shippingbox" title="Nothing installed" detail="Connectors and skills you add show up here." /> : null}
-          {plugins.installedConnectors.length ? (
-            <CardSection title="Connectors">
-              {plugins.installedConnectors.map((c) => (
-                <InstalledRow
-                  key={c.id}
-                  title={c.name}
-                  subtitle={needsSignIn(c) ? 'Sign in so bots can use it' : (c.command ?? c.url ?? c.description)}
-                  icon={c.kind === 'composio' ? <AppLogo url={c.logo} name={c.name} size={32} /> : <ServiceLogo name={c.name} registryName={c.registryName} size={32} />}
-                  accessory={signingIn === c.id ? <Spinner /> : needsSignIn(c) ? <Button onClick={() => void signIn(c.id)}>Sign in</Button> : null}
-                  onRemove={() => setRemoving({ id: c.id, name: c.name, isSkill: false })}
-                />
-              ))}
-            </CardSection>
-          ) : null}
-          {plugins.installedSkills.length ? (
-            <CardSection title="Skills">
-              {plugins.installedSkills.map((s) => (
-                <InstalledRow
-                  key={s.id}
-                  title={s.name}
-                  subtitle={s.description}
-                  icon={<SkillGlyph size={32} />}
-                  onOpen={() => setViewingSkill({ id: s.id, name: s.name, description: s.description })}
-                  onRemove={() => setRemoving({ id: s.id, name: s.name, isSkill: true })}
-                />
-              ))}
-            </CardSection>
-          ) : null}
-        </CardForm>
+      <div className="market-installed-body">
+        <div className="market-scroll">
+          <div className="market-page-content">
+            {empty ? <EmptyState icon="shippingbox" title="Nothing installed" detail="Connectors and skills you add show up here." /> : null}
+            {plugins.installedConnectors.length ? (
+              <MarketSection title="Connectors">
+                <ItemGrid>
+                  {plugins.installedConnectors.map((c) => (
+                    <ItemRow
+                      key={c.id}
+                      title={c.name}
+                      subtitle={needsSignIn(c) ? tr('Sign in so bots can use it') : c.canSignIn ? tr('Sign in instead of using a saved token') : (c.command ?? c.url ?? c.description)}
+                      icon={c.kind === 'composio' ? <AppLogo url={c.logo} name={c.name} /> : <ServiceLogo name={c.name} registryName={c.registryName} />}
+                      trailing={(
+                        <>
+                          {signingIn === c.id ? <Spinner /> : needsSignIn(c) || c.canSignIn ? <Button onClick={() => void signIn(c.id)}>Sign in</Button> : null}
+                          <RemoveButton title={c.name} onClick={() => setRemoving({ id: c.id, name: c.name, isSkill: false })} />
+                        </>
+                      )}
+                    />
+                  ))}
+                </ItemGrid>
+              </MarketSection>
+            ) : null}
+            {plugins.installedSkills.length ? (
+              <MarketSection title="Skills">
+                <ItemGrid>
+                  {plugins.installedSkills.map((s) => (
+                    <ItemRow
+                      key={s.id}
+                      title={s.name}
+                      subtitle={s.description}
+                      icon={<SkillGlyph />}
+                      onOpen={() => setViewingSkill({ id: s.id, name: s.name, description: s.description })}
+                      trailing={<RemoveButton title={s.name} onClick={() => setRemoving({ id: s.id, name: s.name, isSkill: true })} />}
+                    />
+                  ))}
+                </ItemGrid>
+              </MarketSection>
+            ) : null}
+          </div>
+        </div>
       </div>
       <Dialog
         open={removing !== null}
-        title={`Remove ${removing?.name ?? ''}?`}
-        message={removing ? (removing.isSkill ? 'Bots stop using this skill.' : 'Bots lose this connector, and the keys saved for it are deleted.') : null}
+        title={tr('Remove {name}?').replaceAll('{name}', removing?.name ?? '')}
+        message={removing ? tr(removing.isSkill ? 'Bots stop using this skill.' : 'Bots lose this connector, and the keys saved for it are deleted.') : null}
         actions={removing ? [{ title: 'Remove', destructive: true, action: () => void remove(removing) }] : []}
         onClose={() => setRemoving(null)}
       />
       <FormSheet open={viewingSkill !== null} onClose={() => setViewingSkill(null)}>
         {viewingSkill ? <SkillSheet key={viewingSkill.name} skill={viewingSkill} /> : null}
       </FormSheet>
-    </div>
+    </SheetPage>
   )
 }
 
 /** A quiet "nothing here" message (replaces `ContentUnavailableView`). */
 function EmptyState({ icon, title, detail }: { icon: string; title: string; detail: string }) {
+  const tr = useTr()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '40px 0', textAlign: 'center' }}>
+    <VStack align="center" gap={8} className="market-empty">
       <Icon name={icon} size={28} color="var(--tertiary)" />
-      <span style={{ ...font('compactBody', 'semibold'), color: 'var(--text)' }}>{title}</span>
-      <span style={{ ...font('compactSecondary'), color: 'var(--secondary)' }}>{detail}</span>
-    </div>
+      <Text size="compactBody" weight="semibold" tone="text">{tr(title)}</Text>
+      <Text size="compactSecondary" tone="secondary">{tr(detail)}</Text>
+    </VStack>
   )
 }
 
-function InstalledRow({ title, subtitle, icon, accessory, onOpen, onRemove }: {
-  title: string; subtitle: string; icon: ReactNode; accessory?: ReactNode
-  /** Opens the item's details from its name. */
-  onOpen?: () => void
-  onRemove: () => void
-}) {
-  const label = (
-    <>
-      {icon}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <span style={{ color: 'var(--text)', ...ellipsis }}>{title}</span>
-        <span style={{ ...font('caption'), color: 'var(--secondary)', ...ellipsis }}>{subtitle}</span>
-      </div>
-    </>
-  )
+function RemoveButton({ title, onClick }: { title: string; onClick: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} title={subtitle}>
-      {onOpen ? (
-        <button className="press" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }} onClick={onOpen}>
-          {label}
-        </button>
-      ) : label}
-      <span style={{ minWidth: 12 }} />
-      {accessory}
-      <button
-        title="Remove"
-        aria-label={`Remove ${title}`}
-        style={{ minWidth: 44, minHeight: 44, display: 'grid', placeItems: 'center', color: 'var(--secondary)', margin: '-8px 0' }}
-        onClick={onRemove}
-      >
-        <Icon name="trash" size={13} />
-      </button>
-    </div>
+    <button
+      title="Remove"
+      aria-label={`Remove ${title}`}
+      className="market-remove"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      <Icon name="trash" size={13} />
+    </button>
   )
 }

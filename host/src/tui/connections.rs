@@ -52,7 +52,7 @@ pub fn fields(entry: &Entry) -> Fields {
     };
     Fields {
         title: request["title"].as_str().unwrap_or("Connect service").into(),
-        note: "Saved securely; never added to chat. Ctrl+X cancels the request; Esc closes.".into(),
+        note: "Saved securely; never added to chat. Esc closes.".into(),
         choices: vec![],
         choice: 0,
         inputs,
@@ -99,7 +99,22 @@ impl App {
             })
             .cloned();
         if let Some(entry) = entry {
-            self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
+            let request = &entry.data["connectionRequest"];
+            if request["kind"] == "agent" {
+                let backend = request["backend"].as_str().unwrap_or_default();
+                // The host completes the request and resends the messages once a check finds it signed in.
+                match request["loginProfile"].as_str() {
+                    // The login that refused is the bot's login profile: its sign-in (an API key's key form) opens over
+                    // the agent's sheet.
+                    Some(login_profile) => {
+                        self.open_agent(backend, false);
+                        self.sign_in_login_profile(backend, login_profile);
+                    }
+                    None => self.open_agent(backend, true),
+                }
+            } else {
+                self.overlays.push(Overlay::Fields(Box::new(fields(&entry))));
+            }
         } else {
             self.flash("No pending connection request here");
         }
@@ -121,7 +136,7 @@ impl App {
             ),
             Step::Installed => ("connectors", json!({}), Step::Installed),
             Step::Authorize if f.choice == 0 => {
-                ("connectorSignIn", json!({"id":c.request["connectorId"]}), Step::SignIn)
+                ("connectorSignIn", json!({"id":c.request["connectorId"],"showsCode":true}), Step::SignIn)
             }
             Step::AppStart => ("composioConnect", json!({"toolkit":c.request["toolkit"]}), Step::AppStart),
             Step::AppCheck if c.metadata["status"] == "needsFields" => (
@@ -213,10 +228,21 @@ impl App {
             Step::SignIn => {
                 c.step = Step::Authorize;
                 f.choice = 1;
-                f.note = "Sign-in link copied. Finish in browser, then Enter checks. Ctrl+X cancels.".into();
-                if let Some(url) = value["url"].as_str() {
+                let url = value["url"].as_str().unwrap_or_default();
+                let opened = super::manage::open_browser(url, &self.url);
+                // A sign-in with a code (GitHub): the code is what to paste on the page.
+                if let Some(code) = value["code"].as_str() {
+                    super::app::copy(code);
+                    f.note = if opened {
+                        "Code {code} copied. Paste it on the sign-in page, then Enter checks. Ctrl+X cancels."
+                    } else {
+                        "Code {code} copied: paste it at {url}, then Enter checks. Ctrl+X cancels."
+                    }
+                    .replace("{code}", code)
+                    .replace("{url}", url);
+                } else {
                     super::app::copy(url);
-                    super::manage::open_browser(url, &self.url);
+                    f.note = "Sign-in link copied. Finish in browser, then Enter checks. Ctrl+X cancels.".into();
                 }
             }
             Step::AppStart | Step::AppCheck => {
@@ -288,8 +314,12 @@ mod tests {
                 Json(match method.as_str() {
                     "connectorInfo" => json!({"name":"fixture","options":[{"id":"local","inputs":[{"name":"key","secret":true,"required":true}]}]}),
                     "installConnector" => json!({"connector":{"id":"connector","auth":"signedOut"}}),
+                    "connectorSignIn" => {
+                        json!({"url":"https://github.com/login/device","callback":"host","code":"ABCD-1234"})
+                    }
                     "composioConnect" => json!({"status":"needsFields","mode":"apiKey","fields":[{"name":"token","label":"Token","secret":true}]}),
                     "composioConnectFields" => json!({"status":"active"}),
+                    "loginShellVariables" => json!({"names":["HOME","OPENAI_API_KEY"]}),
                     _ => json!({}),
                 })
             }
@@ -300,7 +330,8 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        (App::new(super::super::net::Client::new(&url, Some("fixture")), tx, url), rx, calls, task)
+        // A computer elsewhere (the TUI over SSH), so no browser opens.
+        (App::new(super::super::net::Client::new(&url, Some("fixture")), tx, String::new()), rx, calls, task)
     }
 
     fn open(app: &mut App, request: &Value) {
@@ -311,7 +342,6 @@ mod tests {
             kind: Kind::Notice,
             data: json!({"connectionRequest":request}),
             created_at: 0,
-            thread_id: None,
         };
         app.overlays.push(Overlay::Fields(Box::new(fields(&e))));
     }
@@ -326,7 +356,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn credentials_submit_exact_secret_and_cancel_is_explicit() {
+    async fn credentials_submit_the_exact_secret_and_esc_sends_nothing() {
         use crossterm::event::{KeyCode, KeyModifiers};
         let (mut app, mut rx, calls, server) = fixture().await;
         open(&mut app, &json!({"kind":"login","status":"pending"}));
@@ -343,10 +373,6 @@ mod tests {
         open(&mut app, &json!({"kind":"secret","status":"pending"}));
         key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
         assert_eq!(calls.lock().unwrap().len(), 1);
-        open(&mut app, &json!({"kind":"secret","status":"pending"}));
-        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
-        reply(&mut app, &mut rx).await;
-        assert_eq!(calls.lock().unwrap()[1]["body"], json!({"entryId":"request","cancel":true}));
         server.abort();
     }
 
@@ -364,12 +390,16 @@ mod tests {
         reply(&mut app, &mut rx).await;
         key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         reply(&mut app, &mut rx).await;
+        // A sign-in with a code, and no browser here: the note names the code and the page.
+        let Some(Overlay::Fields(f)) = app.overlays.last() else { panic!("fields") };
+        assert!(f.note.contains("ABCD-1234") && f.note.contains("https://github.com/login/device"), "{}", f.note);
         key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         reply(&mut app, &mut rx).await;
         let calls = calls.lock().unwrap();
         let methods: Vec<_> = calls.iter().map(|c| c["method"].as_str().unwrap()).collect();
         assert_eq!(methods, ["connectorInfo", "installConnector", "connectorSignIn", "connectorRequestFinish"]);
         assert_eq!(calls[1]["body"]["inputs"]["key"], "fixture-key");
+        assert_eq!(calls[2]["body"]["showsCode"], true);
         assert_eq!(calls[3]["body"]["connectorId"], "connector");
         assert!(app.overlays.is_empty());
         server.abort();
@@ -393,6 +423,118 @@ mod tests {
         server.abort();
     }
 
+    #[tokio::test]
+    async fn agent_sign_in_request_opens_the_agent_sheet_checking_again() {
+        let (mut app, mut rx, calls, server) = fixture().await;
+        let request = json!({"kind":"agent","status":"pending","title":"Claude Code","backend":"claude"});
+        let e = Entry {
+            id: "card".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Notice,
+            data: json!({"connectionRequest":request}),
+            created_at: 0,
+        };
+        app.entries.entry("bot".into()).or_default().insert(1, e);
+        app.selected = Some("bot".into());
+        // Looking signed in doesn't skip the check: this agent just refused a turn.
+        app.backends = vec![json!({"id":"claude","signedIn":true})];
+        app.open_connection();
+        let Some(Overlay::Agent(a)) = app.overlays.last() else { panic!("agent sheet") };
+        assert_eq!((a.backend.as_str(), a.busy), ("claude", true));
+        reply(&mut app, &mut rx).await;
+        assert_eq!(calls.lock().unwrap()[0], json!({"method":"agentAuth","body":{"backend":"claude"}}));
+
+        // A request of a bot on a login profile this app hasn't heard of opens no sign-in: its kind isn't known, and
+        // an API key's variables never go to a terminal.
+        app.overlays.clear();
+        let entry = app.entries.get_mut("bot").and_then(|lane| lane.get_mut(&1)).expect("the card");
+        entry.data["connectionRequest"]["loginProfile"] = "a1".into();
+        app.open_connection();
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(a)) if !a.busy), "no check of the own login");
+        reply(&mut app, &mut rx).await;
+        let sign_in = || calls.lock().unwrap().iter().find(|call| call["method"] == "agentSetup").cloned();
+        assert_eq!(calls.lock().unwrap()[1]["method"], "refreshBackends");
+        assert_eq!(sign_in(), None);
+
+        // Once it knows the account login profile, the request signs that one in, not the computer's own login.
+        app.overlays.clear();
+        let profiles = json!([{"id":"a1","kind":"account","signedIn":false}]);
+        app.backends =
+            vec![json!({"id":"claude","signedIn":true,"loginProfileSignIn":"terminal","loginProfiles":profiles})];
+        app.open_connection();
+        let asked = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            loop {
+                if let Some(call) = sign_in() {
+                    return call;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        assert_eq!(asked.await.expect("the sign-in terminal is asked for")["body"]["loginProfile"], "a1");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn an_api_key_sign_in_request_opens_its_key_form_which_saves_removes_and_imports() {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let (mut app, mut rx, calls, server) = fixture().await;
+        let profiles = json!([{"id":"k1","kind":"apiKey","name":null,"signedIn":true,"vars":["OPENAI_API_KEY"]}]);
+        app.backends = vec![json!({"id":"codex","installed":true,"signedIn":true,"loginProfiles":profiles})];
+        let request = json!({"kind":"agent","status":"pending","backend":"codex","loginProfile":"k1"});
+        let card = Entry {
+            id: "card".into(),
+            seq: 1,
+            turn: 1,
+            kind: Kind::Notice,
+            data: json!({"connectionRequest":request}),
+            created_at: 0,
+        };
+        app.entries.entry("bot".into()).or_default().insert(1, card);
+        app.selected = Some("bot".into());
+        app.open_connection();
+        let sent = || calls.lock().unwrap().last().cloned().expect("a call");
+        let keys = |vars: Value, import: Value| json!({"method":"setLoginProfileKeys","body":{"loginProfile":"k1","vars":vars,"import":import}});
+
+        // No terminal: the key form, over the agent's sheet. A saved value never shows.
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form") };
+        let names: Vec<_> = f.inputs.iter().map(|i| (i.name.as_str(), i.ed.text.as_str(), i.secret)).collect();
+        assert_eq!(names, [("OPENAI_API_KEY", "", true), ("+name", "", false), ("+value", "", true)]);
+        assert_eq!(f.inputs[0].placeholder, "Saved (type to replace)");
+        f.inputs[1].ed = Editor::with("OPENAI_BASE_URL");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form stays") };
+        assert_eq!(f.error.as_deref(), Some("Value is required."), "a named variable needs its value");
+        f.inputs[2].ed = Editor::with("https://example.com");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_BASE_URL":"https://example.com"}), json!([])));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(_))), "saved: back on the agent's sheet");
+
+        // ^x on a saved variable removes it: an empty value.
+        app.open_login_keys("codex", "k1");
+        key(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_API_KEY":""}), json!([])));
+
+        // ^l lists the login shell's variables; space ticks, ↵ imports the ticked ones and saves what was typed.
+        app.open_login_keys("codex", "k1");
+        let Some(Overlay::Fields(f)) = app.overlays.last_mut() else { panic!("the key form") };
+        f.inputs[0].ed = Editor::with("typed-before-import");
+        key(&mut app, KeyCode::Char('l'), KeyModifiers::CONTROL);
+        reply(&mut app, &mut rx).await;
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        let Some(Overlay::KeyImport(i)) = app.overlays.last() else { panic!("the import list") };
+        assert_eq!((i.names.as_deref().map(<[String]>::len), i.importing), (Some(2), false), "nothing ticked yet");
+        key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        key(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        reply(&mut app, &mut rx).await;
+        assert_eq!(sent(), keys(json!({"OPENAI_API_KEY":"typed-before-import"}), json!(["OPENAI_API_KEY"])));
+        assert!(matches!(app.overlays.last(), Some(Overlay::Agent(_))), "the list and the form both close");
+        server.abort();
+    }
+
     #[test]
     fn login_fields_mask_the_password_and_keep_it_out_of_chat() {
         let e = Entry {
@@ -402,7 +544,6 @@ mod tests {
             kind: Kind::Notice,
             data: json!({"connectionRequest":{"kind":"login","status":"pending"}}),
             created_at: 0,
-            thread_id: None,
         };
         let f = fields(&e);
         assert!(!f.inputs[0].secret);

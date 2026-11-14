@@ -1,0 +1,86 @@
+/* Message Markdown (Markdown.tsx). Its sizes follow the conversation's text size, not the app's
+   type ramp. */
+.md-body {
+  font-size: var(--conversation);
+}
+.md-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* SwiftUI's `.lineSpacing(4 * scale)`: four points between lines on top of the font's own. */
+.md-spaced,
+.md-table,
+.md-code-text {
+  line-height: calc(1.2em + 4px * var(--md-scale));
+}
+/* None above the first line or below the last: the negative margins take the half-leading back. */
+.md-spaced {
+  margin: calc(-2px * var(--md-scale)) 0;
+}
+.md-heading-1 {
+  font-size: calc(15px * var(--md-scale));
+  font-weight: 700;
+}
+.md-heading-2 {
+  font-size: calc(13px * var(--md-scale));
+  font-weight: 600;
+}
+.md-heading-3 {
+  font-size: calc(11px * var(--md-scale));
+  font-weight: 700;
+}
+.md-marker {
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.md-bullet-text {
+  min-width: 0;
+}
+.md-quote {
+  color: var(--secondary);
+  padding-left: 10px;
+  box-shadow: inset 3px 0 0 var(--border);
+}
+.md-table-scroll {
+  overflow-x: auto;
+}
+.md-table {
+  display: grid;
+  column-gap: 16px;
+  row-gap: 7px;
+  color: var(--text);
+  padding: 2px 0;
+  width: max-content;
+}
+.md-code {
+  background: var(--code-background);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.md-code-text {
+  margin: 0;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: calc(10px * var(--md-scale));
+  color: var(--text);
+  width: max-content;
+}
+
+/* Inline styling. */
+.md-code-span {
+  font-family: var(--mono);
+  background: rgba(var(--text-rgb), 0.08);
+}
+.md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+.md-strong {
+  font-weight: 600;
+}
+.md-rule {
+  margin: 4px 0;
+}

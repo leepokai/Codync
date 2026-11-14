@@ -3,9 +3,14 @@ import SwiftUI
 
 public struct BotRow: View {
     let bot: Bot
+    /// The agent whose logo marks the avatar, if any.
+    let agent: String?
     @Environment(BotStore.self) private var model
 
-    public init(bot: Bot) { self.bot = bot }
+    public init(bot: Bot, agent: String? = nil) {
+        self.bot = bot
+        self.agent = agent
+    }
 
     private let avatar: CGFloat = 46
     private let rowPadding: CGFloat = 10
@@ -14,6 +19,11 @@ public struct BotRow: View {
     public var body: some View {
         HStack(spacing: 12) {
             AvatarWithStatus(bot: bot, members: model.members(of: bot), size: avatar)
+                .overlay(alignment: .bottomLeading) {
+                    if let agent {
+                        AgentBadge(registry: model.agentRegistry(agent), size: avatar * 0.4)
+                    }
+                }
             VStack(alignment: .leading, spacing: lineSpacing) {
                 HStack(alignment: .firstTextBaseline) {
                     if bot.pinned {
@@ -37,14 +47,7 @@ public struct BotRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
-                    if bot.unread > 0 {
-                        Text("\(bot.unread)")
-                            .font(.caption2.bold())
-                            .foregroundStyle(Palette.onAccent)
-                            .padding(.horizontal, 6)
-                            .frame(minWidth: 18, minHeight: 18)
-                            .background(Palette.accentFill, in: Capsule())
-                    }
+                    if bot.unread > 0 { UnreadBadge(count: bot.unread) }
                 }
             }
         }
@@ -58,7 +61,7 @@ public struct BotRow: View {
     @ViewBuilder private var preview: some View {
         if bot.needsInput {
             Label {
-                Text(bot.activity.isEmpty ? "Needs your approval" : bot.activity)
+                Text(L10n.tr(bot.activity.isEmpty ? "Needs your approval" : bot.activity))
             } icon: {
                 ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
             }
@@ -68,7 +71,7 @@ public struct BotRow: View {
         } else if bot.isWorking {
             HStack(spacing: 6) {
                 ThinkingOrb(size: 13, color: Palette.secondary)
-                Text(bot.activity.isEmpty ? "Working…" : bot.activity)
+                Text(L10n.tr(bot.activity.isEmpty ? "Working…" : bot.activity))
                     .lineLimit(1)
             }
             .font(.subheadline)
@@ -79,10 +82,26 @@ public struct BotRow: View {
                 .foregroundStyle(Palette.danger)
                 .lineLimit(1)
         } else {
-            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.folderName)")))
+            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .lineLimit(1)
         }
+    }
+}
+
+/// An unread count in an accent capsule: a bot's, or a folded section's.
+public struct UnreadBadge: View {
+    let count: Int
+
+    public init(count: Int) { self.count = count }
+
+    public var body: some View {
+        Text("\(count)")
+            .font(.caption2.bold())
+            .foregroundStyle(Palette.onAccent)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 18, minHeight: 18)
+            .background(Palette.accentFill, in: Capsule())
     }
 }

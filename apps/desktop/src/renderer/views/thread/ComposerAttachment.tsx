@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { isImageName } from '@shared/models'
 import { Icon } from '../../components/Icon'
-import { font } from '../../lib/fonts'
-import type { OutgoingFile } from '../../store/bot-store'
+import { Text } from '../../components/Text'
+import type { OutgoingFile } from '../../store/outgoing-files'
 import { attachmentSymbol } from './Attachments'
+import { useTr } from '../../lib/use-language'
 
 /**
  * A local attachment, shown before it is sent: images as a whole-image thumbnail with the
  * remove button in the corner, anything else (or an image that won't decode) as a name chip.
  */
 export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remove: () => void }) {
+  const tr = useTr()
   const [url, setUrl] = useState<string | null>(null)
   const [broken, setBroken] = useState(false)
 
@@ -22,7 +24,7 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
 
   if (url && !broken) {
     return (
-      <span className="attachment-tile" aria-label={`Image attachment: ${file.name}`} title={file.name}>
+      <span className="attachment-tile" aria-label={tr('Image attachment: {name}').replaceAll('{name}', () => file.name)} title={file.name}>
         <img src={url} alt="" onError={() => setBroken(true)} />
         <button className="press attachment-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
           <Icon name="xmark" size={11} weight="bold" color="#fff" />
@@ -33,8 +35,8 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
   return (
     <span className="file-chip">
       <Icon name={attachmentSymbol(file.name)} size={10} color="var(--secondary)" />
-      <span style={{ ...font('footnote'), color: 'var(--text)', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
-      <button aria-label={`Remove ${file.name}`} title="Remove" style={{ display: 'flex' }} onClick={remove}>
+      <Text size="footnote" tone="text" truncate className="file-chip-name">{file.name}</Text>
+      <button className="file-chip-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
         <Icon name="xmark" size={10} weight="bold" color="var(--secondary)" />
       </button>
     </span>

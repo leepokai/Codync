@@ -1,0 +1,158 @@
+package com.codync.android
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ContentResolver
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
+import com.codync.android.core.*
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
+
+/** Copies provider streams into this account's private storage before it owns a send. */
+class AttachmentFiles(private val context: Context, private val directory: File) {
+    private val outgoing = outgoingFolder(directory).apply { mkdirs() }
+    private val downloads = File(directory, "attachments").apply { mkdirs() }
+
+    suspend fun import(uri: Uri): OutgoingFile = withContext(Dispatchers.IO) {
+        check(outgoing.mkdirs() || outgoing.isDirectory)
+        val (named, size) = describe(context.contentResolver, uri)
+        require(size == null || size <= MAX_FILE_BYTES) { "Files must be 100 MiB or smaller." }
+        val name = cleanName(named)
+        val used = outgoing.listFiles().orEmpty().sumOf { it.length() }
+        require(outgoing.listFiles().orEmpty().size < 200 && used < 512L * 1024 * 1024) {
+            "Attachment storage is full. Send or remove older files first."
+        }
+        val destination = File(outgoing, UUID.randomUUID().toString())
+        try {
+            val input = requireNotNull(context.contentResolver.openInputStream(uri)) { "Couldn't open the selected file." }
+            input.use { source -> destination.outputStream().use { target ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    coroutineContext.ensureActive()
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_FILE_BYTES) { "Files must be 100 MiB or smaller." }
+                    require(used + total <= 512L * 1024 * 1024) { "Attachment storage is full. Send or remove older files first." }
+                    target.write(buffer, 0, count)
+                }
+                target.fd.sync()
+            } }
+            if (name.substringAfterLast('.', "").lowercase() in listOf("heic", "heif", "bmp")) {
+                val bitmap = thumbnail(destination, 4096)
+                val converted = File(outgoing, UUID.randomUUID().toString())
+                try {
+                    converted.outputStream().use { target -> check(bitmap.compress(Bitmap.CompressFormat.JPEG, 85, target)); target.fd.sync() }
+                    destination.delete()
+                    return@withContext OutgoingFile(converted.path, name.substringBeforeLast('.') + ".jpg", converted.length())
+                } catch (error: Exception) { converted.delete(); throw error }
+            }
+            OutgoingFile(destination.path, name, destination.length())
+        } catch (error: Throwable) { destination.delete(); throw error }
+    }
+
+    fun discard(file: OutgoingFile) {
+        if (inOutgoing(directory, file.path)) File(file.path).delete()
+    }
+    fun retainPending(files: List<OutgoingFile>) {
+        val paths = files.map { File(it.path).canonicalPath }.toSet()
+        outgoing.listFiles().orEmpty().filter { it.canonicalPath !in paths }.forEach { it.delete() }
+    }
+    fun cached(id: String): File {
+        check(downloads.mkdirs() || downloads.isDirectory)
+        val uuid = UUID.fromString(id).toString()
+        require(uuid == id.lowercase()) { "Invalid attachment ID." }
+        return File(downloads, uuid)
+    }
+    fun cache(id: String, source: OutgoingFile) {
+        File(source.path).copyTo(cached(id), overwrite = true)
+        trim()
+    }
+    fun trim() {
+        val files = downloads.listFiles().orEmpty().filter { it.isFile && !it.name.endsWith(".partial") }.sortedBy { it.lastModified() }
+        var bytes = files.sumOf { it.length() }
+        for (file in files) if (bytes > 512L * 1024 * 1024) { bytes -= file.length(); file.delete() }
+    }
+
+    /**
+     * A new folder for one file the share sheet hands out. The receiving app reads it after the sheet
+     * closes, so folders are cleared only once they're a day old.
+     */
+    fun shareFolder(): File {
+        val root = File(context.cacheDir, "shared-attachments").apply { mkdirs() }
+        root.listFiles().orEmpty().filter { System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60 * 1000 }.forEach { it.deleteRecursively() }
+        return File(root, UUID.randomUUID().toString())
+    }
+
+    /**
+     * Picture [source] itself as a clip (iOS `UIPasteboard` image): a copy named [name] in a `shareFolder`, as a
+     * `content://` link the app that pastes reads through the FileProvider. The clipboard grants it that read once
+     * [putOnClipboard] has it.
+     */
+    fun stageImage(source: File, name: String): ClipData {
+        val copy = File(shareFolder().apply { mkdirs() }, cleanName(name))
+        source.copyTo(copy, overwrite = true)
+        return ClipData.newUri(context.contentResolver, copy.name, uri(copy))
+    }
+
+    /** [clip] as the clipboard's current item. */
+    fun putOnClipboard(clip: ClipData) = context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+
+    private fun uri(shared: File) = FileProvider.getUriForFile(context, context.packageName + ".files", shared)
+
+    /** The system share sheet for a file in a `shareFolder`. */
+    fun open(shared: File, name: String) {
+        val uri = uri(shared)
+        val type = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(shared.extension.lowercase()) ?: "application/octet-stream"
+        val intent = Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(intent, "Share $name").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    companion object {
+        /** Where account folder [directory] keeps the files its drafts and queued messages send. */
+        fun outgoingFolder(directory: File) = File(directory, "outgoing")
+        fun inOutgoing(directory: File, path: String) = File(path).canonicalFile.parentFile == outgoingFolder(directory).canonicalFile
+
+        /** [file] saved in account folder [from], pointed at its copy in [to] (`LocalStore.adopt`); others stay as they are. */
+        fun moved(file: OutgoingFile, from: File, to: File): OutgoingFile =
+            if (inOutgoing(from, file.path)) file.copy(path = File(outgoingFolder(to), File(file.path).name).path) else file
+
+        /** [uri]'s name ("file" when its app gives none) and size (null when it doesn't say), as its app tells them. */
+        fun describe(resolver: ContentResolver, uri: Uri): Pair<String, Long?> {
+            var name: String? = null
+            var size: Long? = null
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    name = cursor.getString(0)
+                    if (!cursor.isNull(1)) size = cursor.getLong(1)
+                }
+            }
+            return (name?.takeIf { it.isNotBlank() } ?: "file") to size
+        }
+
+        fun cleanName(value: String): String {
+            val name = value.substringAfterLast('/').substringAfterLast('\\').trim().trimStart('.').filter { !it.isISOControl() }
+            val usable = name.ifBlank { "file" }
+            require(usable.toByteArray(Charsets.UTF_8).size <= 200) { "The file name is too long." }
+            return usable
+        }
+        fun thumbnail(file: File, maxPixels: Int): Bitmap = thumbnail(ImageDecoder.createSource(file), maxPixels)
+        /** [source] decoded at most about [maxPixels] on its long side. */
+        fun thumbnail(source: ImageDecoder.Source, maxPixels: Int): Bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val longest = maxOf(info.size.width, info.size.height)
+            decoder.setTargetSampleSize(maxOf(1, (longest + maxPixels - 1) / maxPixels))
+        }
+    }
+}

@@ -1,55 +1,30 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Backend } from '@shared/models'
-import { agentIconURL } from '../../components/AgentIcon'
+import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader } from '../../components/Overlay'
+import { ModalHeader, SheetPage } from '../../components/Overlay'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
-import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
+import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
-import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled, lineClamp } from './pieces'
+import { ErrorText, Field, OptionRow, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
+import { LoginProfileKeys } from './LoginProfileKeys'
+import { CheckAgain, LoginProfiles } from './LoginProfiles'
+import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
-type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null } | { kind: 'keys'; method: AuthMethod }
-
-/** Registry logos are one-color; paint the ones with a known brand color in it. */
-export function agentTint(registry: string | null | undefined) {
-  switch (registry) {
-    case 'claude-acp': return 'rgb(217, 120, 87)'
-    case 'gemini': return 'linear-gradient(to top right, rgb(71, 150, 227), rgb(145, 120, 199), rgb(201, 102, 115))'
-    case 'antigravity-acp': return 'rgb(66, 133, 245)'
-    case 'mistral-vibe': return 'rgb(250, 82, 15)'
-    case 'qwen-code': return 'rgb(97, 92, 237)'
-    case 'amp-acp': return 'rgb(242, 79, 64)'
-    case 'kiro': return 'rgb(143, 69, 255)'
-    case 'cortex-code': return 'rgb(41, 181, 232)'
-    case 'omp': return 'linear-gradient(to bottom right, rgb(237, 74, 191), rgb(155, 77, 255), rgb(90, 216, 230))'
-    default: return 'var(--text)'
-  }
-}
+type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; loginProfile?: string } | { kind: 'keys'; method: AuthMethod } | { kind: 'profileKeys'; loginProfile: string }
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
   return (
-    <div style={{ width: tile, height: tile, flex: 'none', borderRadius: radius, background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', color: 'var(--text)' }}>
-      <TintedAgentIcon registry={registry} size={icon} />
+    <div className="agent-tile" style={{ width: tile, height: tile, borderRadius: radius }}>
+      <AgentIcon registry={registry} size={icon} color={agentTint(registry)} />
     </div>
-  )
-}
-
-/** `AgentIcon` painted with `agentTint` (which can be a gradient, so a mask over `background`). */
-function TintedAgentIcon({ registry, size }: { registry?: string | null; size: number }) {
-  const url = agentIconURL(registry)
-  if (!url) return <Icon name="terminal" size={size * 0.8} scaled={false} />
-  return (
-    <span
-      aria-hidden
-      style={{
-        display: 'inline-block', width: size, height: size, flex: 'none', background: agentTint(registry),
-        WebkitMaskImage: `url("${url}")`, WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center',
-      }}
-    />
   )
 }
 
@@ -59,13 +34,14 @@ function TintedAgentIcon({ registry, size }: { registry?: string | null; size: n
  */
 export function NodeNotice({ onAdd }: { onAdd: () => void }) {
   const store = useStore()
+  const tr = useTr()
   return (
     <div className="node-notice fade-in">
       <Icon name="shippingbox" size={15} color="var(--secondary)" />
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('subheadline', 'semibold'), color: 'var(--text)' }}>Node.js isn't on {store.hostName}</span>
-        <span style={{ ...font('caption'), color: 'var(--secondary)' }}>Some agents need it to run. Codync can add a copy just for them.</span>
-      </span>
+      <VStack as="span" gap={2} grow>
+        <Text size="subheadline" weight="semibold" tone="text">{tr("Node.js isn't on {name}").replaceAll('{name}', store.hostName)}</Text>
+        <Text size="caption" tone="secondary">{tr(`Some agents need it to run. Codync can add a copy just for them.`)}</Text>
+      </VStack>
       <Button onClick={onAdd}>Add Node.js</Button>
     </div>
   )
@@ -75,11 +51,19 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  * Getting an agent ready on the computer: install it, add Node.js when it runs on Node and
  * the computer has none, then sign in. Sign-in
  * options come from the agent itself (ACP), plus Codync's own command for
- * CLIs it knows. Bots are made from New chat, not here.
+ * CLIs it knows. Bots are made from New bot, not here.
  */
-export function AgentSheet({ initial }: { initial: Backend }) {
+/** `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent is
+ *  asked again however signed in it looked. `signInProfile`: the request is for that login profile,
+ *  so its sign-in (an account) or its key form (an API key) opens, not a check of the computer's own login. */
+export function AgentSheet({ initial, recheck = false, signInProfile }: { initial: Backend; recheck?: boolean; signInProfile?: string | null }) {
   const store = useStore()
-  const [route, setRoute] = useState<SetupRoute | null>(null)
+  const asked = signInProfile ? initial.loginProfiles?.find((p) => p.id === signInProfile) : undefined
+  const [route, setRoute] = useState<SetupRoute | null>(
+    asked?.kind === 'apiKey' ? { kind: 'profileKeys', loginProfile: asked.id }
+      : asked && initial.loginProfileSignIn !== 'browser' ? { kind: 'terminal', method: null, loginProfile: asked.id }
+      : null,
+  )
   const [auth, setAuth] = useState<AgentAuth | null>(null)
   const [checking, setChecking] = useState(false)
   const [authenticating, setAuthenticating] = useState<string | null>(null)
@@ -92,6 +76,9 @@ export function AgentSheet({ initial }: { initial: Backend }) {
   const curated = backend.curated === true
   const signedIn = auth?.signedIn ?? backend.signedIn ?? null
   const nodeMissing = backend.node === 'missing'
+  // It has run on this computer: its CLI is there, or an earlier check started it. Until then, a
+  // check can download it, so only Set up starts one.
+  const setUp = installed || backend.signedIn != null || auth !== null
   const host = store.hostName
 
   const check = async () => {
@@ -124,48 +111,67 @@ export function AgentSheet({ initial }: { initial: Backend }) {
     await store.refreshBackends()
   }
 
-  // A known "signed in" needs no agent start; everything else asks the agent (which can't
-  // start without its Node.js).
+  // A known "signed in" needs no agent start; one set up asks the agent (which can't start
+  // without its Node.js). Opening never downloads one: that waits for Set up.
   useEffect(() => {
-    if (backend.signedIn !== true && !nodeMissing) void check()
+    if ((recheck || (setUp && backend.signedIn !== true)) && !nodeMissing) void check()
   }, [])
 
-  // Back from a terminal or key form: see what changed.
-  const hadRoute = useRef(false)
+  /** Asks a login profile's agent whether its sign-in went through, and as whom. */
+  const checkProfile = async (loginProfile: string) => {
+    try {
+      await store.checkLoginProfile(backend.id, loginProfile)
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
+  // Back from a terminal or key form: see what changed, for the login it was about.
+  const lastRoute = useRef<SetupRoute | null>(route)
   useEffect(() => {
-    if (route === null && hadRoute.current) void check()
-    hadRoute.current = route !== null
+    const last = lastRoute.current
+    if (route === null && last?.kind === 'terminal' && last.loginProfile) void checkProfile(last.loginProfile)
+    // A login profile's key form shows what it saved itself.
+    else if (route === null && last && last.kind !== 'profileKeys') void check()
+    lastRoute.current = route
   }, [route])
 
   const back = () => setRoute(null)
   const routed = route === null ? null
     : route.kind === 'install' ? <SetupTerminalView backend={backend} step="install" back={back} />
     : route.kind === 'node' ? <SetupTerminalView backend={backend} step="node" back={back} />
-    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} back={back} />
+    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} loginProfile={route.loginProfile} back={back} />
+    : route.kind === 'profileKeys' ? <LoginProfileKeys backend={backend} loginProfile={route.loginProfile} back={back} />
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
     ? (auth === null ? `Checking with ${backend.name}… The first check can download it.` : 'Checking…')
     : signedIn === true ? 'Signed in.'
     : nodeMissing ? 'Add Node.js first.'
+    : !setUp ? (curated ? 'Install it first.' : `Not set up on ${host} yet.`)
     : signedIn === false ? 'Not signed in yet.'
     : `Couldn't tell. Skip this if you've already signed in on ${host}.`
 
   const optionRow = (key: string, title: string, detail: string, icon: string, action: () => void, busy = false) => (
-    <button key={key} className="option-row" disabled={authenticating !== null} onClick={action}>
-      <span aria-hidden style={{ width: 26, display: 'flex', justifyContent: 'center', color: 'var(--secondary)', flex: 'none' }}>
-        <Icon name={icon} size={13} />
-      </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('body', 'medium'), color: 'var(--text)' }}>{title}</span>
-        <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{detail}</span>
-      </span>
-      <span style={{ minWidth: 8 }} />
-      {busy ? <ThinkingOrb size={16} color="var(--secondary)" /> : <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
-    </button>
+    <OptionRow
+      key={key}
+      icon={icon}
+      title={title}
+      detail={detail}
+      disabled={authenticating !== null}
+      onClick={action}
+      trailing={<>
+        <span className="agent-row-gap" />
+        {busy ? <ThinkingOrb size={16} color="var(--secondary)" /> : <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
+      </>}
+    />
   )
 
   const options: ReactNode[] = []
+  // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+  if (!setUp && !curated && !checking && !nodeMissing) {
+    options.push(optionRow('setup', 'Set up', `Downloads ${backend.name} on ${host} if it needs to, then checks its sign-in.`, 'arrow.down.circle', () => void check()))
+  }
   // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
   if (signedIn !== true && !checking) {
     if (auth?.login) options.push(optionRow('login', 'Sign in', `In a terminal on ${host}. Links open here.`, 'terminal', () => setRoute({ kind: 'terminal', method: null })))
@@ -185,19 +191,19 @@ export function AgentSheet({ initial }: { initial: Backend }) {
     }
   }
 
+  const signInDetail = signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null
+  const browserNote = signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
+    ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
+    : null
+
   const overview = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
-      <ModalHeader title={backend.name} />
+    <SheetPage>
+      <ModalHeader
+        icon={<AgentTile registry={backend.registry ?? backend.id} icon={18} tile={32} radius={9} />}
+        title={backend.name}
+        subtitle={backend.description || undefined}
+      />
       <CardForm>
-        <CardSection>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0' }}>
-            <AgentTile registry={backend.registry ?? backend.id} icon={30} tile={52} radius={14} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <span style={font('title3', 'semibold')}>{backend.name}</span>
-              {backend.description ? <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...lineClamp(3) }}>{backend.description}</span> : null}
-            </div>
-          </div>
-        </CardSection>
         {curated ? (
           <CardSection>
             <SetupStepRow
@@ -220,29 +226,34 @@ export function AgentSheet({ initial }: { initial: Backend }) {
             />
           </CardSection>
         ) : null}
-        <CardSection
-          footer={signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
-            ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
-            : null}
-        >
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <SetupStepRow number={1 + Number(curated) + Number(backend.node !== undefined)} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
-            </div>
-            {checking ? (
-              <ThinkingOrb state="connecting" size={16} color="var(--secondary)" />
-            ) : (
-              <button title="Check again" aria-label="Check again" style={{ display: 'flex', color: 'var(--secondary)' }} onClick={() => void check()}>
-                <Icon name="arrow.clockwise" size={13} />
-              </button>
-            )}
-          </div>
-          {signedIn !== true && auth?.detail ? <span className="selectable" style={{ ...font('footnote'), color: 'var(--secondary)', whiteSpace: 'pre-wrap' }}>{auth.detail}</span> : null}
-          {options}
-        </CardSection>
+        {backend.loginProfiles ? (
+          <LoginProfiles
+            backend={backend}
+            own={{ status: statusText, checking, check: () => void check() }}
+            signIn={(loginProfile) => setRoute({ kind: 'terminal', method: null, loginProfile })}
+            editKeys={(loginProfile) => setRoute({ kind: 'profileKeys', loginProfile })}
+            signInNow={asked?.kind === 'account' ? asked.id : undefined}
+          >
+            {signInDetail}
+            {options}
+            {browserNote ? <Text size="footnote" tone="secondary">{browserNote}</Text> : null}
+          </LoginProfiles>
+        ) : (
+          <CardSection footer={browserNote}>
+            <HStack>
+              <VStack grow>
+                <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
+              </VStack>
+              <CheckAgain checking={checking} check={() => void check()} />
+            </HStack>
+            {signInDetail}
+            {options}
+          </CardSection>
+        )}
+        <AgentBrings backendId={backend.id} />
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 
   return <SlideStack base={overview} top={routed} />
@@ -256,6 +267,7 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
   back: () => void
   done: (auth: AgentAuth) => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -277,17 +289,17 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
 
   const missing = vars.some((v) => !v.optional && !values[v.name] && !saved.includes(v.name))
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ScreenHeader
         title={method.name}
         onBack={back}
         trailing={saving ? <Spinner /> : <IconButton title="Save" icon="checkmark" disabled={missing} onClick={() => void save(filled(values))} />}
       />
       <CardForm>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <VStack gap={6}>
           <CardSection title={method.name}>
             {vars.map((v) => (
-              <div key={v.name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <VStack key={v.name} gap={4}>
                 <Field
                   label={v.label}
                   value={values[v.name] ?? ''}
@@ -295,26 +307,26 @@ function AgentKeysForm({ backend, method, saved, back, done }: {
                   placeholder={saved.includes(v.name) ? 'Saved (type to replace)' : v.name}
                   onChange={(x) => setValues((old) => ({ ...old, [v.name]: x }))}
                 />
-                <span style={{ ...font('caption'), color: 'var(--secondary)' }}>{v.label + (v.optional ? ' (optional)' : '')}</span>
-              </div>
+                <Text size="caption" tone="secondary">{v.label + (v.optional ? tr(` (optional)`) : '')}</Text>
+              </VStack>
             ))}
           </CardSection>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 4px', ...font('caption'), color: 'var(--tertiary)' }}>
+          <VStack gap={6} className="agent-keys-notes">
             {method.description ? <span>{method.description}</span> : null}
-            <span>Saved on {store.hostName} only and given to {backend.name} when it starts.</span>
+            <span>{fill(tr('Saved on {name} only and given to {other} when it starts.'), { name: store.hostName, other: backend.name })}</span>
             {method.link && URL.canParse(method.link) ? <WebLink title="Get a key" url={method.link} /> : null}
-          </div>
-        </div>
+          </VStack>
+        </VStack>
         {saved.length ? (
           <CardSection>
-            <button style={{ color: 'var(--danger)' }} onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
+            <button className="market-danger-button" onClick={() => void save(Object.fromEntries(vars.map((v) => [v.name, ''])))}>
               Remove saved keys
             </button>
           </CardSection>
         ) : null}
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 }
 
@@ -325,23 +337,24 @@ function SetupStepRow({ number, title, detail, done, action }: {
   done: boolean
   action: { label: string; run: () => void } | null
 }) {
+  const tr = useTr()
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }} aria-label={`${title}. ${detail}${done ? '. Done' : ''}`}>
-      <span aria-hidden style={{ width: 26, height: 26, borderRadius: '50%', flex: 'none', display: 'grid', placeItems: 'center', background: done ? 'var(--accent-fill)' : 'var(--bubble-agent)', transition: 'background-color var(--fade)' }}>
+    <HStack gap={12} className="agent-step-row" aria-label={`${tr(title)}. ${tr(detail)}${done ? `. ${tr('Done')}` : ''}`}>
+      <span aria-hidden className={`agent-step-number${done ? ' done' : ''}`}>
         {done
           ? <Icon name="checkmark" size={10} weight="bold" color="var(--on-accent)" />
-          : <span style={{ ...font('caption', 'semibold'), color: 'var(--secondary)' }}>{number}</span>}
+          : <Text size="caption" weight="semibold" tone="secondary">{number}</Text>}
       </span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-        <span style={{ ...font('body', 'medium'), color: 'var(--text)' }}>{title}</span>
-        <span className="selectable" style={{ ...font('subheadline'), color: 'var(--secondary)' }}>{detail}</span>
-      </span>
-      <span style={{ minWidth: 8 }} />
+      <VStack as="span" gap={2} grow>
+        <Text size="body" weight="medium" tone="text">{title}</Text>
+        <Text size="subheadline" tone="secondary" className="selectable">{detail}</Text>
+      </VStack>
+      <span className="agent-row-gap" />
       {action ? (
-        <button className="capsule-action" style={{ ...font('subheadline', 'semibold'), padding: '7px 14px' }} onClick={action.run}>
-          {action.label}
+        <button className="capsule-action agent-step-action" onClick={action.run}>
+          {tr(action.label)}
         </button>
       ) : null}
-    </div>
+    </HStack>
   )
 }

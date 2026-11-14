@@ -9,12 +9,14 @@ import os
 final class NotificationService: UNNotificationServiceExtension {
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         let info = request.content.userInfo
+        let store = SharedStore.activeContext
         guard let sealed = info["sealed"] as? String,
               let computerId = info["computerId"] as? String,
-              let ctx = info["ctx"] as? String,
-              let alert = DeviceIdentity.openPush(sealed: sealed, computerId: computerId, contextID: ctx) else {
+              // Only the selected account's alerts open: one signed out here keeps its push key.
+              info["ctx"] as? String == store.id,
+              let alert = DeviceIdentity.openPush(sealed: sealed, computerId: computerId, contextID: store.id) else {
             Logger(subsystem: "com.pokai.Codync.ios", category: "NotificationService")
-                .error("Showing notification fallback: sealed content or shared key unavailable")
+                .error("Showing notification fallback: sealed content, shared key or selected account unavailable")
             contentHandler(request.content)
             return
         }
@@ -25,17 +27,20 @@ final class NotificationService: UNNotificationServiceExtension {
         content.title = alert.title
         content.subtitle = alert.subtitle ?? ""
         content.body = alert.body
-        contentHandler(Self.fromBot(content, alert: alert, botId: info["botId"] as? String, computerId: computerId, ctx: ctx))
+        contentHandler(Self.fromBot(content, alert: alert, botId: info["botId"] as? String, computerId: computerId, store: store))
     }
 
     /// A communication notification shows the bot's face in place of the app icon; a group
     /// message shows the group's face with the speaking member's on it. Faces come with the alert,
     /// or (from an older host) from this account's snapshot; without either, or if the system
     /// refuses, the plain notification stays.
-    private static func fromBot(_ content: UNMutableNotificationContent, alert: PushAlert, botId: String?, computerId: String, ctx: String) -> UNNotificationContent {
-        let store = SharedStore.activeContext
-        let snapshot = store.id == ctx ? store.bots.filter { $0.computerId == computerId }.map(\.bot) : []
-        let bots = (alert.faces ?? []) + snapshot
+    private static func fromBot(_ content: UNMutableNotificationContent, alert: PushAlert, botId: String?, computerId: String, store: SharedStore.Context) -> UNNotificationContent {
+        let snapshot = store.bots.filter { $0.computerId == computerId }.map(\.bot)
+        let bots = (alert.faces ?? []).map { face in
+            var face = face
+            face.customIcon = snapshot.first { $0.id == face.id }?.customIcon
+            return face
+        } + snapshot
         guard let botId, let chat = bots.first(where: { $0.id == botId }) else { return content }
         let members = chat.members.compactMap { id in bots.first { $0.id == id } }
         let conversation = "\(computerId)/\(chat.id)"

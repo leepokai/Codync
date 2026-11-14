@@ -39,6 +39,12 @@
 .mac-chat-button:active > * {
   translate: calc(var(--dx) * 1.5px) calc(var(--dy) * 1.5px);
 }
+/* Grok Bot's details buttons (open, share, close): the page color, ringed by a soft shadow. */
+.mac-chat-button.ringed {
+  background: var(--background);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--chrome-stroke), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
 @media (prefers-reduced-motion: reduce) {
   .mac-chat-button:hover > *,
   .mac-chat-button:active > * {
@@ -70,18 +76,25 @@
   mask-image: linear-gradient(to top, #000 40%, transparent);
   background: linear-gradient(to top, color-mix(in srgb, var(--background) 90%, transparent) 0%, color-mix(in srgb, var(--background) 45%, transparent) 40%, transparent 100%);
 }
+@media (prefers-reduced-transparency: reduce) {
+  .composer-fade {
+    backdrop-filter: none;
+    background: linear-gradient(to top, var(--background) 40%, transparent);
+  }
+}
 .jump-to-latest {
   position: absolute;
+  bottom: calc(var(--composer-height, 70px) + 10px);
   left: 50%;
   z-index: 5;
   transform: translateX(-50%);
   border-radius: 50%;
-  box-shadow: 0 3px 20px rgba(0, 0, 0, 0.12);
-  animation: jump-in var(--morph) both;
+  box-shadow: var(--shadow-m);
+  opacity: 0;
+  translate: 0 6px;
+  transition: opacity var(--morph), translate var(--morph);
 }
-@keyframes jump-in {
-  from {
-    opacity: 0;
-    translate: 0 6px;
-  }
+.jump-to-latest.shown {
+  opacity: 1;
+  translate: none;
 }

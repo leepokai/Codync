@@ -39,15 +39,15 @@ struct NewSkillSheet: View {
     private var form: some View {
         CardForm {
             CardSection(footer: "The bot sees the name and when to use it, and reads the instructions only when a task fits.") {
-                TextField("Name", text: $name)
-                TextField("When to use it", text: $summary, axis: .vertical).lineLimit(2...4)
+                TextField(L10n.tr("Name"), text: $name)
+                TextField(L10n.tr("When to use it"), text: $summary, axis: .vertical).lineLimit(2...4)
             }
             CardSection("Instructions") {
-                TextField("Step by step, in plain words…", text: $instructions, axis: .vertical)
+                TextField(L10n.tr("Step by step, in plain words…"), text: $instructions, axis: .vertical)
                     .lineLimit(6...20)
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .textFieldStyle(.plain)

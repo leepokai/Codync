@@ -24,8 +24,7 @@ final class Recognizer {
         guard await AVCaptureDevice.requestAccess(for: .audio) else {
             return fail("Allow the microphone for Codync in System Settings to talk to your bots.")
         }
-        let status = await withCheckedContinuation { done in SFSpeechRecognizer.requestAuthorization { done.resume(returning: $0) } }
-        guard status == .authorized else {
+        guard await Self.speechAuthorized() else {
             return fail("Allow Speech Recognition for Codync in System Settings to talk to your bots.")
         }
         guard let recognizer, recognizer.isAvailable else {
@@ -37,27 +36,20 @@ final class Recognizer {
         self.request = request
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-            let level = Self.level(buffer)
-            Task { @MainActor in self.report(level) }
+        // No usable input (no microphone, a route change): a tap on a 0 Hz format raises an exception that ends the helper.
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            return fail("Couldn't start the microphone: no microphone is available right now.")
         }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tap(request) { level in
+            Task { @MainActor in self.report(level) }
+        })
         do {
             engine.prepare()
             try engine.start()
         } catch {
             return fail("Couldn't start the microphone: \(error.localizedDescription)")
         }
-        task = recognizer.recognitionTask(with: request) { result, error in
-            let text = result?.bestTranscription.formattedString
-            let final = result?.isFinal ?? false
-            let message = error?.localizedDescription
-            Task { @MainActor in
-                if let text { emit(["type": final ? "final" : "partial", "text": text]) }
-                // An error after the stream was ended on purpose is just the end.
-                if let message, !final, self.request != nil { emit(["type": "error", "message": message]) }
-            }
-        }
+        task = recognizer.recognitionTask(with: request, resultHandler: Self.results(self))
         emit(["type": "started"])
     }
 
@@ -80,6 +72,44 @@ final class Recognizer {
         exit(1)
     }
 
+    // MARK: callbacks the frameworks run off the main thread (built outside the main actor, which
+    // would otherwise trap on them)
+
+    nonisolated private static func speechAuthorized() async -> Bool {
+        await withCheckedContinuation { done in
+            SFSpeechRecognizer.requestAuthorization { done.resume(returning: $0 == .authorized) }
+        }
+    }
+
+    nonisolated private static func tap(_ request: SFSpeechAudioBufferRecognitionRequest,
+                                        meter: @escaping @Sendable (Float) -> Void) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            request.append(buffer)
+            meter(level(buffer))
+        }
+    }
+
+    nonisolated private static func results(_ owner: Recognizer) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
+        { result, error in
+            let text = result?.bestTranscription.formattedString
+            let final = result?.isFinal ?? false
+            let message = error.map(Self.message)
+            Task { @MainActor in
+                if let text { emit(["type": final ? "final" : "partial", "text": text]) }
+                // An error after the stream was ended on purpose is just the end.
+                if let message, !final, owner.request != nil { emit(["type": "error", "message": message]) }
+            }
+        }
+    }
+
+    /// A recognizer error as the app says it: the ones it knows get a fix the app translates, others the system's words.
+    nonisolated private static func message(_ error: any Error) -> String {
+        let error = error as NSError
+        // "Siri and Dictation are disabled": on-device recognition needs one of them on.
+        if error.domain == "kLSRErrorDomain", error.code == 201 { return dictationOff }
+        return error.localizedDescription
+    }
+
     nonisolated private static func level(_ buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0] else { return 0 }
         let count = Int(buffer.frameLength)
@@ -92,6 +122,9 @@ final class Recognizer {
         return max(0, min(1, (db + 50) / 50))
     }
 }
+
+/// Shown (translated) by the app when Siri and Dictation are off.
+let dictationOff = "Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice."
 
 @MainActor func emit(_ event: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: event) else { return }
@@ -125,4 +158,6 @@ FileHandle.standardInput.readabilityHandler = { handle in
 }
 
 Task { @MainActor in await recognizer.start() }
-dispatchMain()
+// Not dispatchMain(): it ends the main thread and drains the main queue on worker threads, where the
+// MainActor checks in the handlers above trap.
+RunLoop.main.run()

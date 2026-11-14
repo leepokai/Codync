@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
 
-/// A main-chat entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
+/// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
 /// its rev was bumped (a rewrite, a reaction). History paging brings it.
 fn outside_window(floor: Option<i64>, held: bool, e: &Entry) -> bool {
-    e.thread_id.is_none() && !held && floor.is_some_and(|f| e.seq < f)
+    !held && floor.is_some_and(|f| e.seq < f)
 }
 
 impl App {
@@ -33,10 +33,6 @@ impl App {
                 self.entries.clear();
                 self.history_done.clear();
                 self.floors.clear();
-                // Catch-up carries only recent thread replies: fetch the open thread whole again.
-                if let (Some(id), Some(root)) = (&self.selected, &self.thread) {
-                    self.call("thread", json!({"botId": id, "rootId": root}), After::Thread);
-                }
             }
             Msg::Connected { since } => {
                 self.stream_since = since;
@@ -60,17 +56,39 @@ impl App {
         match v["type"].as_str() {
             Some("hello") => {
                 self.snapshot_floors();
+                self.network = v["network"].clone();
                 if !v["usage"].is_null() {
                     self.usage = v["usage"].clone();
                 }
             }
             Some("usage") => self.usage = v["usage"].clone(),
             Some("screen") => self.screen = v["screen"].clone(),
-            Some("bot") => self.upsert_bot(&v["bot"]),
+            Some("network") => self.network_changed(&v["network"]),
+            Some("cloud") => self.cloud = v["cloud"].clone(),
+            Some("name") => {
+                if let Some(name) = v["name"].as_str() {
+                    name.clone_into(&mut self.host);
+                }
+            }
+            Some("autoOrder") => self.auto_order = v["enabled"].as_bool(),
+            Some("pairingRequests") => self.pairing_requests_changed(v),
+            Some("bot") => {
+                self.upsert_bot(&v["bot"]);
+                self.memory_moved(&v["bot"]);
+            }
+            Some("artifact") => self.artifact_changed(&v["artifact"]),
             Some("entry") => {
                 if let Some((bot, e)) = Entry::parse(&v["entry"])
                     && !self.outside_window(&bot, &e)
                 {
+                    if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
+                        self.entry_added(&bot, &e);
+                        // A routine's run and a follow-up say in the chat that they began or were dropped.
+                        if e.kind == Kind::Notice {
+                            self.reload_routines(&bot);
+                        }
+                    }
+                    self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);
                 }
             }
@@ -78,13 +96,13 @@ impl App {
         }
     }
 
-    /// A catch-up from `since > 0` starts: remember where each bot's loaded main chat begins.
+    /// A catch-up from `since > 0` starts: remember where each bot's loaded chat begins.
     fn snapshot_floors(&mut self) {
         self.floors = if self.stream_since > 0 {
             self.entries
                 .iter()
                 .filter_map(|(bot, loaded)| {
-                    let oldest = loaded.values().filter(|e| e.thread_id.is_none() && e.seq > 0).map(|e| e.seq).min();
+                    let oldest = loaded.values().filter(|e| e.seq > 0).map(|e| e.seq).min();
                     Some((bot.clone(), oldest?))
                 })
                 .collect()
@@ -104,12 +122,12 @@ impl App {
             self.bots.remove(id);
             self.entries.remove(id);
             self.floors.remove(id);
-            let prefix = format!("{id}#");
-            self.drafts.retain(|key, _| key != id && !key.starts_with(&prefix));
-            self.files.retain(|key, _| key != id && !key.starts_with(&prefix));
+            self.drafts.remove(id);
+            self.files.remove(id);
             if self.selected.as_deref() == Some(id) {
+                self.close_find();
                 self.selected = None;
-                self.thread = None;
+                self.reply = None;
                 self.pick = None;
                 self.chat_page = false;
                 self.typing = false;
@@ -117,10 +135,9 @@ impl App {
             return;
         }
         let Some(new) = Bot::parse(v) else { return };
-        // Marked read once per change: an open thread leaves the main chat's replies unread.
+        // Marked read once per change.
         if self.bots.get(&new.id).is_none_or(|old| old.unread != new.unread) {
-            let thread = format!("{}/", new.id);
-            self.reading.retain(|scope| *scope != new.id && !scope.starts_with(&thread));
+            self.reading.remove(&new.id);
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
@@ -158,6 +175,18 @@ impl App {
             self.on_sheet_reply(s, r);
             return;
         }
+        if let After::Network(n) = after {
+            self.network_reply(n, r);
+            return;
+        }
+        if let After::UsageOrder(to) = after {
+            self.usage_order_answered(to, r);
+            return;
+        }
+        if matches!(after, After::Pairing | After::Cloud | After::PairingRequests | After::PairingDecided) {
+            self.pair_reply(&after, r);
+            return;
+        }
         let v = match r {
             Ok(v) => v,
             Err(e) => {
@@ -172,15 +201,22 @@ impl App {
                             f.saving = false;
                             f.error = Some(e);
                         }
+                        Some(Overlay::NewBot(n)) => {
+                            n.saving = false;
+                            n.error = Some(e);
+                        }
                         Some(Overlay::Group(g)) => {
                             g.saving = false;
                             g.error = Some(e);
                         }
                         _ => {}
                     },
-                    After::Dirs => {
-                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+                    After::Dirs(id) | After::WorkspaceSelected(id) => {
+                        if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                            && p.request_id == id
+                        {
                             p.error = Some(e);
+                            p.busy = false;
                         }
                     }
                     _ => self.flash(&e),
@@ -189,45 +225,44 @@ impl App {
             }
         };
         match after {
-            After::Nothing | After::Tracked | After::Answered(_) | After::Sheet(_) | After::Sent(_) | After::Connection(_, _) => {}
+            After::Nothing
+            | After::Tracked
+            | After::Answered(_)
+            | After::Sheet(_)
+            | After::Network(_)
+            | After::UsageOrder(_)
+            | After::Sent(_)
+            | After::Connection(_, _)
+            | After::Pairing
+            | After::Cloud
+            | After::PairingRequests
+            | After::PairingDecided => {}
             After::Installed => {
                 self.error = None;
                 self.flash("Host installed; connecting…");
                 self.call("hello", json!({}), After::Hello);
             }
             After::Hello => {
+                self.custom_icons = v["icons"].is_object();
                 self.mismatch = crate::compat::check(env!("CARGO_PKG_VERSION"), crate::compat::MIN_HOST, &v);
                 v["name"].as_str().unwrap_or("computer").clone_into(&mut self.host);
+                v["version"].as_str().unwrap_or_default().clone_into(&mut self.host_version);
                 v["home"].as_str().unwrap_or_default().clone_into(&mut self.home);
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
+                self.auto_order = v["autoOrder"].as_bool();
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),
+            After::AutoOrder => self.auto_order_set(&v),
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");
             }
-            After::Update => match (v["state"]["availableVersion"].as_str(), v["state"]["requiredApp"].as_str()) {
-                (Some(version), Some(app)) => self.flash(&match v["state"]["appStoreVersion"].as_str() {
-                    Some(store) => format!(
-                        "Version {version} waits for the iPhone app {app} (App Store has {store}); it installs after review"
-                    ),
-                    None => format!(
-                        "Version {version} waits: couldn't check the App Store for the iPhone app {app}. \
-                         codync-host update --skip-app-check installs anyway"
-                    ),
-                }),
-                (Some(version), None) => self.flash(&format!("Version {version} is available: run codync-host update")),
-                (None, _) => self.flash("The host is up to date."),
+            After::Update => match v["state"]["availableVersion"].as_str() {
+                Some(version) => self.flash(&format!("Version {version} is available: run codync-host update")),
+                None => self.flash("The host is up to date."),
             },
-            After::Thread => {
-                for e in v["entries"].as_array().into_iter().flatten() {
-                    if let Some((bot, e)) = Entry::parse(e) {
-                        self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
-                    }
-                }
-            }
             After::History(id) => {
                 self.history_busy.remove(&id);
                 let list = v["entries"].as_array().cloned().unwrap_or_default();
@@ -240,9 +275,30 @@ impl App {
                     }
                 }
             }
-            After::Dirs => {
-                if let Some(Overlay::Folder(p)) = self.overlays.last_mut() {
+            After::WorkspaceSelected(id) => {
+                if matches!(self.overlays.last(), Some(Overlay::Folder(p)) if p.request_id == id)
+                    && let Some(path) = v["path"].as_str().filter(|p| !p.is_empty())
+                {
+                    self.overlays.pop();
+                    self.folder_chosen(path.to_owned());
+                }
+            }
+            After::Dirs(id) => {
+                if let Some(Overlay::Folder(p)) = self.overlays.last_mut()
+                    && p.request_id == id
+                {
                     v["path"].as_str().unwrap_or_default().clone_into(&mut p.path);
+                    p.busy = false;
+                    p.remembers = v["recent"].is_array();
+                    p.recent = v["recent"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|item| {
+                            let path = item["path"].as_str()?;
+                            Some(Dir { name: path.to_owned(), path: path.to_owned(), git: false })
+                        })
+                        .collect();
                     p.parent = v["parent"].as_str().map(str::to_owned);
                     p.dirs = v["dirs"]
                         .as_array()
@@ -259,16 +315,14 @@ impl App {
                     p.error = None;
                 }
             }
-            After::Pairing => {
-                if let Some(Overlay::Pair(url)) = self.overlays.last_mut() {
-                    *url = v["pairingUrl"].as_str().map(str::to_owned);
-                }
-            }
             After::Saved => {
-                let saved = self.overlays.iter().rposition(|o| matches!(o, Overlay::Form(_) | Overlay::Group(_)));
+                let saved = self
+                    .overlays
+                    .iter()
+                    .rposition(|o| matches!(o, Overlay::Form(_) | Overlay::NewBot(_) | Overlay::Group(_)));
                 // A new bot or group opens ready to type; an edit goes back to where it was.
                 let created = saved.is_some_and(|i| match &self.overlays[i] {
-                    Overlay::Form(f) => f.bot_id.is_none(),
+                    Overlay::NewBot(_) => true,
                     Overlay::Group(g) => g.group_id.is_none(),
                     _ => false,
                 });
@@ -296,11 +350,10 @@ impl App {
                 }
                 for o in &mut self.overlays {
                     if let Overlay::Form(f) = o {
-                        // Connectors and skills start on for a new bot.
                         if connectors {
-                            merge_toggles(&mut f.connectors, &self.market.0, f.bot_id.is_none());
+                            merge_toggles(&mut f.connectors, &self.market.0);
                         } else {
-                            merge_toggles(&mut f.skills, &self.market.1, f.bot_id.is_none());
+                            merge_toggles(&mut f.skills, &self.market.1);
                         }
                     }
                 }
@@ -318,10 +371,15 @@ impl App {
                 {
                     self.drafts.remove(key);
                     self.files.remove(key);
+                    self.pasted.remove(key);
                 }
                 self.sends.remove(key);
+                if self.selected.as_deref() == Some(key) {
+                    self.reply = None;
+                }
                 // The stream may already hold a newer copy (its delivery status).
                 if let Some((bot, e)) = Entry::parse(&value["entry"]) {
+                    self.kofi_sent(&bot, &e);
                     self.entries.entry(bot).or_default().entry(e.seq).or_insert(e);
                 }
                 self.flash("Sent");
@@ -336,31 +394,13 @@ mod tests {
     use super::super::{Editor, FIELDS, Field, PendingSend, test_app};
     use super::*;
 
-    fn entry_event(seq: i64, thread: &Value) -> Value {
+    fn entry_event(seq: i64) -> Value {
         json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
-            "kind": "user", "threadId": thread}})
+            "kind": "user"}})
     }
 
     fn seqs(app: &App) -> Vec<i64> {
         app.entries.get("a").map(|m| m.keys().copied().collect()).unwrap_or_default()
-    }
-
-    #[tokio::test]
-    async fn catch_up_with_only_replies_can_fetch_main_chat_history() {
-        fn entry_event(seq: i64, thread: &Value) -> Value {
-            json!({"type": "entry", "entry": {"botId": "a", "id": format!("e{seq}"), "seq": seq, "turn": seq,
-                "kind": "user", "threadId": thread}})
-        }
-        let mut app = test_app();
-        app.selected = Some("a".into());
-        app.on_event(&entry_event(100, &json!("root")));
-        assert!(!app.history_complete("a"));
-        app.load_history();
-        assert!(app.history_busy.contains("a"));
-        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(90, &Value::Null)["entry"]]})));
-        assert_eq!(app.lane("a").iter().map(|e| e.seq).collect::<Vec<_>>(), [90]);
-        app.on_reply(After::History("a".into()), Ok(json!({"entries": []})));
-        assert!(app.history_complete("a"));
     }
 
     fn connect(app: &mut App, since: i64) {
@@ -372,42 +412,40 @@ mod tests {
     fn rewritten_entry_below_the_floor_waits_for_paging() {
         let mut app = test_app();
         for seq in [5, 6] {
-            app.on_event(&entry_event(seq, &Value::Null));
+            app.on_event(&entry_event(seq));
         }
         connect(&mut app, 40);
-        app.on_event(&entry_event(2, &Value::Null));
+        app.on_event(&entry_event(2));
         assert_eq!(seqs(&app), [5, 6], "below the floor: dropped");
-        app.on_event(&entry_event(2, &json!("root")));
-        assert_eq!(seqs(&app), [2, 5, 6], "thread replies are not paged");
-        let mut update = entry_event(5, &Value::Null);
+        let mut update = entry_event(5);
         update["entry"]["reactions"] = json!(["x"]);
         app.on_event(&update);
-        app.on_event(&entry_event(7, &Value::Null));
-        assert_eq!(seqs(&app), [2, 5, 6, 7], "held updates and newer entries apply");
-        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(3, &Value::Null)["entry"]]})));
-        assert_eq!(seqs(&app), [2, 3, 5, 6, 7], "history inserts older entries");
+        app.on_event(&entry_event(7));
+        assert_eq!(seqs(&app), [5, 6, 7], "held updates and newer entries apply");
+        app.on_reply(After::History("a".into()), Ok(json!({"entries": [entry_event(3)["entry"]]})));
+        assert_eq!(seqs(&app), [3, 5, 6, 7], "history inserts older entries");
     }
 
     #[test]
     fn a_full_catch_up_accepts_entries_in_rev_order() {
         let mut app = test_app();
-        app.on_event(&entry_event(9, &Value::Null)); // a sent message's reply, before catch-up
+        app.on_event(&entry_event(9)); // a sent message's reply, before catch-up
         connect(&mut app, 0);
         for seq in [4, 2, 7] {
-            app.on_event(&entry_event(seq, &Value::Null));
+            app.on_event(&entry_event(seq));
         }
         assert_eq!(seqs(&app), [2, 4, 7, 9]);
         connect(&mut app, 40);
-        app.on_event(&entry_event(1, &Value::Null));
+        app.on_event(&entry_event(1));
         assert_eq!(seqs(&app), [2, 4, 7, 9], "a later resume floors at the loaded window");
         connect(&mut app, 0);
-        app.on_event(&entry_event(1, &Value::Null));
+        app.on_event(&entry_event(1));
         assert_eq!(seqs(&app), [1, 2, 4, 7, 9], "each connection replaces the floors");
     }
 
     #[test]
     fn floor_rule_is_pure() {
-        let (_, e) = Entry::parse(&entry_event(3, &Value::Null)["entry"]).expect("parses");
+        let (_, e) = Entry::parse(&entry_event(3)["entry"]).expect("parses");
         assert!(outside_window(Some(5), false, &e));
         assert!(!outside_window(Some(5), true, &e));
         assert!(!outside_window(Some(3), false, &e));
@@ -417,7 +455,7 @@ mod tests {
     #[test]
     fn send_failure_keeps_text_files_and_nonce_for_retry() {
         let mut app = test_app();
-        let key = "bot/thread";
+        let key = "bot";
         let files = vec![std::path::PathBuf::from("/tmp/report.txt")];
         app.drafts.insert(key.into(), Editor::with("draft"));
         app.files.insert(key.into(), files.clone());

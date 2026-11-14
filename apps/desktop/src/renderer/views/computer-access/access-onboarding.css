@@ -1,0 +1,30 @@
+.access-onboarding { height: 100%; padding: clamp(36px, 6vh, 60px) 24px 24px; }
+.access-onboarding-content { max-width: 560px; margin: auto; }
+.access-onboarding-header { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 24px; text-align: center; }
+.access-onboarding-header img { margin-bottom: 8px; }
+.access-onboarding-picker .segmented { border-radius: var(--radius-pill); padding: 3px; }
+.access-onboarding-picker .segmented-thumb { border-radius: var(--radius-pill); transition: transform 460ms var(--spring); }
+.access-onboarding-picker .segmented-option { border-radius: var(--radius-pill); min-width: 0; padding: 12px 4px; white-space: normal; overflow-wrap: anywhere; }
+.access-onboarding-stage { display: grid; align-items: start; margin-top: 32px; }
+.access-onboarding-panel { grid-area: 1 / 1; min-width: 0; visibility: hidden; opacity: 0; transition: opacity 220ms var(--ease-out), transform 420ms var(--ease-out), visibility 420ms; }
+.access-onboarding-panel.before { transform: translateX(-24px) scale(.98); }
+.access-onboarding-panel.after { transform: translateX(24px) scale(.98); }
+.access-onboarding-panel.selected { visibility: visible; opacity: 1; transform: translateX(0) scale(1); transition-delay: 80ms; }
+.access-onboarding .computer-access-row { flex-direction: column; align-items: center; text-align: center; padding: 0 16px 24px; }
+.access-onboarding .computer-access-badge, .access-onboarding-star-icon { width: 64px; height: 64px; border-radius: var(--radius-xl); margin: 0 auto 8px; }
+.access-onboarding .computer-access-row h2, .access-onboarding-star h2 { font-size: var(--text-title); line-height: 1.3; letter-spacing: -.5px; margin: 0 0 12px; color: var(--text); }
+.access-onboarding .computer-access-row p, .access-onboarding-star > p { max-width: 380px; margin-left: auto; margin-right: auto; color: var(--secondary); }
+.access-onboarding .computer-access-actions { justify-content: center; margin-top: 24px; }
+.access-onboarding .styled-button.secondary { border: none; background: var(--bubble-user); }
+.access-onboarding .styled-button { min-height: 36px; padding: 8px 16px; }
+.access-onboarding-star { text-align: center; padding: 0 16px 24px; }
+.access-onboarding-star-icon { display: flex; align-items: center; justify-content: center; background: var(--chrome-fill); margin-bottom: 22px; }
+.access-onboarding-star .styled-button { margin: 24px 0 14px; }
+.access-onboarding-footer, .access-onboarding-navigation { display: flex; align-items: center; gap: 12px; }
+.access-onboarding-footer { justify-content: space-between; margin-top: 24px; }
+.access-onboarding .access-onboarding-note { text-align: center; font-size: var(--text-caption); margin-top: 24px; }
+.access-onboarding-prerequisite { text-align: center; }
+@media (max-width: 440px) { .access-onboarding { padding-left: 16px; padding-right: 16px; } }
+@media (prefers-reduced-motion: reduce) {
+  .access-onboarding-panel, .access-onboarding-picker .segmented-thumb { transition: none; transform: none; }
+}

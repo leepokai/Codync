@@ -76,7 +76,8 @@ impl ScheduleDraft {
         draft
     }
 
-    fn read_cron(&mut self) {
+    /// The style (and its fields) a Custom `expression` is, when the editor has one for it.
+    pub(crate) fn read_cron(&mut self) {
         let fields: Vec<_> = self.expression.split_whitespace().collect();
         let [minute, hour, day, month, weekday] = fields.as_slice() else { return };
         if [hour, day, month, weekday].iter().all(|field| **field == "*")
@@ -145,7 +146,7 @@ impl ScheduleDraft {
         })
     }
 
-    fn cron(&self) -> Result<String> {
+    pub(crate) fn cron(&self) -> Result<String> {
         if self.hour > 23 || self.minute > 59 {
             bail!("choose a valid hour and minute");
         }

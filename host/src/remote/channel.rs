@@ -8,12 +8,15 @@
 //! The device's authorization is re-checked on every request, whenever the device
 //! table changes and when its lease runs out; a revoked device is closed at once.
 
+mod pairing;
+mod subscriptions;
+
 use crate::LockExt;
 use crate::api;
 use crate::api::devices::{self, Caller, RejectCode};
 use crate::hub::Hub;
 use crate::remote::crypto::{self, FrameError, Opener, Sealer};
-use crate::store::{Device, DeviceSource, Scope, now_ms};
+use crate::store::{Device, DeviceAccount, DeviceSource, Scope, now_ms};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures::{SinkExt as _, StreamExt as _};
 use serde_json::{Value, json};
@@ -28,13 +31,13 @@ use x25519_dalek::StaticSecret;
 
 /// Largest WebSocket message accepted (and the Cloudflare limit); 256 KiB chunks fit.
 pub const MAX_WS_MESSAGE: usize = 1 << 20;
-/// Largest reassembled device → host message.
-const MAX_INBOUND: usize = 1 << 20;
+/// Largest reassembled authorized device → host message (5 MiB icon + base64/JSON).
+const MAX_INBOUND: usize = 8 << 20;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Channel keys are replaced (close `4011`) after this long.
-const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_AGE: Duration = Duration::from_hours(24);
 /// A pairing channel only lives long enough to redeem its code.
-const PAIRING_MAX_AGE: Duration = Duration::from_secs(120);
+const PAIRING_MAX_AGE: Duration = Duration::from_mins(2);
 const DIRECT_PING: Duration = Duration::from_secs(15);
 const MAX_REQUESTS: usize = 32;
 const MAX_SUBS: usize = 4;
@@ -185,14 +188,15 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
         caller: Arc::new(Caller::Local),
         lease: None,
         online: None,
+        relayed: matches!(kind, ChannelKind::Relay { .. }),
     };
-    let opener = Opener::new(hs.keys.d2h, MAX_INBOUND);
+    let opener = Opener::new(hs.keys.d2h, if hs.device.is_some() { MAX_INBOUND } else { 1 << 20 });
     let (code, reason) = if let Some(d) = hs.device {
         ch.set_device(&d);
         ch.serve(&mut incoming, opener, &mut writer).await
     } else {
         ch.caller = Arc::new(Caller::Pairing { key: ch.key.clone() });
-        ch.pair(&mut incoming, opener, &kind.source()).await
+        ch.pair(&mut incoming, opener, &kind).await
     };
     for job in ch.jobs.locked().drain() {
         if let (_, Job::Sub(h)) = job {
@@ -202,7 +206,10 @@ pub async fn run(hub: Arc<Hub>, t: Transport, kind: ChannelKind) {
     let _ = ch.tx.send(ToDevice::Close(code, reason)).await;
     let hub = ch.hub.clone();
     drop(ch);
-    let _ = writer.await;
+    // `serve` already took the writer's end when it stopped first; polling it again panics.
+    if !writer.is_finished() {
+        let _ = writer.await;
+    }
     // Only now, with the answer and the `4100` handed to the transport: a relay publishes the
     // new ACL (offer gone) behind them on the same socket, so the pairing link isn't cut first.
     if code == close::PAIRED {
@@ -311,11 +318,12 @@ enum Job {
 struct Online(Arc<Hub>, String);
 
 impl Online {
-    fn new(hub: Arc<Hub>, key: String) -> Self {
+    fn new(hub: Arc<Hub>, key: String, relayed: bool) -> Self {
         *hub.connected.locked().entry(key.clone()).or_default() += 1;
         if let Err(error) = hub.store.touch_device(&key) {
             tracing::warn!(error = format!("{error:#}"), "couldn't record when a device was last seen");
         }
+        crate::analytics::phone_connected(&hub, &key, relayed);
         Self(hub, key)
     }
 }
@@ -340,6 +348,8 @@ struct Channel {
     caller: Arc<Caller>,
     lease: Option<Instant>,
     online: Option<Online>,
+    /// It came through a relay, not over Wi-Fi or Tailscale.
+    relayed: bool,
 }
 
 type CloseWith = (u16, &'static str);
@@ -383,11 +393,15 @@ impl Channel {
                 // Gone from the table while connected: it was revoked.
                 let code = if code == RejectCode::Unauthorized { RejectCode::Revoked } else { code };
                 tracing::info!(device = self.key, ?code, "closing channel: device no longer authorized");
-                let reject = json!({"t": "reject", "code": code, "message": code.message()});
-                let _ = self.tx.send(ToDevice::Plain(reject)).await;
-                Err((code.close_code(), "rejected"))
+                Err(self.reject(code).await)
             }
         }
+    }
+
+    /// Sends `reject` (outside the channel's encryption) and says how to close.
+    async fn reject(&self, code: RejectCode) -> CloseWith {
+        let _ = self.tx.send(ToDevice::Plain(json!({"t": "reject", "code": code, "message": code.message()}))).await;
+        (code.close_code(), if code == RejectCode::RateLimited { "rateLimited" } else { "rejected" })
     }
 
     async fn serve(
@@ -397,6 +411,10 @@ impl Channel {
         writer: &mut tokio::task::JoinHandle<()>,
     ) -> CloseWith {
         let mut auth = self.hub.auth.subscribe();
+        // A new relay address (or the relay on or off) reaches phones only in `hello`: reconnecting
+        // reads it again, over this route or the old relay while it is still up (`relay::MOVE_GRACE`).
+        let mut cloud = self.hub.cloud.config.subscribe();
+        let mut account = self.hub.cloud.account_changed.subscribe();
         let rekey_at = Instant::now() + MAX_AGE;
         loop {
             let lease = self.lease;
@@ -408,7 +426,7 @@ impl Channel {
                         Err(e) => return frame_close(&e),
                     };
                     if self.online.is_none() {
-                        self.online = Some(Online::new(self.hub.clone(), self.key.clone()));
+                        self.online = Some(Online::new(self.hub.clone(), self.key.clone(), self.relayed));
                     }
                     if let Some(bytes) = message
                         && let Err(close) = self.handle(&bytes).await
@@ -430,6 +448,8 @@ impl Channel {
                     }
                 }
                 () = sleep_until(rekey_at) => return (close::REKEY, "rekey"),
+                _ = cloud.changed() => return (close::REKEY, "relay"),
+                _ = account.changed() => return (close::REKEY, "account"),
                 _ = &mut *writer => return (close::NORMAL, ""),
             }
         }
@@ -486,53 +506,6 @@ impl Channel {
         });
     }
 
-    async fn subscribe(&self, id: u64, kind: &str, b: &Value) {
-        if self.count(true) >= MAX_SUBS {
-            self.send(err(id, 429, "too many subscriptions")).await;
-            return;
-        }
-        let stream = match kind {
-            "events" => match api::events_stream(
-                &self.hub,
-                b["since"].as_i64().unwrap_or(0),
-                b["client"].as_str(),
-                &self.caller,
-            ) {
-                Ok(s) => s.boxed(),
-                Err(e) => {
-                    self.send(err(id, 500, &format!("{e:#}"))).await;
-                    return;
-                }
-            },
-            "term" => {
-                let Some(s) = api::term_events(&self.hub, b["term"].as_str().unwrap_or_default()) else {
-                    self.send(err(id, 404, "that terminal is gone")).await;
-                    return;
-                };
-                s.boxed()
-            }
-            _ => {
-                self.send(err(id, 400, "unknown subscription")).await;
-                return;
-            }
-        };
-        let (jobs, tx) = (self.jobs.clone(), self.tx.clone());
-        // Held while spawning so the task can't finish (and remove itself) before it's listed.
-        let mut list = self.jobs.locked();
-        let task = tokio::spawn(async move {
-            let mut stream = stream;
-            while let Some(ev) = stream.next().await {
-                if tx.send(ToDevice::Inner(json!({"id": id, "ev": ev}))).await.is_err() {
-                    return;
-                }
-            }
-            if jobs.locked().remove(&id).is_some() {
-                let _ = tx.send(ToDevice::Inner(json!({"id": id, "end": true}))).await;
-            }
-        });
-        list.insert(id, Job::Sub(task.abort_handle()));
-    }
-
     async fn cancel(&self, id: u64) {
         let job = self.jobs.locked().remove(&id);
         if let Some(Job::Sub(h)) = job {
@@ -540,82 +513,39 @@ impl Channel {
             self.send(json!({"id": id, "end": true})).await;
         }
     }
-
-    /// A pairing channel: exactly one `pair`, answered, then closed with `4100` (§4.1).
-    async fn pair(&mut self, incoming: &mut mpsc::Receiver<Value>, mut opener: Opener, source: &str) -> CloseWith {
-        let protocol = (close::PROTOCOL, "protocolError");
-        let deadline = Instant::now() + PAIRING_MAX_AGE;
-        let bytes = loop {
-            let msg = tokio::select! {
-                msg = incoming.recv() => msg,
-                () = sleep_until(deadline) => return (close::PAIRING_EXPIRED, "pairingExpired"),
-            };
-            let Some(msg) = msg else { return (close::NORMAL, "") };
-            match opener.open(&msg) {
-                Ok(Some(bytes)) => break bytes,
-                Ok(None) => {}
-                Err(e) => return frame_close(&e),
-            }
-        };
-        let Ok(v) = serde_json::from_slice::<Value>(&bytes) else { return protocol };
-        let Some(id) = v["id"].as_u64() else { return protocol };
-        if v["m"] != "pair" {
-            return protocol;
-        }
-        let b = &v["b"];
-        let name = b["name"].as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 100);
-        let platform = b["platform"].as_str().filter(|p| matches!(*p, "ios" | "macos"));
-        let (Some(name), Some(platform)) = (name, platform) else {
-            self.send(err(id, 400, "`name` and `platform` (ios or macos) are required")).await;
-            return protocol;
-        };
-        if !self.hub.pairing.locked().attempt(source) {
-            let code = RejectCode::RateLimited;
-            let _ =
-                self.tx.send(ToDevice::Plain(json!({"t": "reject", "code": code, "message": code.message()}))).await;
-            return (code.close_code(), "rateLimited");
-        }
-        if !self.hub.pairing.locked().redeem(b["code"].as_str().unwrap_or_default()) {
-            self.send(err(id, 403, "This pairing code expired. Show a new one on the computer.")).await;
-            return (close::UNAUTHORIZED, "unauthorized");
-        }
-        let device = Device {
-            key: self.key.clone(),
-            name: name.to_owned(),
-            platform: platform.to_owned(),
-            source: DeviceSource::Local,
-            grant_id: None,
-            scopes: vec![Scope::Control, Scope::Screen],
-            lease_until: None,
-            created_at: now_ms(),
-            last_seen_at: None,
-        };
-        if let Err(e) = self.hub.store.put_device(&device) {
-            tracing::error!(error = format!("{e:#}"), "couldn't save a paired device");
-            self.send(err(id, 500, "couldn't save this device")).await;
-            return (close::NORMAL, "");
-        }
-        tracing::info!(device = self.key, platform, "device paired");
-        let name = crate::service::host_name();
-        self.send(json!({"id": id, "ok": {"computerId": self.hub.identity.computer_id(), "name": name}})).await;
-        (close::PAIRED, "paired")
-    }
 }
 
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
+    mod accounts;
+    mod screen_signaling;
     use super::*;
     use crate::remote::identity::Identity;
     use crate::store::Store;
     use ed25519_dalek::SigningKey;
 
+    /// A computer in `user_1`'s account (on the Codync cloud), so phones of that account pair without asking.
     fn temp_hub() -> Arc<Hub> {
+        let hub = unowned_hub();
+        hub.store.kv_set("test_cloud_url", "https://dev-api.codync.dev").unwrap();
+        let owner = crate::remote::cloud::Owner { user_id: "user_1".into(), email: Some("kevin@example.com".into()) };
+        crate::remote::owner::remember(&hub, Some(&owner)).unwrap();
+        hub
+    }
+
+    fn unowned_hub() -> Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-ch-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(&dir.join("t.db")).unwrap();
         let identity = Identity::load_or_create(&dir).unwrap();
         Hub::new(store, "host".into(), identity, "token".into(), 0)
+    }
+
+    /// A `pair` body for `p`, signed in to `user`.
+    fn pair_body(p: &Phone, code: &str, name: &str, platform: &str, user: &str) -> Value {
+        json!({"code": code, "name": name, "platform": platform,
+               "certificate": crate::remote::certificate::test_certificate(&p.dk(), user)})
     }
 
     /// The device end of a channel, over in-memory pipes.
@@ -625,14 +555,16 @@ mod tests {
         rx: mpsc::Receiver<Out>,
         sealer: Option<Sealer>,
         opener: Option<Opener>,
+        /// The host's side of this channel.
+        run: tokio::task::JoinHandle<()>,
     }
 
     impl Phone {
         fn connect(hub: &Arc<Hub>, key: SigningKey, kind: ChannelKind) -> Self {
             let (tx, incoming) = mpsc::channel(64);
             let (outgoing, rx) = mpsc::channel(64);
-            tokio::spawn(run(hub.clone(), Transport { incoming, outgoing }, kind));
-            Self { key, tx, rx, sealer: None, opener: None }
+            let run = tokio::spawn(run(hub.clone(), Transport { incoming, outgoing }, kind));
+            Self { key, tx, rx, sealer: None, opener: None, run }
         }
 
         fn direct(hub: &Arc<Hub>, key: SigningKey) -> Self {
@@ -717,11 +649,35 @@ mod tests {
         let code = hub.pairing.locked().issue().code;
         let mut p = Phone::direct(hub, key.clone());
         assert!(matches!(p.hello(hub, true).await, Out::Msg(v) if v["t"] == "welcome"));
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Kevin's iPhone", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "Kevin's iPhone", "ios", "user_1")})).await;
         let reply = p.recv().await.unwrap();
         assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
         assert_eq!(p.recv().await.unwrap_err().0, close::PAIRED);
         key
+    }
+
+    #[tokio::test]
+    async fn android_pairing_preserves_authorization_and_one_time_code() {
+        let hub = temp_hub();
+        let key = SigningKey::from_bytes(&crypto::random());
+        let code = hub.pairing.locked().issue().code;
+        let mut phone = Phone::direct(&hub, key.clone());
+        assert!(matches!(phone.hello(&hub, true).await, Out::Msg(v) if v["t"] == "welcome"));
+        let reply = phone.call(1, "pair", pair_body(&phone, &code, "Android phone", "android", "user_1")).await;
+        assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
+        assert_eq!(phone.recv().await.unwrap_err().0, close::PAIRED);
+        let device = hub.store.device(&phone.dk()).unwrap();
+        assert_eq!(device.platform, "android");
+        assert_eq!(device.source, DeviceSource::Local);
+        assert_eq!(device.scopes, [Scope::Control, Scope::Screen]);
+        assert!(!hub.pairing.locked().open());
+
+        let mut connected = Phone::direct(&hub, key);
+        assert!(matches!(connected.hello(&hub, false).await, Out::Msg(v) if v["t"] == "welcome"));
+        let hello = connected.call(1, "hello", json!({})).await;
+        assert_eq!(hello["ok"]["computerId"], hub.identity.computer_id());
+        let refused = connected.call(2, "setScreenEnabled", json!({"enabled": true})).await;
+        assert_eq!(refused["err"]["status"], 403);
     }
 
     #[tokio::test]
@@ -798,12 +754,12 @@ mod tests {
 
         let mut p = Phone::direct(&hub, SigningKey::from_bytes(&crypto::random()));
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "A", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "A", "ios", "user_1")})).await;
         assert!(p.recv().await.unwrap()["ok"].is_object());
 
         let mut p = Phone::direct(&hub, SigningKey::from_bytes(&crypto::random()));
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "B", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "B", "ios", "user_1")})).await;
         assert_eq!(p.recv().await.unwrap()["err"]["status"], 403, "a used code doesn't work twice");
         assert_eq!(p.recv().await.unwrap_err().0, close::UNAUTHORIZED);
     }
@@ -823,7 +779,8 @@ mod tests {
         p.send(json!({"id": 3, "sub": "events", "b": {"since": hub.store.current_rev(), "client": "ios"}})).await;
         let hello = p.recv().await.unwrap();
         assert_eq!((hello["id"].as_u64(), hello["ev"]["type"].as_str()), (Some(3), Some("hello")));
-        assert!(hub.ios_connected());
+        assert_eq!(p.recv().await.unwrap()["ev"]["type"], "icons");
+        assert!(hub.phone_connected());
 
         assert!(hub.revoke_device(&dk).unwrap());
         let (code, reject) = p.recv().await.unwrap_err();
@@ -832,8 +789,25 @@ mod tests {
         assert!(hub.store.push_tickets().is_empty());
         assert_eq!(hub.store.activity_tickets("b1").len(), 0);
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!hub.ios_connected(), "the events subscription ended with the channel");
+        assert!(!hub.phone_connected(), "the events subscription ended with the channel");
         assert!(hub.connected.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_new_relay_address_makes_phones_reconnect_and_read_it() {
+        let hub = temp_hub();
+        let key = paired_phone(&hub).await;
+        let mut p = Phone::direct(&hub, key);
+        p.hello(&hub, false).await;
+        assert!(p.call(1, "hello", json!({})).await["ok"].is_object());
+        hub.store.kv_set("test_cloud_url", "https://relay.example.com").unwrap();
+        hub.cloud.config.send_modify(|g| *g += 1);
+        let (code, _) = p.recv().await.unwrap_err();
+        assert_eq!(code, close::REKEY, "a rekey close reconnects at once on every client");
+        let key = paired_phone(&hub).await;
+        let mut again = Phone::direct(&hub, key);
+        again.hello(&hub, false).await;
+        assert_eq!(again.call(1, "hello", json!({})).await["ok"]["cloud"], "https://relay.example.com");
     }
 
     #[tokio::test]
@@ -851,6 +825,7 @@ mod tests {
             lease_until: Some(now_ms() + 300),
             created_at: now_ms(),
             last_seen_at: None,
+            account: DeviceAccount::Unrecorded,
         };
         hub.store.put_device(&device).unwrap();
         let mut p = Phone::direct(&hub, key.clone());
@@ -900,6 +875,7 @@ mod tests {
         p.hello(&hub, false).await;
         p.send(json!({"id": 7, "sub": "events", "b": {"since": 0}})).await;
         assert_eq!(p.recv().await.unwrap()["ev"]["type"], "hello");
+        assert_eq!(p.recv().await.unwrap()["ev"]["type"], "icons");
         p.send(json!({"id": 7, "cancel": true})).await;
         assert_eq!(p.recv().await.unwrap(), json!({"id": 7, "end": true}));
         assert_eq!(p.call(8, "hello", json!({})).await["id"], 8, "the channel goes on");
@@ -917,7 +893,7 @@ mod tests {
         auth.mark_unchanged();
         let mut p = Phone::connect(&hub, key, ChannelKind::Relay { link: "p".into(), dk, pair: true });
         p.hello(&hub, true).await;
-        p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "A", "platform": "ios"}})).await;
+        p.send(json!({"id": 1, "m": "pair", "b": pair_body(&p, &code, "A", "ios", "user_1")})).await;
         auth.changed().await.unwrap();
         // The relay republishes the ACL on this change: the answer and 4100 must already be queued.
         let mut last = None;
@@ -925,5 +901,18 @@ mod tests {
             last = Some(out);
         }
         assert!(matches!(last, Some(Out::Close(close::PAIRED, _))), "got {last:?}");
+    }
+
+    #[tokio::test]
+    async fn a_device_that_stops_reading_ends_the_channel_cleanly() {
+        let hub = temp_hub();
+        let key = paired_phone(&hub).await;
+        let mut p = Phone::direct(&hub, key);
+        p.hello(&hub, false).await;
+        assert_eq!(p.call(1, "hello", json!({})).await["id"], 1);
+        // The transport is gone: the next answer can't be written, so the writer ends first.
+        p.rx.close();
+        p.send(json!({"id": 2, "m": "hello", "b": {}})).await;
+        timeout(Duration::from_secs(5), p.run).await.expect("the channel ends").expect("without a panic");
     }
 }

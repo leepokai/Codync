@@ -1,4 +1,12 @@
-/** Text belongs to a destination, independent of a mounted editor or transcript cache. */
+/** Drafts saved before 2.20.1 were keyed `["<bot>",null]`; a thread's (`["<bot>","<root>"]`) is dropped. */
+function chatOf(key: string): string | null {
+  let old: unknown
+  try { old = JSON.parse(key) } catch { return key }
+  if (!Array.isArray(old)) return key
+  return old.length === 2 && typeof old[0] === 'string' && old[1] === null ? old[0] : null
+}
+
+/** Text belongs to a chat, independent of a mounted editor or transcript cache. */
 export class ComposerDrafts {
   private values = new Map<string, string>()
   private listeners = new Set<() => void>()
@@ -17,7 +25,8 @@ export class ComposerDrafts {
       if (Array.isArray(saved)) {
         for (const row of saved) {
           if (Array.isArray(row) && row.length === 2 && typeof row[0] === 'string' && typeof row[1] === 'string') {
-            this.values.set(row[0], row[1])
+            const chat = chatOf(row[0])
+            if (chat) this.values.set(chat, row[1])
           }
         }
       }
@@ -29,23 +38,21 @@ export class ComposerDrafts {
     return () => { this.listeners.delete(listener) }
   }
 
-  get(bot: string, thread: string | null = null) {
-    return this.values.get(JSON.stringify([bot, thread])) ?? ''
+  get(bot: string) {
+    return this.values.get(bot) ?? ''
   }
 
-  set(bot: string, thread: string | null, text: string) {
+  set(bot: string, text: string) {
     if (this.retired) return
-    const destination = JSON.stringify([bot, thread])
-    if (text) this.values.set(destination, text)
-    else this.values.delete(destination)
+    if (text) this.values.set(bot, text)
+    else this.values.delete(bot)
     this.save()
   }
 
+  /** The chat's draft and its artifacts' (`artifactDraftKey`). */
   removeBot(bot: string) {
     if (this.retired) return
-    for (const key of this.values.keys()) {
-      try { if (JSON.parse(key)[0] === bot) this.values.delete(key) } catch { this.values.delete(key) }
-    }
+    for (const key of [...this.values.keys()]) if (key === bot || key.startsWith(`${bot}/`)) this.values.delete(key)
     this.save()
   }
 

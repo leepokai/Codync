@@ -1,0 +1,8 @@
+.handoff-line { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-callout); color: var(--secondary); min-width: 0; }
+.handoff-line span { overflow-wrap: anywhere; }
+.handoff-folded { max-width: 620px; }
+.handoff-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--radius-l); background: var(--bubble-agent); max-width: 560px; }
+.handoff-actions { display: flex; align-items: center; gap: 8px; }
+.handoff-text { margin: 0; font-size: var(--text-callout); color: var(--secondary); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; line-height: 1.45; }
+.handoff-carried { font-family: var(--mono, ui-monospace, monospace); max-height: 320px; overflow: auto; }
+.agent-switch-carried { font-size: var(--text-caption); padding: 10px 12px; border-radius: var(--radius-m); background: var(--bubble-agent); max-height: 320px; overflow: auto; }

@@ -1,0 +1,58 @@
+package com.codync.android.core
+
+/**
+ * Which side must update before this app and a host can work together
+ * (docs/reference/compatibility.md): each names the oldest version of the other it works with.
+ */
+sealed interface VersionMismatch {
+    /** This app is older than the host's `minApp`. */
+    data class UpdateApp(val minimum: String) : VersionMismatch
+    /** The host is older than `MIN_HOST`. */
+    data class UpdateHost(val version: String, val minimum: String) : VersionMismatch
+    /** The Codync cloud turned this app version away (`426`), saying why: an emergency floor. */
+    data class AppFloor(val reason: String) : VersionMismatch
+
+    companion object {
+        /** The oldest host this app works with; raise it only when a core flow needs something older hosts lack. */
+        const val MIN_HOST = "2.26.0"
+
+        /** An unknown version is never a reason to lock someone out. */
+        fun check(app: String, hostVersion: String?, minApp: String?, minHost: String = MIN_HOST): VersionMismatch? = when {
+            hostVersion == null -> null
+            minApp != null && AppVersion.isBelow(app, minApp) -> UpdateApp(minApp)
+            AppVersion.isBelow(hostVersion, minHost) -> UpdateHost(hostVersion, minHost)
+            else -> null
+        }
+    }
+}
+
+/**
+ * `Codync-App`, on every request to the Codync cloud and the relay upgrade: the cloud records it, moves a cloud
+ * computer to the host this app needs, and can answer `426 appUpdateRequired`. Its versions are bare x.y.z.
+ */
+fun appHeader(version: String): String = "android/${version.substringBefore('-')}; minHost=${VersionMismatch.MIN_HOST}"
+
+object AppVersion {
+    /** `2.9.0` < `2.14.1`, numerically, ignoring a `-dev` style suffix; unreadable versions compare as not below. */
+    fun isBelow(version: String, minimum: String): Boolean {
+        val have = parse(version) ?: return false
+        val need = parse(minimum) ?: return false
+        for (i in 0 until maxOf(have.size, need.size)) {
+            val a = have.getOrElse(i) { 0 }
+            val b = need.getOrElse(i) { 0 }
+            if (a != b) return a < b
+        }
+        return false
+    }
+
+    internal fun parse(version: String): List<Int>? = version.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }
+}
+
+/** A newer release of this app to remind about (iOS `UpdateReminder.app`): the store has one, and it wasn't dismissed. */
+object UpdateReminder {
+    fun app(current: String, store: String?, dismissed: String?): String? =
+        store?.takeIf { AppVersion.isBelow(current, it) && it != dismissed }
+
+    /** A Google Play version code as its version (`major * 1_000_000 + minor * 1_000 + patch`, app/build.gradle.kts). */
+    fun versionOf(code: Long): String = "${code / 1_000_000}.${code / 1_000 % 1_000}.${code % 1_000}"
+}

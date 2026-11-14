@@ -1,8 +1,12 @@
 import {
-  FINISHED_MS, focusOf, isActive, islandFrame, islandMode, islandRect, othersOf, transitions,
+  FINISHED_MS, focusOf, isActive, islandFrame, islandMode, islandRect, othersOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
 } from '@shared/island'
+import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
 import { Observable } from '../../lib/observable'
+import { pref } from '../../lib/prefs'
+import { Dictation } from '../thread/dictation'
+import { dictationPlatform } from '../thread/dictation-platform'
 
 /** The bare notch peeks at once and opens after a rest; the compact island opens sooner. */
 const OPEN_FROM_PEEK_MS = 650
@@ -11,6 +15,8 @@ const UNPEEK_MS = 600
 /** Opened by hover, it folds soon after the pointer leaves; opened by a click, after a countdown. */
 const LEAVE_MS = 800
 export const PINNED_LEAVE_MS = 10_000
+/** Set once the voice input shortcut has been used; until then the message field shows how. */
+const voiceShortcutUsed = pref('islandVoiceShortcutUsed', false)
 
 /** The island window's state: the chat window's summary, the pointer, the header's tab and what was put off. */
 export class IslandModel extends Observable {
@@ -23,6 +29,12 @@ export class IslandModel extends Observable {
   closing = false
   /** The bot the message field writes to. */
   messageRef: string | null = null
+  /** The message field's text. */
+  draft = ''
+  /** Talking into the message field (the field's mic, or the voice input shortcut). */
+  readonly dictation = new Dictation((change) => this.update(() => (this.draft = change(this.draft))), dictationPlatform())
+  /** The voice input shortcut, as Settings → General has it. */
+  shortcut: VoiceShortcut = 'off'
   /** The shape grew on its last change: open with a spring, close without one. */
   growing = true
   private peek = false
@@ -43,6 +55,7 @@ export class IslandModel extends Observable {
     island.onScreen((s) => this.update(() => (this.screen = s)))
     island.onHover((inside) => this.hover(inside))
     island.onKey((answer) => this.answerByKey(answer))
+    island.onVoiceKey((key) => this.voiceKey(key))
     window.addEventListener('blur', () => {
       if (this.tab === 'message') this.close()
     })
@@ -96,6 +109,12 @@ export class IslandModel extends Observable {
     return this.bot(this.messageRef) ?? this.focus
   }
 
+  /** How to talk from any app, under the message field until the shortcut is first used. */
+  get voiceTip() {
+    const key = VOICE_SHORTCUT_KEYS[this.shortcut]
+    return key && !voiceShortcutUsed.get() ? `Tip: double-tap ${key} to talk from any app, then tap it once to send.` : null
+  }
+
   /** A click on the closed island opens it and keeps it open. */
   openNow() {
     this.update(() => {
@@ -108,6 +127,7 @@ export class IslandModel extends Observable {
 
   /** The header's tabs. Bots puts the approvals on screen off until another arrives. */
   setTab(tab: IslandTab) {
+    if (stopsDictation(this.tab, tab, this.dictation.busy)) this.dictation.finish()
     this.update(() => {
       if (tab === 'bots') for (const p of this.summary.permissions) this.deferred.add(p.entryId)
       if (tab === 'message' && !this.messageRef) this.messageRef = this.focus?.ref ?? null
@@ -120,6 +140,7 @@ export class IslandModel extends Observable {
     if (tab === 'message') {
       this.keyboard = true
       window.codync.island.setFocusable(true)
+      this.readShortcut()
     }
     this.foldWhenAway()
   }
@@ -132,10 +153,14 @@ export class IslandModel extends Observable {
     this.update(() => (this.messageRef = bots[(at + 1) % bots.length]!.ref))
   }
 
-  send(text: string) {
+  setDraft(text: string) {
+    this.update(() => (this.draft = text))
+  }
+
+  send() {
     const bot = this.messageBot
-    if (!bot || !text.trim()) return
-    window.codync.island.send(bot.ref, text)
+    if (!bot || !this.draft.trim()) return
+    window.codync.island.send(bot.ref, this.draft)
     this.close()
   }
 
@@ -167,7 +192,9 @@ export class IslandModel extends Observable {
 
   close() {
     clearTimeout(this.hoverTimer)
+    this.dictation.cancel()
     this.update(() => {
+      this.draft = ''
       this.open = false
       this.pinned = false
       this.peek = false
@@ -176,6 +203,18 @@ export class IslandModel extends Observable {
     })
     if (this.keyboard) window.codync.island.setFocusable(false)
     this.keyboard = false
+  }
+
+  /** A double tap opens the message field and listens; the next tap sends what was said once the last words are in. */
+  private voiceKey(key: VoiceKey) {
+    if (!this.dictation.shortcutKey(key, () => this.send())) return
+    voiceShortcutUsed.set(true)
+    this.setTab('message')
+    if (this.messageBot) this.dictation.start(this.draft, true)
+  }
+
+  private readShortcut() {
+    void window.codync.speech.shortcut().then((shortcut) => this.update(() => (this.shortcut = shortcut)))
   }
 
   private answerByKey(answer: 'allow' | 'deny') {

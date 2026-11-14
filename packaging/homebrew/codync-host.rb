@@ -1,6 +1,6 @@
 # Homebrew formula template for the leepokai/homebrew-codync tap.
-# The `homebrew` job in .github/workflows/host.yml fills in the version and the four
-# sha256 values (in this order: mac arm, mac intel, linux arm, linux intel) on every `v*` tag.
+# tools/release-gate.py fills in the version and the four sha256 values (in this order: mac arm,
+# mac intel, linux arm, linux intel) of the release it marks latest.
 class CodyncHost < Formula
   desc "Host that runs coding agents (Claude Code, Codex, Cursor…) as Codync bots"
   homepage "https://www.codync.dev"

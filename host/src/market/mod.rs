@@ -7,16 +7,20 @@
 //! - **Apps** are connected through Composio and listed as `composio-*`
 //!   connectors; see `composio`.
 //! - **Skills** are instruction folders (a `SKILL.md` plus any files it uses),
-//!   from <https://github.com/anthropics/skills> or written by hand, kept in
+//!   from <https://github.com/anthropics/skills> or written in Codync (by the
+//!   user, or by a bot with `chat::skills`), kept in
 //!   `~/.codync/skills/<id>`. A bot that has one turned on is told where it is
 //!   and reads it when the task calls for it.
 //! - **Agents** come from the ACP registry; see `backends`.
 //!
 //! Registry and GitHub JSON is untrusted input: names become ids and paths, so
 //! they're reduced to a safe slug first. Secret values (API keys, tokens) stay
-//! on this computer; listings only say which keys are set.
+//! on this computer; listings only say which keys are set. On a Codync Cloud
+//! computer, remote connectors' secrets are its keeper's: see `connector_keeper`.
 
+pub mod agent_sign_in;
 pub mod composio;
+pub mod connector_update;
 pub mod logins;
 pub mod oauth;
 pub mod passwords;
@@ -24,17 +28,22 @@ pub mod requests;
 pub mod vault;
 pub mod verify;
 
+mod command_line;
+mod connector_keeper;
+mod custom;
 mod install;
 mod registry;
 mod skills;
 mod updates;
 
-pub use install::{add_custom_connector, import_connectors, install_connector, list_connectors, remove_connector};
+pub use custom::add_custom_connector;
+pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
-    skills_brief, slash_command, turn_on_installed_once,
+    skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
 };
+pub(crate) use skills::{body as skill_body, front_matter};
 
 pub use updates::{automatic_loop, refresh_connector};
 
@@ -52,6 +61,9 @@ const UA: &str = concat!("codync-host/", env!("CARGO_PKG_VERSION"));
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Registry search is slow (often 20-30 s); lookups by name are fast.
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The largest value a connector keeps in its environment or headers.
+pub const MAX_CREDENTIAL_BYTES: usize = 64 * 1024;
 
 // MARK: stored items
 
@@ -87,20 +99,16 @@ impl Connector {
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
     pub fn acp(&self, exe: &std::path::Path, port: u16) -> Option<Value> {
-        if self.command.is_some() {
-            return Some(
-                json!({"name":self.id,"command":exe,"args":["mcp","local","--connector",self.id,"--port",port.to_string()],"env":[]}),
-            );
-        }
-        self.url.as_ref()?;
-        if self.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
-            return None;
-        }
-        Some(json!({
-            "name": self.id, "command": exe,
-            "args": ["mcp", "remote", "--connector", self.id, "--port", port.to_string()],
-            "env": [],
-        }))
+        let kind = if self.command.is_some() {
+            "local"
+        } else {
+            self.url.as_ref()?;
+            if self.oauth.as_ref().is_some_and(|o| !o.signed_in()) {
+                return None;
+            }
+            "remote"
+        };
+        Some(crate::mcp::acp_server(&self.id, exe, &[kind, "--connector", &self.id], port))
     }
 
     /// What clients see: everything but the secret values.
@@ -122,6 +130,8 @@ impl Connector {
                 Some(o) if o.signed_in() => "signedIn",
                 Some(_) => "signedOut",
             },
+            // Set up with a token before Codync could sign in to it (GitHub): it can switch.
+            "canSignIn": self.oauth.is_none() && self.url.as_deref().is_some_and(oauth::offers_sign_in),
         })
     }
 }
@@ -136,6 +146,10 @@ pub struct Skill {
     /// "anthropics/skills" or "custom".
     #[serde(default)]
     pub source: String,
+    /// The bot that saved it (`chat::skills`): it's on only for that bot until the user turns it on for others,
+    /// and only that bot can rewrite it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_by: Option<String>,
 }
 
 impl Skill {
@@ -143,7 +157,7 @@ impl Skill {
         skills_dir().join(&self.id)
     }
 
-    fn public(&self) -> Value {
+    pub fn public(&self) -> Value {
         json!({"id": self.id, "name": self.name, "description": self.description, "source": self.source,
                "path": self.dir().join("SKILL.md").to_string_lossy()})
     }
@@ -171,12 +185,88 @@ fn load<T: for<'de> Deserialize<'de>>(store: &crate::store::Store, key: &str) ->
     store.kv_get(key).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
 }
 
+const CONNECTORS_SLOT: &str = "connectors";
+
 pub fn connectors(store: &crate::store::Store) -> Result<Vec<Connector>> {
-    vault::read(store, "connectors")?.map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
+    vault::read(store, CONNECTORS_SLOT)?
+        .map_or_else(|| Ok(Vec::new()), |s| serde_json::from_str(&s).map_err(Into::into))
 }
 
 pub fn skills(store: &crate::store::Store) -> Vec<Skill> {
     load(store, "skills")
+}
+
+/// Whether a connector or connected app was ever saved, answered without the vault.
+pub fn connectors_saved(store: &crate::store::Store) -> Result<bool> {
+    Ok(vault::saved(store, CONNECTORS_SLOT)? || vault::saved(store, composio::SLOT)?)
+}
+
+/// Everything a bot can turn on: installed connectors and connected apps.
+pub fn connector_ids(store: &crate::store::Store) -> Result<Vec<String>> {
+    Ok(list_connectors(store)?["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["id"].as_str().map(str::to_owned))
+        .collect())
+}
+
+/// The bots that have this connector turned on.
+pub fn bots_using(store: &crate::store::Store, id: &str) -> Result<Vec<crate::store::BotRow>> {
+    let mut bots = store.bots()?;
+    bots.retain(|row| !row.deleted && !row.config.is_group() && row.config.connectors.iter().any(|c| c == id));
+    Ok(bots)
+}
+
+/// What the computer installs for its bots.
+#[derive(Clone, Copy)]
+pub enum Installed {
+    Connectors,
+    Skills,
+}
+
+impl Installed {
+    /// What every bot gets: a skill a bot wrote stays with that bot.
+    pub fn ids(self, store: &crate::store::Store) -> Result<Vec<String>> {
+        match self {
+            Self::Connectors => connector_ids(store),
+            Self::Skills => Ok(skills(store).into_iter().filter(|s| s.written_by.is_none()).map(|s| s.id).collect()),
+        }
+    }
+}
+
+/// A connector or skill installed on the computer is on for every bot; each bot can turn it off.
+pub fn enable_new(hub: &crate::hub::Hub, kind: Installed, before: &[String]) -> Result<()> {
+    let new: Vec<String> = kind.ids(&hub.store)?.into_iter().filter(|id| !before.contains(id)).collect();
+    turn_on(hub, kind, &new, None)
+}
+
+/// Turns `ids` on for `bot`, or for every bot. One call at a time reads and writes the bots' lists, so two
+/// installs can't drop each other's ids; a bot that can't take the change (its folder is gone, say) is skipped.
+pub fn turn_on(hub: &crate::hub::Hub, kind: Installed, ids: &[String], bot: Option<&str>) -> Result<()> {
+    static TURN_ON: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let _guard = TURN_ON.locked();
+    for row in hub.store.bots()? {
+        if row.deleted || row.config.is_group() || bot.is_some_and(|b| b != row.config.id) {
+            continue;
+        }
+        let (key, mut on) = match kind {
+            Installed::Connectors => ("connectors", row.config.connectors),
+            Installed::Skills => ("skills", row.config.skills),
+        };
+        for id in ids {
+            if !on.contains(id) {
+                on.push(id.clone());
+            }
+        }
+        if let Err(e) = hub.update_bot(&json!({"id": row.config.id, key: on})) {
+            tracing::warn!(bot = %row.config.id, error = format!("{e:#}"), "couldn't turn on a new install");
+        }
+    }
+    Ok(())
 }
 
 fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Result<()> {
@@ -184,7 +274,12 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
 }
 
 pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
-    vault::write(store, "connectors", &serde_json::to_string(items)?)
+    if crate::remote::managed::is_managed(store) {
+        let mut items = items.to_vec();
+        connector_keeper::hand_over(store, &mut items)?;
+        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
+    }
+    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
 }
 
 /// Serialize read/modify/write so OAuth refreshes and installations cannot replace each other.
@@ -201,9 +296,16 @@ pub fn update_connectors<T>(
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {
     update_connectors(store, |all| {
+        if c.registry_name.is_none() {
+            // Recheck under the write lock: another install may have finished during OAuth discovery.
+            ensure_name_available(&c.name, all)?;
+        }
+        // A registry server is installed once: installing it again replaces it under the id the bots know.
         if let Some(name) = c.registry_name.as_deref()
-            && let Some(existing) = all.iter().find(|x| x.registry_name.as_deref() == Some(name))
+            && let Some(existing) = all.iter_mut().find(|x| x.registry_name.as_deref() == Some(name))
         {
+            c.id.clone_from(&existing.id);
+            *existing = c;
             return Ok(existing.public());
         }
         c.id = unique_id(&c.name, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>());
@@ -211,6 +313,17 @@ fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value>
         all.push(c);
         Ok(public)
     })
+}
+
+/// A custom connector can't take an installed connector's name. Names are compared as
+/// given, not as slugs: distinct names may share an id prefix.
+fn ensure_name_available(name: &str, all: &[Connector]) -> Result<()> {
+    if all.iter().any(|c| c.name == name) {
+        bail!(
+            "A connector named \"{name}\" is already installed. Sign in to it or remove it in your library, or choose another name."
+        );
+    }
+    Ok(())
 }
 
 fn unique_id(base: &str, taken: &[String]) -> String {
@@ -264,14 +377,91 @@ mod tests {
         let exe = std::path::Path::new("/bin/codync-host");
         let config = c.acp(exe, 1).unwrap();
         assert_eq!(config["args"][1], "local");
-        assert_eq!(config["env"], json!([]));
+        let only_data_dir = json!([{"name": "CODYNC_HOME", "value": crate::service::data_dir()}]);
+        assert_eq!(config["env"], only_data_dir, "never the connector's secrets");
         assert!(!config.to_string().contains("secret"));
         assert!(c.public().get("env").is_none(), "secrets never leave the host");
         c.command = None;
         c.url = Some("https://example.com/mcp".into());
-        assert_eq!(c.acp(exe, 1).unwrap()["args"][1], "remote", "remote servers go through the proxy");
+        let remote = c.acp(exe, 1).unwrap();
+        assert_eq!(remote["args"][1], "remote", "remote servers go through the proxy");
+        assert_eq!(remote["env"], only_data_dir);
+        assert_eq!(c.public()["canSignIn"], false, "only servers Codync has its own app for");
         c.oauth = Some(oauth::OAuth::default());
         assert!(c.acp(exe, 1).is_none(), "not signed in yet");
         assert_eq!(c.public()["auth"], "signedOut");
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.url = Some("https://api.githubcopilot.com/mcp/".into());
+        assert_eq!(c.public()["canSignIn"], false, "already signs in");
+        c.oauth = None;
+        assert_eq!(c.public()["canSignIn"], true, "set up with a token: can switch to signing in");
+    }
+
+    /// The credential store stays shut until something was saved, and a new bot still gets all of it after that.
+    #[tokio::test]
+    async fn a_new_bot_gets_what_the_computer_saved() {
+        let dir = std::env::temp_dir().join(format!("codync-new-bot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let app = json!({"id": "1", "toolkit": "slack", "name": "Slack", "status": "active"});
+        for (slot, saved, id) in [
+            (CONNECTORS_SLOT, json!([{"id": "linear", "name": "Linear", "url": "https://example.com/mcp"}]), "linear"),
+            (composio::SLOT, json!({"key": "k", "userId": "u", "connections": [app]}), "composio-slack"),
+        ] {
+            let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+            let hub = crate::hub::Hub::new(
+                store,
+                "test".into(),
+                crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+                "test".into(),
+                19222,
+            );
+            let new_bot = async || {
+                let asked = json!({"name": "n", "backend": "fixture", "command": "true", "cwd": dir});
+                crate::agent::new_bot::with_defaults(&hub, asked).await.expect("new bot").connectors
+            };
+            assert!(new_bot().await.is_empty(), "nothing saved yet");
+            vault::write(&hub.store, slot, &saved.to_string()).expect("save");
+            assert_eq!(new_bot().await, [id], "{slot}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn new_installs_turn_on_for_every_bot() {
+        let dir = std::env::temp_dir().join(format!("codync-connectors-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("memory store");
+        for (id, on) in [("a", json!([])), ("b", json!(["old"]))] {
+            let cfg: crate::store::BotConfig = serde_json::from_value(
+                json!({"id": id, "name": id, "backend": "fixture", "command": "true", "cwd": dir, "connectors": on, "notify": false}),
+            )
+            .expect("bot config");
+            store.save_bot(&cfg).expect("save bot");
+        }
+        let connector = |id: &str| -> Connector {
+            serde_json::from_value(json!({"id": id, "name": id, "url": "https://example.com/mcp"})).expect("connector")
+        };
+        save_connectors(&store, &[connector("old")]).expect("save");
+        let hub = crate::hub::Hub::new(
+            store,
+            "test".into(),
+            crate::remote::identity::Identity::load_or_create(&dir).expect("identity"),
+            "test".into(),
+            19222,
+        );
+        hub.start().expect("start");
+        let before = connector_ids(&hub.store).expect("ids");
+        save_connectors(&hub.store, &[connector("old"), connector("linear")]).expect("save");
+        enable_new(&hub, Installed::Connectors, &before).expect("enable");
+        let on = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.connectors;
+        assert_eq!(on("a"), ["linear"], "the new connector is on; one turned off stays off");
+        assert_eq!(on("b"), ["old", "linear"]);
+        let list = r#"[{"id":"pdf","name":"PDF"},{"id":"mine","name":"Mine","writtenBy":"a"}]"#;
+        hub.store.kv_set("skills", list).expect("install a skill");
+        enable_new(&hub, Installed::Skills, &[]).expect("enable");
+        let skills = |id: &str| hub.store.bot(id).expect("read").expect("bot").config.skills;
+        let pdf = vec!["pdf".to_owned()];
+        assert_eq!((skills("a"), skills("b")), (pdf.clone(), pdf), "new skills too, but not one a bot wrote");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

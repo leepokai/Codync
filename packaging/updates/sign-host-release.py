@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Create a signed manifest for one standalone host release archive, and a signed
-compat file (the iPhone app version the release needs) that updaters read before
-downloading anything (docs/reference/compatibility.md).
+"""Create a signed manifest for one standalone host release archive.
 
 HOST_UPDATE_SIGNING_KEY contains a base64 Ed25519 seed. Only the public key is
 committed. Requires cryptography (installed by the release workflow).
@@ -23,7 +21,12 @@ def main():
     parser.add_argument("archive", type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--platform", required=True, choices=["macos-arm64", "macos-x86_64", "linux-arm64", "linux-x86_64"])
+    # The channel the archive is served from (the dev channel: docs/guides/development.md#dev-release-channel);
+    # hosts take only manifests that point into their own channel.
+    parser.add_argument("--base", default="https://github.com/leepokai/Codync/releases")
     args = parser.parse_args()
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._-]+)*", args.base):
+        parser.error("base must be an https URL without a trailing slash")
     version = args.version.removeprefix("v")
     if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
         parser.error("version must be a stable major.minor.patch release")
@@ -39,21 +42,12 @@ def main():
     manifest = {
         "version": version,
         "platform": args.platform,
-        "url": f"https://github.com/leepokai/Codync/releases/download/v{version}/{name}",
+        "url": f"{args.base}/download/v{version}/{name}",
         "sha256": hashlib.sha256(archive).hexdigest(),
         "size": len(archive),
     }
     data = (json.dumps(manifest, indent=2) + "\n").encode()
     output = args.archive.with_name(f"codync-host-{args.platform}.update.json")
-    output.write_bytes(data)
-    output.with_suffix(output.suffix + ".sig").write_text(base64.b64encode(key.sign(data)).decode() + "\n")
-    print(f"Signed {output.name}")
-    source = Path(__file__).parents[2].joinpath("host/src/compat.rs").read_text()
-    min_app = re.search(r'pub const MIN_APP: &str = "([0-9]+\.[0-9]+\.[0-9]+)";', source)
-    if not min_app:
-        raise SystemExit("MIN_APP not found in host/src/compat.rs")
-    data = (json.dumps({"version": version, "minApp": min_app[1]}, indent=2) + "\n").encode()
-    output = args.archive.with_name(f"codync-host-{args.platform}.compat.json")
     output.write_bytes(data)
     output.with_suffix(output.suffix + ".sig").write_text(base64.b64encode(key.sign(data)).decode() + "\n")
     print(f"Signed {output.name}")

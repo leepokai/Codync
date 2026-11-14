@@ -26,7 +26,7 @@ We close these without a reply:
 - **"A paired device can run commands on the host."** This covers it through bot launch commands, agent prompts, permission modes, working folders, the screen, or any other route. See the trust model.
 - Attacks that require a compromised computer, a compromised paired device, or physical access to an unlocked one.
 - What a coding agent does when you prompt it, including prompt injection into an agent you chose to run. Report those to the agent's vendor.
-- Self-hosted or third-party relay deployments you configured yourself.
+- Self-hosted or third-party relay deployments you configured yourself: how you set up and run the server. Vulnerabilities in the code itself, including the [private relay](private-relay/README.md) in this repository, are in scope.
 - Missing hardening with no exploit: headers, rate limits beyond those documented, dependency versions with no reachable vulnerable path, and so on.
 - Findings from scanners or AI tools that you did not reproduce yourself.
 

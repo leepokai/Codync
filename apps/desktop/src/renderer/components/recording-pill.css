@@ -1,0 +1,26 @@
+/* Dictation in progress: a quiet pill with stop, the time and the level dots. */
+.recording-pill {
+  flex: none;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px 0 4px;
+  border-radius: 14px;
+  background: rgba(var(--text-rgb), 0.08);
+  font-size: var(--text-body);
+  animation: fade-in var(--fade) both;
+}
+.recording-pill.transcribing {
+  padding-left: 10px;
+}
+.recording-stop {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  transition: background-color var(--hover);
+}
+.recording-stop:hover {
+  background: rgba(var(--text-rgb), 0.1);
+}

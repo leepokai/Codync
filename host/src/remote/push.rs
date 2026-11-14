@@ -107,7 +107,7 @@ fn faces(hub: &Hub, bot: &BotConfig, from: Option<&str>) -> Vec<Value> {
 /// `bot` is the chat the alert opens; `from` is the member bot speaking when that chat is a group.
 pub fn notify(hub: &Hub, bot: &BotConfig, from: Option<&str>, title: &str, body: &str, kind: AlertKind) {
     purge_dead_tickets(hub);
-    if bot.notify == Some(false) || bot.hidden || hub.ios_connected() {
+    if bot.notify == Some(false) || bot.hidden || hub.phone_connected() {
         return;
     }
     if throttled((bot.id.clone(), kind), Duration::from_secs(5)) {

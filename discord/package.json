@@ -8,7 +8,7 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "typecheck": "tsc",
-    "test": "node --experimental-strip-types --no-warnings test/claim.test.ts"
+    "test": "node --experimental-strip-types --no-warnings test/claim.test.ts && node --experimental-strip-types --no-warnings test/issues.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261006.1",

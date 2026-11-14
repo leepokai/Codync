@@ -12,11 +12,13 @@ public struct CharacterAvatar: View {
     let size: CGFloat
     let mood: Mood
     let still: Bool
+    var customIcon: CustomIcon?
 
     /// `still` draws one frame of the mood (widgets and Live Activities render one frame);
     /// a change of mood then moves the halftone highlight and the eyes, animatable dot by dot.
-    public init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
+    public init(shape: String, color: String, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false, customIcon: CustomIcon? = nil) {
         self.init(shape: shape, tint: AvatarPalette.color(color), size: size, mood: mood, still: still)
+        self.customIcon = customIcon
     }
 
     public init(shape: String, tint: Color, size: CGFloat = 40, mood: Mood = .idle, still: Bool = false) {
@@ -34,15 +36,23 @@ public struct CharacterAvatar: View {
             size: size,
             mood: animated ? bot.mood : .idle
         )
+        customIcon = bot.customIcon
     }
 
     /// The bot's current mood, drawn as one frame.
     public init(bot: Bot, size: CGFloat = 40, still: Bool) {
         self.init(shape: bot.avatarShape, color: bot.avatarColor, size: size, mood: bot.mood, still: still)
+        customIcon = bot.customIcon
     }
 
     public var body: some View {
-        DottedBody(shape: shape, color: color, size: size, mood: mood, paused: still)
+        Group {
+            if let customIcon, customIcon.image != nil {
+                CustomIconView(icon: customIcon, size: size, tint: color)
+            } else {
+                DottedBody(shape: shape, color: color, size: size, mood: mood, paused: still || customIcon != nil)
+            }
+        }
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -52,13 +62,13 @@ public extension Bot {
     var mood: CharacterAvatar.Mood { needsInput ? .needsInput : isWorking ? .working : .idle }
 }
 
-/// Keep the halftone at every size. Small icons use fewer, larger dots so the
+/// Keep the halftone at every size: 9 × 9 large dots from 18 pt up. Tiny icons use 7 × 7 so the
 /// gaps and hollow eyes survive rasterization in widgets and the Dynamic Island.
 struct DotGrid {
     let cells: Int
-    init(size: CGFloat) { cells = size < 18 ? 7 : size < 28 ? 9 : 13 }
-    var eyeColumns: [Int] { cells == 7 ? [2, 4] : cells == 9 ? [3, 6] : [4, 8] }
-    var eyeRows: [Int] { cells == 13 ? [4, 5, 6] : cells == 9 ? [3, 4] : [2, 3] }
+    init(size: CGFloat) { cells = size < 18 ? 7 : 9 }
+    var eyeColumns: [Int] { cells == 7 ? [2, 4] : [3, 6] }
+    var eyeRows: [Int] { cells == 7 ? [2, 3] : [3, 4] }
 }
 
 struct DottedBody: View {
@@ -168,8 +178,8 @@ struct DottedBody: View {
                 shade *= 0.6 + 0.4 * ripple
             }
             return Ink(dot: d,
-                       radius: step * 0.42 * (0.55 + 0.45 * shade),
-                       ink: grid.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * min(1, shade / 0.7),
+                       radius: step * 0.4 * (0.7 + 0.3 * shade),
+                       ink: 0.4 + 0.4 * shade,
                        tint: shade > 0.6 ? (shade - 0.6) / 0.4 : 0,
                        eye: eyeCols.contains(d.col) && eyeRows.contains(d.row))
         }
@@ -293,7 +303,7 @@ public struct GroupAvatar: View {
                 if members.count == 4 {
                     place(members[3], size * 0.5, .bottomTrailing)
                 } else {
-                    Text("+\(members.count - 3)")
+                    Text(L10n.tr("+\(members.count - 3)"))
                         .font(.system(size: size * 0.24, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(width: size * 0.5, height: size * 0.5)
@@ -311,6 +321,29 @@ public struct GroupAvatar: View {
     }
 }
 
+/// A bot's character, or a group's `members` (Android `BotAvatar`).
+public struct BotAvatar: View {
+    let bot: Bot
+    let members: [Bot]
+    let size: CGFloat
+    let animated: Bool
+
+    public init(bot: Bot, members: [Bot] = [], size: CGFloat = 44, animated: Bool = true) {
+        self.bot = bot
+        self.members = members
+        self.size = size
+        self.animated = animated
+    }
+
+    public var body: some View {
+        if bot.isGroup && bot.customIcon == nil {
+            GroupAvatar(members: members, size: size, animated: animated)
+        } else {
+            CharacterAvatar(bot: bot, size: size, animated: animated)
+        }
+    }
+}
+
 /// Avatar with the roster status dot: lime = unread, orange = needs you.
 /// A group shows its `members`.
 public struct AvatarWithStatus: View {
@@ -325,10 +358,8 @@ public struct AvatarWithStatus: View {
     }
 
     public var body: some View {
-        Group {
-            if bot.isGroup { GroupAvatar(members: members, size: size) } else { CharacterAvatar(bot: bot, size: size) }
-        }
-            .overlay(alignment: .bottomTrailing) {
+        BotAvatar(bot: bot, members: members, size: size)
+            .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
                 if bot.needsInput {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
@@ -342,6 +373,9 @@ public struct AvatarWithStatus: View {
                         .frame(width: size * 0.28, height: size * 0.28)
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if bot.lead { LeadAgentBadge(size: max(12, size * 0.34)) }
             }
     }
 }

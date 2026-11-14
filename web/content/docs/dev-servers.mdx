@@ -1,0 +1,62 @@
+A bot can leave a program running on your computer: a dev server for the site it's building, or a watch build. Codync runs these programs itself, so they keep running when the bot's agent stops or restarts, and you can see them and stop them from any of your devices.
+
+## Start one
+
+Ask the bot, in its chat:
+
+> Run this site so I can look at it.
+
+The bot starts it with Codync's built-in dev server tool. You get an approval card with the command and folder first, unless the bot's **Permissions** are set to **Approve automatically**. The bot's reply has the address.
+
+A dev server runs on your computer, as you, with your files and network. It isn't isolated from anything else on your computer.
+
+## See what's running
+
+A running server's port shows at the top of the bot's chat: `:5173`, or `:5173 +1` when there's another one. A program that doesn't listen on a port, like a watch build, shows its name instead. The same spot says when a server is starting, or when one failed to start.
+
+- **Desktop:** next to the bot's name.
+- **iPhone and Android:** under the bot's name, after the connection (`Connected · :5173`).
+- **Terminal UI:** on the right of the chat's header.
+
+For the list, open the bot's details:
+
+- **iPhone and Android:** tap the bot's name at the top of the chat. **Dev servers** is first on the page.
+- **Desktop:** click the bot's name at the top of the chat. **Dev servers** is first on the **Details** tab.
+- **Terminal UI:** click the port, or type `/servers`.
+
+## Open, stop and restart
+
+- **Desktop:** click a row to open that server in your browser. The **⋯** next to it has the rest: copy its address, read its logs, restart it, stop it. **⋯** shows when you hover over the row.
+- **iPhone and Android:** tap a row to open that server, when your phone can reach it. The **⋯** next to it has the rest.
+- **Terminal UI:** in the list, Enter opens the selected server, `c` copies its address, `l` shows its logs (`r` refreshes them there), `r` restarts it, `s` stops it and `x` removes it. The line at the bottom lists only the keys that apply to it.
+
+A row with no port to open, like a watch build or a server that failed, shows its logs instead. A failed server's logs also show its exit code.
+
+A stopped server stays in the list so you can start it again with the same command, until you remove it. Starting a server from the apps only ever re-runs what a bot started; only a bot can start a new one.
+
+A server's command and logs show in your apps, on all your devices. Keep secrets in your project's env files, not in the command.
+
+## Open one from your phone
+
+Most dev servers listen only on the computer they run on, so a phone can't reach them, and the menu says **Only reachable on the computer**. To open one from your phone, ask the bot to run it on all interfaces (for Vite, `npm run dev -- --host`). Your phone must be able to reach your computer directly, on the same Wi-Fi or over Tailscale.
+
+A tap opens the first address your computer has. If that one doesn't load (it's a Tailscale address and this device isn't on Tailscale), the **⋯** menu lists every address to try. The desktop app does the same for a computer attached over SSH, and the terminal UI shows them all.
+
+On all interfaces, anyone who can reach your computer on that network can open the server, and most dev servers have no sign-in. On shared Wi-Fi or a machine with a public address, that means strangers. Stay on Tailscale there, with a firewall that keeps the port closed elsewhere, or keep the default and open the server on the computer.
+
+## When they stop
+
+| What happens | The dev server |
+|---|---|
+| The bot's agent stops when idle, or restarts | Keeps running |
+| You start a new conversation, or a routine finishes | Keeps running |
+| You or the bot stops it | Stops, with everything it started |
+| Codync updates or restarts | Starts again by itself |
+| Your computer restarts | Stays stopped until you start it |
+| You delete the bot | Stops and is removed |
+
+There's no time limit, so a server you forget keeps running until you stop it. A bot can run at most 5 at once.
+
+## Servers a bot started by itself
+
+Sometimes a bot starts a server through its own shell instead. Codync shows it in the list too, but it stops when the bot's agent stops, and while it runs the agent stays running as well. If you want it to last, ask the bot to run it as a dev server.

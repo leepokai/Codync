@@ -21,6 +21,7 @@ final class ScreenHelper {
             lastStatus = [:]
             sendStatus()
         }
+        link.onDisconnect = { [unowned self] in closeAll() }
         badge.onDisconnect = { [unowned self] in closeAll() }
     }
 
@@ -62,7 +63,7 @@ final class ScreenHelper {
             }
             let s = Session(id: id, display: display(p["display"]), helper: self, iceServers: iceServers,
                             maxBitrate: min(16_000_000, max(100_000, p["maxBitrateBps"] as? Int ?? 16_000_000)),
-                            maxFramerate: min(60, max(1, p["maxFramerate"] as? Int ?? 60)))
+                            maxFramerate: min(60, max(1, p["maxFramerate"] as? Int ?? 60)), trickle: p["trickle"] as? Bool ?? false)
             sessions[id] = s
             do {
                 let answer = try await s.answer(offer: sdp)
@@ -73,6 +74,12 @@ final class ScreenHelper {
                 s.close()
                 throw error
             }
+        case "candidate":
+            guard let id = p["session"] as? String, let session = sessions[id],
+                  let candidate = p["candidate"] as? [String: Any]
+            else { throw HelperError("unknown screen session") }
+            try await session.candidate(candidate)
+            return [String: Any]()
         case "close":
             if let id = p["session"] as? String, let s = sessions.removeValue(forKey: id) {
                 s.close()
@@ -92,6 +99,16 @@ final class ScreenHelper {
         default:
             throw HelperError("unknown method \(method)")
         }
+    }
+
+    func candidate(session: String, candidate: [String: Any]) {
+        guard sessions[session] != nil else { return }
+        link.notify("candidate", ["session": session, "candidate": candidate])
+    }
+
+    func sessionConnected(_ session: Session) {
+        guard sessions[session.id] === session else { return }
+        link.notify("session", ["session": session.id, "state": "connected"])
     }
 
     func sessionEnded(_ id: String) {
@@ -143,6 +160,7 @@ final class ScreenHelper {
             "permissionApp": Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Codync Screen",
             "displays": displays,
             "capture": CGPreflightScreenCaptureAccess(),
+            "trickle": true,
             "input": AXIsProcessTrusted(),
         ]
         guard status != lastStatus, link.isConnected else { return }

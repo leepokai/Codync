@@ -1,11 +1,12 @@
-//! Phones viewing the screen: prepared WebRTC sessions, offers, takeover and the on/off switch.
+//! Viewers of the screen (phones, the desktop app): prepared WebRTC sessions, offers, takeover and the on/off switch.
 
-use super::{Control, KV_ENABLED, Screen, Viewer};
+use super::{Control, EndedViewer, KV_ENABLED, Screen, Viewer, ViewerState};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,18 +35,32 @@ impl Default for IceConfig {
 
 impl Screen {
     /// Reserve one session before the phone gathers ICE; the host keeps the exact configuration.
-    pub fn prepare(&self, owner: &str, ice: IceConfig) -> Result<Value> {
-        self.link()?;
-        let mut sessions = self.sessions.locked();
-        let now = crate::store::now_ms();
-        sessions.retain(|_, v| v.started || v.pending_until > now);
-        if sessions.len() >= 32 || sessions.values().filter(|v| v.owner == owner).count() >= 4 {
-            bail!("too many screen sessions; close another screen and try again");
-        }
-        let session = uuid::Uuid::new_v4().to_string();
-        let result = json!({"session": session, "iceServers": ice.ice_servers, "expiresAt": ice.expires_at});
-        sessions.insert(session, Viewer { owner: owner.to_owned(), ice, started: false, pending_until: now + 60_000 });
-        Ok(result)
+    pub fn prepare(&self, owner: &str, ice: IceConfig, trickle: bool) -> Result<Value> {
+        self.with_link(|link| {
+            let trickle = trickle && self.status.locked().trickle;
+            let mut sessions = self.sessions.locked();
+            let now = crate::store::now_ms();
+            // Started/failed viewers stay registered until their watcher closes the helper.
+            self.end_viewers(&mut sessions, |_, v| v.state == ViewerState::Prepared && v.pending_until <= now);
+            if sessions.len() >= 32 || sessions.values().filter(|v| v.owner == owner).count() >= 4 {
+                bail!("too many screen sessions; close another screen and try again");
+            }
+            let session = uuid::Uuid::new_v4().to_string();
+            let result = json!({"session": session, "iceServers": ice.ice_servers, "expiresAt": ice.expires_at, "trickle": trickle});
+            sessions.insert(
+                session,
+                Viewer {
+                    owner: owner.to_owned(),
+                    ice,
+                    state: ViewerState::Prepared,
+                    opened_at: now,
+                    pending_until: now + 60_000,
+                    link_id: link.id,
+                    signaling: trickle.then(super::signaling::Signaling::new),
+                },
+            );
+            Ok(result)
+        })
     }
 
     pub fn owns_session(&self, session: &str, owner: &str) -> bool {
@@ -58,21 +73,28 @@ impl Screen {
         if !self.status.locked().capture {
             bail!("Codync isn't allowed to record this computer's screen yet. Allow it in System Settings there.");
         }
-        let ice = {
-            let sessions = self.sessions.locked();
-            let viewer = sessions.get(session).filter(|v| v.owner == owner).context("unknown screen session")?;
+        let (ice, trickle) = {
+            let mut sessions = self.sessions.locked();
+            let viewer = sessions.get_mut(session).filter(|v| v.owner == owner).context("unknown screen session")?;
             let now = crate::store::now_ms();
-            if viewer.ice.expires_at <= now || (!viewer.started && viewer.pending_until <= now) {
+            if viewer.expired(now) {
                 bail!("screen connection expired; reconnect to continue");
             }
-            viewer.ice.clone()
+            if viewer.link_id != link.id {
+                bail!("screen helper changed; reconnect");
+            }
+            let trickle = viewer.signaling.is_some();
+            if let Some(signaling) = &mut viewer.signaling {
+                signaling.begin_offer()?;
+            }
+            (viewer.ice.clone(), trickle)
         };
         let remote = !ice.ice_servers.is_empty();
         let res = link
             .request(
                 "answer",
                 json!({
-                    "session": session, "sdp": sdp, "display": display, "iceServers": ice.ice_servers,
+                    "session": session, "sdp": sdp, "trickle": trickle, "display": display, "iceServers": ice.ice_servers,
                     "maxBitrateBps": if remote { 4_000_000 } else { 16_000_000 },
                     "maxFramerate": if remote { 30 } else { 60 },
                 }),
@@ -83,7 +105,7 @@ impl Screen {
             Err(error) => {
                 // A helper can finish after the RPC times out. Keep retrying close until it acknowledges.
                 if let Some(viewer) = self.sessions.locked().get_mut(session) {
-                    viewer.ice.expires_at = 0;
+                    viewer.state = ViewerState::Failed;
                 }
                 if let Err(close_error) = self.close(session).await {
                     tracing::warn!(error = format!("{close_error:#}"), "couldn't close failed screen session");
@@ -95,7 +117,12 @@ impl Screen {
         let accepted = {
             let mut sessions = self.sessions.locked();
             if let Some(viewer) = sessions.get_mut(session) {
-                viewer.started = true;
+                if let Some(signaling) = &mut viewer.signaling {
+                    signaling.answered()?;
+                }
+                if viewer.state == ViewerState::Prepared {
+                    viewer.state = ViewerState::Started;
+                }
                 true
             } else {
                 false
@@ -110,6 +137,7 @@ impl Screen {
     }
 
     pub async fn close(&self, session: &str) -> Result<()> {
+        self.fail_signaling(session, "screen session closed");
         let link = self.link.locked().clone();
         if let Some(link) = link {
             link.request("close", json!({"session": session})).await?;
@@ -119,22 +147,59 @@ impl Screen {
     }
 
     pub(super) fn session_closed(&self, session: &str) {
-        let removed = {
-            let mut sessions = self.sessions.locked();
-            let removed = sessions.remove(session).is_some();
-            if sessions.is_empty() {
-                // Nobody is watching: hand control back to the bots.
-                self.control.locked().user = false;
-            }
-            removed
-        };
-        if removed {
+        if self.remove_session(session) {
             self.emit();
         }
     }
 
-    pub fn takeover(&self, on: bool) {
-        self.control.locked().user = on;
+    #[cfg(any(unix, test))]
+    pub(super) fn session_connected(&self, session: &str) {
+        if let Some(viewer) = self.sessions.locked().get_mut(session)
+            && viewer.state != ViewerState::Failed
+        {
+            viewer.state = ViewerState::Connected;
+        }
+    }
+
+    pub(super) fn remove_session(&self, session: &str) -> bool {
+        let mut sessions = self.sessions.locked();
+        let removed = self.end_viewers(&mut sessions, |id, _| id == session);
+        // The device that took over has gone (another may still be watching, view only): control goes back to the bots.
+        let mut control = self.control.locked();
+        if control.user.as_ref().is_some_and(|owner| !sessions.values().any(|v| &v.owner == owner)) {
+            control.user = None;
+        }
+        removed
+    }
+
+    /// Removes the viewers `ends` picks; every removal goes through here, so each one's watcher reports how it ended.
+    /// Whether any was removed.
+    pub(super) fn end_viewers(
+        &self,
+        sessions: &mut HashMap<String, Viewer>,
+        ends: impl Fn(&str, &Viewer) -> bool,
+    ) -> bool {
+        let now = crate::store::now_ms();
+        let mut ended = self.ended.locked();
+        let before = sessions.len();
+        sessions.retain(|id, viewer| {
+            let end = ends(id, viewer);
+            if end {
+                ended.insert(id.clone(), viewer.ended(now));
+            }
+            !end
+        });
+        sessions.len() < before
+    }
+
+    /// How `session` ended, once (`watch_viewer` reports it).
+    fn take_ended(&self, session: &str) -> Option<EndedViewer> {
+        self.ended.locked().remove(session)
+    }
+
+    /// `owner` (a device key) takes the screen from the bots, or hands it back.
+    pub fn takeover(&self, owner: &str, on: bool) {
+        self.control.locked().user = on.then(|| owner.to_owned());
         self.emit();
     }
 
@@ -152,7 +217,7 @@ impl Screen {
             {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close screen sessions");
             }
-            self.sessions.locked().clear();
+            self.end_viewers(&mut self.sessions.locked(), |_, _| true);
             *self.control.locked() = Control::default();
         }
         self.emit();
@@ -166,20 +231,20 @@ pub async fn watch_viewer(hub: Arc<Hub>, session: String, owner: String) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let expired = {
             let sessions = hub.screen.sessions.locked();
-            let Some(viewer) = sessions.get(&session) else { return };
+            let Some(viewer) = sessions.get(&session) else { break };
             let now = crate::store::now_ms();
-            viewer.ice.expires_at <= now || (!viewer.started && viewer.pending_until <= now)
+            viewer.expired(now)
         };
-        let authorized = owner == "local"
-            || crate::api::devices::authorize(&hub, &owner)
-                .is_ok_and(|d| d.scopes.contains(&crate::store::Scope::Screen));
-        if expired || !authorized || !hub.screen.enabled() {
+        if expired || !crate::api::devices::may_view_screen(&hub, &owner) || !hub.screen.enabled() {
             if let Err(error) = hub.screen.close(&session).await {
                 tracing::warn!(error = format!("{error:#}"), "couldn't close expired screen session");
                 continue;
             }
-            return;
+            break;
         }
+    }
+    if let Some(ended) = hub.screen.take_ended(&session) {
+        crate::analytics::remote_screen_finished(&hub, &owner, &ended);
     }
 }
 
@@ -190,6 +255,23 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicI64;
     use tokio::sync::{broadcast, mpsc};
+
+    #[test]
+    fn an_ended_session_is_reported_once_with_how_far_it_got() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let (tx, _) = mpsc::unbounded_channel();
+        *screen.link.locked() =
+            Some(Arc::new(Link { id: 1, tx, pending: Mutex::default(), next_id: AtomicI64::new(1) }));
+        let id = screen.prepare("phone", IceConfig::default(), false).unwrap()["session"].as_str().unwrap().to_owned();
+        screen.sessions.locked().get_mut(&id).unwrap().state = ViewerState::Connected;
+        assert!(screen.remove_session(&id));
+        let ended = screen.take_ended(&id).unwrap();
+        assert_eq!(ended.outcome, "connected");
+        assert!(!ended.relay, "no TURN servers were handed out");
+        assert!(screen.take_ended(&id).is_none(), "reported once");
+        assert!(!screen.remove_session(&id));
+    }
 
     #[test]
     fn prepared_sessions_are_bounded_and_do_not_count_as_viewers() {
@@ -206,7 +288,7 @@ mod tests {
             }],
             ..IceConfig::default()
         };
-        let prepared = screen.prepare("phone", config).unwrap();
+        let prepared = screen.prepare("phone", config, false).unwrap();
         let id = prepared["session"].as_str().unwrap();
         assert!(screen.owns_session(id, "phone"));
         assert!(!screen.owns_session(id, "other"));
@@ -214,14 +296,50 @@ mod tests {
         assert_eq!(screen.state()["viewers"], 0);
         assert!(!screen.state().to_string().contains("secret"));
         for _ in 0..3 {
-            screen.prepare("phone", IceConfig::default()).unwrap();
+            screen.prepare("phone", IceConfig::default(), false).unwrap();
         }
-        assert!(screen.prepare("phone", IceConfig::default()).is_err());
+        assert!(screen.prepare("phone", IceConfig::default(), false).is_err());
         for viewer in screen.sessions.locked().values_mut() {
             viewer.pending_until = 0;
         }
-        assert!(screen.prepare("phone", IceConfig::default()).is_ok());
+        assert!(screen.prepare("phone", IceConfig::default(), false).is_ok());
+        let live = screen.prepare("watching", IceConfig::default(), false).unwrap();
+        let live_id = live["session"].as_str().unwrap();
+        {
+            let mut sessions = screen.sessions.locked();
+            let viewer = sessions.get_mut(live_id).unwrap();
+            viewer.state = ViewerState::Started;
+            viewer.ice.expires_at = 0;
+        }
+        screen.prepare("another", IceConfig::default(), false).unwrap();
+        assert!(
+            screen.owns_session(live_id, "watching"),
+            "credential expiry must still close the helper through the viewer watcher"
+        );
         *screen.enabled.locked() = Some(false);
-        assert!(screen.prepare("phone", IceConfig::default()).is_err());
+        assert!(screen.prepare("phone", IceConfig::default(), false).is_err());
+    }
+
+    #[test]
+    fn control_goes_back_to_the_bots_when_the_device_that_took_over_leaves() {
+        let (tx, _) = broadcast::channel(8);
+        let screen = Screen::new(Some(true), tx);
+        let (tx, _) = mpsc::unbounded_channel();
+        *screen.link.locked() =
+            Some(Arc::new(Link { id: 1, tx, pending: Mutex::default(), next_id: AtomicI64::new(1) }));
+        let session = |owner: &str| {
+            screen.prepare(owner, IceConfig::default(), false).unwrap()["session"].as_str().unwrap().to_owned()
+        };
+        let watching = session("desktop");
+        let phone = session("phone");
+        screen.takeover("phone", true);
+        assert!(screen.remove_session(&phone));
+        assert_eq!(screen.state()["userControl"], false, "a view-only picture elsewhere keeps no takeover alive");
+        screen.takeover("desktop", true);
+        let again = session("desktop");
+        assert!(screen.remove_session(&watching));
+        assert_eq!(screen.state()["userControl"], true, "its other session still has the screen");
+        assert!(screen.remove_session(&again));
+        assert_eq!(screen.state()["userControl"], false);
     }
 }

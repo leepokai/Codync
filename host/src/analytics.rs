@@ -4,20 +4,40 @@
 //! What is collected and why: docs/features/analytics.md.
 
 use crate::LockExt as _;
-use crate::api::devices::Caller;
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::Result;
-use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, oneshot};
 
 pub mod errors;
+mod event;
+mod lifecycle;
+mod observe;
+pub mod reported;
+mod session;
+mod turns;
+
+pub use event::Event;
+pub use lifecycle::{
+    DiscoveryStage, KV_STARTED, KeeperState, PairedAccount, SleepOutcome, Via, cloud_keeper_checked, cloud_sleep_asked,
+    device_paired, discovery_failed, host_started, join_from_phone_answered, phone_connected, remote_screen_finished,
+};
+pub use observe::{answered, failed, observe_call};
+pub use reported::track;
+pub use turns::{
+    Carried, Retired, Steer, TurnOutcome, TurnSource, agent_fell_back, agent_retired, context_compacted,
+    handoff_carried, message_steered, turn_finished,
+};
 
 const KV_ENABLED: &str = "analytics_enabled";
-/// The account the install id was last merged into (one `$identify` per account).
+/// Set to `dev` on test machines (`CODYNC_ANALYTICS_ENV=dev`): their events say `env: dev`, outside every chart.
+const KV_ENV: &str = "analytics_env";
+/// The account the install id was merged into. An id merges into one account and a second is
+/// refused, so a later account on this computer starts its own profile.
 const KV_IDENTIFIED: &str = "analytics_identified";
 /// Write-only project token: safe to ship in public builds.
 const TOKEN: &str = "phc_rQHvxdSFKnMquPfMjmiMhXhM4tqJ5qCYsWuVEoFxCCWX";
@@ -26,71 +46,40 @@ const FLUSH_EVERY: Duration = Duration::from_secs(30);
 /// Unsent events kept while offline; the oldest go first.
 const MAX_PENDING: usize = 500;
 
-/// Everything the host reports. Names follow the `object_verb` convention.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Event {
-    AppOpened,
-    OnboardingCompleted,
-    SignedIn,
-    SignedOut,
-    BotCreated,
-    BotUpdated,
-    BotsReordered,
-    BotDeleted,
-    MessageSent,
-    TurnStopped,
-    TurnFinished,
-    SessionReset,
-    PermissionAnswered,
-    RoutineSaved,
-    RoutineDeleted,
-    RoutineRun,
-    VoiceCallFinished,
-    RemoteScreenOpened,
-    ConnectorInstalled,
-    SkillInstalled,
-    /// Error tracking (`errors`): a panic or an uncaught error.
-    Exception,
+/// Where a network of the user's computers failed (`network_failed`'s `stage`); a failed
+/// `network*` call is `action` (`observe::failed`).
+#[derive(Clone, Copy, Debug)]
+pub enum NetworkStage {
+    /// A saved network's node didn't start with the host.
+    Start,
+    /// A bot's letter to another computer didn't go (refused, or no such computer).
+    Send,
+    /// The outcome of another computer's request didn't go back.
+    Reply,
+    /// A letter from another computer couldn't be taken in.
+    Receive,
 }
 
-impl Event {
-    fn name(self) -> &'static str {
-        match self {
-            Self::AppOpened => "app_opened",
-            Self::OnboardingCompleted => "onboarding_completed",
-            Self::SignedIn => "signed_in",
-            Self::SignedOut => "signed_out",
-            Self::BotCreated => "bot_created",
-            Self::BotUpdated => "bot_updated",
-            Self::BotsReordered => "bots_reordered",
-            Self::BotDeleted => "bot_deleted",
-            Self::MessageSent => "message_sent",
-            Self::TurnStopped => "turn_stopped",
-            Self::TurnFinished => "turn_finished",
-            Self::SessionReset => "session_reset",
-            Self::PermissionAnswered => "permission_answered",
-            Self::RoutineSaved => "routine_saved",
-            Self::RoutineDeleted => "routine_deleted",
-            Self::RoutineRun => "routine_run",
-            Self::VoiceCallFinished => "voice_call_finished",
-            Self::RemoteScreenOpened => "remote_screen_opened",
-            Self::ConnectorInstalled => "connector_installed",
-            Self::SkillInstalled => "skill_installed",
-            Self::Exception => "$exception",
-        }
-    }
-
-    /// Events the computer's own apps report through `track` (the rest come from API calls).
-    fn client_reported(self) -> bool {
-        matches!(self, Self::AppOpened | Self::OnboardingCompleted | Self::SignedIn | Self::SignedOut)
-    }
+/// Reports a network step that failed; never the error's text, a name or an address.
+pub fn network_failed(hub: &Hub, stage: NetworkStage) {
+    let stage = match stage {
+        NetworkStage::Start => "start",
+        NetworkStage::Send => "send",
+        NetworkStage::Reply => "reply",
+        NetworkStage::Receive => "receive",
+    };
+    capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
 }
 
 pub struct Analytics {
     enabled: Mutex<bool>,
+    /// Every event's `env`: the build's, or `dev` on a test machine.
+    env: &'static str,
     tx: mpsc::UnboundedSender<Msg>,
     rx: Mutex<Option<mpsc::UnboundedReceiver<Msg>>>,
+    session: Mutex<session::Session>,
+    /// The UTC day each phone last connected (`phone_connected`), in memory only.
+    phones: Mutex<HashMap<String, chrono::NaiveDate>>,
 }
 
 enum Msg {
@@ -103,9 +92,25 @@ enum Msg {
 
 impl Analytics {
     pub fn load(store: &Store) -> Self {
+        // Test machines (Dev and end-to-end cloud computers) mark their events instead of guessing them from
+        // location or version. Stored, so a release the machine updates to keeps the mark.
+        if std::env::var("CODYNC_ANALYTICS_ENV").as_deref() == Ok("dev")
+            && let Err(e) = store.kv_set(KV_ENV, "dev")
+        {
+            tracing::warn!(error = format!("{e:#}"), "couldn't mark this machine's analytics as dev");
+        }
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        let env = if store.kv_get(KV_ENV).as_deref() == Some("dev") { "dev" } else { built };
         let enabled = store.kv_get(KV_ENABLED).as_deref() != Some("0");
         let (tx, rx) = mpsc::unbounded_channel();
-        Self { enabled: Mutex::new(enabled), tx, rx: Mutex::new(Some(rx)) }
+        Self {
+            enabled: Mutex::new(enabled),
+            env,
+            tx,
+            rx: Mutex::new(Some(rx)),
+            session: Mutex::default(),
+            phones: Mutex::default(),
+        }
     }
 
     pub fn state(&self) -> bool {
@@ -113,179 +118,30 @@ impl Analytics {
     }
 
     pub fn set_enabled(&self, store: &Store, on: bool) -> Result<()> {
-        store.kv_set(KV_ENABLED, if on { "1" } else { "0" })?;
+        save_choice(store, on)?;
         *self.enabled.locked() = on;
         Ok(())
     }
 }
 
-/// `track`: an event the computer's own app reports (app opened, signed in, …).
-pub fn track(hub: &Hub, b: &Value) -> Result<()> {
-    let event = Event::deserialize(&b["event"]).map_err(|_| anyhow::anyhow!("unknown event"))?;
-    anyhow::ensure!(event.client_reported(), "unknown event");
-    capture(hub, event, Map::new());
-    Ok(())
+/// Saves the owner's choice; a host that isn't running reads it when it starts (`Analytics::load`).
+pub fn save_choice(store: &Store, on: bool) -> Result<()> {
+    store.kv_set(KV_ENABLED, if on { "1" } else { "0" })
 }
 
-/// The event an API call stands for, with its properties, read before the call runs.
-pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
-    let mut p = Map::new();
-    let event = match method {
-        "createBot" => {
-            let group = b["kind"] == "group";
-            p.insert("kind".into(), (if group { "group" } else { "bot" }).into());
-            if group {
-                p.insert("members".into(), b["members"].as_array().map_or(0, Vec::len).into());
-            } else {
-                p.insert("agent".into(), b["backend"].clone());
-                p.insert("model".into(), b["model"].clone());
-            }
-            Event::BotCreated
-        }
-        "updateBot" => Event::BotUpdated,
-        "reorderBots" => Event::BotsReordered,
-        "deleteBot" => Event::BotDeleted,
-        "send" => {
-            let in_thread = b["threadId"].as_str().is_some_and(|t| !t.is_empty());
-            p.insert("in_thread".into(), in_thread.into());
-            p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
-            Event::MessageSent
-        }
-        "stop" => Event::TurnStopped,
-        "newSession" => Event::SessionReset,
-        "respondPermission" => Event::PermissionAnswered,
-        "saveRoutine" => Event::RoutineSaved,
-        "deleteRoutine" => Event::RoutineDeleted,
-        "runRoutine" => Event::RoutineRun,
-        "logCall" => {
-            p.insert("seconds".into(), b["seconds"].as_u64().unwrap_or(0).into());
-            Event::VoiceCallFinished
-        }
-        "screenPrepare" => Event::RemoteScreenOpened,
-        "installConnector" => {
-            // A catalog name is public; a custom connector's URL or command is not.
-            let catalog = b["registryName"].as_str().unwrap_or("custom");
-            p.insert("connector".into(), catalog.into());
-            Event::ConnectorInstalled
-        }
-        "installSkill" => {
-            p.insert("custom".into(), (!b["source"].is_string()).into());
-            Event::SkillInstalled
-        }
-        _ => return None,
-    };
-    let client = if matches!(caller, Caller::Local) { "local" } else { "remote" };
-    p.insert("client".into(), client.into());
-    Some((event, p))
-}
-
-/// How an agent's turn ended (`turn_finished`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TurnOutcome {
-    /// `end_turn`: the agent finished.
-    Done,
-    /// The user stopped it.
-    Stopped,
-    /// The agent process or connection failed.
-    Failed,
-    /// It ended short of `end_turn` (output or step limit, refusal).
-    Incomplete,
-}
-
-/// What started the turn.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TurnSource {
-    User,
-    Routine,
-    Group,
-    Bot,
-}
-
-/// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
-/// never its text or the error's.
-pub fn turn_finished(
-    hub: &Hub,
-    agent: &str,
-    outcome: TurnOutcome,
-    stop_reason: &str,
-    failure: Option<&anyhow::Error>,
-    source: TurnSource,
-    ms: i64,
-) {
-    let outcome = match outcome {
-        TurnOutcome::Done => "done",
-        TurnOutcome::Stopped => "stopped",
-        TurnOutcome::Failed => "failed",
-        TurnOutcome::Incomplete => "incomplete",
-    };
-    // ACP's stop reasons plus ours; anything else an adapter invents is just `other`.
-    let stop_reason = match stop_reason {
-        "end_turn" | "cancelled" | "max_tokens" | "max_turn_requests" | "refusal" | "error" | "start_failed" => {
-            stop_reason
-        }
+/// A phone's platform as the catalog names it.
+fn platform(p: &str) -> &'static str {
+    match p {
+        "ios" => "ios",
+        "android" => "android",
+        "macos" => "macos",
         _ => "other",
-    };
-    let source = match source {
-        TurnSource::User => "user",
-        TurnSource::Routine => "routine",
-        TurnSource::Group => "group",
-        TurnSource::Bot => "bot",
-    };
-    let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
-    if let Some(e) = failure {
-        let (kind, rpc_code) = failure_kind(e);
-        p["error"] = kind.into();
-        if let Some(code) = rpc_code {
-            p["rpc_code"] = code.into();
-        }
     }
-    capture(hub, Event::TurnFinished, p.as_object().cloned().unwrap_or_default());
 }
 
-/// Why a turn failed, as a category (plus the agent's JSON-RPC code): never the error's text,
-/// which can hold paths and agent output.
-fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<i64>) {
-    use crate::agent::acp::{Failure, FailureKind, RpcError};
-    if let Some(f) = e.chain().find_map(|c| c.downcast_ref::<Failure>()) {
-        let kind = match f.kind {
-            FailureKind::NotSetUp => "not_installed",
-            FailureKind::Timeout => "timeout",
-            FailureKind::Exited => "exited",
-        };
-        return (kind, None);
-    }
-    if crate::agent::acp::needs_sign_in(e) {
-        return ("sign_in", None);
-    }
-    for cause in e.chain() {
-        if let Some(r) = cause.downcast_ref::<RpcError>() {
-            return ("agent_error", Some(r.code));
-        }
-        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
-            return (if io.kind() == std::io::ErrorKind::NotFound { "not_installed" } else { "io" }, None);
-        }
-    }
-    ("other", None)
-}
-
-/// `observe` plus what only the store knows: a resent message (same `clientNonce`) is
-/// not a new one, and a message names its bot's agent.
-pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
-    let (event, mut p) = observe(caller, method, b)?;
-    if event == Event::MessageSent {
-        let bot = b["botId"].as_str().unwrap_or_default();
-        let nonce = b["clientNonce"].as_str().unwrap_or_default();
-        if !nonce.is_empty() && hub.store.find_by_nonce(bot, nonce).is_some() {
-            return None;
-        }
-        if let Ok(Some(row)) = hub.store.bot(bot) {
-            p.insert("kind".into(), (if row.config.is_group() { "group" } else { "bot" }).into());
-            if !row.config.is_group() {
-                p.insert("agent".into(), row.config.backend.into());
-            }
-        }
-    }
-    Some((event, p))
+/// The platform of the paired phone `key` (`other` for one this computer doesn't have).
+fn platform_of(hub: &Hub, key: &str) -> &'static str {
+    platform(hub.store.device(key).as_ref().map_or("", |d| d.platform.as_str()))
 }
 
 /// Queues one event unless the owner turned analytics off. Signed in to a Codync account,
@@ -297,7 +153,7 @@ pub fn capture(hub: &Hub, event: Event, mut properties: Map<String, Value>) {
     }
     let account = hub.cloud.status().owner.map(|o| o.user_id);
     if let Some(user) = &account
-        && hub.store.kv_get(KV_IDENTIFIED).as_deref() != Some(user.as_str())
+        && hub.store.kv_get(KV_IDENTIFIED).is_none()
     {
         // Merges this install's earlier, anonymous events into the account.
         let identify = json!({"$anon_distinct_id": hub.host_id, "$process_person_profile": true});
@@ -314,11 +170,12 @@ fn queue(hub: &Hub, event: &str, distinct_id: &str, mut properties: Map<String, 
     properties.extend([
         ("$lib".into(), "codync-host".into()),
         ("app_version".into(), env!("CARGO_PKG_VERSION").into()),
-        ("env".into(), (if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" }).into()),
+        ("env".into(), hub.analytics.env.into()),
         ("$os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         // Joins this computer's events across accounts and with its phones' `computer_paired`.
         ("computer".into(), computer_tag(&hub.identity.computer_id()).into()),
+        ("$session_id".into(), hub.analytics.session.locked().id(SystemTime::now()).to_string().into()),
     ]);
     let _ = hub.analytics.tx.send(Msg::Event(json!({
         "event": event,
@@ -378,8 +235,9 @@ async fn flush(hub: &Hub, pending: &mut Vec<Value>) {
     }
 }
 
-/// Sends what's queued before the host exits, so a restart or update loses nothing.
-pub async fn flush_before_exit(hub: &Hub) {
+/// Sends what's queued now: before the host exits, so a restart or update loses nothing, and before a cloud computer's
+/// machine stops (`remote::managed`).
+pub async fn flush_now(hub: &Hub) {
     let (tx, rx) = oneshot::channel();
     if hub.analytics.tx.send(Msg::Flush(tx)).is_ok() {
         let _ = tokio::time::timeout(Duration::from_secs(3), rx).await;
@@ -412,51 +270,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn observed_events_carry_no_content() {
-        let b = json!({"botId": "b1", "text": "secret plan", "threadId": "e1", "attachments": ["u1", "u2"]});
-        let (event, p) = observe(&Caller::Local, "send", &b).expect("send is tracked");
-        assert_eq!(event, Event::MessageSent);
-        assert_eq!(Value::Object(p.clone()), json!({"in_thread": true, "attachments": 2, "client": "local"}));
-        assert!(!Value::Object(p).to_string().contains("secret"));
-
-        let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
-        let (_, p) = observe(&Caller::Local, "installConnector", &custom).expect("tracked");
-        assert_eq!(p["connector"], "custom");
-        assert!(observe(&Caller::Local, "history", &json!({})).is_none());
-    }
-
-    #[tokio::test]
-    async fn a_resent_message_counts_once_and_names_its_agent() {
-        let dir = std::env::temp_dir().join(format!("codync-analytics-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
-        let hub = Hub::new(
-            store,
-            "h".into(),
-            crate::remote::identity::Identity::load_or_create(&dir).unwrap(),
-            "t".into(),
-            0,
-        );
-        let cfg = serde_json::from_value(json!({"id": "b1", "name": "b", "backend": "codex", "cwd": "/tmp"})).unwrap();
-        hub.store.save_bot(&cfg).unwrap();
-        let send = json!({"botId": "b1", "text": "hi", "clientNonce": "n1"});
-
-        let (_, p) = observe_call(&hub, &Caller::Local, "send", &send).expect("a new message is tracked");
-        assert_eq!((p["agent"].as_str(), p["kind"].as_str()), (Some("codex"), Some("bot")));
-        let lane = crate::store::Lane::main("b1");
-        hub.store
-            .insert_entry(&lane, crate::store::EntryKind::User, 1, &json!({"text": "hi", "clientNonce": "n1"}))
-            .unwrap();
-        assert!(observe_call(&hub, &Caller::Local, "send", &send).is_none(), "a replay is the same message");
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
     fn on_until_the_owner_turns_it_off() {
         let store = Store::open(std::path::Path::new(":memory:")).unwrap();
         assert!(Analytics::load(&store).state());
         Analytics::load(&store).set_enabled(&store, false).unwrap();
         assert!(!Analytics::load(&store).state(), "an off stays off");
+        save_choice(&store, true).unwrap();
+        assert!(Analytics::load(&store).state(), "a choice saved before the host starts counts");
+    }
+
+    #[test]
+    fn a_test_machine_stays_marked_dev() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let built = if option_env!("CODYNC_ENV") == Some("main") { "main" } else { "dev" };
+        assert_eq!(Analytics::load(&store).env, built);
+        store.kv_set(KV_ENV, "dev").unwrap();
+        assert_eq!(Analytics::load(&store).env, "dev", "the stored mark wins over the build's environment");
     }
 
     #[test]
@@ -466,27 +295,30 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_turn_names_its_kind_not_its_text() {
-        use crate::agent::acp::{Failure, FailureKind, RpcError};
-        use anyhow::Context as _;
-        let setup = Failure::error(FailureKind::NotSetUp, "Codex isn't set up on this computer.");
-        assert_eq!(failure_kind(&setup), ("not_installed", None));
-        let hung = Err::<(), _>(Failure::error(FailureKind::Timeout, "no answer")).context("starting");
-        assert_eq!(failure_kind(&hung.expect_err("failed")), ("timeout", None));
-        let missing = std::io::Error::new(std::io::ErrorKind::NotFound, "/Users/me/bin/agent");
-        let spawn = Err::<(), _>(missing).context("starting `/Users/me/bin/agent`");
-        assert_eq!(failure_kind(&spawn.expect_err("failed")), ("not_installed", None));
-        let auth = anyhow::Error::new(RpcError { code: -32000, message: "Authentication required".into() });
-        assert_eq!(failure_kind(&auth), ("sign_in", None));
-        let rpc = anyhow::Error::new(RpcError { code: -32603, message: "Internal error: /Users/me".into() });
-        assert_eq!(failure_kind(&rpc), ("agent_error", Some(-32603)));
-        assert_eq!(failure_kind(&anyhow::anyhow!("something else")), ("other", None));
-    }
+    fn the_install_id_merges_into_the_first_account_only() {
+        use crate::remote::cloud::{Owner, update_status};
+        let dir = std::env::temp_dir().join(format!("codync-analytics-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let identity = crate::remote::identity::Identity::load_or_create(&dir).unwrap();
+        let hub = Hub::new(store, "h".into(), identity, "t".into(), 0);
 
-    #[test]
-    fn only_app_events_can_be_tracked_directly() {
-        assert!(Event::deserialize(&json!("app_opened")).is_ok_and(Event::client_reported));
-        assert!(!Event::deserialize(&json!("message_sent")).is_ok_and(Event::client_reported));
-        assert!(Event::deserialize(&json!("anything_else")).is_err());
+        for user in ["user_1", "user_2"] {
+            update_status(&hub, |s| s.owner = Some(Owner { user_id: user.into(), email: None }));
+            capture(&hub, Event::AppOpened, Map::new());
+        }
+
+        let mut rx = hub.analytics.rx.locked().take().unwrap();
+        let mut sent = Vec::new();
+        while let Ok(Msg::Event(event)) = rx.try_recv() {
+            sent.push(event);
+        }
+        assert_eq!(
+            sent.iter().map(|e| (e["event"].as_str().unwrap(), e["distinct_id"].as_str().unwrap())).collect::<Vec<_>>(),
+            [("$identify", "user_1"), ("app_opened", "user_1"), ("app_opened", "user_2")]
+        );
+        assert_eq!(sent[0]["properties"]["$anon_distinct_id"], "h");
+        assert_eq!(hub.store.kv_get(KV_IDENTIFIED).as_deref(), Some("user_1"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

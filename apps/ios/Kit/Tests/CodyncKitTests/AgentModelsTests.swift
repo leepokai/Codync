@@ -51,13 +51,30 @@ import Testing
     #expect(!older.fastMode)
 }
 
-@Test func composerOffersFastModeOnceTheAgentDoes() throws {
+@Test func composerOffersFastModeUntilTheAgentSaysItHasNone() throws {
     func bot(_ json: String) throws -> Bot { try JSONDecoder().decode(Bot.self, from: Data(json.utf8)) }
-    #expect(try !bot(#"{"id":"b"}"#).fastModeShown)
+    #expect(try bot(#"{"id":"b"}"#).fastModeShown)
+    #expect(try !bot(#"{"id":"b","fastModeSupport":"unsupported"}"#).fastModeShown)
     #expect(try bot(#"{"id":"b","fastModeSupport":"offered"}"#).fastModeShown)
     #expect(try bot(#"{"id":"b","fastMode":true,"fastModeSupport":"unsupported"}"#).fastModeShown)
     #expect(try !bot(#"{"id":"g","kind":"group","fastModeSupport":"offered"}"#).fastModeShown)
     let refused = try bot(#"{"id":"b","fastMode":true,"fastModeSupport":"refused","fastModeIssue":"requires extra usage"}"#)
     #expect(refused.fastModeState == .refused)
     #expect(refused.fastModeRefusal?.contains("requires extra usage") == true)
+}
+
+@Test func settingsDraftTakesChangesMadeElsewhereAndKeepsItsOwnEdits() {
+    var base = BotDraft(name: "Lead", avatarColor: "red", avatarShape: "blob")
+    base.model = "sonnet"
+    var draft = base
+    draft.notify = false
+    var fresh = base
+    fresh.model = "opus"
+    fresh.name = "Boss"
+    var expected = fresh
+    expected.notify = false
+    #expect(draft.rebased(from: base, onto: fresh) == expected)
+    // A field edited here stays, even when the host changed it too.
+    draft.model = "haiku"
+    #expect(draft.rebased(from: base, onto: fresh).model == "haiku")
 }

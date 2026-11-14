@@ -4,8 +4,9 @@
   transition: opacity var(--layout);
 }
 
-.computer-roster-section.dragging {
-  opacity: 0.45;
+/* Its heading's lifted copy follows the pointer; the slot stays open. */
+.computer-roster-section.lifted {
+  opacity: 0;
 }
 
 .computer-roster-heading {
@@ -23,12 +24,16 @@
   min-width: 0;
   padding: 5px 4px;
   color: var(--secondary);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   cursor: grab;
 }
 
 .computer-roster-toggle:hover {
   background: var(--bubble-agent);
+}
+/* Headings the pointer passes over while dragging don't light up. */
+.pointer-dragging .computer-roster-toggle:hover {
+  background: none;
 }
 
 .computer-roster-label {
@@ -37,7 +42,7 @@
   min-width: 0;
   align-items: baseline;
   gap: 6px;
-  font-size: calc(11px * var(--scale));
+  font-size: var(--text-caption);
   text-align: left;
 }
 
@@ -49,12 +54,22 @@
 
 .computer-roster-label > span {
   color: var(--tertiary);
-  font-size: calc(10px * var(--scale));
+  font-size: var(--text-caption);
   white-space: nowrap;
 }
 
+/* The connection sits at the trailing edge, before the chevron. */
+.computer-roster-label > .computer-roster-status {
+  margin-left: auto;
+}
+
 .computer-roster-label > .warning {
-  color: var(--warning);
+  color: var(--attention);
+}
+
+/* A computer's own Screen and Extensions, always beside its heading. */
+.computer-roster-action {
+  flex: none;
 }
 
 .computer-roster-chevron {
@@ -84,10 +99,26 @@
   overflow: hidden;
 }
 
+/* A section the user made: a quieter header than a computer's, its rows folding the same way. The
+   "Bots" label over the rows in no section sits where a header's chevron starts. */
+.roster-section-toggle,
+.roster-label {
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  color: var(--secondary);
+  border-radius: var(--radius-s);
+  text-align: left;
+}
+
+.roster-section-toggle:hover {
+  background: var(--bubble-agent);
+}
+
 .computer-roster-empty {
   padding: 8px 10px 12px;
   color: var(--tertiary);
-  font-size: calc(11px * var(--scale));
+  font-size: var(--text-caption);
 }
 
 .sidebar.compact .computer-roster-toggle {
@@ -95,3 +126,7 @@
   padding: 4px 0;
   gap: 2px;
 }
+
+.roster-section-toggle,
+button.roster-label { cursor: grab; }
+.pointer-dragging .roster-section-toggle:hover { background: none; }

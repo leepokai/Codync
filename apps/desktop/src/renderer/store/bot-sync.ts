@@ -1,12 +1,21 @@
-import { isChat, type AccessRequest, type CloudStatus, type Entry } from '@shared/models'
+import { isChat, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
+import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
+import { Artifacts } from './artifacts'
+import type { CallCue } from '@shared/calls'
+import { trNow } from '../lib/l10n.ts'
 
+const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000
 const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
+/** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
+const UPDATE_RECHECK = 5_000
+/** Raise when the app starts to need a field the rows it cached may lack. */
+const MIRROR_FORMAT = 1
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const same = (a: Connection, b: Connection) => a.kind === b.kind && JSON.stringify(a) === JSON.stringify(b)
@@ -22,19 +31,34 @@ function keptEntries(entries: Map<string, Entry[]>, keep: (e: Entry) => boolean)
 }
 
 /**
+ * The mirror format and the host's store schema (its version on a host that sends none): updates of the app or
+ * the host that keep both keep the cached copy and its cursor.
+ */
+function syncStamp(hello: Hello) {
+  return `${MIRROR_FORMAT}:${hello.schema == null ? hello.version : `schema ${hello.schema}`}`
+}
+
+/**
  * The link half of `BotStore`: the events stream (catch-up since `rev`, then live), connection
  * graces, waiting for the link before an action, and read acknowledgements.
  */
 export class BotSync extends BotMirror {
+  readonly artifacts = new Artifacts(() => this.changed())
+  /** The calls in this app, by id: each hands what the computer tells its voice to its engine. */
+  readonly callCues = new Map<string, (cue: CallCue) => void>()
+  /** The newest cue each call heard (`CallCue.seq`), kept across engine switches: a replayed one isn't said again. */
+  private readonly heardCues = new Map<string, number>()
+  private finishRefresh: ((error?: Error) => void) | null = null
   private heldDrop: Connection | null = null
   private dropTimer: ReturnType<typeof setTimeout> | null = null
   private closeEvents: (() => void) | null = null
   private eventsLoop = 0
+  private paused = false
   private rewound = false
   /** The `since` the current events connection asked for, and the per-bot floors snapshotted at its `hello`. */
   private requestedSince = 0
   private floors = new Map<string, number>()
-  private readingViews = new Map<string, { botId: string; thread: string | null }>()
+  private readingViews = new Map<string, string>()
 
   // MARK: lifecycle
 
@@ -49,21 +73,56 @@ export class BotSync extends BotMirror {
     this.selection = null
   }
 
+  /** A store paused before it started (a window nobody looks at) connects on `resume`. */
   start() {
-    this.restartStream()
+    if (!this.paused) this.restartStream()
   }
 
   restartStream() {
     if (this.retired) return
+    this.paused = false
     this.stopTransport()
     if (this.connection.kind !== 'online') this.setConnection({ kind: 'connecting' })
     const transport = this.makeTransport()
     this.client = new HostClient(transport)
-    this.hostRoute = this.isLoopback ? 'loopback' : null
+    this.hostRoute = transport.route ?? null
     this.runEvents(this.client)
   }
 
+  /**
+   * Lets go of a cloud computer while nobody looks at the window, so it can sleep: the events stream stops and
+   * the channel closes behind it. Its bots and chats stay; `resume` (or any action) reconnects, and until it has,
+   * it reads as connecting rather than as it was (it may have gone to sleep meanwhile).
+   */
+  pause() {
+    if (this.retired || this.paused) return
+    this.paused = true
+    this.stopTransport()
+    this.connection = { kind: 'connecting' }
+    this.changed()
+  }
+
+  resume() {
+    if (this.paused) this.restartStream()
+  }
+
+  /** Manual refresh waits for the new stream to answer, independently of the online grace period. */
+  refreshStream(): Promise<void> {
+    if (this.retired) return Promise.resolve()
+    this.restartStream()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => this.finishRefresh?.(new Error(trNow('Connection timed out'))), REFRESH_TIMEOUT)
+      this.finishRefresh = (error) => {
+        clearTimeout(timer)
+        this.finishRefresh = null
+        if (error) reject(error)
+        else resolve()
+      }
+    })
+  }
+
   private stopTransport() {
+    this.finishRefresh?.()
     this.eventsLoop++
     this.closeEvents?.()
     this.closeEvents = null
@@ -100,7 +159,7 @@ export class BotSync extends BotMirror {
       this.connection = next
       this.changed()
     }
-    if (recovering) for (const scope of this.readingViews.values()) this.markRead(scope.botId, scope.thread)
+    if (recovering) for (const botId of new Set(this.readingViews.values())) this.markRead(botId)
   }
 
   /** Events (catch-up since `rev`, then live) for as long as the store lives. */
@@ -111,16 +170,20 @@ export class BotSync extends BotMirror {
     const attempt = async () => {
       if (!alive()) return
       try {
-        await this.refreshHello(client)
+        await this.refreshHello(client, loop)
         if (!alive()) return
         if (this.mismatch) {
+          this.finishRefresh?.()
           this.setConnection({ kind: 'online' })
-          await sleep(MISMATCH_RECHECK)
+          await sleep(this.hostUpdateOffer.kind === 'updating' ? UPDATE_RECHECK : MISMATCH_RECHECK)
           return void attempt()
         }
         if (this.isLoopback) {
           try {
             this.accessRequests = (await client.call<{ requests: AccessRequest[] }>('accessRequests')).requests
+          } catch {}
+          try {
+            this.pairingRequests = (await client.call<{ requests: PairingRequest[] }>('pairingRequests')).requests
           } catch {}
           try {
             this.cloud = await client.call<CloudStatus>('cloudStatus')
@@ -129,8 +192,11 @@ export class BotSync extends BotMirror {
         }
         if (!alive()) return
         await new Promise<void>((resolve, reject) => {
+          // A refetch the link cut short starts over: only one whole catch-up says what the computer still has.
+          if (this.refetched) this.refetchAll()
           this.requestedSince = this.rev
           this.floors = new Map()
+          let catchUpLeft = 0
           this.closeEvents = client.events(
             this.requestedSince,
             'desktop',
@@ -139,6 +205,14 @@ export class BotSync extends BotMirror {
               this.setConnection({ kind: 'online' })
               backoff = 1000
               this.apply(event)
+              this.finishRefresh?.()
+              // An event that restarted the stream leaves the refetch to the new one.
+              if (!alive()) return
+              // A host before 2.32.0 doesn't say how long its catch-up is: the held entries go first.
+              if (event.type === 'hello') catchUpLeft = event.catchUp ?? 0
+              else if (catchUpLeft > 0) catchUpLeft--
+              else return
+              if (catchUpLeft === 0) this.finishRefetch()
             },
             (error) => (error ? reject(error) : resolve()),
           )
@@ -146,7 +220,8 @@ export class BotSync extends BotMirror {
       } catch (error) {
         if (!alive()) return
         const message = error instanceof Error ? error.message : String(error)
-        this.setConnection({ kind: 'offline', message })
+        this.finishRefresh?.(new Error(message))
+        this.setConnection(error instanceof HostError && error.offline ? { kind: 'computerOffline', lastSeen: null } : { kind: 'offline', message })
         if (error instanceof HostError && error.status === 401) return
       }
       if (!alive()) return
@@ -164,39 +239,52 @@ export class BotSync extends BotMirror {
     this.runEvents(this.client)
   }
 
-  private async refreshHello(client: HostClient) {
+  private async refreshHello(client: HostClient, loop: number) {
+    const epoch = ++this.iconsEpoch
     const h = await client.hello()
-    if (this.retired) return
+    if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
+    this.iconsRevision = -1
     this.hello = h
+    this.applyIcons(h.icons ?? {}, h.iconsRevision)
+    this.noteSyncStamp(syncStamp(h))
     this.noteHostVersion({ version: h.version, minApp: h.minApp })
     if (this.isLoopback) this.updateComputer((c) => ({ ...c, name: h.name, device: h.device ?? c.device }))
     this.changed()
   }
 
+  /** A copy synced under another mirror format or host schema may lack fields or hold rows a migration changed: fetch it all again, underneath what's shown. */
+  private noteSyncStamp(stamp: string) {
+    if (this.cacheStamp !== null && this.cacheStamp !== stamp) this.refetchAll()
+    this.cacheStamp = stamp
+  }
+
   private noteHostVersion(next: { version: string; minApp?: string | null }) {
-    const cached = this.cacheStamp !== null && this.cacheStamp !== `${this.appVersion}/${next.version}`
-    if (cached || (this.hostVersion && this.hostVersion.version !== next.version)) {
-      // A different host version or app build: data may carry new fields, so fetch it all again.
-      this.refetchAll()
+    if (this.hostVersion && this.hostVersion.version !== next.version) {
+      // Another host: its update is done, and what the last one sent no longer says anything.
       this.rewound = false
       this.unreadable = false
+      this.hostUpdate = null
     }
-    this.cacheStamp = null
     this.hostVersion = next
   }
 
   private apply(event: HostEvent) {
     switch (event.type) {
+      case 'icons':
+        this.applyIcons(event.icons, event.iconsRevision)
+        break
       case 'hello':
         if (this.hostId && this.hostId !== event.hostId) this.resetMirror()
         this.hostId = event.hostId
+        if (event.icons) this.applyIcons(event.icons)
         this.usage = event.usage
         this.screen = event.screen
+        this.network = event.network
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
         break
       case 'bot':
-        this.bots.set(event.bot.id, event.bot)
+        this.putHostBot(event.bot)
         this.bump(event.bot.rev)
         this.onRosterChanged?.()
         if (event.bot.unread > 0) this.acknowledgeVisible(event.bot.id)
@@ -219,15 +307,38 @@ export class BotSync extends BotMirror {
       case 'usage':
         this.usage = event.usage
         break
+      case 'artifact':
+        this.artifacts.upsert(event.artifact)
+        break
       case 'screen':
         this.screen = event.screen
         break
       case 'accessRequests':
         this.accessRequests = event.requests
         break
+      case 'pairingRequests':
+        this.pairingRequests = event.requests
+        break
       case 'cloud':
         this.cloud = event.cloud
         break
+      case 'name':
+        this.setHostName(event.name)
+        break
+      case 'autoOrder':
+        this.showAutoOrder(event.enabled)
+        break
+      case 'network':
+        this.network = event.network
+        break
+      case 'call': {
+        const { cue } = event
+        const hear = this.callCues.get(cue.call)
+        if (!hear || cue.seq <= (this.heardCues.get(cue.call) ?? 0)) break
+        this.heardCues.set(cue.call, cue.seq)
+        hear(cue)
+        break
+      }
       case 'resync':
         this.restartEvents()
         break
@@ -248,6 +359,8 @@ export class BotSync extends BotMirror {
   }
 
   private resetMirror() {
+    this.iconsRevision = -1
+    this.applyIcons({})
     this.composerDrafts.clear()
     this.bots = new Map()
     this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-'))
@@ -258,22 +371,31 @@ export class BotSync extends BotMirror {
     this.historyComplete = new Set()
     this.floors = new Map()
     this.screen = null
+    this.refetched = null
     this.saveCache()
   }
 
-  /**
-   * Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so the
-   * main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which pages
-   * from the oldest one held. Threads (loaded whole when opened) and messages still sending stay.
-   */
+  /** Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the catch-up has all arrived (`finishRefetch`). */
   private refetchAll() {
     this.rev = 0
-    this.entries = keptEntries(this.entries, (e) => !!e.threadId || e.id.startsWith('local-'))
+    this.refetched = new Set()
     this.historyComplete = new Set()
   }
 
+  /**
+   * The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
+   * ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the
+   * oldest one held. Messages still sending stay.
+   */
+  private finishRefetch() {
+    const kept = this.refetched
+    if (!kept) return
+    this.refetched = null
+    this.entries = keptEntries(this.entries, (e) => e.id.startsWith('local-') || kept.has(e.id))
+  }
+
   private isBelowFloor(e: Entry) {
-    const held = this.allEntries(e.botId).some((x) => x.id === e.id)
+    const held = !!this.entries.get(e.botId)?.some((x) => x.id === e.id)
     return isOutsideLoadedWindow(this.floors.get(e.botId), held, e)
   }
 
@@ -284,13 +406,14 @@ export class BotSync extends BotMirror {
   // MARK: link
 
   protected get live(): HostClient | null {
-    return this.connection.kind === 'online' && !this.heldDrop && !this.retired ? this.client : null
+    return this.connection.kind === 'online' && !this.heldDrop && !this.retired && !this.paused ? this.client : null
   }
 
   /** The client once the link is up. A reconnect in progress is waited out (headers show it). */
   async ready(deadline = Date.now() + ACTION_PATIENCE): Promise<HostClient> {
     let counted = false
     let retried = false
+    this.resume()
     try {
       while (!this.retired) {
         if (this.live) return this.live
@@ -308,7 +431,13 @@ export class BotSync extends BotMirror {
           case 'unpaired':
             throw HostError.unreachable()
           case 'computerOffline':
-            throw new HostError(0, 'Your computer is offline.')
+            // A cloud computer asleep wakes when this device connects: reconnect once and wait for it.
+            if (this.cloudHosting && !retried) {
+              retried = true
+              this.restartStream()
+              break
+            }
+            throw new HostError(0, trNow('Your computer is offline.'))
           case 'unauthorized':
             throw new HostError(401, this.connection.message)
         }
@@ -346,18 +475,19 @@ export class BotSync extends BotMirror {
     }
   }
 
-  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false) {
-    void this.withLink(op, replay).catch((error: unknown) => {
-      this.lastError = error instanceof Error ? error.message : String(error)
+  /** Fire and forget (resolving to whether it went through): what waiting and retrying couldn't settle reaches the dialog, after `undo` takes back what the action already showed. */
+  protected perform(op: (c: HostClient) => Promise<unknown>, replay = false, undo?: () => void): Promise<boolean> {
+    return undoOnFailure(this.withLink(op, replay), undo, (message) => {
+      this.lastError = message
       this.changed()
     })
   }
 
   /** Views register while visible. Multiple windows may read the same conversation. */
-  setReading(token: string, botId: string, thread: string | null, active: boolean) {
+  setReading(token: string, botId: string, active: boolean) {
     if (active) {
-      this.readingViews.set(token, { botId, thread })
-      if (this.connection.kind === 'online') this.markRead(botId, thread)
+      this.readingViews.set(token, botId)
+      if (this.connection.kind === 'online') this.markRead(botId)
     } else {
       this.readingViews.delete(token)
     }
@@ -365,24 +495,17 @@ export class BotSync extends BotMirror {
 
   private acknowledgeVisible(botId: string, entry?: Entry) {
     if (this.connection.kind !== 'online') return
-    const seen = new Set<string>()
-    for (const scope of this.readingViews.values()) {
-      if (scope.botId !== botId) continue
-      if (entry && (!isChat(entry) || (entry.threadId ?? null) !== scope.thread)) continue
-      const key = `${scope.botId}/${scope.thread}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      this.markRead(botId, scope.thread)
-    }
+    if (![...this.readingViews.values()].includes(botId) || (entry && !isChat(entry))) return
+    this.markRead(botId)
   }
 
-  markRead(botId: string, thread: string | null = null) {
+  markRead(botId: string) {
     void (async () => {
       if (!this.live) await sleep(INITIAL_GRACE)
       const client = this.live
       if (!client) return
       try {
-        await client.call('markRead', { botId, threadId: thread, all: false })
+        await client.call('markRead', { botId })
       } catch {
         // The visible scope is acknowledged again when the link recovers.
       }

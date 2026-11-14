@@ -22,11 +22,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "installHostUpdate" => {
             let port = hub.port;
             let force = b["force"].as_bool().unwrap_or(false);
-            let skip_app_check = b["skipAppCheck"].as_bool().unwrap_or(false);
             if !force && hub.busy() {
-                bail!("host is busy; retry when idle or explicitly allow interruption");
+                bail!("A bot is working on this computer. Update it once the bot is done.");
             }
-            tokio::task::spawn_blocking(move || crate::update::spawn_worker(port, force, skip_app_check)).await??;
+            tokio::task::spawn_blocking(move || crate::update::request_install(port, force)).await??;
             json!({"scheduled": true})
         }
         "voiceStatus" => crate::voice::status(&hub.store)?,
@@ -58,40 +57,122 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "hello" => {
             let port = hub.port;
+            let icons = crate::icons::snapshot(&hub.store)?;
             json!({
                 "hostId": hub.host_id,
                 "computerId": hub.identity.computer_id(),
                 "signKey": hub.identity.sign_pub_b64(),
                 "boxKey": hub.identity.box_pub_b64(),
-                "cloud": crate::remote::cloud::url(&hub.store),
-                "name": crate::service::host_name(),
+                // Only where a phone may use it: in no account, phones go over Wi-Fi or Tailscale.
+                "cloud": crate::remote::owner::url_for_phones(hub, caller.device_key()),
+                "name": crate::remote::managed::computer_name(&hub.store),
                 "version": env!("CARGO_PKG_VERSION"),
                 "minApp": crate::compat::MIN_APP,
+                // What a client's copy of the conversation was synced under; it holds across versions.
+                "schema": crate::store::SCHEMA,
+                // Whether `installHostUpdate` can update this computer, from here or a phone.
+                "canUpdate": tokio::task::spawn_blocking(crate::update::installable).await?,
+                // The latest release, so a phone can say whether this computer is current (null: unknown).
+                "latestVersion": tokio::task::spawn_blocking(crate::update::latest_version).await?,
                 "os": std::env::consts::OS,
-                "device": tokio::task::spawn_blocking(crate::service::device).await?,
+                "device": crate::remote::managed::computer_device(&hub.store).await?,
                 "home": dirs::home_dir().map(|p| p.to_string_lossy().into_owned()),
-                "backends": backends::list(),
+                "backends": agents(hub),
+                "icons": icons.icons,
+                "iconsRevision": icons.icons_revision,
                 "rev": hub.store.current_rev(),
                 "screen": hub.screen.state(),
                 "analytics": hub.analytics.state(),
+                // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
+                "autoOrder": hub.auto_order(),
+                // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
+                // don't send, so they aren't told to.
+                "joinAccount": false,
+                // A signed-in phone may offer to bring this computer into its account (`joinAccount`).
+                "canJoinAccount": crate::remote::owner::can_join(hub),
                 // Shells out to `tailscale`: keep it off the async workers.
                 "urls": tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?,
             })
         }
         "refreshBackends" => {
             tokio::task::spawn_blocking(backends::hydrate_path).await?;
-            backends::refresh_sign_in().await;
-            json!({"backends": backends::list()})
+            crate::market::agent_sign_in::refresh(hub).await;
+            json!({"backends": agents(hub)})
+        }
+        // A new login profile for an agent, not signed in yet: `kind` is `account` (its sign-in follows:
+        // `agentSetup` or `agentAuthenticate` with it) or `apiKey` (`setLoginProfileKeys` gives it its keys).
+        "addLoginProfile" => {
+            let kind = crate::agent::login_profiles::Kind::parse(&b["kind"])?;
+            let profile = crate::agent::login_profiles::add(&hub.store, str_arg(&b, "backend")?, kind).await?;
+            json!({"loginProfile": profile, "backends": agents(hub)})
+        }
+        // The user's name for a login profile, or with no `loginProfile` for the agent's default one; empty clears it.
+        "renameLoginProfile" => {
+            let name = b["name"].as_str().unwrap_or_default();
+            let profile = b["loginProfile"].as_str();
+            crate::agent::login_profiles::rename(&hub.store, str_arg(&b, "backend")?, profile, name)?;
+            usage::login_profiles_changed(hub);
+            json!({"backends": agents(hub)})
+        }
+        // An API key profile's variables: `vars` typed by the user (an empty value removes one), and `import`, names
+        // whose values the host reads from the login shell now. Values never come back.
+        "setLoginProfileKeys" => {
+            let none = serde_json::Map::new();
+            let typed = b["vars"].as_object().unwrap_or(&none);
+            let import: Vec<String> = match &b["import"] {
+                Value::Null => Vec::new(),
+                names => serde_json::from_value(names.clone()).context("`import` is a list of variable names")?,
+            };
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::set_keys(hub, id, typed, &import).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        // The names (never the values) of the login shell's variables an API key profile can import.
+        "loginShellVariables" => json!({"names": crate::agent::login_profiles::keys::shell_names().await?}),
+        "removeLoginProfile" => {
+            crate::agent::login_profiles::remove(hub, str_arg(&b, "loginProfile")?).await?;
+            usage::login_profiles_changed(hub);
+            json!({"backends": agents(hub)})
         }
         "usage" => {
             if b["refresh"].as_bool().unwrap_or(false) {
                 usage::refresh(hub).await;
             }
-            serde_json::to_value(&*hub.usage.locked())?
+            serde_json::to_value(hub.usage.locked().visible())?
+        }
+        // Whether the Usage screens list this agent's limits.
+        "setUsageShown" => {
+            let id = str_arg(&b, "id")?.to_owned();
+            let shown = b["shown"].as_bool().context("shown is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_shown(&hub, &id, shown)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
+        }
+        // The order the Usage screens list the agents in.
+        "setUsageOrder" => {
+            let ids: Vec<String> = serde_json::from_value(b["ids"].clone()).context("ids is required")?;
+            let hub = hub.clone();
+            let usage = tokio::task::spawn_blocking(move || {
+                usage::set_order(&hub, &ids)?;
+                anyhow::Ok(hub.usage.locked().visible())
+            })
+            .await??;
+            serde_json::to_value(usage)?
         }
         "listDirs" => {
             let path = b["path"].as_str().map(std::path::PathBuf::from);
-            tokio::task::spawn_blocking(move || list_dirs(path)).await??
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::listing(&hub.store, path)).await??
+        }
+        "selectWorkspace" => {
+            let path = str_arg(&b, "path")?.to_owned();
+            let hub = hub.clone();
+            tokio::task::spawn_blocking(move || super::folders::select(&hub.store, &path)).await??
         }
         "agentSetup" => {
             let step: crate::agent::term::Step =
@@ -99,16 +180,47 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let (cols, rows) = term_size(&b);
             // Node.js belongs to the computer, not to one agent.
             let backend = if step == crate::agent::term::Step::Node { "" } else { str_arg(&b, "backend")? };
-            json!({"term": hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?})
+            let term = match b["loginProfile"].as_str().filter(|_| step == crate::agent::term::Step::Login) {
+                Some(id) => {
+                    let command = crate::agent::login_profiles::login_command(&hub.store, id).await?;
+                    hub.terms.sign_in_account(backend, id, &command, cols, rows)?
+                }
+                None => hub.terms.start(backend, step, b["method"].as_str(), cols, rows).await?,
+            };
+            json!({"term": term})
         }
-        "agentModels" => crate::agent::auth::models(&hub.store, str_arg(&b, "backend")?).await?,
-        "agentAuth" => crate::agent::auth::check(&hub.store, str_arg(&b, "backend")?).await?,
-        "agentAuthenticate" => {
-            crate::agent::auth::authenticate(&hub.store, str_arg(&b, "backend")?, str_arg(&b, "method")?).await?
+        "agentModels" => crate::agent::auth::shared_models(hub, str_arg(&b, "backend")?).await?,
+        // A login profile's own sign-in state: `{signedIn, loginProfile}`, and the agent list it changed.
+        "agentAuth" if b["loginProfile"].is_string() => {
+            let id = str_arg(&b, "loginProfile")?;
+            let mut status = crate::market::agent_sign_in::check_login_profile(hub, id).await?;
+            status["backends"] = agents(hub).into();
+            status
         }
-        "setAgentEnv" => {
-            let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
-            crate::agent::auth::set_env(&hub.store, str_arg(&b, "backend")?, vars).await?
+        // An account login profile whose agent signs itself in (a browser on this computer): the same answer once
+        // it's done.
+        "agentAuthenticate" if b["loginProfile"].is_string() => {
+            let mut status = crate::market::agent_sign_in::sign_in_account(hub, str_arg(&b, "loginProfile")?).await?;
+            status["backends"] = agents(hub).into();
+            status
+        }
+        "agentAuth" | "agentAuthenticate" | "setAgentEnv" => {
+            let backend = str_arg(&b, "backend")?;
+            let status = match method {
+                "agentAuth" => crate::agent::auth::check(&hub.store, backend).await?,
+                "agentAuthenticate" => {
+                    crate::agent::auth::authenticate(&hub.store, backend, str_arg(&b, "method")?).await?
+                }
+                _ => {
+                    let vars = b["vars"].as_object().ok_or_else(|| anyhow!("`vars` is required"))?;
+                    crate::agent::auth::set_env(&hub.store, backend, vars).await?
+                }
+            };
+            // Chats that asked the user to sign in get their messages answered now.
+            if status["signedIn"] == true {
+                crate::market::agent_sign_in::agent_signed_in(hub, backend)?;
+            }
+            status
         }
         "termInput" => {
             hub.terms.write(str_arg(&b, "term")?, str_arg(&b, "data")?)?;
@@ -134,7 +246,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             } else {
                 crate::screen::IceConfig::default()
             };
-            let result = hub.screen.prepare(caller.device_key(), ice)?;
+            let result = hub.screen.prepare(caller.device_key(), ice, b["trickle"].as_bool().unwrap_or(false))?;
             let session = result["session"].as_str().context("missing screen session")?.to_owned();
             tokio::spawn(crate::screen::watch_viewer(hub.clone(), session, caller.device_key().to_owned()));
             result
@@ -142,6 +254,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "screenOffer" => {
             let display = b["display"].as_u64().and_then(|d| u32::try_from(d).ok());
             hub.screen.offer(caller.device_key(), str_arg(&b, "sdp")?, str_arg(&b, "session")?, display).await?
+        }
+        "screenCandidate" => {
+            let candidate = serde_json::from_value(b["candidate"].clone())?;
+            hub.screen.candidate(str_arg(&b, "session")?, caller.device_key(), candidate).await?;
+            json!({})
         }
         "screenClose" => {
             let session = str_arg(&b, "session")?;
@@ -151,11 +268,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({})
         }
         "screenTakeover" => {
-            hub.screen.takeover(b["on"].as_bool().unwrap_or(false));
+            hub.screen.takeover(caller.device_key(), b["on"].as_bool().unwrap_or(false));
             hub.screen.state()
         }
         "setAnalytics" => {
             hub.analytics.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false))?;
+            crate::remote::managed::share_analytics(hub);
             json!({"enabled": hub.analytics.state()})
         }
         "track" => {
@@ -165,6 +283,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "reportError" => {
             crate::analytics::errors::report(hub, &b)?;
             json!({})
+        }
+        "setAutoOrder" => {
+            hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
+            json!({"enabled": hub.auto_order()})
         }
         "setScreenEnabled" => {
             hub.screen.set_enabled(&hub.store, b["enabled"].as_bool().unwrap_or(false)).await?;
@@ -179,32 +301,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     }))
 }
 
-/// Blocking (`std::fs`): call through `spawn_blocking`.
-fn list_dirs(path: Option<std::path::PathBuf>) -> Result<Value> {
-    let dir = match path {
-        Some(p) => p,
-        None => dirs::home_dir().ok_or_else(|| anyhow!("no home directory"))?,
-    };
-    let mut dirs: Vec<Value> = std::fs::read_dir(&dir)
-        .with_context(|| format!("listing {}", dir.display()))?
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                return None;
-            }
-            let p = e.path();
-            Some(json!({"name": name, "path": p.to_string_lossy(), "isGit": p.join(".git").exists()}))
-        })
-        .collect();
-    dirs.sort_by_key(|d| d["name"].as_str().unwrap_or_default().to_lowercase());
-    Ok(json!({
-        "path": dir.to_string_lossy(),
-        "parent": dir.parent().map(|p| p.to_string_lossy().into_owned()),
-        "isGit": dir.join(".git").exists(),
-        "dirs": dirs,
-    }))
+/// The agents this computer can run, each with its login profiles.
+fn agents(hub: &Hub) -> Vec<Value> {
+    let mut agents = backends::list();
+    crate::agent::login_profiles::annotate(&hub.store, &mut agents);
+    agents
 }
 
 fn term_size(b: &Value) -> (u16, u16) {

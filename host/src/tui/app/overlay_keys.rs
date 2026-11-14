@@ -1,27 +1,15 @@
-//! Keys in the pickers: go-to, actions, agents and folders.
+//! Keys in the pickers: go-to, actions and folders.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::super::manage::{AnalyticsSheet, Reply};
 use super::{
-    ACTIONS, Action, After, AgentPicker, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderPicker, Goto, GotoItem,
-    NEW_GROUP, Overlay, contains, fuzzy,
+    ACTIONS, Action, After, App, Bot, ConfirmAct, Dir, Editor, FILTERS, FolderMode, FolderPicker, Goto, GotoItem,
+    Overlay, PairCode, contains, fuzzy,
 };
 
 impl App {
-    /// Agents offered for a new bot: runnable ones on this computer first.
-    pub fn agent_choices(&self, query: &str) -> Vec<&Value> {
-        let mut v: Vec<&Value> = self
-            .backends
-            .iter()
-            .filter(|b| b["available"].as_bool().unwrap_or(false) || b["registry"].is_string())
-            .filter(|b| fuzzy(query, &[b["name"].as_str().unwrap_or_default(), b["id"].as_str().unwrap_or_default()]))
-            .collect();
-        v.sort_by_key(|b| !b["installed"].as_bool().unwrap_or(false));
-        v
-    }
-
     pub fn goto_items(&self, g: &Goto) -> Vec<GotoItem> {
         let q = g.query.text.trim();
         let want = FILTERS[g.filter].1;
@@ -36,8 +24,20 @@ impl App {
         });
         let mut items: Vec<GotoItem> = bots.into_iter().map(|b| GotoItem::Bot(b.id.clone())).collect();
         if want.is_none() {
+            // First among the actions, so they show without scrolling past the long list.
+            let unhide = super::super::l10n::tr("Unhide");
+            let mut hidden: Vec<&Bot> =
+                self.bots.values().filter(|b| b.hidden && fuzzy(q, &[&b.name, "Unhide", unhide.as_ref()])).collect();
+            hidden.sort_by(|a, b| a.name.cmp(&b.name));
+            items.extend(hidden.into_iter().map(|b| GotoItem::Unhide(b.id.clone())));
             items.extend(
-                ACTIONS.iter().filter(|(label, _, _)| fuzzy(q, &[label])).map(|(_, _, a)| GotoItem::Action(*a)),
+                ACTIONS
+                    .iter()
+                    .filter(|(label, _, _)| {
+                        let translated = super::super::l10n::tr(label);
+                        fuzzy(q, &[label, translated.as_ref()])
+                    })
+                    .map(|(_, _, a)| GotoItem::Action(*a)),
             );
         }
         items
@@ -49,13 +49,29 @@ impl App {
             Action::NewGroup => self.new_group(),
             Action::Market => self.open_market(),
             Action::Memory => self.open_memory(),
-            Action::Routines => self.open_routines(),
+            Action::Details => self.open_routines(),
+            Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
-            Action::Usage => self.overlays.push(Overlay::Usage),
+            Action::Network => self.open_network(),
+            Action::Usage => self.overlays.push(Overlay::Usage(0)),
             Action::CheckUpdate => self.call("checkHostUpdate", json!({}), After::Update),
             Action::Analytics => self.toggle_analytics(),
+            Action::AutoOrder => self.toggle_auto_order(),
             Action::AboutAnalytics => self.overlays.push(Overlay::Analytics(AnalyticsSheet::default())),
+            Action::Appearance(mode) => match super::super::appearance::select(mode) {
+                Ok(()) => self.flash(&format!("Appearance: {}", mode.name())),
+                Err(error) => self.flash(&format!("Couldn't save appearance: {error}")),
+            },
+            Action::Language => {
+                let title = super::super::l10n::cycle_language();
+                self.flash(title.as_ref());
+            }
+            Action::ThinkingDetails => self.flash(if super::super::details::toggle() {
+                "Thinking details on: > unfolds a working bot's steps"
+            } else {
+                "Thinking details off"
+            }),
             Action::Keys => self.overlays.push(Overlay::Help(Editor::default())),
         }
     }
@@ -80,8 +96,9 @@ impl App {
                     let changed = After::Sheet(Reply::Changed);
                     match &c.act {
                         ConfirmAct::Delete(id) => self.call("deleteBot", json!({"botId": id}), After::Nothing),
-                        ConfirmAct::NewSession(id) => self.call("newSession", json!({"botId": id}), After::Nothing),
-                        ConfirmAct::ClearMemory(id) => self.call("clearMemory", json!({"botId": id}), changed),
+                        ConfirmAct::KeepHarnessMemory(id) => {
+                            self.call("updateBot", json!({"id": id, "harnessMemory": true}), changed);
+                        }
                         ConfirmAct::DeleteRoutine(bot, id) => {
                             self.call("deleteRoutine", json!({"botId": bot, "id": id}), changed);
                         }
@@ -98,20 +115,53 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => None,
                 _ => Some(Overlay::Confirm(c)),
             },
-            Overlay::Agents(a) => self.agents_key(a, k),
+            Overlay::NewBot(n) => self.new_bot_key(n, k),
             Overlay::Folder(p) => self.folder_key(p, k),
             Overlay::Form(f) => self.form_key(f, k),
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
+            Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Routines(l) => self.routines_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
+            Overlay::Computer(bot) => self.computer_key(bot, k),
+            Overlay::Library(l) => self.library_key(l, k),
+            Overlay::Gear(g) => Self::gear_key(g, k),
             Overlay::Market(m) => self.market_key(m, k),
             Overlay::Agent(a) => self.agent_key(a, k),
             Overlay::Fields(f) => self.fields_key(f, k),
+            Overlay::KeyImport(i) => self.key_import_key(i, k),
             Overlay::Skill(s) => self.skill_key(s, k),
             Overlay::Analytics(s) => s.key(k),
-            o @ (Overlay::Usage | Overlay::Pair(_)) => {
+            Overlay::Network(n) => self.network_key(n, k),
+            Overlay::WhatsNew(s) => s.key(k),
+            // A phone that scanned the code waits for this computer to let it in.
+            o @ Overlay::Pair(_)
+                if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>
+            {
+                self.decide_pairing(k.code);
+                // Answering the last question closes a sheet opened only for it.
+                (!(matches!(o, Overlay::Pair(PairCode::QuestionOnly)) && self.pairing_requests.is_empty())).then_some(o)
+            }
+            // A new code: after a failure, or in place of the one shown.
+            o @ Overlay::Pair(PairCode::QuestionOnly) if k.code == KeyCode::Char('r') => Some(o),
+            Overlay::Pair(_) if k.code == KeyCode::Char('r') => {
+                self.request_pairing_code();
+                Some(Overlay::Pair(PairCode::Loading))
+            }
+            Overlay::LeadAgent(scroll) => {
+                let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+                let max = super::super::view::lead_agent_scroll_max(width, height);
+                match k.code {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'I') => None,
+                    KeyCode::Down | KeyCode::Char('j') => Some(Overlay::LeadAgent((scroll + 1).min(max))),
+                    KeyCode::Up | KeyCode::Char('k') => Some(Overlay::LeadAgent(scroll.saturating_sub(1))),
+                    _ => Some(Overlay::LeadAgent(scroll.min(max))),
+                }
+            }
+            Overlay::Usage(scroll) => self.usage_key(scroll, k),
+            Overlay::UsageChooser { row, moving } => self.usage_chooser_key(row, moving, k),
+            o @ Overlay::Pair(_) => {
                 if matches!(k.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | 'U' | 'P')) {
                     None
                 } else {
@@ -152,6 +202,9 @@ impl App {
                         self.start_typing();
                     }
                     Some(GotoItem::Action(a)) => self.run_action(*a),
+                    Some(GotoItem::Unhide(id)) => {
+                        self.call("updateBot", json!({"id": id, "hidden": false}), After::Nothing);
+                    }
                     None => {}
                 }
                 return None;
@@ -165,42 +218,14 @@ impl App {
         Some(Overlay::Goto(g))
     }
 
-    /// The agent picker's last row, "New group chat", when the filter matches it.
-    pub fn agent_group_row(query: &str) -> bool {
-        fuzzy(query, &[NEW_GROUP])
-    }
-
-    fn agents_key(&mut self, mut a: AgentPicker, k: KeyEvent) -> Option<Overlay> {
-        let agents = self.agent_choices(&a.query.text).len();
-        let n = agents + usize::from(Self::agent_group_row(&a.query.text));
-        match k.code {
-            KeyCode::Esc => return None,
-            KeyCode::Down => a.cursor = (a.cursor + 1).min(n.saturating_sub(1)),
-            KeyCode::Up => a.cursor = a.cursor.saturating_sub(1),
-            KeyCode::Enter if a.cursor == agents && Self::agent_group_row(&a.query.text) => {
-                self.new_group();
-                return None;
-            }
-            KeyCode::Enter => {
-                let backend =
-                    self.agent_choices(&a.query.text).get(a.cursor).and_then(|b| b["id"].as_str()).map(str::to_owned);
-                if let Some(backend) = backend {
-                    self.overlays.push(Overlay::Agents(a));
-                    self.new_bot_form(backend);
-                    return None;
-                }
-            }
-            _ => {
-                if a.query.key(k) {
-                    a.cursor = 0;
-                }
-            }
-        }
-        Some(Overlay::Agents(a))
-    }
-
     pub(super) fn open_folder(&mut self, start: &str) {
+        let request_id = uuid::Uuid::new_v4().to_string();
         self.overlays.push(Overlay::Folder(FolderPicker {
+            request_id: request_id.clone(),
+            mode: FolderMode::Recent,
+            recent: vec![],
+            remembers: false,
+            busy: true,
             path: start.to_owned(),
             parent: None,
             dirs: vec![],
@@ -209,14 +234,60 @@ impl App {
             error: None,
         }));
         let body = if start.is_empty() { json!({}) } else { json!({"path": start}) };
-        self.call("listDirs", body, After::Dirs);
+        self.call("listDirs", body, After::Dirs(request_id));
     }
 
     pub fn folder_matches(p: &FolderPicker) -> Vec<&Dir> {
-        p.dirs.iter().filter(|d| fuzzy(&p.query.text, &[&d.name])).collect()
+        let items = if p.mode == FolderMode::Recent { &p.recent } else { &p.dirs };
+        items.iter().filter(|d| fuzzy(&p.query.text, &[&d.name, &d.path])).collect()
     }
 
     fn folder_key(&mut self, mut p: FolderPicker, k: KeyEvent) -> Option<Overlay> {
+        if k.code == KeyCode::Esc && p.mode != FolderMode::Path {
+            return None;
+        }
+        if p.busy {
+            return Some(Overlay::Folder(p));
+        }
+        if k.modifiers.contains(KeyModifiers::CONTROL) {
+            match k.code {
+                KeyCode::Char('r') => {
+                    p.mode = FolderMode::Recent;
+                    p.query.clear();
+                    p.cursor = 0;
+                }
+                KeyCode::Char('b') => {
+                    p.mode = FolderMode::Browse;
+                    p.query.clear();
+                    p.cursor = 0;
+                }
+                KeyCode::Char('l') => {
+                    p.mode = FolderMode::Path;
+                    p.query.clear();
+                }
+                _ => {
+                    p.query.key(k);
+                }
+            }
+            return Some(Overlay::Folder(p));
+        }
+        if p.mode == FolderMode::Path {
+            match k.code {
+                KeyCode::Esc => {
+                    p.mode = FolderMode::Browse;
+                    p.query.clear();
+                }
+                KeyCode::Enter if !p.query.text.trim().is_empty() => {
+                    self.call("listDirs", json!({"path": p.query.text.trim()}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
+                }
+                _ => {
+                    p.query.key(k);
+                }
+            }
+            return Some(Overlay::Folder(p));
+        }
         let matches: Vec<Dir> = Self::folder_matches(&p).into_iter().cloned().collect();
         match k.code {
             KeyCode::Esc => return None,
@@ -224,29 +295,34 @@ impl App {
             KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
             KeyCode::Right | KeyCode::Tab => {
                 if let Some(d) = matches.get(p.cursor) {
-                    let path = d.path.clone();
-                    self.call("listDirs", json!({"path": path}), After::Dirs);
+                    self.call("listDirs", json!({"path": d.path}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
                 }
             }
             KeyCode::Left | KeyCode::Backspace if p.query.text.is_empty() => {
                 if let Some(parent) = p.parent.clone() {
-                    self.call("listDirs", json!({"path": parent}), After::Dirs);
+                    self.call("listDirs", json!({"path": parent}), After::Dirs(p.request_id.clone()));
+                    p.mode = FolderMode::Browse;
+                    p.busy = true;
                 }
             }
-            KeyCode::Enter => {
-                // Enter on a highlighted child uses it; with nothing typed and no match, the current folder.
-                let chosen = if p.query.text.is_empty() && k.modifiers.contains(KeyModifiers::ALT) {
+            KeyCode::Enter | KeyCode::Char('.') if k.code == KeyCode::Enter || p.query.text.is_empty() => {
+                let current = k.code == KeyCode::Char('.') || k.modifiers.contains(KeyModifiers::ALT);
+                let chosen = if current {
                     p.path.clone()
                 } else {
-                    matches.get(p.cursor).map_or_else(|| p.path.clone(), |d| d.path.clone())
+                    matches.get(p.cursor).map_or_else(String::new, |d| d.path.clone())
                 };
-                self.folder_chosen(chosen);
-                return None;
-            }
-            KeyCode::Char('.') if p.query.text.is_empty() => {
-                let chosen = p.path.clone();
-                self.folder_chosen(chosen);
-                return None;
+                if !chosen.is_empty() {
+                    // Older hosts still validate using their existing directory endpoint.
+                    self.call(
+                        if p.remembers { "selectWorkspace" } else { "listDirs" },
+                        json!({"path": chosen}),
+                        After::WorkspaceSelected(p.request_id.clone()),
+                    );
+                    p.busy = true;
+                }
             }
             _ => {
                 if p.query.key(k) {
@@ -257,9 +333,38 @@ impl App {
         Some(Overlay::Folder(p))
     }
 
-    fn folder_chosen(&mut self, path: String) {
+    pub(super) fn folder_chosen(&mut self, path: String) {
+        // The drive list (Windows) has no path of its own to use.
+        if path.is_empty() {
+            return;
+        }
         if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
             f.cwd = path;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Bot, Editor, Goto, GotoItem, test_app};
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn the_palette_offers_to_unhide_hidden_bots() {
+        let mut app = test_app();
+        for (id, hidden) in [("shown", false), ("hidden", true)] {
+            let bot = Bot::parse(&json!({"id": id, "name": id, "hidden": hidden})).expect("a bot with an id parses");
+            app.bots.insert(id.into(), bot);
+        }
+        let g = Goto { query: Editor::default(), filter: 0, cursor: 0 };
+        let unhide: Vec<String> = app
+            .goto_items(&g)
+            .into_iter()
+            .filter_map(|i| match i {
+                GotoItem::Unhide(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(unhide, ["hidden"]);
     }
 }

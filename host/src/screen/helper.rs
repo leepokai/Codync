@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 #[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(unix)]
@@ -21,7 +23,6 @@ pub(super) type Pending = Mutex<HashMap<i64, oneshot::Sender<Result<Value, Strin
 
 /// One connected screen helper.
 pub(super) struct Link {
-    #[cfg_attr(windows, expect(dead_code, reason = "Windows has no screen helper yet"))]
     pub(super) id: u64,
     pub(super) tx: mpsc::UnboundedSender<String>,
     pub(super) pending: Pending,
@@ -39,7 +40,7 @@ impl Link {
             bail!("the screen helper disconnected");
         }
         // Permission dialogs wait for a person; normal helper calls should still fail quickly.
-        let timeout = if method == "requestPermission" { Duration::from_secs(120) } else { HELPER_TIMEOUT };
+        let timeout = if method == "requestPermission" { Duration::from_mins(2) } else { HELPER_TIMEOUT };
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(Ok(v))) => Ok(v),
             Ok(Ok(Err(message))) => Err(anyhow!(message)),
@@ -113,33 +114,88 @@ pub(super) fn graphical_session() -> bool {
 pub async fn supervise_linux_helper(screen: Arc<Screen>) {
     let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("codync-screen")));
     let program = exe.filter(|p| p.is_file()).unwrap_or_else(|| "codync-screen".into());
-    let mut child: Option<tokio::process::Child> = None;
-    let mut backoff = Duration::from_secs(1);
+    let mut child: Option<(tokio::process::Child, Instant)> = None;
+    let mut restarts = Restarts::default();
+    let mut next_start = Instant::now();
     loop {
-        let running = child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
-        if screen.enabled() && !running {
-            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
-                Ok(c) => child = Some(c),
-                Err(error) => tracing::warn!(%error, program = %program.display(), "can't start codync-screen"),
-            }
-            tokio::time::sleep(backoff).await;
-            backoff = (backoff * 2).min(Duration::from_secs(30));
-            continue;
-        }
-        if !screen.enabled()
-            && let Some(mut c) = child.take()
+        if let Some((c, started)) = child.as_mut()
+            && let Ok(Some(status)) = c.try_wait()
         {
-            let _ = c.kill().await;
+            if restarts.exited(started.elapsed()) {
+                tracing::warn!(
+                    program = %program.display(), %status, exits = QUICK_EXITS,
+                    "codync-screen keeps exiting right after it starts (its own error is logged just before, \
+                     e.g. missing GStreamer libraries); retrying less often, up to every 2 minutes"
+                );
+            }
+            child = None;
         }
-        if running && screen.link.locked().is_some() {
-            backoff = Duration::from_secs(1);
+        if !screen.enabled() {
+            if let Some((mut c, _)) = child.take() {
+                let _ = c.kill().await;
+            }
+            restarts = Restarts::default();
+            next_start = Instant::now();
+        } else if child.is_none() && Instant::now() >= next_start {
+            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
+                Ok(c) => child = Some((c, Instant::now())),
+                Err(error) => {
+                    if restarts.exited(Duration::ZERO) {
+                        tracing::warn!(
+                            %error, program = %program.display(),
+                            "can't start codync-screen; retrying less often, up to every 2 minutes"
+                        );
+                    }
+                }
+            }
+            next_start = Instant::now() + restarts.next_wait();
+        } else if child.is_some() && screen.link.locked().is_some() {
+            restarts = Restarts::default();
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
+/// A helper that exits this soon after starting can't run here yet: missing `GStreamer` libraries,
+/// which a cloud computer's setup installs a minute or two after the host starts.
+#[cfg(target_os = "linux")]
+const QUICK_EXIT: Duration = Duration::from_secs(10);
+/// Quick exits in a row that make a failing streak.
+#[cfg(target_os = "linux")]
+const QUICK_EXITS: u32 = 3;
+
+/// When to start the helper again: doubling waits up to 30 s, up to 2 minutes during a failing
+/// streak, so a helper that can't run yet comes up by itself soon after it can, without flooding the log.
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct Restarts {
+    quick_exits: u32,
+    wait: Duration,
+}
+
+#[cfg(target_os = "linux")]
+impl Restarts {
+    /// Counts an exit after running for `ran`; true when it starts a failing streak (say why once).
+    fn exited(&mut self, ran: Duration) -> bool {
+        if ran >= QUICK_EXIT {
+            self.quick_exits = 0;
+            return false;
+        }
+        self.quick_exits += 1;
+        self.quick_exits == QUICK_EXITS
+    }
+
+    /// The wait after this start before the next one.
+    fn next_wait(&mut self) -> Duration {
+        let cap = if self.quick_exits >= QUICK_EXITS { Duration::from_mins(2) } else { Duration::from_secs(30) };
+        self.wait = (self.wait * 2).clamp(Duration::from_secs(1), cap);
+        self.wait
+    }
+}
+
 #[cfg(unix)]
 async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
+    let mut generation = screen.helper_generation.subscribe();
     let (rd, mut wr) = stream.into_split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let link = Arc::new(Link {
@@ -148,7 +204,12 @@ async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
         pending: Mutex::default(),
         next_id: AtomicI64::new(1),
     });
-    *screen.link.locked() = Some(link.clone());
+    {
+        let mut slot = screen.link.locked();
+        *slot = Some(link.clone());
+        screen.reset_helper_state();
+        screen.helper_generation.send_replace(link.id);
+    }
     tracing::info!("screen helper connected");
     let writer = tokio::spawn(async move {
         while let Some(mut line) = rx.recv().await {
@@ -159,37 +220,27 @@ async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
         }
     });
     let mut lines = BufReader::new(rd).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-            tracing::debug!(line, "ignoring non-JSON from the screen helper");
+    loop {
+        let packet = tokio::select! {
+            packet = lines.next_line() => { let Ok(Some(packet)) = packet else { break }; packet }
+            changed = generation.changed() => {
+                if changed.is_err() || *generation.borrow() != link.id { break; }
+                continue;
+            }
+        };
+        let Ok(msg) = serde_json::from_str::<Value>(&packet) else {
+            tracing::debug!(packet, "ignoring non-JSON from the screen helper");
             continue;
         };
-        match (msg["method"].as_str(), msg["id"].as_i64()) {
-            (None, Some(id)) => {
-                if let Some(waiter) = link.pending.locked().remove(&id) {
-                    let res = match msg.get("error") {
-                        Some(e) => Err(e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned)),
-                        None => Ok(msg["result"].clone()),
-                    };
-                    let _ = waiter.send(res);
-                }
-            }
-            (Some("status"), _) => match serde_json::from_value::<HelperStatus>(msg["params"].clone()) {
-                Ok(st) => {
-                    *screen.status.locked() = st;
-                    screen.emit();
-                }
-                Err(error) => tracing::warn!(%error, "bad status from the screen helper"),
-            },
-            (Some("session"), _) => {
-                if msg["params"]["state"] == "closed"
-                    && let Some(s) = msg["params"]["session"].as_str()
-                {
-                    screen.session_closed(s);
-                }
-            }
-            (Some(method), _) => tracing::debug!(method, "unknown screen helper notification"),
-            _ => {}
+        // Keep replacement atomic with every notification's state changes.
+        let current = screen.link.locked();
+        if current.as_ref().is_none_or(|current| current.id != link.id) {
+            break;
+        }
+        let announce = handle_message(&screen, &link, &msg);
+        drop(current);
+        if announce {
+            screen.emit();
         }
     }
     writer.abort();
@@ -199,79 +250,74 @@ async fn run_link(screen: Arc<Screen>, stream: UnixStream) {
         let current = slot.as_ref().is_some_and(|l| l.id == link.id);
         if current {
             *slot = None;
+            screen.reset_helper_state();
         }
         current
     };
     if current {
-        *screen.status.locked() = HelperStatus::default();
-        screen.sessions.locked().clear();
-        screen.control.locked().user = false;
         screen.emit();
     }
     tracing::info!("screen helper disconnected");
 }
 
-#[cfg(all(test, unix))]
-mod tests {
-    use super::*;
-    use crate::screen::tests::retina;
-    use crate::screen::viewer::{IceConfig, IceServer};
-    use tokio::sync::broadcast;
-
-    #[tokio::test]
-    async fn helper_roundtrip_over_the_socket() {
-        let (tx, _) = broadcast::channel(8);
-        let screen = Arc::new(Screen::new(Some(true), tx));
-        let (a, b) = UnixStream::pair().unwrap();
-        let (observed_tx, mut observed_rx) = mpsc::unbounded_channel();
-        // Fake helper reports a display and records the host's ICE configuration.
-        tokio::spawn(async move {
-            let (rd, mut wr) = b.into_split();
-            let status = json!({"jsonrpc": "2.0", "method": "status", "params": {"platform": "test", "capture": true, "displays": [retina()]}});
-            wr.write_all(format!("{status}\n").as_bytes()).await.unwrap();
-            let mut lines = BufReader::new(rd).lines();
-            while let Ok(Some(l)) = lines.next_line().await {
-                let m: Value = serde_json::from_str(&l).unwrap();
-                observed_tx.send(m.clone()).unwrap();
-                let res = json!({"jsonrpc": "2.0", "id": m["id"], "result": {"sdp": format!("answer to {}", m["params"]["sdp"].as_str().unwrap_or_default())}});
-                wr.write_all(format!("{res}\n").as_bytes()).await.unwrap();
+/// Applies one message from the helper; true when clients should hear about the change.
+#[cfg(unix)]
+fn handle_message(screen: &Screen, link: &Link, msg: &Value) -> bool {
+    match (msg["method"].as_str(), msg["id"].as_i64()) {
+        (None, Some(id)) => {
+            if let Some(waiter) = link.pending.locked().remove(&id) {
+                let res = match msg.get("error") {
+                    Some(e) => Err(e["message"].as_str().map_or_else(|| e.to_string(), str::to_owned)),
+                    None => Ok(msg["result"].clone()),
+                };
+                let _ = waiter.send(res);
             }
-        });
-        tokio::spawn(run_link(screen.clone(), a));
-        for _ in 0..50 {
-            if screen.status.locked().capture {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            false
         }
-        let local = screen.prepare("local", IceConfig::default()).unwrap();
-        let res = screen.offer("local", "offer", local["session"].as_str().unwrap(), None).await.unwrap();
-        assert_eq!(res["sdp"], "answer to offer");
-        assert_eq!(screen.state()["viewers"], 1);
-        assert_eq!(screen.state()["displays"][0]["name"], "Built-in");
-        let direct = observed_rx.recv().await.unwrap();
-        assert_eq!(direct["params"]["iceServers"], json!([]));
-        assert_eq!(direct["params"]["maxBitrateBps"], 16_000_000);
-        let config = IceConfig {
-            ice_servers: vec![IceServer {
-                urls: vec!["turn:turn.cloudflare.com:3478?transport=udp".into()],
-                username: Some("u".into()),
-                credential: Some("p".into()),
-            }],
-            ..IceConfig::default()
-        };
-        screen.takeover(true);
-        let prepared = screen.prepare("phone", config).unwrap();
-        screen.session_closed(res["session"].as_str().unwrap());
-        assert_eq!(screen.state()["userControl"], true, "renewal keeps takeover while the replacement is pending");
-        let id = prepared["session"].as_str().unwrap();
-        assert!(screen.offer("other", "offer", id, None).await.is_err());
-        screen.offer("phone", "offer", id, None).await.unwrap();
-        let remote = observed_rx.recv().await.unwrap();
-        assert_eq!(remote["params"]["iceServers"], prepared["iceServers"]);
-        assert_eq!(remote["params"]["maxBitrateBps"], 4_000_000);
-        assert_eq!(remote["params"]["maxFramerate"], 30);
-        screen.sessions.locked().get_mut(id).unwrap().ice.expires_at = 0;
-        assert!(screen.offer("phone", "offer", id, None).await.is_err());
+        (Some("status"), _) => match serde_json::from_value::<HelperStatus>(msg["params"].clone()) {
+            Ok(st) => {
+                *screen.status.locked() = st;
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "bad status from the screen helper");
+                false
+            }
+        },
+        (Some("candidate"), _) => {
+            if let Some(session) = msg["params"]["session"].as_str() {
+                screen.helper_candidate(session, msg["params"]["candidate"].clone());
+            }
+            false
+        }
+        (Some("session"), _) => {
+            let Some(session) = msg["params"]["session"].as_str() else { return false };
+            match msg["params"]["state"].as_str() {
+                Some("closed") => screen.remove_session(session),
+                Some("connected") => {
+                    screen.session_connected(session);
+                    false
+                }
+                _ => false,
+            }
+        }
+        (Some(method), _) => {
+            tracing::debug!(method, "unknown screen helper notification");
+            false
+        }
+        _ => false,
     }
 }
+
+#[cfg(unix)]
+impl Screen {
+    /// Nothing from a previous helper carries over to the next one.
+    fn reset_helper_state(&self) {
+        self.end_viewers(&mut self.sessions.locked(), |_, _| true);
+        *self.status.locked() = HelperStatus::default();
+        self.control.locked().user = None;
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests;

@@ -30,6 +30,8 @@ function status(): string {
 /** Registers (or removes) the agent; returns whether macOS wants the user to allow it. */
 export function setScreenAgent(on: boolean): { needsApproval: boolean } {
   if (!isMac || !app.isPackaged) return { needsApproval: false }
+  // Registering an enabled agent is a no-op, so a helper launchd gave up on would never start again.
+  if (on && status() === 'enabled') app.setLoginItemSettings({ type: 'agentService', serviceName, openAtLogin: false })
   app.setLoginItemSettings({ type: 'agentService', serviceName, openAtLogin: on })
   prefs.set('screenHelperStamp', on ? helperStamp() : null)
   prefs.set('screenHelperResumeAfterUpdate', false)
@@ -48,7 +50,6 @@ export function syncScreenAgent(enabled: boolean): { needsApproval: boolean } {
   }
   const stale = prefs.get('screenHelperStamp') !== helperStamp()
   if (!stale && status() === 'enabled') return { needsApproval: false }
-  if (stale && status() === 'enabled') app.setLoginItemSettings({ type: 'agentService', serviceName, openAtLogin: false })
   return setScreenAgent(true)
 }
 

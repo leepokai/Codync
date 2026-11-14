@@ -1,8 +1,11 @@
+import type { SignInFailure, SignInProvider } from './analytics'
 import type { SharedFile } from './models'
 import type { SSHBridge } from './ssh'
 import type { ScreenAgentState } from './computer-access'
 import type { IslandRect, IslandScreen, IslandSummary } from './island'
+import type { VoiceKey, VoiceShortcut } from './voice-shortcut'
 import type { ErrorReport } from './error-report'
+import type { Appearance } from './appearance'
 
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
@@ -32,24 +35,88 @@ export interface HostSnapshot {
 export interface CallError {
   status: number
   message: string
+  /** An account computer that isn't connected to the relay (a cloud computer asleep, or one that's off). */
+  offline?: boolean
+}
+
+/** A menu image as PNG data URLs drawn for 1x and 2x screens; each screen shows its own. */
+export interface TrayImage {
+  x1: string
+  x2: string
+}
+
+/** The SF Symbols beside the tray menu's actions and its computers. */
+export const TRAY_SYMBOLS = [
+  'macwindow',
+  'qrcode',
+  'square.on.square',
+  'arrow.down.circle',
+  'arrow.clockwise.circle',
+  'list.bullet.rectangle',
+  'person.crop.circle.badge.checkmark',
+  'display',
+  'gearshape',
+  'power',
+  'laptopcomputer',
+  'desktopcomputer',
+  'macmini',
+  'macstudio',
+  'macpro.gen3',
+  'cloud',
+] as const
+export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
+
+/** One usage limit in the tray menu: its line and bar, or a note with no bar. */
+export interface TrayUsageLine {
+  title: string
+  bar: TrayImage | null
+}
+
+/** One login of an agent with its limits. */
+export interface TrayUsageLogin {
+  name: string
+  lines: TrayUsageLine[]
+}
+
+/** An agent's logins, the default one first: one when it has no login profiles. */
+export interface TrayUsageAgent {
+  name: string
+  icon: TrayImage | null
+  logins: TrayUsageLogin[]
+}
+
+/** A computer's usage limits by agent. */
+export interface TrayUsageComputer {
+  /** Null while the app has one computer: its agents then list in the menu itself. */
+  name: string | null
+  symbol: TraySymbol
+  agents: TrayUsageAgent[]
 }
 
 /** What the tray menu shows; the renderer owns the stores and sends this on every change. */
 export interface TraySummary {
   status: string
   canPair: boolean
-  bots: { ref: string; name: string; detail: string; working: boolean; avatar: string | null }[]
+  bots: { ref: string; name: string; detail: string; working: boolean; avatar: TrayImage | null }[]
   approval: string | null
-  usage: { name: string; icon: string | null; lines: { title: string; bar: string | null }[] }[]
+  /** Every computer with usage limits to show. */
+  usage: TrayUsageComputer[]
   screen: {
     enabled: boolean
     subtitle: string
     error: string | null
   } | null
-  version: string | null
+  /** This computer's networks (codync-network), lines already translated; null on hosts without them. */
+  networks: { title: string; computers: { label: string; dot: TrayImage | null }[] }[] | null
+  /** The Network row's codync-network mark (SF Symbols has none), drawn on every platform; a template image on macOS. */
+  networkIcon: TrayImage | null
+  /** Windows and Linux: the actions' symbols drawn by the renderer (macOS menus draw SF Symbols); null on macOS. */
+  symbols: Partial<Record<TraySymbol, TrayImage>> | null
   needsAttention: boolean
   textSize: number
   usageIconStyle: 'character' | 'original'
+  /** The tray and the application menu are system menus, so the main process translates their labels from this. */
+  language: 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'pt-BR' | 'ru' | 'it'
 }
 
 /** Things the tray menu (or the app menu) asks the window to do. */
@@ -58,17 +125,28 @@ export type WindowCommand =
   | { kind: 'stopBot'; ref: string }
   | { kind: 'reviewApprovals' }
   | { kind: 'confirmReset' }
+  | { kind: 'upToDate' }
   | { kind: 'setTextSize'; size: number }
   | { kind: 'stepTextSize'; up: boolean | null }
   | { kind: 'setUsageIconStyle'; style: 'character' | 'original' }
   | { kind: 'setRemoteScreen'; on: boolean }
   | { kind: 'computerAccess' }
-  | { kind: 'newChat' }
+  | { kind: 'networkSettings' }
+  | { kind: 'newBot' }
   | { kind: 'search' }
+  /** ⌘F: the find bar over the open conversation. */
+  | { kind: 'find' }
+  /** ⌘G / ⇧⌘G: the next or previous match of the open find bar. */
+  | { kind: 'findStep'; forward: boolean }
   | { kind: 'toggleSidebar' }
   | { kind: 'toggleDetails' }
+  | { kind: 'refresh' }
   | { kind: 'respondPermission'; ref: string; entryId: string; optionId: string }
   | { kind: 'sendMessage'; ref: string; text: string }
+  /** The voice input shortcut, while the island is off: a double tap starts dictating into the composer, a tap sends. */
+  | { kind: 'voiceKey'; key: VoiceKey }
+  /** The chat window was shown again after being hidden (`window_opened`). */
+  | { kind: 'windowOpened' }
 
 /** The app's own updates (electron-updater, release builds only). */
 export interface UpdateState {
@@ -85,8 +163,6 @@ export interface UpdateState {
   autoDownload: boolean
   lastCheck: number | null
   error: string | null
-  /** The release waits until paired iPhones can get the app it needs. */
-  waitingForApp: string | null
 }
 
 export interface AccountState {
@@ -107,6 +183,9 @@ export type SpeechEvent =
   | { type: 'stopped' }
   | { type: 'error'; message: string }
 
+/** A dropped, pasted or picked file: its name and bytes. */
+export type PickedFile = { name: string; data: Uint8Array }
+
 export interface CodyncBridge {
   platform: 'darwin' | 'linux' | 'win32'
   appName: string
@@ -115,7 +194,9 @@ export interface CodyncBridge {
   appVersion: string
   /** The computer's name ("Kevin's MacBook Pro"). */
   computerName: string
-  /** Screenshot/UI checks: CODYNC_DEBUG_OPEN=compose | group | plugins | computers | <bot name>. */
+  /** This launch was started by the login item (Open at login). */
+  openedAtLogin: boolean
+  /** Screenshot/UI checks: CODYNC_DEBUG_OPEN=newBot | newGroup | plugins | computers | <bot name>. */
   debugOpen: string | null
   host: {
     snapshot(): Promise<HostSnapshot>
@@ -127,11 +208,20 @@ export interface CodyncBridge {
     /** SSE on a loopback host: each `data:` line, then `onEnd` (with an error when it failed). */
     stream(url: string, token: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
   }
+  /** An account computer over the relay's encrypted channel, with the same calls and streams as `host`. */
+  channel: {
+    call(computerId: string, signKey: string, method: string, body: unknown, timeoutMs: number): Promise<unknown>
+    /** `path`: `/events?…` or `/term/{id}`, as on a loopback host. */
+    stream(computerId: string, signKey: string, path: string, onData: (line: string) => void, onEnd: (error: CallError | null) => void): () => void
+  }
   account: {
     state(): Promise<AccountState>
     onChange(cb: (s: AccountState) => void): () => void
-    signIn(provider: 'apple' | 'google'): Promise<void>
+    /** Why it ended without an account; null once signed in (or while another sign-in runs). */
+    signIn(provider: SignInProvider): Promise<SignInFailure | null>
     signOut(): Promise<void>
+    /** Deletes the signed-in Codync account in Clerk; false when it couldn't (nothing changed). */
+    deleteAccount(): Promise<boolean>
     /** The signed-in session's JWT for the Codync cloud. */
     token(): Promise<string>
   }
@@ -144,6 +234,11 @@ export interface CodyncBridge {
     start(locale: string | null): void
     stop(): void
     onEvent(cb: (e: SpeechEvent) => void): () => void
+    /** The voice input shortcut (Settings → General); always `off` without on-device speech. */
+    shortcut(): Promise<VoiceShortcut>
+    setShortcut(shortcut: VoiceShortcut): Promise<VoiceShortcut>
+    /** A call is on (or over): it has the microphone, so the voice input shortcut does nothing meanwhile. */
+    setCalling(on: boolean): void
   }
   ssh: SSHBridge
   /** The notch island (shared/island.ts): its setting, the chat window's summary, and the island window's side. */
@@ -164,6 +259,8 @@ export interface CodyncBridge {
     /** ⌥Y / ⌥N answer the approval on screen, from any app, while it shows. */
     setKeys(on: boolean): void
     onKey(cb: (answer: 'allow' | 'deny') => void): () => void
+    /** The voice input shortcut's taps, from any app, while the island is on. */
+    onVoiceKey(cb: (key: VoiceKey) => void): () => void
     respond(ref: string, entryId: string, optionId: string): void
     send(ref: string, text: string): void
     openBot(ref: string): void
@@ -173,6 +270,8 @@ export interface CodyncBridge {
   /** The Codync cloud's `/v1` API with the signed-in session (and the device key for `signed`). */
   cloud: {
     request(method: string, path: string, body: unknown, signed: boolean): Promise<{ ok: true; value: unknown } | { ok: false; error: { status: number; code: string; message: string | null } }>
+    /** Asks a Codync Cloud computer for this device's access and waits for its answer (it approves by itself). */
+    requestAccess(computerId: string): Promise<{ ok: true; value: { status: string } } | { ok: false; error: { status: number; code: string; message: string | null } }>
   }
   updates: {
     state(): Promise<UpdateState>
@@ -183,6 +282,12 @@ export interface CodyncBridge {
     setAutoCheck(on: boolean): void
     setAutoDownload(on: boolean): void
   }
+  /** Artifacts shown in a frame of their own (`main/artifacts.ts`). */
+  artifacts: {
+    /** Makes `codync-artifact://<id>` serve this HTML. */
+    show(id: string, html: Uint8Array): Promise<void>
+    openInBrowser(id: string, html: Uint8Array): Promise<void>
+  }
   files: {
     begin(file: SharedFile): Promise<string | null>
     write(id: string, offset: number, data: Uint8Array): Promise<void>
@@ -190,17 +295,28 @@ export interface CodyncBridge {
     cancel(id: string): Promise<void>
   }
   app: {
+    /** Whether someone is looking at this window (shown, and the computer in use), then each change. */
+    attended(): Promise<boolean>
+    onAttended(cb: (attended: boolean) => void): () => void
     /** Error tracking: an uncaught error in this window (shared/error-report.ts). */
     reportError(report: ErrorReport): void
     openExternal(url: string): void
     copy(text: string): void
+    /** The remote screen keyboard took or lost focus: while it has it, shortcuts go to the other computer, not the menu. */
+    remoteKeyboard(on: boolean): void
     /** Files picked in the system dialog: name and bytes. */
-    pickFiles(): Promise<{ name: string; data: Uint8Array }[]>
-    readClipboardFiles(): Promise<{ name: string; data: Uint8Array }[]>
+    pickFiles(): Promise<PickedFile[]>
+    /** A bot export (.zip) picked in the system dialog: its path on this computer, or null. */
+    pickExport(): Promise<string | null>
+    readClipboardFiles(): Promise<PickedFile[]>
     setTraySummary(summary: TraySummary): void
+    /** Brings the chat window forward (a phone waits for this computer to let it in). */
+    showWindow(): void
     onCommand(cb: (command: WindowCommand) => void): () => void
     resetAllData(): Promise<void>
     setLaunchAtLogin(on: boolean): Promise<boolean>
+    appearance(): Promise<Appearance>
+    setAppearance(value: Appearance): Promise<Appearance>
     showInDock(): Promise<boolean>
     setShowInDock(on: boolean): Promise<boolean>
     launchAtLogin(): Promise<boolean>

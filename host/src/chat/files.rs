@@ -16,6 +16,18 @@ pub struct SharedFile {
     pub name: String,
     pub size: u64,
     pub sha256: String,
+    /// A sound the chat plays in place (a voice note), as opposed to a file to download. Stamped once by the host so
+    /// every client follows one rule; missing (an older host) means a plain file card.
+    #[serde(default, rename = "playsInChat")]
+    pub plays_in_chat: bool,
+}
+
+/// The largest sound a chat fetches whole to play.
+const PLAYABLE_BYTES: u64 = 20 * 1024 * 1024;
+
+fn plays_in_chat(name: &str, size: u64) -> bool {
+    let extension = name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase());
+    matches!(extension.as_deref(), Some("mp3" | "m4a" | "wav" | "aac")) && size <= PLAYABLE_BYTES
 }
 
 /// Removes an unpublished snapshot on every failure, including a dropped actor.
@@ -58,7 +70,7 @@ pub fn name(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
-fn open_regular(path: &Path) -> Result<File> {
+pub(crate) fn open_regular(path: &Path) -> Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -99,7 +111,7 @@ pub fn snapshot(
     let final_path = path(root, &id)?;
     let partial = final_path.with_extension("partial");
     let mut owned = Snapshot {
-        meta: SharedFile { id, name: display, size: 0, sha256: String::new() },
+        meta: SharedFile { id, name: display, size: 0, sha256: String::new(), plays_in_chat: false },
         path: partial.clone(),
         committed: false,
     };
@@ -117,6 +129,7 @@ pub fn snapshot(
     std::fs::rename(&partial, &final_path)?;
     owned.path = final_path;
     owned.meta.sha256 = digest;
+    owned.meta.plays_in_chat = plays_in_chat(&owned.meta.name, owned.meta.size);
     Ok(owned)
 }
 
@@ -154,11 +167,16 @@ pub fn digest_hex(bytes: &[u8]) -> String {
 
 pub fn read(root: &Path, meta: &SharedFile, offset: u64) -> Result<Vec<u8>> {
     ensure!(meta.size <= MAX_FILE && offset <= meta.size, "invalid file offset or size");
-    let mut file = open_regular(&path(root, &meta.id)?)?;
-    ensure!(file.metadata()?.len() == meta.size, "shared file is missing or damaged");
+    read_chunk(&path(root, &meta.id)?, meta.size, offset, "shared file is missing or damaged")
+}
+
+/// Up to `CHUNK_SIZE` bytes of the stored file `path` from `offset` (at most `size`); fails with `damaged` unless the
+/// file is `size` bytes long.
+pub(crate) fn read_chunk(path: &Path, size: u64, offset: u64, damaged: &str) -> Result<Vec<u8>> {
+    let mut file = open_regular(path)?;
+    ensure!(file.metadata()?.len() == size, "{damaged}");
     file.seek(SeekFrom::Start(offset))?;
-    let length = usize::try_from((meta.size - offset).min(CHUNK_SIZE as u64))?;
-    let mut data = vec![0; length];
+    let mut data = vec![0; usize::try_from((size - offset).min(CHUNK_SIZE as u64))?];
     file.read_exact(&mut data)?;
     Ok(data)
 }

@@ -27,14 +27,20 @@ public extension UsageProvider {
     /// Claude keeps its orange; everyone else is ink, like the rest of the app.
     var tint: Color { id == "claude" ? Color(hex: 0xD97757) : Palette.accent }
 
-    /// ACP registry id of the provider's agent, for its logo (`AgentIcon`).
-    /// Claude and Codex run through ACP adapters (`claude-acp`, `codex-acp`); others by their own id.
-    var registry: String { ["claude", "codex"].contains(id) ? "\(id)-acp" : id }
+    /// The name of this agent's logo in this bundle, when it has one. A host or a saved widget that
+    /// doesn't name the registry id: Claude and Codex run through ACP adapters, others go by their own id.
+    var logoAsset: String? {
+        let name = "agent-\(registry ?? (["claude", "codex"].contains(id) ? "\(id)-acp" : id))"
+        return UIImage(named: name, in: .module, compatibleWith: nil) == nil ? nil : name
+    }
 
     /// The character that stands for this provider.
     var mascotShape: String { id == "codex" ? "hex" : "blob" }
 
-    var tightest: UsageWindow? { windows.max { $0.percent < $1.percent } }
+    /// Plan windows of the login closest to a limit.
+    var limits: [UsageWindow] { tightestLogin.limits }
+
+    var tightest: UsageWindow? { tightestLogin.tightest }
 }
 
 public extension UsageWindow {
@@ -44,6 +50,14 @@ public extension UsageWindow {
         if let model = label.split(separator: " · ").dropFirst().first { return String(model) }
         return label
     }
+
+    /// "62% used": the share of the cap already spent, said so (a bare percent reads as what's left).
+    var usedText: String {
+        L10n.tr("{percent}% used").replacingOccurrences(of: "{percent}", with: "\(Int(percent.rounded()))")
+    }
+
+    /// The used percent, or the note when this window isn't a share of a cap.
+    var reading: String { text ?? usedText }
 
     /// "resets 3h 20m" / "resets Sep 26 at 12pm", compact for widgets and cards.
     func resetsShort(now: Date = .now) -> String? {
@@ -67,8 +81,8 @@ public struct ProviderMascot: View {
     public var body: some View {
         let full = (provider.tightest?.percent ?? 0) >= 90
         Group {
-            if style == .original {
-                Image("agent-\(provider.registry)", bundle: .module)
+            if style == .original, let logo = provider.logoAsset {
+                Image(logo, bundle: .module)
                     .resizable().scaledToFit().padding(size * 0.08)
                     .foregroundStyle(provider.tint)
             } else {

@@ -111,59 +111,120 @@
     ],
     "android": [
       {
-        "id": "s_mup83m53_5",
+        "id": "s_a1",
         "layout": "hero",
         "label": {
-          "en": "MEET YOUR APP"
+          "en": "CODYNC",
+          "zh-Hant": "CODYNC"
         },
         "headline": {
-          "en": "Sell one\nidea per slide."
+          "en": "Your coding agents,\nas bots.",
+          "zh-Hant": "你的 coding agent，\n變成 bot。"
         },
-        "screenshot": ""
+        "screenshot": "/screenshots/android/phone/en/01.png"
       },
       {
-        "id": "s_mup83m53_6",
-        "layout": "device-bottom",
-        "label": {
-          "en": "FEATURE 01"
-        },
-        "headline": {
-          "en": "Your headline\nlives here."
-        },
-        "screenshot": ""
-      },
-      {
-        "id": "s_mup83m53_7",
-        "layout": "two-devices",
-        "label": {
-          "en": "FEATURE 02"
-        },
-        "headline": {
-          "en": "Show two\nscreens at once."
-        },
-        "screenshot": "",
-        "screenshotSecondary": ""
-      },
-      {
-        "id": "s_mup83m53_8",
+        "id": "s_a2",
         "layout": "device-top",
         "label": {
-          "en": "FEATURE 03"
+          "en": "DELEGATE",
+          "zh-Hant": "交辦"
         },
         "headline": {
-          "en": "Flip the contrast\nfor visual rhythm."
+          "en": "Say what.\nPut the phone away.",
+          "zh-Hant": "交代一句，\n手機收起來。"
         },
-        "screenshot": "",
-        "inverted": true
+        "screenshot": "/screenshots/android/phone/en/02.png",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 86.4,
+            "y": 1330,
+            "width": 907.1999999999999,
+            "height": 537.6
+          }
+        }
       },
       {
-        "id": "s_mup83m53_9",
-        "layout": "no-device",
+        "id": "s_a3",
+        "layout": "device-bottom",
         "label": {
-          "en": "MORE"
+          "en": "APPROVE",
+          "zh-Hant": "批准"
         },
         "headline": {
-          "en": "And so\nmuch more."
+          "en": "Approve\nfrom anywhere.",
+          "zh-Hant": "人在哪，\n都能批准。"
+        },
+        "screenshot": "/screenshots/android/phone/en/03.png"
+      },
+      {
+        "id": "s_a4",
+        "layout": "two-devices",
+        "label": {
+          "en": "GROUP CHAT",
+          "zh-Hant": "群組"
+        },
+        "headline": {
+          "en": "Let your bots\nreview each other.",
+          "zh-Hant": "讓 bot\n互相 review。"
+        },
+        "screenshot": "/screenshots/android/phone/en/04.png",
+        "screenshotSecondary": "/screenshots/android/phone/en/05.png",
+        "transforms": {
+          "caption": {
+            "x": 86.4,
+            "y": 64,
+            "width": 907.1999999999999,
+            "height": 537.6
+          }
+        }
+      },
+      {
+        "id": "s_a5",
+        "layout": "device-top",
+        "label": {
+          "en": "LIVE UPDATES",
+          "zh-Hant": "即時更新"
+        },
+        "headline": {
+          "en": "Follow along\nin the status bar.",
+          "zh-Hant": "狀態列上\n隨時看進度。"
+        },
+        "screenshot": "/screenshots/android/phone/en/06.png",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 86.4,
+            "y": 1330,
+            "width": 907.1999999999999,
+            "height": 537.6
+          }
+        }
+      },
+      {
+        "id": "s_a6",
+        "layout": "hero",
+        "label": {
+          "en": "USAGE",
+          "zh-Hant": "用量"
+        },
+        "headline": {
+          "en": "Know your limits\nat a glance.",
+          "zh-Hant": "額度剩多少，\n一眼就知道。"
+        },
+        "screenshot": "/screenshots/android/phone/en/07.png"
+      },
+      {
+        "id": "s_a7",
+        "layout": "no-device",
+        "label": {
+          "en": "WORKS WITH",
+          "zh-Hant": "支援"
+        },
+        "headline": {
+          "en": "Claude Code\nCodex · Cursor\nGemini · Pi\n& dozens more",
+          "zh-Hant": "Claude Code\nCodex · Cursor\nGemini · Pi\n還有數十種"
         },
         "screenshot": ""
       }
@@ -469,7 +530,8 @@
         "layout": "feature-graphic",
         "label": {},
         "headline": {
-          "en": "Your tagline goes here."
+          "en": "Your coding agents, as bots.",
+          "zh-Hant": "把寫程式的 AI 變成你的隊友"
         },
         "screenshot": ""
       }

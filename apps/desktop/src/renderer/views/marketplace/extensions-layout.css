@@ -1,0 +1,54 @@
+/* The Extensions sheet's layout: the section chips and one section, whose list scrolls. */
+/* Header, search and chips stay put, one section fills the rest. */
+.market-frame {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 30px 36px 20px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+.market-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.market-tab {
+  height: calc(32px * var(--scale));
+  padding: 0 calc(16px * var(--scale));
+  border-radius: var(--radius-pill);
+  background: var(--bubble-agent);
+  color: var(--text);
+  font-size: var(--text-body);
+  white-space: nowrap;
+  transition: background-color var(--hover), color var(--hover), transform var(--press);
+}
+.market-tab:active {
+  transform: scale(0.96);
+}
+.market-tab.on {
+  background: var(--text);
+  color: var(--background);
+}
+.market-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.market-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The end of a list the registry continues: placeholder rows, or Try again after a failure. */
+.load-more {
+  margin-top: 8px;
+}
+@media (max-width: 640px) {
+  .market-frame { padding: 28px 18px 16px; }
+}

@@ -1,4 +1,5 @@
 import { checkVersions, isBelow, type VersionMismatch } from '@shared/compat'
+import { mixesAgents } from '@shared/fallbacks'
 import {
   type AccessRequest,
   type Bot,
@@ -6,13 +7,25 @@ import {
   type Computer,
   type Entry,
   type Hello,
+  type PairingRequest,
   type ScreenState,
   type Usage,
+  withoutRemoved,
 } from '@shared/models'
+import type { NetworkView, RecoveryCode } from '@shared/network'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
+import type { CloudPlacement } from '../lib/cloud-computer'
+import { rosterOrder } from '../lib/computer-roster'
+import { HOST_UPDATE_WAIT, hostVersionLine, offerHostUpdate, type HostUpdate, type HostUpdateOffer, type HostVersionLine } from '../lib/host-update'
 import { Observable } from '../lib/observable'
+import { hostHasSections } from '../lib/roster-sections'
 import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
+import { loadIconCache, saveIconCache } from '../lib/icon-cache'
+import { trNow } from '../lib/l10n.ts'
+
+/** The first host where the user picks the lead and may delete it. */
+const LEAD_CHOICE_HOST = '2.33.0'
 
 export type Connection =
   | { kind: 'unpaired' }
@@ -27,23 +40,62 @@ export type Connection =
  * read, entry merging and the on-device cache.
  */
 export class BotMirror extends Observable {
+  icons: import('@shared/custom-icons').CustomIcons = {}
+  private iconsReceived = false
+  protected iconsRevision = -1
+  iconsEpoch = 0
+
+  applyIcons(icons: import('@shared/custom-icons').CustomIcons, revision = 0) {
+    if (revision < this.iconsRevision) return
+    this.iconsRevision = revision
+    this.iconsReceived = true
+    void saveIconCache(this.cacheKey, icons).catch((error: unknown) => console.warn('Could not cache custom icons', error))
+    this.restoreIcons(icons)
+  }
+
+  private restoreIcons(icons: import('@shared/custom-icons').CustomIcons) {
+    this.icons = icons
+    for (const [id, bot] of this.bots) this.bots.set(id, this.withIcon(bot))
+    this.onRosterChanged?.()
+    this.changed()
+  }
+
+  /** Icons sync apart from bots, so no bot the host sends carries its custom icon. */
+  private withIcon(bot: Bot): Bot {
+    return { ...bot, customIcon: this.icons[`bot:${bot.id}`] }
+  }
+
+  /** Stores a bot the host sent, with its custom icon. */
+  protected putHostBot(bot: Bot): Bot {
+    const stored = this.withIcon(bot)
+    this.bots.set(stored.id, stored)
+    return stored
+  }
   computer: Computer
   connection: Connection = { kind: 'connecting' }
   hostRoute: HostRoute | null = null
+  /** Set for a Codync Cloud computer: who runs it, where, and whether it's awake (the account's computer list). */
+  cloudHosting: CloudPlacement | null = null
   client: HostClient | null = null
   hello: Hello | null = null
   hostVersion: { version: string; minApp?: string | null } | null = null
+  /** An update asked of this computer from here while it's behind; cleared once its version changes. */
+  hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
+  pairingRequests: PairingRequest[] = []
   cloud: CloudStatus | null = null
+  /** This computer's network; null until known, and on hosts without `networkView`. */
+  network: NetworkView | null = null
+  /** A new network's recovery code until the user says they saved it: the host keeps it nowhere. */
+  recoveryCode: RecoveryCode | null = null
   historyComplete = new Set<string>()
-  routineDrafts = new Map<string, string>()
   readonly composerDrafts: ComposerDrafts
   lastError: string | null = null
-  /** A kit view selected a bot on this store (new chat, editor); the account picks it up. */
+  /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */
   selection: string | null = null
   /** Permission cards whose answer is on its way, with the chosen option. */
   answering = new Map<string, string>()
@@ -53,10 +105,13 @@ export class BotMirror extends Observable {
 
   protected waiting = 0
   protected rev = 0
+  /** While everything is fetched again (`refetchAll`): the entries the computer has sent since it began. */
+  protected refetched: Set<string> | null = null
   protected hostId: string | null = null
   protected retired = false
   protected unreadable = false
   protected saveTimer: ReturnType<typeof setTimeout> | null = null
+  /** What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Null: nothing held yet. */
   protected cacheStamp: string | null = null
 
   constructor(
@@ -69,7 +124,7 @@ export class BotMirror extends Observable {
     super()
     this.computer = computer
     this.composerDrafts = new ComposerDrafts(localStorage, `codync-drafts-v1-${JSON.stringify([contextId, computer.id])}`,
-      () => this.setError("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it."))
+      () => this.setError(trNow("Couldn't save the draft on this device. Your text is still here; keep this window open until you send or copy it.")))
     this.loadCache()
   }
 
@@ -94,6 +149,37 @@ export class BotMirror extends Observable {
     return this.hello?.name ?? this.computer.name
   }
 
+  /** The automatic bot order switch as the computer has it: switched here, or its `autoOrder` event (another device). */
+  showAutoOrder(on: boolean) {
+    if (!this.hello || this.hello.autoOrder === on) return
+    this.hello = { ...this.hello, autoOrder: on }
+    this.changed()
+  }
+
+  /** A new name for this computer: its host's `name` event, or a cloud computer renamed from here (shown before its host,
+   * asleep perhaps, says so). */
+  setHostName(name: string) {
+    if (!this.hello || this.hello.name === name) return
+    this.hello = { ...this.hello, name }
+    this.changed()
+  }
+
+  setCloudHosting(hosting: CloudPlacement | null) {
+    if (JSON.stringify(hosting) === JSON.stringify(this.cloudHosting)) return
+    this.cloudHosting = hosting
+    this.changed()
+  }
+
+  /** A Codync Cloud computer that's asleep: a connection or a message wakes it, so it isn't offline. */
+  get isAsleep() {
+    return this.connection.kind === 'computerOffline' && (this.cloudHosting?.state === 'stopped' || this.cloudHosting?.state === 'stopping')
+  }
+
+  /** A Codync Cloud computer older than this app's `minHost`: the cloud updates it on its own (this app's `Codync-App` header asks for it). */
+  get isCloudUpdating() {
+    return this.mismatch?.kind === 'updateHost' && this.cloudHosting !== null
+  }
+
   get mismatch(): VersionMismatch | null {
     if (!this.hostVersion) return null
     const found = checkVersions(this.appVersion, this.hostVersion.version, this.hostVersion.minApp)
@@ -102,9 +188,48 @@ export class BotMirror extends Observable {
     return null
   }
 
-  /** Roster order: pinned first, then where the user dragged them, then most recent activity. */
+  /** The host keeps roster sections (an older one leaves them out): the menus offer them only then. */
+  get hasRosterSections() {
+    return this.hostVersion !== null && hostHasSections(this.hostVersion.version)
+  }
+
+  /** The user picks the lead (`setLead`) and may delete it: an older host refuses both. */
+  get hasLeadChoice() {
+    return this.hostVersion !== null && !isBelow(this.hostVersion.version, LEAD_CHOICE_HOST)
+  }
+
+  /** What the update notice offers while this computer is behind this app. */
+  get hostUpdateOffer(): HostUpdateOffer {
+    return offerHostUpdate(this.hostUpdate, this.hello?.canUpdate === true)
+  }
+
+  /** This computer's Codync row at `now` (Settings > Computers); null until its `hello` arrives. */
+  hostVersionLine(now = Date.now()): HostVersionLine | null {
+    if (!this.hello) return null
+    return hostVersionLine(this.hello.version, this.hello.latestVersion, this.mismatch,
+      offerHostUpdate(this.hostUpdate, this.hello.canUpdate === true, now), this.hostName, this.hello.os, this.cloudHosting !== null)
+  }
+
+  /** Out of reach while an update asked from here installs: the computer restarts on its own, so it
+   *  reads as updating, not as a lost connection (kit's `BotStore.isUpdating`). */
+  get isUpdating(): boolean {
+    return this.connection.kind !== 'online' && this.hostUpdateOffer.kind === 'updating'
+  }
+
+  /** When an update asked from here stops reading as under way; null when none was asked. */
+  get hostUpdateWaitEnds(): number | null {
+    return this.hostUpdate?.kind === 'requested' ? this.hostUpdate.at + HOST_UPDATE_WAIT : null
+  }
+
+  /** Roster order: the lead, then pinned bots, then where the user dragged them, then most recent activity. */
   get roster(): Bot[] {
-    return [...this.bots.values()].filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.position - b.position || b.lastAt - a.lastAt)
+    return [...this.bots.values()].filter((b) => !b.hidden).sort(rosterOrder)
+  }
+
+  /** The visible bots run more than one agent, so the roster marks each with its agent's logo. Not before
+   * `hello`: it names the logos, and without it every badge would be the same generic one. */
+  get mixesAgents(): boolean {
+    return this.hello !== null && mixesAgents([...this.bots.values()].filter((b) => !b.hidden))
   }
 
   get hiddenBots(): Bot[] {
@@ -115,47 +240,36 @@ export class BotMirror extends Observable {
     return this.hello?.backends.find((b) => b.id === id)?.name ?? builtInBackendName(id)
   }
 
-  /** A bot's or group's main chat (thread replies are left out). */
-  chat(botId: string) {
-    return (this.entries.get(botId) ?? []).filter((e) => !e.threadId)
+  /** The ACP registry id an agent's logo is under (`AgentIcon`). */
+  agentRegistry(id: string) {
+    return this.hello?.backends.find((b) => b.id === id)?.registry ?? id
   }
 
+  /** A bot's or group's chat, trace entries included. */
   allEntries(botId: string) {
-    return this.entries.get(botId) ?? []
+    const list = this.entries.get(botId)
+    return list ? withoutRemoved(list) : []
   }
 
+  /** Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go. */
   canLoadOlder(botId: string) {
-    return canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
-  }
-
-  replies(botId: string, root: string) {
-    return (this.entries.get(botId) ?? []).filter((e) => e.threadId === root)
+    return !this.refetched && canLoadHistory(this.allEntries(botId), this.historyComplete.has(botId))
   }
 
   members(group: Bot) {
     return group.members.map((id) => this.bots.get(id)).filter((b): b is Bot => !!b)
   }
 
-  authorName(id: string | null | undefined) {
-    return (id && this.bots.get(id)?.name) || 'A deleted bot'
-  }
-
-  /** The latest thinking of the turn running in a chat (`thread` null) or thread. */
-  currentThinking(botId: string, thread: string | null) {
-    const list = this.allEntries(botId)
-    for (let i = list.length - 1; i >= 0; i--) {
-      const e = list[i]!
-      if ((e.threadId ?? null) !== thread) continue
-      if (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true)) return null
-      if (e.kind === 'thought' && e.data.text) return e.data.text
-    }
-    return null
+  /** A bot's name; `fallback` for one that isn't this computer's (a bot on another computer). */
+  authorName(id: string | null | undefined, fallback?: string) {
+    return (id && this.bots.get(id)?.name) || fallback || trNow('A deleted bot')
   }
 
   get connectionLabel() {
+    if (this.isAsleep) return 'Sleeping'
     switch (this.shownConnection.kind) {
       case 'online':
-        return this.mismatch ? 'Needs update' : 'Connected'
+        return this.isCloudUpdating ? 'Updating…' : this.mismatch ? 'Needs update' : 'Connected'
       case 'connecting':
         return 'Connecting…'
       case 'computerOffline':
@@ -177,6 +291,7 @@ export class BotMirror extends Observable {
   }
 
   protected upsert(e: Entry) {
+    this.refetched?.add(e.id)
     const list = [...(this.entries.get(e.botId) ?? [])]
     const i = list.findIndex((x) => x.id === e.id)
     if (i >= 0) {
@@ -205,6 +320,16 @@ export class BotMirror extends Observable {
     this.changed()
   }
 
+  setNetwork(network: NetworkView | null) {
+    this.network = network
+    this.changed()
+  }
+
+  setRecoveryCode(code: RecoveryCode | null) {
+    this.recoveryCode = code
+    this.changed()
+  }
+
   // MARK: cache (instant launch, offline reading)
 
   private get cacheKey() {
@@ -212,6 +337,9 @@ export class BotMirror extends Observable {
   }
 
   private loadCache() {
+    void loadIconCache(this.cacheKey).then((icons) => {
+      if (!this.retired && !this.iconsReceived) this.restoreIcons(icons)
+    }).catch((error: unknown) => console.warn('Could not read cached icons', error))
     try {
       const raw = localStorage.getItem(this.cacheKey)
       if (!raw) return
@@ -240,7 +368,10 @@ export class BotMirror extends Observable {
       kept.push(...list.filter((e) => !e.id.startsWith('local-')).slice(-200))
       kept.push(...list.filter((e) => e.id.startsWith('local-') && e.data.status === 'failed'))
     }
-    const cache = { stamp: `${this.appVersion}/${this.hello?.version ?? ''}`, hostId: this.hostId, rev: this.rev, bots: [...this.bots.values()], entries: kept }
+    const bots = [...this.bots.values()].map(({ customIcon: _image, ...bot }) => bot)
+    // Saved partway through a refetch, the cache says so: the next launch begins it again.
+    const stamp = this.refetched ? '' : this.cacheStamp ?? ''
+    const cache = { stamp, hostId: this.hostId, rev: this.rev, bots, entries: kept }
     try {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache))
     } catch {}
@@ -260,6 +391,6 @@ export function builtInBackendName(id: string) {
     case 'gemini':
       return 'Gemini CLI'
     default:
-      return 'Custom agent'
+      return trNow('Custom agent')
   }
 }

@@ -8,17 +8,40 @@
 mod agent;
 mod analytics;
 mod bot_chat;
+mod computer;
+mod dev_servers;
 mod fields;
+mod gear;
+mod icons;
+mod library;
+mod login_keys;
 mod market;
 mod memory;
+mod network;
+mod network_rules;
+mod network_setup;
+mod pages;
 mod replies;
 mod routines;
+mod scroll;
 mod skill;
+mod when;
 
 pub use analytics::AnalyticsSheet;
-pub use memory::{MemoryMode, MemorySheet};
-pub use routines::local_zone;
+pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
+pub use fields::{handoff_fields, section_fields};
+pub use gear::{Gear, GearRow};
+pub use icons::icon_fields;
+pub use library::{ArtifactTitles, LibraryItem};
+pub use login_keys::KeyImport;
+pub use memory::{MemoryMode, MemorySheet, Section};
+pub use network::{NetReply, NetworkSheet, Recovery, Step};
+pub use network_rules::{RuleField, RuleForm};
+pub use network_setup::{CONNECTORS, Setup, SetupField};
+pub use pages::Page;
+pub use scroll::Scroll;
 pub use skill::SkillSheet;
+pub use when::complete_zone;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -33,12 +56,20 @@ pub const REACTIONS: [&str; 6] = ["👍", "❤️", "😂", "🎉", "👀", "✅
 /// Replies to the sheets' commands.
 #[derive(Clone)]
 pub enum Reply {
+    /// A dev server's log, by the server's id.
+    DevServerLogs(String),
     Memory(String),
     MemorySaved(String),
-    MemoryDetail(String),
-    MemoryExport(String),
+    /// A note the bot's memory sheet has open.
+    MemoryFile(String),
     Routines(String),
+    /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
+    FollowUpCancelled(String),
     RoutineSaved,
+    /// A bot's Library (`library {botId}`).
+    Library(String),
+    /// What an agent brings on its own (`agentGear`), for its sign-in sheet.
+    Gear(String),
     /// A routine's webhook URL and key: copied as a ready-to-run curl.
     Webhook,
     /// A bot conversation's fetched history.
@@ -46,15 +77,33 @@ pub enum Reply {
         bot: String,
         peer: String,
     },
+    /// A voice call's own messages, by call id.
+    CallEntries(String),
+    /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
-        more: bool,
+        search: String,
+        cursor: Option<String>,
     },
     Skills,
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
-    Setup,
+    /// The setup terminal opened; for a login profile's sign-in, that login profile.
+    Setup(Option<String>),
+    /// An agent's login profiles changed (`backends` comes with the answer), on its sheet.
+    LoginProfiles(String),
+    /// `addLoginProfile` for that agent: the new login profile signs in, or gets its keys, next.
+    LoginProfileAdded(String),
+    /// `setLoginProfileKeys` for a login profile of that agent: its key form closes and its sheet shows the answer.
+    LoginKeys(String),
+    /// `loginShellVariables`, for the import list of that login profile.
+    ShellVariables(String),
     FieldsSaved,
+    /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
+    SectionRenamed {
+        from: String,
+        to: Option<String>,
+    },
     SignIn,
     Models(String),
     Downloaded,
@@ -75,10 +124,48 @@ pub struct BotChatSheet {
     pub page: Cell<usize>,
 }
 
+/// A bot's Library tab: its artifacts and the files shared in its chat, newest first.
+pub struct Library {
+    pub bot: String,
+    pub items: Option<Vec<LibraryItem>>,
+    pub cursor: usize,
+}
+
+#[derive(Default)]
 pub struct RoutineList {
     pub bot: String,
     pub items: Option<Vec<Value>>,
+    /// The bot's runs, newest first.
+    pub runs: Vec<Value>,
+    /// The follow-ups the bot set for itself that still wait.
+    pub follow_ups: Vec<Value>,
+    /// Over `rows`.
     pub cursor: usize,
+}
+
+/// A row of the routines list.
+pub enum RoutineRow<'a> {
+    FollowUp(&'a Value),
+    Routine(&'a Value),
+}
+
+impl RoutineRow<'_> {
+    pub fn id(&self) -> &Value {
+        let (Self::FollowUp(item) | Self::Routine(item)) = self;
+        &item["id"]
+    }
+}
+
+impl RoutineList {
+    /// The list top to bottom: the follow-ups come first, then the routines.
+    pub fn rows(&self) -> impl Iterator<Item = RoutineRow<'_>> {
+        self.follow_ups.iter().map(RoutineRow::FollowUp).chain(self.items.iter().flatten().map(RoutineRow::Routine))
+    }
+
+    /// The row the cursor is on.
+    pub fn picked(&self) -> Option<RoutineRow<'_>> {
+        self.rows().nth(self.cursor)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -131,7 +218,6 @@ pub enum Row<'a> {
     Installed(&'a Value),
     Custom,
     Registry(&'a Value),
-    More,
     OwnSkill(&'a Value),
     Skill(&'a Value),
 }
@@ -141,6 +227,8 @@ pub struct AgentSetup {
     pub auth: Option<Value>,
     /// A check or a browser sign-in is running.
     pub busy: bool,
+    /// The login profile its agent signs in itself, in a browser on the computer, until the host answers.
+    pub signing_in: Option<String>,
     pub cursor: usize,
     pub error: Option<String>,
 }
@@ -151,6 +239,18 @@ pub enum SetupRow {
     Login,
     Method(Value),
     Check,
+    /// Opens the read-only lists of what this agent already brings.
+    Brings,
+    /// The default login profile, the login the computer already has (the agent's `defaultLoginProfile`): ↵ checks
+    /// it again, `r` names it.
+    DefaultLoginProfile,
+    /// One of the agent's other login profiles: ↵ signs an account in or edits an API key's keys, `r` names it, `x`
+    /// removes it.
+    LoginProfile(Value),
+    /// Adds an account login profile; its sign-in follows. Only for an agent with a `loginProfileSignIn`.
+    AddAccount,
+    /// Adds an API key login profile; its key form follows.
+    AddApiKey,
 }
 
 pub struct Input {
@@ -164,10 +264,32 @@ pub struct Input {
 }
 
 pub enum Submit {
+    Icon(String),
     AgentEnv(String),
     Connection(Box<super::connections::Connection>),
     Connector(Value),
     Import,
+    /// A handoff card's text (the card's entry id).
+    Handoff(String),
+    /// A bot's section (its id): a name, or empty for none.
+    Section(String),
+    /// A section's new name (its current one), or empty to remove it.
+    RenameSection(String),
+    RenameArtifact {
+        bot: String,
+        artifact: String,
+    },
+    /// A login profile's name, or empty for who it signs in; no `login_profile`: the agent's default one.
+    RenameLoginProfile {
+        backend: String,
+        login_profile: Option<String>,
+    },
+    /// An API key login profile's variables; `saved`: the names it already has, which ^x removes.
+    LoginProfileKeys {
+        backend: String,
+        login_profile: String,
+        saved: Vec<String>,
+    },
 }
 
 /// A few labeled text fields: an agent's keys, a connector's setup, a pasted MCP config.
@@ -193,6 +315,12 @@ impl Fields {
         let i = self.cursor.checked_sub(self.offset())?;
         self.inputs.get_mut(i)
     }
+
+    /// What is typed, by input name: a secret as it is, other text trimmed. Empty inputs are left out.
+    fn typed(&self) -> serde_json::Map<String, Value> {
+        let typed = self.inputs.iter().filter(|i| !i.ed.text.trim().is_empty());
+        typed.map(|i| (i.name.clone(), if i.secret { i.ed.text.as_str() } else { i.ed.text.trim() }.into())).collect()
+    }
 }
 
 /// The running setup terminal, which takes over the whole screen.
@@ -201,6 +329,8 @@ pub struct Shell {
     /// Keys in the order typed (one sender, one request at a time).
     pub input: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pub backend: String,
+    /// The login profile it signs in; `None`: the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub exited: Option<i64>,
     /// Output not yet written to the screen.
     pub out: Vec<u8>,
@@ -224,6 +354,11 @@ impl App {
         self.call(method, body, After::Sheet(r));
     }
 
+    /// Loads what voice call `call` in `bot`'s chat carried, for its unfolded conversation.
+    pub(in crate::tui) fn fetch_call(&self, bot: &str, call: &str) {
+        self.sheet("callEntries", json!({"botId": bot, "callId": call}), Reply::CallEntries(call.to_owned()));
+    }
+
     // ---------- a message's actions ----------
 
     pub(super) fn react(&mut self, entry: &str, i: usize) {
@@ -232,18 +367,27 @@ impl App {
         }
     }
 
-    /// Saves a message's files to Downloads.
-    pub(super) fn save_files(&mut self, bot: &str, entry: &str, data: &Value) {
-        if self.download.take().is_some() {
+    /// `f` while a download runs: stops it.
+    fn cancel_download(&mut self) -> bool {
+        let running = self.download.take().is_some();
+        if running {
             self.flash("Download cancelled · f retries");
+        }
+        running
+    }
+
+    /// Saves a message's files, or its artifact, to Downloads.
+    pub(super) fn save_files(&mut self, bot: &str, entry: &str, data: &Value) {
+        if self.cancel_download() {
+            return;
+        }
+        if let Some(artifact) = data["artifact"]["id"].as_str() {
+            self.fetch_artifact(bot, artifact, super::net::artifacts::ArtifactTo::Downloads);
             return;
         }
         if let Some(meta) = data["files"].as_array().and_then(|files| files.first()) {
             match serde_json::from_value(meta.clone()) {
-                Ok(file) => {
-                    self.download = Some(self.client.download_file(entry.to_owned(), file, self.tx.clone()));
-                    self.flash("Downloading… · f cancels");
-                }
+                Ok(file) => self.download_shared(entry.to_owned(), file),
                 Err(error) => self.flash(&format!("Invalid file: {error}")),
             }
             return;
@@ -258,6 +402,17 @@ impl App {
             self.flash("No files on that message");
             return;
         }
+        self.save_uploads(bot, files);
+    }
+
+    /// Saves a file the bot shared (`readFile`), with progress; `f` again cancels.
+    fn download_shared(&mut self, entry: String, file: crate::chat::files::SharedFile) {
+        self.download = Some(self.client.download_file(entry, file, self.tx.clone()));
+        self.flash("Downloading… · f cancels");
+    }
+
+    /// Saves files the user attached (`(upload id, name)`, `readUpload`).
+    fn save_uploads(&mut self, bot: &str, files: Vec<(String, String)>) {
         self.flash("Saving…");
         self.client.spawn_download(bot.to_owned(), files, self.tx.clone());
     }
@@ -276,7 +431,7 @@ impl App {
     pub(super) fn cycle_model(&self, backend: &str, current: &str, d: isize) -> Option<String> {
         let list = self.models.get(backend)?.as_ref()?;
         let mut ids = vec![String::new()];
-        ids.extend(list.iter().map(|m| m.id.clone()));
+        ids.extend(list.iter().filter(|m| !m.id.is_empty()).map(|m| m.id.clone()));
         let i = ids.iter().position(|x| x == current).unwrap_or(0);
         Some(ids[super::app::cycle(i, d, ids.len())].clone())
     }
@@ -291,15 +446,5 @@ impl App {
 /// Opens `url` in this computer's browser, when the host is this computer.
 pub(super) fn open_browser(url: &str, host: &str) -> bool {
     let local = ["//127.0.0.1", "//localhost", "//[::1]"].iter().any(|h| host.contains(h));
-    if !local || url.is_empty() {
-        return false;
-    }
-    let mut command = if cfg!(windows) {
-        let mut c = std::process::Command::new("rundll32");
-        c.arg("url.dll,FileProtocolHandler");
-        c
-    } else {
-        std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" })
-    };
-    command.arg(url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().is_ok()
+    local && !url.is_empty() && crate::shell::open(std::ffi::OsStr::new(url))
 }

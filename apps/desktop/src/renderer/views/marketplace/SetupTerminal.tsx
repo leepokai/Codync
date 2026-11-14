@@ -6,12 +6,16 @@ import { useEffect, useRef, useState } from 'react'
 import { fromBase64, HostError, toBase64 } from '../../client/host-client'
 import { Button } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
+import { SheetPage } from '../../components/Overlay'
+import { HStack, Spacer } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
-import { font } from '../../lib/fonts'
 import { useStore } from '../../store/context'
 import type { Backend } from '@shared/models'
 import { errorText, market, type AuthMethod, type SetupStep } from './market-models'
 import { ScreenHeader } from './pieces'
+import { useTr } from '../../lib/use-language'
+
 
 const openLink = (uri: string) => {
   if (/^https?:/i.test(uri)) window.codync.app.openExternal(uri)
@@ -21,15 +25,18 @@ const openLink = (uri: string) => {
  * Installing or signing in to an agent, or adding Node.js, live: the command runs in a
  * terminal on the computer and this screen is that terminal (links open here).
  */
-export function SetupTerminalView({ backend, step, method, back }: {
+export function SetupTerminalView({ backend, step, method, loginProfile, back }: {
   /** Null only for the `node` step, which belongs to the computer. */
   backend: Backend | null
   step: SetupStep
   /** A terminal sign-in method the agent offered; null runs Codync's own command. */
   method?: AuthMethod | null
+  /** The login profile a sign-in is for; none signs in the computer's own login. */
+  loginProfile?: string
   /** Back to the agent's sheet (the terminal is a step inside it). */
   back: () => void
 }) {
+  const tr = useTr()
   const store = useStore()
   const surface = useRef<HTMLDivElement>(null)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -133,7 +140,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
     void (async () => {
       try {
         const client = await store.ready()
-        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows)
+        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows, loginProfile)
         if (cancelled) {
           void market.termClose(client, id).catch(() => {})
           return
@@ -165,33 +172,31 @@ export function SetupTerminalView({ backend, step, method, back }: {
     }
   }, [store, backend?.id, step, method?.id])
 
-  const name = backend?.name ?? 'the agent'
+  const name = backend?.name ?? tr('the agent')
   const title = step === 'node' ? 'Add Node.js' : step === 'install' ? `Install ${name}` : (method?.name ?? `Sign in to ${name}`)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ScreenHeader title={title} onBack={back} />
       <div className="setup-terminal">
-        <div ref={surface} style={{ width: '100%', height: '100%' }} />
+        <div ref={surface} className="setup-terminal-surface" />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', ...font('footnote') }}>
+      <HStack gap={8} className="setup-terminal-status">
         {error ? (
-          <span style={{ color: 'var(--danger)', ...clamp2 }}>{error}</span>
+          <Text tone="danger" lines={2}>{error}</Text>
         ) : exitCode !== null ? (
           <>
             <Icon name={exitCode === 0 ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} color={exitCode === 0 ? 'var(--added)' : 'var(--warning)'} />
-            <span style={{ color: 'var(--secondary)', ...clamp2 }}>{exitCode === 0 ? 'Finished.' : `Ended with an error (${exitCode}).`}</span>
+            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr('Finished.') : tr('Ended with an error ({code}).').replaceAll('{code}', () => String(exitCode))}</Text>
           </>
         ) : (
           <>
             <ThinkingOrb size={14} color="var(--secondary)" />
-            <span style={{ color: 'var(--secondary)', ...clamp2 }}>Running on {store.hostName}. Links open on this device.</span>
+            <Text tone="secondary" lines={2}>{tr('Running on {name}. Links open on this device.').replaceAll('{name}', () => store.hostName)}</Text>
           </>
         )}
-        <span style={{ flex: 1 }} />
+        <Spacer />
         {exitCode !== null ? <Button className="fade-in" onClick={back}>Done</Button> : null}
-      </div>
-    </div>
+      </HStack>
+    </SheetPage>
   )
 }
-
-const clamp2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as const

@@ -6,6 +6,7 @@
 #   build/native/CodyncScreen.app   macOS screen helper (Xcode `Screen` target, with cua-driver inside)
 #   build/native/cua-driver.exe     Windows: the computer-use driver and its UI Automation helper
 beforePack: tools/verify-build.cjs
+afterPack: tools/windows-archive.cjs
 appId: com.pokai.Codync
 productName: Codync
 copyright: ""
@@ -49,8 +50,6 @@ mac:
   extendInfo:
     NSMicrophoneUsageDescription: Talk to your bots in a voice call.
     NSSpeechRecognitionUsageDescription: Your words are transcribed on this Mac and sent to your bot as a message.
-    # generate_appcast signs the zip only when the app inside names this key (packaging/updates).
-    SUPublicEDKey: /WvuKYw0ghkj3ExQbCejTquAcozuP1Llo2k8TIvx0Mc=
   # The host ships inside the Mac app; Linux uses the installed codync-host (an AppImage's
   # mount path changes every launch, so a service can't point into it).
   extraResources:
@@ -90,8 +89,7 @@ win:
   icon: resources/icon.png
   target:
     - target: nsis
-      arch: x64
-  artifactName: codync-windows-x64.${ext}
+  artifactName: codync-windows-${arch}.${ext}
   # The host ships inside the app, as on macOS: a per-user install keeps its path stable for
   # the sign-in entry that starts it.
   extraResources:

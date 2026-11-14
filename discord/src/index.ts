@@ -2,12 +2,14 @@
 // their GitHub account comes from their Discord connections (verified by Discord) or, when they have none, from
 // signing in with GitHub, so nobody can claim someone else's. A merged pull request on the repo earns the
 // Contributor role, an opened issue the Reporter role. The link is remembered, so later ones arrive on their
-// own (webhook.ts). Star and download milestones are posted in #milestones (milestones.ts).
+// own (webhook.ts). GitHub issues get forum posts (issues.ts); star and download milestones are posted in
+// #milestones (milestones.ts).
 
 import { DISCORD, earnedRoles, githubLogin, grant, join, names, notify, profile } from "./guild.ts";
 import { sign, verify } from "./hmac.ts";
 import { json, page } from "./http.ts";
 import { mentions } from "./mentions.ts";
+import { postOpenIssues } from "./issues.ts";
 import { celebrate, downloads } from "./milestones.ts";
 import { webhook } from "./webhook.ts";
 
@@ -27,11 +29,14 @@ export interface Env {
   REPORTER_ROLE_ID: string;
   STAFF_CHANNEL_ID: string;
   MILESTONES_CHANNEL_ID: string;
+  BUG_FORUM_ID: string;
+  FEATURE_FORUM_ID: string;
   /** The counts the #milestones posts count toward. */
   STAR_GOAL: string;
   DOWNLOAD_GOAL: string;
   REPO: string;
-  /** `github:<GitHub user id>` → Discord user id; `<stars|downloads>:milestone` → the last milestone posted. */
+  /** `github:<GitHub user id>` → Discord user id; `<stars|downloads>:milestone` → the last milestone posted;
+   * `issue:<number>` → its forum post (`{ kind, thread }`). */
   LINKS: KVNamespace;
 }
 
@@ -53,9 +58,10 @@ export default {
     }
   },
 
-  // Daily (wrangler.toml): GitHub has no download event, so the count is polled.
+  // Daily (wrangler.toml): GitHub has no download event, so the count is polled; open issues without a forum
+  // post get one.
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await celebrate(env, "downloads", await downloads(env));
+    await Promise.all([downloads(env).then((count) => celebrate(env, "downloads", count)), postOpenIssues(env)]);
   },
 };
 

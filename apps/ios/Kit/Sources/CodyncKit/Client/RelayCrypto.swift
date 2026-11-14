@@ -258,7 +258,17 @@ public enum RelayCrypto {
     }
 
     static func sasCode(hostSignKey: Data, deviceKey dk: Data, deviceNonce nD: Data, hostNonce nH: Data) -> String {
-        let h = sha256(label("codync/sas/v2"), hostSignKey, dk, nD, nH)
+        sixDigits(sha256(label("codync/sas/v2"), hostSignKey, dk, nD, nH))
+    }
+
+    /// The code a computer in no account shows while it asks whether to let this phone in (pairing, phase 2):
+    /// a phone that isn't the one in the user's hand shows another one.
+    static func pairCheck(deviceKey dk: Data, hostSignKey: Data) -> String {
+        sixDigits(sha256(label("codync/pair-check/v1"), dk, hostSignKey))
+    }
+
+    /// The hash's first 4 bytes, big-endian, as 6 zero-padded digits.
+    private static func sixDigits(_ h: Data) -> String {
         let v = h.prefix(4).reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
         let s = String(v % 1_000_000)
         return String(repeating: "0", count: 6 - s.count) + s

@@ -1,0 +1,22 @@
+# Runs in the codync-network mirror, where this folder is the repository root (inert in Codync, like ci.yml). The
+# mirror is read-only: a pull request opened here gets a pointer to Codync's dev branch and is closed.
+name: Pull requests
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  redirect:
+    runs-on: ubuntu-latest
+    steps:
+      # Nothing from the pull request is checked out or run.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Thanks! codync-network is developed inside Codync and mirrored here read-only, so a pull request can't be merged here. Please open it against Codync's \`dev\` branch, in \`host/crates/network\`: https://github.com/leepokai/Codync. Issues are welcome here."
+          gh pr close "$PR" --repo "$GITHUB_REPOSITORY"

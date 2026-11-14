@@ -41,7 +41,8 @@ fn main() {
     }
     loop {
         let mut command = std::process::Command::new(&host);
-        command.args(&args).creation_flags(CREATE_NO_WINDOW);
+        // Tells the host it runs as the service (`service::started_by_service`).
+        command.args(&args).env("CODYNC_SERVICE", "1").creation_flags(CREATE_NO_WINDOW);
         let log = data.as_ref().and_then(|d| {
             std::fs::create_dir_all(d).ok()?;
             std::fs::OpenOptions::new().create(true).append(true).open(d.join("host.log")).ok()

@@ -32,7 +32,6 @@ impl Caller {
 const LOCAL_ONLY: &[&str] = &[
     "hostUpdateStatus",
     "checkHostUpdate",
-    "installHostUpdate",
     "setHostAutomaticUpdates",
     "setScreenEnabled",
     "requestScreenPermission",
@@ -42,29 +41,57 @@ const LOCAL_ONLY: &[&str] = &[
     "reportError",
     // Voice keys are entered on the computer itself; phones only use them.
     "setVoiceKey",
+    // An export file is a path on this computer.
+    "previewImport",
+    "importBots",
     "pairing",
     "computerCall",
     "computerTools",
     "chatCall",
     "teamCall",
+    "agentCall",
+    "manageCall",
     "memoryCall",
-    "memoryTools",
     "routineCall",
     "composioCall",
     "connectorTarget",
     "connectorRuntime",
     "connectorCall",
+    // It can point a connector that holds credentials at any program; no app edits connectors yet.
+    "updateConnector",
     "claimSign",
     "unclaim",
     "devices",
     "revokeDevice",
     "accessRequests",
     "decideAccessRequest",
+    // Letting a phone in that brings this computer into its account is decided at the computer.
+    "pairingRequests",
+    "decidePairing",
+    "pairingCodeOpen",
+    // Names the other phones of this computer, which a phone has no business reading.
+    "joinWouldRemove",
     "cloudStatus",
     "setCloud",
+    "setCloudUrl",
     "setApproval",
+    // Letting the cloud assistant in is decided at the computer, never through the cloud.
+    "setAssistants",
+    // Who is in the user's network of computers is decided at a computer.
+    "networkStatus",
+    "networkCreate",
+    "networkJoin",
+    "networkLeave",
+    "networkInvite",
+    "networkPeers",
+    "networkRemove",
+    "networkPromote",
+    "networkRecover",
+    // Who may write to this computer's bots is decided at the computer, like who is in.
+    "setNetworkRules",
 ];
-const SCREEN: &[&str] = &["screenPrepare", "screenOffer", "screenClose", "screenTakeover"];
+const SCREEN: &[&str] =
+    &["screenPrepare", "screenOffer", "screenClose", "screenTakeover", "screenCandidate", "screenCandidates"];
 
 /// A method the caller isn't allowed to call (403).
 #[derive(Debug)]
@@ -140,6 +167,12 @@ pub fn authorize(hub: &Hub, key: &str) -> Result<Device, RejectCode> {
     Ok(d)
 }
 
+/// Whether `key` may still view this computer's screen: `local` always, a device while
+/// it is authorized and holds the screen scope.
+pub fn may_view_screen(hub: &Hub, key: &str) -> bool {
+    key == "local" || authorize(hub, key).is_ok_and(|device| device.scopes.contains(&Scope::Screen))
+}
+
 // MARK: pairing codes
 
 const CODE_TTL_MS: i64 = 10 * 60 * 1000;
@@ -198,7 +231,7 @@ impl Pairing {
     /// Counts a `pair` attempt from `source` (peer IP or relay link); false when over the limit.
     pub fn attempt(&mut self, source: &str) -> bool {
         let now = Instant::now();
-        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_secs(60));
+        self.attempts.retain(|(_, t)| now.duration_since(*t) < Duration::from_mins(1));
         let from_source = self.attempts.iter().filter(|(s, _)| s == source).count();
         if from_source >= PER_SOURCE_PER_MINUTE || self.attempts.len() >= TOTAL_PER_MINUTE {
             return false;
@@ -207,17 +240,27 @@ impl Pairing {
         true
     }
 
-    /// Uses up `code` if it is valid (constant-time over every live code).
+    /// Whether `code` is live, without using it up.
+    pub fn valid(&mut self, code: &str) -> bool {
+        self.find(code).is_some()
+    }
+
+    /// Uses up `code` if it is valid.
     pub fn redeem(&mut self, code: &str) -> bool {
+        self.find(code).map(|i| self.codes.remove(i)).is_some()
+    }
+
+    /// Where `code` is among the live codes (constant-time over every one).
+    fn find(&mut self, code: &str) -> Option<usize> {
         self.prune(now_ms());
-        let Ok(given) = crypto::unb64_n::<16>(code) else { return false };
+        let given = crypto::unb64_n::<16>(code).ok()?;
         let mut found = None;
         for (i, c) in self.codes.iter().enumerate() {
             if crypto::ct_eq(&c.code, &given) {
                 found = Some(i);
             }
         }
-        found.map(|i| self.codes.remove(i)).is_some()
+        found
     }
 }
 
@@ -235,11 +278,19 @@ mod tests {
             assert!(permit(&both, m).is_err(), "{m} is loopback only");
         }
         assert!(permit(&both, "send").is_ok());
+        assert!(permit(&control, "joinWouldRemove").is_err(), "a phone doesn't learn the other phones' names");
+        assert!(permit(&control, "joinAccount").is_ok(), "a paired phone can ask to add the computer");
+        assert!(permit(&both, "networkView").is_ok(), "phones read the network");
         assert!(permit(&both, "screenOffer").is_ok());
         assert!(permit(&both, "screenPrepare").is_ok());
         assert!(permit(&control, "screenPrepare").is_err());
+        assert!(permit(&control, "screenCandidate").is_err());
+        assert!(permit(&control, "screenCandidates").is_err());
+        assert!(permit(&both, "screenCandidate").is_ok());
+        assert!(permit(&both, "screenCandidates").is_ok());
         assert!(permit(&control, "screenOffer").is_err(), "screen needs the screen scope");
         assert!(permit(&control, "screenStatus").is_ok(), "status is control");
+        assert!(permit(&control, "installHostUpdate").is_ok(), "a phone can update a computer that's behind");
         assert!(permit(&Caller::Device { key: "k".into(), scopes: vec![] }, "hello").is_err());
         assert!(permit(&both, "pair").is_err(), "pair only on a pairing channel");
         assert!(permit(&Caller::Pairing { key: "k".into() }, "hello").is_err());
@@ -256,6 +307,8 @@ mod tests {
         let offer = crypto::offer_id(&crypto::unb64_n(&first.code).unwrap());
         assert_eq!(p.offers(), [(offer, first.expires_at)]);
         assert!(!p.redeem("CAgICAgICAgICAgICAgICA"));
+        assert!(p.valid(&first.code) && p.valid(&first.code), "checking doesn't use it up");
+        assert!(!p.valid("CAgICAgICAgICAgICAgICA"));
         assert!(p.redeem(&first.code));
         assert!(!p.redeem(&first.code), "single use");
         assert!(!p.open());

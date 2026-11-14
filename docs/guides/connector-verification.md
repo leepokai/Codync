@@ -40,6 +40,11 @@ not a released-build certification.
   tools in a real subprocess. Public listings omit credentials and command args.
 - Check the connector record is encrypted in SQLite; restart the host and verify
   it can recover credentials through the OS Keychain.
+- Edit a custom local connector through `updateConnector` (what an edit does:
+  [connector credentials](../features/connector-credentials.md)): new `args` keep
+  the id, verify as ready and `connectorRuntime` returns the new command line; an edit
+  that won't start leaves what's saved as it was. Bot assignments and the bots' tool
+  refresh are not covered here (`host/src/market/connector_update.rs` tests them).
 - Import a pasted `mcpServers` configuration and verify the resulting connector.
 - Reject a missing runtime and a malformed MCP initialize response.
 - Verify authenticated remote MCP using JSON and streamable HTTP SSE responses,
@@ -65,12 +70,10 @@ iOS, Electron or terminal installation UI, log into real provider accounts,
 exercise the phone's OAuth deep link, Composio, 1Password, Linux Secret Service,
 or the older separate GET-stream/POST-message SSE transport.
 
-Source inspection on 2026-10-05 found these outstanding UI/workflow issues:
+Source inspection on 2026-10-05 found this outstanding workflow issue (the install
+forms' retry, which kept the connector saved with the first values, was fixed in 2.25.0:
+the host now rebuilds an installed registry connector when new values come in):
 
-- The iOS and desktop registry install forms retain the installed connector after
-  verification fails. Retrying reads that saved connector and ignores changed
-  setup input. The credential settings API tested here can correct existing
-  fields, but that does not fix the install form.
 - Custom/import installation on iOS and desktop, and marketplace installation in
   the terminal, can finish without running `connectorVerify`. The host enables
   newly installed connectors before readiness is verified. Saving successfully

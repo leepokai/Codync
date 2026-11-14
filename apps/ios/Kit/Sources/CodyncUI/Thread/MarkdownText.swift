@@ -21,10 +21,13 @@ public struct MarkdownText: View, Equatable {
         .textSelection(.enabled)
     }
 
-    /// Inline styling; inline code gets a soft tint behind it.
+    /// Underlines keep links distinct in the monochrome theme; inline code gets a soft tint.
     static func inline(_ s: String) -> AttributedString {
         guard var text = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
         else { return AttributedString(s) }
+        for run in text.runs where run.link != nil {
+            text[run.range].underlineStyle = .single
+        }
         for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true {
             text[run.range].backgroundColor = Palette.text.opacity(0.08)
         }

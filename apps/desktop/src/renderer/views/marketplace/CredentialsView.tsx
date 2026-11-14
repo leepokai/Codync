@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { ModalHeader, useDismiss } from '../../components/Overlay'
-import { font } from '../../lib/fonts'
+import { ModalHeader, SheetPage, useDismiss } from '../../components/Overlay'
+import { HStack, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
 import { errorText, market, type CredentialStatus, type InstalledConnector, type SavedLogin } from './market-models'
 import { ErrorText, Field, FormSheet, ScreenHeader, filled } from './pieces'
 import { usePlugins } from './plugins'
+import { useTr } from '../../lib/use-language'
 import './credentials.css'
-
-const caption = { ...font('caption'), color: 'var(--secondary)' }
 
 export function CredentialsView({ onBack }: { onBack: () => void }) {
   const dismiss = useDismiss()
   const store = useStore()
+  const tr = useTr()
   const plugins = usePlugins(store)
   const [selected, setSelected] = useState<InstalledConnector | null>(null)
   const [token, setToken] = useState('')
@@ -49,29 +50,29 @@ export function CredentialsView({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="credentials-page">
+    <SheetPage className="credentials-page">
       <ScreenHeader title="Credentials" onBack={onBack} trailing={<IconButton title="Close" icon="xmark" onClick={dismiss} />} />
       <CardForm>
         <CardSection title="Storage">
-          <div className="credential-storage"><Icon name="lock.shield" size={20} /><div><strong>{status?.provider ?? 'System credential store'}</strong><p>Encrypted on the connected computer.</p></div></div>
+          <div className="credential-storage"><Icon name="lock.shield" size={20} /><div><strong>{tr(status?.provider ?? 'System credential store')}</strong><p>{tr('Encrypted on the connected computer.')}</p></div></div>
         </CardSection>
         <CardSection title="Saved connections">
           {plugins.installedConnectors.filter((c) => c.keys.length > 0).map((c) => (
             <button key={c.id} className="plain-row-button" onClick={() => setSelected(c)}>
-              <span style={{ flex: 1 }}>{c.name}</span>
+              <span className="credential-row-title">{c.name}</span>
               <Icon name="chevron.right" size={10} />
             </button>
           ))}
-          {!plugins.installedConnectors.some((c) => c.keys.length > 0) ? <span style={caption}>No saved connection credentials yet.</span> : null}
-          <span style={caption}>Values stay hidden. Select a connection to replace its credentials.</span>
+          {!plugins.installedConnectors.some((c) => c.keys.length > 0) ? <Text size="caption" tone="secondary">{tr(`No saved connection credentials yet.`)}</Text> : null}
+          <Text size="caption" tone="secondary">{tr(`Values stay hidden. Select a connection to replace its credentials.`)}</Text>
         </CardSection>
         <LoginsSection />
         <CardSection title="1Password" footer="Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.">
-          <span>{status?.onePasswordConnected ? 'Connected' : 'Connect a shared vault'}</span>
+          <span>{tr(status?.onePasswordConnected ? 'Connected' : 'Connect a shared vault')}</span>
           <CredentialField label="Service account token" value={token} onChange={setToken} placeholder="Paste your token" secret />
           <div><Button disabled={busy || !token} onClick={() => void save(token)}>Connect</Button></div>
           {status?.onePasswordConnected ? <div><Button kind="secondary" disabled={busy} onClick={() => void save('')}>Disconnect</Button></div> : null}
-          <span style={{ ...font('footnote'), color: 'var(--secondary)' }}>Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs.</span>
+          <Text size="footnote" tone="secondary">{tr(`Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs.`)}</Text>
         </CardSection>
         {busy ? <Spinner /> : null}
         {error ? <ErrorText text={error} /> : null}
@@ -79,7 +80,7 @@ export function CredentialsView({ onBack }: { onBack: () => void }) {
       <FormSheet open={selected !== null} onClose={() => setSelected(null)}>
         {selected ? <ConnectorCredentialEditor key={selected.id} connector={selected} /> : null}
       </FormSheet>
-    </div>
+    </SheetPage>
   )
 }
 
@@ -137,19 +138,19 @@ function LoginsSection() {
   return (
     <CardSection title="Sign-ins" footer="Bots type these into the matching website or app and never see the password. You can use an op:// reference.">
       {logins.map((login) => (
-        <div key={login.id} style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+        <HStack key={login.id}>
+          <VStack gap={2} grow>
             <span>{login.site}</span>
-            {login.username ? <span style={caption}>{login.username}</span> : null}
-          </div>
+            {login.username ? <Text size="caption" tone="secondary">{login.username}</Text> : null}
+          </VStack>
           <IconButton title="Remove" icon="trash" onClick={() => void remove(login)} />
-        </div>
+        </HStack>
       ))}
       <CredentialField label="Website or app" value={site} onChange={setSite} placeholder="github.com" />
       <CredentialField label="Username or email" value={username} onChange={setUsername} placeholder="name@example.com" />
       <CredentialField label="Password" value={password} onChange={setPassword} placeholder="Password or op:// reference" secret />
       <div><Button disabled={busy || !site || !password} onClick={() => void save()}>Save sign-in</Button></div>
-      {error ? <span style={{ ...font('footnote'), color: 'var(--danger)' }}>{error}</span> : null}
+      {error ? <Text size="footnote" tone="danger">{error}</Text> : null}
     </CardSection>
   )
 }
@@ -177,8 +178,9 @@ function ConnectorCredentialEditor({ connector }: { connector: InstalledConnecto
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--background)' }}>
+    <SheetPage>
       <ModalHeader
+        icon="key"
         title={connector.name}
         trailing={saving ? <Spinner /> : <IconButton title="Save credentials" icon="checkmark" disabled={Object.values(fields).every((v) => !v)} onClick={() => void save()} />}
       />
@@ -190,11 +192,12 @@ function ConnectorCredentialEditor({ connector }: { connector: InstalledConnecto
         </CardSection>
         {error ? <ErrorText text={error} /> : null}
       </CardForm>
-    </div>
+    </SheetPage>
   )
 }
 
 /** Persistent labels keep a filled credential field identifiable. */
 function CredentialField({ label, ...props }: Parameters<typeof Field>[0] & { label: string }) {
-  return <label className="credential-field"><span>{label}</span><Field {...props} label={label} /></label>
+  const tr = useTr()
+  return <label className="credential-field"><span>{tr(label)}</span><Field {...props} label={label} /></label>
 }

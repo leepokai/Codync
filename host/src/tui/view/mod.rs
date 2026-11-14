@@ -6,17 +6,25 @@
 // Drawing code reads best with x / y / w / t (theme) / r (rect).
 #![allow(clippy::many_single_char_names, clippy::similar_names)]
 
+mod activity;
 mod analytics;
 mod bot_chat;
 mod buffer;
 mod chat;
-mod computer_access;
+pub(super) mod computer_access;
+mod dev_servers;
+mod fallbacks;
 mod forms;
 mod goto;
 mod help;
+mod lead_agent;
+mod network;
+mod network_rules;
+mod new_bot;
 mod overlay;
 mod pair;
 mod permission;
+mod queue;
 mod roster;
 mod skill;
 mod style;
@@ -24,12 +32,19 @@ mod time;
 mod trace;
 mod transcript;
 mod usage;
+mod whats_new;
 
-pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u};
+pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, window};
 pub(super) use chat::composer_lines;
+pub(super) use fallbacks::{chain_line, using_line};
+#[cfg(test)]
+pub(super) use fallbacks::{rest_note, step_item};
+pub(super) use lead_agent::lead_agent_scroll_max;
 pub(super) use overlay::{field_line, input_line};
 pub(super) use style::theme;
-pub(super) use usage::when_future;
+pub(super) use time::when;
+pub(super) use transcript::{file_size, unfoldable};
+pub(super) use usage::{usage_scroll_max, usage_services, when_future};
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
@@ -56,6 +71,7 @@ pub fn draw(f: &mut Frame<'_>, app: &mut App) {
         _ => Width::Huge,
     };
     let buf = f.buffer_mut();
+    buf.set_style(area, theme().text);
     if area.width < 40 || area.height < 12 {
         let c = app.counts();
         put(buf, 0, 0, area.width, "Make the window bigger", theme().bold);

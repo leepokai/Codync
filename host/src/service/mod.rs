@@ -16,14 +16,18 @@ use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+mod addresses;
+pub use addresses::{addresses, interface_addresses, public_addresses};
+pub mod bind;
+
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{install, installed, require_executable, start, stop, uninstall};
+pub use unix::{install, installed, require_executable, start, started_by_service, stop, uninstall};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{install, installed, require_executable, start, stop, uninstall};
+pub use windows::{install, installed, require_executable, start, started_by_service, stop, uninstall};
 
 static BINARY_IDENTITY: OnceLock<(String, String)> = OnceLock::new();
 
@@ -53,9 +57,15 @@ pub fn binary_identity() -> Option<&'static (String, String)> {
     BINARY_IDENTITY.get()
 }
 
+/// How long a stopping host may take: its bots get 5 s, then its agents and dev servers up to 10 s to end by themselves
+/// and 15 s to end from their leaves up (`agent/acp.rs`, `agent/process.rs`), then its analytics are sent (3 s). launchd
+/// waits as long before it kills the host (`ExitTimeOut`), which would leave its agents running.
+const HOST_EXIT: Duration = Duration::from_secs(40);
+
 /// Do not claim a restart succeeded while an old daemon still holds the data.
 fn wait_for_host_exit() -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    // A moment past launchd's kill.
+    let deadline = Instant::now() + HOST_EXIT + Duration::from_secs(5);
     loop {
         match lock_host() {
             Ok(lock) => {
@@ -80,8 +90,18 @@ pub(crate) fn home() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
-    std::env::var_os("CODYNC_HOME")
-        .map_or_else(|| home().join(crate::environment::Environment::current().data_folder()), PathBuf::from)
+    std::env::var_os("CODYNC_HOME").map_or_else(default_data_dir, PathBuf::from)
+}
+
+#[cfg(not(test))]
+fn default_data_dir() -> PathBuf {
+    home().join(crate::environment::Environment::current().data_folder())
+}
+
+/// Unit tests never see a real host's data: tests that start a hub run its start-up clean-up, which deletes files.
+#[cfg(test)]
+fn default_data_dir() -> PathBuf {
+    std::env::temp_dir().join(format!("codync-unit-{}", std::process::id()))
 }
 
 fn create_parent(file: &Path) -> Result<()> {
@@ -159,47 +179,13 @@ impl KeepAwake {
     }
 }
 
-/// Addresses the phone can try, best first: Tailscale, then LAN.
-pub fn addresses(port: u16) -> Vec<String> {
-    let mut tailscale = vec![];
-    let mut lan = vec![];
-    for iface in if_addrs::get_if_addrs().unwrap_or_default() {
-        if iface.is_loopback() {
-            continue;
-        }
-        if let std::net::IpAddr::V4(ip) = iface.ip() {
-            let o = ip.octets();
-            // 100.64.0.0/10 is Tailscale's CGNAT range.
-            if o[0] == 100 && (64..128).contains(&o[1]) {
-                tailscale.push(format!("http://{ip}:{port}"));
-            } else if ip.is_private() {
-                lan.push(format!("http://{ip}:{port}"));
-            }
-        }
-    }
-    if let Ok(out) = Command::new("tailscale").args(["status", "--json"]).output()
-        && let Ok(v) = serde_json::from_slice::<Value>(&out.stdout)
-        && let Some(dns) = v["Self"]["DNSName"].as_str()
-    {
-        let dns = dns.trim_end_matches('.');
-        if !dns.is_empty() {
-            tailscale.insert(0, format!("http://{dns}:{port}"));
-        }
-    }
-    tailscale.sort();
-    tailscale.dedup();
-    lan.sort();
-    lan.dedup();
-    tailscale.into_iter().chain(lan).collect()
-}
-
 pub fn host_name() -> String {
     let n = gethostname::gethostname().to_string_lossy().into_owned();
     n.trim_end_matches(".local").to_owned()
 }
 
 /// What the computer is, so phones can draw the right icon (Linux gets its penguin;
-/// Windows counts as a desktop).
+/// Windows counts as a desktop; a Codync Cloud computer, its cloud).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {
@@ -210,6 +196,7 @@ pub enum Device {
     MacPro,
     Desktop,
     Linux,
+    Cloud,
 }
 
 /// Detected once; on macOS from `system_profiler`'s model name.
@@ -366,6 +353,15 @@ mod tests {
 
     fn read(f: &Path) -> Value {
         serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn unit_tests_keep_out_of_the_real_data_folder() {
+        assert!(
+            std::env::var_os("CODYNC_HOME").is_some() || !data_dir().starts_with(home()),
+            "{}",
+            data_dir().display()
+        );
     }
 
     #[test]

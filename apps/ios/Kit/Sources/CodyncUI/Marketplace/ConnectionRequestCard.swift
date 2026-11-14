@@ -1,4 +1,3 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
@@ -7,50 +6,57 @@ struct ConnectionRequestCard: View {
     let entry: Entry
     let request: ConnectionRequest
     @Environment(BotStore.self) private var model
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var app: ComposioApp?
     @State private var item: MarketConnector?
+    @State private var agent: Backend?
     @State private var value = ""
     @State private var username = ""
     @State private var busy = false
     @State private var error: String?
 
+    private var pending: Bool { request.status == "pending" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(request.title, systemImage: "lock.shield")
-                .font(.headline)
-            if let text = entry.data.text { Text(text).foregroundStyle(Palette.secondary) }
-            if request.status == "pending" {
-                if request.kind == "login" {
-                    TextField("Username or email", text: $username)
-                        .plainTextInput()
-                    SecureField("Password or op:// reference", text: $value)
-                        .plainTextInput()
-                    Text("Saved securely on this computer. The bot types it into the sign-in page but never sees it.")
-                        .font(.caption).foregroundStyle(Palette.secondary)
-                } else if request.kind == "secret" {
-                    Text("\(request.field ?? "Credential") · \(request.location ?? "")")
-                        .font(.caption).foregroundStyle(Palette.secondary)
-                    SecureField("Credential or op:// reference", text: $value)
-                        .plainTextInput()
-                    Text("Saved securely on this computer. Never added to the conversation.")
-                        .font(.caption).foregroundStyle(Palette.secondary)
+            HStack(spacing: 14) {
+                logo
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(request.title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                    if let text = entry.data.text {
+                        Text(text).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
+                    }
                 }
-                HStack {
-                    Button(request.kind == "login" ? "Save login" : request.kind == "secret" ? "Save and connect" : "Connect") { connect() }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
-                    Button("Cancel") { cancel() }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
-                    if busy { Spinner() }
-                }
-            } else {
-                Text(request.status == "ready" ? (request.kind == "login" ? "Saved" : "Connected") : "Cancelled").foregroundStyle(Palette.secondary)
+                Spacer(minLength: 8)
+                trailing
             }
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
+            // The card has no fill, so each field gets one.
+            if pending, request.kind == "login" {
+                TextField(L10n.tr("Username or email"), text: $username)
+                    .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
+                SecureField(L10n.tr("Password or op:// reference"), text: $value)
+                    .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
+                Text(L10n.tr("Saved securely on this computer. The bot types it into the sign-in page but never sees it."))
+                    .font(.caption).foregroundStyle(Palette.secondary)
+            } else if pending, request.kind == "secret" {
+                Text("\(request.field ?? "Credential") · \(request.location ?? "")")
+                    .font(.caption).foregroundStyle(Palette.secondary)
+                SecureField("Credential or op:// reference", text: $value)
+                    .plainTextInput()
+                    .pill(fill: Palette.bubbleAgent)
+                Text(L10n.tr("Saved securely on this computer. Never added to the conversation."))
+                    .font(.caption).foregroundStyle(Palette.secondary)
+            }
+            if let error { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
         }
-        .padding(16)
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Palette.border))
+        // A card, not a banner: full width on a phone, capped on wider screens.
+        .frame(maxWidth: 400, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .textFieldStyle(.plain)
         .codyncSheet(item: $item) { item in
             InstallConnectorSheet(item: item, requestId: entry.id) { self.item = nil }
@@ -58,7 +64,61 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.loginProfile == nil, signInLoginProfile: request.loginProfile) }
+        .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
+    }
+
+    /// The agent, website or service the request is for.
+    @ViewBuilder private var logo: some View {
+        switch request.kind {
+        case "agent":
+            let backend = model.hello?.backends.first { $0.id == request.backend }
+            AgentIcon(registry: backend?.registry ?? request.backend, size: 26)
+                .frame(width: 46, height: 46)
+                .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case "app":
+            AppLogo(url: request.logo, name: request.title)
+        case "login":
+            // A login's site is a domain, or an app's name (no logo to find for that).
+            ServiceLogo(website: nil, site: request.site.flatMap { $0.contains(".") ? $0 : nil }, name: request.title)
+        default:
+            ServiceLogo(website: nil, name: request.title, registryName: request.registryName)
+        }
+    }
+
+    @ViewBuilder private var trailing: some View {
+        if pending {
+            HStack(spacing: 6) {
+                if busy { Spinner() }
+                Button(L10n.tr(connectTitle)) { connect() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(busy || (["secret", "login"].contains(request.kind) && value.isEmpty))
+            }
+        } else {
+            HStack(spacing: 6) {
+                if request.status == "ready" { Image(systemName: "checkmark").fontWeight(.semibold) }
+                Text(L10n.tr(request.status == "ready" ? doneTitle : "Cancelled"))
+            }
+            .font(.subheadline)
+            .foregroundStyle(Palette.secondary)
+        }
+    }
+
+    private var connectTitle: String {
+        switch request.kind {
+        case "agent": "Sign in"
+        case "login": "Save"
+        default: "Connect"
+        }
+    }
+
+    private var doneTitle: String {
+        switch request.kind {
+        case "agent": "Signed in"
+        case "login": "Saved"
+        default: "Connected"
+        }
     }
 
     private func connect() {
@@ -68,7 +128,14 @@ struct ConnectionRequestCard: View {
         Task {
             defer { busy = false }
             do {
-                if request.kind == "app", let toolkit = request.toolkit {
+                if request.kind == "agent" {
+                    // The host completes the card and resends the messages once the sheet finds it signed in.
+                    if let backend = model.hello?.backends.first(where: { $0.id == request.backend }) {
+                        withAnimation(Motion.layout) { agent = backend }
+                    } else {
+                        error = "Open \(request.title) in Extensions to sign in."
+                    }
+                } else if request.kind == "app", let toolkit = request.toolkit {
                     withAnimation(Motion.layout) { app = ComposioApp(slug: toolkit, name: request.title) }
                 } else if request.kind == "login" {
                     try await client.finishConnectionRequest(entry.id, value: value, username: username)
@@ -78,25 +145,14 @@ struct ConnectionRequestCard: View {
                     value = ""
                 } else if let id = request.connectorId {
                     let connectors = try await client.connectors()
-                    if connectors.first(where: { $0.id == id })?.needsSignIn == true {
-                        try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(id)
-                    }
+                    // Cancelled: the card stays pending.
+                    if connectors.first(where: { $0.id == id })?.needsSignIn == true, try await !signInFlow.signIn(id) { return }
                     try await client.finishConnectionRequest(entry.id, connectorId: id)
                 } else if let name = request.registryName {
                     let loaded = try await client.connectorInfo(name)
                     withAnimation(Motion.layout) { item = loaded }
                 }
             } catch { self.error = error.localizedDescription }
-        }
-    }
-
-    private func cancel() {
-        guard let client = model.client else { return }
-        busy = true
-        Task {
-            defer { busy = false }
-            do { try await client.finishConnectionRequest(entry.id, cancel: true); value = "" }
-            catch { self.error = error.localizedDescription }
         }
     }
 }
@@ -114,8 +170,8 @@ struct CredentialsView: View {
             ModalHeader("Credentials") {}
             CardForm {
                 CardSection("Storage") {
-                    Text(status?.provider ?? "System credential store")
-                    Text("Encrypted on the connected computer.")
+                    Text(L10n.tr(status?.provider ?? "System credential store"))
+                    Text(L10n.tr("Encrypted on the connected computer."))
                         .foregroundStyle(Palette.secondary)
                 }
                 CardSection("Saved connections") {
@@ -126,27 +182,27 @@ struct CredentialsView: View {
                         .buttonStyle(.plain)
                     }
                     if !model.installedConnectors.contains(where: { !$0.keys.isEmpty }) {
-                        Text("No saved connection credentials yet.")
+                        Text(L10n.tr("No saved connection credentials yet."))
                             .font(.caption).foregroundStyle(Palette.secondary)
                     }
-                    Text("Values stay hidden. Select a connection to replace its credentials.")
+                    Text(L10n.tr("Values stay hidden. Select a connection to replace its credentials."))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 LoginsSection()
                 CardSection("1Password", footer: "Use a service account with read access only to a dedicated shared vault. The 1Password CLI must be installed on the computer.") {
-                    Text(status?.onePasswordConnected == true ? "Connected" : "Connect a shared vault")
+                    Text(L10n.tr(status?.onePasswordConnected == true ? "Connected" : "Connect a shared vault"))
                     CredentialFieldRow("Service account token") {
-                        SecureField("Paste your token", text: $token).plainTextInput()
+                        SecureField(L10n.tr("Paste your token"), text: $token).plainTextInput()
                     }
-                    Button("Connect") { save(token) }.buttonStyle(PrimaryButtonStyle()).disabled(busy || token.isEmpty)
+                    Button(L10n.tr("Connect")) { save(token) }.buttonStyle(PrimaryButtonStyle()).disabled(busy || token.isEmpty)
                     if status?.onePasswordConnected == true {
-                        Button("Disconnect") { save("") }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
+                        Button(L10n.tr("Disconnect")) { save("") }.buttonStyle(SecondaryButtonStyle()).disabled(busy)
                     }
-                    Text("Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs.")
+                    Text(L10n.tr("Use op://vault/item/field in a connector's credential field. Codync retrieves the value when the connector runs."))
                         .font(.footnote).foregroundStyle(Palette.secondary)
                 }
                 if busy { Spinner() }
-                if let error { Text(error).foregroundStyle(Palette.danger) }
+                if let error { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .background(Palette.background)
@@ -201,12 +257,12 @@ private struct LoginsSection: View {
                 TextField("name@example.com", text: $username).plainTextInput()
             }
             CredentialFieldRow("Password") {
-                SecureField("Password or op:// reference", text: $password).plainTextInput()
+                SecureField(L10n.tr("Password or op:// reference"), text: $password).plainTextInput()
             }
-            Button("Save sign-in") { save() }
+            Button(L10n.tr("Save sign-in")) { save() }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(busy || site.isEmpty || password.isEmpty)
-            if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger) }
+            if let error { Text(L10n.tr(error)).font(.footnote).foregroundStyle(Palette.danger) }
         }
         .task { await load() }
         .onDisappear { password = "" }
@@ -261,7 +317,7 @@ private struct ConnectorCredentialEditor: View {
                         SecureField(key, text: Binding(get: { fields[key] ?? "" }, set: { fields[key] = $0 })).plainTextInput()
                     }
                 }
-                if let error { Text(error).foregroundStyle(Palette.danger) }
+                if let error { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .background(Palette.background)
@@ -294,8 +350,8 @@ private struct CredentialFieldRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.caption).foregroundStyle(Palette.secondary)
-            content.accessibilityLabel(title)
+            Text(L10n.tr(title)).font(.caption).foregroundStyle(Palette.secondary)
+            content.accessibilityLabel(L10n.tr(title))
         }
     }
 }

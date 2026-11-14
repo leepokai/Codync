@@ -56,6 +56,8 @@ nd = b"\x0a"*32
 nh = b"\x0b"*32
 sas_commit = sha(b"codync/sascommit/v1" + dk + nd)
 sas_n = struct.unpack(">I", sha(b"codync/sas/v2" + hk + dk + nd + nh)[:4])[0] % 1_000_000
+# The code a phone and a computer in no account both show while the computer asks (pairing, phase 2).
+pair_check_n = struct.unpack(">I", sha(b"codync/pair-check/v1" + dk + hk)[:4])[0] % 1_000_000
 offer = sha(b"codync/offer/v1" + code)[:16]
 
 # mailbox
@@ -119,6 +121,7 @@ out = {
     {"dir":"d2h","c":1,"final":False,"message":'{"id":2,"m":"se',"plaintext":f_d2h1_more[1],"d":f_d2h1_more[0]},
   ],
   "sas": {"deviceNonce": b64(nd), "hostNonce": b64(nh), "commit": b64(sas_commit), "code": "%06d" % sas_n},
+  "pairCheck": {"code": "%06d" % pair_check_n},
   "claim": {"claimId": "clm_AAAAAAAAAAAAAAAAAAAAAA", "nonce": "DAwMDAwMDAwMDAwMDAwMDA", "userId": "user_2abc",
             "computerId": b64(cid), "boxKey": b64(bk), "canonical": claim_canon, "sig": b64(claim_sig)},
   "push": {"pushPriv": b64(b"\x0c"*32), "pushPub": b64(push_pub), "ephPriv": b64(b"\x0d"*32), "ephPub": b64(pepk),

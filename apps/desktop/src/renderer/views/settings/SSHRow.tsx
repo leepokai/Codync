@@ -1,13 +1,20 @@
-import { SSH_INSTALL_COMMAND, type SSHProfile, type SSHStatus } from '@shared/ssh'
-import { Button, IconButton } from '../../components/Controls'
+import { SSH_LINGER_COMMAND, type SSHProfile, type SSHStatus } from '@shared/ssh'
+import { Button, IconButton, Reveal, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { font } from '../../lib/fonts'
-import { Reveal } from './parts'
+import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
+import { analytics } from '../../store/analytics'
 import { sshStatusDetail } from '@shared/ssh-startup'
+import { useTr } from '../../lib/use-language'
+import { useSSH } from './ssh-model'
 
 export function SSHRow({ profile, status, edit, attached = true }: { profile: SSHProfile; status: SSHStatus; attached?: boolean; edit: () => void }) {
+  const tr = useTr()
+  const ssh = useSSH()
   const bridge = window.codync.ssh
+  // There's no released development host to install.
   const dev = window.codync.appScheme === 'codync-dev'
+  const named = (text: string) => tr(text).replaceAll('{name}', profile.host)
   const target = `${profile.user ? `${profile.user}@` : ''}${profile.host}${profile.port !== null ? `:${profile.port}` : ''}`
   const line = (() => {
     switch (status.kind) {
@@ -15,6 +22,8 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
         return `${target} · Not connected`
       case 'connecting':
         return status.step
+      case 'installing':
+        return tr(status.step)
       case 'confirmHostKey':
         return `${target} · Confirm the host key`
       case 'connected':
@@ -24,21 +33,23 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
       case 'failed':
         return status.message
       case 'notInstalled':
-        return dev ? `Install Codync Dev on ${profile.host} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.` : `codync-host isn't installed on ${profile.host}. Install it there:`
+        if (dev) return named('Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.')
+        return named(status.failure ? "Couldn't install codync-host on {name}." : "codync-host isn't installed on {name}.")
     }
   })()
   const problem = status.kind === 'retrying' || status.kind === 'failed' || status.kind === 'notInstalled'
-  const active = status.kind === 'connected' || status.kind === 'connecting' || status.kind === 'retrying'
+  const active = status.kind === 'connected' || status.kind === 'connecting' || status.kind === 'retrying' || status.kind === 'installing'
   return (
     <div className="settings-card settings-appear">
       <div className="settings-row">
-        <span style={{ width: 22, display: 'flex', justifyContent: 'center', color: 'var(--secondary)' }}>
+        <IconSlot width={22} tone="secondary">
           <Icon name="terminal" size={13} />
-        </span>
-        <div className="settings-stack" style={{ flex: 1 }}>
-          <span style={font('callout', 'medium')}>{profile.name || profile.host}</span>
-          <span style={{ ...font('caption'), color: problem ? 'var(--warning)' : 'var(--secondary)' }}>{line}</span>
-        </div>
+        </IconSlot>
+        <VStack grow className="settings-stack">
+          <Text size="callout" weight="medium">{profile.name || profile.host}</Text>
+          <Text size="caption" tone={problem ? 'attention' : 'secondary'}>{line}</Text>
+        </VStack>
+        {status.kind === 'installing' ? <Spinner /> : null}
         {active ? (
           <IconButton title="Disconnect" icon="stop.circle" onClick={() => bridge.disconnect(profile.id)} />
         ) : (
@@ -49,26 +60,37 @@ export function SSHRow({ profile, status, edit, attached = true }: { profile: SS
       </div>
       <Reveal show={status.kind === 'confirmHostKey'}>
         {status.kind === 'confirmHostKey' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ ...font('caption'), color: 'var(--secondary)' }}>
+          <VStack gap={6}>
+            <Text size="caption" tone="secondary">
               First connection to {status.name}. Check that its host key fingerprint matches what the computer's owner sees (
-              <code style={{ fontFamily: 'var(--mono)' }}>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>).
-            </span>
+              <code className="settings-mono">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>).
+            </Text>
             {status.fingerprints.map((f) => (
-              <span key={f} className="selectable" style={font('caption', undefined, 'monospaced')}>{f}</span>
+              <Text key={f} size="caption" mono className="selectable">{f}</Text>
             ))}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <HStack align="stretch" gap={8}>
               <Button onClick={() => bridge.trustHostKey(profile.id)}>Trust and connect</Button>
               <Button kind="secondary" onClick={() => bridge.disconnect(profile.id)}>Cancel</Button>
-            </div>
-          </div>
+            </HStack>
+          </VStack>
         ) : null}
       </Reveal>
       <Reveal show={status.kind === 'notInstalled' && !dev}>
-        <div className="settings-row" style={{ gap: 6 }}>
-          <span className="settings-code selectable">{SSH_INSTALL_COMMAND}</span>
-          <IconButton title="Copy install command" icon="doc.on.doc" onClick={() => window.codync.app.copy(SSH_INSTALL_COMMAND)} />
-        </div>
+        <HStack gap={8} className="settings-row">
+          {status.kind === 'notInstalled' && status.failure?.output ? (
+            <span className="settings-code settings-output selectable">{status.failure.output}</span>
+          ) : <Spacer />}
+          <Button onClick={() => ssh.install(profile.id)}>Install</Button>
+        </HStack>
+      </Reveal>
+      <Reveal show={ssh.state.needsLinger.includes(profile.id)}>
+        <VStack gap={6}>
+          <Text size="caption" tone="secondary">{named('To keep codync-host running on {name} after you log out, run this there:')}</Text>
+          <HStack gap={6}>
+            <span className="settings-code selectable">{SSH_LINGER_COMMAND}</span>
+            <IconButton title="Copy command" icon="doc.on.doc" onClick={() => { analytics.track({ event: 'link_opened', link: 'install_command' }); window.codync.app.copy(SSH_LINGER_COMMAND) }} />
+          </HStack>
+        </VStack>
       </Reveal>
     </div>
   )

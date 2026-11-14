@@ -4,7 +4,7 @@ import { CharacterAvatar, type Mood } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useArrivals, useFlip } from './island-motion'
-import { avatarColor, withAlpha } from '../../lib/theme'
+import { avatarColor, palette, withAlpha } from '../../lib/theme'
 
 // Pieces the island's views share: the big character with its glow and
 // badge, the agent row, the column of other bots and the key hint on a button.
@@ -12,7 +12,7 @@ import { avatarColor, withAlpha } from '../../lib/theme'
 export type Badge = 'working' | 'needsInput' | 'finished' | 'failed' | null
 
 /** State colors: amber needs you, green done, red failed (Codync's palette has no others). */
-export const AMBER = '#F0A030'
+export const AMBER = palette(true).warning
 export const GREEN = '#34D399'
 export const RED = '#F4505E'
 
@@ -39,7 +39,7 @@ function glowOf(badge: Badge, color: string) {
 
 /** The bot in the big slot: its character, a glow in its state's color and a badge. */
 export function BigCharacter({ bot, size, mood, badge, onOpen }: {
-  bot: Pick<IslandBot, 'shape' | 'color'>
+  bot: Pick<IslandBot, 'shape' | 'color' | 'customIcon'>
   size: number
   mood: Mood
   badge: Badge
@@ -49,7 +49,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   const inner = (
     <>
       {glow ? <span aria-hidden className="island-glow" style={{ background: `radial-gradient(circle, ${withAlpha(glow, 0.36)}, ${withAlpha(glow, 0)} 68%)` }} /> : null}
-      <CharacterAvatar shape={bot.shape} color={bot.color} size={size} mood={mood} dark />
+      <CharacterAvatar customIcon={bot.customIcon} shape={bot.shape} color={bot.color} size={size} mood={mood} dark />
       <StateBadge badge={badge} />
     </>
   )
@@ -112,7 +112,7 @@ export function MiniColumn({ bots, onOpen }: { bots: IslandBot[]; onOpen: (ref: 
     <div ref={column} className="island-minis">
       {bots.map((b) => (
         <button key={b.ref} data-flip={b.ref} className={`island-mini ${arrivals.has(b.ref) ? 'island-swap' : ''}`} title={b.name} aria-label={`Open ${b.name}`} onClick={() => onOpen(b.ref)}>
-          <CharacterAvatar shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
+          <CharacterAvatar customIcon={b.customIcon} shape={b.shape} color={b.color} size={18} mood={moodOf(b)} dark />
           <StatusDot bot={b} />
         </button>
       ))}

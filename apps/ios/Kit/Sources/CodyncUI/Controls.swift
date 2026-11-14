@@ -4,7 +4,8 @@ import UIKit
 
 // Codync's own controls. Never use the stock ones (Picker, .switch toggles,
 // Form/List styling, confirmationDialog/alert, ProgressView, DisclosureGroup,
-// .bordered buttons, swipeActions): build from these instead.
+// .bordered buttons, swipeActions): build from these instead (CardForm, CardSection, Hairline and Spinner
+// are in CodyncKit, for the share extension).
 // Menus are the one exception: `DropdownMenu`/`ChoicePicker` open the system `Menu` and
 // `.contextActions` the system `contextMenu`. A hand-built overlay anchored by global
 // frame lands in the wrong place (sheets, scroll views, the composer).
@@ -101,133 +102,7 @@ public extension ButtonStyle where Self == SecondaryButtonStyle {
     static var secondary: SecondaryButtonStyle { SecondaryButtonStyle() }
 }
 
-// MARK: - Spinner
-
-/// Loading indicator: a thin arc that turns.
-public struct Spinner: View {
-    var size: CGFloat
-    @State private var turning = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    public init(size: CGFloat = 14) { self.size = size }
-
-    public var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.7)
-            .stroke(Palette.secondary, style: StrokeStyle(lineWidth: max(1.5, size / 9), lineCap: .round))
-            .frame(width: size, height: size)
-            .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(reduceMotion ? nil : .linear(duration: 0.8).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
-            .accessibilityLabel("Loading")
-    }
-}
-
 // MARK: - Menus
-
-/// One row in a Codync menu: an action, or a choice when `selected` is set.
-public struct MenuItem: Identifiable {
-    public let id = UUID()
-    public var title: String
-    public var icon: String?
-    public var selected: Bool?
-    public var destructive: Bool
-    public var divider: Bool
-    public var action: () -> Void
-
-    public init(_ title: String, icon: String? = nil, selected: Bool? = nil, destructive: Bool = false,
-                divider: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.icon = icon
-        self.selected = selected
-        self.destructive = destructive
-        self.divider = divider
-        self.action = action
-    }
-}
-
-/// A row of emoji above a message's menu (Slack's quick reactions).
-public struct ReactionPick {
-    public var emoji: [String]
-    public var chosen: [String]
-    public var toggle: (String) -> Void
-
-    public init(emoji: [String], chosen: [String], toggle: @escaping (String) -> Void) {
-        self.emoji = emoji
-        self.chosen = chosen
-        self.toggle = toggle
-    }
-}
-
-public extension View {
-    /// Long-press opens the system context menu; `reactions` puts a quick-reaction row on top.
-    func contextActions(reactions: ReactionPick? = nil, _ items: @escaping () -> [MenuItem]) -> some View {
-        modifier(ContextActions(items: items, reactions: reactions))
-    }
-}
-
-private struct ContextActions: ViewModifier {
-    let items: () -> [MenuItem]
-    let reactions: ReactionPick?
-
-    func body(content: Content) -> some View {
-        content.contextMenu {
-            if let reactions {
-                ControlGroup {
-                    ForEach(reactions.emoji, id: \.self) { emoji in
-                        let chosen = reactions.chosen.contains(emoji)
-                        Toggle(isOn: Binding(get: { chosen }, set: { _ in reactions.toggle(emoji) })) { Text(emoji) }
-                    }
-                }
-                .controlGroupStyle(.palette)
-            }
-            ForEach(items()) { item in
-                if item.divider { Divider() }
-                systemMenuRow(item)
-            }
-        }
-    }
-}
-
-/// A `MenuItem` inside a system `Menu` or `contextMenu`: choices as checkmarked toggles.
-@ViewBuilder private func systemMenuRow(_ item: MenuItem) -> some View {
-    let role: ButtonRole? = item.destructive ? .destructive : nil
-    if let selected = item.selected {
-        // The binding's setter must be Sendable, but SwiftUI only calls it from the menu, on the
-        // main thread where the action was made.
-        nonisolated(unsafe) let action = item.action
-        Toggle(isOn: Binding(get: { selected }, set: { _ in action() })) {
-            if let icon = item.icon { SwiftUI.Label(item.title, systemImage: icon) } else { Text(item.title) }
-        }
-    } else if let icon = item.icon {
-        Button(role: role, action: item.action) { SwiftUI.Label(item.title, systemImage: icon) }
-    } else {
-        Button(item.title, role: role, action: item.action)
-    }
-}
-
-/// A button that opens the system menu.
-public struct DropdownMenu<Label: View>: View {
-    let items: () -> [MenuItem]
-    let label: Label
-
-    public init(items: @escaping () -> [MenuItem], @ViewBuilder label: () -> Label) {
-        self.items = items
-        self.label = label()
-    }
-
-    public var body: some View {
-        // The system menu: it anchors correctly inside sheets and scroll views, where an overlay can't.
-        Menu {
-            ForEach(items()) { item in
-                if item.divider { Divider() }
-                systemMenuRow(item)
-            }
-        } label: { label }
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-    }
-}
 
 /// Picks one value: shows the current choice in a pill with a chevron, opens the system menu.
 public struct ChoicePicker<ID: Hashable>: View {
@@ -235,20 +110,29 @@ public struct ChoicePicker<ID: Hashable>: View {
     let options: [(id: ID, label: String)]
     var fill: Color
     var fitsAvailableWidth: Bool
+    /// A picture before each label, in the menu and on the pill (an agent's logo).
+    var image: ((ID) -> Image?)?
 
-    public init(selection: Binding<ID>, options: [(id: ID, label: String)], fill: Color = .clear, fitsAvailableWidth: Bool = false) {
+    public init(selection: Binding<ID>, options: [(id: ID, label: String)], fill: Color = .clear, fitsAvailableWidth: Bool = false,
+                image: ((ID) -> Image?)? = nil) {
         _selection = selection
         self.options = options
         self.fill = fill
         self.fitsAvailableWidth = fitsAvailableWidth
+        self.image = image
     }
 
     public var body: some View {
         DropdownMenu {
-            options.map { option in MenuItem(option.label, selected: option.id == selection) { selection = option.id } }
+            options.map { option in
+                MenuItem(option.label, image: image?(option.id), selected: option.id == selection) { selection = option.id }
+            }
         } label: {
             HStack(spacing: 6) {
-                Text(options.first { $0.id == selection }?.label ?? "Choose").lineLimit(1)
+                if let picture = image?(selection) {
+                    picture.resizable().scaledToFit().frame(width: 16, height: 16)
+                }
+                Text(L10n.tr(options.first { $0.id == selection }?.label ?? "Choose")).lineLimit(1)
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
             }
             .font(.body)
@@ -259,7 +143,7 @@ public struct ChoicePicker<ID: Hashable>: View {
             }
         }
         .fixedSize(horizontal: !fitsAvailableWidth, vertical: true)
-        .help(options.first { $0.id == selection }?.label ?? "Choose")
+        .help(L10n.tr(options.first { $0.id == selection }?.label ?? "Choose"))
     }
 }
 
@@ -282,7 +166,7 @@ public struct SegmentedChoice<ID: Hashable>: View {
                 Button {
                     withAnimation(Motion.reduced(Motion.morph, reduceMotion)) { selection = option.id }
                 } label: {
-                    Text(option.label)
+                    Text(L10n.tr(option.label))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(on ? Palette.text : Palette.secondary)
                         .lineLimit(1)
@@ -304,6 +188,58 @@ public struct SegmentedChoice<ID: Hashable>: View {
     }
 }
 
+public extension EnvironmentValues {
+    /// How many lines a row's note shows; the details sheet keeps long ones (skill descriptions) to two.
+    @Entry var noteLines: Int? = nil
+}
+
+/// Grok Bot's page tabs: plain labels, the chosen one on a light capsule.
+public struct TabChoice<ID: Hashable>: View {
+    @Binding var selection: ID
+    let options: [(id: ID, label: String)]
+    @Namespace private var pill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(selection: Binding<ID>, options: [(id: ID, label: String)]) {
+        _selection = selection
+        self.options = options
+    }
+
+    public var body: some View {
+        // Labels too long for the width shrink a little, then scroll, rather than cut one short.
+        ViewThatFits(in: .horizontal) {
+            tabs(small: false)
+            tabs(small: true)
+            ScrollView(.horizontal) { tabs(small: false) }
+                .scrollIndicators(.hidden)
+        }
+    }
+
+    private func tabs(small: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.id) { option in
+                let on = option.id == selection
+                Button {
+                    withAnimation(Motion.reduced(Motion.morph, reduceMotion)) { selection = option.id }
+                } label: {
+                    Text(L10n.tr(option.label))
+                        .font(small ? .footnote : .subheadline)
+                        .foregroundStyle(on ? Palette.text : Palette.secondary)
+                        .lineLimit(1)
+                        .padding(.horizontal, small ? 10 : 12)
+                        .padding(.vertical, 6)
+                        .background {
+                            if on { Capsule().fill(Palette.bubbleAgent).matchedGeometryEffect(id: "pill", in: pill) }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+    }
+}
+
 /// A list of choices, one per row with a checkmark: the replacement for `.inline` pickers.
 public struct ChoiceList<ID: Hashable>: View {
     @Binding var selection: ID
@@ -320,9 +256,9 @@ public struct ChoiceList<ID: Hashable>: View {
                 Button { selection = option.id } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(option.label).foregroundStyle(Palette.text)
+                            Text(L10n.tr(option.label)).foregroundStyle(Palette.text)
                             if let detail = option.detail, !detail.isEmpty {
-                                Text(detail).font(.subheadline).foregroundStyle(Palette.secondary)
+                                Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary)
                             }
                         }
                         Spacer(minLength: 8)
@@ -340,113 +276,12 @@ public struct ChoiceList<ID: Hashable>: View {
     }
 }
 
-// MARK: - Forms
-
-/// A scrolling page of cards: the replacement for `Form` / grouped `List`.
-public struct CardForm<Content: View>: View {
-    let content: Content
-
-    public init(@ViewBuilder content: () -> Content) { self.content = content() }
-
-    public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
-                content
-            }
-            .font(.body)
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Palette.background)
-    }
-}
-
-/// A titled group of rows: the replacement for `Section`. Modeled on ChatGPT's desktop settings:
-/// a small bold heading over a filled, rounded group whose rows are split by inset hairlines
-/// (references in `docs/design/reference/`).
-public struct CardSection<Content: View, Accessory: View>: View {
-    let title: String?
-    let footer: String?
-    let content: Content
-    /// Trailing controls on the heading's line (add, refresh, clear).
-    let accessory: Accessory
-
-    public init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content,
-                @ViewBuilder accessory: () -> Accessory) {
-        self.title = title
-        self.footer = footer
-        self.content = content()
-        self.accessory = accessory()
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.text)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 0)
-                    accessory
-                }
-                .padding(.leading, 2)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                _VariadicView.Tree(HairlineRows()) { content }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            if let footer {
-                Text(footer)
-                    .font(.caption)
-                    .foregroundStyle(Palette.secondary)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-public extension CardSection where Accessory == EmptyView {
-    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
-        self.init(title, footer: footer, content: content) { EmptyView() }
-    }
-}
-
-/// A 1-pixel separator line in the border color.
-public struct Hairline: View {
-    @Environment(\.displayScale) private var scale
-
-    public init() {}
-
-    public var body: some View {
-        Rectangle().fill(Palette.border).frame(height: 1 / scale)
-    }
-}
-
-/// Lays a section's rows out one under another with an inset hairline between each pair.
-private struct HairlineRows: _VariadicView_MultiViewRoot {
-    func body(children: _VariadicView.Children) -> some View {
-        let inset: CGFloat = 16
-        ForEach(children) { child in
-            child
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                .padding(.horizontal, inset)
-                .padding(.vertical, 14)
-            if child.id != children.last?.id { Hairline().padding(.horizontal, inset) }
-        }
-    }
-}
-
 /// Label on the left, value on the right: the replacement for `LabeledContent`.
 public struct ValueRow<Value: View>: View {
     let label: String
     let detail: String?
     let value: Value
+    @Environment(\.noteLines) private var noteLines
 
     public init(_ label: String, detail: String? = nil, @ViewBuilder value: () -> Value) {
         self.label = label
@@ -457,17 +292,18 @@ public struct ValueRow<Value: View>: View {
     public init(_ label: String, detail: String? = nil, value: String) where Value == Text {
         self.label = label
         self.detail = detail
-        self.value = Text(value)
+        self.value = Text(L10n.tr(value))
     }
 
     public var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(label).foregroundStyle(Palette.text)
+                Text(L10n.tr(label)).foregroundStyle(Palette.text)
                 if let detail {
-                    Text(detail)
+                    Text(L10n.tr(detail))
                         .font(.caption)
                         .foregroundStyle(Palette.secondary)
+                        .lineLimit(noteLines)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -482,16 +318,22 @@ public struct ValueRow<Value: View>: View {
 public struct SearchField: View {
     let prompt: String
     @Binding var text: String
+    /// Puts the cursor in the field as it appears.
+    let autoFocus: Bool
+    @FocusState private var focused: Bool
 
-    public init(_ prompt: String = "Search", text: Binding<String>) {
+    public init(_ prompt: String = "Search", text: Binding<String>, autoFocus: Bool = false) {
         self.prompt = prompt
         _text = text
+        self.autoFocus = autoFocus
     }
 
     public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary)
             TextField(prompt, text: $text).textFieldStyle(.plain).plainTextInput()
+                .focused($focused)
+                .onAppear { if autoFocus { focused = true } }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(Palette.tertiary)
@@ -556,6 +398,18 @@ extension View {
         padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Grok Bot's list cards (routines, the computer switch): an outline on the page, no fill. `dashed` for what
+    /// is there only until it happens (a bot's follow-up).
+    func outlinedCard(vertical: CGFloat = 12, dashed: Bool = false) -> some View {
+        padding(.horizontal, 14)
+            .padding(.vertical, vertical)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Palette.border, style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : []))
+            )
     }
 }
 

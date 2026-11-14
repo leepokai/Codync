@@ -12,7 +12,7 @@
   height: 56px;
   padding: 0 20px;
   flex: none;
-  font-size: calc(15px * var(--scale));
+  font-size: var(--text-title3);
 }
 .palette-field input {
   flex: 1;
@@ -34,29 +34,36 @@
   width: 100%;
   min-height: 56px;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-m);
   text-align: left;
   transition: background-color var(--hover);
 }
 .palette-row.active {
   background: var(--bubble-user);
 }
-.palette-line {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* A row's shortcut key. */
+.key-cap {
+  min-width: 18px;
+  min-height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--background);
+  color: var(--secondary);
+  font-family: var(--mono);
+  font-size: var(--text-caption);
 }
 .palette-key {
   flex: none;
   font-family: inherit;
-  font-size: calc(12px * var(--scale));
+  font-size: var(--text-callout);
   padding: 0 6px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
 }
 .palette-empty {
   padding: 28px 0;
   text-align: center;
   color: var(--secondary);
-  font-size: calc(13px * var(--scale));
+  font-size: var(--text-body);
 }

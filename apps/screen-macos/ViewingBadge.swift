@@ -64,7 +64,7 @@ private struct BadgeView: View {
                 .opacity(pulse ? 0.35 : 1)
                 .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulse)
                 .onAppear { pulse = true }
-            Text(model.viewers == 1 ? "iPhone is viewing" : "\(model.viewers) viewers")
+            Text(model.viewers == 1 ? "Phone is viewing" : "\(model.viewers) viewers")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.white)
             Button(action: disconnect) {

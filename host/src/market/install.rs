@@ -1,6 +1,7 @@
-//! Installing connectors: registry install options and inputs, pasted configs, custom
-//! servers, listing and removal.
+//! Installing connectors: registry install options and inputs, pasted configs, listing
+//! and removal.
 
+use super::custom::custom;
 use super::registry::{listing, registry_server};
 use super::{Connector, add_connector, composio, connectors, oauth, unique_id, update_connectors};
 use anyhow::{Context, Result, anyhow, bail};
@@ -145,18 +146,45 @@ pub(super) fn package_reference(p: &Value) -> Result<String> {
     Ok(if p["registryType"] == "pypi" { format!("{id}=={version}") } else { format!("{id}@{version}") })
 }
 
+/// The command that runs a registry package.
+fn package_command(p: &Value) -> Option<&'static str> {
+    match p["registryType"].as_str()? {
+        "npm" => Some("npx"),
+        "pypi" => Some("uvx"),
+        "oci" => Some("docker"),
+        "nuget" => Some("dnx"),
+        _ => None,
+    }
+}
+
 /// Installs a registry server with the user's inputs (`{NAME: value}`).
 pub async fn install_connector(store: &crate::store::Store, name: &str, option: &str, inputs: &Value) -> Result<Value> {
-    let server = registry_server(name).await?;
+    install_server(store, &registry_server(name).await?, name, option, inputs).await
+}
+
+/// A server that's installed already stays as it is when the call brings no values and runs it the
+/// same way (Add again after its sign-in or check failed); otherwise it's rebuilt with the new ones.
+async fn install_server(
+    store: &crate::store::Store,
+    server: &Value,
+    name: &str,
+    option: &str,
+    inputs: &Value,
+) -> Result<Value> {
     let input = |k: &str| inputs[k].as_str().filter(|v| !v.is_empty()).map(str::to_owned);
     let (kind, index) = option.split_once(':').ok_or_else(|| anyhow!("unknown install option"))?;
     let index: usize = index.parse()?;
     let all = connectors(store)?;
-    if let Some(c) = all.iter().find(|c| c.registry_name.as_deref() == Some(name)) {
+    let typed = inputs.as_object().is_some_and(|m| m.values().any(|v| v.as_str().is_some_and(|s| !s.is_empty())));
+    let command = if kind == "package" { package_command(&server["packages"][index]) } else { None };
+    if let Some(c) = all.iter().find(|c| c.registry_name.as_deref() == Some(name))
+        && !typed
+        && c.command.as_deref() == command
+    {
         return Ok(c.public());
     }
     let title =
-        listing(&server, &all).and_then(|l| l["title"].as_str().map(str::to_owned)).unwrap_or_else(|| name.into());
+        listing(server, &all).and_then(|l| l["title"].as_str().map(str::to_owned)).unwrap_or_else(|| name.into());
     let mut c = Connector {
         id: unique_id(&title, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>()),
         name: title,
@@ -185,18 +213,17 @@ pub async fn install_connector(store: &crate::store::Store, name: &str, option: 
             }
             let runtime = arguments(&p["runtimeArguments"], &input)?;
             let package = arguments(&p["packageArguments"], &input)?;
-            let (command, mut args) = match p["registryType"].as_str() {
-                Some("npm") => ("npx", vec!["-y".to_owned()]),
-                Some("pypi") => ("uvx", vec![]),
-                Some("oci") => {
+            let command = command.ok_or_else(|| anyhow!("this package type isn't supported"))?;
+            let mut args = match command {
+                "npx" => vec!["-y".to_owned()],
+                "docker" => {
                     let mut args = vec!["run".to_owned(), "-i".into(), "--rm".into()];
                     for k in c.env.keys() {
                         args.extend(["-e".into(), k.clone()]);
                     }
-                    ("docker", args)
+                    args
                 }
-                Some("nuget") => ("dnx", vec![]),
-                _ => bail!("this package type isn't supported"),
+                _ => vec![],
             };
             // Runtime arguments come before the package; skip flags we already pass.
             for a in runtime {
@@ -233,15 +260,6 @@ pub async fn install_connector(store: &crate::store::Store, name: &str, option: 
     {
         c.oauth = Some(oauth::OAuth::default());
     }
-    add_connector(store, c)
-}
-
-/// A connector you describe yourself: a command line or an https URL.
-pub async fn add_custom_connector(store: &crate::store::Store, b: &Value) -> Result<Value> {
-    let name =
-        b["name"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| anyhow!("`name` is required"))?;
-    let all = connectors(store)?;
-    let c = custom(name, b, &all).await?;
     add_connector(store, c)
 }
 
@@ -287,54 +305,6 @@ fn config_servers(v: &Value) -> Vec<(String, Value)> {
     }
 }
 
-/// A connector from `{command, args?, env?}` or `{url, headers?}`. A command without
-/// `args` is split like a shell would (quotes work).
-async fn custom(name: &str, b: &Value, all: &[Connector]) -> Result<Connector> {
-    let map = |v: &Value| -> BTreeMap<String, String> {
-        v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned()))).collect()
-    };
-    let mut c = Connector {
-        id: unique_id(name, &all.iter().map(|c| c.id.clone()).collect::<Vec<_>>()),
-        name: name.to_owned(),
-        description: b["description"].as_str().unwrap_or_default().to_owned(),
-        registry_name: None,
-        command: None,
-        args: vec![],
-        env: map(&b["env"]),
-        url: None,
-        headers: map(&b["headers"]),
-        oauth: None,
-    };
-    let url =
-        ["url", "serverUrl", "httpUrl"].iter().find_map(|k| b[*k].as_str()).map(str::trim).filter(|s| !s.is_empty());
-    if let Some(url) = url {
-        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"].iter().any(|p| url.starts_with(p));
-        if !url.starts_with("https://") && !local {
-            bail!("remote connectors need an https URL");
-        }
-        if oauth::required(url, &c.headers).await {
-            c.oauth = Some(oauth::OAuth::default());
-        }
-        c.url = Some(url.to_owned());
-        return Ok(c);
-    }
-    let line = b["command"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow!("give a command or a URL"))?;
-    let mut words = match b["args"].as_array() {
-        Some(args) => {
-            std::iter::once(line.to_owned()).chain(args.iter().filter_map(|a| a.as_str().map(str::to_owned))).collect()
-        }
-        None => shlex::split(line).ok_or_else(|| anyhow!("the command has an unclosed quote"))?,
-    }
-    .into_iter();
-    c.command = words.next();
-    c.args = words.collect();
-    Ok(c)
-}
-
 /// Installed MCP servers, then the apps connected through Composio.
 pub fn list_connectors(store: &crate::store::Store) -> Result<Value> {
     let mut items: Vec<Value> = connectors(store)?.iter().map(Connector::public).collect();
@@ -364,6 +334,30 @@ pub fn remove_connector(store: &crate::store::Store, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn installing_again_with_new_values_rebuilds_the_connector_in_place() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).expect("store");
+        let package = |kind: &str| {
+            json!({"registryType": kind, "identifier": "server", "version": "1.0.0",
+                   "environmentVariables": [{"name": "API_KEY", "isRequired": kind == "npm"}]})
+        };
+        let name = "io.example/server";
+        let server = json!({"name": name, "packages": [package("npm"), package("pypi")]});
+        let only = || connectors(&store).expect("read").pop().expect("one connector");
+        let first =
+            install_server(&store, &server, name, "package:0", &json!({"API_KEY": "wrong"})).await.expect("add");
+        install_server(&store, &server, name, "package:0", &json!({"API_KEY": "right"})).await.expect("new key");
+        // Add again with nothing typed keeps it (and its sign-in) as it is.
+        install_server(&store, &server, name, "package:0", &json!({"API_KEY": ""})).await.expect("retry");
+        assert_eq!(
+            (only().id, only().env["API_KEY"].clone()),
+            (first["id"].as_str().expect("id").to_owned(), "right".into())
+        );
+        install_server(&store, &server, name, "package:1", &json!({})).await.expect("another runtime");
+        assert_eq!(only().command.as_deref(), Some("uvx"));
+        assert_eq!(connectors(&store).expect("read").len(), 1);
+    }
 
     #[test]
     fn oci_references_do_not_need_a_separate_package_version() {

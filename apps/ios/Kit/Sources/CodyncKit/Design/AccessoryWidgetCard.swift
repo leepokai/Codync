@@ -20,7 +20,7 @@ public struct AccessoryWidgetCard: View {
     private var count: Int { needs > 0 ? needs : working > 0 ? working : bots.count }
     private var botLabel: String { needs > 0 ? (needs == 1 ? "needs you" : "need you") : working > 0 ? "working" : (bots.count == 1 ? "bot" : "bots") }
     private var top: (name: String, window: UsageWindow)? {
-        usage.providers.flatMap { p in p.windows.map { (name: p.name, window: $0) } }
+        usage.providers.flatMap { p in p.limits.map { (name: p.name, window: $0) } }
             .max { $0.window.percent < $1.window.percent }
     }
     private var headline: String {
@@ -42,7 +42,7 @@ public struct AccessoryWidgetCard: View {
                     Gauge(value: min(100, max(0, top.window.percent)), in: 0...100) {
                         Text(top.name.prefix(2))
                     } currentValueLabel: {
-                        Text("\(Int(top.window.percent.rounded()))").font(.system(size: 18, weight: .semibold))
+                        Text(L10n.tr("\(Int(top.window.percent.rounded()))")).font(.system(size: 18, weight: .semibold))
                     }
                     .gaugeStyle(.accessoryCircularCapacity)
                     .accessibilityLabel(headline)
@@ -58,13 +58,13 @@ public struct AccessoryWidgetCard: View {
                     Text(headline).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                     if paired, kind == .bots {
                         ForEach(bots.sorted { rank($0) < rank($1) }.prefix(2)) { bot in
-                            Text("\(bot.name) · \(bot.needsInput ? "Needs you" : bot.isWorking ? "Working" : "Ready")")
+                            Text("\(widgetName(bot)) · \(L10n.tr(bot.needsInput ? "Needs you" : bot.isWorking ? "Working" : "Ready"))")
                                 .font(.system(size: 10)).lineLimit(1)
                         }
                     } else if paired, let top {
-                        Text(top.window.title).font(.system(size: 10)).lineLimit(1)
+                        Text(L10n.tr(top.window.title)).font(.system(size: 10)).lineLimit(1)
                         if let reset = top.window.resetsShort() {
-                            Text(reset).font(.system(size: 9)).lineLimit(1)
+                            Text(L10n.resetLine(reset)).font(.system(size: 9)).lineLimit(1)
                         }
                     }
                 }

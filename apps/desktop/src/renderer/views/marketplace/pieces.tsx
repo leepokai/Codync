@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { IconButton } from '../../components/Controls'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { Icon } from '../../components/Icon'
+import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
+import { Text } from '../../components/Text'
+import { useTr } from '../../lib/use-language'
+import { EXTENSION_SECTIONS, errorText, type ExtensionSection } from './market-models'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
-import { font } from '../../lib/fonts'
 import './marketplace.css'
+import './extensions-layout.css'
 
 // Building blocks the Marketplace's screens share (kit MarketplaceView.swift "Pieces").
 
 export function MarketSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="market-section">
-      <div style={{ ...font('headline'), color: 'var(--text)', paddingLeft: 4 }}>{title}</div>
+      <Text as="div" size="headline" tone="text" className="market-section-title">{title}</Text>
       {children}
     </section>
   )
@@ -21,9 +25,6 @@ export function MarketSection({ title, children }: { title: string; children: Re
 export function ItemGrid({ children }: { children: ReactNode }) {
   return <div className="item-grid">{children}</div>
 }
-
-const oneLine: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-export const lineClamp = (n: number): CSSProperties => ({ display: '-webkit-box', WebkitLineClamp: n, WebkitBoxOrient: 'vertical', overflow: 'hidden' })
 
 export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Add', icon, onAdd, onOpen }: {
   title: string
@@ -36,70 +37,122 @@ export function MarketRow({ title, subtitle, added, busy = false, addLabel = 'Ad
   /** The whole row opens the item's details; without it the row does what its button does. */
   onOpen?: () => void
 }) {
-  const open = onOpen ?? (added || busy ? undefined : onAdd)
+  const tr = useTr()
+  const addedLabel = tr('Added')
   return (
-    <div
-      className={`market-row ${open ? 'openable' : ''}`}
-      role={open ? 'button' : undefined}
-      tabIndex={open ? 0 : undefined}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (open && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault()
-          open()
-        }
-      }}
-    >
-      <div style={{ width: 46, height: 46, flex: 'none', display: 'grid' }}>{icon}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-        <span style={{ ...font('body', 'medium'), color: 'var(--text)', ...oneLine }} title={title}>{title}</span>
-        <span style={{ ...font('subheadline'), color: 'var(--secondary)', ...oneLine }} title={subtitle}>{subtitle}</span>
-      </div>
-      {busy ? (
-        <span style={{ width: 60, display: 'flex', justifyContent: 'center', flex: 'none' }}>
+    <ItemRow
+      title={title}
+      subtitle={subtitle}
+      icon={icon}
+      onOpen={onOpen ?? (added || busy ? undefined : onAdd)}
+      trailing={busy ? (
+        <HStack as="span" align="stretch" justify="center" className="market-row-status">
           <ThinkingOrb size={18} color="var(--secondary)" />
-        </span>
+        </HStack>
       ) : added ? (
-        <span style={{ width: 60, display: 'flex', justifyContent: 'center', flex: 'none', color: 'var(--secondary)' }} aria-label="Added" title="Added">
+        <HStack as="span" align="stretch" justify="center" className="market-row-status market-row-added" aria-label={addedLabel} title={addedLabel}>
           <Icon name="checkmark" size={11} weight="semibold" />
-        </span>
+        </HStack>
       ) : (
         <button
           className="capsule-action"
-          style={font('subheadline', 'semibold')}
           onClick={(e) => {
             e.stopPropagation()
             onAdd()
           }}
         >
-          {addLabel}
+          {tr(addLabel)}
         </button>
       )}
+    />
+  )
+}
+
+/** An `ItemGrid` row: icon, title and subtitle, then `trailing`; `onOpen` makes the whole row a button. */
+export function ItemRow({ title, subtitle, icon, trailing, onOpen }: {
+  title: string
+  subtitle: string
+  icon: ReactNode
+  /** Buttons here stop the click so it doesn't also open the row. */
+  trailing?: ReactNode
+  onOpen?: () => void
+}) {
+  return (
+    <div
+      className={`market-row ${onOpen ? 'openable' : ''}`}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (onOpen && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      <div className="market-row-icon">{icon}</div>
+      <VStack gap={2} grow>
+        <Text size="body" weight="medium" tone="text" truncate title={title}>{title}</Text>
+        <Text size="subheadline" tone="secondary" truncate title={subtitle}>{subtitle}</Text>
+      </VStack>
+      {trailing}
     </div>
   )
 }
 
 /** Placeholder rows while a list loads, shaped like the real ones. */
 export function SkeletonGrid() {
+  const tr = useTr()
   return (
-    <div className="item-grid skeleton">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 12px' }}>
-          <div style={{ width: 46, height: 46, borderRadius: 12, background: 'var(--bubble-agent)', flex: 'none' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ width: 120, height: 12, borderRadius: 6, background: 'var(--bubble-agent)' }} />
-            <div style={{ width: 190, height: 10, borderRadius: 5, background: 'var(--bubble-agent)' }} />
-          </div>
-        </div>
-      ))}
+    <VStack gap={8} aria-busy="true" aria-label={tr('Loading…')}>
+      <Text size="footnote" tone="secondary">{tr('Loading…')}</Text>
+      <div className="item-grid skeleton">
+        {[0, 1, 2, 3].map((i) => (
+          <HStack key={i} gap={14} className="skeleton-row">
+            <div className="skeleton-icon" />
+            <VStack gap={8}>
+              <div className="skeleton-title" />
+              <div className="skeleton-subtitle" />
+            </VStack>
+          </HStack>
+        ))}
+      </div>
+    </VStack>
+  )
+}
+
+/**
+ * The end of a list the registry continues (kit `LoadMoreRow`). In view, it asks for the page at
+ * `cursor`, and again each time the cursor moves on while it stays in view. After a failure it shows
+ * Try again, and asks again once it scrolls back into view.
+ */
+export function LoadMoreRow({ cursor, failed, onLoad }: { cursor: string; failed: boolean; onLoad: () => void }) {
+  const end = useRef<HTMLDivElement>(null)
+  const [inView, setInView] = useState(false)
+  const load = useEffectEvent(onLoad)
+  useEffect(() => {
+    const seen = new IntersectionObserver(([e]) => setInView(e!.isIntersecting))
+    seen.observe(end.current!)
+    return () => seen.disconnect()
+  }, [])
+  useEffect(() => {
+    if (inView) load()
+  }, [inView, cursor])
+  return (
+    <div ref={end} className="load-more">
+      {failed ? (
+        <HStack justify="center">
+          <IconButton title="Try again" icon="arrow.clockwise" onClick={onLoad} />
+        </HStack>
+      ) : <SkeletonGrid />}
     </div>
   )
 }
 
 /** A loaded image, or nothing until (and unless) it loads. */
-function RemoteImage({ src, style }: { src: string; style: CSSProperties }) {
+function RemoteImage({ src, className, style }: { src: string; className: string; style: CSSProperties }) {
   const [loaded, setLoaded] = useState(false)
-  return <img src={src} alt="" draggable={false} onLoad={() => setLoaded(true)} style={{ ...style, display: loaded ? 'block' : 'none' }} />
+  return <img src={src} alt="" draggable={false} onLoad={() => setLoaded(true)} className={`${className}${loaded ? ' loaded' : ''}`} style={style} />
 }
 
 function serviceDomain(website: string | null | undefined, name: string, registryName: string | null | undefined) {
@@ -116,17 +169,19 @@ function serviceDomain(website: string | null | undefined, name: string, registr
   return `${labels[1]}.${labels[0]}`
 }
 
-/** A service's logo from its website favicon, on a white tile; its initial otherwise. */
-export function ServiceLogo({ website, name, registryName, size = 46 }: { website?: string | null; name: string; registryName?: string | null; size?: number }) {
-  const domain = serviceDomain(website, name, registryName)
+/** A service's logo from its website favicon, on a white tile; its initial otherwise. `site`: the
+ *  service's own domain when it's known (a login's site), even github.com. */
+export function ServiceLogo({ website, site, name, registryName, size = 46 }: { website?: string | null; site?: string | null; name: string; registryName?: string | null; size?: number }) {
+  const domain = site ?? serviceDomain(website, name, registryName)
   const radius = size * 0.26
   return (
-    <div style={{ position: 'relative', width: size, height: size, borderRadius: radius, overflow: 'hidden', background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', flex: 'none' }}>
-      <span style={{ ...font(size * 0.4, 'semibold', 'rounded'), color: 'var(--text)' }}>{name.slice(0, 1).toUpperCase() || '?'}</span>
+    <div className="market-logo service-logo" style={{ width: size, height: size, borderRadius: radius }}>
+      <Text size={size * 0.4} weight="semibold" tone="text" className="service-logo-initial">{name.slice(0, 1).toUpperCase() || '?'}</Text>
       {domain ? (
         <RemoteImage
           src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', padding: size * 0.2, boxSizing: 'border-box', background: '#fff' }}
+          className="market-logo-image service-logo-image"
+          style={{ padding: size * 0.2 }}
         />
       ) : null}
     </div>
@@ -137,15 +192,16 @@ export function ServiceLogo({ website, name, registryName, size = 46 }: { websit
 export function AppLogo({ url, name, size = 46 }: { url?: string | null; name: string; size?: number }) {
   const [loaded, setLoaded] = useState(false)
   return (
-    <div aria-hidden style={{ position: 'relative', width: size, height: size, flex: 'none', borderRadius: size * 0.28, background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center' }}>
-      {!loaded ? <span style={{ ...font(size * 0.4, 'semibold'), color: 'var(--secondary)' }}>{name.slice(0, 1).toUpperCase()}</span> : null}
+    <div aria-hidden className="market-logo" style={{ width: size, height: size, borderRadius: size * 0.28 }}>
+      {!loaded ? <Text size={size * 0.4} weight="semibold" tone="secondary">{name.slice(0, 1).toUpperCase()}</Text> : null}
       {url ? (
         <img
           src={url}
           alt=""
           draggable={false}
           onLoad={() => setLoaded(true)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', padding: size * 0.18, boxSizing: 'border-box', display: loaded ? 'block' : 'none' }}
+          className={`market-logo-image${loaded ? ' loaded' : ''}`}
+          style={{ padding: size * 0.18 }}
         />
       ) : null}
     </div>
@@ -154,38 +210,40 @@ export function AppLogo({ url, name, size = 46 }: { url?: string | null; name: s
 
 export function TileIcon({ name }: { name: string }) {
   return (
-    <div style={{ width: '100%', height: '100%', borderRadius: 12, background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', color: 'var(--text)' }}>
+    <div className="market-tile">
       <Icon name={name} size={18} weight="medium" />
     </div>
   )
 }
 
-export function SkillGlyph({ size }: { size?: number }) {
+export function SkillGlyph() {
   return (
-    <div style={{ width: size ?? '100%', height: size ?? '100%', flex: 'none', borderRadius: 12, background: 'var(--bubble-agent)', display: 'grid', placeItems: 'center', color: 'var(--text)' }}>
+    <div className="market-tile">
       <Icon name="book.pages" size={13} />
     </div>
   )
 }
 
 /** Text that opens a web page (replaces the system `Link`). */
-export function WebLink({ title, url, style }: { title: string; url: string; style?: CSSProperties }) {
+export function WebLink({ title, url, className }: { title: string; url: string; className?: string }) {
+  const tr = useTr()
   return (
-    <button className="plain-link" style={style} title={url} onClick={() => window.codync.app.openExternal(url)}>
-      {title}
+    <button className={`plain-link${className ? ` ${className}` : ''}`} title={url} onClick={() => window.codync.app.openExternal(url)}>
+      {tr(title)}
     </button>
   )
 }
 
 /** A full screen's top bar (kit `ScreenHeader`): back on the leading side, centered title, trailing. */
 export function ScreenHeader({ title, onBack, trailing }: { title: string; onBack: () => void; trailing?: ReactNode }) {
+  const tr = useTr()
   return (
-    <div style={{ position: 'relative', height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 6, flex: 'none', background: 'var(--background)' }}>
-      <div style={{ position: 'absolute', left: 60, right: 60, textAlign: 'center', ...font('compactBody', 'semibold'), color: 'var(--text)', ...oneLine }}>{title}</div>
+    <HStack gap={6} className="market-screen-header">
+      <Text as="div" size="compactBody" weight="semibold" tone="text" truncate className="market-screen-title">{tr(title)}</Text>
       <IconButton title="Back" icon="chevron.left" onClick={onBack} />
-      <span style={{ flex: 1, minWidth: 8 }} />
+      <Spacer min={8} />
       {trailing}
-    </div>
+    </HStack>
   )
 }
 
@@ -216,38 +274,84 @@ export function Field({ value, onChange, placeholder, secret = false, lines, mon
   mono?: boolean
   label?: string
 }) {
-  const style: CSSProperties = mono ? font('callout', 'regular', 'monospaced') : {}
+  const tr = useTr()
+  const hint = placeholder ? tr(placeholder) : undefined
+  const named = label ? tr(label) : hint
+  const className = `market-field${mono ? ' mono' : ''}`
   if (lines) {
     return (
       <textarea
-        className="market-field"
-        aria-label={label ?? placeholder}
+        className={className}
+        aria-label={named}
         value={value}
-        placeholder={placeholder}
+        placeholder={hint}
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
-        style={{ ...style, lineHeight: 1.3, minHeight: `${lines[0] * 1.3}em`, maxHeight: `${lines[1] * 1.3}em` }}
+        style={{ minHeight: `${lines[0] * 1.3}em`, maxHeight: `${lines[1] * 1.3}em` }}
       />
     )
   }
   return (
     <input
-      className="market-field"
-      aria-label={label ?? placeholder}
+      className={className}
+      aria-label={named}
       type={secret ? 'password' : 'text'}
       value={value}
-      placeholder={placeholder}
+      placeholder={hint}
       spellCheck={false}
       autoComplete="off"
       onChange={(e) => onChange(e.target.value)}
-      style={style}
     />
   )
 }
 
 /** A danger-colored error line in its own card. */
 export function ErrorText({ text }: { text: string }) {
-  return <span className="selectable" style={{ color: 'var(--danger)' }}>{text}</span>
+  const tr = useTr()
+  return <Text tone="danger" className="selectable">{tr(text)}</Text>
+}
+
+/** A row that starts something: an icon, a title, an optional line under it, and what trails (a spinner, a chevron). */
+export function OptionRow({ icon, title, detail, disabled = false, trailing, onClick }: {
+  icon: string
+  title: string
+  detail?: string
+  disabled?: boolean
+  trailing?: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button className="option-row" disabled={disabled} onClick={onClick}>
+      <IconSlot width={26} tone="secondary" aria-hidden>
+        <Icon name={icon} size={13} />
+      </IconSlot>
+      <VStack as="span" gap={2} grow>
+        <Text size="body" weight="medium" tone="text">{title}</Text>
+        {detail ? <Text size="subheadline" tone="secondary" lines={3}>{detail}</Text> : null}
+      </VStack>
+      {trailing}
+    </button>
+  )
+}
+
+/** Runs one change at a time: which one is running (`busy`, its key), and why the last one failed. `run` gives the change's result, or nothing when it failed. */
+export function useBusyAction() {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const run = async <T,>(key: string, change: () => Promise<T>): Promise<T | undefined> => {
+    setBusy(key)
+    try {
+      const result = await change()
+      setError(null)
+      return result
+    } catch (e) {
+      setError(errorText(e))
+      return undefined
+    } finally {
+      setBusy(null)
+    }
+  }
+  return { busy, error, run }
 }
 
 /** Values with something typed in. */
@@ -264,11 +368,32 @@ export function useWindowHeight() {
   return height
 }
 
-/** A Marketplace form in its own modal card (`.codyncSheet`). */
-export function FormSheet({ open, onClose, width = 520, height = 600, children }: { open: boolean; onClose: () => void; width?: number; height?: number; children: ReactNode }) {
-  const windowHeight = useWindowHeight()
+/** Agents, Connectors, Skills: a row of filled chips over the list, the chosen one in the text color. */
+export function ExtensionTabs({ selection, onChange }: { selection: ExtensionSection; onChange: (id: ExtensionSection) => void }) {
+  const tr = useTr()
   return (
-    <Sheet open={open} onClose={onClose} width={width} height={Math.min(height, windowHeight - 76)}>
+    <nav className="market-tabs" role="tablist" aria-label={tr('Extensions sections')}>
+      {EXTENSION_SECTIONS.map((section) => {
+        const on = section.id === selection
+        return (
+          <button key={section.id} type="button" role="tab" aria-selected={on} className={`market-tab${on ? ' on' : ''}`} onClick={() => onChange(section.id)}>
+            {tr(section.label)}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+/**
+ * A Marketplace form in its own modal card (`.codyncSheet`), as tall as its content up to
+ * `height`; `fixed` keeps it at `height` for content that fills the card (a terminal).
+ */
+export function FormSheet({ open, onClose, width = 520, height = 600, fixed = false, children }: { open: boolean; onClose: () => void; width?: number; height?: number; fixed?: boolean; children: ReactNode }) {
+  const windowHeight = useWindowHeight()
+  const cap = Math.min(height, windowHeight - 76)
+  return (
+    <Sheet open={open} onClose={onClose} width={width} height={fixed ? cap : undefined} maxHeight={cap}>
       {children}
     </Sheet>
   )

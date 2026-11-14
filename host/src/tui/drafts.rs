@@ -91,19 +91,16 @@ mod tests {
         let mut store = Drafts::at(path.clone()).await.unwrap();
         let mut drafts = HashMap::from([
             ("bot".into(), Editor::with("  中文\nunfinished 🐱\n")),
-            ("bot#thread".into(), Editor::with("reply")),
             ("other".into(), Editor::with("other bot")),
         ]);
         store.save(&drafts).await.unwrap();
         let restored = Drafts::at(path.clone()).await.unwrap().restore();
         assert_eq!(restored["bot"].text, drafts["bot"].text);
-        assert_eq!(restored["bot#thread"].text, "reply");
         drafts.remove("bot");
         store.save(&drafts).await.unwrap();
         let restored = Drafts::at(path).await.unwrap().restore();
         assert!(!restored.contains_key("bot"));
         assert_eq!(restored["other"].text, "other bot");
-        assert_eq!(restored["bot#thread"].text, "reply");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

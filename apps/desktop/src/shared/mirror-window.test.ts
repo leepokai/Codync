@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canLoadHistory, isOutsideLoadedWindow, mainChatFloor, snapshotFloors } from './mirror-window.ts'
+import { canLoadHistory, isOutsideLoadedWindow, chatFloor, snapshotFloors } from './mirror-window.ts'
 import type { Entry } from './models.ts'
 
 const entry = (id: string, seq: number, extra: Partial<Entry> = {}): Entry => ({ id, seq, botId: 'b', rev: 1, kind: 'notice', turn: 0, createdAt: 0, updatedAt: 0, data: {}, ...extra })
 
-test('earlier main-chat history stays available after a catch-up dominated by replies', () => {
-  const catchUp = Array.from({ length: 200 }, (_, i) => entry(`e${i}`, i + 100, { threadId: i < 6 ? null : 'root' }))
+test('earlier history stays available after a catch-up dominated by trace entries', () => {
+  const catchUp = Array.from({ length: 200 }, (_, i) => entry(`e${i}`, i + 100, { kind: i < 6 ? 'user' : 'tool' }))
   assert.equal(canLoadHistory(catchUp, false), true)
-  assert.equal(canLoadHistory(catchUp.filter((e) => e.threadId), false), true)
   assert.equal(canLoadHistory([entry('one', 100)], false), true)
   assert.equal(canLoadHistory(catchUp, true), false)
 })
@@ -32,10 +31,6 @@ test('a new entry at or above the floor applies', () => {
   assert.equal(isOutsideLoadedWindow(100, false, entry('edge', 100)), false)
 })
 
-test('thread entries never fall outside', () => {
-  assert.equal(isOutsideLoadedWindow(100, false, entry('r', 40, { threadId: 'root' })), false)
-})
-
 test('no floor accepts everything, including lower seqs after higher ones (rev-ordered catch-up)', () => {
   const floors = snapshotFloors(new Map(), 0)
   assert.equal(floors.get('b'), undefined)
@@ -47,11 +42,11 @@ test('since 0 snapshots nothing even when the mirror is loaded', () => {
   assert.equal(snapshotFloors(new Map([['b', [entry('a', 100)]]]), 0).size, 0)
 })
 
-test('floor ignores optimistic, threaded and unsequenced entries', () => {
-  const list = [entry('local-n', 0), entry('local-m', 3), entry('t', 5, { threadId: 'x' }), entry('a', 100), entry('c', 120)]
-  assert.equal(mainChatFloor(list, 7), 100)
+test('floor ignores optimistic and unsequenced entries', () => {
+  const list = [entry('local-n', 0), entry('local-m', 3), entry('t', 0), entry('a', 100), entry('c', 120)]
+  assert.equal(chatFloor(list, 7), 100)
   assert.equal(snapshotFloors(new Map([['b', list]]), 7).get('b'), 100)
-  assert.equal(mainChatFloor([entry('local-n', 0)], 7), undefined)
+  assert.equal(chatFloor([entry('local-n', 0)], 7), undefined)
 })
 
 test('a floor taken at hello is not moved by later inserts (RPC upsert before catch-up)', () => {

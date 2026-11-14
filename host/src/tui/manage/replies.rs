@@ -1,9 +1,11 @@
 //! Replies to the sheets' commands.
 
 use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 
-use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle};
-use super::{MemoryMode, Reply, Shell, open_browser, s};
+use super::super::app::{After, AgentModel, App, Entry, Overlay, Toggle, rename_fold};
+use super::super::l10n::tr;
+use super::{Market, MemoryMode, Reply, Shell, open_browser, s};
 
 impl App {
     pub(in crate::tui) fn on_sheet_reply(&mut self, r: Reply, res: Result<Value, String>) {
@@ -20,17 +22,7 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        if v["query"].as_str() != Some(m.query.trim())
-                            || v["filter"].as_str() != Some(super::memory::FILTERS[m.filter])
-                            || v["offset"].as_u64() != Some(m.offset as u64)
-                        {
-                            continue;
-                        }
-                        let facts = v["facts"].as_array().cloned().unwrap_or_default();
-                        m.cursor = m.cursor.min(facts.len().saturating_sub(1));
-                        m.facts = Some(facts);
-                        m.total = v["total"].as_u64().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
-                        m.next_offset = v["nextOffset"].as_u64().and_then(|n| usize::try_from(n).ok());
+                        m.show(v.clone());
                         m.busy = false;
                         m.error = None;
                     }
@@ -41,36 +33,19 @@ impl App {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
                     {
-                        m.mode = MemoryMode::Browse;
                         m.busy = false;
                     }
                 }
                 self.refresh_sheets();
             }
-            Reply::MemoryDetail(bot) => {
+            Reply::MemoryFile(bot) => {
                 for o in &mut self.overlays {
                     if let Overlay::Memory(m) = o
                         && m.bot == bot
+                        && let MemoryMode::File { detail, .. } = &mut m.mode
                     {
-                        m.mode = MemoryMode::Detail {
-                            text: format!(
-                                "{}\n\nSession timeline\n{}",
-                                s(&v["history"], "result"),
-                                s(&v["timeline"], "result")
-                            ),
-                            scroll: 0,
-                            id: s(&v["fact"], "id"),
-                            history_cursor: v["history"]["history_cursor"].as_i64(),
-                        };
-                    }
-                }
-            }
-            Reply::MemoryExport(bot) => {
-                for o in &mut self.overlays {
-                    if let Overlay::Memory(m) = o
-                        && m.bot == bot
-                    {
-                        m.mode = MemoryMode::Export { text: s(&v, "json"), scroll: 0 };
+                        *detail = Some(v.clone());
+                        m.busy = false;
                     }
                 }
             }
@@ -83,9 +58,15 @@ impl App {
                     }
                 }
             }
+            Reply::CallEntries(call) => {
+                self.call_entries.insert(call, entries_of(&v));
+            }
+            Reply::DevServerLogs(id) => {
+                let text = v["text"].as_str().unwrap_or_default().to_owned();
+                self.dev_server_logs(&id, Ok(text));
+            }
             Reply::BotChat { bot, peer } => {
-                let entries: Vec<Entry> =
-                    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect();
+                let entries = entries_of(&v);
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
                         && c.bot == bot
@@ -101,15 +82,40 @@ impl App {
                         if let Overlay::Routines(l) = o
                             && l.bot == bot
                         {
-                            let items = v["routines"].as_array().cloned().unwrap_or_default();
-                            l.cursor = l.cursor.min(items.len().saturating_sub(1));
-                            l.items = Some(items);
+                            // Follow-ups come and go with no key pressed: the cursor stays on the row it picked.
+                            let picked = l.picked().map(|row| row.id().clone());
+                            l.items = Some(v["routines"].as_array().cloned().unwrap_or_default());
+                            l.follow_ups = v["followUps"].as_array().cloned().unwrap_or_default();
+                            l.runs = v["runs"].as_array().cloned().unwrap_or_default();
+                            let kept = picked.and_then(|id| l.rows().position(|row| *row.id() == id));
+                            l.cursor = kept.unwrap_or(l.cursor).min(l.rows().count().saturating_sub(1));
                         }
                     }
                 } else {
                     // A change: the list comes again.
                     self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
                 }
+            }
+            Reply::Library(bot) => self.library_loaded(&bot, v["items"].as_array().map_or(&[], Vec::as_slice)),
+            Reply::Gear(backend) => {
+                let lists = super::gear::GearLists {
+                    skills: super::gear::items(&v["skills"]),
+                    connectors: super::gear::items(&v["connectors"]),
+                    rules: super::gear::items(&v["rules"]),
+                    plugins: super::gear::items(&v["plugins"]),
+                };
+                for overlay in &mut self.overlays {
+                    if let Overlay::Gear(gear) = overlay
+                        && gear.backend == backend
+                    {
+                        gear.lists = Some(lists.clone());
+                        gear.failed = false;
+                    }
+                }
+            }
+            Reply::FollowUpCancelled(bot) => {
+                self.flash("Follow-up cancelled");
+                self.reload_routines(&bot);
             }
             Reply::RoutineSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Routine(_))) {
@@ -124,28 +130,24 @@ impl App {
                     s(&v, "key")
                 );
                 super::super::app::copy(&text);
-                self.flash(if v["url"].is_string() {
-                    "Copied a curl command for the public URL (with its key)"
-                } else {
-                    "Copied a curl command (the cloud is off: this computer only)"
-                });
+                self.flash(webhook_copied(&v));
             }
-            Reply::Registry { more } => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
-                    let items = v["items"].as_array().cloned().unwrap_or_default();
-                    if more {
-                        m.registry.extend(items);
-                    } else {
-                        m.registry = items;
-                    }
-                    m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
-                    m.searched.get_or_insert_with(String::new);
-                    m.loading = false;
-                    m.error = None;
+            Reply::Registry { search, cursor } => self.with_market(|app, m| {
+                if !m.awaits(&search, cursor.as_deref()) {
+                    return;
                 }
-            }
+                let items = v["items"].as_array().cloned().unwrap_or_default();
+                if cursor.is_some() {
+                    m.registry.extend(items);
+                } else {
+                    m.registry = items;
+                }
+                m.next = v["nextCursor"].as_str().filter(|c| !c.is_empty()).map(str::to_owned);
+                m.searched.get_or_insert_with(String::new);
+                m.loading = false;
+                m.error = None;
+                app.load_near_end(m);
+            }),
             Reply::Skills => {
                 if let Some(Overlay::Market(m)) =
                     self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
@@ -166,18 +168,32 @@ impl App {
                 }
                 self.call("refreshBackends", json!({}), After::Nothing);
             }
-            Reply::Setup => {
+            Reply::LoginProfiles(backend) => self.login_profiles_changed(&backend, &v),
+            Reply::LoginProfileAdded(backend) => {
+                self.login_profiles_changed(&backend, &v);
+                if let Some(id) = v["loginProfile"]["id"].as_str() {
+                    self.sign_in_login_profile(&backend, id);
+                }
+            }
+            Reply::LoginKeys(backend) => self.login_keys_saved(&backend, &v),
+            Reply::ShellVariables(login_profile) => self.shell_variables(&login_profile, Ok(&v)),
+            Reply::Setup(login_profile) => {
                 let Some(id) = v["term"].as_str() else { return };
                 let backend = match self.overlays.last() {
                     Some(Overlay::Agent(a)) => a.backend.clone(),
                     _ => String::new(),
                 };
                 let input = self.client.spawn_term(id.to_owned(), self.tx.clone());
-                self.shell = Some(Shell { id: id.to_owned(), input, backend, exited: None, out: vec![] });
+                self.shell =
+                    Some(Shell { id: id.to_owned(), input, backend, login_profile, exited: None, out: vec![] });
             }
             Reply::FieldsSaved => {
                 if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Fields(_))) {
                     self.overlays.truncate(i);
+                }
+                // A renamed login profile comes back with the agents.
+                if let Some(agents) = v["backends"].as_array() {
+                    self.backends.clone_from(agents);
                 }
                 if let Some(Overlay::Agent(a)) = self.overlays.last_mut()
                     && v.get("signedIn").is_some()
@@ -188,20 +204,58 @@ impl App {
                 self.flash("Saved");
                 self.refresh_sheets();
             }
+            Reply::SectionRenamed { from, to } => {
+                rename_fold(&mut self.folded, &from, to.as_deref());
+                self.rename_section_order(&from, to.as_deref());
+                self.on_sheet_reply(Reply::FieldsSaved, Ok(v));
+            }
             Reply::SignIn => {
                 let url = s(&v, "url");
-                super::super::app::copy(&url);
-                if open_browser(&url, &self.url) {
-                    self.flash("Finish in the browser, then ^r refreshes");
+                let opened = open_browser(&url, &self.url);
+                // A sign-in with a code (GitHub): the code is what to paste, and it stays up meanwhile.
+                if let Some(code) = v["code"].as_str() {
+                    super::super::app::copy(code);
+                    let text = if opened {
+                        tr("Code {code} copied: paste it on the page that opened, then ^r refreshes")
+                    } else {
+                        tr("Code {code} copied: paste it at {url}, then ^r refreshes")
+                    };
+                    let text = text.replace("{code}", code).replace("{url}", &url);
+                    self.hint = Some((text, Instant::now() + Duration::from_mins(2)));
                 } else {
-                    self.flash("Sign-in link copied: open it on this computer, then ^r refreshes");
+                    super::super::app::copy(&url);
+                    self.flash(if opened {
+                        "Finish in the browser, then ^r refreshes"
+                    } else {
+                        "Sign-in link copied: open it on this computer, then ^r refreshes"
+                    });
                 }
             }
             Reply::Models(backend) => {
-                let list = v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                let mut list: Vec<_> =
+                    v["models"].as_array().into_iter().flatten().filter_map(AgentModel::parse).collect();
+                if v["defaultModelOptions"] == true
+                    && let Some(default) = v["models"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|m| m["id"] == v["currentModelId"])
+                        .and_then(AgentModel::parse)
+                {
+                    list.insert(
+                        0,
+                        AgentModel {
+                            id: String::new(),
+                            name: "Default".into(),
+                            options: default.options,
+                            options_error: default.options_error,
+                        },
+                    );
+                }
                 if v["fastMode"] == true {
                     self.fast_mode.insert(backend.clone());
                 }
+                self.modes.insert(backend.clone(), crate::tui::app::parse_modes(&v));
                 self.models.insert(backend, Some(list));
             }
             Reply::Downloaded => {
@@ -229,32 +283,49 @@ impl App {
                     f.error = Some(e);
                 }
             }
-            Reply::FieldsSaved => match self.overlays.last_mut() {
+            Reply::FieldsSaved | Reply::SectionRenamed { .. } => match self.overlays.last_mut() {
                 Some(Overlay::Fields(f)) => {
                     f.saving = false;
                     f.error = Some(e);
                 }
                 _ => self.flash(&e),
             },
-            Reply::Auth(backend) => {
+            Reply::LoginKeys(_) => self.login_keys_failed(e),
+            Reply::ShellVariables(login_profile) => self.shell_variables(login_profile, Err(e)),
+            Reply::Auth(backend) | Reply::LoginProfiles(backend) | Reply::LoginProfileAdded(backend) => {
                 for o in &mut self.overlays {
                     if let Overlay::Agent(a) = o
                         && a.backend == *backend
                     {
                         a.busy = false;
+                        a.signing_in = None;
                         a.error = Some(e.clone());
                     }
                 }
             }
-            Reply::Registry { .. } | Reply::Skills => {
-                if let Some(Overlay::Market(m)) =
-                    self.overlays.iter_mut().rev().find(|o| matches!(o, Overlay::Market(_)))
-                {
+            Reply::Registry { search, cursor } => self.with_market(|_, m| {
+                if m.awaits(search, cursor.as_deref()) {
                     m.loading = false;
-                    m.skills.get_or_insert_with(Vec::new);
                     m.error = Some(e);
                 }
+            }),
+            Reply::Skills => self.with_market(|_, m| {
+                m.skills.get_or_insert_with(Vec::new);
+                m.error = Some(e);
+            }),
+            Reply::CallEntries(call) => {
+                // The call's line folds again with nothing kept, so the next `o` asks again.
+                let lines: Vec<String> = self
+                    .entries
+                    .values()
+                    .flat_map(|m| m.values())
+                    .filter(|l| l.unfolds() && l.call() == Some(call.as_str()))
+                    .map(|l| l.id.clone())
+                    .collect();
+                self.unfolded.retain(|id| !lines.contains(id));
+                self.flash(&e);
             }
+            Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {
                     if let Overlay::BotChat(c) = o
@@ -275,11 +346,33 @@ impl App {
                     }
                 }
             }
-            Reply::Memory(_)
-            | Reply::MemorySaved(_)
-            | Reply::MemoryDetail(_)
-            | Reply::MemoryExport(_)
-            | Reply::Routines(_) => {
+            Reply::Library(bot) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Library(l) = o
+                        && l.bot == *bot
+                    {
+                        l.items.get_or_insert_with(Vec::new);
+                    }
+                }
+                self.flash(&e);
+            }
+            Reply::Gear(backend) => {
+                for o in &mut self.overlays {
+                    if let Overlay::Gear(gear) = o
+                        && gear.backend == *backend
+                    {
+                        gear.lists.get_or_insert_with(|| super::gear::GearLists {
+                            skills: Vec::new(),
+                            connectors: Vec::new(),
+                            rules: Vec::new(),
+                            plugins: Vec::new(),
+                        });
+                        gear.failed = true;
+                    }
+                }
+                self.flash(&e);
+            }
+            Reply::Memory(_) | Reply::MemorySaved(_) | Reply::MemoryFile(_) | Reply::Routines(_) => {
                 for o in &mut self.overlays {
                     match o {
                         Overlay::Memory(m) => {
@@ -298,23 +391,47 @@ impl App {
         }
     }
 
+    /// Runs `f` on the open marketplace, with the rest of the app readable beside it.
+    fn with_market(&mut self, f: impl FnOnce(&Self, &mut Market)) {
+        let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Market(_))) else { return };
+        let overlay = match self.overlays.remove(i) {
+            Overlay::Market(mut m) => {
+                f(self, &mut m);
+                Overlay::Market(m)
+            }
+            other => other,
+        };
+        self.overlays.insert(i, overlay);
+    }
+
     /// Loads what every open sheet shows again, after a change.
     pub(in crate::tui) fn refresh_sheets(&mut self) {
         let mut calls: Vec<(&'static str, Value, After)> = vec![];
+        let mut gear_ids = Vec::new();
         for o in &self.overlays {
             match o {
                 Overlay::Memory(m) => {
                     calls.push(("memory", m.body(), After::Sheet(Reply::Memory(m.bot.clone()))));
+                    if let Some(body) = m.file_body() {
+                        calls.push(("memoryFile", body, After::Sheet(Reply::MemoryFile(m.bot.clone()))));
+                    }
                 }
                 Overlay::Routines(l) => {
                     calls.push(("routines", json!({"botId": l.bot}), After::Sheet(Reply::Routines(l.bot.clone()))));
                 }
+                Overlay::Library(l) => {
+                    calls.push(("library", json!({"botId": l.bot}), After::Sheet(Reply::Library(l.bot.clone()))));
+                }
+                Overlay::Gear(gear) => gear_ids.push(gear.backend.clone()),
                 Overlay::Market(_) | Overlay::Form(_) => {
                     calls.push(("connectors", json!({}), After::Connectors));
                     calls.push(("skills", json!({}), After::Skills));
                 }
                 _ => {}
             }
+        }
+        for backend in gear_ids {
+            calls.push(("agentGear", json!({"backend": backend}), After::Sheet(Reply::Gear(backend))));
         }
         calls.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
         for (m, body, after) in calls {
@@ -338,5 +455,33 @@ impl App {
             self.plugins.1 = items;
         }
         list
+    }
+}
+
+/// The entries in a host reply (`callEntries`, `botConversation`).
+/// What copying a routine's curl command says about where it works.
+fn webhook_copied(v: &Value) -> &'static str {
+    if v["url"].is_string() {
+        "Copied a curl command for the public URL (with its key)"
+    } else if v["needsAccount"] == true {
+        "Copied a curl command (not in an account: this computer only)"
+    } else {
+        "Copied a curl command (the cloud is off: this computer only)"
+    }
+}
+
+fn entries_of(v: &Value) -> Vec<Entry> {
+    v["entries"].as_array().into_iter().flatten().filter_map(Entry::parse).map(|(_, e)| e).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_copied_webhook_says_where_it_works() {
+        assert!(webhook_copied(&json!({"url": "https://x"})).contains("public URL"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": true})).contains("not in an account"));
+        assert!(webhook_copied(&json!({"url": null, "needsAccount": false})).contains("the cloud is off"));
     }
 }

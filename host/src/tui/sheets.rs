@@ -6,28 +6,33 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
+
+use crate::tui::l10n::{fill, tr};
 use serde_json::Value;
 
+mod computer_view;
+mod gear_view;
+mod library_view;
+mod login_keys_view;
+mod market_view;
 mod memory_view;
+pub use computer_view::draw as computer;
+pub use gear_view::draw as gear;
+pub use library_view::draw as library;
+pub use login_keys_view::draw as key_import;
+pub use market_view::draw as market;
 pub use memory_view::draw as memory;
 
 use super::app::{App, Editor};
-use super::manage::{
-    AgentSetup, Fields, Market, RoutineField, RoutineForm, RoutineList, Row, SetupRow, Submit, TABS, Tab,
-};
+use super::manage::{AgentSetup, Fields, Page, RoutineField, RoutineForm, RoutineList, RoutineRow, SetupRow, Submit};
 use super::md::truncate;
 use super::view::{
-    centered, composer_lines, field_line, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
-    when_future,
+    centered, chain_line, composer_lines, frame_box, hline, input_line, put, restyle, rput, set_cursor, theme, u,
+    using_line, when_future, window,
 };
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or_default()
-}
-
-/// Rows `off..` of a list that fit `h` lines with `cursor` on screen.
-fn window(cursor: usize, h: usize) -> usize {
-    cursor.saturating_sub(h.saturating_sub(1))
 }
 
 /// A selectable row's background, highlighted when `sel`.
@@ -45,80 +50,171 @@ fn footer(buf: &mut Buffer, inner: Rect, error: Option<&str>, keys: &str) {
     let t = theme();
     let by = inner.bottom() - 1;
     if let Some(e) = error {
-        put(buf, inner.x, by - 1, inner.width, &truncate(e, usize::from(inner.width)), t.red.patch(t.panel));
+        let shown = tr(e);
+        put(
+            buf,
+            inner.x,
+            by - 1,
+            inner.width,
+            &truncate(shown.as_ref(), usize::from(inner.width)),
+            t.red.patch(t.panel),
+        );
     }
-    put(buf, inner.x, by, inner.width, keys, t.dim.patch(t.panel));
+    let keys = tr(keys);
+    put(buf, inner.x, by, inner.width, keys.as_ref(), t.dim.patch(t.panel));
 }
 
 fn name_of(app: &App, bot: &str) -> String {
     app.bots.get(bot).map_or_else(String::new, |b| b.name.clone())
 }
 
+/// A bot's pages on the top line (Details, Computer, Library, Memory, Settings) with this one marked.
+/// Returns the area under it.
+pub fn page_tabs(buf: &mut Buffer, inner: Rect, current: Page) -> Rect {
+    let t = theme();
+    let mut x = inner.x;
+    for page in Page::ALL {
+        let style = if page == current { t.text.patch(t.sel) } else { t.secondary.patch(t.panel) };
+        let tab = tr(page.label());
+        x = put(buf, x, inner.y, inner.right().saturating_sub(x), &format!(" {tab} "), style) + 1;
+    }
+    rput(buf, inner.right(), inner.y, "⇧←→ page", t.dim.patch(t.panel));
+    Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2))
+}
+
 pub fn routines(buf: &mut Buffer, area: Rect, app: &App, l: &RoutineList) {
     let t = theme();
-    let r = centered(area, 90, 24);
-    let title = format!("{}'s routines", name_of(app, &l.bot));
+    let r = centered(area, 90, 28);
+    let title = name_of(app, &l.bot);
     let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
+    let mut inner = page_tabs(buf, inner, Page::Details);
+    // What changes often: the agent, its model and the instructions (`i` edits them in Settings).
+    if let Some(b) = app.bots.get(&l.bot).filter(|b| !b.group) {
+        let agent = app
+            .backends
+            .iter()
+            .find(|x| x["id"].as_str() == Some(b.backend.as_str()))
+            .map_or(&*b.backend, |x| s(x, "name"));
+        let model = b.model.as_deref().unwrap_or("default model");
+        let fast = if b.fast_mode { " · fast" } else { "" };
+        put(buf, inner.x, inner.y, inner.width, &format!("{agent} · {model}{fast}"), t.text.patch(t.panel));
+        rput(buf, inner.right(), inner.y, "i edits", t.dim.patch(t.panel));
+        let mut line = inner.y + 1;
+        // The agent it's on when its own can't answer, and the chain.
+        if let Some(using) = using_line(app, b) {
+            put(buf, inner.x, line, inner.width, &using, t.amber.patch(t.panel));
+            rput(buf, inner.right(), line, "B switches back", t.dim.patch(t.panel));
+            line += 1;
+        }
+        if let Some(chain) = chain_line(app, b) {
+            let room = usize::from(inner.width);
+            put(buf, inner.x, line, inner.width, &truncate(&chain, room), t.secondary.patch(t.panel));
+            line += 1;
+        }
+        let first = b.description.lines().find(|l| !l.trim().is_empty()).unwrap_or("No standing instructions");
+        let room = usize::from(inner.width);
+        put(buf, inner.x, line, inner.width, &truncate(first.trim(), room), t.secondary.patch(t.panel));
+        let used = line + 2 - inner.y;
+        inner = Rect::new(inner.x, inner.y + used, inner.width, inner.height.saturating_sub(used));
+    }
+    put(buf, inner.x, inner.y, inner.width, &tr("Routines"), t.bold.patch(t.panel));
     let list_h = usize::from(inner.height.saturating_sub(3)) / 2;
     match &l.items {
         None => {
-            put(buf, inner.x, inner.y + 1, inner.width, "Loading…", t.dim.patch(t.panel));
+            put(buf, inner.x, inner.y + 1, inner.width, &tr("Loading…"), t.dim.patch(t.panel));
         }
-        Some(v) if v.is_empty() => {
+        Some(_) if l.rows().next().is_none() => {
             put(
                 buf,
                 inner.x,
                 inner.y + 1,
                 inner.width,
-                "No routines. c asks the bot for one; n sets one up here.",
+                &tr("No routines. n sets one up here, or ask the bot in chat."),
                 t.secondary.patch(t.panel),
             );
         }
-        Some(items) => {
+        Some(_) => {
             let mut y = inner.y + 1;
-            for (i, it) in items.iter().enumerate().skip(window(l.cursor, list_h)).take(list_h) {
-                let base = row(buf, inner, y, i == l.cursor);
-                let on = it["enabled"] == true;
-                put(buf, inner.x, y, 2, if on { "●" } else { "○" }, if on { t.bold } else { t.dim }.patch(base));
-                put(buf, inner.x + 2, y, inner.width / 2, s(it, "name"), t.bold.patch(base));
-                let next = it["nextRunAt"].as_i64().map(|ms| format!("next {}", when_future(ms)));
-                rput(
-                    buf,
-                    inner.right(),
-                    y,
-                    &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
-                    t.dim.patch(base),
-                );
-                let when: Vec<&str> =
-                    it["triggerDescriptions"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-                let (line, style) = match it["lastError"].as_str() {
-                    Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
-                    None => (when.join(" · "), t.secondary),
-                };
-                let room = usize::from(inner.width.saturating_sub(2));
-                put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
+            for (i, item) in l.rows().enumerate().skip(window(l.cursor, list_h)).take(list_h) {
+                match item {
+                    RoutineRow::FollowUp(follow_up) => follow_up_row(buf, inner, y, i == l.cursor, follow_up),
+                    RoutineRow::Routine(it) => routine_row(buf, inner, y, i == l.cursor, it, &l.runs),
+                }
                 y += 2;
             }
         }
     }
-    footer(
+    let keys = if matches!(l.picked(), Some(RoutineRow::FollowUp(_))) {
+        "x cancel follow-up · esc"
+    } else {
+        "n new · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc"
+    };
+    footer(buf, inner, None, keys);
+}
+
+/// A follow-up the bot set for itself: a clock where a routine has its on/off dot, and when it happens.
+fn follow_up_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, follow_up: &Value) {
+    let t = theme();
+    let base = row(buf, inner, y, selected);
+    put(buf, inner.x, y, 2, "◷", t.dim.patch(base));
+    let room = usize::from(inner.width.saturating_sub(2));
+    let note = s(follow_up, "note").lines().next().unwrap_or_default();
+    put(buf, inner.x + 2, y, u(room), &truncate(note, room), t.bold.patch(base));
+    let at = follow_up["at"].as_i64().unwrap_or_default();
+    let when = if at <= crate::store::now_ms() {
+        tr("Follow-up due now").into_owned()
+    } else {
+        fill(&tr("Follow-up at {time}"), &[("time", &when_future(at))])
+    };
+    put(buf, inner.x + 2, y + 1, u(room), &truncate(&when, room), t.secondary.patch(t.panel));
+}
+
+fn routine_row(buf: &mut Buffer, inner: Rect, y: u16, selected: bool, it: &Value, runs: &[Value]) {
+    let t = theme();
+    let base = row(buf, inner, y, selected);
+    let on = it["enabled"] == true;
+    put(buf, inner.x, y, 2, if on { "●" } else { "○" }, if on { t.bold } else { t.dim }.patch(base));
+    put(buf, inner.x + 2, y, inner.width / 2, s(it, "name"), t.bold.patch(base));
+    // A retry still waiting comes before the schedule's next run.
+    let retry = runs
+        .iter()
+        .find(|r| r["routineId"] == it["id"] && r["status"] == "pending")
+        .and_then(|r| r["notBefore"].as_i64());
+    let next = retry
+        .map(|ms| format!("retry {}", when_future(ms)))
+        .or_else(|| it["nextRunAt"].as_i64().map(|ms| format!("next {}", when_future(ms))));
+    rput(
         buf,
-        inner,
-        None,
-        "n new · c ask the bot · ↵ edit · space on/off · r run now · w copy webhook · W new key · x delete · esc",
+        inner.right(),
+        y,
+        &next.unwrap_or_else(|| if on { String::new() } else { "off".into() }),
+        t.dim.patch(base),
     );
+    let when: Vec<String> = it["triggerDescriptions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|text| tr(text).into_owned())
+        .collect();
+    let (line, style) = match it["lastError"].as_str() {
+        Some(e) => (format!("{} · {e}", when.join(" · ")), t.red),
+        None => (when.join(" · "), t.secondary),
+    };
+    let room = usize::from(inner.width.saturating_sub(2));
+    put(buf, inner.x + 2, y + 1, u(room), &truncate(&line, room), style.patch(t.panel));
 }
 
 pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
     let t = theme();
-    let r = centered(area, 84, 14);
+    let r = centered(area, 84, 15);
     let title = if f.id.is_some() { "Edit routine" } else { "New routine" };
     let inner = frame_box(buf, r, t.text, t.panel, Some((title, t.text)));
     let label = |on: bool| if on { t.bold } else { t.secondary }.patch(t.panel);
     let vx = inner.x + 9;
     let vw = inner.width.saturating_sub(9);
     let at = |y: u16| Rect::new(vx, y, vw, 1);
-    put(buf, inner.x, inner.y, 9, "Name", label(f.field == RoutineField::Name));
+    put(buf, inner.x, inner.y, 9, tr("Name").as_ref(), label(f.field == RoutineField::Name));
     input_line(buf, at(inner.y), inner.y, &f.name, "Morning summary", f.field == RoutineField::Name, false);
     put(buf, inner.x, inner.y + 2, 9, "Do", label(f.field == RoutineField::Instruction));
     multiline(
@@ -130,19 +226,18 @@ pub fn routine(buf: &mut Buffer, area: Rect, f: &RoutineForm) {
     );
     put(buf, inner.x, inner.y + 7, 9, "When", label(f.field == RoutineField::When));
     let placeholder = if f.original_text.is_empty() {
-        "0 9 * * 1-5  ·  every 2h  ·  2026-10-01 09:00  ·  webhook"
+        "daily 09:00 · weekdays 09:00 · every 2h · 0 9 * * 1-5 · webhook"
     } else {
         &f.original_text
     };
     input_line(buf, at(inner.y + 7), inner.y + 7, &f.when, placeholder, f.field == RoutineField::When, false);
-    put(
-        buf,
-        vx,
-        inner.y + 8,
-        vw,
-        &format!("cron runs in {}; every = from now on; webhook = when called", super::manage::local_zone()),
-        t.dim.patch(t.panel),
-    );
+    put(buf, vx, inner.y + 8, vw, "or hourly :30 · weekly mon 09:00 · 2026-10-01 09:00 (once)", t.dim.patch(t.panel));
+    put(buf, vx, inner.y + 9, vw, "every = from now on · webhook = when called", t.dim.patch(t.panel));
+    let (zone_hint, zone_style) = match super::manage::complete_zone(&f.when.text, crate::store::now_ms()) {
+        Some(done) => (format!("tab → {done}"), t.secondary),
+        None => (format!("times in {}; end with a zone to change it", crate::routines::local_zone()), t.dim),
+    };
+    put(buf, vx, inner.y + 10, vw, &zone_hint, zone_style.patch(t.panel));
     let by = inner.bottom() - 1;
     if let Some(e) = &f.error {
         put(buf, inner.x, by - 1, inner.width, e, t.red.patch(t.panel));
@@ -172,108 +267,42 @@ fn multiline(buf: &mut Buffer, r: Rect, e: &Editor, placeholder: &str, active: b
     }
 }
 
-pub fn market(buf: &mut Buffer, area: Rect, app: &App, m: &Market) {
-    let t = theme();
-    let r = centered(area, 96, 30);
-    let title = format!("Extensions · {}", app.host);
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&title, t.text)));
-    let mut x = inner.x;
-    for (tab, label) in TABS {
-        let style = if tab == m.tab { t.btn_primary } else { t.secondary.patch(t.btn) };
-        x = put(buf, x, inner.y, 20, &format!(" {label} "), style) + 1;
-    }
-    let search = Rect::new(x + 2, inner.y, inner.right().saturating_sub(x + 2), 1);
-    let placeholder = match m.tab {
-        Tab::Connectors => "search the MCP registry",
-        _ => "filter",
-    };
-    field_line(buf, search, inner.y, &m.query, placeholder, true);
-    let rows = app.market_rows(m);
-    let list_h = usize::from(inner.height.saturating_sub(5));
-    let mut y = inner.y + 2;
-    if App::market_stale(m) {
-        put(buf, inner.x, y, inner.width, "↵ searches the registry", t.secondary.patch(t.panel));
-        y += 1;
-    }
-    for (i, item) in rows.iter().enumerate().skip(window(m.cursor, list_h)).take(list_h) {
-        let base = row(buf, inner, y, i == m.cursor);
-        let (mark, name, detail, right): (&str, String, String, String) = match item {
-            Row::Node => (
-                "+",
-                "Add Node.js".into(),
-                "Some agents need it to run. Codync adds a copy just for them.".into(),
-                String::new(),
-            ),
-            Row::Agent(b) => {
-                let status = match (b["installed"] == true, b["signedIn"].as_bool()) {
-                    (false, _) if b["curated"] == true => "not installed",
-                    _ if b["node"] == "missing" => "needs Node.js",
-                    (_, Some(true)) => "signed in",
-                    (true, Some(false)) => "not signed in",
-                    (true, None) => "installed",
-                    (false, _) => "sets up on first use",
-                };
-                let mark = if b["signedIn"] == true || b["installed"] == true { "✓" } else { "↓" };
-                (mark, s(b, "name").into(), s(b, "description").into(), status.into())
-            }
-            Row::Installed(c) => {
-                let right = match s(c, "auth") {
-                    "signedOut" => "↵ sign in",
-                    _ if c["kind"] == "composio" => "Composio",
-                    _ => "installed",
-                };
-                let detail = c["command"].as_str().or(c["url"].as_str()).unwrap_or(s(c, "description"));
-                ("✓", s(c, "name").into(), detail.into(), right.into())
-            }
-            Row::Custom => ("+", "Custom connector".into(), "Paste any MCP server's config".into(), String::new()),
-            Row::Registry(c) => ("↓", s(c, "title").into(), s(c, "description").into(), String::new()),
-            Row::More => ("…", "Load more connectors".into(), String::new(), String::new()),
-            Row::OwnSkill(v) => ("✓", s(v, "name").into(), s(v, "description").into(), "installed".into()),
-            Row::Skill(v) => ("↓", s(v, "name").into(), s(v, "description").into(), String::new()),
-        };
-        let ok = mark == "✓";
-        put(buf, inner.x, y, 2, mark, if ok { t.green } else { t.dim }.patch(base));
-        let nx = put(buf, inner.x + 2, y, 26, &truncate(&name, 26), t.bold.patch(base)) + 2;
-        let rx = rput(buf, inner.right(), y, &right, t.dim.patch(base));
-        let room = usize::from(rx.saturating_sub(nx + 1));
-        put(buf, nx, y, u(room), &truncate(&detail.replace('\n', " "), room), t.secondary.patch(base));
-        y += 1;
-    }
-    if rows.is_empty() {
-        let msg = if m.loading { "Loading…" } else { "Nothing matches" };
-        put(buf, inner.x, y, inner.width, msg, t.dim.patch(t.panel));
-    }
-    let keys = match m.tab {
-        Tab::Agents => "tab switch · ↵ install / sign in · ^r refresh · esc close",
-        Tab::Connectors => "tab switch · ↵ add / sign in · ^x remove · ^r refresh · esc",
-        Tab::Skills => "tab switch · ↵ details · ^x remove · esc close",
-    };
-    let loading = m.loading && m.tab == Tab::Connectors && !rows.is_empty();
-    footer(buf, inner, m.error.as_deref().or(loading.then_some("Loading the registry…")), keys);
-}
-
 pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
     let t = theme();
     let b = app.backends.iter().find(|b| b["id"] == a.backend.as_str());
     let name = b.map_or(a.backend.as_str(), |b| s(b, "name"));
     let rows = app.agent_rows(a);
-    let r = centered(area, 80, u(rows.len() * 2 + 11).max(14));
+    let login_profiles = usize::from(rows.iter().any(|r| matches!(r, SetupRow::DefaultLoginProfile))) * 2;
+    let r = centered(area, 90, u(rows.len() * 2 + login_profiles + 11).max(14));
     let inner = frame_box(buf, r, t.text, t.panel, Some((name, t.text)));
     let mut y = inner.y;
+    let mut headed = false;
     if let Some(d) = b.map(|b| s(b, "description")).filter(|d| !d.is_empty()) {
-        put(buf, inner.x, y, inner.width, &truncate(d, usize::from(inner.width)), t.secondary.patch(t.panel));
+        let shown = tr(d);
+        put(
+            buf,
+            inner.x,
+            y,
+            inner.width,
+            &truncate(shown.as_ref(), usize::from(inner.width)),
+            t.secondary.patch(t.panel),
+        );
         y += 2;
     }
     let signed_in =
         a.auth.as_ref().map_or_else(|| b.and_then(|b| b["signedIn"].as_bool()), |v| v["signedIn"].as_bool());
-    let status = if a.busy {
+    let set_up = app.agent_set_up(a);
+    let curated = b.is_some_and(|b| b["curated"] == true);
+    let status = if a.busy && a.signing_in.is_none() {
         if a.auth.is_none() {
-            format!("Checking with {name}… the first check can download it.")
+            format!("Checking with {name}… The first check can download it.")
         } else {
-            "Working…".into()
+            tr("Working…").into_owned()
         }
     } else if signed_in != Some(true) && b.is_some_and(|b| b["node"] == "missing") {
         "Add Node.js first.".into()
+    } else if !set_up {
+        if curated { "Install it first.".into() } else { format!("Not set up on {} yet.", app.host) }
     } else {
         match signed_in {
             Some(true) => "Signed in.".into(),
@@ -282,18 +311,28 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
         }
     };
     let style = if signed_in == Some(true) { t.green } else { t.text };
-    put(buf, inner.x, y, inner.width, &status, style.patch(t.panel).add_modifier(Modifier::BOLD));
+    let status = tr(&status);
+    put(buf, inner.x, y, inner.width, status.as_ref(), style.patch(t.panel).add_modifier(Modifier::BOLD));
     y += 1;
     if signed_in != Some(true)
         && let Some(d) = a.auth.as_ref().and_then(|v| v["detail"].as_str()).filter(|d| !d.is_empty())
     {
-        put(buf, inner.x, y, inner.width, &truncate(d, usize::from(inner.width)), t.dim.patch(t.panel));
+        let shown = tr(d);
+        put(buf, inner.x, y, inner.width, &truncate(shown.as_ref(), usize::from(inner.width)), t.dim.patch(t.panel));
         y += 1;
     }
     y += 1;
+    let default = tr("Default");
+    let in_browser = b.is_some_and(|b| b["loginProfileSignIn"] == "browser");
     for (i, rw) in rows.iter().enumerate() {
-        if y + 1 >= inner.bottom().saturating_sub(2) {
+        let heading = !headed && matches!(rw, SetupRow::DefaultLoginProfile);
+        if y + 1 + u16::from(heading) * 2 >= inner.bottom().saturating_sub(2) {
             break;
+        }
+        if heading {
+            headed = true;
+            put(buf, inner.x, y + 1, inner.width, &tr("Login profiles"), t.secondary.patch(t.panel));
+            y += 2;
         }
         let base = row(buf, inner, y, i == a.cursor);
         let (icon, title, detail) = match rw {
@@ -311,21 +350,82 @@ pub fn agent(buf: &mut Buffer, area: Rect, app: &App, a: &AgentSetup) {
                 let d = m["description"].as_str().map_or(fallback, str::to_owned);
                 (icon, s(m, "name").to_owned(), d)
             }
+            // A registry agent downloads on its first start; an app's own CLI comes from Install.
+            SetupRow::Check if !set_up && !curated => (
+                "↓",
+                "Set up".to_owned(),
+                format!("Downloads {name} on {} if it needs to, then checks its sign-in.", app.host),
+            ),
             SetupRow::Check => ("↻", "Check again".to_owned(), String::new()),
+            SetupRow::Brings => ("≡", "What the agent brings".to_owned(), String::new()),
+            SetupRow::DefaultLoginProfile => {
+                let own = b.map_or(&Value::Null, |b| &b["defaultLoginProfile"]);
+                let state = signed_in.map(|on| tr(if on { "Signed in" } else { "Not signed in" }));
+                let name = own["name"].as_str().unwrap_or("Default login profile");
+                ("◎", name.to_owned(), login_profile_detail(Some(&default), own, state.as_deref()))
+            }
+            SetupRow::LoginProfile(login_profile) if login_profile["kind"] == "apiKey" => {
+                let vars: Vec<&str> =
+                    login_profile["vars"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                let keys = if vars.is_empty() { tr("No key yet").into_owned() } else { vars.join(", ") };
+                let state = format!("{keys} · ↵ {}", tr("Edit keys"));
+                let detail = login_profile_detail(Some(&tr("API key")), login_profile, Some(&state));
+                ("⚿", login_profile["name"].as_str().unwrap_or("New login profile").to_owned(), detail)
+            }
+            SetupRow::LoginProfile(login_profile) => {
+                let state = if login_profile["signedIn"] == true {
+                    tr("Signed in").into_owned()
+                } else if a.signing_in.as_deref() == login_profile["id"].as_str() {
+                    tr("Finish signing in in the browser on {name}…").replace("{name}", &app.host)
+                } else {
+                    format!("{} · ↵ {}", tr("Not signed in"), tr("Sign in"))
+                };
+                let detail = login_profile_detail(None, login_profile, Some(&state));
+                ("◎", login_profile["name"].as_str().unwrap_or("New login profile").to_owned(), detail)
+            }
+            SetupRow::AddAccount => {
+                let how = if in_browser {
+                    "Signs in another {name} account in a browser on {other}."
+                } else {
+                    "Signs in another {name} account in a terminal on {other}."
+                };
+                ("+", "Add account".to_owned(), fill(&tr(how), &[("name", name), ("other", &app.host)]))
+            }
+            SetupRow::AddApiKey => {
+                let what = tr("Runs {name} on keys you type or import from your login shell.");
+                ("+", "Add API key".to_owned(), fill(&what, &[("name", name)]))
+            }
         };
+        let title = tr(&title);
+        let detail = tr(&detail);
         put(buf, inner.x, y, 3, icon, t.secondary.patch(base));
-        let nx = put(buf, inner.x + 3, y, 30, &title, t.bold.patch(base)) + 2;
+        let nx = put(buf, inner.x + 3, y, 30, title.as_ref(), t.bold.patch(base)) + 2;
         put(
             buf,
             nx,
             y,
             inner.right().saturating_sub(nx),
-            &truncate(&detail, usize::from(inner.right().saturating_sub(nx))),
+            &truncate(detail.as_ref(), usize::from(inner.right().saturating_sub(nx))),
             t.secondary.patch(base),
         );
         y += 1;
     }
-    footer(buf, inner, a.error.as_deref(), "↑↓ move · ↵ run · esc back");
+    let keys = tr("↑↓ move · ↵ run · esc back");
+    let keys = match rows.get(a.cursor) {
+        Some(SetupRow::DefaultLoginProfile) => format!("{keys} · r {}", tr("Rename login profile")),
+        Some(SetupRow::LoginProfile(_)) => {
+            format!("{keys} · r {} · x {}", tr("Rename login profile"), tr("Remove login profile"))
+        }
+        _ => keys.into_owned(),
+    };
+    footer(buf, inner, a.error.as_deref(), &keys);
+}
+
+/// A login profile row's detail: `lead`, who it signs in (under a name the user gave it; otherwise that is its title),
+/// then its state.
+fn login_profile_detail(lead: Option<&str>, login_profile: &Value, state: Option<&str>) -> String {
+    let email = login_profile["email"].as_str().filter(|_| login_profile["label"].is_string());
+    [lead, email, state].into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
 pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
@@ -333,9 +433,11 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     let tall = f.inputs.iter().any(|i| i.multiline);
     let h = if tall { 20 } else { u(f.inputs.len() * 2 + usize::from(f.choices.len() > 1) * 2 + 8) };
     let r = centered(area, 84, h);
-    let inner = frame_box(buf, r, t.text, t.panel, Some((&f.title, t.text)));
+    let title = tr(&f.title);
+    let note = tr(&f.note);
+    let inner = frame_box(buf, r, t.text, t.panel, Some((title.as_ref(), t.text)));
     let mut y = inner.y;
-    put(buf, inner.x, y, inner.width, &truncate(&f.note, usize::from(inner.width)), t.dim.patch(t.panel));
+    put(buf, inner.x, y, inner.width, &truncate(note.as_ref(), usize::from(inner.width)), t.dim.patch(t.panel));
     y += 2;
     let label_w = 18u16;
     let vx = inner.x + label_w;
@@ -343,7 +445,8 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     let mut row_i = 0;
     if f.choices.len() > 1 {
         let on = f.cursor == 0;
-        put(buf, inner.x, y, label_w, "Runs", if on { t.bold } else { t.secondary }.patch(t.panel));
+        let runs = tr("Runs");
+        put(buf, inner.x, y, label_w, runs.as_ref(), if on { t.bold } else { t.secondary }.patch(t.panel));
         let base = if on { t.sel } else { t.panel };
         put(buf, vx, y, vw, &format!("‹ {} ›", f.choices[f.choice]), t.text.patch(base));
         y += 2;
@@ -352,12 +455,13 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     for (i, input) in f.inputs.iter().enumerate() {
         let on = f.cursor == row_i + i;
         let star = if input.required { " *" } else { "" };
+        let label = tr(&input.label);
         put(
             buf,
             inner.x,
             y,
             label_w - 1,
-            &truncate(&format!("{}{star}", input.label), usize::from(label_w - 1)),
+            &truncate(&format!("{label}{star}"), usize::from(label_w - 1)),
             if on { t.bold } else { t.secondary }.patch(t.panel),
         );
         if input.multiline {
@@ -395,6 +499,8 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
             " … Saving "
         } else if matches!(f.submit, Submit::Connection(_)) {
             " ↵ Continue "
+        } else if matches!(f.submit, Submit::Connector(_)) {
+            " ↵ Add "
         } else {
             " ↵ Save "
         },
@@ -402,11 +508,42 @@ pub fn fields(buf: &mut Buffer, area: Rect, f: &Fields) {
     ) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = if matches!(f.submit, Submit::Connection(_)) {
-        "^x cancel request · tab next · esc close"
+        "tab next · esc close"
     } else if tall {
         "⇧↵ new line · paste works"
+    } else if matches!(f.submit, Submit::LoginProfileKeys { .. }) {
+        "tab next field · ^x remove · ^l import"
     } else {
         "tab next field"
     };
-    rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
+    rput(buf, inner.right(), by, &tr(hint), t.dim.patch(t.panel));
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::tui::app::{screen, test_app};
+
+    #[tokio::test]
+    async fn the_routines_sheet_lists_follow_ups_above_the_routines_with_a_clock_and_when() {
+        let app = test_app();
+        let routine = json!({"id": "r", "name": "Morning summary", "enabled": true,
+            "triggerDescriptions": ["Every day at 09:00"]});
+        let list = RoutineList {
+            bot: "b".into(),
+            items: Some(vec![routine]),
+            follow_ups: vec![json!({"id": "f", "at": 0, "note": "Check the build\nthen the deploy"})],
+            ..Default::default()
+        };
+        let area = Rect::new(0, 0, 100, 30);
+        let lines = screen(area, |buf| routines(buf, area, &app, &list));
+        let at = |text: &str| lines.iter().position(|line| line.contains(text));
+        let note = at("◷ Check the build").expect("the note's first line, after its clock");
+        assert!(!lines[note].contains("then the deploy"));
+        assert!(lines[note + 1].contains("Follow-up due now"));
+        assert!(at("● Morning summary") > Some(note), "the routines come after");
+        assert!(at("x cancel follow-up").is_some(), "the keys of what is picked");
+    }
 }

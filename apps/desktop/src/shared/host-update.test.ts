@@ -106,6 +106,25 @@ test('idle detection distinguishes working, offline and idle hosts', async () =>
 })
 
 
+test('an update another device asks for reaches the updater once per request', async () => {
+  const f = hostUpdateFixture()
+  let requests = 0
+  f.host.on('updateRequested', () => requests++)
+  const installing = f.host.install()
+  await settle()
+  await f.tick(1000)
+  await installing
+  assert.equal(requests, 0)
+  f.behavior.updateRequested = 1_000
+  await f.tick(5000)
+  await f.tick(5000)
+  assert.equal(requests, 1, 'a request the poll sees again is passed on once')
+  f.behavior.updateRequested = 2_000
+  await f.tick(5000)
+  assert.equal(requests, 2)
+  assert.ok(f.fetched.length > 0 && f.fetched.every((url) => url.endsWith('/health?app=true')), 'the poll tells the host this app is open')
+})
+
 test('development install and stop reject a production binary before touching its service', async () => {
   const f = hostUpdateFixture({ environment: 'dev' })
   f.behavior.binaryEnvironment = 'main'

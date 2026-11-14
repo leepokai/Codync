@@ -5,12 +5,27 @@ use super::{Actor, NoticeStyle};
 use crate::agent::config::{FastModeSupport, fast_mode_change, fast_mode_config, fast_mode_on, fast_mode_refusal};
 use serde_json::{Value, json};
 
+/// Where a session's config options come from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Listing {
+    /// `session/new` or `session/load`.
+    Session,
+    /// The answer to our own Fast mode switch.
+    Switch,
+    /// A `config_option_update`, or the answer to a mode switch.
+    Update,
+}
+
 impl Actor {
-    /// Records a session's options from an agent answer or a `config_option_update`.
-    /// `requested`: the answer to our own switch.
-    pub(super) fn note_options(&mut self, sid: &str, options: &Value, requested: bool) {
-        // An answer without config options says nothing about Fast mode.
+    /// Records a session's options from an agent answer or a `config_option_update`: its modes, and Fast mode.
+    pub(super) fn note_options(&mut self, sid: &str, options: &Value, listing: Listing) {
+        self.note_modes(sid, options);
         if !options["configOptions"].is_array() {
+            // A session without config options has no Fast mode to offer; other answers that
+            // leave them out say nothing, and neither overrides what the agent listed before.
+            if listing == Listing::Session && self.fast_support == FastModeSupport::Unknown {
+                self.publish_fast_support(FastModeSupport::Unsupported);
+            }
             return;
         }
         let Some(conn) = self.conn.as_mut() else { return };
@@ -19,7 +34,7 @@ impl Actor {
         let support = match &option {
             None => FastModeSupport::Unsupported,
             // Turned off right after it was on, or despite our asking: the agent refused it.
-            Some(o) if self.cfg.fast_mode && !fast_mode_on(o) && (requested || was_on) => {
+            Some(o) if self.cfg.fast_mode && !fast_mode_on(o) && (listing == Listing::Switch || was_on) => {
                 FastModeSupport::Refused(fast_mode_refusal(o))
             }
             Some(_) => FastModeSupport::Offered,
@@ -42,7 +57,7 @@ impl Actor {
         let (Some(config_id), Some(value)) = (option["id"].as_str(), fast_mode_change(option, on)) else { return };
         let params = json!({"sessionId": sid, "configId": config_id, "value": value});
         match self.session_request("session/set_config_option", params).await {
-            Ok(answer) => self.note_options(sid, &answer, true),
+            Ok(answer) => self.note_options(sid, &answer, Listing::Switch),
             Err(error) => {
                 tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't set Fast mode");
                 self.notice(&format!("Couldn't change Fast mode: {error:#}"), NoticeStyle::Info);

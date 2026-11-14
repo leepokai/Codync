@@ -1,12 +1,10 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
 struct InstalledView: View {
     let back: () -> Void
     @Environment(BotStore.self) private var model
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var removing: Removal?
     @State private var signingIn: String?
     @State private var viewingSkill: SkillRef?
@@ -22,7 +20,7 @@ struct InstalledView: View {
             ScreenHeader {
                 BackButton(action: back).keyboardShortcut(.cancelAction)
             } title: {
-                Text("Connectors & skills").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("Connectors & skills")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 EmptyView()
             }
@@ -30,6 +28,7 @@ struct InstalledView: View {
         }
         .background(Palette.background)
         .codyncSheet(item: $viewingSkill) { SkillSheet(skill: $0) }
+        .signInCodeDialog(signInFlow.codePrompt)
     }
 
     private var list: some View {
@@ -40,7 +39,8 @@ struct InstalledView: View {
             if !model.installedConnectors.isEmpty {
                 CardSection("Connectors") {
                     ForEach(model.installedConnectors) { c in
-                        InstalledRow(title: c.name, subtitle: c.needsSignIn ? "Sign in so bots can use it" : c.command ?? c.url ?? c.description) {
+                        InstalledRow(title: c.name, subtitle: c.needsSignIn ? "Sign in so bots can use it"
+                            : c.canSignIn == true ? "Sign in instead of using a saved token" : c.command ?? c.url ?? c.description) {
                             if c.kind == "composio" {
                                 AppLogo(url: c.logo, name: c.name, size: 32)
                             } else {
@@ -49,8 +49,8 @@ struct InstalledView: View {
                         } accessory: {
                             if signingIn == c.id {
                                 Spinner()
-                            } else if c.needsSignIn {
-                                Button("Sign in") { signIn(c.id) }
+                            } else if c.needsSignIn || c.canSignIn == true {
+                                Button(L10n.tr("Sign in")) { signIn(c.id) }
                                     .buttonStyle(PrimaryButtonStyle())
                                     .controlSize(.small)
                             }
@@ -75,7 +75,7 @@ struct InstalledView: View {
             }
         }
         .codyncDialog(
-            "Remove \(removing?.name ?? "")?",
+            L10n.tr("Remove {name}?").replacingOccurrences(of: "{name}", with: removing?.name ?? ""),
             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
             message: removing.map { $0.isSkill ? "Bots stop using this skill." : "Bots lose this connector, and the keys saved for it are deleted." }
         ) {
@@ -96,7 +96,7 @@ struct InstalledView: View {
         signingIn = id
         Task {
             do {
-                try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(id)
+                try await signInFlow.signIn(id)
             } catch {
                 model.lastError = error.localizedDescription
             }
@@ -114,8 +114,8 @@ private struct EmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 28)).foregroundStyle(Palette.tertiary).accessibilityHidden(true)
-            Text(title).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
-            Text(detail).font(.subheadline).foregroundStyle(Palette.secondary).multilineTextAlignment(.center)
+            Text(L10n.tr(title)).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
@@ -156,7 +156,7 @@ private struct InstalledRow<Icon: View, Accessory: View>: View {
             icon
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).foregroundStyle(Palette.text).lineLimit(1)
-                Text(subtitle).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
+                Text(L10n.tr(subtitle)).font(.caption).foregroundStyle(Palette.secondary).lineLimit(1)
             }
         }
         .contentShape(Rectangle())

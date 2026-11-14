@@ -1,35 +1,48 @@
-import { DiscordLogo, Plus } from "@phosphor-icons/react/ssr";
+import { DiscordLogo, Plus, TelegramLogo } from "@phosphor-icons/react/ssr";
 import Reveal from "./reveal";
-import { DISCORD } from "../links";
+import SectionHeader from "./section-header";
+import { CHINA_COMMUNITY, DISCORD } from "../links";
 
 const questions: [string, string][] = [
   [
     "Is Codync free?",
-    "Yes. Codync costs $0 with every feature included, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have.",
+    "Yes. Codync costs $0 with every feature included, Codync Cloud too, and it's Apache 2.0 licensed. You pay only your agent's provider, through the plan or key you already have, and for a cloud computer, your Boat or InstaBox account under its own plan.",
   ],
   [
-    "Can I use my Claude or ChatGPT plan?",
+    "Can I bring my own Claude or ChatGPT subscription?",
     "Yes. Codync runs the agents already signed in on your computer: Claude Code with your Claude plan, Codex with your ChatGPT plan, and so on. It never calls a provider's API with your login.",
   ],
   [
     "Which agents can it run?",
-    "Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more through the Agent Client Protocol registry. Each bot picks its own.",
+    "Any of them: Codync is agent-agnostic. Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more through the Agent Client Protocol registry. Each bot picks its own.",
   ],
   [
     "How do I start?",
-    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair.",
+    "Install Codync on the computer your agents run on and create a bot. Then pair your iPhone by scanning the code from the Mac menu bar, the Windows or Linux app, or codync-host pair. Signing in with Apple, Google or GitHub is optional.",
   ],
   [
     "Where does my data go?",
-    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network, or through an end-to-end encrypted relay anywhere else, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
+    "Bots, chats and memory stay on your computer. Your phone reaches it directly on the same network or over Tailscale. With an account, it can also go through an end-to-end encrypted relay, which can't read your messages. Your agent's provider receives the prompts the agent sends.",
   ],
   [
     "Do I need an account?",
-    "No. Pair your phone by scanning a code. Signing in with Apple or Google is optional: it lists every computer on your account on your phone, and each computer still approves each device itself.",
+    "No. Without one, your phone pairs by scanning a code and connects over Wi-Fi or Tailscale. A free account (Apple, Google or GitHub) adds the relay, which needs the computer and the phone in the same account, and lists your computers on your phone. An account alone never unlocks a computer: you still pair in person by scanning a code, or approve a 6-digit code on the computer.",
   ],
   [
     "Which computers can run it?",
-    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host.",
+    "A Mac, a Windows PC, or a Linux desktop or headless server. The iPhone app and the terminal UI over SSH talk to the same host, and the desktop app on Mac, Windows and Linux adds other machines over SSH, with their bots in the same sidebar.",
+  ],
+  [
+    "Can my bots run in the cloud?",
+    "Yes, with Codync Cloud (beta). Signed in to a free Codync account, start a cloud computer on your own Boat (EU) or InstaBox (US) account with a key you paste once. Codync charges nothing for it; the provider bills your account under its own plan. It sleeps while your bots are idle and wakes when you message one, and every app reaches it like any other computer.",
+  ],
+  [
+    "Can bots on different computers work together?",
+    "Yes. Put your computers in a private network (beta) and a bot on one can message a bot on another, which works on its own computer and answers. Computers connect peer to peer, through a relay that sees only encrypted traffic when they must, and each one decides which bots may message its bots.",
+  ],
+  [
+    "What happens when my agent runs out of usage?",
+    "Give the bot fallbacks and the next agent in its list, say Codex after Claude Code, carries on with the same turn, chat, memory and folder. The bot goes back to its own agent once that one resets. Without fallbacks, the chat offers to add one.",
   ],
   [
     "Is it safe to let bots work on my computer?",
@@ -50,27 +63,29 @@ const faqJsonLd = {
 
 export default function Questions() {
   return (
-    <section id="faq" className="scroll-mt-20 px-4 py-20 sm:px-6 md:py-28">
+    <section id="faq" className="scroll-mt-16 px-4 py-24 sm:px-6 md:py-32">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd).replace(/</g, "\\u003c") }}
       />
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 md:grid-cols-[1fr_1.4fr] md:gap-20">
+      <div className="mx-auto max-w-3xl">
+        <SectionHeader label="Questions" title="Short answers.">
+          About price, setup, agents and your data.
+        </SectionHeader>
         <Reveal>
-          <h2 className="text-3xl font-semibold tracking-tight text-neutral-50 md:text-4xl">Questions</h2>
-          <p className="mt-4 max-w-[22rem] text-lg leading-relaxed text-neutral-400">
-            Short answers about price, setup, agents and your data.
-          </p>
-          <a
-            href={DISCORD}
-            className="mt-6 inline-flex items-center gap-2 font-medium text-neutral-200 hover:text-white"
-          >
-            <DiscordLogo size={20} />
-            <span className="underline underline-offset-4">Ask on Discord</span>
-          </a>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-4 font-medium text-neutral-200">
+            <a href={DISCORD} className="inline-flex items-center gap-2 hover:text-white">
+              <DiscordLogo size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">Ask on Discord</span>
+            </a>
+            <a href={CHINA_COMMUNITY} className="inline-flex items-center gap-2 hover:text-white" lang="zh-CN">
+              <TelegramLogo size={20} aria-hidden="true" />
+              <span className="underline underline-offset-4">Telegram 中国用户交流群</span>
+            </a>
+          </div>
         </Reveal>
         <Reveal delay={0.05}>
-          <div className="divide-y divide-neutral-800">
+          <div className="mt-12 divide-y divide-neutral-800 border-y border-neutral-800">
             {questions.map(([q, a]) => (
               <details key={q} className="group py-5">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-lg font-medium text-neutral-100 [&::-webkit-details-marker]:hidden">

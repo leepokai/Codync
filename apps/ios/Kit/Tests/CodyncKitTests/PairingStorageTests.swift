@@ -32,6 +32,14 @@ private func link(_ overrides: [String: String?] = [:]) -> String {
     #expect(Pairing(string: link(["cloud": nil])) != nil)
 }
 
+@Test func aComputerWithManyNetworksPairsWithItsBestSixteenAddresses() throws {
+    let urls = (1...30).map { "http://172.\($0 + 1).0.1:19222" }
+    let p = try Pairing.parse(link(["urls": (urls + [urls[0], "ftp://x"]).joined(separator: ",")]))
+    #expect(p.computer.urls == Array(urls.prefix(16)))
+    // A hello's list is kept the same way.
+    #expect(Pairing.directURLs(urls.reversed() + urls) == Array(urls.reversed().prefix(16)))
+}
+
 @Test func rejectsBadPairingLinks() {
     #expect(throws: Pairing.Problem.outdatedHost) { try Pairing.parse(link(["v": nil])) }
     #expect(throws: Pairing.Problem.outdatedHost) { try Pairing.parse(link(["v": "2"])) }

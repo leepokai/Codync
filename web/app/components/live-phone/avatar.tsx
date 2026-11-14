@@ -129,7 +129,8 @@ function contains(kind: string, s: number): (p: Pt) => boolean {
 type Dot = { row: number; col: number; x: number; y: number };
 
 function dotGrid(shape: string, size: number) {
-  const cells = size < 18 ? 7 : size < 28 ? 9 : 13;
+  // 9 × 9 large dots from 18 px up; tiny ones 7 × 7, as in the apps.
+  const cells = size < 18 ? 7 : 9;
   const step = size / cells;
   const test = contains(shape, size);
   const dots: Dot[] = [];
@@ -139,11 +140,10 @@ function dotGrid(shape: string, size: number) {
       if (test([x, y])) dots.push({ row, col, x, y });
     }
   return {
-    cells,
     step,
     dots,
-    eyeColumns: cells === 7 ? [2, 4] : cells === 9 ? [3, 6] : [4, 8],
-    eyeRows: cells === 13 ? [4, 5, 6] : cells === 9 ? [3, 4] : [2, 3],
+    eyeColumns: cells === 7 ? [2, 4] : [3, 6],
+    eyeRows: cells === 7 ? [2, 3] : [3, 4],
   };
 }
 
@@ -166,8 +166,8 @@ function inks(g: ReturnType<typeof dotGrid>, size: number, pose: Pose) {
       if (pose.ripple !== null) shade *= 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(Math.hypot(u, v) * 9 - pose.ripple));
       return {
         d,
-        r: g.step * 0.42 * (0.55 + 0.45 * shade),
-        ink: g.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * Math.min(1, shade / 0.7),
+        r: g.step * 0.4 * (0.7 + 0.3 * shade),
+        ink: 0.4 + 0.4 * shade,
         tint: shade > 0.6 ? (shade - 0.6) / 0.4 : 0,
       };
     });

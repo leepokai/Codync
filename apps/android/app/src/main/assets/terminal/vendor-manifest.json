@@ -1,0 +1,76 @@
+[
+  {
+    "package": "@xterm/xterm",
+    "version": "6.0.0",
+    "integrity": "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==",
+    "license": "MIT",
+    "source": "https://github.com/xtermjs/xterm.js/tree/6.0.0",
+    "files": {
+      "xterm.js": "d2c5cc040dcd2c51cb10d6b7bbdc5712ffc79b0a51d0d309fd70b40badcc2013",
+      "xterm.css": "854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6",
+      "LICENSE.xterm": "b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd"
+    },
+    "originalFiles": {
+      "xterm.js": "14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972",
+      "xterm.css": "854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6",
+      "LICENSE.xterm": "b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd"
+    },
+    "transform": {
+      "tool": "esbuild",
+      "version": "0.28.2",
+      "target": "chrome83",
+      "options": [
+        "--minify",
+        "--legal-comments=inline"
+      ]
+    }
+  },
+  {
+    "package": "@xterm/addon-fit",
+    "version": "0.11.0",
+    "integrity": "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==",
+    "license": "MIT",
+    "source": "https://github.com/xtermjs/xterm.js/tree/6.0.0",
+    "files": {
+      "addon-fit.js": "75e9d8ddfc9220281210ee13e2d18f7f0b1c065356456ed3bb2b1dd714911001",
+      "LICENSE.addon-fit": "e256f01188af527e4d06d21d06fbf785ae9c50d4b328bf03cbe0ba7f0aa4228f"
+    },
+    "originalFiles": {
+      "addon-fit.js": "ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527",
+      "LICENSE.addon-fit": "e256f01188af527e4d06d21d06fbf785ae9c50d4b328bf03cbe0ba7f0aa4228f"
+    },
+    "transform": {
+      "tool": "esbuild",
+      "version": "0.28.2",
+      "target": "chrome83",
+      "options": [
+        "--minify",
+        "--legal-comments=inline"
+      ]
+    }
+  },
+  {
+    "package": "@xterm/addon-web-links",
+    "version": "0.12.0",
+    "integrity": "sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw==",
+    "license": "MIT",
+    "source": "https://github.com/xtermjs/xterm.js/tree/6.0.0",
+    "files": {
+      "addon-web-links.js": "056279a93e1819c06f3b88563bdee135502c2cf128ea0a1f0ccee432c7a2e2c0",
+      "LICENSE.addon-web-links": "689ceb10716bd7a87a804c14951d7c2b818cbd60aab83d540902470ce3b13444"
+    },
+    "originalFiles": {
+      "addon-web-links.js": "b74864125ef3889753b94e61eb4dabb99b2a27f920f0c9a7bd53cbe6d10f032a",
+      "LICENSE.addon-web-links": "689ceb10716bd7a87a804c14951d7c2b818cbd60aab83d540902470ce3b13444"
+    },
+    "transform": {
+      "tool": "esbuild",
+      "version": "0.28.2",
+      "target": "chrome83",
+      "options": [
+        "--minify",
+        "--legal-comments=inline"
+      ]
+    }
+  }
+]

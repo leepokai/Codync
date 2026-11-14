@@ -1,13 +1,28 @@
 import Foundation
 
 public enum HostEvent: Sendable {
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?)
+    case icons([String: CustomIcon], revision: Int64)
+    /// The stream's first event; `network` is nil from hosts before the network view. `catchUp` events follow
+    /// before the live ones (nil from hosts before 2.32.0).
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?, catchUp: Int?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
     case usage(Usage)
     case screen(ScreenState)
+    /// An artifact published or renamed (the catch-up replays it too).
+    case artifact(Artifact)
+    /// For the voice of a call on this device (only the device holding the call receives it).
+    case call(CallCue)
+    /// The computer's network changed (members, roles, presence, offered bots, cloud assistants).
+    case network(NetworkView)
+    /// The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on.
+    case name(String)
+    /// The computer's automatic bot order was switched (from any device): its `hello` says it from now on.
+    case autoOrder(Bool)
     case resync
+    /// One this app has no use for.
+    case skipped
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
 }
@@ -25,14 +40,14 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model }
+    private enum CodingKeys: String, CodingKey { case model, mode, loginProfile }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
-        if draft.model == nil {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeNil(forKey: .model)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if draft.model == nil { try container.encodeNil(forKey: .model) }
+        if draft.mode == nil { try container.encodeNil(forKey: .mode) }
+        if draft.loginProfile == nil { try container.encodeNil(forKey: .loginProfile) }
     }
 }
 
@@ -53,7 +68,8 @@ public struct HostClient: Sendable {
 
     /// Catch-up since `since`, then live updates.
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
-        map(transport.stream(.events(since: since, client: client)), Self.parseEvent)
+        // One this app has no use for still counts toward the catch-up `hello` announced.
+        map(transport.stream(.events(since: since, client: client))) { Self.parseEvent($0) ?? .skipped }
     }
 
     /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
@@ -90,19 +106,26 @@ public struct HostClient: Sendable {
             var type: String
             var hostId: String?
             var rev: Int64?
+            var catchUp: Int?
         }
         struct BotWrap: Decodable { var bot: Bot }
         struct StubWrap: Decodable { var bot: BotStub }
         struct EntryWrap: Decodable { var entry: Entry }
         struct UsageWrap: Decodable { var usage: Usage }
         struct ScreenWrap: Decodable { var screen: ScreenState }
+        struct ArtifactWrap: Decodable { var artifact: Artifact }
+        struct NetworkWrap: Decodable { var network: NetworkView }
         let d = decoder
         guard let env = try? d.decode(Envelope.self, from: data) else { return nil }
         switch env.type {
+        case "icons":
+            struct Icons: Decodable { var icons: [String: CustomIcon]; var iconsRevision: Int64? }
+            return (try? d.decode(Icons.self, from: data)).map { .icons($0.icons, revision: $0.iconsRevision ?? 0) }
         case "hello":
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen)
+            let network = (try? d.decode(NetworkWrap.self, from: data))?.network
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network, catchUp: env.catchUp)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)
@@ -114,6 +137,20 @@ public struct HostClient: Sendable {
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
             return (try? d.decode(ScreenWrap.self, from: data)).map { .screen($0.screen) }
+        case "artifact":
+            // Not worth a rewind: a card or the Library reads the artifact again.
+            return (try? d.decode(ArtifactWrap.self, from: data)).map { .artifact($0.artifact) }
+        case "call":
+            return (try? d.decode(CallCue.self, from: data)).map { .call($0) }
+        case "network":
+            // Not worth a rewind: the next stream's hello carries the view again.
+            return (try? d.decode(NetworkWrap.self, from: data)).map { .network($0.network) }
+        case "name":
+            struct NameWrap: Decodable { var name: String }
+            return (try? d.decode(NameWrap.self, from: data)).map { .name($0.name) }
+        case "autoOrder":
+            struct AutoOrderWrap: Decodable { var enabled: Bool }
+            return (try? d.decode(AutoOrderWrap.self, from: data)).map { .autoOrder($0.enabled) }
         case "resync":
             return .resync
         default:
@@ -127,6 +164,22 @@ public struct HostClient: Sendable {
 public extension HostClient {
     func hello() async throws -> Hello { try await call("hello") }
 
+    /// The computer's network, read-only (hosts before it: "unknown method").
+    func networkView() async throws -> NetworkView { try await call("networkView") }
+
+    /// Updates a computer that's behind this app to the latest release (`Hello.canUpdate`).
+    func installHostUpdate() async throws {
+        let _: Empty = try await call("installHostUpdate")
+    }
+
+    /// The computer asks its user (up to 90 seconds), then signs `claim` for this phone's account
+    /// (`Hello.canJoinAccount`), as JSON to pass on to `CloudClient.completeClaim` as it came.
+    func joinAccount(_ claim: CloudClaim, certificate: DeviceCertificate) async throws -> Data {
+        struct Body: Encodable { var claimId: String; var nonce: String; var certificate: DeviceCertificate }
+        let body = Body(claimId: claim.claimId, nonce: claim.nonce, certificate: certificate)
+        return try await transport.call("joinAccount", body: try Self.encoder.encode(body), timeout: 120)
+    }
+
     func history(botId: String, beforeSeq: Int64, limit: Int = 100) async throws -> [Entry] {
         struct Body: Encodable { var botId: String; var beforeSeq: Int64; var limit: Int }
         struct Res: Decodable { var entries: [Entry] }
@@ -134,10 +187,10 @@ public extension HostClient {
         return res.entries
     }
 
-    /// A thread's replies (the root is in the main chat).
-    func thread(botId: String, rootId: String) async throws -> [Entry] {
+    /// What a voice call carried, from the computer: the chat this device holds may not reach back to it.
+    func callEntries(botId: String, call: String) async throws -> [Entry] {
         struct Res: Decodable { var entries: [Entry] }
-        let res: Res = try await call("thread", ["botId": botId, "rootId": rootId])
+        let res: Res = try await self.call("callEntries", ["botId": botId, "callId": call])
         return res.entries
     }
 
@@ -173,6 +226,12 @@ public extension HostClient {
         return res.bot
     }
 
+    /// Puts the bot in `section`, or takes it out of its own (nil, sent as null); nothing else changes.
+    func setSection(_ botId: String, to section: String?) async throws {
+        let body: [String: String?] = ["id": botId, "section": section]
+        let _: Empty = try await call("updateBot", body)
+    }
+
     func deleteBot(_ id: String) async throws {
         let _: Empty = try await call("deleteBot", ["botId": id])
     }
@@ -182,10 +241,16 @@ public extension HostClient {
         let _: Empty = try await call("reorderBots", ["ids": ids])
     }
 
-    /// The main chat, one thread (`threadId`), or everything (`all`).
-    func markRead(_ id: String, threadId: String? = nil, all: Bool = false) async throws {
-        struct Body: Encodable { var botId: String; var threadId: String?; var all: Bool }
-        let _: Empty = try await call("markRead", Body(botId: id, threadId: threadId, all: all))
+    /// Moves every bot of the computer in section `from` to `to` (a name already in use merges the
+    /// two); nil removes the section, its bots staying without one.
+    func renameSection(from: String, to: String?) async throws {
+        let body: [String: String?] = ["from": from, "to": to]
+        let _: Empty = try await call("renameSection", body)
+    }
+
+    /// The chat read; a no-op when nothing there is unread.
+    func markRead(_ id: String) async throws {
+        let _: Empty = try await call("markRead", ["botId": id])
     }
 
     /// Toggles the user's `emoji` reaction on a chat message.
@@ -195,19 +260,42 @@ public extension HostClient {
         return res.entry
     }
 
-    /// `threadId`: reply in the thread on that main-chat message.
-    func send(botId: String, text: String, clientNonce: String, threadId: String? = nil, attachments: [String]? = nil) async throws -> Entry {
-        struct Body: Encodable { var botId: String; var text: String; var clientNonce: String; var threadId: String?; var attachments: [String]? }
+    /// `replyTo`: the chat message this one quotes.
+    /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
+    /// `call`: the voice call it was said in (on-device or speech to text).
+    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
+              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+        struct Body: Encodable {
+            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
+            var pasted: [String]?; var call: String?
+        }
         struct Res: Decodable { var entry: Entry }
-        let res: Res = try await call("send", Body(botId: botId, text: text, clientNonce: clientNonce, threadId: threadId, attachments: attachments))
+        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+        let res: Res = try await self.call("send", body)
         return res.entry
     }
 
     /// Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message.
     static let uploadChunk = 384 * 1024
 
-    /// Sends one file in chunks for a later `send`; `id` names the upload there.
-    func upload(botId: String, id: String, name: String, data: Data) async throws {
+    /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
+    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+        var ids: [String] = []
+        var done = 0
+        for file in files {
+            let id = UUID().uuidString
+            let before = done
+            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            done += file.data.count
+            ids.append(id)
+        }
+        return ids
+    }
+
+    /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
+    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
         struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
@@ -215,6 +303,7 @@ public extension HostClient {
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
             let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
+            sent(offset)
         } while offset < data.count
     }
 
@@ -232,22 +321,94 @@ public extension HostClient {
         return out
     }
 
-    func logCall(_ botId: String, seconds: Int) async throws {
-        struct Body: Encodable { var botId: String; var seconds: Int }
-        let _: Empty = try await call("logCall", Body(botId: botId, seconds: seconds))
+    /// Whether a bot with a new message moves to the top of the roster.
+    func setAutoOrder(_ enabled: Bool) async throws {
+        let _: Empty = try await self.call("setAutoOrder", ["enabled": enabled])
+    }
+
+    /// The user makes this bot the lead, in place of the one before.
+    func setLead(_ botId: String) async throws {
+        let _: Empty = try await self.call("setLead", ["botId": botId])
+    }
+
+    /// A call's audio is live: a lead opens it, and its opening is the call's.
+    func callStarted(_ botId: String, call: String) async throws {
+        let _: Empty = try await self.call("callStarted", ["botId": botId, "callId": call])
+    }
+
+    // MARK: voice calls (host/src/chat/calls)
+
+    /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
+    /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
+    func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
+                   voice: String? = nil, language: String?) async throws -> CallSession {
+        struct Body: Encodable {
+            var botId, callId, mode: String; var provider, model, voice, language: String?
+        }
+        let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
+                        language: language)
+        let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
+        return try CallSession(json: data)
+    }
+
+    /// Runs one of the voice's tool calls on the computer, with what was said that it hasn't got yet (`lines`);
+    /// `arguments` and the answer are JSON.
+    func callTool(call: String, name: String, arguments: Data, lines: [CallLine]) async throws -> Data {
+        let args = (try? JSONSerialization.jsonObject(with: arguments)) ?? [String: Any]()
+        let said = try JSONSerialization.jsonObject(with: Self.encoder.encode(lines))
+        let body = try JSONSerialization.data(withJSONObject: ["callId": call, "name": name, "arguments": args, "lines": said])
+        let data = try await transport.call("callTool", body: body, timeout: 60)
+        let result = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["result"] ?? [String: Any]()
+        return try JSONSerialization.data(withJSONObject: result)
+    }
+
+    /// What was just said on the call, kept on the computer.
+    func callLines(call: String, lines: [CallLine]) async throws {
+        struct Body: Encodable { var callId: String; var lines: [CallLine] }
+        let _: Empty = try await self.call("callLines", Body(callId: call, lines: lines))
+    }
+
+    /// The call is over: its line in the chat, with the rest of the transcript (`lines`), which the computer titles.
+    /// Safe to repeat: the computer ends a call once.
+    func endCall(botId: String, call: String, seconds: Int, lines: [CallLine]) async throws -> Entry? {
+        struct Body: Encodable { var botId, callId: String; var seconds: Int; var lines: [CallLine] }
+        struct Res: Decodable { var entry: Entry? }
+        let res: Res = try await self.call("endCall", Body(botId: botId, callId: call, seconds: seconds, lines: lines))
+        return res.entry
     }
 
     func stop(_ botId: String) async throws {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
-    func newSession(_ botId: String) async throws {
-        let _: Empty = try await call("newSession", ["botId": botId])
+    /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
+    func steer(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    }
+
+    /// A queued message taken back: it never goes out (host 2.39.0).
+    func unqueue(botId: String, entryId: String) async throws {
+        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
+    }
+
+    func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {
+        let _: Empty = try await call(action.rawValue, ["botId": botId, "id": id])
+    }
+
+    /// The server's recent output.
+    func devServerLogs(botId: String, id: String) async throws -> String {
+        struct Res: Decodable { var text: String }
+        let res: Res = try await call("devServerLogs", ["botId": botId, "id": id])
+        return res.text
     }
 
     func respondPermission(entryId: String, optionId: String?) async throws {
         struct Body: Encodable { var entryId: String; var optionId: String? }
         let _: Empty = try await call("respondPermission", Body(entryId: entryId, optionId: optionId))
+    }
+
+    func respondDecision(entryId: String, option: String) async throws {
+        let _: Empty = try await call("respondDecision", ["entryId": entryId, "option": option])
     }
 
     /// Push tickets are bound to this device's key; `pushKey` lets the host seal notification text (§6.7).
@@ -256,49 +417,35 @@ public extension HostClient {
         let _: Empty = try await call("registerDevice", Body(ticket: ticket, relay: relay, name: name, pushKey: pushKey, ctx: ctx))
     }
 
-    /// Stops this device's alerts; used when notifications are switched off in the app.
+    /// Stops this device's alerts: notifications switched off in the app, or the phone signed out.
     func unregisterDevice() async throws {
         let _: Empty = try await call("unregisterDevice")
+    }
+
+    /// Removes this device from the computer (deleting the account, starting over): its access and alerts go.
+    /// A computer older than `forgetDevice` only stops the alerts; the key is erased right after either way.
+    func forgetDevice() async throws {
+        do {
+            let _: Empty = try await call("forgetDevice")
+        } catch {
+            let _: Empty = try await call("unregisterDevice")
+        }
     }
 
     func registerActivity(botId: String, ticket: String) async throws {
         let _: Empty = try await call("registerActivity", ["botId": botId, "ticket": ticket])
     }
 
-    func usage(refresh: Bool = false) async throws -> Usage {
-        try await call("usage", ["refresh": refresh])
+    func selectWorkspace(_ path: String) async throws -> String {
+        struct Reply: Decodable { var path: String }
+        let reply: Reply = try await call("selectWorkspace", ["path": path])
+        return reply.path
     }
 
     func listDirs(_ path: String?) async throws -> DirListing {
         struct Body: Encodable { var path: String? }
         return try await call("listDirs", Body(path: path))
     }
-
-    // MARK: remote screen
-
-    func screenStatus() async throws -> ScreenState { try await call("screenStatus") }
-
-    func screenPrepare() async throws -> ScreenConnection {
-        let relay = if let channel = transport as? ChannelTransport { try await channel.screenRelayRequired() } else { false }
-        return try await call("screenPrepare", ["relay": relay])
-    }
-
-    /// Sends a WebRTC offer (with all its ICE candidates); returns the session id and the answer.
-    /// Passing `session` restarts ICE on an existing session.
-    func screenOffer(sdp: String, session: String?, display: UInt32?) async throws -> ScreenAnswer {
-        struct Body: Encodable { var sdp: String; var session: String?; var display: UInt32? }
-        return try await call("screenOffer", Body(sdp: sdp, session: session, display: display), timeout: 30)
-    }
-
-    func screenClose(session: String) async throws {
-        let _: Empty = try await call("screenClose", ["session": session])
-    }
-
-    /// Takes control from bots (they can still look) or hands it back.
-    func screenTakeover(_ on: Bool) async throws -> ScreenState {
-        try await call("screenTakeover", ["on": on])
-    }
-
 }
 
 // MARK: - Agent setup
@@ -311,12 +458,13 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command.
-    func agentSetup(backend: String, step: SetupStep, method: String?, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `loginProfile`: the
+    /// login profile a `login` signs in; nil for the computer's own.
+    func agentSetup(backend: String, step: SetupStep, method: String?, loginProfile: String? = nil, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var loginProfile: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
         // The first sign-in through a registry build can download it.
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, cols: cols, rows: rows), timeout: 300)
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, loginProfile: loginProfile, cols: cols, rows: rows), timeout: 300)
         return res.term
     }
 
@@ -327,6 +475,62 @@ public extension HostClient {
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
         try await call("agentAuth", ["backend": backend], timeout: 300)
+    }
+
+    /// A new login profile for `backend` (an account one is signed out, an API key one has no key yet), and the
+    /// agent list with it.
+    func addLoginProfile(_ backend: String, kind: LoginProfile.Kind) async throws -> (loginProfile: LoginProfile, backends: [Backend]) {
+        struct Res: Decodable { var loginProfile: LoginProfile; var backends: [Backend] }
+        let res: Res = try await call("addLoginProfile", ["backend": backend, "kind": kind.rawValue])
+        return (res.loginProfile, res.backends)
+    }
+
+    /// Asks the login profile's agent whether its sign-in went through, and as whom.
+    func loginProfileAuth(_ backend: String, loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuth", ["backend": backend, "loginProfile": loginProfile], timeout: 300)
+        return res.backends
+    }
+
+    /// Has the login profile's agent sign it in itself, in a browser on the computer; returns once that's done.
+    func signInLoginProfile(_ backend: String, loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuthenticate", ["backend": backend, "loginProfile": loginProfile], timeout: 660)
+        return res.backends
+    }
+
+    /// Names a login profile (`loginProfile` nil: the default one); an empty name clears it back to who it signs in.
+    func renameLoginProfile(_ backend: String, loginProfile: String?, name: String) async throws -> [Backend] {
+        struct Body: Encodable { var backend: String; var loginProfile: String?; var name: String }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("renameLoginProfile", Body(backend: backend, loginProfile: loginProfile, name: name))
+        return res.backends
+    }
+
+    /// Fails while something still uses the login profile.
+    func removeLoginProfile(_ loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("removeLoginProfile", ["loginProfile": loginProfile])
+        return res.backends
+    }
+
+    /// An API key login profile's variables. `vars`: what the user typed (an empty value removes that variable);
+    /// `importing`: names whose values the computer reads from its login shell now.
+    func setLoginProfileKeys(_ loginProfile: String, vars: [String: String], importing: [String]) async throws -> [Backend] {
+        struct Body: Encodable {
+            var loginProfile: String; var vars: [String: String]; var importing: [String]
+            private enum CodingKeys: String, CodingKey { case loginProfile, vars, importing = "import" }
+        }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("setLoginProfileKeys", Body(loginProfile: loginProfile, vars: vars, importing: importing), timeout: 60)
+        return res.backends
+    }
+
+    /// The names (never the values) of the login shell's variables, to import into an API key login profile.
+    func loginShellVariables() async throws -> [String] {
+        struct Res: Decodable { var names: [String] }
+        let res: Res = try await call("loginShellVariables", timeout: 60)
+        return res.names
     }
 
     /// Lets the agent sign itself in; returns once it's done (or gave up).
@@ -352,9 +556,4 @@ public extension HostClient {
     func termClose(_ term: String) async throws {
         let _: Empty = try await call("termClose", ["term": term])
     }
-}
-
-public struct ScreenAnswer: Codable, Sendable {
-    public var session: String
-    public var sdp: String
 }

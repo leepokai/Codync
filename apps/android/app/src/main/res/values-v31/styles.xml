@@ -1,0 +1,7 @@
+<resources>
+    <!-- Android 12+ shows the system splash: the ground color only, Codync draws its own launch screen. -->
+    <style name="Theme.Codync" parent="Theme.Codync.Base">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+    </style>
+</resources>

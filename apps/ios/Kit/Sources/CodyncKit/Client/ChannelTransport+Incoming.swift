@@ -153,18 +153,21 @@ extension ChannelTransport {
               let rawId = obj["id"] as? NSNumber else { return }
         let id = rawId.uint32Value
         if let ev = obj["ev"] {
-            if let data = try? JSONSerialization.data(withJSONObject: ev, options: .fragmentsAllowed) { streams[id]?.yield(data) }
+            // Only a bounded stream (`HostStreamRequest.bufferLimit`) drops: screen candidates.
+            if let data = try? JSONSerialization.data(withJSONObject: ev, options: .fragmentsAllowed),
+               case .dropped = streams[id]?.yield(data) {
+                finishStream(id, throwing: ScreenError.candidateOverflow)
+                do { try sendCancellation(id) } catch { link?.socket.close(code: 1000) }
+            }
         } else if obj["end"] as? Bool == true {
-            streams.removeValue(forKey: id)?.finish()
-            streamIds = streamIds.filter { $0.value != id }
+            finishStream(id)
         } else if let err = obj["err"] as? [String: Any] {
             let status = (err["status"] as? NSNumber)?.intValue ?? 500
             let error = HostError.http(status, err["message"] as? String ?? "Host error \(status)")
             if let call = calls.removeValue(forKey: id) {
                 call.resume(throwing: error)
-            } else if let stream = streams.removeValue(forKey: id) {
-                stream.finish(throwing: error)
-                streamIds = streamIds.filter { $0.value != id }
+            } else {
+                finishStream(id, throwing: error)
             }
         } else if obj.keys.contains("ok") {
             let data = (try? JSONSerialization.data(withJSONObject: obj["ok"] ?? NSNull(), options: .fragmentsAllowed)) ?? Data("null".utf8)
@@ -212,7 +215,7 @@ extension ChannelTransport {
         var c = computer
         if !hello.name.isEmpty { c.name = hello.name }
         if let bk = hello.boxKey, Data(base64URL: bk)?.count == 32 { c.boxKey = bk }
-        if let urls = hello.urls { c.urls = urls.filter(Pairing.isDirectURL) }
+        if let urls = hello.urls { c.urls = Pairing.directURLs(urls) }
         c.cloud = hello.cloud.flatMap(URL.init(string:)).flatMap { Pairing.isCloudURL($0) ? $0 : nil }
         if let device = hello.device { c.device = device }
         guard c != computer else { return }

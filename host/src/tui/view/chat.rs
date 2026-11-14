@@ -5,13 +5,15 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Click, Editor, Mark, Status};
+use super::super::app::{App, Click, Editor, Entry, Mark, SlashAction, Status, match_ranges};
+use super::super::l10n::tr;
 use super::super::md::{truncate, width as w};
-use super::buffer::{fill, hline, put, put_line, rput, u};
+use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
+use super::queue::queue_band;
 use super::set_cursor;
 use super::style::{avatar, rgb, spin, theme};
 use super::time::elapsed;
-use super::transcript::build_chat;
+use super::transcript::{Built, build_chat};
 
 pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let t = theme();
@@ -33,23 +35,25 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         x = put(buf, x, r.y, 2, "‹", t.bold) + 1;
     }
     put_line(buf, x, r.y, 2, &avatar(app, &b));
-    let title = if app.thread.is_some() { format!("Thread · {}", b.name) } else { b.name.clone() };
-    x = put(buf, x + 3, r.y, r.width / 3, &title, t.bold) + 2;
+    x = put(buf, x + 3, r.y, r.width / 3, &b.name, t.bold) + 2;
     let (status, ss) = match b.mark() {
         Mark::Need => ("◆ needs you".to_owned(), t.amber),
         Mark::Work => (format!("{} working {}", spin(app), elapsed(b.started_at)), t.secondary),
         Mark::Error => ("× error".to_owned(), t.red),
         _ => (String::new(), t.dim),
     };
-    let sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    let mut sx = rput(buf, r.right() - 1, r.y, &status, ss.add_modifier(Modifier::BOLD));
+    sx = super::dev_servers::in_header(buf, r, sx, app, &b);
     let room = sx.saturating_sub(x + 2);
-    if app.thread.is_some() {
-        put(buf, x, r.y, room, "esc back to the chat", t.dim);
-    } else if b.group {
+    if b.group {
         let names: Vec<String> = b.members.iter().map(|m| app.author_name(Some(m))).collect();
         put(buf, x, r.y, room, &truncate(&format!("group · {}", names.join(", ")), usize::from(room)), t.secondary);
     } else if !narrow {
-        let mode = if b.auto { "auto" } else { "ask" };
+        let mode = match b.mode.as_deref() {
+            _ if b.auto => "approve all",
+            None => "ask",
+            Some(id) => app.mode_name(&b.backend, id),
+        };
         let fast = match (b.fast_mode, b.fast_refusal().is_some()) {
             (true, true) => " · ⚡ refused",
             (true, false) => " · ⚡ fast",
@@ -84,39 +88,61 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     let inner = usize::from(r.width.saturating_sub(4)).max(1);
     let (clines, cursor) = composer_lines(&draft, inner);
     let ch = u(clines.len().clamp(1, 8));
-    // Attached files: one row of names above the text.
+    // The message it replies to, then attached files: a row each above the text.
+    let quote = app.replying_to().map(Entry::quoted);
+    let qh = u16::from(quote.is_some());
     let files = app.draft_files();
     let fh = u16::from(!files.is_empty());
-    let box_top = r.bottom().saturating_sub(ch + fh + 2);
+    let box_top = r.bottom().saturating_sub(ch + qh + fh + 2);
     let typing = app.typing && app.overlays.is_empty();
     let rule = if typing { t.text } else { t.line };
     hline(buf, r.x, box_top, r.width, rule);
-    hline(buf, r.x, box_top + fh + ch + 1, r.width, rule);
+    hline(buf, r.x, box_top + qh + fh + ch + 1, r.width, rule);
+    if let Some(quote) = quote {
+        let quote = super::roster::plain(&quote);
+        let hint = if typing { "" } else { "esc cancels" };
+        let room = r.width.saturating_sub(u(w(hint)) + 6);
+        put(
+            buf,
+            r.x + 3,
+            box_top + 1,
+            room,
+            &format!("↳ “{}”", truncate(&quote, usize::from(room).saturating_sub(3))),
+            t.secondary,
+        );
+        rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
+    }
     if fh > 0 {
         let names: Vec<String> = files
             .iter()
             .map(|p| format!("▤ {}", p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default()))
             .collect();
         let hint = if draft.text.is_empty() { "⌫ removes" } else { "" };
-        put(buf, r.x + 3, box_top + 1, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
-        rput(buf, r.right() - 1, box_top + 1, hint, t.dim);
+        let row = box_top + qh + 1;
+        put(buf, r.x + 3, row, r.width.saturating_sub(u(w(hint)) + 6), &names.join("  "), t.secondary);
+        rput(buf, r.right() - 1, row, hint, t.dim);
     }
-    let comp_top = box_top + fh;
+    let comp_top = box_top + qh + fh;
     put(buf, r.x + 1, comp_top + 1, 1, "›", if typing { t.bold } else { t.dim });
-    let comp_rect = Rect::new(r.x, box_top, r.width, ch + fh + 2);
+    let comp_rect = Rect::new(r.x, box_top, r.width, ch + qh + fh + 2);
     app.hits.clicks.push((comp_rect, Click::Composer));
     let first = clines.len().saturating_sub(usize::from(ch)).min(cursor.1.saturating_sub(usize::from(ch) - 1));
     // Where the first composer line's text ends, so the chip on its right never covers it.
     let mut used = clines.get(first).map_or(0, |l| w(l));
     if draft.text.is_empty() {
         // The apps' wording.
-        let placeholder = if app.pick.is_some() {
-            let reply = if app.thread.is_some() { "↵ reply" } else { "↵ thread" };
-            format!("j k pick · {reply} · 1–6 react · f save files · c copy · esc")
-        } else if app.thread.is_some() {
-            "Reply…".to_owned()
+        let placeholder = if let Some(pick) = &app.pick {
+            let artifact = app.lane(&b.id).iter().any(|e| &e.id == pick && e.artifact().is_some());
+            if artifact {
+                "j k pick · o open in the browser · f save as HTML · ↵ reply · 1–6 react · c copy · esc"
+            } else {
+                "j k pick · ↵ reply · 1–6 react · f save files · c copy · esc"
+            }
+            .to_owned()
+        } else if app.reply.is_some() {
+            tr("Reply…").into_owned()
         } else if b.group {
-            "Message everyone · @ to ask one bot".to_owned()
+            tr("Ask everyone · @ to ask one bot").into_owned()
         } else {
             format!("Message {}…", b.name)
         };
@@ -128,8 +154,8 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             put(buf, r.x + 3, comp_top + 1 + u(i), r.width.saturating_sub(4), l, t.text);
         }
     }
-    // Only a turn in this lane holds a message back; in a group a new one ends the round instead.
-    let here = b.works_in(app.thread.as_deref());
+    // Only a turn in this chat holds a message back; in a group a new one ends the round instead.
+    let here = b.works_here();
     let chip = if typing {
         match b.status {
             Status::Working if here && b.group => "goes in after this reply",
@@ -138,13 +164,11 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             _ => "",
         }
     } else if app.pick.is_some() {
-        if draft.text.is_empty() { "" } else { "↵ opens its thread · esc cancels" }
+        if draft.text.is_empty() { "" } else { "↵ replies to it · esc cancels" }
     } else if matches!(b.status, Status::Working | Status::NeedsInput) {
         "s stops"
-    } else if app.thread.is_none() {
-        "i to type · r reply in thread"
     } else {
-        "i to type"
+        "i to type · r reply"
     };
     if (draft.text.is_empty() || !typing) && used + w(chip) + 6 <= usize::from(r.width) {
         rput(buf, r.right() - 1, comp_top + 1, chip, t.dim);
@@ -154,8 +178,10 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         set_cursor(Position::new(r.x + 3 + u(cursor.0), cy.min(comp_top + ch)));
     }
 
+    let strip_top = queue_band(buf, r, app, &b, box_top, typing);
+
     // Transcript.
-    let body = Rect::new(r.x, top + 1, r.width, box_top.saturating_sub(top + 1));
+    let body = Rect::new(r.x, top + 1, r.width, strip_top.saturating_sub(top + 1));
     app.chat_height = usize::from(body.height);
     let built = build_chat(app, &b, usize::from(body.width.saturating_sub(1)));
     let total = built.lines.len();
@@ -171,6 +197,14 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             app.chat_scroll = total.saturating_sub(to.max(h));
         }
     }
+    let hits = find_hits(app, &built);
+    if let Some(f) = app.find.as_mut().filter(|f| f.reveal) {
+        f.reveal = false;
+        // The shown match to the middle of the chat.
+        if let Some(&(line, _, _)) = hits.get(f.active) {
+            app.chat_scroll = total.saturating_sub(h + line.saturating_sub(h / 2));
+        }
+    }
     app.chat_scroll = app.chat_scroll.min(max);
     app.chat_top = total > 0 && app.chat_scroll == max;
     let start = total.saturating_sub(h + app.chat_scroll);
@@ -182,6 +216,18 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             put(buf, body.x, body.y + u(li - start), 1, "▌", t.amber);
         }
     }
+    let active = app.find.as_ref().map_or(0, |f| f.active);
+    for (i, &(line, col, width)) in hits.iter().enumerate() {
+        if line >= start && line < start + h && col < usize::from(body.width) {
+            let width = u(width).min(body.width - u(col));
+            let style = if i == active { Modifier::REVERSED } else { Modifier::UNDERLINED | Modifier::BOLD };
+            restyle(
+                buf,
+                Rect::new(body.x + u(col), body.y + u(line - start), width, 1),
+                Style::default().add_modifier(style),
+            );
+        }
+    }
     for (li, bx, bw, click) in built.buttons {
         if li >= start && li < start + h {
             let y = body.y + u(li - start);
@@ -190,28 +236,94 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
     }
     if app.chat_scroll > 0 {
         let s = format!(" ↓ {} more ", app.chat_scroll);
-        rput(buf, r.right() - 1, box_top.saturating_sub(1), &s, t.btn);
+        rput(buf, r.right() - 1, strip_top.saturating_sub(1), &s, t.btn);
     }
     if typing {
-        skill_menu(buf, body, app);
+        command_menu(buf, body, app);
+    }
+    find_bar(buf, body, app);
+}
+
+/// Each match of the find in the message text drawn: (line, column, width). Also keeps the count and the shown match
+/// in step with them.
+// ponytail: matches within one drawn line; a match a wrap splits isn't found.
+fn find_hits(app: &mut App, built: &Built) -> Vec<(usize, usize, usize)> {
+    let Some(f) = app.find.as_mut() else { return vec![] };
+    let mut hits = vec![];
+    // Spaces alone find nothing, as on the other clients.
+    if f.query.text.trim().is_empty() {
+        f.matches = 0;
+        f.active = 0;
+        return hits;
+    }
+    for &(from, to) in &built.texts {
+        for (li, line) in built.lines.iter().enumerate().take(to).skip(from) {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let cols: Vec<usize> =
+                text.chars().map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)).collect();
+            for (a, z) in match_ranges(&text, &f.query.text) {
+                hits.push((li, cols[..a].iter().sum(), cols[a..z].iter().sum()));
+            }
+        }
+    }
+    f.matches = hits.len();
+    f.active = f.active.min(hits.len().saturating_sub(1));
+    hits
+}
+
+/// The find bar over the top of the chat: the text, where the shown match stands, the keys.
+fn find_bar(buf: &mut Buffer, body: Rect, app: &App) {
+    let Some(f) = app.find.as_ref() else { return };
+    let t = theme();
+    let row = Rect::new(body.x, body.y, body.width, 1);
+    fill(buf, row, t.panel);
+    let count = match (f.query.text.trim().is_empty(), f.matches) {
+        (true, _) => String::new(),
+        (false, 0) => tr("No results").into_owned(),
+        (false, n) => format!("{}/{n}", f.active + 1),
+    };
+    let hint = format!("{count}  ↵ ↓ next · ↑ previous · esc");
+    let rx = rput(buf, row.right() - 1, row.y, &hint, t.dim.patch(t.panel));
+    let x = row.x + 1;
+    let room = rx.saturating_sub(x + 2);
+    let text = &f.query.text;
+    if text.is_empty() {
+        put(buf, x, row.y, room, &tr("Find in conversation"), t.dim.patch(t.panel));
+    }
+    // A text longer than the room shows its end, where the typing is.
+    let mut shown = text.as_str();
+    while w(shown) > usize::from(room) {
+        shown = &shown[shown.chars().next().map_or(0, char::len_utf8)..];
+    }
+    let end = put(buf, x, row.y, room, shown, t.text.patch(t.panel));
+    let cursor = if shown.len() == text.len() { x + u(w(&text[..f.query.cursor])) } else { end };
+    if app.overlays.is_empty() {
+        set_cursor(Position::new(cursor, row.y));
     }
 }
 
-/// The `/` menu over the bottom of the transcript: the bot's skills matching what's typed.
-fn skill_menu(buf: &mut Buffer, body: Rect, app: &App) {
+/// The `/` list over the bottom of the transcript: the commands matching what's typed, the
+/// highlighted one kept in view.
+fn command_menu(buf: &mut Buffer, body: Rect, app: &App) {
     let t = theme();
-    let matches = app.skill_matches();
-    let n = u(matches.len().min(5)).min(body.height);
-    for (i, m) in matches.iter().take(usize::from(n)).enumerate() {
-        let y = body.bottom() - n + u(i);
-        fill(buf, Rect::new(body.x, y, body.width, 1), t.panel);
-        let name = if i == 0 { t.bold } else { t.text };
-        let x = put(buf, body.x + 3, y, 26, &truncate(&format!("/{}", m.id), 26), name.patch(t.panel)) + 2;
-        let hint = if i == 0 { "tab fills in" } else { "" };
-        let rx = rput(buf, body.right() - 1, y, hint, t.dim.patch(t.panel));
-        let about = if m.description.is_empty() { &m.name } else { &m.description };
+    let commands = app.slash_commands();
+    let sel = app.slash_selected(commands.len());
+    let n = u(commands.len().min(5)).min(body.height);
+    let start = sel.saturating_sub(usize::from(n).saturating_sub(1));
+    for (row, (i, c)) in commands.iter().enumerate().skip(start).take(usize::from(n)).enumerate() {
+        let y = body.bottom() - n + u(row);
+        let bg = if i == sel { t.sel } else { t.panel };
+        fill(buf, Rect::new(body.x, y, body.width, 1), bg);
+        let name = if i == sel { t.bold } else { t.text };
+        let x = put(buf, body.x + 3, y, 26, &truncate(&format!("/{}", c.name), 26), name.patch(bg)) + 2;
+        let hint = match (i == sel, c.action) {
+            (false, _) => "",
+            (true, SlashAction::Skill) => "tab fills in",
+            (true, _) => "↵ runs",
+        };
+        let rx = rput(buf, body.right() - 1, y, hint, t.dim.patch(bg));
         let room = usize::from(rx.saturating_sub(x + 1));
-        put(buf, x, y, u(room), &truncate(&about.replace('\n', " "), room), t.secondary.patch(t.panel));
+        put(buf, x, y, u(room), &truncate(&c.about(), room), t.secondary.patch(bg));
     }
 }
 
@@ -268,6 +380,36 @@ pub(super) fn with_bg(lines: Vec<Line<'static>>, width: usize, bg: Style) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn find_counts_only_what_messages_say() {
+        use crate::tui::app::Msg;
+        use serde_json::json;
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(crate::tui::net::Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.on_msg(Msg::Event(json!({"type":"bot","bot":{"id":"a","name":"Needle"}})));
+        for (seq, kind, text) in [(1, "user", "find the needle"), (2, "agent", "A NEEDLE, and a needle")] {
+            app.on_msg(Msg::Event(json!({"type":"entry", "entry":{"id": format!("e{seq}"), "botId":"a", "seq":seq,
+                "kind":kind, "turn":1, "data":{"author":"a", "text":text, "final":true}}})));
+        }
+        app.selected = Some("a".into());
+        app.open_find();
+        let built = build_chat(&app, &app.bots["a"].clone(), 80);
+        if let Some(f) = app.find.as_mut() {
+            f.query = Editor::with("needle");
+            f.active = 9;
+        }
+        let hits = find_hits(&mut app, &built);
+        assert_eq!(hits.len(), 3, "the bot's name over its reply isn't searched");
+        let (line, col, width) = hits[0];
+        let text = built.lines[line].to_string();
+        assert_eq!(text.chars().skip(col).take(width).collect::<String>(), "needle");
+        assert_eq!(app.find.as_ref().map(|f| (f.matches, f.active)), Some((3, 2)), "the shown match stays in range");
+        if let Some(f) = app.find.as_mut() {
+            f.query = Editor::with("  ");
+        }
+        assert!(find_hits(&mut app, &built).is_empty(), "spaces alone find nothing");
+    }
 
     #[test]
     fn composer_cursor_tracks_wraps_and_newlines() {

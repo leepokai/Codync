@@ -1,9 +1,11 @@
 // GitHub webhook (pull_request, issues, star): a linked member earns a role as soon as their pull request merges
-// or their issue opens, without opening the link again; each 100th star is celebrated in #milestones.
+// or their issue opens, without opening the link again; issues get their forum posts (issues.ts); each 100th
+// star is celebrated in #milestones.
 
 import { grant, notify, profile, roles, type Role } from "./guild.ts";
 import { verify } from "./hmac.ts";
 import type { Env } from "./index.ts";
+import { type Issue, syncIssue } from "./issues.ts";
 import { celebrate } from "./milestones.ts";
 
 interface Item {
@@ -15,7 +17,7 @@ interface Item {
 interface Payload {
   action: string;
   pull_request?: Item & { merged: boolean };
-  issue?: Item;
+  issue?: Item & Issue;
   repository?: { stargazers_count: number };
 }
 
@@ -32,6 +34,11 @@ export async function webhook(req: Request, env: Env): Promise<Response> {
   if (event === "star" && payload.action === "created" && payload.repository) {
     await celebrate(env, "stars", payload.repository.stargazers_count);
     return done();
+  }
+  if (event === "issues" && payload.issue) {
+    const { number } = payload.issue;
+    // The daily run posts an open issue whose post failed here; the role below goes ahead either way.
+    await syncIssue(env, payload.action, payload.issue).catch((e) => console.error("issue sync failed", { issue: number, error: String(e) }));
   }
   const earned = earnedBy(event, payload, env);
   if (!earned) return done();

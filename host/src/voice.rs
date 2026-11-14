@@ -1,17 +1,19 @@
 //! Realtime voice for calls on the user's own provider keys (`OpenAI` Realtime,
-//! Gemini Live). The keys stay in this computer's vault; a client starting a
+//! Gemini Live). The keys stay in this computer's vault (`keys`); a client starting a
 //! call gets a short-lived credential minted here and then streams audio to the
 //! provider directly, so audio never crosses the channel or the relay.
 
-use crate::market::vault;
+mod keys;
+
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use keys::Access;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const SLOT: &str = "voice";
 const TIMEOUT: Duration = Duration::from_secs(15);
 /// Speech to text: keep the speaker's language and script, and coding terms as written.
 const TRANSCRIBE_HINT: &str = "Keep the speaker's language and script. Keep code, file and product names as written.";
@@ -68,7 +70,7 @@ pub struct Defaults {
     speech: String,
 }
 
-const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+const REFRESH_EVERY: Duration = Duration::from_hours(24);
 
 fn defaults_key(p: Provider) -> String {
     format!("voice-defaults.{}", p.id())
@@ -82,7 +84,7 @@ fn defaults(store: &Store, p: Provider) -> Defaults {
 pub async fn refresh_loop(hub: std::sync::Arc<crate::hub::Hub>) {
     loop {
         for p in Provider::ALL {
-            if load(&hub.store).is_ok_and(|keys| !keys.get(p).is_empty())
+            if keys::configured(&hub.store, p).unwrap_or(false)
                 && let Err(e) = models(&hub.store, p).await
             {
                 tracing::info!(
@@ -94,61 +96,6 @@ pub async fn refresh_loop(hub: std::sync::Arc<crate::hub::Hub>) {
         }
         tokio::time::sleep(REFRESH_EVERY).await;
     }
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct Keys {
-    #[serde(default)]
-    openai: String,
-    #[serde(default)]
-    gemini: String,
-}
-
-impl Keys {
-    fn get(&self, p: Provider) -> &str {
-        match p {
-            Provider::OpenAi => &self.openai,
-            Provider::Gemini => &self.gemini,
-        }
-    }
-
-    fn set(&mut self, p: Provider, key: String) {
-        match p {
-            Provider::OpenAi => self.openai = key,
-            Provider::Gemini => self.gemini = key,
-        }
-    }
-}
-
-fn load(store: &Store) -> Result<Keys> {
-    Ok(vault::read(store, SLOT)?
-        .filter(|s| !s.is_empty())
-        .map(|s| serde_json::from_str(&s))
-        .transpose()?
-        .unwrap_or_default())
-}
-
-fn key(store: &Store, p: Provider) -> Result<String> {
-    let keys = load(store)?;
-    let key = keys.get(p);
-    if key.is_empty() {
-        bail!("No {} key on this computer. Add one in the call settings.", p.name());
-    }
-    Ok(key.to_owned())
-}
-
-/// `CODYNC_OPENAI_BASE_URL` (e.g. `http://127.0.0.1:8890`) points the `OpenAI` engine at a
-/// compatible server on this computer instead of `api.openai.com`: local speech to text and
-/// text to speech. Unset, nothing changes.
-fn openai_base() -> Option<String> {
-    std::env::var("CODYNC_OPENAI_BASE_URL")
-        .ok()
-        .map(|s| s.trim().trim_end_matches('/').to_owned())
-        .filter(|s| !s.is_empty())
-}
-
-fn openai_url(path: &str) -> String {
-    format!("{}{path}", openai_base().as_deref().unwrap_or("https://api.openai.com"))
 }
 
 /// Model ids and voices go into provider requests: letters, digits, `-`, `.`, `_`.
@@ -172,14 +119,14 @@ async fn send(p: Provider, req: reqwest::RequestBuilder) -> Result<Value> {
 
 /// A credential for one call's audio session: an `OpenAI` client secret (10 minutes)
 /// or a one-use Gemini ephemeral token.
-async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String> {
+async fn mint(p: Provider, access: &Access, model: &str, voice: &str) -> Result<String> {
     let v = match p {
         Provider::OpenAi => {
             let body = json!({
                 "expires_after": {"anchor": "created_at", "seconds": 600},
                 "session": {"type": "realtime", "model": model, "audio": {"output": {"voice": voice}}},
             });
-            send(p, crate::http().post(openai_url("/v1/realtime/client_secrets")).bearer_auth(key).json(&body)).await?
+            send(p, access.request(p, Method::POST, "/v1/realtime/client_secrets").json(&body)).await?
         }
         Provider::Gemini => {
             let now = chrono::Utc::now();
@@ -188,14 +135,7 @@ async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String
                 "expireTime": (now + chrono::Duration::minutes(30)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                 "newSessionExpireTime": (now + chrono::Duration::minutes(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             });
-            send(
-                p,
-                crate::http()
-                    .post("https://generativelanguage.googleapis.com/v1alpha/auth_tokens")
-                    .header("x-goog-api-key", key)
-                    .json(&body),
-            )
-            .await?
+            send(p, access.request(p, Method::POST, "/v1alpha/auth_tokens").json(&body)).await?
         }
     };
     let field = match p {
@@ -211,14 +151,13 @@ async fn mint(p: Provider, key: &str, model: &str, voice: &str) -> Result<String
 
 /// Which providers have a key here, with their default models.
 pub fn status(store: &Store) -> Result<Value> {
-    let keys = load(store)?;
-    let providers: Vec<Value> = Provider::ALL
+    let providers = Provider::ALL
         .iter()
         .map(|&p| {
             let defaults = defaults(store, p);
-            json!({"provider": p.id(), "configured": !keys.get(p).is_empty(), "defaults": defaults})
+            Ok(json!({"provider": p.id(), "configured": keys::configured(store, p)?, "defaults": defaults}))
         })
-        .collect();
+        .collect::<Result<Vec<Value>>>()?;
     Ok(json!({"providers": providers}))
 }
 
@@ -230,14 +169,9 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
             Provider::OpenAi => "marin",
             Provider::Gemini => "Kore",
         };
-        mint(p, key, &defaults(store, p).realtime, voice).await?;
+        mint(p, &Access::direct(p, key), &defaults(store, p).realtime, voice).await?;
     }
-    {
-        let _guard = store.connector_lock.lock().map_err(|_| anyhow!("credential storage is busy"))?;
-        let mut keys = load(store)?;
-        keys.set(p, key.to_owned());
-        vault::write(store, SLOT, &serde_json::to_string(&keys)?)?;
-    }
+    keys::save(store, p, key)?;
     if !key.is_empty() {
         // A new key may see newer models; the daily refresh would only get there tomorrow.
         let _ = models(store, p).await;
@@ -247,17 +181,17 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
 
 /// A credential for a call starting now.
 pub async fn session(store: &Store, p: Provider, model: &str, voice: &str) -> Result<Value> {
-    let key = key(store, p)?;
-    Ok(json!({"credential": mint(p, &key, checked(model)?, checked(voice)?).await?}))
+    let access = keys::access(store, p)?;
+    Ok(json!({"credential": mint(p, &access, checked(model)?, checked(voice)?).await?}))
 }
 
 /// Models the key can use, from the provider's own list: realtime (conversation),
 /// transcribe (speech to text) and speech (text to speech).
 pub async fn models(store: &Store, p: Provider) -> Result<Value> {
-    let key = key(store, p)?;
+    let access = keys::access(store, p)?;
     let entries: Vec<Model> = match p {
         Provider::OpenAi => {
-            let v = send(p, crate::http().get(openai_url("/v1/models")).bearer_auth(&key)).await?;
+            let v = send(p, access.request(p, Method::GET, "/v1/models")).await?;
             v["data"]
                 .as_array()
                 .into_iter()
@@ -274,10 +208,7 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 .collect()
         }
         Provider::Gemini => {
-            let req = crate::http()
-                .get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")
-                .header("x-goog-api-key", &key);
-            let v = send(p, req).await?;
+            let v = send(p, access.request(p, Method::GET, "/v1beta/models?pageSize=1000")).await?;
             v["models"]
                 .as_array()
                 .into_iter()
@@ -405,7 +336,7 @@ fn names_hint(names: &[String]) -> String {
 
 /// Speech to text for one utterance (`audio`: base64 WAV, 16 kHz mono).
 pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) -> Result<Value> {
-    let key = key(store, p)?;
+    let access = keys::access(store, p)?;
     let model = checked(model)?;
     let wav = STANDARD.decode(audio).map_err(|_| anyhow!("audio must be base64"))?;
     let names = spoken_names(store);
@@ -438,9 +369,8 @@ pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) ->
             );
             body.extend_from_slice(&wav);
             body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-            let req = crate::http()
-                .post(openai_url("/v1/audio/transcriptions"))
-                .bearer_auth(&key)
+            let req = access
+                .request(p, Method::POST, "/v1/audio/transcriptions")
                 .header("Content-Type", format!("multipart/form-data; boundary={boundary}"))
                 .body(body);
             send(p, req).await?["text"].as_str().unwrap_or_default().to_owned()
@@ -450,7 +380,7 @@ pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) ->
                 {"text": format!("Transcribe this audio exactly as spoken. {TRANSCRIBE_HINT} {} Reply with the transcript only; reply with nothing if there is no speech.", names_hint(&names))},
                 {"inlineData": {"mimeType": "audio/wav", "data": audio}},
             ]}]});
-            let v = send(p, gemini_generate(&key, model).json(&body)).await?;
+            let v = send(p, gemini_generate(&access, model).json(&body)).await?;
             v["candidates"][0]["content"]["parts"]
                 .as_array()
                 .into_iter()
@@ -464,19 +394,16 @@ pub async fn transcribe(store: &Store, p: Provider, model: &str, audio: &str) ->
 
 /// Text to speech for one stretch of a reply: `{audio: base64, format: "aac" | "wav"}`.
 pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &str) -> Result<Value> {
-    let key = key(store, p)?;
+    let access = keys::access(store, p)?;
     let (model, voice) = (checked(model)?, checked(voice)?);
     if text.trim().is_empty() || text.len() > 4000 {
         bail!("text must be 1–4000 bytes");
     }
     match p {
         Provider::OpenAi => {
-            // A local server answers WAV (no AAC encoder needed); the phone plays both.
-            let format = if openai_base().is_some() { "wav" } else { "aac" };
-            let body = json!({"model": model, "voice": voice, "input": text, "response_format": format});
-            let res = crate::http()
-                .post(openai_url("/v1/audio/speech"))
-                .bearer_auth(&key)
+            let body = json!({"model": model, "voice": voice, "input": text, "response_format": "aac"});
+            let res = access
+                .request(p, Method::POST, "/v1/audio/speech")
                 .json(&body)
                 .timeout(TIMEOUT * 4)
                 .send()
@@ -492,7 +419,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
                         .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned)
                 );
             }
-            Ok(json!({"audio": STANDARD.encode(&bytes), "format": format}))
+            Ok(json!({"audio": STANDARD.encode(&bytes), "format": "aac"}))
         }
         Provider::Gemini => {
             let body = json!({
@@ -502,7 +429,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
                     "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
                 },
             });
-            let v = send(p, gemini_generate(&key, model).json(&body)).await?;
+            let v = send(p, gemini_generate(&access, model).json(&body)).await?;
             let pcm = v["candidates"][0]["content"]["parts"]
                 .as_array()
                 .into_iter()
@@ -515,10 +442,9 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
     }
 }
 
-fn gemini_generate(key: &str, model: &str) -> reqwest::RequestBuilder {
-    crate::http()
-        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"))
-        .header("x-goog-api-key", key)
+fn gemini_generate(access: &Access, model: &str) -> reqwest::RequestBuilder {
+    access
+        .request(Provider::Gemini, Method::POST, &format!("/v1beta/models/{model}:generateContent"))
         .timeout(TIMEOUT * 4)
 }
 

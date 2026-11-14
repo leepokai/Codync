@@ -15,12 +15,17 @@ the GitHub roles.
 5. `/mentions` takes release notes signed with `MENTIONS_SECRET` and turns each `@login` of a linked member into
    a Discord mention. Auto Tag (`.github/workflows/auto-tag.yml`) uses it so the #releases post pings the people
    it thanks; the links stay private.
-6. Milestones go to #milestones, each once and with `@everyone`, with progress toward the goal and one-click
+6. Milestones go to #milestones, each once and without pinging anyone, with progress toward the goal and one-click
    links to share Codync on X, Threads, Reddit and LinkedIn: every 100th star (`/webhook` takes the repo's
    `star` events; goal `STAR_GOAL`) and every 1,000th desktop app download (GitHub has no download event, so a
    daily cron sums the installer downloads of every release: `.dmg`, `.exe`, `.AppImage`, `.deb`, `.rpm`,
    desktop Linux `.tar.gz`; goal `DOWNLOAD_GOAL`). The last milestone posted is kept in KV (`stars:milestone`,
    `downloads:milestone`), so a count that dips and climbs back doesn't repeat it.
+7. Every GitHub issue gets its own post, tagged **GitHub**, in #feature-requests (the `enhancement` label or a
+   "[Feature]" title) or #bug-reports (everything else), from the `issues` webhook. Closing on GitHub posts in
+   the thread and closes it (with **Fixed** / **Shipped** when completed); reopening reopens it. Replies in
+   Discord stay in Discord. KV keeps `issue:<number>` → `{ kind, thread }`, and the daily cron posts any open
+   issue that has no post yet (that brought the existing ones over, and it catches a missed webhook).
 
 `.github/workflows/contributor.yml` comments the link on a contributor's first merged pull request and first
 issue. The onboarding Server Guide has a "Link your GitHub" to-do that leads to the link in #welcome.
@@ -30,7 +35,8 @@ issue. The onboarding Server Guide has a "Link your GitHub" to-do that leads to 
 - Discord application **Codync** (Developer Portal): OAuth2 redirect `https://discord.codync.dev/callback`; bot
   not public. In the server, its role keeps Manage Roles and Create Invite (`guilds.join` needs it), sits above
   Contributor and Reporter, and can view and send in #moderator-only and #milestones (read-only for everyone
-  else), where it may also mention @everyone.
+  else). On the Support category it may create posts, send in threads and
+  manage threads (the moderator-only **GitHub** and **Shipped** tags, closing posts).
 - GitHub OAuth app **Codync Discord** (leepokai's developer settings): callback
   `https://discord.codync.dev/github/callback`, no scopes requested.
 - Repo webhook: `https://discord.codync.dev/webhook`, JSON, events `pull_request`, `issues` and `star`, secret =

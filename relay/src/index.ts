@@ -13,6 +13,7 @@
 // generic alert with the host's end-to-end encrypted title/body (`data.sealed`).
 
 import { ApnsClient, Notification, PushType, Priority } from "@fivesheepco/cloudflare-apns2";
+import { FcmError, fcmClient } from "./fcm.ts";
 
 export interface Env {
   APNS_TEAM_ID: string;
@@ -20,11 +21,15 @@ export interface Env {
   APNS_SIGNING_KEY: string;
   /** base64 of 32 random bytes: `openssl rand -base64 32` */
   TICKET_KEY: string;
+  /** JSON service account with Firebase Cloud Messaging API Admin permission. */
+  FCM_SERVICE_ACCOUNT?: string;
 }
 
 type ApnsEnv = "sandbox" | "production";
 type Kind = "alert" | "liveactivity";
-interface TicketPayload { t: string; e: ApnsEnv; k: Kind; b?: string }
+interface ApnsTicket { p?: "apns"; t: string; e: ApnsEnv; k: Kind; b?: string }
+interface FcmTicket { p: "fcm"; t: string; k: Kind; c: string; h: string; b?: string; r?: string }
+type TicketPayload = ApnsTicket | FcmTicket;
 
 const BUNDLE_ID = "com.pokai.Codync.ios";
 
@@ -50,8 +55,9 @@ async function ticketKey(env: Env): Promise<CryptoKey> {
 
 export async function sealTicket(env: Env, p: TicketPayload): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await ticketKey(env);
   const ct = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await ticketKey(env), new TextEncoder().encode(JSON.stringify(p))),
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(p))),
   );
   const out = new Uint8Array(iv.length + ct.length);
   out.set(iv);
@@ -62,7 +68,8 @@ export async function sealTicket(env: Env, p: TicketPayload): Promise<string> {
 export async function openTicket(env: Env, ticket: string): Promise<TicketPayload | null> {
   try {
     const bytes = fromB64url(ticket);
-    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, await ticketKey(env), bytes.slice(12));
+    const key = await ticketKey(env);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12) }, key, bytes.slice(12));
     return JSON.parse(new TextDecoder().decode(pt)) as TicketPayload;
   } catch {
     return null;
@@ -99,7 +106,22 @@ function client(env: Env, apnsEnv: ApnsEnv, kind: Kind, bundleId?: string): Apns
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 async function register(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { token?: string; env?: string; kind?: string; bundleId?: string } | null;
+  const parsed = await req.json().catch(() => null);
+  const body = parsed as { provider?: string; token?: string; env?: string; kind?: string; ctx?: string; computerId?: string; botId?: string; taskId?: string; bundleId?: string } | null;
+  if (body?.provider === "fcm") {
+    if (typeof body.token !== "string" || !/^[A-Za-z0-9_:.-]{20,4096}$/.test(body.token)) return json({ error: "invalid token" }, 400);
+    if (body.kind !== "alert" && body.kind !== "liveactivity") return json({ error: "invalid kind" }, 400);
+    if (typeof body.ctx !== "string" || !/^(local|[a-f0-9]{64})$/.test(body.ctx) ||
+        typeof body.computerId !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(body.computerId) ||
+        (body.kind === "liveactivity" && (typeof body.botId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.botId) ||
+          typeof body.taskId !== "string" || !/^[a-f0-9-]{36}$/.test(body.taskId)))) {
+      return json({ error: "invalid context" }, 400);
+    }
+    const ticket = await sealTicket(env, { p: "fcm", t: body.token, k: body.kind, c: body.ctx, h: body.computerId,
+      ...(body.kind === "liveactivity" ? { b: body.botId, r: body.taskId } : {}) });
+    return json({ ticket });
+  }
+  if (body?.provider !== undefined && body.provider !== "apns") return json({ error: "invalid provider" }, 400);
   if (typeof body?.token !== "string" || !/^(?:[0-9a-fA-F]{2}){16,100}$/.test(body.token)) return json({ error: "invalid token" }, 400);
   if (body.env !== "production" && body.env !== "sandbox") return json({ error: "invalid environment" }, 400);
   if (body.kind !== "alert" && body.kind !== "liveactivity") return json({ error: "invalid kind" }, 400);
@@ -157,11 +179,19 @@ export function tokenIsGone(error: { reason?: string; statusCode?: number }): bo
 }
 
 async function push(req: Request, env: Env): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as PushBody | null;
+  const parsed = await req.json().catch(() => null);
+  const body = parsed as PushBody | null;
   const t = body?.ticket ? await openTicket(env, body.ticket) : null;
   if (!body || !t) return json({ error: "invalid ticket" }, 403);
   // ponytail: no per-ticket rate limit; add a Durable Object counter if tickets get abused.
   try {
+    if (t.p === "fcm") {
+      const data = fcmData(t, body);
+      const urgent = t.k === "alert" || body.liveActivity?.event === "end" || body.liveActivity?.contentState?.status === "needsInput";
+      const sender = fcmClient(env.FCM_SERVICE_ACCOUNT);
+      await sender.push(t.t, data, urgent);
+      return json({ ok: true });
+    }
     if (t.k === "alert") {
       if (!body.alert || typeof body.alert !== "object" ||
           (body.alert.title !== undefined && typeof body.alert.title !== "string") ||
@@ -196,6 +226,8 @@ async function push(req: Request, env: Env): Promise<Response> {
     }
     return json({ ok: true });
   } catch (err) {
+    if (err instanceof FcmError) return json({ error: err.reason, gone: err.gone }, err.gone ? 410 : err.reason === "payload too large" ? 413 : 502);
+    if (err instanceof InvalidFcmPayload) return json({ error: "invalid FCM payload" }, 400);
     // ApnsError carries APNs' `reason` (e.g. "Unregistered") and `statusCode`.
     const e = err as { reason?: string; statusCode?: number; message?: string };
     const reason = e.reason ?? e.message ?? String(err);
@@ -211,9 +243,30 @@ async function push(req: Request, env: Env): Promise<Response> {
 export function latestTicketIndices(tickets: Array<TicketPayload | null>): Set<number> {
   const latest = new Map<string, number>();
   tickets.forEach((ticket, index) => {
-    if (ticket) latest.set(`${ticket.b ?? BUNDLE_ID}:${ticket.e}:${ticket.k}:${ticket.t.toLowerCase()}`, index);
+    if (ticket?.p === "fcm") latest.set(`fcm:${ticket.k}:${ticket.b ?? ""}:${ticket.t}`, index);
+    else if (ticket) latest.set(`apns:${ticket.b ?? BUNDLE_ID}:${ticket.e}:${ticket.k}:${ticket.t.toLowerCase()}`, index);
   });
   return new Set(latest.values());
+}
+
+class InvalidFcmPayload extends Error {}
+
+/** Data-only messages let Android open sealed text locally even in the background. */
+export function fcmData(ticket: FcmTicket, body: PushBody): Record<string, string> {
+  if (ticket.k === "alert") {
+    const data = body.data;
+    if (!body.alert || typeof body.alert.title !== "string" || typeof body.alert.body !== "string" ||
+        !data || typeof data.sealed !== "string" || typeof data.botId !== "string" ||
+        data.ctx !== ticket.c || data.computerId !== ticket.h) throw new InvalidFcmPayload();
+    return { kind: "alert", ctx: ticket.c, computerId: ticket.h, botId: data.botId, sealed: data.sealed,
+      title: body.alert.title.slice(0, 120), body: body.alert.body.slice(0, 400), category: body.category ?? "" };
+  }
+  if (!body.liveActivity || !ticket.b || !ticket.r) throw new InvalidFcmPayload();
+  let aps: Record<string, unknown>;
+  try { aps = liveActivityAps(body.liveActivity); } catch { throw new InvalidFcmPayload(); }
+  return { kind: "task", ctx: ticket.c, computerId: ticket.h, botId: ticket.b, taskId: ticket.r,
+    event: String(aps.event), timestamp: String(aps.timestamp),
+    staleDate: String(aps["stale-date"] ?? aps["dismissal-date"]), status: String(body.liveActivity.contentState?.status) };
 }
 
 export async function pushBatch(req: Request, env: Env, deliver = push): Promise<Response> {

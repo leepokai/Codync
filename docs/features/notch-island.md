@@ -5,7 +5,7 @@ MacBook it grows out of the notch; on a Mac without a notch, and on Windows and 
 from the top edge. It draws Codync's own bot characters. Design inspired by
 [@novra.design](https://www.instagram.com/novra.design/).
 
-Turn it on or off in **Settings → General → System** (*Show in notch* on macOS, *Show at top
+Turn it on or off in **Settings → General → System** (*Show in Notch* on macOS, *Show at top
 of screen* elsewhere) or the menu bar / tray menu's **Settings**. It is off by default while it
 is experimental. The setting belongs to the desktop installation (`showIsland` in `host-prefs.json`).
 
@@ -18,8 +18,8 @@ badge; alerts tint the card from the bottom (amber, green, red). The other bots 
 on the right.
 
 The working badge is Codync's thinking orb. The usage meter and the Usage tab show the tightest
-local plan limit and every limit with its reset (amber from 70 %, red from 90 %, like the menu
-bar). A bot can be messaged from the island, and ⌥Y / ⌥N answer an approval from any app.
+local plan limit and the limits of the login nearest a limit, with their resets (amber from 70 %,
+red from 90 %, like the menu bar). A bot can be messaged from the island, and ⌥Y / ⌥N answer an approval from any app.
 
 | State | When | What it shows |
 |---|---|---|
@@ -29,14 +29,15 @@ bar). A bot can be messaged from the island, and ⌥Y / ⌥N answer an approval 
 | Overview | Pointer rest or a click, bots working | The bot in focus with its last three tool calls (newest brightest) and the other bots as pills; each opens its conversation |
 | Nothing running | Opened with no bot working | "Nothing running right now." and Message a bot |
 | Approval | A permission card is pending | The command and the card's options, deny left and Allow once right (⌥N / ⌥Y from any app while it shows) |
+| Choice | A choice card (`request_decision`) is pending | The bot as needing you, with no options: choice cards are answered in the chat window |
 | Finished | A bot stops working | "*Bot* is done" with its last message, Open conversation / OK, for 5.2 s |
 | Failed | A bot stops on an error | "*Bot* stopped." with the error in red, until OK |
-| Message a bot | The header's bubble | The bot chip (click for the next bot) and a field; Enter sends, Esc closes |
+| Message a bot | The header's bubble, or the [voice input shortcut](voice-call.md#voice-input-shortcut) | The bot chip (click for the next bot) and a field with the mic (macOS); Enter sends, Esc closes. Until the shortcut is first used, a tip under the field says how to talk from any app |
 | Usage | The header's gauge or the usage meter | Claude and Codex limits side by side: each window's bar, percent and reset |
 
 Opened by hover, the island folds 0.8 s after the pointer leaves; opened by a click or a tab,
 10 s after (a 2 pt line counts down). The message field stays until it sends, Esc or a click in
-another app. An approval opens by itself and stays until answered; the Bots tab puts it off
+another app; switching to another tab while it dictates stops dictation and keeps the words. An approval opens by itself and stays until answered; the Bots tab puts it off
 until another arrives. Answers and messages go through the chat window (`respondPermission`,
 `send`), like the chat's own cards and composer. The states, sizes and motion are drawn in the
 design canvas the island was built from.

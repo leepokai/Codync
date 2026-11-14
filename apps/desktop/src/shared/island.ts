@@ -13,6 +13,7 @@ export interface IslandStep {
 
 /** One bot as the island shows it (`ref` = computerId/botId). */
 export interface IslandBot {
+  customIcon?: import('./custom-icons').CustomIcon
   ref: string
   name: string
   shape: string
@@ -43,7 +44,7 @@ export interface IslandOption {
 export interface IslandPermission {
   ref: string
   entryId: string
-  bot: Pick<IslandBot, 'name' | 'shape' | 'color' | 'backend'>
+  bot: Pick<IslandBot, 'name' | 'shape' | 'color' | 'backend' | 'customIcon'>
   headline: string
   title: string
   options: IslandOption[]
@@ -54,7 +55,7 @@ export interface IslandPermission {
 export interface IslandSummary {
   bots: IslandBot[]
   permissions: IslandPermission[]
-  /** This computer's plan limits (Claude, Codex), as the menu bar shows them. */
+  /** This computer's plan limits by agent (Claude, Codex); the island shows each agent's login nearest a limit. */
   usage: UsageProvider[]
 }
 
@@ -109,6 +110,8 @@ const BAR = 26
 
 export const isActive = (b: Pick<IslandBot, 'status'>) => b.status === 'working' || b.status === 'needsInput'
 export const isOpenMode = (mode: IslandMode) => mode !== 'hidden' && mode !== 'peek' && mode !== 'compact'
+/** Leaving the message tab hides its recording pill, so dictation still going there stops (keeping the words). */
+export const stopsDictation = (from: IslandTab, to: IslandTab, dictating: boolean) => dictating && from === 'message' && to !== 'message'
 
 export function islandMode(
   summary: IslandSummary,
@@ -199,4 +202,4 @@ export function notchOf(screens: NotchScreen[], bounds: { x: number; width: numb
 }
 
 /** The setting's name: a notch on the Mac, the top edge elsewhere. */
-export const islandLabel = (platform: string) => (platform === 'darwin' ? 'Show in notch' : 'Show at top of screen')
+export const islandLabel = (platform: string) => (platform === 'darwin' ? 'Show in Notch' : 'Show at top of screen')

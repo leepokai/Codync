@@ -1,15 +1,16 @@
-import AuthenticationServices
 import CodyncKit
 import SwiftUI
 
 struct InstallConnectorSheet: View {
     let item: MarketConnector
     var requestId: String? = nil
+    /// Opened by an Add: a connector with nothing to fill in installs at once. Opened to look at it,
+    /// nothing installs until Add in the header.
+    var addsAtOnce = true
     let done: () -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
-    @Environment(\.openURL) private var openURL
+    private let signInFlow = ConnectorSignInFlow()
     @State private var optionId = ""
     @State private var values: [String: String] = [:]
     @State private var installed: InstalledConnector?
@@ -21,6 +22,13 @@ struct InstallConnectorSheet: View {
         item.options.first { $0.id == optionId } ?? item.options.first
     }
 
+    private var missing: Bool {
+        option?.inputs.contains { $0.required && (values[$0.name] ?? $0.default ?? "").isEmpty } ?? true
+    }
+
+    /// After a try that failed, Add with nothing typed tries the connector it saved again.
+    private var retrying: Bool { installed != nil && !values.values.contains { !$0.isEmpty } }
+
     var body: some View {
         VStack(spacing: 0) {
             ModalHeader("Add connector") {
@@ -28,7 +36,7 @@ struct InstallConnectorSheet: View {
                     Spinner()
                 } else {
                     IconButton("Add", systemImage: "plus") { install() }
-                        .disabled(installed == nil && (option?.inputs.contains { $0.required && (values[$0.name] ?? $0.default ?? "").isEmpty } ?? true))
+                        .disabled(missing && !retrying)
                 }
             }
             form
@@ -37,8 +45,9 @@ struct InstallConnectorSheet: View {
         .task {
             guard !started else { return }
             started = true
-            if item.options.count == 1 && item.options[0].inputs.isEmpty { install() }
+            if addsAtOnce && item.options.count == 1 && item.options[0].inputs.isEmpty { install() }
         }
+        .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { values.removeAll() }
     }
 
@@ -57,16 +66,19 @@ struct InstallConnectorSheet: View {
             if item.options.count > 1 {
                 CardSection("Runs") {
                     ChoiceList(selection: $optionId, options: item.options.map { o in
-                        (id: o.id, label: o.kind == "remote" ? "Hosted by \(item.title)" : "On \(model.hostName) (\(o.kind))", detail: nil)
+                        (id: o.id, label: o.kind == "remote"
+                            ? L10n.tr("Hosted by {name}").replacingOccurrences(of: "{name}", with: item.title)
+                            : L10n.fill(L10n.tr("On {name} ({kind})"), ["name": model.hostName, "kind": o.kind]),
+                         detail: nil)
                     })
                 }
             }
             if let option {
-                CardSection("Setup", footer: "Keys are saved on \(model.hostName) only.") {
+                CardSection("Setup", footer: L10n.tr("Keys are saved on {name} only.").replacingOccurrences(of: "{name}", with: model.hostName)) {
                     if option.inputs.isEmpty {
                         Text(option.kind == "remote"
-                            ? "No keys needed here. If \(item.title) wants you to sign in, its sign-in page opens next."
-                            : "No setup needed.")
+                            ? L10n.tr("No keys needed here. If {name} wants you to sign in, its sign-in page opens next.").replacingOccurrences(of: "{name}", with: item.title)
+                            : L10n.tr("No setup needed."))
                             .foregroundStyle(Palette.secondary)
                     }
                     ForEach(option.inputs) { input in
@@ -80,14 +92,14 @@ struct InstallConnectorSheet: View {
                             }
                             .plainTextInput()
                             if let d = input.description {
-                                Text(d + (input.required ? "" : " (optional)")).font(.caption).foregroundStyle(Palette.secondary)
+                                Text(d + (input.required ? "" : L10n.tr(" (optional)"))).font(.caption).foregroundStyle(Palette.secondary)
                             }
                         }
                     }
                 }
             }
             if let error {
-                CardSection { Text(error).foregroundStyle(Palette.danger) }
+                CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger) }
             }
         }
         .textFieldStyle(.plain)
@@ -105,15 +117,14 @@ struct InstallConnectorSheet: View {
         Task {
             do {
                 guard let client = model.client else { return }
-                let c: InstalledConnector
-                if let installed { c = try await client.connectors().first(where: { $0.id == installed.id }) ?? installed }
-                else {
-                    c = try await model.installConnector(item, option: option.id, inputs: values)
-                    installed = c
-                    values.removeAll()
-                }
-                if c.needsSignIn {
-                    try await ConnectorSignInFlow(model: model, webAuthenticationSession: webAuthenticationSession, openURL: openURL).signIn(c.id)
+                // The host keeps the connector a try saved unless new values or another way to run it come in.
+                let c = try await model.installConnector(item, option: option.id, inputs: values)
+                installed = c
+                values.removeAll()
+                // Cancelled: the sheet stays as it is.
+                if c.needsSignIn, try await !signInFlow.signIn(c.id) {
+                    saving = false
+                    return
                 }
                 if let requestId {
                     try await client.finishConnectionRequest(requestId, connectorId: c.id)

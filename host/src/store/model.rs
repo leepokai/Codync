@@ -4,14 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// How a bot handles the agent's permission requests (wire values `ask` / `auto`).
+/// How a bot handles the permission requests that reach Codync (wire values `ask` / `auto`). Which ones reach it is
+/// the agent's mode (`BotConfig::mode`).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Permission {
-    /// Every request becomes an approval card on the phone.
-    Ask,
-    /// Requests are approved once, automatically. New bots start here.
+    /// Every request becomes an approval card on the phone. New bots start here, in the agent's Auto mode.
     #[default]
+    Ask,
+    /// Requests are approved once, automatically.
     Auto,
 }
 
@@ -74,11 +75,19 @@ pub struct BotConfig {
     pub backend: String,
     #[serde(default)]
     pub command: Option<String>,
+    /// The login profile it runs on (`agent::login_profiles`). None: the default one, the login this computer
+    /// already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_profile: Option<String>,
     /// Empty for a group.
     #[serde(default)]
     pub cwd: String,
     #[serde(default)]
     pub permission: Permission,
+    /// The agent mode to work in (see `agent::modes`): its own id, or `auto` for its Auto mode under any id (an agent
+    /// without one keeps its own). None: the mode its sessions open in, the agent's default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     /// The model's own settings (effort, fast…): ACP config option id → value.
@@ -87,14 +96,27 @@ pub struct BotConfig {
     /// Ask the agent for its Fast mode (Claude Code, Codex): faster replies for more usage.
     #[serde(default)]
     pub fast_mode: bool,
+    /// Agents that carry on, in order, when the bot's own can't answer (see `agent::fallback`).
+    #[serde(default)]
+    pub fallbacks: Vec<Fallback>,
+    /// The bot may set its own fallbacks (`chat` server's `set_fallbacks`). On unless the user turns it off.
+    #[serde(default = "yes")]
+    pub self_fallbacks: bool,
     #[serde(default)]
     pub pinned: bool,
-    /// Place in the roster, lowest first (after pinned bots). All 0 until the user drags one:
+    /// The computer's lead bot (see `chat::lead`): first in the roster. The host makes the first; the user may pick
+    /// another (`setLead`), never a client's or a bot's `createBot` / `updateBot`.
+    #[serde(default)]
+    pub lead: bool,
+    /// Place in the roster, lowest first (after the lead and pinned bots). All 0 until the user drags one:
     /// ties sort by recent activity (see `Hub::reorder_bots`).
     #[serde(default)]
     pub position: i64,
     #[serde(default)]
     pub hidden: bool,
+    /// The roster section it shows in; none when unset. Trimmed and checked (`hub::sections`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
     #[serde(default)]
     pub notify: Option<bool>,
     /// Connector ids (MCP servers) handed to the agent; see `market`.
@@ -106,6 +128,32 @@ pub struct BotConfig {
     /// The bot gets the built-in `computer` MCP server (see `screen`).
     #[serde(default)]
     pub computer: bool,
+    /// The bot gets the built-in `manage` MCP server: it creates bots and changes any bot's setup
+    /// (see `chat::manage`). The user turns it on; the bots such a bot creates have it too.
+    #[serde(default)]
+    pub manage_team: bool,
+    /// Other computers in the user's network list this bot and may message it (`network::publish`).
+    #[serde(default = "yes")]
+    pub offered_to_network: bool,
+    /// The user's cloud assistant lists this bot and may message it (`chat::team::assistant`).
+    #[serde(default = "yes")]
+    pub reachable_by_assistants: bool,
+    /// The bot that created this one with `create_bot`; none when the user did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
+    /// Uses the memory shared by all bots ("yours"). Unset: on for a bot in its own workspace, off for one in a
+    /// project folder (see `chat::memory::shared`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_memory: Option<bool>,
+    /// Keeps the harness's own memory (Claude Code's auto memory…) on beside Codync's. Off unless the user turns it
+    /// on, and only where Codync can turn it off (see `agent::own_memory::kept`). A client sending back the bot as
+    /// it got it sends `null` where there is no switch.
+    #[serde(default, deserialize_with = "null_as_false")]
+    pub harness_memory: bool,
+    /// When Codync summarizes the bot's chat ahead of time (see `agent::bot::compaction`); only for an agent it can
+    /// ask to, and the apps show it only there. `null` and values from a newer app read as the default.
+    #[serde(default)]
+    pub compaction: codync_mem::compaction::Threshold,
     /// Created without a name: the host names it from its first conversations (see `naming`)
     /// until the user renames it.
     #[serde(default)]
@@ -120,6 +168,36 @@ impl BotConfig {
     }
 }
 
+/// One step of a bot's fallback chain: another agent and the model to use on it.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Fallback {
+    pub backend: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// The login profile this step runs on (`agent::login_profiles`). None: the default one. Always on the wire,
+    /// `null` for none: an edit that leaves the key out keeps the saved one (`hub::patch`).
+    #[serde(default)]
+    pub login_profile: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub model_options: BTreeMap<String, String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn null_as_false<'de, D: serde::Deserializer<'de>>(value: D) -> Result<bool, D::Error> {
+    Ok(Option::<bool>::deserialize(value)?.unwrap_or(false))
+}
+
+/// The avatar colors and shapes every client offers.
+pub const AVATAR_COLORS: [&str; 11] =
+    ["black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray"];
+pub const AVATAR_SHAPES: [&str; 8] = ["blob", "pebble", "squircle", "tablet", "wedge", "hex", "cloud", "teardrop"];
+
 fn default_color() -> String {
     "blue".into()
 }
@@ -127,42 +205,20 @@ fn default_shape() -> String {
     "blob".into()
 }
 
-/// kv key for per-bot state in one lane (`what`: `session`, `seen`).
-pub fn lane_key(what: &str, bot_id: &str, lane: &Lane) -> String {
-    format!("lane.{what}.{bot_id}@{}", lane.key())
+/// kv key for the agent session of one of a bot's routine runs (`slot`: see `routines::session_slot`).
+pub fn run_session_key(bot_id: &str, slot: &str) -> String {
+    format!("lane.session.{bot_id}@{bot_id}/{slot}")
 }
 
-/// What the user has read (`markRead`): the main chat, one thread, or all of a chat.
-#[derive(Clone, Copy, Debug)]
-pub enum ReadScope<'a> {
-    All,
-    Chat,
-    Thread(&'a str),
-}
-
-/// Where an entry lives: a bot's or group's chat (`bot_id`), and optionally a thread in it,
-/// named by its root entry. Every lane a bot talks in has its own ACP session.
+/// Where entries go and a turn talks: a bot's own chat or a group's (`chat`, a bot id).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Lane {
     pub chat: String,
-    pub thread: Option<String>,
 }
 
 impl Lane {
     pub fn main(chat: &str) -> Self {
-        Self { chat: chat.to_owned(), thread: None }
-    }
-
-    pub fn in_thread(chat: &str, root: &str) -> Self {
-        Self { chat: chat.to_owned(), thread: Some(root.to_owned()) }
-    }
-
-    /// Stable text form for kv keys: `chat` or `chat/root`.
-    pub fn key(&self) -> String {
-        match &self.thread {
-            Some(t) => format!("{}/{t}", self.chat),
-            None => self.chat.clone(),
-        }
+        Self { chat: chat.to_owned() }
     }
 }
 
@@ -172,14 +228,31 @@ pub struct Entry {
     pub id: String,
     pub seq: i64,
     pub bot_id: String,
-    /// The thread's root entry; `None` in the main chat.
-    pub thread_id: Option<String>,
     pub rev: i64,
     pub kind: String,
     pub turn: i64,
     pub data: Value,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl Entry {
+    /// A message the chat shows as one: the user's, or an agent's finished reply.
+    pub fn is_message(&self) -> bool {
+        self.kind == EntryKind::User.as_str() || (self.kind == EntryKind::Agent.as_str() && self.data["final"] == true)
+    }
+}
+
+/// A message's text, or the names of its files when it has none.
+pub fn message_text(data: &Value) -> String {
+    match data["text"].as_str().unwrap_or_default() {
+        "" => {
+            let names: Vec<&str> =
+                data["attachments"].as_array().into_iter().flatten().filter_map(|a| a["name"].as_str()).collect();
+            names.join(", ")
+        }
+        text => text.to_owned(),
+    }
 }
 
 pub struct LastMessage {

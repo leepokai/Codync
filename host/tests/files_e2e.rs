@@ -27,7 +27,6 @@ impl Host {
     async fn start() -> Self {
         let home = std::env::temp_dir().join(format!("codync-files-e2e-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        common::seed_memory_runtime(&home);
         let (child, base) = common::serve(&home).await;
         let mut host = Self { child, home, base, token: String::new() };
         std::fs::read_to_string(host.home.join("token")).unwrap().trim().clone_into(&mut host.token);
@@ -44,7 +43,8 @@ impl Host {
             .post(format!("{}/api/{method}", self.base))
             .bearer_auth(&self.token)
             .json(&body)
-            .timeout(Duration::from_secs(10))
+            // As long as `common::host`'s: on a busy machine (parallel tests) `createBot` alone can take over 10 s.
+            .timeout(Duration::from_mins(2))
             .send()
             .await;
         let response = response_result.unwrap();
@@ -75,7 +75,7 @@ async fn ready(host: &Host, bot: &str, expected_files: usize) -> Vec<Value> {
 }
 
 #[tokio::test]
-async fn publishes_all_types_with_final_text_and_survives_restart_workspace_changes_and_threads() {
+async fn publishes_all_types_with_final_text_and_survives_restart_workspace_changes_and_replies() {
     use base64::Engine as _;
     let mut host = Host::start().await;
     let cwd = host.home.join("workspace");
@@ -134,28 +134,10 @@ async fn publishes_all_types_with_final_text_and_survives_restart_workspace_chan
     host.call("send", json!({"botId":bot,"text":"share-files resumed"})).await;
     ready(&host, bot, 8).await;
     assert!(cwd.join("resumed").exists());
-    host.call("send", json!({"botId":bot,"text":"share-files in a thread", "threadId":root["entry"]["id"]})).await;
-    let waited = tokio::time::timeout(Duration::from_secs(30), async {
-        loop {
-            let response = host.call("thread", json!({"botId":bot,"rootId":root["entry"]["id"]})).await;
-            let files: Vec<_> = response["entries"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter(|e| e["data"]["files"].is_array())
-                .cloned()
-                .collect();
-            if files.len() == 4 {
-                let file = &files[0];
-                host.call("readFile", json!({"entryId":file["id"],"fileId":file["data"]["files"][0]["id"],"offset":0}))
-                    .await;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await;
-    waited.unwrap();
+    host.call("send", json!({"botId":bot,"text":"share-files in a reply", "replyTo":root["entry"]["id"]})).await;
+    let entries = ready(&host, bot, 12).await;
+    let file = entries.iter().rfind(|e| e["data"]["files"].is_array()).unwrap();
+    host.call("readFile", json!({"entryId":file["id"],"fileId":file["data"]["files"][0]["id"],"offset":0})).await;
     let mut updated = created["bot"].clone();
     updated["cwd"] = host.home.to_string_lossy().into();
     host.call("updateBot", updated).await;
@@ -188,11 +170,16 @@ async fn rejects_invalid_sources_without_a_file_entry() {
 async fn rejected(path: &std::path::Path) {
     let waited = tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if let Ok(data) = std::fs::read(path) {
-                let results: Value = serde_json::from_slice(&data).unwrap();
+            // A file that doesn't parse yet is still being written by the agent.
+            if let Ok(data) = std::fs::read(path)
+                && let Ok(results) = serde_json::from_slice::<Value>(&data)
+            {
                 assert!(
                     results.as_array().unwrap().iter().all(|result| result["isError"] == true
-                        && result["content"][0]["text"].as_str().unwrap().contains("own chat and threads")),
+                        && result["content"][0]["text"]
+                            .as_str()
+                            .unwrap()
+                            .contains("only available in the bot's own chat")),
                     "{results}"
                 );
                 break;
@@ -238,6 +225,48 @@ async fn groups_routines_and_delegated_turns_cannot_publish_files() {
     rejected(&results_path).await;
     let history = host.call("history", json!({"botId":bot})).await;
     assert!(history["entries"].as_array().unwrap().iter().all(|entry| entry["data"]["files"].is_null()));
+}
+
+#[tokio::test]
+async fn a_voice_note_goes_inside_its_message() {
+    let host = Host::start().await;
+    std::fs::write(host.home.join("note.m4a"), b"\0\0\0\x18ftypM4A voice").unwrap();
+    std::fs::write(host.home.join("report.pdf"), b"%PDF-example").unwrap();
+    let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/file_agent.py");
+    let created = host.call("createBot", json!({"name":"Speaker", "backend":"custom", "cwd":host.home, "command":common::python_agent(&agent), "connectors":[], "notify":false})).await;
+    let bot = created["bot"]["id"].as_str().unwrap();
+    host.call("send", json!({"botId":bot,"text":"spoken"})).await;
+    let entries = spoken(&host, bot).await;
+    let shared: Vec<_> = entries.iter().filter(|e| e["data"]["files"].is_array()).collect();
+    assert_eq!(shared.len(), 1, "{entries:?}");
+    let message = &shared[0]["data"];
+    assert_eq!((message["text"].as_str(), message["voiceNote"].as_bool()), (Some("Here is the **plan**."), Some(true)));
+    assert_eq!((&message["files"][0]["name"], &message["files"][0]["playsInChat"]), (&json!("note.m4a"), &json!(true)));
+    // The voice note's message is the turn's reply: what the agent wrote as its reply stays in the trace.
+    assert!(entries.iter().all(|e| e["data"]["text"] != "The files are ready." || e["data"]["final"] != true));
+}
+
+/// The bot's history once its `spoken` turn settled: its voice message saved, the bot idle.
+async fn spoken(host: &Host, bot: &str) -> Vec<Value> {
+    let results = host.home.join("file-results.json");
+    let waited = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let sync = common::snapshot(&host.base, &host.token).await;
+            let idle = sync["bots"].as_array().unwrap().iter().any(|b| b["id"] == bot && b["status"] == "idle");
+            let history = host.call("history", json!({"botId": bot})).await;
+            let entries = history["entries"].as_array().unwrap();
+            if idle && results.exists() && entries.iter().any(|e| e["data"]["voiceNote"] == true) {
+                return entries.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    let entries = waited.unwrap();
+    let results: Value = serde_json::from_slice(&std::fs::read(&results).unwrap()).unwrap();
+    assert_eq!(results[0]["content"][0]["text"], r#"{"sent":true}"#, "{results}");
+    assert_eq!(results[1]["isError"], true, "only a voice note goes with a message: {results}");
+    entries
 }
 
 #[tokio::test]

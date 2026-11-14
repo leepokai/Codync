@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The desktop demo's built bundle.
+    "public/demo/**",
   ]),
 ]);
 

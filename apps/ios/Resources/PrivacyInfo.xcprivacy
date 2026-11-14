@@ -21,7 +21,7 @@
 				<string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
 			</array>
 		</dict>
-		<!-- Crash reports (exception and signal names, binary + offset frames, no message) sent with usage analytics. -->
+		<!-- Crash reports (exception and signal names, code addresses, no message) sent with usage analytics. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeCrashData</string>

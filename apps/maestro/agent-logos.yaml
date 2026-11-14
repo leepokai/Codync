@@ -1,0 +1,113 @@
+# Settings › Appearance › Show agent logos is on by default, and switched off it stays off after a relaunch.
+# The bot list's logos themselves are checked on the desktop (apps/desktop/e2e/agent-logos.spec.ts).
+# Needs a signed-in phone (`npm run phone-account`, docs/guides/dev-app.md), so it keeps the app's state:
+# run it apart from `smoke`, whose welcome flow clears that state. A computer in the account leaves a fresh phone on
+# first-run setup's choice page, which it skips to reach the tabs.
+# Android reports the switch's state on its row, not on the row's label, and matches only `checked: true` there,
+# hence the per-platform checks.
+# One flow for iPhone and Android (docs/guides/test-stack.md):
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags settings apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - settings
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# `when` doesn't wait: first let the spinner give way to one page or the other.
+- extendedWaitUntil:
+    visible: "(Connect a computer|Settings)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Connect a computer"
+    commands:
+      - tapOn: "Skip"
+- tapOn: "Settings"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          text: "Show agent logos.*"
+          checked: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          containsChild: "Show agent logos"
+          checked: true
+- tapOn: "Show agent logos.*"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          text: "Show agent logos.*"
+          checked: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          containsChild: "Show agent logos"
+      - assertNotVisible:
+          containsChild: "Show agent logos"
+          checked: true
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - stopApp: com.pokai.Codync.ios.dev
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - stopApp: com.pokai.Codync.android.dev
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: "Settings"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          text: "Show agent logos.*"
+          checked: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          containsChild: "Show agent logos"
+      - assertNotVisible:
+          containsChild: "Show agent logos"
+          checked: true
+# Back to the default.
+- tapOn: "Show agent logos.*"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          text: "Show agent logos.*"
+          checked: true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertVisible:
+          containsChild: "Show agent logos"
+          checked: true

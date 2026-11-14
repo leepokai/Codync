@@ -1,0 +1,77 @@
+# A picture a bot shared, on the phones: a tap opens it full size, a double tap zooms it, Copy image copies it (the button
+# says Copied), holding it opens the menu with Copy image and Copy name, and Download fetches it and opens the share sheet,
+# after which its card says Downloaded. The phone must already be signed in and paired with the host (a worktree's
+# sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that; the
+# flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags attachments \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FILE_AGENT="$PWD/host/tests/fixtures/file_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - attachments
+onFlowComplete:
+  - runScript:
+      file: image-viewer.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: image-viewer.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# A bot made a moment ago can take a while to reach the phone's list.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+- tapOn: ${output.bot.name}
+- extendedWaitUntil:
+    visible: "The files are ready."
+    timeout: 20000
+# The picture comes first, above its name on the card.
+- tapOn:
+    text: "chart.png"
+    index: 0
+- extendedWaitUntil:
+    visible: "Copy image"
+    timeout: 10000
+- doubleTapOn:
+    point: "50%,55%"
+# "Copied" shows for 1.5 s: don't wait for the screen to settle first.
+- tapOn:
+    text: "Copy image"
+    waitToSettleTimeoutMs: 300
+- assertVisible: "Copied"
+- longPressOn:
+    point: "50%,55%"
+- assertVisible: "Copy image"
+- tapOn: "Copy name"
+- assertNotVisible: "Copy name"
+- tapOn: "Download.*"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: "(Save to Files|Save Image)"
+          timeout: 20000
+      - tapOn: "Close"
+- tapOn: "Close"
+- extendedWaitUntil:
+    visible: ".*Downloaded"
+    timeout: 20000

@@ -1,0 +1,273 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { appLanguages, intlLocale, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
+
+test('chinese follows the choice, and a system preference follows the computer', () => {
+  assert.equal(usesChinese('zh', false), true)
+  assert.equal(usesChinese('en', true), false)
+  assert.equal(usesChinese('system', true), true)
+  assert.equal(usesChinese('system', false), false)
+  assert.equal(usesChinese('zh-Hant', false), true)
+  assert.equal(systemIsChinese('zh-Hans-CN'), true)
+  assert.equal(systemIsChinese('zh-Hant-TW'), true)
+  assert.equal(systemIsChinese('en-US'), false)
+  assert.equal(systemScript('zh-TW'), 'hant')
+  assert.equal(systemScript('zh-HK'), 'hant')
+  assert.equal(systemScript('zh-Hant-TW'), 'hant')
+  assert.equal(systemScript('zh_MO.UTF-8'), 'hant')
+  assert.equal(systemScript('zh-CN'), 'hans')
+  assert.equal(systemScript('zh-Hans-CN'), 'hans')
+  assert.equal(systemScript('en-US'), null)
+})
+
+test('known chrome becomes Chinese and everything else stays', () => {
+  assert.equal(translate('Pair a computer', 'zh', false), '配对一台电脑')
+  assert.equal(translate('  Pair a computer\n', 'zh', false), '配对一台电脑')
+  assert.equal(translate('Pair a computer', 'en', true), 'Pair a computer')
+  assert.equal(translate('Not a phrase', 'system', true), 'Not a phrase')
+  assert.equal(languageTitle('system', 'zh', false), '跟随系统')
+  assert.equal(languageTitle('zh', 'en', true), '简体中文')
+  assert.equal(languageTitle('zh-Hant', 'en', true), '繁體中文')
+  assert.equal(translate('Settings', 'zh-Hant', 'en'), '設定')
+  assert.equal(translate('Files', 'zh-Hant', 'en'), '檔案')
+  assert.equal(translate('Settings', 'system', 'zh-TW'), '設定')
+  assert.equal(translate('Settings', 'system', 'zh-CN'), '设置')
+  assert.equal(languageTitle('en', 'zh', false), 'English')
+  assert.equal(translate('Personal', 'zh', false), '个人')
+  assert.equal(translate('This Mac', 'zh', false), '这台 Mac')
+  assert.equal(translate('Show in notch', 'zh', false), '在屏幕顶部显示')
+  assert.equal(translate('Show in Notch', 'zh', false), '在屏幕顶部显示')
+  assert.equal(translate('Voice input shortcut', 'zh', false), '语音输入快捷键')
+  assert.equal(translate('Right ⌘ twice', 'zh', false), '右 ⌘ 两次')
+  assert.equal(translate('Left ⌘ twice', 'zh', false), '左 ⌘ 两次')
+  // The speech helper's message for Siri and Dictation off reaches the user translated.
+  assert.match(translate('Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.', 'zh', false), /打开听写/)
+  assert.equal(translate('Claude Code (not installed)', 'zh', false), 'Claude Code（未安装）')
+  assert.equal(translate('Copy template', 'zh', false), '复制模板')
+  assert.equal(translate('Siri and Dictation are disabled', 'zh', false), 'Siri 和听写已关闭')
+  assert.equal(
+    translate('the Codync cloud refused (403 forbidden): Sign in on the computer to use remote screen relay.', 'zh', false),
+    'Codync 云拒绝了（403 禁止）：请先在电脑上登录，才能使用远程屏幕中继。',
+  )
+  assert.equal(
+    translate('Tip: double-tap the right ⌘ to talk from any app, then tap it once to send.', 'zh', false),
+    '提示：连按两次右侧 ⌘，就能在任何应用里说话，再按一次就发送。',
+  )
+  assert.equal(translate('Theme', 'zh', false), '主题')
+  assert.equal(translate('Only changes appearance on this device.', 'zh', false), '只改变这台设备的外观。')
+  assert.equal(translate('Continue on this Mac', 'zh', false), '在这台 Mac 上继续')
+  assert.equal(translate('Your coding agents,\nas teammates.', 'zh', false), '你的编程助手，\n像队友一样。')
+  assert.equal(translate('Open {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '打开 Codync Dev')
+  assert.equal(translate('Quit {name}', 'zh', false).replaceAll('{name}', 'Codync Dev'), '退出 Codync Dev')
+  assert.equal(translate('Pair iPhone…', 'zh', false), '配对 iPhone…')
+  assert.equal(translate('Remote screen', 'zh', false), '远程屏幕')
+  assert.equal(translate('Text Size', 'zh', false), '文字大小')
+  assert.equal(translate('Restart host', 'zh', false), '重启 Host')
+  assert.equal(translate('2 bots working', 'zh', false), '2 个 Bot 正在工作')
+  assert.equal(translate('Check for updates', 'zh', false), '检查更新')
+  assert.equal(translate('Routine · News', 'zh', false), '例行任务 · News')
+  assert.equal(translate('Routine · News', 'zh-Hant', 'en'), '例行任務 · News')
+  assert.equal(translate('Turn {turn}', 'zh', false), '第 {turn} 轮')
+  assert.equal(translate('Tool', 'zh', false), '工具')
+  assert.equal(translate('Tool', 'zh-Hant', 'en'), '工具')
+  assert.equal(translate('Computer access is ready.', 'zh', false), '电脑访问已就绪。')
+  assert.equal(translate('Storage', 'zh', false), '存储')
+  assert.equal(translate('Extensions sections', 'zh', false), '扩展分类')
+  assert.equal(
+    translate('listing skills on GitHub: https://api.github.com/repos/anthropics/skills answered 403 Forbidden', 'zh', false),
+    '无法列出 GitHub 上的技能：https://api.github.com/repos/anthropics/skills 返回了 403 Forbidden',
+  )
+  assert.equal(
+    translate('Remote screen is off. On the computer, open Codync → Settings → Computer access. Permissions are set separately on each computer.', 'zh', false),
+    '远程屏幕已关闭。在电脑上打开 Codync → 设置 → 电脑访问。每台电脑的权限要单独设置。',
+  )
+  assert.equal(translate('Updates are available in release builds.', 'zh', false), '正式版才会提供更新。')
+  assert.equal(translate('Privacy', 'zh', false), '隐私')
+  assert.equal(translate('Share usage analytics', 'zh', false), '共享用量分析')
+  assert.equal(translate('Fast mode', 'zh', false), '快速模式')
+  assert.equal(translate('Use the computer', 'zh', false), '使用电脑')
+  assert.equal(translate('{size} pt (Default)', 'zh', false), '{size} pt（默认）')
+  assert.equal(translate('Full conversation', 'zh', false), '完整对话')
+  assert.equal(translate('Settings', 'zh', false), '设置')
+  assert.equal(translate('Ask {name}', 'zh', false), '问 {name}')
+  assert.equal(translate('Stopped.', 'zh', false), '已停止。')
+  assert.equal(translate('Load earlier messages', 'zh', false), '加载更早的消息')
+  assert.equal(translate('Today', 'zh', false), '今天')
+  assert.equal(translate('Yesterday', 'zh', false), '昨天')
+  assert.equal(translate('No dreams yet.', 'zh', false), '还没有梦境。')
+  assert.equal(translate('Standing instructions', 'zh', false), '常驻指令')
+  assert.equal(translate('Your coding agents, as teammates.', 'zh', false), '你的编程智能体，像队友一样。')
+  assert.equal(translate('Mark as Read', 'zh', false), '标为已读')
+  assert.equal(translate('Resuming session…', 'zh', false), '正在恢复会话…')
+  assert.equal(translate('Search agents, connectors and skills', 'zh', false), '搜索智能体、连接器和技能')
+  assert.equal(translate('Apps', 'zh', false), '应用')
+  assert.equal(translate('Agents', 'zh', false), '智能体')
+  assert.equal(translate('Installed', 'zh', false), '已安装')
+  assert.equal(translate('Not installed', 'zh', false), '未安装')
+  assert.equal(translate('Set up', 'zh', false), '设置')
+  assert.equal(translate('Writing a reply…', 'zh', false), '正在写回复…')
+  assert.equal(translate('Downloading Codebuddy Code…', 'zh', false), '正在下载 Codebuddy Code…')
+  assert.equal(translate('Needs approval: Bash', 'zh', false), '需要批准：Bash')
+  assert.equal(translate('Gmail, Slack, GitHub, Notion and 1,000 more apps', 'zh', false), 'Gmail、Slack、GitHub、Notion 等 1,000 多个应用')
+  assert.equal(translate('Storage', 'zh', false), '存储')
+  assert.equal(translate('New skill', 'zh', false), '新建技能')
+  assert.equal(translate('Composio API key', 'zh', false), 'Composio API 密钥')
+  assert.equal(translate('When to use it', 'zh', false), '何时使用')
+  assert.equal(translate("Runs on {name} in the bot's project folder. Quotes work like in a shell.", 'zh', false), '在 {name} 上、Bot 的项目文件夹里运行。引号用法和 shell 一样。')
+  assert.equal(translate('Add connector', 'zh', false), '添加连接器')
+  assert.equal(translate('Name your group', 'zh', false), '给群聊起个名字')
+  assert.equal(translate('Nothing installed', 'zh', false), '还没有安装')
+  assert.equal(translate('Remove {name}?', 'zh', false), '移除 {name}？')
+  assert.equal(translate('No setup needed.', 'zh', false), '无需设置。')
+  assert.equal(translate('On {name} ({kind})', 'zh', false), '在 {name} 上（{kind}）')
+  assert.equal(translate('Runs the official installer on this Mac.', 'zh', false), '在 this Mac 上运行官方安装程序。')
+  assert.equal(translate('Use Claude subscription', 'zh', false), '使用 Claude 订阅')
+  assert.equal(translate('Support', 'zh', false), '支持')
+  assert.equal(translate('Devices that can use FORWARDXU-MC3', 'zh', false), '可以使用 FORWARDXU-MC3 的设备')
+  assert.equal(translate('Paired with a QR code · seen 10:54', 'zh', false), '通过二维码配对 · 10:54 见过')
+  assert.equal(translate("CodeBuddy Code's own memory", 'zh', false), 'CodeBuddy Code 自己的记忆')
+  assert.equal(translate("About {name}'s own memory", 'zh', false), '关于 {name} 自己的记忆')
+  assert.equal(translate('A memory of its own', 'zh', false), '它自己的记忆')
+  assert.equal(translate('Usage', 'zh', false), '用量')
+  assert.equal(translate('Computers & devices', 'zh', false), '电脑和设备')
+  assert.equal(translate('Reachable from anywhere through Cloudflare (encrypted).', 'zh', false), '通过 Cloudflare 随时随地连接（已加密）。')
+  assert.equal(
+    translate('Reachable from anywhere through Private relay (relay.example.com) (encrypted).', 'zh', false),
+    '通过私人中继（relay.example.com）随时随地连接（已加密）。',
+  )
+  assert.equal(translate('Use Anthropic Console (API usage billing)', 'zh', false), '使用 Anthropic 控制台（按 API 用量计费）')
+  assert.equal(translate('12 pt (Default)', 'zh', false), '12 pt（默认）')
+  assert.equal(
+    translate("Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.", 'zh', false),
+    'Claude Code 还没有在这台电脑上设置好。安装 Claude Code，然后运行 `claude auth login`。',
+  )
+  assert.equal(
+    translate("Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.", 'en', true),
+    "Claude Code isn't set up on this computer. Install Claude Code and run `claude auth login`.",
+  )
+})
+
+
+test('each supported locale follows regional system tags and explicit choices win', () => {
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it'] as const) {
+    assert.equal(resolvedLanguage('system', `${language.toUpperCase()}_XX.UTF-8`), language)
+    assert.equal(resolvedLanguage(language, 'zh-TW'), language)
+    assert.equal(usesChinese(language, 'zh-TW'), false)
+    assert.notEqual(translate('Settings', language), 'Settings')
+    assert.equal(translate('Settings', 'system', `${language}-XX`), translate('Settings', language))
+    assert.equal(translate('An unknown phrase', language), 'An unknown phrase')
+    assert.equal(translate('Remove {name}?', language).replaceAll('{name}', 'Done').includes('Done'), true)
+    assert.equal(resetLine('resets 3h 20m', language).includes('3h 20m'), true)
+    assert.notEqual(languageTitle(language, 'en', 'en'), 'Follow system')
+  }
+  assert.equal(new Set(appLanguages).size, 12)
+  assert.equal(resolvedLanguage('system', 'nl-NL'), 'en')
+  assert.equal(translate('Settings', 'en', 'ja-JP'), 'Settings')
+})
+
+
+test('Brazilian Portuguese follows Portuguese regions and keeps its native menu name', () => {
+  assert.deepEqual(appLanguages.slice(-4), ['es', 'pt-BR', 'ru', 'it'])
+  assert.equal(languageTitle('pt-BR', 'en', 'en'), 'Português (Brasil)')
+  for (const tag of ['pt', 'pt-BR', 'pt_BR.UTF-8', 'pt-PT', 'pt-AO', 'pt-MZ', 'PT_cv.UTF-8']) {
+    assert.equal(resolvedLanguage('system', tag), 'pt-BR', tag)
+    assert.equal(translate('Settings', 'system', tag), translate('Settings', 'pt-BR'), tag)
+  }
+  assert.equal(resolvedLanguage('pt-BR', 'zh-TW'), 'pt-BR')
+  assert.equal(usesChinese('pt-BR', 'zh-TW'), false)
+  assert.equal(translate('Settings', 'en', 'pt-BR'), 'Settings')
+  assert.equal(resolvedLanguage('system', 'en-US'), 'en')
+  assert.equal(resolvedLanguage('system', ''), 'en')
+})
+
+test('English reset text remains literal and absolute dates do not become durations', () => {
+  assert.equal(resetLine('resets Sep 26 at 12pm', 'en'), 'resets Sep 26 at 12pm')
+  assert.equal(resetLine('resets 3h 20m', 'en'), 'resets 3h 20m')
+  for (const language of ['ja', 'ko', 'fr', 'de', 'es', 'pt-BR', 'ru', 'it'] as const) {
+    assert.equal(resetLine('resets Sep 26 at 12pm', language), `${translate('resets', language)} Sep 26 at 12pm`)
+  }
+})
+
+
+test('Russian resolves regional tags and keeps its native menu name', () => {
+  for (const tag of ['ru', 'ru-RU', 'ru_RU.UTF-8', 'ru-UA']) {
+    assert.equal(resolvedLanguage('system', tag), 'ru')
+    assert.equal(translate('Settings', 'system', tag), 'Настройки')
+  }
+  assert.equal(languageTitle('ru', 'en', 'en'), 'Русский')
+  assert.equal(resolvedLanguage('ru', 'pt-BR'), 'ru')
+})
+
+test('Italian resolves regional tags and keeps its native menu name', () => {
+  for (const tag of ['it', 'it-IT', 'it_IT.UTF-8', 'it-CH']) {
+    assert.equal(resolvedLanguage('system', tag), 'it')
+    assert.equal(translate('Settings', 'system', tag), translate('Settings', 'it'))
+  }
+  assert.equal(languageTitle('it', 'en', 'en'), 'Italiano')
+  assert.equal(resolvedLanguage('it', 'pt-BR'), 'it')
+})
+
+test('bot, routine and message slots keep what the user wrote; other slots still translate', () => {
+  // "connected", "Reviewer" and "Settings" are catalog phrases, but as a name or a message they stay as written.
+  assert.equal(translate('Created bot connected', 'ru', false), 'Создан бот connected')
+  assert.equal(translate('Created bot Reviewer', 'ru', false), 'Создан бот Reviewer')
+  assert.equal(translate('Routine · Проверка почты', 'ru', false), 'Рутина · Проверка почты')
+  assert.equal(translate('Created bot Price $&', 'ru', false), 'Создан бот Price $&')
+  assert.equal(translate('Routine · Settings', 'ru', false), 'Рутина · Settings')
+  assert.equal(translate('Message from Reviewer: Settings', 'ru', false), 'Сообщение от Reviewer: Settings')
+  assert.equal(translate('Last run connected', 'ru', false), `${translate('Last run {status}', 'ru', false).replace('{status}', '')}${translate('connected', 'ru', false)}`)
+  assert.equal(translate('constructor', 'ru', false), 'constructor')
+})
+
+test('follow-up notices translate around the wait and keep the note as written', () => {
+  assert.equal(translate('Follow-up in 1 minute: Settings', 'zh-Hant', 'en'), '1 分鐘後跟進：Settings')
+  assert.equal(translate('Follow-up in 20 minutes: Settings', 'zh-Hant', 'en'), '20 分鐘後跟進：Settings')
+  // A note that reads like another wait stays a note: the wait ends at the first colon.
+  assert.equal(translate('Follow-up in about 3 hours: look again in 5 minutes: maybe', 'zh', false), '约 3 小时后跟进：look again in 5 minutes: maybe')
+  assert.equal(translate('Follow-up in 1 minute: wait 5 minutes: then check', 'zh-Hant', 'en'), '1 分鐘後跟進：wait 5 minutes: then check')
+  assert.equal(translate('Follow-up in about 2 days: rerun if 3 hours: passed', 'zh-Hant', 'en'), '約 2 天後跟進：rerun if 3 hours: passed')
+  assert.equal(translate('Follow-up in about 2 days: Plan', 'ru', false), 'Проверка через примерно 2 дн.: Plan')
+  assert.equal(translate('Follow-up · Plan', 'ja', false), 'フォローアップ · Plan')
+  assert.equal(translate('Follow-up cancelled: Plan', 'fr', false), 'Suivi annulé : Plan')
+  // A waiting follow-up's row in the routines list.
+  assert.equal(translate('Follow-up at 15:42', 'zh-Hant', 'en'), '15:42 跟進')
+  assert.equal(translate('Follow-up due now', 'zh-Hant', 'en'), '即將跟進')
+})
+
+test('filled interface templates preserve user-owned names', () => {
+  for (const name of ['Plan', 'connected', 'Standby']) {
+    assert.equal(translate(`Routine · ${name}`, 'zh', 'en'), `例行任务 · ${name}`)
+    assert.equal(translate(`Routine · ${name}`, 'zh-Hant', 'en'), `例行任務 · ${name}`)
+    assert.equal(translate(`Remove ${name}?`, 'zh', 'en'), `移除 ${name}？`)
+  }
+})
+
+test('all catalogs preserve names and substitute captured values only once', () => {
+  for (const language of appLanguages.filter((id) => id !== 'en' && id !== 'system')) {
+    for (const name of ['Plan', 'connected', 'Standby', '$&', '{hint}']) {
+      const expected = translate('Routine · {name}', language).replaceAll('{name}', () => name)
+      assert.equal(translate(`Routine · ${name}`, language), expected, `${language}: ${name}`)
+      const title = translate('Message about “{title}”', language).replaceAll('{title}', () => name)
+      assert.equal(translate(`Message about “${name}”`, language), title)
+    }
+    const hint = 'Install Claude Code and run `claude auth login`.'
+    const expected = translate("{name} isn't set up on this computer. {hint}", language)
+      .replaceAll('{hint}', translate(hint, language)).replaceAll('{name}', '{hint}')
+    assert.equal(translate(`{hint} isn't set up on this computer. ${hint}`, language), expected)
+  }
+})
+
+test('host schedule sentences match their catalog templates', () => {
+  assert.equal(translate('Every day at 09:00, 18:00 · Europe/Rome', 'it'), 'Ogni giorno alle 09:00, 18:00 · Europe/Rome')
+  assert.equal(translate('Every Monday at 09:00 · Europe/Rome', 'it'), 'Ogni lunedì alle 09:00 · Europe/Rome')
+  assert.equal(translate('Every 30 minutes', 'it'), 'Ogni 30 minuti')
+})
+
+test('dates keep the system region when the app shows the system language', () => {
+  assert.equal(intlLocale('system', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('en', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('it', 'en-GB'), 'it')
+  assert.equal(intlLocale('zh', 'en-US'), 'zh-Hans')
+  assert.equal(intlLocale('en', 'nl-NL'), 'en')
+  assert.equal(intlLocale('system', 'pl-PL'), 'en')
+})

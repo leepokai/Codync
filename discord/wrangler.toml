@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 routes = [{ pattern = "discord.codync.dev", custom_domain = true }]
 
-# Daily download count for the #milestones posts (01:00 UTC, 09:00 in Taiwan).
+# Daily (01:00 UTC, 09:00 in Taiwan): download count for #milestones, forum posts for open issues missing one.
 [triggers]
 crons = ["0 1 * * *"]
 
@@ -17,6 +17,8 @@ CONTRIBUTOR_ROLE_ID = "1559453466894663680"
 REPORTER_ROLE_ID = "1559885097535148133"
 STAFF_CHANNEL_ID = "1559451211860672512"
 MILESTONES_CHANNEL_ID = "1560254402168758403"
+BUG_FORUM_ID = "1559834539004661760"
+FEATURE_FORUM_ID = "1559451567143387237"
 STAR_GOAL = "1000"
 DOWNLOAD_GOAL = "10000"
 REPO = "leepokai/Codync"

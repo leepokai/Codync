@@ -1,0 +1,16 @@
+.star-prompt-symbol {
+  color: var(--star);
+  fill: currentColor;
+  flex: none;
+}
+.star-prompt-body {
+  padding: 0 20px 20px;
+}
+.star-prompt-message {
+  line-height: 1.5;
+}
+.star-prompt-app-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}

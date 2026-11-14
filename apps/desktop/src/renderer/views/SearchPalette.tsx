@@ -3,7 +3,8 @@ import { isGroup, type Bot } from '@shared/models'
 import { AvatarWithStatus } from '../components/Avatar'
 import { Icon } from '../components/Icon'
 import { Sheet } from '../components/Overlay'
-import { font } from '../lib/fonts'
+import { VStack } from '../components/Stack'
+import { Text } from '../components/Text'
 import { refKey, type BotRef, type RosterItem } from '../store/app-model'
 import './search-palette.css'
 
@@ -75,10 +76,10 @@ function PaletteBody({ items, onPick, onClose }: { items: RosterItem[]; onPick: 
             onClick={() => pick(item)}
           >
             <AvatarWithStatus bot={item.bot} members={isGroup(item.bot) ? item.store.members(item.bot) : []} size={32} />
-            <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span className="palette-line" style={{ ...font('body'), color: 'var(--text)' }}>{item.bot.name}</span>
-              {subtitle(item) ? <span className="palette-line" style={{ ...font('subheadline'), color: 'var(--secondary)' }}>{subtitle(item)}</span> : null}
-            </span>
+            <VStack as="span" gap={2} grow>
+              <Text size="body" tone="text" truncate>{item.bot.name}</Text>
+              {subtitle(item) ? <Text size="subheadline" tone="secondary" truncate>{subtitle(item)}</Text> : null}
+            </VStack>
             {i < 9 ? <span className="key-cap palette-key">{`${modifier}${i + 1}`}</span> : null}
           </button>
         ))}

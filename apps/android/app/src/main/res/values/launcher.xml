@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The iOS and desktop app icon's black square. -->
+    <color name="ic_launcher_background">#000000</color>
+    <!-- iOS LaunchBackground: the app's ground behind the launch splash. -->
+    <color name="launch_background">#FFFFFF</color>
+</resources>

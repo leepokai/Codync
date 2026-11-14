@@ -11,6 +11,8 @@ struct SetupTerminalView: View {
     let step: SetupStep
     /// A terminal sign-in method the agent offered; nil runs Codync's own command.
     var method: AuthMethod?
+    /// The login profile a `login` signs in; nil for the computer's own.
+    var loginProfile: String?
     /// Back to the agent's sheet (the terminal is a step inside it).
     let back: () -> Void
     @Environment(BotStore.self) private var model
@@ -46,7 +48,7 @@ struct SetupTerminalView: View {
         .background(Palette.background)
         .task {
             guard let client = model.client else { return }
-            await session.run(client, backend: backend?.id ?? "", step: step, method: method?.id)
+            await session.run(client, backend: backend?.id ?? "", step: step, method: method?.id, loginProfile: loginProfile)
             await model.refreshBackends()
         }
         .onDisappear { session.close() }
@@ -55,7 +57,7 @@ struct SetupTerminalView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             if let error = session.error {
-                Text(error).foregroundStyle(Palette.danger)
+                Text(L10n.tr(error)).foregroundStyle(Palette.danger)
             } else if let code = session.exitCode {
                 Image(systemName: code == 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .foregroundStyle(code == 0 ? Palette.added : Palette.warning)
@@ -63,12 +65,12 @@ struct SetupTerminalView: View {
                     .foregroundStyle(Palette.secondary)
             } else {
                 ThinkingOrb(size: 14, color: Palette.secondary)
-                Text("Running on \(model.hostName). Links open on this device.")
+                Text(L10n.tr("Running on \(model.hostName). Links open on this device."))
                     .foregroundStyle(Palette.secondary)
             }
             Spacer(minLength: 0)
             if session.exitCode != nil {
-                Button("Done", action: back).buttonStyle(.primary)
+                Button(L10n.tr("Done"), action: back).buttonStyle(.primary)
             }
         }
         .font(.footnote)
@@ -96,11 +98,11 @@ final class TermSession {
         (keyStream, keys) = AsyncStream.makeStream()
     }
 
-    func run(_ client: HostClient, backend: String, step: SetupStep, method: String?) async {
+    func run(_ client: HostClient, backend: String, step: SetupStep, method: String?, loginProfile: String? = nil) async {
         self.client = client
         let term: String
         do {
-            term = try await client.agentSetup(backend: backend, step: step, method: method, cols: size.cols, rows: size.rows)
+            term = try await client.agentSetup(backend: backend, step: step, method: method, loginProfile: loginProfile, cols: size.cols, rows: size.rows)
         } catch {
             self.error = error.localizedDescription
             return

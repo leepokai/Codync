@@ -4,6 +4,16 @@
 set -eu
 
 staged_files=$(git diff --cached --name-only)
+# A merge brings in commits whose files were checked when they landed. Only a file that differs from
+# both sides (a resolved conflict, or both sides' changes put together) is new here.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    ours_list=$(mktemp)
+    theirs_list=$(mktemp)
+    printf '%s\n' "$staged_files" | sort > "$ours_list"
+    git diff --cached --name-only MERGE_HEAD | sort > "$theirs_list"
+    staged_files=$(comm -12 "$ours_list" "$theirs_list")
+    rm -f "$ours_list" "$theirs_list"
+fi
 touches() { printf '%s\n' "$staged_files" | grep -Eq "$1"; }
 
 repo=$(git rev-parse --show-toplevel)
@@ -36,32 +46,95 @@ staged_copy() {
     git archive "$(git write-tree)" | tar -x -C "$snapshot"
 }
 
-if touches '^(host/|packaging/(updates|engram)/|docs/reference/fixtures/remote-relay-vectors\.json)'; then
+# The host tests a commit needs, as a nextest filter: unit tests always, plus the end-to-end tests of
+# the areas it touches; "all" for everything else (the hub, the store, the API, bots, agents and chats,
+# which every end-to-end test goes through, and the tests' shared helpers).
+host_tests() {
+    targets=""
+    for file in $(printf '%s\n' "$staged_files" | grep -E '^(host/|packaging/updates/|docs/reference/fixtures/)'); do
+        case "$file" in
+            host/src/routines/*) add="routines_e2e routine_retry_e2e routine_unread_e2e" ;;
+            host/src/network/*|host/src/network_cli.rs|host/crates/network/*) add="network_e2e two_computers" ;;
+            host/src/send_cli*) add="send_cli_e2e" ;;
+            host/src/chat/memory/*|host/crates/memory/*) add="memory_e2e memory_files_e2e compaction_e2e" ;;
+            host/src/voice.rs|host/src/chat/calls*) add="calls_e2e" ;;
+            host/src/tui/*|host/src/screen/*|host/src/update/*|host/src/usage/*|host/src/remote/*|host/src/analytics*|\
+            host/src/service/*|host/src/cloud_cli.rs|host/src/compat.rs|host/src/prompt.rs|\
+            packaging/updates/*|docs/reference/fixtures/*) add="" ;;
+            host/tests/common/*) echo all; return ;;
+            host/tests/*.py|host/tests/fixtures/*)
+                add=$(grep -rl --include='*.rs' "$(basename "$file")" "$snapshot/host/tests" |
+                    sed -E 's#^.*/host/tests/([^/.]+).*#\1#' || true) ;;
+            host/tests/*) add=$(printf '%s' "$file" | sed -E 's#^host/tests/([^/.]+).*#\1#') ;;
+            *) echo all; return ;;
+        esac
+        targets="$targets $add"
+    done
+    filter="kind(lib) | kind(bin)"
+    for target in $targets; do filter="$filter | binary($target)"; done
+    printf '%s\n' "$filter"
+}
+
+# The catalogs and What's new announcements the iPhone app shares with the desktop app and the terminal UI.
+shared_text='apps/ios/Kit/Sources/CodyncKit/Resources/(Announcements|Languages)/'
+
+if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\\.json|$shared_text)"; then
+    if ! cargo nextest --version >/dev/null 2>&1; then
+        echo "The host checks run their tests with cargo-nextest, as CI does: cargo install cargo-nextest --locked"
+        exit 1
+    fi
     staged_copy
-    echo "Checking the host (cargo fmt, clippy, test)..."
-    # CI's pinned memory runtime (fetched once): without it every test turn waits on installing one.
-    engram=$(python3 "$repo/packaging/engram/test-runtime.py")
-    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" CODYNC_TEST_ENGRAM="$engram" &&
-        cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test --no-run &&
-        within 300 sh -c 'cargo test && cargo test --test memory_e2e -- --ignored &&
-            cargo test --bin codync-host native_memory_survives_restart -- --ignored')
+    tests=$(host_tests)
+    # Cargo only warns when a patch stops applying (host/vendor/noq-udp/CODYNC.md).
+    if grep -q '^\[\[patch.unused\]\]' "$snapshot/host/Cargo.lock" ||
+        grep -A2 '^name = "noq-udp"' "$snapshot/host/Cargo.lock" | grep -q '^source'; then
+        echo "noq-udp no longer comes from host/vendor/noq-udp: see host/vendor/noq-udp/CODYNC.md"
+        exit 1
+    fi
+    echo "Checking the host (cargo fmt, clippy, test: $tests)..."
+    set -- --profile ci
+    [ "$tests" = all ] || set -- "$@" -E "$tests"
+    # nextest runs every test at once, retries a flaky one and stops one that hangs (`host/.config/nextest.toml`).
+    (cd "$snapshot/host" && export CARGO_TARGET_DIR="$repo/host/target/precommit" &&
+        cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings &&
+        within 900 cargo nextest run --workspace "$@")
 fi
 
-if touches '^apps/desktop/'; then
+if touches "^(apps/desktop/|$shared_text)"; then
     staged_copy
     echo "Checking the desktop app (typecheck, test)..."
     ln -s "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"
     (cd "$snapshot/apps/desktop" && npm run typecheck && npm test)
 fi
 
-for dir in cloud relay discord; do
-    if touches "^(cloud/|relay/|discord/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
+if touches '^web/'; then
+    staged_copy
+    echo "Checking the user manual (pages compile, links and anchors)..."
+    ln -s "$repo/web/node_modules" "$snapshot/web/node_modules"
+    (cd "$snapshot/web" && npm run check:docs)
+fi
+
+for dir in cloud relay discord private-relay; do
+    if touches "^($dir/|docs/reference/fixtures/remote-relay-vectors\\.json)"; then
         staged_copy
         echo "Checking $dir (typecheck, test)..."
         ln -s "$repo/$dir/node_modules" "$snapshot/$dir/node_modules"
         (cd "$snapshot/$dir" && npm run typecheck && npm test)
     fi
 done
+
+if touches '^apps/(android/|project\.yml)'; then
+    # Gradle needs JDK 21: macOS finds it with java_home, elsewhere JAVA_HOME points at it.
+    jdk=$( (/usr/libexec/java_home -v 21 2>/dev/null) || printf '%s' "${JAVA_HOME:-}")
+    if [ -n "$jdk" ]; then
+        staged_copy
+        echo "Checking the Android app (unit tests, compile, instrumentation tests compile)..."
+        (cd "$snapshot/apps/android" && JAVA_HOME="$jdk" ./gradlew --console=plain -q --build-cache \
+            :core:test :app:testDebugUnitTest :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin)
+    else
+        echo "Skipping the Android checks (needs JDK 21)."
+    fi
+fi
 
 if touches '^apps/screen-linux/'; then
     staged_copy

@@ -16,6 +16,12 @@ struct ConversationRow {
     }
 }
 
+/// A row to bring to the middle of the list: each new `step` scrolls to it again (find's next match).
+struct ConversationReveal: Equatable {
+    let id: String
+    let step: Int
+}
+
 /// A conversation's scrolling list, in UIKit (a collection view of hosted SwiftUI rows): only
 /// the rows on screen exist, and a changed row re-renders alone. It opens at the newest
 /// message and follows it (`following`) as messages arrive and replies grow. Scrolling away
@@ -25,6 +31,8 @@ struct ConversationRow {
 struct ConversationList: View {
     let rows: [ConversationRow]
     @Binding var following: Bool
+    /// Brings a row into view, leaving the newest message (find's shown match).
+    var reveal: ConversationReveal?
     /// The reader scrolled up near the top: time to bring in earlier messages.
     var nearTop: (() -> Void)?
     /// Letting go of a full pull past the top: the force refresh, its indicator held until it returns.
@@ -42,7 +50,7 @@ struct ConversationList: View {
             .ignoresSafeArea()
             // The list itself stays inside the safe area (so its rows never see one) and
             // reaches out past it.
-            ConversationCollection(rows: rows, following: $following, nearTop: nearTop, refresh: refresh, pull: pull,
+            ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh, pull: pull,
                                    outsets: UIEdgeInsets(top: max(0, safeFrame.minY - fullFrame.minY), left: 0,
                                                          bottom: max(0, fullFrame.maxY - safeFrame.maxY), right: 0))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { safeFrame = $0 }
@@ -59,6 +67,7 @@ struct ConversationList: View {
 private struct ConversationCollection: UIViewRepresentable {
     let rows: [ConversationRow]
     @Binding var following: Bool
+    let reveal: ConversationReveal?
     let nearTop: (() -> Void)?
     let refresh: (() async -> Void)?
     let pull: PullToRefresh
@@ -86,6 +95,7 @@ private struct ConversationCollection: UIViewRepresentable {
         /// What the list is telling `following` (it reaches the binding after the update).
         private var pending: Bool?
         private var lastId: String?
+        private var lastReveal: ConversationReveal?
         private var lastOffset: CGFloat = 0
         private var reduceMotion = false
 
@@ -104,16 +114,19 @@ private struct ConversationCollection: UIViewRepresentable {
             view.allowsSelection = false
             view.delegate = self
             if #available(iOS 26, *) { view.topEdgeEffect.style = .soft }
-            // Tapping the conversation puts the keyboard away; the rows still get the tap.
-            let tap = UITapGestureRecognizer(target: view, action: #selector(UIView.endEditing(_:)))
+            // Only the empty collection background; hosted rows arbitrate their own taps.
+            let tap = UITapGestureRecognizer(target: view, action: #selector(ConversationCollectionView.dismissComposerKeyboard))
             tap.cancelsTouchesInView = false
+            tap.delegate = view.keyboardDismissTapDelegate
             view.addGestureRecognizer(tap)
 
-            let cell = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self] cell, _, id in
+            let cell = UICollectionView.CellRegistration<UICollectionViewCell, String> { [weak self, weak view] cell, _, id in
                 guard let self else { return }
                 cell.backgroundConfiguration = .clear()
-                cell.contentConfiguration = UIHostingConfiguration {
+                cell.contentConfiguration = UIHostingConfiguration { [weak view] in
                     ConversationCell(content: contents[id] ?? AnyView(EmptyView()))
+                        .contentShape(Rectangle())
+                        .onTapGesture { [weak view] in view?.dismissComposerKeyboard() }
                         .environment(\.self, environment)
                         // A reused cell starts fresh (no state carried over from another row).
                         .id(id)
@@ -182,6 +195,16 @@ private struct ConversationCollection: UIViewRepresentable {
                 applyKeepingPlace(snapshot)
             }
             if jump || sent { view.scrollToEnd(animated: !reduceMotion) }
+            reveal(parent.reveal)
+        }
+
+        private func reveal(_ reveal: ConversationReveal?) {
+            guard let reveal, reveal != lastReveal, let path = dataSource.indexPath(for: reveal.id) else { return }
+            lastReveal = reveal
+            view.cancelScrollingToEnd()
+            setFollowing(false)
+            view.layoutIfNeeded()
+            view.scrollToItem(at: path, at: .centeredVertically, animated: !reduceMotion)
         }
 
         /// Rows going in or out above: the first row on screen stays where it is.
@@ -225,7 +248,7 @@ private struct ConversationCollection: UIViewRepresentable {
             defer { lastOffset = y }
             trackPull(scrollView)
             // Only the reader's own scrolling changes following; layout never does.
-            guard scrollView.isTracking || scrollView.isDecelerating else { return }
+            guard !view.updatingViewport, scrollView.isTracking || scrollView.isDecelerating else { return }
             setFollowing(view.followingAfterScroll(from: lastOffset))
             if !view.following, y + scrollView.adjustedContentInset.top < scrollView.bounds.height / 2 {
                 parent?.nearTop?()
@@ -307,7 +330,7 @@ private struct ConversationCollection: UIViewRepresentable {
 
         /// The reader stopped scrolling: resting at the end follows again; anywhere else stays put.
         private func settle() {
-            setFollowing(view.endOffset - view.contentOffset.y < ConversationCollectionView.nearEnd)
+            setFollowing(view.followingAfterInteraction())
             if view.following { view.pinToEnd() }
         }
     }
@@ -361,13 +384,9 @@ private final class ConversationContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        list.frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
+        let frame = bounds.inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
         let insets = UIEdgeInsets(top: outsets.top + hold, left: 0, bottom: outsets.bottom, right: 0)
-        if list.contentInset != insets {
-            list.contentInset = insets
-            list.verticalScrollIndicatorInsets = outsets
-            if list.following { list.pinToEnd() }
-        }
+        list.updateViewport(frame: frame, insets: insets, indicators: outsets)
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -394,16 +413,28 @@ struct JumpToLatest: View {
     var body: some View {
         ZStack {
             if visible {
-                Button("Jump to latest", systemImage: "arrow.down", action: action)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(IconButtonStyle())
-                    .frosted(in: Circle())
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
-                    .help("Jump to latest")
+                jumpButton
+                    .help(L10n.tr("Jump to latest"))
                     .padding(.bottom, 10)
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
             }
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: visible)
+    }
+
+    @ViewBuilder private var jumpButton: some View {
+        if #available(iOS 26, *) {
+            Button(L10n.tr("Jump to latest"), systemImage: "arrow.down", action: action)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 18, weight: .medium))
+                .controlSize(.large)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+        } else {
+            Button(L10n.tr("Jump to latest"), systemImage: "arrow.down", action: action)
+                .labelStyle(.iconOnly)
+                .buttonStyle(IconButtonStyle())
+                .glass(in: Circle())
+        }
     }
 }

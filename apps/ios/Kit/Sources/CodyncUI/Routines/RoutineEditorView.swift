@@ -8,6 +8,7 @@ struct RoutineEditorView: View {
     let saved: (Routine?) -> Void
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var name = ""
     @State private var instruction = ""
     @State private var schedule = RoutineScheduleDraft()
@@ -21,6 +22,7 @@ struct RoutineEditorView: View {
     @State private var checkedSchedule: RoutineScheduleDraft?
     @State private var confirmDelete = false
     @State private var started = false
+    @State private var pickingZone = false
     /// Any text field is being edited; cleared on save so nothing sits under the keyboard.
     @FocusState private var typing: Bool
 
@@ -29,7 +31,7 @@ struct RoutineEditorView: View {
     private var options: [(String, String)] {
         var values = [("cron", "Schedule"), ("webhook", "Webhook")]
         if let routine, keepsOriginal {
-            values.insert(("keep", routine.triggerDescriptions.joined(separator: " · ")), at: 0)
+            values.insert(("keep", routine.scheduleLine), at: 0)
         }
         return values
     }
@@ -68,6 +70,12 @@ struct RoutineEditorView: View {
                 }
             }]
         }
+        .codyncSheet(isPresented: $pickingZone) {
+            TimeZonePicker(selection: schedule.zone) {
+                schedule.zone = $0
+                pickingZone = false
+            }
+        }
         .task {
             if let routine {
                 name = routine.name
@@ -88,10 +96,10 @@ struct RoutineEditorView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 14) {
                     Field("Name") {
-                        TextField("Name", text: $name, prompt: Text("e.g. Morning summary").foregroundStyle(Palette.secondary)).routineInput().focused($typing)
+                        TextField("Name", text: $name, prompt: Text(L10n.tr("e.g. Morning summary")).foregroundStyle(Palette.secondary)).routineInput().focused($typing)
                     }
                     Field("Instruction") {
-                        TextField("Instruction", text: $instruction, prompt: Text("Describe what this bot should do each time it runs.").foregroundStyle(Palette.secondary), axis: .vertical)
+                        TextField("Instruction", text: $instruction, prompt: Text(L10n.tr("Describe what this bot should do each time it runs.")).foregroundStyle(Palette.secondary), axis: .vertical)
                             .lineLimit(3...8).routineInput().focused($typing)
                     }
                 }
@@ -100,18 +108,21 @@ struct RoutineEditorView: View {
                         ChoicePicker(selection: $schedule.kind, options: options.map { (id: $0.0, label: $0.1) }, fitsAvailableWidth: true)
                     }
                     if loaded { triggerFields }
-                    else { Label("Loading schedule…", systemImage: "clock").foregroundStyle(Palette.secondary) }
+                    else { Label(L10n.tr("Loading schedule…"), systemImage: "clock").foregroundStyle(Palette.secondary) }
                 }
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
                         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { advanced.toggle() }
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Run settings")
+                            Text(L10n.tr("Run settings"))
                             Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
                                 .rotationEffect(.degrees(advanced ? 180 : 0))
                             Spacer()
-                            if !advanced { Text("Timeout \(timeout)s").foregroundStyle(Palette.tertiary) }
+                            if !advanced {
+                                Text(L10n.tr("Timeout {time}").replacingOccurrences(of: "{time}", with: Routine.timeoutText(timeout, locale: locale)))
+                                    .foregroundStyle(Palette.tertiary)
+                            }
                         }
                         .font(.subheadline)
                         .foregroundStyle(Palette.secondary)
@@ -122,7 +133,7 @@ struct RoutineEditorView: View {
                     .accessibilityValue(advanced ? "Expanded" : "Collapsed")
                     if advanced {
                         Field("Timeout (seconds)") { TextField("3600", text: $timeout).routineInput().focused($typing) }
-                        Text("A run is stopped after this long. 1 second to 24 hours.")
+                        Text(L10n.tr("A run is stopped after this long. 1 second to 24 hours."))
                             .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     }
                 }
@@ -153,9 +164,7 @@ struct RoutineEditorView: View {
         guard let client = model.client else { error = "Connect to this computer to load the schedule."; return }
         do {
             let result = try await client.routineSchedule(triggers: routine?.triggers ?? [], timeZone: TimeZone.current.identifier)
-            schedule = result.draft
-            schedule.calendarStyle = "custom"
-            if !["cron", "webhook"].contains(schedule.kind) { schedule.kind = "keep" }
+            schedule = result.draft.forMobileEditor()
             preview = result
             checkedSchedule = result.draft
             loaded = true
@@ -171,30 +180,77 @@ struct RoutineEditorView: View {
             if let routine, routine.triggers.contains(where: { $0.type == "webhook" || $0.type == "event" }) {
                 RoutineWebhookPanel(botId: botId, routineId: routine.id)
             } else {
-                Text("Runs each time something is posted to its URL. Save to get the URL and key.")
+                Text(L10n.tr("Runs each time something is posted to its URL. Save to get the URL and key."))
                     .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
                     .fixedSize(horizontal: false, vertical: true)
             }
         default:
-            Text("Set up by the bot. Pick Schedule or Webhook to replace it.")
+            Text(L10n.tr("Set up by the bot. Pick Schedule or Webhook to replace it."))
                 .font(.caption).foregroundStyle(Palette.secondary).padding(.leading, 4)
         }
     }
 
-    /// Cron is written directly; the host checks it and describes when it runs.
+    /// A frequency with its time, or cron written directly; the host compiles, checks and describes it.
     private var cronFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 10) { expressionField; zoneField.frame(width: 170) }
-                VStack(alignment: .leading, spacing: 14) { expressionField; zoneField }
+                HStack(alignment: .top, spacing: 10) { frequencyFields }
+                VStack(alignment: .leading, spacing: 14) { frequencyFields }
             }
-            schedulePreview.padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                if schedule.calendarStyle == "custom" {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 10) { expressionField; zoneField }
+                        VStack(alignment: .leading, spacing: 14) { expressionField; zoneField }
+                    }
+                } else {
+                    zoneField
+                }
+                schedulePreview.padding(.leading, 4)
+            }
         }
+    }
+
+    @ViewBuilder private var frequencyFields: some View {
+        Field("Repeat") {
+            ChoicePicker(selection: Binding(get: { schedule.calendarStyle }, set: { selectFrequency($0) }), options: RoutineScheduleDraft.repeatChoices)
+        }
+        switch schedule.calendarStyle {
+        case "hourly":
+            Field("At minute") {
+                ChoicePicker(selection: $schedule.minute, options: (0..<60).map { (id: $0, label: String(format: ":%02d", $0)) })
+            }
+        case "daily", "weekdays":
+            timeField
+        case "weekly":
+            Field("On") {
+                // Monday first; the host counts 0 = Sunday … 6 = Saturday, like cron.
+                ChoicePicker(selection: $schedule.weekday,
+                             options: [1, 2, 3, 4, 5, 6, 0].map { (id: $0, label: Calendar.current.standaloneWeekdaySymbols[$0]) })
+            }
+            timeField
+        default:
+            EmptyView()
+        }
+    }
+
+    private var timeField: some View {
+        Field("At") {
+            DatePicker("At", selection: $schedule.timeOfDay, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+                .environment(\.timeZone, .gmt)
+        }
+    }
+
+    /// Custom starts from the cron the host compiled for the checked choice it replaces.
+    private func selectFrequency(_ style: String) {
+        let compiled = checkedSchedule == schedule ? preview?.cronExpression : nil
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { schedule = schedule.repeating(style, compiled: compiled) }
     }
 
     private var expressionField: some View {
         Field("Cron") {
-            TextField("Cron", text: $schedule.expression, prompt: Text("0 9 * * 1-5").foregroundStyle(Palette.secondary))
+            TextField("Cron", text: $schedule.expression, prompt: Text(L10n.tr("0 9 * * 1-5")).foregroundStyle(Palette.secondary))
                 .font(.body.monospaced()).autocorrectionDisabled().routineInput().focused($typing)
                 .frame(minWidth: 220)
         }
@@ -202,41 +258,52 @@ struct RoutineEditorView: View {
 
     private var zoneField: some View {
         Field("Time zone") {
-            TextField("Time zone", text: $schedule.zone, prompt: Text("Asia/Taipei").foregroundStyle(Palette.secondary))
-                .autocorrectionDisabled().routineInput().focused($typing)
+            Button { pickingZone = true } label: {
+                HStack(spacing: 6) {
+                    Text(schedule.zone).lineLimit(1)
+                    Text(TimeZones.offset(schedule.zone)).foregroundStyle(Palette.secondary)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(Palette.secondary)
+                }
+                .foregroundStyle(Palette.text)
+                .outlinedPill()
+            }
+            .buttonStyle(.plain)
         }
     }
 
-    /// One quiet line under the fields: what the host read, or why it can't.
+    /// The sentence, then the next run, under the fields — or why the host can't read it.
     @ViewBuilder private var schedulePreview: some View {
         let preview = checkedSchedule == schedule ? preview : nil
         if let previewError {
             Text(previewError).font(.caption).foregroundStyle(Palette.danger)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let preview {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(preview.summary).font(.caption.weight(.medium))
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
                 if let next = preview.nextRunAt {
-                    Text("Next \(Date(milliseconds: next).formatted(date: .abbreviated, time: .shortened))")
+                    let when = Date(milliseconds: next).formatted(
+                        Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)
+                    )
+                    Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
                 if let warning = preview.warning {
                     Text(warning).font(.caption).foregroundStyle(Palette.secondary)
                 }
             }
-        } else {
-            Text("minute  hour  day  month  weekday").font(.caption.monospaced()).foregroundStyle(Palette.tertiary)
+        } else if schedule.calendarStyle == "custom" {
+            Text(L10n.tr("minute  hour  day  month  weekday")).font(.caption.monospaced()).foregroundStyle(Palette.tertiary)
         }
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
             if previewError != nil {
-                Button("Check schedule again") { Task { await checkSchedule() } }
+                Button(L10n.tr("Check schedule again")) { Task { await checkSchedule() } }
                     .buttonStyle(.plain).disabled(model.isOffline)
             }
             if !loaded, error != nil {
-                Button("Retry loading schedule") { Task { await loadSchedule() } }.buttonStyle(.plain)
+                Button(L10n.tr("Retry loading schedule")) { Task { await loadSchedule() } }.buttonStyle(.plain)
             }
             if schedule.kind != "cron", let previewError {
                 Text(previewError).font(.caption).foregroundStyle(Palette.danger)
@@ -246,13 +313,13 @@ struct RoutineEditorView: View {
                     .font(.callout).foregroundStyle(Palette.danger).textSelection(.enabled)
             }
             if model.isOffline {
-                Label("Connect to this computer to save your routine.", systemImage: "wifi.slash")
+                Label(L10n.tr("Connect to this computer to save your routine."), systemImage: "wifi.slash")
                     .font(.caption).foregroundStyle(Palette.danger)
             }
             if loaded, !model.isOffline,
                name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Enter a name and instruction above to save.")
+                Text(L10n.tr("Enter a name and instruction above to save."))
                     .font(.caption).foregroundStyle(Palette.secondary)
             }
             HStack(spacing: 16) { routineActions; saveButton }

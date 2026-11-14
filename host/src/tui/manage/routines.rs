@@ -1,11 +1,12 @@
-//! A bot's routines: the list, the form, and the triggers typed into it.
+//! A bot's routines: the list and the form (what's typed for when: `when.rs`).
 
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
-use std::str::FromStr as _;
 
-use super::super::app::{App, Confirm, ConfirmAct, Editor, Focus, Overlay};
-use super::{Reply, RoutineField, RoutineForm, RoutineList, ctrl, newline, s};
+use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Overlay};
+use super::when::{complete_zone, parse_when, when_text};
+use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, RoutineRow, ctrl, newline, s};
+use crate::routines::local_zone;
 
 impl App {
     pub fn open_routines(&mut self) {
@@ -15,15 +16,45 @@ impl App {
         };
         let bot = b.id.clone();
         self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
-        self.overlays.push(Overlay::Routines(RoutineList { bot, items: None, cursor: 0 }));
+        self.overlays.push(Overlay::Routines(RoutineList { bot, ..Default::default() }));
+    }
+
+    /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
+    pub(in crate::tui) fn reload_routines(&mut self, bot: &str) {
+        if self.overlays.iter().any(|o| matches!(o, Overlay::Routines(l) if l.bot == bot)) {
+            self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.to_owned()));
+        }
     }
 
     pub(in crate::tui) fn routines_key(&mut self, mut l: RoutineList, k: KeyEvent) -> Option<Overlay> {
-        let n = l.items.as_ref().map_or(0, Vec::len);
-        let current = l.items.as_ref().and_then(|v| v.get(l.cursor)).cloned();
+        if let Some(page) = Page::Details.step(k) {
+            self.open_page(page);
+            return None;
+        }
+        let n = l.rows().count();
         let bot = l.bot.clone();
-        match (k.code, current) {
+        match (k.code, l.picked()) {
             (KeyCode::Esc | KeyCode::Char('q' | 'R'), _) => return None,
+            // The row stays until the host answers: a cancel that failed leaves a follow-up that still happens.
+            (KeyCode::Char('x'), Some(RoutineRow::FollowUp(f))) => {
+                let body = json!({"botId": bot, "id": f["id"]});
+                self.sheet("cancelFollowUp", body, Reply::FollowUpCancelled(bot.clone()));
+            }
+            (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(RoutineRow::FollowUp(_))) => {
+                self.flash("A follow-up is the bot's own: x cancels it");
+            }
+            // The agent, model and instructions shown above the routines are edited in Settings.
+            (KeyCode::Char('i'), _) => {
+                self.open_page(Page::Settings);
+                if let Some(Overlay::Form(f)) = self.overlays.last_mut() {
+                    f.field = FIELDS.iter().position(|x| *x == Field::Instructions).unwrap_or(0);
+                }
+                return None;
+            }
+            // The bot's own agent again, while it runs on a fallback.
+            (KeyCode::Char('B'), _) if self.bots.get(&bot).is_some_and(|b| b.agent_step.is_some()) => {
+                self.call("switchBack", json!({"botId": bot}), After::Nothing);
+            }
             (KeyCode::Down | KeyCode::Char('j'), _) => l.cursor = (l.cursor + 1).min(n.saturating_sub(1)),
             (KeyCode::Up | KeyCode::Char('k'), _) => l.cursor = l.cursor.saturating_sub(1),
             (KeyCode::Char('n'), _) => {
@@ -42,80 +73,69 @@ impl App {
                 })));
                 return None;
             }
-            (KeyCode::Char('c'), _) => {
-                // Or ask the bot to set one up: start the ask in its chat.
-                let draft = self.drafts.entry(bot).or_default();
-                if !draft.text.is_empty() {
-                    draft.insert("\n");
-                }
-                draft.insert("I want a routine that ");
-                self.thread = None;
-                self.focus = Focus::Chat;
-                self.typing = true;
-                return None;
-            }
-            (KeyCode::Enter | KeyCode::Char('e'), Some(r)) => {
+            (KeyCode::Enter | KeyCode::Char('e'), Some(RoutineRow::Routine(r))) => {
                 let triggers = r["triggers"].clone();
                 let text = when_text(&triggers, &local_zone());
                 let original_text = r["triggerDescriptions"]
                     .as_array()
                     .map(|d| d.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" · "))
                     .unwrap_or_default();
-                self.overlays.push(Overlay::Routines(l));
-                self.overlays.push(Overlay::Routine(Box::new(RoutineForm {
+                let form = RoutineForm {
                     bot,
-                    id: Some(s(&r, "id")),
-                    name: Editor::with(&s(&r, "name")),
-                    instruction: Editor::with(&s(&r, "instruction")),
+                    id: Some(s(r, "id")),
+                    name: Editor::with(&s(r, "name")),
+                    instruction: Editor::with(&s(r, "instruction")),
                     when: Editor::with(text.as_deref().unwrap_or_default()),
                     original: if text.is_some() { Value::Null } else { triggers },
                     original_text,
                     field: RoutineField::Name,
                     error: None,
                     saving: false,
-                })));
+                };
+                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Routine(Box::new(form)));
                 return None;
             }
-            (KeyCode::Char(' '), Some(r)) => {
-                let on = !r["enabled"].as_bool().unwrap_or(false);
+            (KeyCode::Char(' '), Some(RoutineRow::Routine(r))) => {
+                let (id, on) = (r["id"].clone(), !r["enabled"].as_bool().unwrap_or(false));
                 self.sheet(
                     "setRoutineEnabled",
-                    json!({"botId": bot, "id": r["id"], "enabled": on}),
+                    json!({"botId": bot, "id": id, "enabled": on}),
                     Reply::Routines(bot.clone()),
                 );
-                if let Some(item) = l.items.as_mut().and_then(|v| v.get_mut(l.cursor)) {
+                if let Some(item) = l.items.iter_mut().flatten().find(|item| item["id"] == id) {
                     item["enabled"] = on.into();
                 }
             }
-            (KeyCode::Char('r'), Some(r)) => {
+            (KeyCode::Char('r'), Some(RoutineRow::Routine(r))) => {
                 self.sheet("runRoutine", json!({"botId": bot, "id": r["id"]}), Reply::Routines(bot.clone()));
-                self.flash(&format!("Running {} now", s(&r, "name")));
+                self.flash(&format!("Running {} now", s(r, "name")));
             }
-            (KeyCode::Char('w' | 'W'), Some(r)) if !has_webhook(&r) => {
+            (KeyCode::Char('w' | 'W'), Some(RoutineRow::Routine(r))) if !has_webhook(r) => {
                 self.flash("Only a routine that runs on a webhook has a URL and key");
             }
-            (KeyCode::Char('w'), Some(r)) => {
+            (KeyCode::Char('w'), Some(RoutineRow::Routine(r))) => {
                 self.sheet("routineWebhook", json!({"botId": bot, "id": r["id"]}), Reply::Webhook);
             }
-            (KeyCode::Char('W'), Some(r)) => {
+            (KeyCode::Char('W'), Some(RoutineRow::Routine(r))) => {
                 let c = Confirm {
-                    title: format!("Replace the webhook key of {}?", s(&r, "name")),
+                    title: format!("Replace the webhook key of {}?", s(r, "name")),
                     detail: "Senders using the current key stop working.".into(),
                     note: "The new one is copied in a curl command.".into(),
                     button: "Replace",
-                    act: ConfirmAct::RotateRoutineKey(bot, s(&r, "id")),
+                    act: ConfirmAct::RotateRoutineKey(bot, s(r, "id")),
                 };
                 self.overlays.push(Overlay::Routines(l));
                 self.overlays.push(Overlay::Confirm(c));
                 return None;
             }
-            (KeyCode::Char('x'), Some(r)) => {
+            (KeyCode::Char('x'), Some(RoutineRow::Routine(r))) => {
                 let c = Confirm {
-                    title: format!("Delete the routine {}?", s(&r, "name")),
+                    title: format!("Delete the routine {}?", s(r, "name")),
                     detail: "It stops running.".into(),
                     note: "What it already posted stays in the chat.".into(),
                     button: "Delete",
-                    act: ConfirmAct::DeleteRoutine(bot, s(&r, "id")),
+                    act: ConfirmAct::DeleteRoutine(bot, s(r, "id")),
                 };
                 self.overlays.push(Overlay::Routines(l));
                 self.overlays.push(Overlay::Confirm(c));
@@ -128,6 +148,14 @@ impl App {
 
     pub(in crate::tui) fn routine_key(&mut self, mut f: Box<RoutineForm>, k: KeyEvent) -> Option<Overlay> {
         use RoutineField::{Instruction, Name, When};
+        // Tab finishes a time zone being typed after the schedule before it moves on.
+        if k.code == KeyCode::Tab
+            && f.field == When
+            && let Some(done) = complete_zone(&f.when.text, crate::store::now_ms())
+        {
+            f.when = Editor::with(&done);
+            return Some(Overlay::Routine(f));
+        }
         match k.code {
             KeyCode::Esc => return None,
             _ if newline(k) && f.field == Instruction => f.instruction.insert("\n"),
@@ -188,110 +216,27 @@ impl App {
         f.error = None;
         self.sheet("saveRoutine", body, Reply::RoutineSaved);
     }
+
+    /// `F`: runs a failed routine run's work again: the picked notice's, else the newest in this chat.
+    pub(in crate::tui) fn retry_failed_run(&mut self) {
+        let Some(bot) = self.selected.clone() else { return };
+        let run = self
+            .lane(&bot)
+            .into_iter()
+            .filter(|e| e.retries() && self.pick.as_ref().is_none_or(|id| *id == e.id))
+            .max_by_key(|e| e.seq)
+            .map(|e| e.data["runId"].clone());
+        match run {
+            Some(run) => {
+                self.call("retryRoutineRun", json!({"botId": bot, "runId": run}), After::Nothing);
+                self.flash("Trying it again");
+            }
+            None => self.flash("No failed routine run to try again here"),
+        }
+    }
 }
 
 /// A routine with a webhook (or event) trigger, which has a URL and key.
 fn has_webhook(r: &Value) -> bool {
     r["triggers"].as_array().into_iter().flatten().any(|t| matches!(t["type"].as_str(), Some("webhook" | "event")))
-}
-
-/// This computer's IANA time zone (routines run on the host's clock in it).
-pub fn local_zone() -> String {
-    let valid = |z: &str| chrono_tz::Tz::from_str(z).is_ok();
-    if let Ok(tz) = std::env::var("TZ")
-        && valid(tz.trim_start_matches(':'))
-    {
-        return tz.trim_start_matches(':').to_owned();
-    }
-    std::fs::read_link("/etc/localtime")
-        .ok()
-        .and_then(|p| p.to_string_lossy().split_once("zoneinfo/").map(|(_, z)| z.to_owned()))
-        .filter(|z| valid(z))
-        .unwrap_or_else(|| "UTC".into())
-}
-
-/// One trigger from what's typed: `webhook`, `every 30m`, a date and time (once),
-/// or five cron fields in `zone`.
-pub fn parse_when(text: &str, zone: &str, now: i64) -> Result<Value, String> {
-    let t = text.trim().to_lowercase();
-    if t.is_empty() {
-        return Err("Say when it runs.".into());
-    }
-    if t == "webhook" {
-        return Ok(json!({"type": "webhook"}));
-    }
-    if let Some(rest) = t.strip_prefix("every") {
-        let rest = rest.trim();
-        let split = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
-        let (n, unit) = rest.split_at(split);
-        let n: i64 = if n.is_empty() { 1 } else { n.parse().map_err(|_| "Use a whole number, like every 30m.")? };
-        let unit = match unit.trim().trim_end_matches('s') {
-            "sec" | "second" => 1,
-            "m" | "min" | "minute" => 60,
-            "h" | "hr" | "hour" => 3600,
-            "d" | "day" => 86400,
-            "" if n > 0 && !rest.is_empty() => return Err("Add a unit: s, m, h or d.".into()),
-            _ => return Err("Use s, m, h or d, like every 2h.".into()),
-        };
-        return Ok(json!({"type": "interval", "seconds": n * unit}));
-    }
-    if let Ok(at) = chrono::NaiveDateTime::parse_from_str(&t, "%Y-%m-%d %H:%M") {
-        let tz = chrono_tz::Tz::from_str(zone).map_err(|_| "Unknown time zone")?;
-        let at = at.and_local_timezone(tz).earliest().ok_or("That time doesn't exist here.")?.timestamp_millis();
-        if at <= now {
-            return Err("That time has passed.".into());
-        }
-        return Ok(json!({"type": "once", "at": at}));
-    }
-    if t.split_whitespace().count() == 5 {
-        return Ok(
-            json!({"type": "cron", "expression": t.split_whitespace().collect::<Vec<_>>().join(" "), "timeZone": zone}),
-        );
-    }
-    Err("Try 0 9 * * 1-5, every 2h, 2026-10-01 09:00 or webhook.".into())
-}
-
-/// A routine's triggers as `parse_when` reads them, when they're one it can write.
-pub fn when_text(triggers: &Value, zone: &str) -> Option<String> {
-    let [t] = triggers.as_array()?.as_slice() else { return None };
-    match t["type"].as_str()? {
-        "webhook" => Some("webhook".into()),
-        "interval" => {
-            let secs = t["seconds"].as_i64()?;
-            let (n, u) = [(86400, "d"), (3600, "h"), (60, "m"), (1, "s")].into_iter().find(|(u, _)| secs % u == 0)?;
-            Some(format!("every {}{u}", secs / n))
-        }
-        "cron" if t["timeZone"].as_str() == Some(zone) => t["expression"].as_str().map(str::to_owned),
-        "once" => {
-            let tz = chrono_tz::Tz::from_str(zone).ok()?;
-            let at = chrono::DateTime::from_timestamp_millis(t["at"].as_i64()?)?.with_timezone(&tz);
-            Some(at.format("%Y-%m-%d %H:%M").to_string())
-        }
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn when_reads_what_it_writes() {
-        let now = 1_790_470_800_000;
-        let zone = "Asia/Taipei";
-        assert_eq!(parse_when("webhook", zone, now), Ok(json!({"type": "webhook"})));
-        assert_eq!(parse_when("every 30m", zone, now), Ok(json!({"type": "interval", "seconds": 1800})));
-        assert_eq!(parse_when("Every 2 hours", zone, now), Ok(json!({"type": "interval", "seconds": 7200})));
-        assert!(parse_when("every 5", zone, now).is_err());
-        assert!(parse_when("2020-01-01 09:00", zone, now).is_err());
-        assert!(parse_when("tomorrow", zone, now).is_err());
-        for text in ["0 9 * * 1-5", "every 90m", "every 1d", "webhook", "2030-10-01 09:00"] {
-            let t = parse_when(text, zone, now).expect(text);
-            let back = when_text(&json!([t]), zone).expect(text);
-            assert_eq!(parse_when(&back, zone, now), Ok(t), "{text}");
-        }
-        // Another zone's cron, or several triggers, stay as they were.
-        assert_eq!(when_text(&json!([{"type": "cron", "expression": "0 9 * * *", "timeZone": "UTC"}]), zone), None);
-        assert_eq!(when_text(&json!([{"type": "webhook"}, {"type": "webhook"}]), zone), None);
-    }
 }

@@ -8,9 +8,15 @@ struct RootView: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(AccountSession.self) private var account
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
+    @AppStorage("withoutAccount") private var withoutAccount = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
+    /// In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
+    @State private var pairingNew = false
+    /// The account computer the choice page is asking for access.
+    @State private var asking: CloudComputer?
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -19,29 +25,28 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if !onboardingCompleted && accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
-                if !welcomed && !account.isSignedIn {
-                    WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                } else {
-                    PairingView(onSkip: { onboardingCompleted = true }) {
-                        if account.isSignedIn {
-                            AccountSwitcherButton()
-                        } else {
-                            BackButton { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = false } }
-                        }
-                    }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            if mustSignIn {
+                // Computers paired signed out wait in the signed-out context.
+                WelcomeView(signedOutComputers: accounts.computers.count) {
+                    Analytics.shared.capture(.continuedWithoutAccount)
+                    animateSetup { withoutAccount = true }
                 }
+                .transition(.opacity)
+            } else if !onboardingCompleted && accounts.computers.isEmpty {
+                setup
             } else {
                 tabs
             }
         }
         .background(Palette.background)
-        .onChange(of: accounts.computers.isEmpty && accounts.cloudComputers.isEmpty, initial: true) { _, empty in
-            // Pairing, signing in to an account that has computers, or explicitly skipping completes
+        .reviewInvitation()
+        .onChange(of: account.isSignedIn) { _, signedIn in
+            if signedIn { withoutAccount = false }
+        }
+        .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
+            // Reaching a computer (paired, or approved through the account) or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
-            if !empty { onboardingCompleted = true }
+            if !empty { completeOnboarding(via: accounts.approvedAccess.isEmpty ? .paired : .account) }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK", inPlace: true) { [] }
         .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { close in
@@ -51,29 +56,61 @@ struct RootView: View {
                     .id(target.id)
             }
         }
-        .codyncSheet(isPresented: Bindable(app).showComputers) {
-            // Holds the pushes inside the sheet (Widgets, Live Activity); no bar shows.
-            NavigationStack { SettingsView() }
+        .codyncSheet(isPresented: Bindable(app).showComputers) { ComputersView() }
+        // Here, not on the choice page: approval replaces that page while this sheet says so.
+        .codyncSheet(item: $asking) { computer in
+            AccessRequestView(computer: computer, pending: accounts.pendingAccess[computer.computerId])
         }
         .codyncSheet(item: Binding(get: { app.marketplace.map(MarketplaceTarget.init) }, set: { app.marketplace = $0?.computerId })) { target in
-            // Switching computers inside keeps the sheet up and loads that computer's own marketplace.
-            let computerId = app.marketplace ?? target.computerId
-            if let store = accounts.store(for: computerId) {
-                MarketplaceView(computers: accounts.computers.compactMap { accounts.store(for: $0.id) }
-                                    .filter { $0.connection == .online }
-                                    .map { ($0.computer.id, $0.hostName) },
-                                computer: Binding(get: { computerId }, set: { app.marketplace = $0 }))
+            // Each computer has its own; it's opened from that computer's heading or row.
+            if let store = accounts.store(for: target.computerId) {
+                MarketplaceView()
                     .environment(store)
-                    .id(computerId)
             }
         }
     }
 
-    /// The system tab bar; both tabs stay alive (scroll position, open thread) and the bar hides while a
+    /// First run, until a computer is reached or setup is skipped.
+    @ViewBuilder
+    private var setup: some View {
+        if !welcomed && !account.isSignedIn && !withoutAccount {
+            WelcomeView { animateSetup { welcomed = true } }
+                .transition(.move(edge: .leading).combined(with: .opacity))
+        } else if account.isSignedIn && !accounts.cloudListLoaded {
+            // Whether the account has computers decides the first page: none flashes by before that's known.
+            Spinner(size: 28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+        } else if !pairingNew && !askableComputers.isEmpty {
+            ChooseComputerView(computers: askableComputers, ask: { asking = $0 },
+                               pairNew: { animateSetup { pairingNew = true } }, skip: { completeOnboarding(via: .skipped) }) {
+                AccountSwitcherButton()
+            }
+            .transition(.move(edge: .leading).combined(with: .opacity))
+        } else {
+            PairingView(onSkip: { completeOnboarding(via: .skipped) }, onContinue: { pairingNew = true }) {
+                if !askableComputers.isEmpty {
+                    BackButton { animateSetup { pairingNew = false } }
+                } else if account.isSignedIn {
+                    AccountSwitcherButton()
+                } else {
+                    BackButton {
+                        animateSetup {
+                            welcomed = false
+                            withoutAccount = false
+                        }
+                    }
+                }
+            }
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    /// The system tab bar; every tab stays alive (scroll position, open thread) and the bar hides while a
     /// thread is open.
     private var tabs: some View {
         TabView(selection: Bindable(app).tab) {
-            Tab("Bots", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
+            Tab(L10n.tr("Bots"), systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.bots) {
                 NavigationStack(path: path) {
                     BotListView()
                         .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
@@ -82,14 +119,57 @@ struct RootView: View {
                         }
                 }
             }
-            Tab("State", systemImage: "rectangle.stack.fill", value: AppTab.state) {
+            Tab(L10n.tr("State"), systemImage: "rectangle.stack.fill", value: AppTab.state) {
                 StateTab()
+                    .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
+            }
+            Tab(L10n.tr("Settings"), systemImage: "gearshape", value: AppTab.settings) {
+                SettingsView()
                     .safeAreaInset(edge: .bottom, spacing: 0) { AccessBanners() }
             }
         }
         .tint(Palette.text)
+        .tracked(.screenViewed(screen))
         // Opening a bot (notification, widget, link) always lands on the Bots tab.
-        .onChange(of: accounts.selection) { _, ref in if ref != nil { app.tab = .bots } }
+        .onChange(of: accounts.selection) { _, ref in
+            if ref != nil { app.tab = .bots }
+        }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        .codyncSheet(isPresented: Binding(get: { app.whatsNew.isPresented && !app.launching },
+                                          set: { app.whatsNew.isPresented = $0 })) {
+            WhatsNewSheet(announcements: app.whatsNew.due)
+                .onAppear { app.whatsNew.shown() }
+        }
+    }
+
+    private var screen: AnalyticsEvent.Screen {
+        switch app.tab {
+        case .bots: .bots
+        case .state: .state
+        case .settings: .settings
+        }
+    }
+
+    /// Signed out, a build with accounts offers signing in or going on without one. While Clerk restores, the last
+    /// signed-in account's context stays on screen, so an offline launch still reaches its computers.
+    private var mustSignIn: Bool {
+        account.isConfigured && !account.isSignedIn && !withoutAccount && (account.isReady || accounts.accountId == nil)
+    }
+
+    /// What the choice page offers: an older copy of a computer doesn't count as one more.
+    private var askableComputers: [CloudComputer] {
+        accounts.cloudComputers.filter { !accounts.isOlderCopy($0) }
+    }
+
+    private func animateSetup(_ change: () -> Void) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion), change)
+    }
+
+    /// Once per setup (Start over begins a new one): the first computer reached, or Skip.
+    private func completeOnboarding(via: AnalyticsEvent.OnboardingVia) {
+        guard !onboardingCompleted else { return }
+        onboardingCompleted = true
+        Analytics.shared.capture(.onboardingCompleted(via: via))
     }
 
     // MARK: one place for every computer's errors and screen requests
@@ -170,7 +250,7 @@ private struct StateTab: View {
             ScreenHeader {
                 EmptyView()
             } title: {
-                Text("State").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("State")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 IconButton("Usage limits", systemImage: "chart.bar") { app.showUsage = true }
             }
@@ -210,7 +290,7 @@ private struct UsageSheet: View {
             ScreenHeader {
                 IconButton("Close", systemImage: "xmark") { dismiss() }
             } title: {
-                Text("Usage").font(.body.weight(.semibold)).foregroundStyle(Palette.text)
+                Text(L10n.tr("Usage")).font(.body.weight(.semibold)).foregroundStyle(Palette.text)
             } trailing: {
                 if let store, accounts.computers.count > 1 {
                     DropdownMenu {
@@ -237,6 +317,12 @@ private struct UsageSheet: View {
             }
         }
         .background(Palette.background)
+        // What failed here (a switch, a drag) shows over this sheet, not under it at the root,
+        // where the same error clears with this one.
+        .codyncDialog("Something went wrong", isPresented: Binding(
+            get: { store?.lastError != nil }, set: { if !$0 { store?.lastError = nil } }
+        ), message: store?.lastError, cancel: "OK", inPlace: true) { [] }
+        .tracked(.screenViewed(.usage))
     }
 }
 
@@ -249,9 +335,9 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage).font(.system(size: 40)).foregroundStyle(Palette.tertiary)
-            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
+            Text(L10n.tr(title)).font(.title3.weight(.semibold)).foregroundStyle(Palette.text)
             if let message {
-                Text(message).font(.subheadline).foregroundStyle(Palette.secondary)
+                Text(L10n.tr(message)).font(.subheadline).foregroundStyle(Palette.secondary)
             }
         }
         .multilineTextAlignment(.center)
@@ -265,12 +351,14 @@ struct EmptyState: View {
 struct PageHeader<Trailing: View>: View {
     let title: String
     var pushed = false
+    var icon: String?
     let trailing: Trailing
     @Environment(\.dismiss) private var pop
 
-    init(_ title: String, pushed: Bool = false, @ViewBuilder trailing: () -> Trailing) {
+    init(_ title: String, pushed: Bool = false, icon: String? = nil, @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.pushed = pushed
+        self.icon = icon
         self.trailing = trailing()
     }
 
@@ -279,25 +367,37 @@ struct PageHeader<Trailing: View>: View {
             ScreenHeader {
                 BackButton { pop() }
             } title: {
-                Text(title).font(.body.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(1)
+                headerTitle
             } trailing: {
                 trailing
             }
         } else {
-            ModalHeader(title) { trailing }
+            ModalHeader { headerTitle } trailing: { trailing }
         }
     }
 }
 
+private extension PageHeader {
+    var headerTitle: some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon).font(.title2).accessibilityHidden(true)
+            }
+            Text(L10n.tr(title)).font(.body.weight(.semibold)).lineLimit(1)
+        }
+        .foregroundStyle(Palette.text)
+    }
+}
+
 extension PageHeader where Trailing == EmptyView {
-    init(_ title: String, pushed: Bool = false) { self.init(title, pushed: pushed) { EmptyView() } }
+    init(_ title: String, pushed: Bool = false, icon: String? = nil) { self.init(title, pushed: pushed, icon: icon) { EmptyView() } }
 }
 
 extension View {
     /// Tops a screen with its `PageHeader` in place of the system navigation bar.
-    func page(_ title: String, pushed: Bool = false) -> some View {
+    func page(_ title: String, pushed: Bool = false, icon: String? = nil) -> some View {
         VStack(spacing: 0) {
-            PageHeader(title, pushed: pushed)
+            PageHeader(title, pushed: pushed, icon: icon)
             self
         }
         .background(Palette.background)
@@ -314,20 +414,26 @@ private extension View {
     }
 }
 
-/// Account computers this iPhone asked on its own after sign-in: the code to check, until they answer.
+/// Access requests still waiting after their sheet closed: the code to check, until the computer answers.
 private struct AccessBanners: View {
     @Environment(AccountStore.self) private var accounts
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(accounts.pendingAccess.values).sorted { $0.requestId < $1.requestId }) { ticket in
-                let name = accounts.cloudComputers.first { $0.computerId == ticket.computerId }?.name ?? "Your computer"
+                let computer = accounts.cloudComputers.first { $0.computerId == ticket.computerId }
+                let name = computer?.name ?? "Your computer"
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Approve on \(name)").font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
-                            .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        if computer?.cloud != nil {
+                            // A cloud computer approves this iPhone by itself: no code to check.
+                            Text(L10n.tr("Connecting to \(name)…")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        } else {
+                            Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                            Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                                .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     IconButton("Cancel request", systemImage: "xmark") {

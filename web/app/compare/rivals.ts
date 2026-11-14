@@ -18,15 +18,15 @@ export type Rival = {
 
 const us = {
   price: "$0, every feature included. Apache 2.0 licensed.",
-  runs: "On your own computer: a Mac, a Windows PC, a Linux desktop or a headless server.",
+  runs: "On your own computer: a Mac, a Windows PC, a Linux desktop or a headless server. Or a Codync Cloud computer (beta) on your own Boat or InstaBox account.",
   agents:
     "Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over ACP, on the plans and logins you already have.",
   apps: "iPhone, Mac, Windows and Linux apps, plus a terminal UI over SSH.",
   data: "Stays on your computer. The phone connects directly, or through an end-to-end encrypted relay.",
   source: "Open source, Apache 2.0.",
-  account: "Not required: pair by scanning a code. Signing in is optional.",
+  account: "Sign in with Apple, Google or GitHub, free. An account never unlocks a computer: each one approves each device itself.",
   approvals: "Edits and commands come to your phone: allow once, always allow or deny.",
-  rooms: "Group chats where every bot answers in its own session, and threads on any message.",
+  rooms: "Group chats where every bot answers in its own session, and replies that quote any message.",
   memory: "Memory per bot, and routines that run on a schedule or from a webhook.",
   tools:
     "Any connector from the MCP registry, your apps through Composio, and skills. Bots can also see and use the computer.",
@@ -51,7 +51,7 @@ export const rivals: Rival[] = [
       ["Source", us.source, "Not published as open source."],
       ["Account", us.account, "Required, with an eligible Cursor or Grok plan."],
       ["Approvals", us.approvals, "Yes, with Auto Review for sensitive actions."],
-      ["Group chats and threads", us.rooms, "Yes: group chats and bot-to-bot threads."],
+      ["Group chats and replies", us.rooms, "Yes: group chats and bot-to-bot threads."],
       ["Memory and routines", us.memory, "Yes: memory, scheduled routines and teaching a task."],
       ["Connected apps and tools", us.tools, "They sign in to your tools and use a browser on their cloud computer."],
       ["Voice and screen", us.extras, "Voice chat and voice memos. Bots use their own cloud computer with a browser."],
@@ -59,7 +59,7 @@ export const rivals: Rival[] = [
     pickUs:
       "you want Grok Bot's way of working without a subscription, with the bots on your own machine next to your files and tools, and the freedom to run Claude Code, Codex or any other agent you already pay for.",
     pickThem:
-      "you'd rather have bots on a managed cloud computer that stays on when your machine is off, and you already pay for Cursor or SuperGrok.",
+      "you'd rather have SpaceXAI run the cloud computer for you, with no provider account of your own, and you already pay for Cursor or SuperGrok.",
     checked: CHECKED,
     sources: [
       ["Grok Bot page and FAQ", "https://x.ai/bot"],
@@ -82,7 +82,7 @@ export const rivals: Rival[] = [
       ["Source", us.source, "Not published as open source."],
       ["Account", us.account, "Required: a Meta, Facebook or Instagram account, 18 or older."],
       ["Approvals", us.approvals, "Yes, before sensitive actions, with a full audit trail."],
-      ["Group chats and threads", us.rooms, "Not documented."],
+      ["Group chats and replies", us.rooms, "Not documented."],
       ["Memory and routines", us.memory, "Memory you can tell to forget, and scheduled or event-driven background work."],
       ["Connected apps and tools", us.tools, "Email, travel and shopping; it uses a browser and terminal on its VM and can write its own tools."],
       ["Voice and screen", us.extras, "Not documented. The agent has a browser and terminal on its own VM."],
@@ -113,7 +113,7 @@ export const rivals: Rival[] = [
       ["Source", us.source, "Not open source."],
       ["Account", us.account, "Required: ChatGPT Pro or Business Premium, 18 or older, in eligible markets."],
       ["Approvals", us.approvals, "Yes: auto-review, and Custom Rules to allow, require approval for or block actions."],
-      ["Group chats and threads", us.rooms, "One primary dot per person for now; teams of dots are planned. It joins Slack and Teams conversations."],
+      ["Group chats and replies", us.rooms, "One primary dot per person for now; teams of dots are planned. It joins Slack and Teams conversations."],
       ["Memory and routines", us.memory, "Yes: memory, recurring tasks and background \"proactive research\"."],
       ["Connected apps and tools", us.tools, "Over 4,000 apps through OpenAI plugins, and its own browser."],
       ["Voice and screen", us.extras, "Voice calls. You can open its cloud computer to watch its work."],
@@ -143,7 +143,7 @@ export const rivals: Rival[] = [
       ["Source", us.source, "Not open source."],
       ["Account", us.account, "Required: a claude.ai account."],
       ["Approvals", us.approvals, "Yes, from the phone."],
-      ["Group chats and threads", us.rooms, "No: up to 32 parallel sessions, not named bots."],
+      ["Group chats and replies", us.rooms, "No: up to 32 parallel sessions, not named bots."],
       ["Memory and routines", us.memory, "Not documented for Remote Control."],
       ["Connected apps and tools", us.tools, "Not documented for Remote Control."],
       ["Voice and screen", us.extras, "Not documented."],
@@ -172,7 +172,7 @@ export const rivals: Rival[] = [
       ["Source", us.source, "Open source, MIT."],
       ["Account", us.account, "No sign-up: pair by key."],
       ["Approvals", us.approvals, "Push notifications when a permission is needed."],
-      ["Group chats and threads", us.rooms, "No: parallel sessions, not named bots."],
+      ["Group chats and replies", us.rooms, "No: parallel sessions, not named bots."],
       ["Memory and routines", us.memory, "Not documented."],
       ["Connected apps and tools", us.tools, "Not documented."],
       ["Voice and screen", us.extras, "A voice agent. No remote screen."],

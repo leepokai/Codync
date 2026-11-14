@@ -1,4 +1,5 @@
 import { isChat, type Entry, type BotMessage } from '../../../shared/models.ts'
+import { trNow } from '../../lib/l10n.ts'
 
 /** How a bot-to-bot message ended: still going, delivered, or it didn't complete. */
 export type BotOutcome = { kind: 'pending' } | { kind: 'done' } | { kind: 'failed'; detail: string }
@@ -39,7 +40,7 @@ export function botExchange(e: Entry): BotExchange | null {
 
 export const isOutgoing = (x: BotExchange) => x.chat === x.message.sourceBotId
 export const peerOf = (x: BotExchange) => (isOutgoing(x) ? x.message.targetBotId : x.message.sourceBotId)
-export const verbOf = (x: BotExchange) => (isOutgoing(x) ? 'Messaged' : 'Message from')
+export const verbOf = (x: BotExchange) => (isOutgoing(x) ? trNow('Messaged') : trNow('Message from'))
 
 /** A chat-visible entry; a run of same-peer bot exchanges is one slot at its first entry. */
 export interface ChatSlot {
@@ -73,7 +74,12 @@ export function groupExchanges(entries: Entry[]): ChatSlot[] {
 
 /** What a group row shows: the peer, how many messages, and whether any failed. */
 export function groupSummary(xs: BotExchange[]) {
-  return { peerId: peerOf(xs[0]!), count: xs.length, failed: xs.some((x) => x.outcome.kind === 'failed') }
+  return { peerId: peerOf(xs[0]!), peerName: peerNameIn(xs), count: xs.length, failed: xs.some((x) => x.outcome.kind === 'failed') }
+}
+
+/** The name a peer on another computer goes by: it isn't one of this computer's bots, so the exchange carries it. */
+export function peerNameIn(xs: BotExchange[]): string | undefined {
+  return xs.find((x) => x.message.peerName)?.message.peerName
 }
 
 /**

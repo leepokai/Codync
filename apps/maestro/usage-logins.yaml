@@ -1,0 +1,36 @@
+# State > Usage limits lists each login of an agent with login profiles under its name, with its own limits
+# (docs/features/usage-limits.md#login-profiles). The phone must already be signed in and paired with the host (a
+# worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), Claude Code must show in usage, and LOGIN_PROFILE is
+# the id of a signed-in account login profile of Claude Code there. Nothing here signs in: a test marks a made-up
+# one signed in in the sandbox host's own store, as apps/desktop/e2e/usage-logins.spec.ts does. Without
+# LOGIN_PROFILE the flow does nothing.
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags usage \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e LOGIN_PROFILE=<login profile id> apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - usage
+---
+- runScript: usage-logins.js
+- runFlow:
+    when:
+      true: ${output.login != null}
+    commands:
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.ios.dev
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.android.dev
+      - tapOn: "State"
+      - tapOn: "Usage limits"
+      - assertVisible: "Work"
+      - assertVisible: "91%.*"
+      - assertVisible: "40%.*"
+      - takeScreenshot: usage-logins

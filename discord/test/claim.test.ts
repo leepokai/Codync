@@ -145,6 +145,7 @@ assert.deepEqual(calls, ["role contributor", "notify <@42> ([octo](https://githu
 
 calls = stub({ held: ["reporter"] });
 const issue = { action: "opened", issue: { number: 5, html_url: "https://github.com/leepokai/Codync/issues/5", user: { id: 7, login: "octo" } } };
+links.set("issue:5", "{}"); // already in the forum (issues.test.ts covers the post)
 assert.equal(await hook("issues", issue), 204);
 assert.deepEqual(calls, []);
 
@@ -173,7 +174,7 @@ assert.deepEqual(await notes("- Fast mode. Thanks @octo (#101).\n@Octo, @other, 
   text: "- Fast mode. Thanks <@42> (#101).\n<@42>, @other, @nobody, a@octo.dev, `@octo_x`",
   users: ["42"],
 });
-// Milestones: each 100th star and 1,000th download posts once in #milestones and pings everyone, with progress
+// Milestones: each 100th star and 1,000th download posts once in #milestones without pinging anyone, with progress
 // toward the goal until it's reached.
 const posts: string[] = [];
 let up = true;
@@ -182,10 +183,11 @@ globalThis.fetch = (async (input: string, init?: RequestInit) => {
   const url = String(input);
   const page = url.match(/^https:\/\/api\.github\.com\/repos\/leepokai\/Codync\/releases\?per_page=100&page=(\d+)$/)?.[1];
   if (page) return Response.json(releases[Number(page) - 1] ?? []);
+  if (url.startsWith("https://api.github.com/repos/leepokai/Codync/issues?")) return Response.json([]);
   assert.equal(url, "https://discord.com/api/v10/channels/milestones/messages");
   if (!up) return new Response("down", { status: 503 });
   const body = JSON.parse(String(init?.body));
-  assert.deepEqual(body.allowed_mentions, { parse: ["everyone"] });
+  assert.deepEqual(body.allowed_mentions, { parse: [] });
   posts.push(body.content);
   return Response.json({});
 }) as typeof fetch;
@@ -200,9 +202,9 @@ up = true;
 for (const count of [402, 401, 400, 450, 1000, 1000, 1104]) assert.equal(await star(count), 204);
 const thanks = "Thanks to everyone who starred [leepokai/Codync](https://github.com/leepokai/Codync) 💛\n\n📣 ";
 assert.equal(posts.length, 3);
-assert.ok(posts[0].startsWith(`@everyone ⭐ **Codync just hit 400 stars on GitHub!**\n\`████████░░░░░░░░░░░░\` 400 / 1,000\n${thanks}Help us reach 1,000: tell people about Codync on [X](https://x.com/intent/post?text=Codync%3A%20`));
-assert.ok(posts[1].startsWith(`@everyone 🎉 **Codync hit 1,000 stars on GitHub, goal reached!**\n${thanks}Keep spreading the word on [X](`));
-assert.ok(posts[2].startsWith(`@everyone ⭐ **Codync just hit 1,100 stars on GitHub!**\n${thanks}Keep spreading the word on [X](`));
+assert.ok(posts[0].startsWith(`⭐ **Codync just hit 400 stars on GitHub!**\n\`████████░░░░░░░░░░░░\` 400 / 1,000\n${thanks}Help us reach 1,000: tell people about Codync on [X](https://x.com/intent/post?text=Codync%3A%20`));
+assert.ok(posts[1].startsWith(`🎉 **Codync hit 1,000 stars on GitHub, goal reached!**\n${thanks}Keep spreading the word on [X](`));
+assert.ok(posts[2].startsWith(`⭐ **Codync just hit 1,100 stars on GitHub!**\n${thanks}Keep spreading the word on [X](`));
 assert.match(posts[0], /\[Threads\]\(.+\) · \[Reddit\]\(.+url=https%3A%2F%2Fgithub.com%2Fleepokai%2FCodync.+\) · \[LinkedIn\]\(.+\), or wherever you hang out\.$/);
 assert.equal(links.get("stars:milestone"), "1100");
 
@@ -222,6 +224,6 @@ releases[1].push(release(asset("codync-linux-x86_64.deb", 1)));
 await cron();
 await cron();
 assert.equal(posts.length, 1);
-assert.ok(posts[0].startsWith("@everyone 📦 **Codync just hit 1,000 downloads!**\n`██░░░░░░░░░░░░░░░░░░` 1,000 / 10,000\nThanks to everyone who gave it a try 💛\n\n📣 Help us reach 10,000:"));
+assert.ok(posts[0].startsWith("📦 **Codync just hit 1,000 downloads!**\n`██░░░░░░░░░░░░░░░░░░` 1,000 / 10,000\nThanks to everyone who gave it a try 💛\n\n📣 Help us reach 10,000:"));
 assert.equal(links.get("downloads:milestone"), "1000");
 console.log("claim tests ok");

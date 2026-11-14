@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import appIcon from '../../../resources/icon.png'
 import { Button } from '../components/Controls'
 import { Icon } from '../components/Icon'
 import { ModalHeader, Sheet } from '../components/Overlay'
-import { font } from '../lib/fonts'
+import { HStack, VStack } from '../components/Stack'
+import { Text } from '../components/Text'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
-import { afterStarAsk, dueStarAsk } from '../lib/star-ask'
+import { useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
-
-const REPO = 'https://github.com/leepokai/Codync'
+import { useTr } from '../lib/use-language'
+import './star-prompt.css'
 
 const copy = {
   first: {
@@ -17,46 +19,56 @@ const copy = {
   },
   second: {
     title: 'Enjoying Codync?',
-    message: "You've been using Codync for a while. If it saves you trips to your desk, a star on GitHub helps other people find it.",
+    message: 'If Codync saves you trips to your desk, a star on GitHub helps other people find it.',
   },
 }
 
 /**
- * Asks for a GitHub star twice at most: once after setup, and once more a week later.
+ * Invites again at the fifth prompt after the setup invitation; also covers older
+ * installations that have not seen the setup invitation.
  * Starring ends it.
  */
 export function StarPrompt() {
+  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
-  const [state, setState] = usePref(prefs.starAsk)
-  const [closed, setClosed] = useState(false)
-  const due = dueStarAsk(state, Date.now())
-  const open = due !== null && onboarded && !closed && local?.connection.kind === 'online'
+  const { due, prompts, answer } = useStarAsk()
+  // The prompt count when this sheet last closed: the next ask waits for a later prompt, so two never follow each other.
+  const [closedAt, setClosedAt] = useState(-1)
+  const open = due !== null && onboarded && prompts > closedAt && local?.connection.kind === 'online'
 
   const finish = (starred: boolean) => {
-    if (closed) return
-    setClosed(true)
-    setState(afterStarAsk(state, starred, Date.now()))
-    if (starred) window.codync.app.openExternal(REPO)
+    if (!open) return
+    setClosedAt(prompts)
+    answer(starred)
   }
 
   const text = copy[due ?? 'first']
   return (
-    <Sheet open={open} onClose={() => finish(false)}>
-      <div style={{ width: 420, display: 'flex', flexDirection: 'column' }}>
-        <ModalHeader title={text.title} />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '0 24px 24px' }}>
-          <Icon name="star" size={36} weight="light" color="var(--secondary)" />
-          <div style={{ ...font('callout'), color: 'var(--secondary)', textAlign: 'center' }}>{text.message}</div>
-          <div style={{ display: 'flex', gap: 12 }}>
+    <Sheet open={open} onClose={() => finish(false)} width={400} dismissOnDim>
+      <VStack className="star-prompt">
+        <ModalHeader
+          icon={<Icon name="star.fill" size={22} className="star-prompt-symbol" />}
+          title={tr(text.title)}
+          onClose={null}
+        />
+        <VStack gap={16} className="star-prompt-body">
+          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{tr(text.message)}</Text>
+          <HStack gap={10}>
+            <img src={appIcon} alt="" className="star-prompt-app-icon" draggable={false} />
+            <Text size="callout" tone="secondary">github.com/leepokai/Codync</Text>
+          </HStack>
+          <HStack gap={8} justify="flex-end" wrap>
             <Button kind="secondary" onClick={() => finish(false)}>
               Not now
             </Button>
-            <Button onClick={() => finish(true)}>Star on GitHub</Button>
-          </div>
-        </div>
-      </div>
+            <Button onClick={() => finish(true)}>
+              Star on GitHub
+            </Button>
+          </HStack>
+        </VStack>
+      </VStack>
     </Sheet>
   )
 }

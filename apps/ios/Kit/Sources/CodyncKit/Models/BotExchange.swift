@@ -21,6 +21,8 @@ public struct BotExchange: Identifiable, Equatable, Sendable {
     public let text: String
     public let reply: String?
     public let outcome: Outcome
+    /// The peer's name when it is a bot on another computer (it isn't in this computer's list).
+    public let peerName: String?
 
     /// A notice with structured message data is a bot exchange; existing notices stay plain.
     public init?(_ entry: Entry) {
@@ -34,6 +36,7 @@ public struct BotExchange: Identifiable, Equatable, Sendable {
         target = message.targetBotId
         text = message.text
         reply = message.reply
+        peerName = message.peerName
         switch entry.data.status {
         case "completed": outcome = .done
         case "failed", "cancelled": outcome = .failed(message.detail ?? "")

@@ -1,7 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync, promises as fs, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, promises as fs, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
@@ -9,6 +9,7 @@ import type { HostState, LocalHost } from '../shared/ipc'
 import { unregisterScreenAgent } from './screen'
 import { identity } from './environment'
 import { hostEnvironmentError } from '../shared/environment'
+import type { HostSetupStage } from './analytics'
 
 /** `CODYNC_PORT` / `CODYNC_HOME` point the app at a dev host started with `codync-host serve`. */
 export const devPort = process.env.CODYNC_PORT ? Number(process.env.CODYNC_PORT) : null
@@ -26,11 +27,14 @@ interface Health {
   binaryPath?: string
   binaryHash?: string
   busy?: boolean
+  /** When another device asked this computer to update (`installHostUpdate`), if it's still waiting. */
+  updateRequested?: number | null
 }
 
+/** This app's own host; `app` tells it the app is open to carry out an update request. */
 export async function fetchHealth(url = baseURL, timeoutMs = 2000): Promise<Health | null> {
   try {
-    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(timeoutMs) })
+    const res = await fetch(`${url}/health?app=true`, { signal: AbortSignal.timeout(timeoutMs) })
     if (!res.ok) return null
     return (await res.json()) as Health
   } catch {
@@ -72,11 +76,19 @@ function serviceDefinition(): string | null {
 
 const serviceInstalled = () => serviceDefinition() !== null
 
+/** A failed check of the host or its binary, and the `host_setup_failed` stage it counts as. */
+class SetupError extends Error {
+  constructor(readonly stage: HostSetupStage, message: string) {
+    super(message)
+  }
+}
+
 /**
  * Manages the local codync-host (binary, background service, health): bundled with the app,
- * else a Homebrew / cargo install.
+ * else a Homebrew / cargo install. `setupFailed`: it couldn't get a working host;
+ * `updateRequested`: another device asked this computer to update.
  */
-export class HostController extends EventEmitter {
+export class HostController extends EventEmitter<{ change: []; setupFailed: [stage: HostSetupStage]; updateRequested: [] }> {
   state: HostState = { kind: 'starting' }
   local: LocalHost | null = null
   private loop: NodeJS.Timeout | null = null
@@ -86,6 +98,8 @@ export class HostController extends EventEmitter {
   private expectedHash: string | null = null
   private failures = 0
   private preparingForUpdate = false
+  /** The update request already passed on to the app's updater. */
+  private updateRequest: number | null = null
 
   get binary(): string | null {
     const candidates = [
@@ -116,6 +130,11 @@ export class HostController extends EventEmitter {
     this.emit('change')
   }
 
+  private setupFailed(stage: HostSetupStage, state: HostState) {
+    this.emit('setupFailed', stage)
+    this.setState(state)
+  }
+
   private setLocal(local: LocalHost | null) {
     this.local = local
     this.emit('change')
@@ -131,7 +150,7 @@ export class HostController extends EventEmitter {
 
   async refresh() {
     if (this.preparingForUpdate) return
-    if (!this.binary && devPort === null) return this.setState({ kind: 'missingBinary' })
+    if (!this.binary && devPort === null) return this.setupFailed('missing_binary', { kind: 'missingBinary' })
     if (devPort === null && prefs.get('hostRestartAfterAppUpdate') === true && serviceInstalled()) return this.install()
     if (devPort === null && !serviceInstalled()) {
       // The app is the way to run the host: set it up right away, unless the user took it out.
@@ -146,10 +165,10 @@ export class HostController extends EventEmitter {
 
   private async verifyBinary(bin: string) {
     const result = await run(bin, ['compat'])
-    if (result.status !== 0) throw new Error(result.output || 'Cannot verify the host environment.')
+    if (result.status !== 0) throw new SetupError('verify', result.output || 'Cannot verify the host environment.')
     const info = JSON.parse(result.output) as { environment?: string }
     const mismatch = hostEnvironmentError(identity.environment, info.environment)
-    if (mismatch) throw new Error(mismatch)
+    if (mismatch) throw new SetupError('environment', mismatch)
   }
 
   /** A service operation must never invoke the other environment's binary. */
@@ -164,13 +183,14 @@ export class HostController extends EventEmitter {
       await this.verifyBinary(bin)
       const result = await run(bin, ['install', '--port', String(port)])
       if (result.status !== 0) {
-        this.setState({ kind: 'failed', message: result.output || 'Install failed' })
+        this.setupFailed('install', { kind: 'failed', message: result.output || 'Install failed' })
       } else {
         await sleep(1000)
         this.connect()
       }
     } catch (error) {
-      this.setState({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
+      // Only the binary's checks throw here (unreadable `compat` output too).
+      this.setupFailed(error instanceof SetupError ? error.stage : 'verify', { kind: 'failed', message: error instanceof Error ? error.message : String(error) })
     } finally {
       this.installing = false
     }
@@ -264,14 +284,17 @@ export class HostController extends EventEmitter {
     this.failures = 0
     const tick = async () => {
       if (generation !== this.generation) return
-      if (await this.attachLocal()) {
+      const problem = await this.attachLocal()
+      // It may have started a reinstall (a stale build), which connects on its own.
+      if (generation !== this.generation) return
+      if (!problem) {
         this.failures = 0
-        if (generation !== this.generation) return
         this.setState({ kind: 'running' })
         if (devPort === null && prefs.get('hostRestartAfterAppUpdate') === true) prefs.set('hostRestartAfterAppUpdate', false)
       } else {
         this.failures++
-        if (this.failures > 5) this.setState({ kind: 'failed', message: "The host isn't responding. See the log for details." })
+        // The other environment's host doesn't become this one's by waiting: shown right away.
+        if (problem.stage === 'environment' || this.failures > 5) this.setupFailed(problem.stage, { kind: 'failed', message: problem.message })
         else if (this.state.kind !== 'running') this.setState({ kind: 'starting' })
       }
       if (generation === this.generation) this.loop = setTimeout(tick, 5000)
@@ -283,33 +306,38 @@ export class HostController extends EventEmitter {
     })()
   }
 
-  /** Attaches the local host once it answers, and again when its token or identity changed. */
-  private async attachLocal(): Promise<boolean> {
+  /** Attaches the local host once it answers, and again when its token or identity changed; else says why not. */
+  private async attachLocal(): Promise<SetupError | null> {
     const health = await fetchHealth()
-    if (!health?.computerId) return false
+    if (!health?.computerId) return new SetupError('not_responding', "The host isn't responding. See the log for details.")
     const mismatch = hostEnvironmentError(identity.environment, health.environment)
-    if (mismatch) {
-      this.setState({ kind: 'failed', message: mismatch })
-      return false
-    }
+    if (mismatch) return new SetupError('environment', mismatch)
     const token = await readToken()
-    if (!token) return false
+    if (!token) return new SetupError('not_responding', `The host is running, but its token (${join(dataDir, 'token')}) can't be read.`)
     if (devPort === null) {
       // A rebuild can change the host without changing the release version.
       const bin = this.binary
-      if (!this.expectedHash || !bin) return false
+      if (!this.expectedHash || !bin) return new SetupError('not_responding', "Couldn't read this app's host to check the one that's running.")
       const matches = health.binaryHash === this.expectedHash && samePath(health.binaryPath, resolved(bin))
       if (!matches) {
         if (!this.replacedStale) {
           this.replacedStale = true
           void this.install()
         }
-        return false
+        return new SetupError('not_responding', "Another build of the host is running, not this app's. Try again to replace it.")
       }
     }
-    if (this.local?.computerId === health.computerId && this.local.token === token) return true
+    this.relayUpdateRequest(health)
+    if (this.local?.computerId === health.computerId && this.local.token === token) return null
     this.setLocal({ computerId: health.computerId, baseURL, token })
-    return true
+    return null
+  }
+
+  /** Passes each new update request on to the app's updater, once. */
+  private relayUpdateRequest(health: Health) {
+    if (!health.updateRequested || health.updateRequested === this.updateRequest) return
+    this.updateRequest = health.updateRequested
+    this.emit('updateRequested')
   }
 }
 
@@ -370,7 +398,13 @@ export const prefs = (() => {
     set: (key: string, value: unknown) => {
       const data = load()
       data[key] = value
-      void fs.mkdir(app.getPath('userData'), { recursive: true }).then(() => fs.writeFile(file(), JSON.stringify(data)))
+      // Synchronous: a marker set right before the app quits (an update install) must be on disk.
+      try {
+        mkdirSync(app.getPath('userData'), { recursive: true })
+        writeFileSync(file(), JSON.stringify(data))
+      } catch (error) {
+        console.error(`prefs: couldn't save ${key}:`, error)
+      }
     },
   }
 })()

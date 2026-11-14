@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useDark, useReduceMotion } from '../lib/theme'
+import { useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 
 // thinking-orbs 0.3.1, commit de85557 (MIT, Jakub Antalik): src/engine/{core,orbits,lattice,web,morph}.ts
 // with the resolved 20/64 pt presets, as ported in kit's ThinkingOrbGeometry.
@@ -219,10 +219,10 @@ export function ThinkingOrb({ state = 'working', size = 16, color = 'var(--text)
   const canvas = useRef<HTMLCanvasElement>(null)
   const reduce = useReduceMotion()
   const dark = useDark()
+  const ratio = usePixelRatio()
   useEffect(() => {
     const el = canvas.current
     if (!el) return
-    const ratio = window.devicePixelRatio || 1
     el.width = Math.round(size * ratio)
     el.height = Math.round(size * ratio)
     const ctx = el.getContext('2d')!
@@ -262,6 +262,6 @@ export function ThinkingOrb({ state = 'working', size = 16, color = 'var(--text)
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [state, size, animated, reduce, color, dark])
+  }, [state, size, animated, reduce, color, dark, ratio])
   return <canvas ref={canvas} aria-hidden style={{ width: size, height: size, color, display: 'block', flex: 'none' }} />
 }

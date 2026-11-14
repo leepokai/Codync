@@ -1,0 +1,100 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBanner, withBackend } from './fallbacks.ts'
+import { draftOf, normalizeBot, type Backend } from './models.ts'
+
+const now = new Date(2026, 9, 21, 10, 0).getTime()
+const at3 = new Date(2026, 9, 21, 15, 0).getTime()
+const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+const names: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' }
+const name = (id: string) => names[id] ?? id
+
+test('a time today is just the time; another day names the weekday', () => {
+  assert.equal(clockTime(at3, now), time(at3))
+  const friday = new Date(2026, 9, 23, 15, 0).getTime()
+  assert.equal(clockTime(friday, now), `${new Date(friday).toLocaleDateString(undefined, { weekday: 'short' })} ${time(friday)}`)
+})
+
+test('a usage limit says when it resets; other rests say until when', () => {
+  assert.equal(restLine({ agent: 'claude', until: at3, reason: 'usageLimit' }, now), `Usage resets ${time(at3)}`)
+  assert.equal(restLine({ agent: 'claude', until: at3, reason: 'rateLimited' }, now), `Resting until ${time(at3)}`)
+})
+
+test('a rest that ended no longer counts', () => {
+  const bot = normalizeBot({ id: 'b', resting: [{ agent: 'claude', until: now - 1, reason: 'usageLimit' }] })
+  assert.equal(restOf(bot, { backend: 'claude' }, now), null)
+  assert.equal(restOf(bot, { backend: 'claude' }, now - 2)?.reason, 'usageLimit')
+})
+
+test('an agent comes again in the chain only on another of its login profiles', () => {
+  const claude: Backend = { id: 'claude', name: 'Claude Code', available: true, command: '', installHint: '',
+    loginProfiles: [{ id: 'a1', kind: 'account', name: 'Work', signedIn: true }, { id: 'a2', kind: 'apiKey', name: null, signedIn: false }] }
+  assert.deepEqual(freeLogins(claude, []), [null, 'a1'], "one that isn't signed in can't carry a turn")
+  assert.deepEqual(freeLogins(claude, [{ backend: 'claude' }]), ['a1'], "the bot's own agent, on the computer's login")
+  assert.deepEqual(freeLogins(claude, [{ backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }]), [null])
+  assert.deepEqual(freeLogins({ ...claude, loginProfiles: undefined }, [{ backend: 'claude' }]), [], 'an agent with one login')
+  // A rest is one login's: the login profile's leaves the computer's own free.
+  const bot = normalizeBot({ id: 'b', resting: [{ agent: 'claude', loginProfile: 'a1', until: now + 1, reason: 'usageLimit' }] })
+  assert.equal(restOf(bot, { backend: 'claude' }, now), null)
+  assert.equal(restOf(bot, { backend: 'claude', loginProfile: 'a1' }, now)?.reason, 'usageLimit')
+  assert.equal(sameLogin({ backend: 'claude', loginProfile: null }, { backend: 'claude' }), true)
+})
+
+test('the banner names the fallback, and when the own agent is back if it says', () => {
+  const step = { step: 1, agent: 'codex', model: null, since: now, reason: 'usageLimit' }
+  // "Claude Code (Work)" on a login profile; the computer's own login by name too when it's asked for.
+  const called = (login: { backend: string; loginProfile?: string | null }, own: boolean) =>
+    `${name(login.backend)}${login.loginProfile ? ' (Work)' : own ? ' (Default login profile)' : ''}`
+  assert.equal(stepBanner(normalizeBot({ id: 'b', backend: 'claude' }), called, now), null)
+  const resting = normalizeBot({ id: 'b', backend: 'claude', agentStep: step, resting: [{ agent: 'claude', until: at3, reason: 'usageLimit' }] })
+  assert.equal(stepBanner(resting, called, now), `Using Codex until Claude Code resets at ${time(at3)}`)
+  const failing = normalizeBot({ id: 'b', backend: 'claude', agentStep: step, resting: [{ agent: 'claude', until: now - 1, reason: 'usageLimit' }] })
+  assert.equal(stepBanner(failing, called, now), "Using Codex while Claude Code can't answer")
+  // Two logins of one agent go by their login profiles.
+  const onProfile = normalizeBot({ id: 'b', backend: 'claude', agentStep: { ...step, agent: 'claude', loginProfile: 'a1' } })
+  assert.equal(stepBanner(onProfile, called, now), "Using Claude Code (Work) while Claude Code (Default login profile) can't answer")
+})
+
+test('fallbacks move within the list', () => {
+  const f = (backend: string) => ({ backend, model: null, modelOptions: {} })
+  const list = [f('codex'), f('gemini'), f('grok')]
+  assert.deepEqual(moveFallback(list, 0, 1).map((x) => x.backend), ['gemini', 'codex', 'grok'])
+  assert.deepEqual(moveFallback(list, 2, -1).map((x) => x.backend), ['codex', 'grok', 'gemini'])
+  assert.deepEqual(moveFallback(list, 0, -1).map((x) => x.backend), ['codex', 'gemini', 'grok'])
+  assert.deepEqual(list.map((x) => x.backend), ['codex', 'gemini', 'grok'])
+})
+
+test('making a fallback the bot\'s own agent drops it from the list', () => {
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', fallbacks: [{ backend: 'codex', model: 'gpt-5.5', modelOptions: {} }, { backend: 'gemini', model: null, modelOptions: {} }] }))
+  const next = withBackend(draft, 'codex')
+  assert.equal(next.backend, 'codex')
+  assert.deepEqual(next.fallbacks?.map((f) => f.backend), ['gemini'])
+})
+
+test('an older host has no fallbacks to show or send', () => {
+  const bot = normalizeBot({ id: 'b' })
+  assert.equal(bot.selfFallbacks, null)
+  assert.equal(draftOf(bot).selfFallbacks, undefined)
+  assert.equal(normalizeBot({ id: 'b', selfFallbacks: false }).selfFallbacks, false)
+})
+
+
+test('switching harness clears its model and effort, selecting the same harness preserves them', () => {
+  const draft = draftOf(normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'a1', model: 'opus', modelOptions: { effort: 'high' } }))
+  assert.equal(withBackend(draft, 'claude'), draft)
+  const changed = withBackend(draft, 'codex')
+  assert.equal(changed.model, null)
+  assert.equal(changed.loginProfile, null, 'a login profile is its own agent\'s')
+  assert.deepEqual(changed.modelOptions, {})
+  const defaultModel = withBackend({ ...draft, model: null }, 'codex')
+  assert.deepEqual(defaultModel.modelOptions, {})
+})
+
+test('bots mix agents when they run more than one, counting a fallback and leaving groups out', () => {
+  const claude = normalizeBot({ id: 'a', backend: 'claude' })
+  const onCodex = normalizeBot({ id: 'b', backend: 'claude', agentStep: { step: 1, agent: 'codex', model: null, since: now, reason: 'usageLimit' } })
+  const group = normalizeBot({ id: 'g', kind: 'group', backend: 'codex' })
+  assert.equal(runningAgent(onCodex), 'codex')
+  assert.equal(mixesAgents([claude, normalizeBot({ id: 'c', backend: 'claude' }), group]), false)
+  assert.equal(mixesAgents([claude, onCodex]), true)
+})

@@ -1,0 +1,86 @@
+import { isBelow, type VersionMismatch } from '../../shared/compat.ts'
+import { trNow } from './l10n.ts'
+
+/** An update this app asked of a computer that's behind it (`installHostUpdate`). */
+export type HostUpdate = { kind: 'requested'; at: number } | { kind: 'failed'; message: string }
+
+/**
+ * What the update notice offers for a computer that's behind (iOS `HostUpdateOffer`): `updating`
+ * while a request runs; `available` when the computer updates when asked, with `last` a request
+ * that didn't (it failed, or the computer never came back updated); `unavailable` when the notice
+ * says how to update it on the computer instead.
+ */
+export type HostUpdateOffer = { kind: 'updating' } | { kind: 'available'; last: HostUpdate | null } | { kind: 'unavailable' }
+
+/** How long a requested update may take before the notice offers it again. */
+export const HOST_UPDATE_WAIT = 10 * 60_000
+
+export function offerHostUpdate(update: HostUpdate | null, canUpdate: boolean, now = Date.now()): HostUpdateOffer {
+  if (update?.kind === 'requested' && now - update.at < HOST_UPDATE_WAIT) return { kind: 'updating' }
+  return canUpdate ? { kind: 'available', last: update } : { kind: 'unavailable' }
+}
+
+/** The words every client uses for a version mismatch (iOS, the TUI and this app). */
+export const updateNeededText = {
+  /** `cloud`: a Codync Cloud computer, which the cloud updates by itself. */
+  title(m: VersionMismatch, host: string, cloud = false) {
+    if (m.kind === 'updateApp') return trNow('Update this app')
+    return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
+  },
+  detail(m: VersionMismatch, host: string, os: string | null | undefined, instructions = true, cloud = false) {
+    if (m.kind === 'updateApp') {
+      return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
+        .replaceAll('{host}', () => host)
+        .replaceAll('{minimum}', () => m.minimum)
+    }
+    if (cloud) return trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.')
+      .replaceAll('{minimum}', () => m.minimum)
+    const needs = trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.')
+      .replaceAll('{host}', () => host)
+      .replaceAll('{version}', () => m.version)
+      .replaceAll('{minimum}', () => m.minimum)
+    return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
+  },
+  /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
+  how(os: string | null | undefined, cloud = false) {
+    return cloud ? 'Codync Cloud updates it before it next sleeps.'
+      : os === 'macos' ? 'Open Codync on that Mac and choose Check for Updates.'
+      : os === 'linux' ? 'Run codync-host update there.'
+      : 'Update Codync on that computer.'
+  },
+  /** A computer updating at this app's request. */
+  updating(host: string) {
+    return trNow('Updating Codync on {host}. This takes a few minutes.').replaceAll('{host}', () => host)
+  },
+  /** Why the last update asked of the computer didn't take. */
+  notUpdated(last: HostUpdate, host: string) {
+    return last.kind === 'failed' ? last.message : `${host} didn't finish updating. Try again, or update Codync on that computer.`
+  },
+}
+
+/**
+ * The Codync row on a computer's card in Settings > Computers (iOS `HostVersionLine`): the version it
+ * runs, and an update when one is due, a newer release or a version too old for this app. `detail` is
+ * sentences, each its own phrase to translate; `accessory` is a spinner while the computer updates, or
+ * the button that asks it to.
+ */
+export interface HostVersionLine {
+  version: string
+  detail: string[]
+  warns: boolean
+  accessory: { kind: 'updating' } | { kind: 'button'; title: string } | null
+}
+
+/** `latest` is the latest release the computer found (null while it doesn't know: then no verdict); `cloud`: a Codync Cloud computer. */
+export function hostVersionLine(version: string, latest: string | null | undefined, mismatch: VersionMismatch | null,
+  offer: HostUpdateOffer, host: string, os: string | null | undefined, cloud = false): HostVersionLine {
+  const line = (detail: string[], warns = false, accessory: HostVersionLine['accessory'] = null) => ({ version, detail, warns, accessory })
+  if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
+  const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
+  const available = latest && isBelow(version, latest) ? latest : null
+  const due = minimum ? trNow('{host} needs Codync {version} or newer.').replaceAll('{host}', () => host).replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
+  if (!due) return line(latest ? [trNow('Up to date')] : [])
+  if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
+  if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: trNow('Try again') })
+  return line([due], minimum !== null, { kind: 'button', title: trNow('Update') })
+}

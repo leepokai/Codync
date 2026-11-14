@@ -23,9 +23,9 @@ struct WidgetSetupDemo: View {
                 VStack(spacing: 14) {
                     DemoPhone(t: t)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("How to add the Codync widget")
-                        .accessibilityValue(Self.step(at: t).text)
-                    Text(Self.step(at: t).text)
+                        .accessibilityLabel(L10n.tr("How to add the Codync widget"))
+                        .accessibilityValue(L10n.tr(Self.step(at: t).text))
+                    Text(L10n.tr(Self.step(at: t).text))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Palette.text)
                         .contentTransition(.opacity)
@@ -96,8 +96,8 @@ struct WidgetSetupDemo: View {
             }
             .frame(height: 32)
             .accessibilityElement()
-            .accessibilityLabel("Step")
-            .accessibilityValue(Self.step(at: t).text)
+            .accessibilityLabel(L10n.tr("Step"))
+            .accessibilityValue(L10n.tr(Self.step(at: t).text))
             .accessibilityAdjustableAction { direction in
                 let i = Self.step(at: t).index + (direction == .increment ? 1 : -1)
                 guard Self.steps.indices.contains(i) else { return }
@@ -196,7 +196,7 @@ private struct DemoPhone: View {
         ZStack {
             Capsule().fill(.black).frame(width: 54, height: 16)
             HStack {
-                Text("9:41").font(.system(size: 9, weight: .semibold))
+                Text(L10n.tr("9:41")).font(.system(size: 9, weight: .semibold))
                 Spacer()
                 Image(systemName: "battery.75percent").font(.system(size: 9))
             }
@@ -273,7 +273,7 @@ private struct DemoPhone: View {
     }
 
     private func pill(_ title: String, highlighted: Bool) -> some View {
-        Text(title)
+        Text(L10n.tr(title))
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 9)
@@ -296,7 +296,7 @@ private struct DemoPhone: View {
 
     private func menuRow(_ title: String, _ symbol: String, highlighted: Bool) -> some View {
         HStack(spacing: 6) {
-            Text(title).font(.system(size: 9, weight: .medium))
+            Text(L10n.tr(title)).font(.system(size: 9, weight: .medium))
             Spacer(minLength: 0)
             Image(systemName: symbol).font(.system(size: 9))
         }
@@ -327,7 +327,7 @@ private struct DemoPhone: View {
             Capsule().fill(.white.opacity(0.3)).frame(width: 28, height: 3).padding(.vertical, 6)
             HStack(spacing: 5) {
                 Image(systemName: "magnifyingglass")
-                Text("Search Widgets")
+                Text(L10n.tr("Search Widgets"))
                 Spacer()
             }
             .font(.system(size: 9))
@@ -356,7 +356,7 @@ private struct DemoPhone: View {
                     CharacterAvatar(shape: "hex", color: "gray", size: 20)
                 }
             }
-            Text(title).font(.system(size: 10, weight: .medium)).foregroundStyle(.white)
+            Text(L10n.tr(title)).font(.system(size: 10, weight: .medium)).foregroundStyle(.white)
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 7, weight: .semibold)).foregroundStyle(.white.opacity(0.35))
         }
@@ -370,9 +370,9 @@ private struct DemoPhone: View {
             Capsule().fill(.white.opacity(0.3)).frame(width: 28, height: 3).padding(.top, 6)
             HStack(spacing: 6) {
                 CharacterAvatar(shape: "hex", color: "gray", size: 18)
-                Text("Codync").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                Text(L10n.tr("Codync")).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
             }
-            Text("See who needs you and who's still working.")
+            Text(L10n.tr("See who needs you and who's still working."))
                 .font(.system(size: 8)).foregroundStyle(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
@@ -387,7 +387,7 @@ private struct DemoPhone: View {
                 ForEach(0..<3) { i in Circle().fill(.white.opacity(i == 1 ? 0.9 : 0.3)).frame(width: 4, height: 4) }
             }
             Spacer()
-            Label("Add Widget", systemImage: "plus")
+            Label(L10n.tr("Add Widget"), systemImage: "plus")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.black)
                 .frame(width: 140, height: 28)

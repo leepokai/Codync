@@ -1,29 +1,44 @@
 //! Signing agents in the ACP way, so every agent that speaks ACP can be set up
 //! from Codync, not just the ones we know by name.
 //!
-//! A check starts the agent, reads the `authMethods` it advertises and tries
-//! `session/new`: `-32000` means it needs signing in. Methods come in three kinds:
+//! A check starts the agent and reads the `authMethods` it advertises. An agent that
+//! reports its login (`_auth/status_update`) is believed; when its report doesn't
+//! come, the harness's own CLI check decides, else it can't tell (a session proves
+//! nothing for it). Other agents get `session/new`: `-32000` means it needs signing
+//! in (`WorkBuddy` opens one signed out, so its account tells). Methods come in three kinds:
 //! - terminal: a command (the agent's `_meta.terminal-auth`, or its own binary
 //!   with `args`), run in a setup terminal (`term`);
 //! - agent: the agent signs itself in on `authenticate` (usually a browser on
 //!   this computer);
 //! - env var: keys the user types, kept in the store and handed to the agent's
-//!   environment on every launch.
+//!   environment on every launch (on a Codync Cloud computer, provider keys through its keeper: `proxied`).
 
 use crate::LockExt;
-use crate::agent::acp::{AUTH_REQUIRED, Acp, Incoming, RpcError};
+use crate::agent::acp::{self, AUTH_REQUIRED, Incoming, RpcError};
 use crate::agent::backends;
 use crate::agent::registry::{Cmd, env_prefix};
+use crate::keeper::client::Grants;
+use crate::remote::managed::is_managed;
 use crate::shell::quote as shell_quote;
 use crate::store::Store;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, bail};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+mod agent;
+mod models;
+mod proxied;
+pub use agent::authenticate;
+use agent::start;
+pub(crate) use agent::{Started, authenticate_account, start_with};
+pub use models::{InFlight, models, shared_models};
+pub(crate) use models::{model_config, model_ids};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -72,31 +87,154 @@ pub struct Status {
 static CHECKED: Mutex<BTreeMap<String, Status>> = Mutex::new(BTreeMap::new());
 
 /// Where probe sessions live, away from the user's projects.
-fn probe_dir() -> PathBuf {
+pub(crate) fn probe_dir() -> PathBuf {
     crate::service::data_dir().join("probe")
 }
 
+/// Where `backend`'s saved keys are. A login profile's are in a slot of its own (`login_profiles::keys`).
 fn env_slot(backend: &str) -> String {
     format!("agent-env:{backend}")
 }
 
-/// Keys saved for `backend`, as environment for its process.
-pub fn env(store: &Store, backend: &str) -> Result<Vec<(String, String)>> {
-    let Some(raw) = crate::market::vault::read(store, &env_slot(backend))? else {
-        return Ok(Vec::new());
+/// The variables saved in `slot` that agents may read: all of them, except a cloud computer's proxied ones.
+fn visible(store: &Store, slot: &str) -> Result<BTreeMap<String, String>> {
+    let Some(raw) = crate::market::vault::read(store, slot)? else {
+        return Ok(BTreeMap::new());
     };
-    let values: BTreeMap<String, String> = serde_json::from_str(&raw)?;
-    Ok(values.into_iter().collect())
+    Ok(serde_json::from_str(&raw)?)
 }
 
-/// Names of the saved keys (values never leave the host).
-fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
-    Ok(env(store, backend)?.into_iter().map(|(k, _)| k).collect())
+/// What the user typed (name → value) as changes: an empty value removes the variable.
+pub(crate) fn env_changes(vars: &Map<String, Value>) -> Result<Vec<(String, Option<String>)>> {
+    let mut changes = Vec::new();
+    for (k, v) in vars {
+        if !crate::shell::is_env_name(k) {
+            bail!("`{k}` isn't an environment variable name");
+        }
+        changes.push((k.clone(), v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)));
+    }
+    Ok(changes)
+}
+
+/// Applies `changes` (a value, or `None` to remove it) to `saved`: the names removed.
+fn apply(saved: &mut BTreeMap<String, String>, changes: &[(String, Option<String>)]) -> BTreeSet<String> {
+    let mut removed = BTreeSet::new();
+    for (name, value) in changes {
+        if let Some(value) = value {
+            saved.insert(name.clone(), value.clone());
+        } else {
+            saved.remove(name);
+            removed.insert(name.clone());
+        }
+    }
+    removed
+}
+
+/// Applies `changes` to the variables saved in `slot`. On a Codync Cloud computer, provider keys go to its keeper
+/// (`proxied`).
+pub(crate) fn save_env(store: &Store, slot: &str, changes: &[(String, Option<String>)]) -> Result<()> {
+    if is_managed(store) {
+        return proxied::save(store, slot, changes);
+    }
+    let mut saved = visible(store, slot)?;
+    apply(&mut saved, changes);
+    crate::market::vault::write(store, slot, &serde_json::to_string(&saved)?)
+}
+
+/// Deletes every variable saved in `slot`, proxied ones too. Needs no open vault.
+pub(crate) fn forget_env(store: &Store, slot: &str) -> Result<()> {
+    if is_managed(store) {
+        proxied::forget(store, slot)?;
+    }
+    crate::market::vault::delete(store, slot)
+}
+
+/// The variables saved in `slot` but those `skip` names (each with the address saved for it), as environment for
+/// a process, and the grants a cloud computer's proxied ones are on: the process holds those for as long as it runs
+/// (`Acp::hold`); dropping them revokes them.
+pub(crate) fn env_without(store: &Store, slot: &str, skip: &[&str]) -> Result<(Vec<(String, String)>, Grants)> {
+    let mut saved = visible(store, slot)?;
+    for key in skip {
+        if saved.remove(*key).is_some()
+            && let Some(address) = proxied::address_of(key)
+        {
+            saved.remove(address);
+        }
+    }
+    let mut env: Vec<(String, String)> = saved.into_iter().collect();
+    let mut grants = Grants::default();
+    if is_managed(store) {
+        proxied::add(store, slot, skip, &mut env, &mut grants)?;
+    }
+    Ok((env, grants))
+}
+
+/// One saved value its agent reads as is (a folder, such as `CODEX_HOME`); never a proxied key.
+pub fn saved_value(store: &Store, backend: &str, name: &str) -> Result<Option<String>> {
+    Ok(visible(store, &env_slot(backend))?.remove(name))
+}
+
+/// The environment `backend`'s process starts with on `login_profile` (none: the computer's own login): the saved
+/// keys, what the harness needs to start, and the login profile's own (and [`env_without`]'s grants).
+pub fn launch_env(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+) -> Result<(Vec<(String, String)>, Grants)> {
+    let (own, own_grants) = crate::agent::login_profiles::env(store, backend, login_profile)?;
+    // A login profile wins over a key saved for the agent, which the agent would run on instead.
+    let login_keys = if own.is_empty() { &[] } else { crate::agent::login_profiles::login_keys(backend) };
+    let (mut env, mut grants) = env_without(store, &env_slot(backend), login_keys)?;
+    grants.absorb(own_grants);
+    backends::apply_process_env(backend, &mut env);
+    // And its variables over the ones the user saved for the agent.
+    env.retain(|(name, _)| !own.iter().any(|(set, _)| set == name));
+    env.extend(own);
+    Ok((env, grants))
+}
+
+/// Whether [`launch_env`] reads the vault, which has to be open then: keys are saved for the agent, or it runs on
+/// an API key login profile.
+pub fn launch_reads_vault(store: &Store, backend: &str, login_profile: Option<&str>) -> Result<bool> {
+    Ok(crate::market::vault::saved(store, &env_slot(backend))?
+        || crate::agent::login_profiles::reads_vault(store, backend, login_profile))
+}
+
+/// Whether [`launch_env`] sets variable `name`, answered from the saved names alone (no vault, no grant).
+pub fn launch_sets(store: &Store, backend: &str, login_profile: Option<&str>, name: &str) -> bool {
+    let saved = || saved_env(store, backend).unwrap_or_default().iter().any(|k| k == name);
+    match crate::agent::login_profiles::vars(store, backend, login_profile) {
+        Some(own) => {
+            own.iter().any(|k| k == name)
+                || (!crate::agent::login_profiles::login_keys(backend).contains(&name) && saved())
+        }
+        None => saved(),
+    }
+}
+
+/// Names of the variables saved in `slot` (values never leave the host), proxied ones too.
+pub(crate) fn saved_names(store: &Store, slot: &str) -> Result<Vec<String>> {
+    let mut names: Vec<String> = visible(store, slot)?.into_keys().collect();
+    if is_managed(store) {
+        names.extend(proxied::names(store, slot)?);
+        names.sort();
+    }
+    Ok(names)
+}
+
+/// Names of the keys saved for `backend`.
+pub(crate) fn saved_env(store: &Store, backend: &str) -> Result<Vec<String>> {
+    saved_names(store, &env_slot(backend))
 }
 
 /// Runs a check and returns `{signedIn, detail, methods, savedEnv}`.
 pub async fn check(store: &Store, backend: &str) -> Result<Value> {
-    let status = probe(store, backend).await?;
+    let mut status = probe(store, backend).await?;
+    // Where a session proves nothing, a check that can't tell keeps what the last sign-in showed.
+    if status.signed_in.is_none() && !backends::session_proves_sign_in(backend) {
+        status.signed_in = backends::signed_in(backend);
+    }
+    status.signed_in = backends::apply_prompt_refusal(backend, status.signed_in);
     backends::set_signed_in(backend, status.signed_in);
     CHECKED.locked().insert(backend.to_owned(), status.clone());
     let mut v = serde_json::to_value(&status)?;
@@ -106,131 +244,33 @@ pub async fn check(store: &Store, backend: &str) -> Result<Value> {
     Ok(v)
 }
 
-/// Discover the agent's advertised models in an isolated, prompt-free session.
-/// This uses the same credentials as actual bot sessions and never reads project files.
-pub async fn models(store: &Store, backend: &str) -> Result<Value> {
-    let (acp, mut inbox, _, _) = start(store, backend).await?;
-    let result = tokio::time::timeout(Duration::from_secs(60), async {
-        let request = acp.request("session/new", json!({"cwd": probe_dir(), "mcpServers": []}));
-        tokio::pin!(request);
-        let session = loop {
-            tokio::select! {
-                result = &mut request => break result?,
-                incoming = inbox.recv() => match incoming {
-                    Some(Incoming::Request { id, .. }) => {
-                        acp.respond_error(id, -32601, "not supported during model discovery").await?;
-                    }
-                    Some(Incoming::Notification { .. }) => {}
-                    Some(Incoming::Closed { .. }) | None => bail!("agent closed during model discovery"),
-                }
-            }
-        };
-        // Cursor lists each model's options (effort, fast…) only through its own method.
-        let options = if backend == "cursor" {
-            acp.request("cursor/list_available_models", json!({})).await.unwrap_or_default()
+async fn probe(store: &Store, backend: &str) -> Result<Status> {
+    if backends::agent_checks_off() {
+        return Ok(Status::default());
+    }
+    let Started { acp, mut inbox, init, cmd } = start(store, backend).await?;
+    let methods = methods(backend, &init, &cmd);
+    // Held until the check below is done.
+    let (vars, _grants) = launch_env(store, backend, None)?;
+    if let ControlFlow::Break(signed_in) = login_without_session(&init, &mut inbox, backend, &vars).await {
+        acp.kill().await;
+        return Ok(Status { signed_in, detail: None, methods });
+    }
+    let dir = probe_dir();
+    tokio::fs::create_dir_all(&dir).await?;
+    let res = tokio::time::timeout(Duration::from_mins(1), async {
+        acp.request("session/new", json!({"cwd": dir, "mcpServers": []})).await?;
+        // WorkBuddy opens a session before it has a token: its account says whether it's signed in.
+        Ok::<_, anyhow::Error>(if backends::session_proves_sign_in(backend) {
+            Some(true)
         } else {
-            Value::Null
-        };
-        Ok((session, options))
+            acp::codebuddy::signed_in(&acp).await
+        })
     })
     .await;
     acp.kill().await;
-    let (session, options) = result.context("the agent's model list timed out")??;
-    Ok(model_catalog(&session, &options))
-}
-
-/// IDs are agent-defined: use the category, with legacy conventional IDs as a fallback.
-pub(crate) fn model_config(session: &Value) -> Option<&Value> {
-    let options = session["configOptions"].as_array()?;
-    let is_select = |v: &&Value| v["type"] == "select" || v.get("type").is_none();
-    options
-        .iter()
-        .filter(is_select)
-        .find(|v| v["category"] == "model")
-        .or_else(|| options.iter().filter(is_select).find(|v| v["id"] == "model" || v["id"] == "models"))
-}
-
-/// The model ids the agent lists, in its order.
-pub(crate) fn model_ids(session: &Value) -> Vec<String> {
-    let catalog = model_catalog(session, &Value::Null);
-    catalog["models"].as_array().into_iter().flatten().filter_map(|m| text(&m["id"])).collect()
-}
-
-/// `{models: [{id, name, description, options}], currentModelId, fastMode}`; `options` is
-/// Cursor's `cursor/list_available_models` answer (`Null` for other agents).
-fn model_catalog(session: &Value, options: &Value) -> Value {
-    fn collect(options: &Value, out: &mut Vec<Value>) {
-        for option in options.as_array().into_iter().flatten() {
-            if option["options"].is_array() {
-                collect(&option["options"], out);
-            } else if let Some(id) = text(&option["value"])
-                && !out.iter().any(|v| v["id"] == id)
-            {
-                out.push(json!({"id": id, "name": text(&option["name"]).unwrap_or(id),
-                    "description": text(&option["description"])}));
-            }
-        }
-    }
-    let mut models = Vec::new();
-    let current = if let Some(config) = model_config(session) {
-        collect(&config["options"], &mut models);
-        text(&config["currentValue"])
-    } else {
-        for model in session["models"]["availableModels"].as_array().into_iter().flatten() {
-            if let Some(id) = text(&model["modelId"])
-                && !models.iter().any(|v| v["id"] == id)
-            {
-                models.push(json!({"id": id, "name": text(&model["name"]).unwrap_or(id),
-                    "description": text(&model["description"])}));
-            }
-        }
-        text(&session["models"]["currentModelId"])
-    };
-    for model in &mut models {
-        model["options"] = json!(model_options(options, model["id"].as_str().unwrap_or_default()));
-    }
-    json!({"models": models, "currentModelId": current,
-        "fastMode": crate::agent::config::fast_mode_config(session).is_some()})
-}
-
-/// One model's options as `[{id, name, values: [{id, name}], default}]`, from Cursor's
-/// `{models: [{value, configOptions}]}` (ACP select config options).
-fn model_options(options: &Value, model: &str) -> Vec<Value> {
-    let entry = options["models"].as_array().into_iter().flatten().find(|m| m["value"] == model);
-    entry
-        .and_then(|m| m["configOptions"].as_array())
-        .into_iter()
-        .flatten()
-        .filter(|o| o["type"] == "select")
-        .filter_map(|o| {
-            let id = text(&o["id"])?;
-            let values: Vec<Value> = o["options"]
-                .as_array()?
-                .iter()
-                .filter_map(|v| {
-                    let value = text(&v["value"])?;
-                    Some(json!({"id": value, "name": text(&v["name"]).unwrap_or(value)}))
-                })
-                .collect();
-            Some(json!({"id": id, "name": text(&o["name"]).unwrap_or(id), "values": values,
-                "default": text(&o["currentValue"])}))
-        })
-        .collect()
-}
-
-async fn probe(store: &Store, backend: &str) -> Result<Status> {
-    let (acp, _inbox, init, cmd) = start(store, backend).await?;
-    let methods = methods(backend, &init, &cmd);
-    let dir = probe_dir();
-    tokio::fs::create_dir_all(&dir).await?;
-    let res = tokio::time::timeout(
-        Duration::from_secs(60),
-        acp.request("session/new", json!({"cwd": dir, "mcpServers": []})),
-    )
-    .await;
-    acp.kill().await;
     let (signed_in, detail) = match res {
-        Ok(Ok(_)) => (Some(true), None),
+        Ok(Ok(signed_in)) => (signed_in, None),
         Ok(Err(e)) => match e.downcast_ref::<RpcError>() {
             Some(r) if r.code == AUTH_REQUIRED => (Some(false), Some(r.message.clone())),
             _ => (None, Some(format!("{e:#}"))),
@@ -240,66 +280,45 @@ async fn probe(store: &Store, backend: &str) -> Result<Status> {
     Ok(Status { signed_in, detail, methods })
 }
 
-/// Starts `backend` and completes `initialize`, trying each way to launch it.
-/// The agent's inbox must stay open: the reader stops when nobody listens.
-type Started = (Arc<Acp>, mpsc::UnboundedReceiver<Incoming>, Value, Cmd);
-
-async fn start(store: &Store, backend: &str) -> Result<Started> {
-    // The installed CLI alone when there is one: resolving the registry build can mean a long download.
-    let candidates = match backends::local_candidate(backend) {
-        Some(local) => vec![local],
-        None => backends::launch_candidates(backend, |_| {}).await?,
-    };
-    let env = env(store, backend)?;
-    let dir = probe_dir();
-    tokio::fs::create_dir_all(&dir).await?;
-    let mut last = None;
-    let count = candidates.len();
-    for (i, cmd) in candidates.into_iter().enumerate() {
-        // A first `npx` run downloads the package: give the last candidate time.
-        let budget = Duration::from_secs(if i + 1 < count { 20 } else { 180 });
-        let (acp, mut rx) = match Acp::spawn(&cmd.acp(), &dir.to_string_lossy(), &env) {
-            Ok(v) => v,
-            Err(e) => {
-                last = Some(e);
-                continue;
-            }
-        };
-        let init = acp.request(
-            "initialize",
-            json!({
-                "protocolVersion": 1,
-                "clientCapabilities": {
-                    "fs": {"readTextFile": false, "writeTextFile": false},
-                    "terminal": false,
-                    // Ask for terminal sign-in methods (spec field and the older `_meta` flag),
-                    // and for plain models with options, as bot sessions do (`bot::start_agent`).
-                    "auth": {"terminal": true},
-                    "_meta": {"terminal-auth": true, "parameterizedModelPicker": true},
-                },
-                "clientInfo": {"name": "codync", "title": "Codync", "version": env!("CARGO_PKG_VERSION")},
-            }),
-        );
-        match tokio::time::timeout(budget, init).await {
-            Ok(Ok(init)) => return Ok((acp, rx, init, cmd)),
-            Ok(Err(e)) => {
-                // Its last stderr line usually says why it quit.
-                let why = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|inc| match inc {
-                    Incoming::Closed { stderr_tail } => {
-                        stderr_tail.lines().rev().find(|l| !l.trim().is_empty()).map(str::to_owned)
-                    }
-                    _ => None,
-                });
-                last = Some(match why {
-                    Some(why) => e.context(why),
-                    None => e,
-                });
-            }
-            Err(_) => last = Some(anyhow!("the agent didn't start within {}s", budget.as_secs())),
-        }
-        acp.kill().await;
+/// `Break`: the login of an agent that reports it, never judged by a session: Claude's adapter
+/// opens one without checking the login, which then fails at the first prompt. When its report
+/// doesn't come (the adapter gives its own `claude auth status` 5 s, too few on many Windows
+/// computers), the harness's CLI check decides, with more time and the agent's `env`, else it
+/// can't tell. `Continue`: the agent doesn't report its login, so a session tells.
+async fn login_without_session(
+    init: &Value,
+    inbox: &mut mpsc::UnboundedReceiver<Incoming>,
+    backend: &str,
+    env: &[(String, String)],
+) -> ControlFlow<Option<bool>> {
+    if !init["agentCapabilities"]["_meta"]["authStatus"].is_object() {
+        return ControlFlow::Continue(());
     }
-    Err(last.unwrap_or_else(|| anyhow!("couldn't start the agent")))
+    if let Some(reported) = reported_login(inbox).await {
+        return ControlFlow::Break(Some(reported));
+    }
+    ControlFlow::Break(match backends::harness(backend) {
+        Some(h) => backends::cli_signed_in(h, env).await,
+        None => None,
+    })
+}
+
+/// The agent's first `_auth/status_update` (ACP `authStatus` extension): `kind: "none"` is signed
+/// out, any other kind signed in. `None`: it can't tell (it stays silent then).
+async fn reported_login(inbox: &mut mpsc::UnboundedReceiver<Incoming>) -> Option<bool> {
+    // Claude's adapter gives its `claude auth status` 5 s.
+    let report = async {
+        while let Some(incoming) = inbox.recv().await {
+            if let Incoming::Notification { method, params } = incoming
+                && method == "_auth/status_update"
+                && let Some(kind) = params["authStatus"]["kind"].as_str()
+            {
+                return Some(kind != "none");
+            }
+        }
+        None
+    };
+    tokio::time::timeout(Duration::from_secs(8), report).await.ok().flatten()
 }
 
 fn text(v: &Value) -> Option<String> {
@@ -329,7 +348,7 @@ fn methods(backend: &str, init: &Value, cmd: &Cmd) -> Vec<Method> {
                     .iter()
                     .filter_map(|v| {
                         let name = text(&v["name"])?;
-                        name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_').then(|| EnvVar {
+                        crate::shell::is_env_name(&name).then(|| EnvVar {
                             label: text(&v["label"]).unwrap_or_else(|| name.clone()),
                             secret: v["secret"].as_bool().unwrap_or(true),
                             optional: v["optional"].as_bool().unwrap_or(false),
@@ -377,113 +396,17 @@ pub fn terminal_command(backend: &str, method: &str) -> Option<String> {
     })
 }
 
-/// Lets the agent sign itself in (it usually opens a browser on this computer).
-pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<Value> {
-    let (acp, _inbox, _, _) = start(store, backend).await?;
-    let res =
-        tokio::time::timeout(Duration::from_secs(10 * 60), acp.request("authenticate", json!({"methodId": method})))
-            .await;
-    acp.kill().await;
-    match res {
-        Ok(r) => {
-            r.context("signing in")?;
-        }
-        Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
-    }
-    check(store, backend).await
-}
-
 /// Saves the keys for an env-var method (empty values remove them), then re-checks.
 pub async fn set_env(store: &Store, backend: &str, vars: &Map<String, Value>) -> Result<Value> {
-    let mut saved: BTreeMap<String, String> = env(store, backend)?.into_iter().collect();
-    for (k, v) in vars {
-        if !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') || k.is_empty() {
-            bail!("`{k}` isn't an environment variable name");
-        }
-        match v.as_str().map(str::trim).filter(|s| !s.is_empty()) {
-            Some(v) => saved.insert(k.clone(), v.to_owned()),
-            None => saved.remove(k),
-        };
-    }
-    crate::market::vault::write(store, &env_slot(backend), &serde_json::to_string(&saved)?)?;
+    save_env(store, &env_slot(backend), &env_changes(vars)?)?;
+    // New keys are a new sign-in: the prompt the old ones got refused no longer counts.
+    backends::clear_prompt_refused(backend);
     check(store, backend).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn model_catalog_reads_grouped_config_and_preserves_agent_ids() {
-        let session = json!({"configOptions": [{
-            "id": "provider-model", "category": "model", "type": "select", "currentValue": "m2",
-            "options": [{"group": "a", "options": [
-                {"value": "m1", "name": "First"}, {"value": "m2", "name": "Second"},
-                {"value": "m1", "name": "Duplicate"}
-            ]}]
-        }], "models": {"availableModels": [{"modelId": "legacy", "name": "Legacy"}]}});
-        assert_eq!(model_config(&session).unwrap()["id"], "provider-model");
-        let result = model_catalog(&session, &Value::Null);
-        assert_eq!(result["currentModelId"], "m2");
-        assert_eq!(result["models"].as_array().unwrap().len(), 2);
-        assert_eq!(result["models"][0]["id"], "m1");
-        assert_eq!(result["models"][1]["name"], "Second");
-        assert_eq!(result["models"][1]["options"], json!([]));
-        assert_eq!(model_ids(&session), ["m1", "m2"]);
-    }
-
-    #[test]
-    fn model_catalog_reads_legacy_and_missing_lists() {
-        let result = model_catalog(
-            &json!({"models": {
-                "currentModelId": "a", "availableModels": [
-                    {"modelId": "a", "name": "Agent model", "description": "Available here"},
-                    {"name": "No ID"}
-                ]
-            }}),
-            &Value::Null,
-        );
-        assert_eq!(result["models"].as_array().unwrap().len(), 1);
-        assert_eq!(result["models"][0]["description"], "Available here");
-        assert_eq!(
-            model_catalog(&json!({}), &Value::Null),
-            json!({"models": [], "currentModelId": null, "fastMode": false})
-        );
-    }
-
-    #[test]
-    fn model_catalog_adds_cursor_model_options() {
-        let session = json!({"configOptions": [{"id": "model", "category": "model", "type": "select",
-            "currentValue": "grok-4.7", "options": [{"value": "grok-4.7", "name": "Grok 4.7"}, {"value": "auto"}]}]});
-        let listed = json!({"models": [{"value": "grok-4.7", "name": "Grok 4.7", "configOptions": [
-            {"id": "reasoning_effort", "name": "Reasoning", "category": "thought_level", "type": "select",
-             "currentValue": "high", "options": [{"value": "medium", "name": "Medium"}, {"value": "high", "name": "High"}]},
-            {"id": "fast", "type": "select", "currentValue": "true", "options": [{"value": "false", "name": "Off"}, {"value": "true"}]},
-            {"id": "verbose", "type": "boolean"}
-        ]}]});
-        let result = model_catalog(&session, &listed);
-        assert_eq!(
-            result["models"][0]["options"],
-            json!([
-                {"id": "reasoning_effort", "name": "Reasoning", "default": "high",
-                 "values": [{"id": "medium", "name": "Medium"}, {"id": "high", "name": "High"}]},
-                {"id": "fast", "name": "fast", "default": "true",
-                 "values": [{"id": "false", "name": "Off"}, {"id": "true", "name": "true"}]}
-            ])
-        );
-        assert_eq!(result["models"][1]["options"], json!([]));
-    }
-
-    #[test]
-    fn model_config_prefers_category_and_ignores_unknown_types() {
-        let session = json!({"configOptions": [
-            {"id": "model", "type": "boolean"},
-            {"id": "models", "type": "select"},
-            {"id": "engine", "category": "model", "type": "select"}
-        ]});
-        assert_eq!(model_config(&session).unwrap()["id"], "engine");
-        assert!(model_config(&json!({"configOptions": [{"id": "model", "type": "boolean"}]})).is_none());
-    }
 
     fn cmd() -> Cmd {
         Cmd { program: "npx -y pkg@1".into(), args: "--acp".into() }
@@ -518,6 +441,38 @@ mod tests {
         assert_eq!(m.len(), 5);
         // Commands stay on the host.
         assert!(serde_json::to_value(&m[0]).unwrap().get("command").is_none());
+    }
+
+    #[tokio::test]
+    async fn takes_the_first_login_the_agent_reports() {
+        let report = |kind: &str| Incoming::Notification {
+            method: "_auth/status_update".into(),
+            params: json!({"authStatus": {"kind": kind, "label": "x"}}),
+        };
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(Incoming::Notification { method: "session/update".into(), params: json!({}) }).unwrap();
+        tx.send(report("none")).unwrap();
+        tx.send(report("account")).unwrap();
+        assert_eq!(reported_login(&mut rx).await, Some(false));
+        assert_eq!(reported_login(&mut rx).await, Some(true));
+        drop(tx);
+        assert_eq!(reported_login(&mut rx).await, None, "an agent that goes quiet can't tell");
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_reports_its_login_is_never_judged_by_a_session() {
+        let reports = json!({"agentCapabilities": {"_meta": {"authStatus": {}}}});
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(Incoming::Notification {
+            method: "_auth/status_update".into(),
+            params: json!({"authStatus": {"kind": "none"}}),
+        })
+        .unwrap();
+        assert_eq!(login_without_session(&reports, &mut rx, "x", &[]).await, ControlFlow::Break(Some(false)));
+        drop(tx);
+        // No report and no CLI check: it can't tell, and still opens no session.
+        assert_eq!(login_without_session(&reports, &mut rx, "x", &[]).await, ControlFlow::Break(None));
+        assert_eq!(login_without_session(&json!({}), &mut rx, "x", &[]).await, ControlFlow::Continue(()));
     }
 
     #[test]

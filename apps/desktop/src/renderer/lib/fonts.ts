@@ -1,39 +1,39 @@
 import type { CSSProperties } from 'react'
 
-// macOS text styles in points (NSFont.preferredFont), scaled by the app's text size preference
-// like kit's `AppFont`.
-export const TextStyle = {
-  largeTitle: 26,
-  title: 22,
-  title2: 17,
-  title3: 15,
-  headline: 13,
-  body: 13,
-  callout: 12,
-  subheadline: 11,
-  footnote: 10,
-  caption: 10,
-  caption2: 10,
-  /** Codync's compact desktop body (12) and secondary (11). */
-  compactBody: 12,
-  compactSecondary: 11,
+// macOS text styles (NSFont.preferredFont) mapped onto the type ramp in styles/theme.css, which
+// scales with the app's text size preference like kit's `AppFont`.
+const TextStyle = {
+  largeTitle: 'large-title',
+  title: 'title',
+  title2: 'title2',
+  title3: 'title3',
+  headline: 'body',
+  body: 'body',
+  callout: 'callout',
+  subheadline: 'caption',
+  // macOS draws these at 10; 11 is the floor for text people read or click.
+  footnote: 'caption',
+  caption: 'caption',
+  caption2: 'caption',
+  /** Codync's compact desktop body and secondary text. */
+  compactBody: 'callout',
+  compactSecondary: 'caption',
 } as const
 
 export type TextStyleName = keyof typeof TextStyle
 
 /** `calc(<pt>px * var(--scale))` */
-export const px = (size: number) => `calc(${size}px * var(--scale))`
+const px = (size: number) => `calc(${size}px * var(--scale))`
 
-type Weight = 'regular' | 'medium' | 'semibold' | 'bold' | 'black' | 'light'
-const weights: Record<Weight, number> = { light: 300, regular: 400, medium: 500, semibold: 600, bold: 700, black: 900 }
+export type Weight = 'regular' | 'medium' | 'semibold' | 'bold' | 'black' | 'light'
+export const weights: Record<Weight, number> = { light: 300, regular: 400, medium: 500, semibold: 600, bold: 700, black: 900 }
 
-/** `.appFont(...)`: a text style name or a point size, with weight and design. */
-export function font(style: TextStyleName | number, weight?: Weight, design?: 'monospaced' | 'rounded'): CSSProperties {
-  const size = typeof style === 'number' ? style : TextStyle[style]
+/** `.appFont(...)`: a text style name or a point size, with weight, optionally monospaced. */
+export function font(style: TextStyleName | number, weight?: Weight, mono = false): CSSProperties {
   const w = weight ?? (style === 'headline' ? 'bold' : 'regular')
   return {
-    fontSize: px(size),
+    fontSize: typeof style === 'number' ? px(style) : `var(--text-${TextStyle[style]})`,
     fontWeight: weights[w],
-    ...(design === 'monospaced' ? { fontFamily: 'var(--mono)' } : design === 'rounded' ? { fontFamily: 'ui-rounded, var(--font)' } : {}),
+    ...(mono ? { fontFamily: 'var(--mono)' } : {}),
   }
 }

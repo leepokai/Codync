@@ -13,6 +13,7 @@ export default defineConfig({
   preload: {},
   renderer: {
     resolve: { alias: { '@shared': resolve('src/shared') } },
+    server: { fs: { allow: [resolve('..')] } },
     plugins: [react()],
     // Readable function names in error reports; the files are local, so size doesn't matter.
     build: { minify: false },

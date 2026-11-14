@@ -42,9 +42,9 @@ struct WidgetGalleryView: View {
                         .frame(width: 58, height: 58)
                         .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 16))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Codync, at a glance.")
+                        Text(L10n.tr("Codync, at a glance."))
                             .font(.title3.weight(.semibold)).tracking(-0.4)
-                        Text("Your bots and usage, on every surface.")
+                        Text(L10n.tr("Your bots and usage, on every surface."))
                             .font(.footnote).foregroundStyle(Palette.secondary)
                     }
                 }
@@ -72,14 +72,14 @@ struct WidgetGalleryView: View {
                     .background(Palette.surface, in: RoundedRectangle(cornerRadius: 18))
                     if widgetCheckFailed {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Couldn't check your widgets. You can still add one using the steps below.")
+                            Text(L10n.tr("Couldn't check your widgets. You can still add one using the steps below."))
                                 .foregroundStyle(Palette.secondary)
-                            Button("Check again") { checkWidgets() }
+                            Button(L10n.tr("Check again")) { checkWidgets() }
                                 .buttonStyle(.secondary)
                         }
                         .font(.caption)
                     } else {
-                        Text(hasWidget == nil ? "Checking your widgets…" : "Steps check themselves as you finish them.")
+                        Text(L10n.tr(hasWidget == nil ? "Checking your widgets…" : "Steps check themselves as you finish them."))
                             .font(.caption2).foregroundStyle(Palette.tertiary)
                     }
                 }
@@ -88,7 +88,7 @@ struct WidgetGalleryView: View {
                     HStack {
                         sectionLabel("Choose your widget")
                         Spacer()
-                        Text("Sample data").font(.caption2).foregroundStyle(Palette.secondary)
+                        Text(L10n.tr("Sample data")).font(.caption2).foregroundStyle(Palette.secondary)
                     }
                     if typeSize.isAccessibilitySize {
                         ChoicePicker(selection: $kind, options: Self.kinds)
@@ -120,14 +120,14 @@ struct WidgetGalleryView: View {
                         get: { usageIconStyle },
                         set: { usageIconStyle = $0; WidgetCenter.shared.reloadTimelines(ofKind: "CodyncProviderUsage") }
                     ), options: [(UsageIconStyle.character.rawValue, "Character"), (UsageIconStyle.original.rawValue, "Original icon")])
-                    Text("Applies to Usage in the app and in widgets.")
+                    Text(L10n.tr("Applies to Usage in the app and in widgets."))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Keep tasks in view")
                     Button { page = .lockScreen } label: {
-                        Label("Lock Screen widgets", systemImage: "lock.rectangle").foregroundStyle(Palette.accent)
+                        Label(L10n.tr("Lock Screen widgets"), systemImage: "lock.rectangle").foregroundStyle(Palette.accent)
                     }
                     .buttonStyle(PressScale())
                 }
@@ -138,7 +138,7 @@ struct WidgetGalleryView: View {
                     sectionLabel("Add a widget")
                     WidgetSetupDemo()
                 }
-                Text("Widgets show the latest report. Open Codync for live updates and approvals.")
+                Text(L10n.tr("Widgets show the latest report. Open Codync for live updates and approvals."))
                     .font(.caption2).foregroundStyle(Palette.tertiary)
             }
             .padding(18)
@@ -169,10 +169,10 @@ struct WidgetGalleryView: View {
 
     private var previewDescription: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(kind == "team" ? "Small widget" : "\(size.capitalized) widget").font(.subheadline.weight(.medium))
-            Text(kind == "usage" ? "Small shows the tightest limit. Medium shows two windows. Large adds a summary and up to four limits."
+            Text(L10n.tr(kind == "team" ? "Small widget" : "\(size.capitalized) widget")).font(.subheadline.weight(.medium))
+            Text(L10n.tr(kind == "usage" ? "Small shows the tightest limit. Medium shows two windows. Large adds a summary and up to four limits."
                  : kind == "team" ? "Four bots as characters with a dot for each one at work. Touch and hold the widget, then Edit Widget to choose who sits in each spot; empty spots show the bots that need you first."
-                 : "See who needs you and who's still working. Large shows up to six bots.")
+                 : "See who needs you and who's still working. Large shows up to six bots."))
                 .font(.caption).foregroundStyle(Palette.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,7 +195,7 @@ struct WidgetGalleryView: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
+        Text(L10n.tr(title)).font(.caption.weight(.medium)).foregroundStyle(Palette.secondary)
             .accessibilityAddTraits(.isHeader)
     }
 
@@ -204,13 +204,13 @@ struct WidgetGalleryView: View {
             Image(systemName: complete ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(complete ? Palette.added : Palette.tertiary)
                 .font(.system(size: 15))
-            Text(title).font(.footnote).foregroundStyle(complete ? Palette.secondary : Palette.text)
+            Text(L10n.tr(title)).font(.footnote).foregroundStyle(complete ? Palette.secondary : Palette.text)
             Spacer()
         }
         .padding(14)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(status ?? (complete ? "Complete" : "Not complete"))
+        .accessibilityLabel(L10n.tr(title))
+        .accessibilityValue(L10n.tr(status ?? (complete ? "Complete" : "Not complete")))
     }
 
     private func checkNotifications() async {
@@ -224,7 +224,7 @@ struct WidgetGalleryView: View {
             UIApplication.shared.open(URL(string: UIApplication.openNotificationSettingsURLString)!)
         } else {
             Task {
-                _ = await PushRegistrar.shared.requestAuthorization()
+                _ = await PushRegistrar.shared.requestAuthorization(from: .widgets)
                 await checkNotifications()
             }
         }

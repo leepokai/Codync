@@ -1,114 +1,25 @@
-//! The new/edit bot and group chat forms.
+//! The bot settings form.
 
+use codync_mem::compaction::Threshold;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, AgentPicker, App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle,
-    cycle, merge_toggles,
+    After, App, COLORS, Editor, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle, merge_toggles,
 };
+use crate::tui::manage::Page;
 
 impl App {
-    pub(super) fn open_pair(&mut self) {
-        self.overlays.push(Overlay::Pair(None));
-        self.call("pairing", json!({}), After::Pairing);
-    }
-
-    pub(super) fn new_bot(&mut self) {
-        if self.backends.is_empty() {
-            self.call("hello", json!({}), After::Hello);
-        }
-        self.overlays.push(Overlay::Agents(AgentPicker { query: Editor::default(), cursor: 0 }));
-    }
-
-    pub(super) fn new_group(&mut self) {
-        self.overlays.push(Overlay::Group(GroupForm {
-            group_id: None,
-            name: Editor::default(),
-            about: Editor::default(),
-            members: vec![],
-            field: GroupField::Bots,
-            cursor: 0,
-            error: None,
-            saving: false,
-        }));
-    }
-
-    /// Bots a group can hold: the roster's agents, plus hidden ones already in it.
-    pub fn group_candidates(&self, members: &[String]) -> Vec<&Bot> {
-        let mut v: Vec<&Bot> = self.roster().into_iter().filter(|b| !b.group).collect();
-        v.extend(self.bots.values().filter(|b| b.hidden && !b.group && members.contains(&b.id)));
-        v
-    }
-
-    /// "Alice, Bob" when no name is typed.
-    pub fn group_default_name(&self, members: &[String]) -> String {
-        let names: Vec<&str> = members.iter().filter_map(|m| self.bots.get(m)).map(|b| b.name.as_str()).collect();
-        names.join(", ")
-    }
-
-    pub(super) fn group_key(&mut self, mut g: GroupForm, k: KeyEvent) -> Option<Overlay> {
-        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-        let n = self.group_candidates(&g.members).len();
-        match k.code {
-            KeyCode::Esc => return None,
-            KeyCode::Enter => self.save_group(&mut g),
-            KeyCode::Char('s') if ctrl => self.save_group(&mut g),
-            KeyCode::Tab => g.field = g.field.next(),
-            KeyCode::BackTab => g.field = g.field.prev(),
-            KeyCode::Down if g.field != GroupField::Bots => g.field = g.field.next(),
-            KeyCode::Down => g.cursor = (g.cursor + 1).min(n.saturating_sub(1)),
-            KeyCode::Up if g.field == GroupField::About => g.field = GroupField::Name,
-            KeyCode::Up if g.field == GroupField::Bots && g.cursor == 0 => g.field = GroupField::About,
-            KeyCode::Up if g.field == GroupField::Bots => g.cursor -= 1,
-            KeyCode::Char(' ') if g.field == GroupField::Bots => {
-                let id = self.group_candidates(&g.members).get(g.cursor).map(|b| b.id.clone());
-                if let Some(id) = id {
-                    g.error = None;
-                    if let Some(i) = g.members.iter().position(|m| *m == id) {
-                        g.members.remove(i);
-                    } else {
-                        g.members.push(id);
-                    }
-                }
-            }
-            _ if g.field == GroupField::Name => {
-                g.name.key(k);
-            }
-            _ if g.field == GroupField::About => {
-                g.about.key(k);
-            }
-            _ => {}
-        }
-        Some(Overlay::Group(g))
-    }
-
-    fn save_group(&mut self, g: &mut GroupForm) {
-        if g.saving {
-            return;
-        }
-        if g.members.is_empty() {
-            g.error = Some("Pick at least one bot.".into());
-            return;
-        }
-        let typed = g.name.text.trim();
-        let name = if typed.is_empty() { self.group_default_name(&g.members) } else { typed.to_owned() };
-        let mut body = json!({"name": name, "members": g.members, "description": g.about.text.trim()});
-        g.saving = true;
-        g.error = None;
-        if let Some(id) = &g.group_id {
-            body["id"] = id.clone().into();
-            self.call("updateBot", body, After::Saved);
-        } else {
-            body["id"] = "".into();
-            body["kind"] = "group".into();
-            self.call("createBot", body, After::Saved);
+    pub(in crate::tui) fn edit_bot(&mut self) {
+        if let Some(id) = self.selected.clone() {
+            self.edit_bot_of(&id);
         }
     }
 
-    pub(super) fn edit_bot(&mut self) {
-        let Some(b) = self.bot().cloned() else { return };
+    /// Opens bot `id`'s settings (a group's: its name, about and members).
+    pub(in crate::tui) fn edit_bot_of(&mut self, id: &str) {
+        let Some(b) = self.bots.get(id).cloned() else { return };
         if b.group {
             self.overlays.push(Overlay::Group(GroupForm {
                 group_id: Some(b.id.clone()),
@@ -123,17 +34,27 @@ impl App {
             return;
         }
         let mut f = Form {
-            bot_id: Some(b.id.clone()),
+            bot_id: b.id.clone(),
             name: Editor::with(&b.name),
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
+            login_profile: b.login_profile.clone(),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
             model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             fast: b.fast_mode,
+            fallbacks: b.fallbacks.clone(),
+            self_fallbacks: b.self_fallbacks,
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             auto: b.auto,
+            mode: b.mode.clone(),
             notify: b.notify,
             computer: b.computer,
+            manage_team: b.manage_team,
+            offered_to_network: b.offered_to_network,
+            reachable_by_assistants: b.reachable_by_assistants,
+            compaction: b.compaction,
+            compaction_sizes: b.compaction_sizes.clone(),
+            compaction_typed: String::new(),
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -142,68 +63,48 @@ impl App {
             sub: 0,
             error: None,
             saving: false,
+            opened: Value::Null,
         };
-        merge_toggles(&mut f.connectors, &self.market.0, false);
-        merge_toggles(&mut f.skills, &self.market.1, false);
+        merge_toggles(&mut f.connectors, &self.market.0);
+        merge_toggles(&mut f.skills, &self.market.1);
+        f.opened = f.body();
         self.want_models(&b.backend);
         self.overlays.push(Overlay::Form(Box::new(f)));
         self.call("connectors", json!({}), After::Connectors);
         self.call("skills", json!({}), After::Skills);
     }
 
-    /// Step 2 of a new bot: name and looks, prefilled, in a personal workspace.
-    pub(super) fn new_bot_form(&mut self, backend: String) {
-        if let Some(i) = self.overlays.iter().rposition(|o| matches!(o, Overlay::Agents(_))) {
-            self.overlays.truncate(i);
-        }
-        let n = self.bots.len() + usize::try_from(crate::store::now_ms() % 97).unwrap_or(0);
-        let name = NAMES[n % NAMES.len()].to_owned();
-        let f = Form {
-            bot_id: None,
-            name: Editor::with(&name),
-            instructions: Editor::default(),
-            backend,
-            model: Editor::default(),
-            model_options: (String::new(), BTreeMap::new()),
-            fast: false,
-            cwd: String::new(),
-            auto: true,
-            notify: true,
-            computer: false,
-            color: (n * 7) % COLORS.len(),
-            shape: n % SHAPES.len(),
-            connectors: self
-                .market
-                .0
-                .iter()
-                .map(|t| Toggle { id: t.id.clone(), name: t.name.clone(), on: true })
-                .collect(),
-            skills: self.market.1.iter().map(|t| Toggle { id: t.id.clone(), name: t.name.clone(), on: true }).collect(),
-            field: 0,
-            sub: 0,
-            error: None,
-            saving: false,
-        };
-        self.want_models(&f.backend);
-        self.overlays.push(Overlay::Form(Box::new(f)));
-        self.call("connectors", json!({}), After::Connectors);
-        self.call("skills", json!({}), After::Skills);
-    }
-
     pub(super) fn form_key(&mut self, mut f: Box<Form>, k: KeyEvent) -> Option<Overlay> {
+        if let Some(page) = Page::Settings.step(k) {
+            if f.dirty() {
+                f.error = Some("Save with ^S first, or Esc to drop the changes.".into());
+                return Some(Overlay::Form(f));
+            }
+            self.open_page(page);
+            return None;
+        }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && k.code == KeyCode::Char('o') && !f.saving && self.custom_icons {
+            let target = format!("bot:{}", f.bot_id);
+            self.overlays.push(Overlay::Form(f));
+            self.overlays.push(Overlay::Fields(Box::new(crate::tui::manage::icon_fields(target))));
+            return None;
+        }
         let field = f.current();
+        if field == Field::Fallbacks && self.fallback_key(&mut f, k) {
+            return Some(Overlay::Form(f));
+        }
         match k.code {
             KeyCode::Esc => return None,
             KeyCode::Char('s') if ctrl => {
                 self.save_form(&mut f);
             }
             KeyCode::Tab | KeyCode::Down => {
-                f.field = (f.field + 1) % FIELDS.len();
+                f.field = self.step_field(&f, 1);
                 f.sub = 0;
             }
             KeyCode::BackTab | KeyCode::Up => {
-                f.field = (f.field + FIELDS.len() - 1) % FIELDS.len();
+                f.field = self.step_field(&f, -1);
                 f.sub = 0;
             }
             KeyCode::Enter
@@ -219,10 +120,11 @@ impl App {
                 self.open_folder(&start);
                 return None;
             }
-            KeyCode::Enter if field == Field::Agent => {
+            // A login profile is added and signed in on the agent's own sheet.
+            KeyCode::Enter if matches!(field, Field::Agent | Field::LoginProfile) => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
-                self.open_agent(&backend);
+                self.open_agent(&backend, false);
                 return None;
             }
             KeyCode::Char('i') if field == Field::Skills => {
@@ -241,15 +143,23 @@ impl App {
                     f.model = Editor::with(&m);
                 }
             }
+            KeyCode::Char(c) if field == Field::Compaction && c.is_ascii_digit() => f.type_compaction(Some(c)),
+            KeyCode::Backspace if field == Field::Compaction => f.type_compaction(None),
             KeyCode::Enter => self.save_form(&mut f),
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')
                 if matches!(
                     field,
                     Field::Agent
+                        | Field::LoginProfile
                         | Field::Fast
+                        | Field::SelfFallbacks
                         | Field::Approvals
+                        | Field::Compaction
                         | Field::Notify
                         | Field::Computer
+                        | Field::Team
+                        | Field::Network
+                        | Field::Assistants
                         | Field::Color
                         | Field::Shape
                         | Field::ModelOptions
@@ -261,20 +171,31 @@ impl App {
                 let space = k.code == KeyCode::Char(' ');
                 match field {
                     Field::Agent if !space => {
-                        let ids: Vec<String> =
-                            self.agent_choices("").iter().filter_map(|b| b["id"].as_str().map(str::to_owned)).collect();
+                        let ids = self.agent_choices();
                         if !ids.is_empty() {
                             let i = ids.iter().position(|x| *x == f.backend).unwrap_or(0);
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
-                            // Another agent's model ids mean nothing here.
+                            // Another agent's model ids mean nothing here, and a login is in the chain once.
                             f.model.clear();
+                            f.model_options = Default::default();
+                            f.login_profile = None;
+                            let own = f.backend.clone();
+                            f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
+                            // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
+                            f.mode = f.mode.take().map(|_| crate::agent::modes::AUTO.to_owned());
                             self.want_models(&f.backend);
                         }
                     }
+                    Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
                     Field::Fast => f.fast = !f.fast,
-                    Field::Approvals => f.auto = !f.auto,
+                    Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
+                    Field::Approvals => self.cycle_approval(&mut f, d),
+                    Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
+                    Field::Team => f.manage_team = f.manage_team.map(|on| !on),
+                    Field::Network => f.offered_to_network = f.offered_to_network.map(|on| !on),
+                    Field::Assistants => f.reachable_by_assistants = f.reachable_by_assistants.map(|on| !on),
                     Field::Color if !space => f.color = cycle(f.color, d, COLORS.len()),
                     Field::Shape if !space => f.shape = cycle(f.shape, d, SHAPES.len()),
                     Field::ModelOptions => {
@@ -330,48 +251,134 @@ impl App {
         if f.saving {
             return;
         }
-        if f.bot_id.is_some() && f.name.text.trim().is_empty() {
+        if f.name.text.trim().is_empty() {
             f.error = Some("Give the bot a name.".into());
             return;
         }
-        let model = f.model.text.trim();
-        let mut body = json!({
-            "name": f.name.text.trim(),
-            "description": f.instructions.text.trim(),
-            "backend": f.backend,
-            "cwd": f.cwd,
-            "permission": if f.auto { "auto" } else { "ask" },
-            "model": if model.is_empty() { Value::Null } else { model.into() },
-            "modelOptions": f.model_options().cloned().unwrap_or_default(),
-            "fastMode": f.fast,
-            "notify": f.notify,
-            "computer": f.computer,
-            "avatarColor": COLORS[f.color],
-            "avatarShape": SHAPES[f.shape],
-            "connectors": f.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
-            "skills": f.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
-        });
+        let mut body = f.changes();
+        body["id"] = f.bot_id.clone().into();
         f.saving = true;
         f.error = None;
-        match &f.bot_id {
-            Some(id) => {
-                body["id"] = id.clone().into();
-                self.call("updateBot", body, After::Saved);
-            }
-            None => self.call("createBot", body, After::Saved),
-        }
+        self.call("updateBot", body, After::Saved);
+    }
+
+    /// Agents a bot can switch to: runnable ones on this computer first.
+    pub(super) fn agent_choices(&self) -> Vec<String> {
+        let mut v: Vec<&Value> = self
+            .backends
+            .iter()
+            .filter(|b| b["available"].as_bool().unwrap_or(false) || b["registry"].is_string())
+            .collect();
+        v.sort_by_key(|b| !b["installed"].as_bool().unwrap_or(false));
+        v.iter().filter_map(|b| b["id"].as_str().map(str::to_owned)).collect()
     }
 }
 
-const NAMES: [&str; 24] = [
-    "Ada", "Rex", "Mia", "Sol", "Kit", "Oli", "Ivy", "Max", "Zoe", "Leo", "Ari", "Bea", "Cal", "Dot", "Eli", "Fay",
-    "Gus", "Hal", "Ida", "Jin", "Kai", "Lux", "Nia", "Otto",
-];
+impl Form {
+    /// The bot as this form would save it.
+    fn body(&self) -> Value {
+        let model = self.model.text.trim();
+        json!({
+            "name": self.name.text.trim(),
+            "description": self.instructions.text.trim(),
+            "backend": self.backend,
+            "loginProfile": self.login_profile,
+            "cwd": self.cwd,
+            "permission": if self.auto { "auto" } else { "ask" },
+            "mode": self.mode,
+            "model": if model.is_empty() { Value::Null } else { model.into() },
+            "modelOptions": self.model_options().cloned().unwrap_or_default(),
+            "fastMode": self.fast,
+            "fallbacks": self.fallbacks,
+            "selfFallbacks": self.self_fallbacks,
+            "notify": self.notify,
+            "computer": self.computer,
+            "manageTeam": self.manage_team.unwrap_or_default(),
+            "offeredToNetwork": self.offered_to_network.unwrap_or(true),
+            "reachableByAssistants": self.reachable_by_assistants.unwrap_or(true),
+            "compaction": self.compaction.map(|at| match (at, &self.compaction_sizes) {
+                (Threshold::Tokens(n), Some(sizes)) => Threshold::Tokens(sizes.fit(n)),
+                _ => at,
+            }),
+            "avatarColor": COLORS[self.color],
+            "avatarShape": SHAPES[self.shape],
+            "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
+            "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
+        })
+    }
+
+    /// When Codync summarizes the chat, in the order ← → steps through: the three choices, then the sizes a menu lists.
+    pub fn compaction_choices(&self) -> Vec<Threshold> {
+        let presets = self.compaction_sizes.iter().flat_map(|s| s.presets.iter().map(|&n| Threshold::Tokens(n)));
+        [Threshold::Off, Threshold::Early, Threshold::NearLimit].into_iter().chain(presets).collect()
+    }
+
+    /// A digit typed into the size (thousands of tokens), or Backspace (`None`); held to the window's sizes on save.
+    fn type_compaction(&mut self, digit: Option<char>) {
+        if self.compaction.is_none() || self.compaction_sizes.is_none() {
+            return;
+        }
+        match digit {
+            Some(c) if self.compaction_typed.len() < 4 => self.compaction_typed.push(c),
+            Some(_) => return,
+            None => {
+                self.compaction_typed.pop();
+            }
+        }
+        if let Ok(k) = self.compaction_typed.parse::<u64>() {
+            self.compaction = Some(Threshold::Tokens(k * 1000));
+        }
+    }
+
+    fn cycle_compaction(&mut self, d: isize) {
+        let Some(now) = self.compaction else { return };
+        self.compaction_typed.clear();
+        let mut choices = self.compaction_choices();
+        // A size of one's own steps from its place among the presets.
+        if let Threshold::Tokens(n) = now
+            && !choices.contains(&now)
+        {
+            choices.insert(choices.partition_point(|c| !matches!(c, Threshold::Tokens(p) if *p > n)), now);
+        }
+        let i = choices.iter().position(|c| *c == now).unwrap_or(0);
+        self.compaction = Some(choices[cycle(i, d, choices.len())]);
+    }
+
+    /// Whether anything changed since the form opened.
+    pub fn dirty(&self) -> bool {
+        self.body() != self.opened
+    }
+
+    /// What changed since the form opened, as `updateBot` takes it: a change made elsewhere meanwhile (a bot that
+    /// manages the team, another device) stays.
+    pub(super) fn changes(&self) -> Value {
+        let mut body = self.body();
+        if let (Some(now), Some(opened)) = (body.as_object_mut(), self.opened.as_object()) {
+            now.retain(|key, value| opened.get(key) != Some(value));
+        }
+        body
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, test_app};
+    use super::super::{AgentModel, Bot, FIELDS, test_app};
     use super::*;
+
+    #[tokio::test]
+    async fn changing_agent_clears_default_model_effort() {
+        let mut app = test_app();
+        app.backends = vec![json!({"id": "claude", "available": true}), json!({"id": "codex", "available": true})];
+        let bot = json!({"id": "b", "backend": "claude", "modelOptions": {"effort": "high"}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Agent).expect("agent field");
+        let Some(Overlay::Form(f)) = app.form_key(f, KeyEvent::from(KeyCode::Right)) else { panic!("editor stays") };
+        assert_ne!(f.backend, "claude");
+        assert!(f.model_options.1.is_empty());
+    }
 
     #[tokio::test]
     async fn model_options_cycle_and_belong_to_their_model() {
@@ -392,5 +399,100 @@ mod tests {
         assert!(f.model_options().is_some_and(BTreeMap::is_empty), "back to the agent's default");
         f.model = Editor::with("other");
         assert!(f.model_options().is_none(), "another model starts without settings");
+    }
+
+    #[tokio::test]
+    async fn a_save_sends_only_what_the_form_changed() {
+        let mut app = test_app();
+        let bot = json!({"id": "b", "name": "Lead", "backend": "claude", "model": "sonnet"});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert_eq!(f.changes(), json!({}));
+        f.notify = false;
+        assert_eq!(f.changes(), json!({"notify": false}), "a model changed elsewhere meanwhile stays");
+    }
+
+    /// Feeds `keys` to the editor, which must stay open.
+    fn press(app: &mut App, mut f: Box<Form>, keys: impl IntoIterator<Item = KeyCode>) -> Box<Form> {
+        for key in keys {
+            let Some(Overlay::Form(next)) = app.form_key(f, KeyEvent::from(key)) else { panic!("the editor stays") };
+            f = next;
+        }
+        f
+    }
+
+    /// The editor of a Claude Code bot on `compaction`, at the compaction field, in a window of up to 260K.
+    fn compaction_editor(app: &mut App, compaction: &Value) -> Box<Form> {
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": compaction,
+            "compactionTokens": {"min": 50_000, "max": 260_000, "step": 10_000, "presets": [100_000, 200_000]}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        f
+    }
+
+    #[tokio::test]
+    async fn the_compaction_threshold_steps_through_choices_then_sizes() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": "early"}), "auto first, then Codync's own");
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": 100_000}));
+        let f = press(&mut app, f, [KeyCode::Left, KeyCode::Left, KeyCode::Left]);
+        assert_eq!(f.changes(), json!({}));
+        assert_eq!(f.compaction_choices().len(), 5, "auto, early, near the limit, 100K, 200K");
+
+        for (key, next) in [(KeyCode::Right, 200_000), (KeyCode::Left, 100_000)] {
+            let f = compaction_editor(&mut app, &json!(150_000));
+            let f = press(&mut app, f, [key]);
+            assert_eq!(f.changes(), json!({"compaction": next}), "a size of one's own steps from its place");
+        }
+
+        let other = json!({"id": "g", "name": "G", "backend": "gemini", "compaction": null});
+        app.bots.insert("g".into(), Bot::parse(&other).expect("a bot"));
+        app.selected = Some("g".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({}), "nothing to choose where Codync doesn't summarize");
+    }
+
+    #[tokio::test]
+    async fn a_typed_size_is_fitted_on_save() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, "35490".chars().map(KeyCode::Char));
+        assert_eq!(f.compaction, Some(Threshold::Tokens(3_549_000)), "as typed, four digits at most");
+        let f = press(&mut app, f, [KeyCode::Backspace]);
+        assert_eq!(f.changes(), json!({"compaction": 260_000}), "held to the largest size the window takes");
+        let f = press(&mut app, f, [KeyCode::Backspace; 3].into_iter().chain("155".chars().map(KeyCode::Char)));
+        assert_eq!(f.changes(), json!({"compaction": 160_000}), "to the nearest 10K");
+    }
+
+    #[tokio::test]
+    async fn the_network_switches_need_a_host_that_has_them() {
+        let mut app = test_app();
+        let old = json!({"id": "a", "name": "Old", "backend": "claude"});
+        let new = json!({"id": "b", "name": "New", "backend": "claude", "offeredToNetwork": true, "reachableByAssistants": true});
+        for bot in [&old, &new] {
+            app.bots.insert(bot["id"].as_str().unwrap().into(), Bot::parse(bot).expect("a bot"));
+        }
+        for (id, offered) in [("a", None), ("b", Some(false))] {
+            app.selected = Some(id.into());
+            app.edit_bot();
+            let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+            f.field = FIELDS.iter().position(|x| *x == Field::Network).unwrap();
+            let keep = app.form_key(f, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+            let Some(Overlay::Form(f)) = keep else { panic!("the form stays") };
+            assert_eq!(f.offered_to_network, offered);
+            let changed = f.changes();
+            assert_eq!(changed.get("offeredToNetwork").cloned(), offered.map(Value::from), "{changed}");
+        }
     }
 }

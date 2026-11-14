@@ -17,6 +17,18 @@ impl AlwaysAllowed {
         }
     }
 
+    /// A session the host has let go: its approvals go with it. An agent numbers its sessions from the start in each
+    /// process, so a fresh conversation can come back on an id an earlier one was always allowed under.
+    pub(super) fn forget(&mut self, session: &str) {
+        self.0.retain(|(saved, _)| saved != session);
+    }
+
+    /// Every conversation starts over (a restarted agent, `newSession`): what the old ones were allowed answers
+    /// nothing.
+    pub(super) fn forget_all(&mut self) {
+        self.0.clear();
+    }
+
     /// The option that answers a request like `card` without asking, once the user always allowed its kind in
     /// `session`: allow always, else allow once. `None` asks the user.
     pub(super) fn pick<'a>(&self, session: &str, card: &Value, options: &'a [Value]) -> Option<&'a str> {
@@ -76,6 +88,26 @@ mod tests {
         allowed.note("s1", &card("other", "mcp: send_email"), "always");
         assert_eq!(allowed.pick("s1", &card("other", "mcp: send_email"), &options()), Some("always"));
         assert_eq!(allowed.pick("s1", &card("other", "mcp: delete_repo"), &options()), None);
+    }
+
+    #[test]
+    fn a_forgotten_session_asks_again_and_another_keeps_its_answer() {
+        let mut allowed = AlwaysAllowed::default();
+        allowed.note("s1", &card("execute", "ls"), "always");
+        allowed.note("s2", &card("execute", "ls"), "always");
+        allowed.forget("s1");
+        assert_eq!(allowed.pick("s1", &card("execute", "cargo test"), &options()), None);
+        assert_eq!(allowed.pick("s2", &card("execute", "cargo test"), &options()), Some("always"));
+    }
+
+    #[test]
+    fn every_conversation_starting_over_forgets_every_approval() {
+        let mut allowed = AlwaysAllowed::default();
+        allowed.note("s1", &card("execute", "ls"), "always");
+        allowed.note("s2", &card("edit", "a.txt"), "always");
+        allowed.forget_all();
+        assert_eq!(allowed.pick("s1", &card("execute", "ls"), &options()), None);
+        assert_eq!(allowed.pick("s2", &card("edit", "a.txt"), &options()), None);
     }
 
     #[test]

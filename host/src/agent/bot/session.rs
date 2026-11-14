@@ -294,8 +294,14 @@ impl Actor {
             Instructions::FirstMessage => {}
         }
         let res = self.session_request("session/new", params).await?;
-        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
+        // A fresh conversation inherits no approvals. An agent numbers its sessions from the start in each process,
+        // so the id it returns here can be the one an earlier conversation was always allowed under.
+        if let Some(stale) = self.session_for(slot).filter(|stale| stale != &sid) {
+            self.always_allowed.forget(&stale);
+        }
+        self.always_allowed.forget(&sid);
+        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
         conn.loaded.insert(sid.clone(), Instant::now());
         conn.renamed.insert(sid.clone(), renamed);
         let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
@@ -345,8 +351,12 @@ impl Actor {
         }
     }
 
-    /// Drops the main ACP session so the next turn starts a fresh one.
+    /// Drops the main ACP session so the next turn starts a fresh one. Its approvals go with it: the next
+    /// conversation may come back on the same session id.
     pub(super) fn forget_session(&mut self) {
+        if let Some(sid) = self.session_id.clone() {
+            self.always_allowed.forget(&sid);
+        }
         self.set_session(None, None);
     }
 }

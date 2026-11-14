@@ -196,6 +196,9 @@ impl Actor {
             self.set_session(Some(&slot), None);
         }
         self.forget_session();
+        // Every conversation starts over on a restarted agent, so none of the old approvals may answer a new one:
+        // an agent that numbers sessions per process hands out the same ids again.
+        self.always_allowed.forget_all();
     }
 
     pub(super) async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {

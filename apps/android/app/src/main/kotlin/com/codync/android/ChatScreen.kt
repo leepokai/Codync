@@ -86,6 +86,8 @@ import kotlinx.coroutines.delay
     var peer by remember(bot.id) { mutableStateOf<String?>(null) }
     /** The voice call whose conversation is open (its line's entry id). */
     var callLine by remember(bot.id) { mutableStateOf<String?>(null) }
+    // The bot's background tasks are open (their list, or the one task's details).
+    var tasksOpen by remember(bot.id) { mutableStateOf(false) }
     var micDenied by remember { mutableStateOf(false) }
     var setupEntry by rememberSaveable { mutableStateOf<String?>(null) }
     var app by remember { mutableStateOf<ComposioApp?>(null) }
@@ -146,6 +148,9 @@ import kotlinx.coroutines.delay
         // Measured with the keyboard and navigation bar under it, so the last message clears them too.
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }
             .imePadding().navigationBarsPadding()) {
+            // A bot's own chat only: a group has no tasks.
+            if (bot.kind != "group") TaskCapsule(bot, stopping = stopTaskKey(bot.id) in state.busy, open = { tasksOpen = true },
+                stop = { store.stopTask(bot.id, it) })
             // Nothing sent now could be read on the other side.
             val mismatch = state.mismatch
             if (mismatch != null) UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
@@ -178,6 +183,7 @@ import kotlinx.coroutines.delay
     }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
+    CodyncSheet(tasksOpen, { tasksOpen = false }) { TasksSheet(bot, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
 }

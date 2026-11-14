@@ -44,6 +44,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |
 
 - At most 5 run per bot, however they start (a bot or a person); past that the error lists them.
+- A [background task](background-tasks.md)'s servers are its bot's (`tools::call` keys them to the task's owner): they show on the bot, count toward its 5, and outlive the task. Its approval card is the task's own, in the bot's chat.
 - A start finishes in a task of its own, so a request that goes away (a closed connection, a cancelled tool call) can't leave it half started. A stop that comes meanwhile ends it as soon as it's up.
 - The command ends when its first process ends, so bots give it as they'd run it in the foreground.
 - Bots hear about them in the tool's description and one line of their instructions (`BRIEF`). Nothing forces it: see

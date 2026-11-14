@@ -68,6 +68,10 @@ import kotlinx.serialization.json.jsonPrimitive
             Text(tr("Runs on {name}{path}").replace("{name}", hostName).replace("{path}", path),
                 style = Type.caption, color = Palette.tertiary)
         }
+        // Asked by one of the bot's background tasks.
+        (d["task"] as? JsonObject)?.text("title")?.let { title ->
+            Text(tr("In the background") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         if (hasDetail) Disclosure(expanded, { expanded = !expanded }, label = {
             Text(tr("Details"), style = Type.caption.medium, color = Palette.secondary)
         }) {

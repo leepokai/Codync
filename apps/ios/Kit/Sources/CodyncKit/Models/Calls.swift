@@ -7,6 +7,8 @@ import Foundation
 public struct CallSession: Sendable {
     /// A realtime provider's short-lived credential.
     public var credential: String?
+    /// Google's built-in search is on for this session (the computer added it to the role); false from older hosts.
+    public var googleSearch: Bool
     /// The voice's instructions: its role, then the background.
     public var instructions: String
     /// The voice's tools, a JSON array of `{name, description, parameters}` (JSON Schema).
@@ -18,6 +20,7 @@ public struct CallSession: Sendable {
             throw HostError.http(0, "The computer sent no call instructions.")
         }
         credential = object["credential"] as? String
+        googleSearch = object["googleSearch"] as? Bool ?? false
         self.instructions = instructions
         tools = try JSONSerialization.data(withJSONObject: object["tools"] as? [Any] ?? [])
     }

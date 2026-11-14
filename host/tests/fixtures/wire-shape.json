@@ -68,6 +68,7 @@
     "event:bot.bot.skills": "array",
     "event:bot.bot.startedAt": "null",
     "event:bot.bot.status": "string",
+    "event:bot.bot.tasks": "array",
     "event:bot.bot.unread": "number",
     "event:bot.bot.workingChat": "null",
     "event:bot.rev": "number",

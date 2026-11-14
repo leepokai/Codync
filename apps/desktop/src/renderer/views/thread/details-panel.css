@@ -92,6 +92,7 @@
 /* Every group in the inspector is an outlined card, like the routines; inputs take the fill. */
 .details-tab .card-section-rows {
   background: none;
+  --edge-fill: var(--background);
   border: 1px solid var(--border);
   border-radius: var(--radius-l);
 }

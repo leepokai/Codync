@@ -174,12 +174,36 @@ impl Running {
     }
 }
 
+/// The login profiles being removed: gone already for a bot that would be set to one, or a process started on it.
+static REMOVING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Held while a profile's sign-out and cleanup run.
+struct Removing<'a>(&'a str);
+
+impl<'a> Removing<'a> {
+    fn on(id: &'a str) -> Self {
+        REMOVING.locked().push(id.to_owned());
+        Self(id)
+    }
+}
+
+impl Drop for Removing<'_> {
+    fn drop(&mut self) {
+        forget(&REMOVING, self.0);
+    }
+}
+
 impl Drop for Running {
     fn drop(&mut self) {
-        let mut running = RUNNING.locked();
-        if let Some(at) = running.iter().position(|id| *id == self.0) {
-            running.swap_remove(at);
-        }
+        forget(&RUNNING, &self.0);
+    }
+}
+
+/// Drops one entry for `id` from `held`.
+fn forget(held: &Mutex<Vec<String>>, id: &str) {
+    let mut held = held.locked();
+    if let Some(at) = held.iter().position(|entry| entry == id) {
+        held.swap_remove(at);
     }
 }
 
@@ -192,6 +216,9 @@ fn all(store: &Store) -> Vec<Profile> {
 
 pub(crate) fn find(store: &Store, id: &str) -> Result<Profile> {
     let gone = || anyhow!("That login profile was removed from this computer.");
+    if REMOVING.locked().iter().any(|removing| removing == id) {
+        return Err(gone());
+    }
     all(store).into_iter().find(|p| p.account.id == id).ok_or_else(gone)
 }
 
@@ -269,12 +296,18 @@ pub async fn add(store: &Store, backend: &str, kind: Kind) -> Result<Value> {
 /// Signs the profile out and deletes it: an account's slot, an API key profile's keys. Refused while a bot or one
 /// of its fallbacks is set to it, an agent still runs on it (a bot moved off it mid-turn) or its sign-in is open.
 pub async fn remove(hub: &Hub, id: &str) -> Result<()> {
-    let profile = find(&hub.store, id)?;
-    let users = users(&hub.store, id)?;
-    if !users.is_empty() {
-        let why = format!("{} still use this login profile. Move them to another one first.", users.join(", "));
-        return Err(Refused::error("in_use", why));
-    }
+    // Found, checked and marked under the lock a bot is saved under (`settle`): none is set to it during the
+    // cleanup, and a second removal of it finds it gone.
+    let (profile, _removing) = {
+        let _bots = hub.emit_lock.locked();
+        let profile = find(&hub.store, id)?;
+        let users = users(&hub.store, id)?;
+        if !users.is_empty() {
+            let why = format!("{} still use this login profile. Move them to another one first.", users.join(", "));
+            return Err(Refused::error("in_use", why));
+        }
+        (profile, Removing::on(id))
+    };
     if RUNNING.locked().iter().any(|running| running == id) || hub.terms.signing_in(id) {
         let why = "An agent is still running on this login profile, its usage is being checked, or its sign-in is \
                    open. Try again once it's done.";
@@ -305,7 +338,21 @@ pub fn env(store: &Store, backend: &str, profile: Option<&str>) -> Result<(Vec<(
     let Some(profile) = resolve(store, backend, profile)? else { return Ok(Default::default()) };
     match profile.kind {
         Kind::Account => Ok((account::env(&profile.account)?, Grants::default())),
-        Kind::ApiKey => keys::env(store, &profile.account.id),
+        Kind::ApiKey => {
+            let (mut env, grants) = keys::env(store, &profile.account.id)?;
+            only_own_login(&profile.account.agent, &mut env);
+            Ok((env, grants))
+        }
+    }
+}
+
+/// Takes the login keys `env` doesn't set away from the process (an empty value: `shell::apply_env`), so a key the
+/// host itself was started with never signs the agent in over the profile.
+fn only_own_login(agent: &str, env: &mut Vec<(String, String)>) {
+    for key in login_keys(agent) {
+        if !env.iter().any(|(name, _)| name == key) {
+            env.push(((*key).to_owned(), String::new()));
+        }
     }
 }
 

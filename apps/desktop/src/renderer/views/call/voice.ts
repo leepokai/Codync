@@ -1,3 +1,4 @@
+import type { SearchResult } from './search-result'
 import type { HostClient } from '../../client/host-client'
 import type { VoiceFailure } from '@shared/analytics'
 import type { CallCue } from '@shared/calls'
@@ -10,6 +11,7 @@ import {
   dictationEngine,
   callEngineChoice,
   type DictationTarget,
+  googleSearch,
   isVoiceProvider,
   language,
   SPEECH_SERVER_MS,
@@ -58,13 +60,15 @@ export const VoiceSettings = {
   rate: () => rate.get(),
   /** The on-device recognizer's language; '' is the computer's. */
   language: () => language.get(),
+  /** Gemini realtime asks for Google's built-in search. */
+  googleSearch: (p: VoiceProvider) => p === 'gemini' && googleSearch.get(),
   /** What a call's engine is built from (`CallView`'s `begin`): a different one picked mid-call takes over the call. */
   engineChoice: (p: VoiceProvider | null): string =>
     !p
       ? `device ${VoiceSettings.language()}`
       : VoiceSettings.isSpeechMode(p)
         ? `${p} speech ${VoiceSettings.transcribeModel(p)} ${VoiceSettings.speechModel(p)} ${VoiceSettings.voice(p)}`
-        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)}`,
+        : `${p} ${VoiceSettings.model(p)} ${VoiceSettings.voice(p)} ${VoiceSettings.googleSearch(p)}`,
 }
 
 /** Rings when voice chat settings close, so a running call takes up a different engine picked there. */
@@ -104,6 +108,7 @@ export const reconnect = { delays: [1000, 2000, 4000] }
  * `CallView` only talks to this; nothing on the host changes.
  */
 export abstract class VoiceEngine extends Observable {
+  searchResult: SearchResult | null = null
   phase: VoicePhase = 'starting'
   failure: string | null = null
   failureKind: VoiceFailureKind | null = null

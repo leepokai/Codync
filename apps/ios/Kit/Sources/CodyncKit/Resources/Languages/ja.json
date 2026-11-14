@@ -2091,5 +2091,22 @@
   "Follow-up due now": "まもなくフォローアップ",
   "Cancel follow-up": "フォローアップを取り消す",
   "Follow-up cancelled": "フォローアップを取り消しました",
-  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます"
+  "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "新機能：Codync Cloud（ベータ）。自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "新機能：ログインプロファイル。エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。",
+  "Picking up from the chat…": "チャットの内容を引き継いでいます…",
+  "In the background": "バックグラウンド",
+  "{count} tasks running": "{count} 件のタスク",
+  "Stop the background work?": "バックグラウンドの作業を停止しますか？",
+  "What it already changed stays.": "すでに変更された内容は残ります。",
+  "In the background: {what}": "バックグラウンド：{what}",
+  "Nothing in the background": "バックグラウンドで実行中のものはありません",
+  "B opens": "B 開く",
+  "X stops": "X 停止",
+  "T full": "T 全文表示",
+  "r retries": "rで再試行",
+  "↵ opens": "↵ 開く",
+  "Google Search": "Google 検索",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "通話中に Gemini がウェブを検索できます。Google 検索の割り当てが必要で、料金が発生する場合があります。",
+  "Couldn't open the link.": "リンクを開けませんでした。"
 }

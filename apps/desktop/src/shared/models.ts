@@ -1,6 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
+import { normalizeTasks, type BotTask } from './tasks.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -88,6 +89,8 @@ export interface Bot {
   activity: string
   startedAt?: number | null
   workingChat?: string | null
+  /** Its background tasks still going, in start order (`tasks.ts`); none from a host before tasks. */
+  tasks: BotTask[]
   unread: number
   lastMessage?: string | null
   lastAt: number
@@ -148,6 +151,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     activity: raw.activity ?? '',
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
+    tasks: normalizeTasks(raw.tasks),
     unread: raw.unread ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
@@ -400,8 +404,11 @@ export interface EntryData {
   /** The voice call it was said in (user), answered during (agent), or that it ends (notice): the chat shows those
    * messages only in the call's conversation. */
   call?: string
-  /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`). */
+  /** user: `voice` when a call's voice wrote it for the user (`send_to_bot`), `host` when the host did (what a
+   * background task was told). */
   from?: string
+  /** The background task this chat entry comes from (its approval card). */
+  task?: { id: string; title: string }
   /** notice: what was said on a realtime call, oldest first. */
   transcript?: CallLine[]
 }

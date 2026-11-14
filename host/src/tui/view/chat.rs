@@ -178,7 +178,8 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         set_cursor(Position::new(r.x + 3 + u(cursor.0), cy.min(comp_top + ch)));
     }
 
-    let strip_top = queue_band(buf, r, app, &b, box_top, typing);
+    let strip_top = super::tasks::task_band(buf, r, &b, box_top, typing);
+    let strip_top = queue_band(buf, r, app, &b, strip_top, typing);
 
     // Transcript.
     let body = Rect::new(r.x, top + 1, r.width, strip_top.saturating_sub(top + 1));

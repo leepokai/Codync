@@ -5,6 +5,11 @@ use super::*;
 /// Makes every waiting follow-up due while the host is down, then starts it again: a computer that was off when
 /// one came due.
 async fn restart_with_follow_ups_due(host: &mut Host) {
+    restart_with_follow_ups_due_in_chain(host, 0).await;
+}
+
+/// The same, with each of them `chain` follow-ups into a watch.
+async fn restart_with_follow_ups_due_in_chain(host: &mut Host, chain: u32) {
     common::stop(&mut host.child);
     {
         let db = rusqlite::Connection::open(host.home.join("codync.db")).unwrap();
@@ -12,6 +17,7 @@ async fn restart_with_follow_ups_due(host: &mut Host) {
         let mut state: Value = serde_json::from_str(&raw).unwrap();
         for follow_up in state["follow_ups"].as_array_mut().unwrap() {
             follow_up["at"] = 0.into();
+            follow_up["chain"] = chain.into();
         }
         db.execute("UPDATE kv SET v = ?1 WHERE k = 'routines.v1'", [state.to_string()]).unwrap();
     }
@@ -122,14 +128,17 @@ async fn a_follow_up_cut_off_by_a_restart_is_resumed_as_a_follow_up() {
     let bot = host.stable_bot("cutoff").await;
     host.send(&bot, "WARMUP").await;
     host.wait_event("cutoff", "finished", "WARMUP").await;
-    follow_up(&host, &bot, "SILENT BLOCK[look] the build").await;
-    restart_with_follow_ups_due(&mut host).await;
+    follow_up(&host, &bot, "SILENT BLOCK[look] the build FOLLOW_UP_AGAIN[Look once more]").await;
+    restart_with_follow_ups_due_in_chain(&mut host, 3).await;
     host.wait_event("cutoff", "started", "BLOCK[look] the build").await;
     host.restart().await;
     // Told it is still its follow-up, so a look that found nothing passes without a word or an alert.
     host.wait_event("cutoff", "resume_prompt", "still the follow-up you set for yourself").await;
     std::fs::write(host.home.join("cutoff/release-look"), "").unwrap();
     host.wait_event("cutoff", "finished", "BLOCK[look] the build").await;
+    // What it set after the restart continues its chain (3, then 4): a restart doesn't reset the limit on a watch.
+    let next = host.call("routines", json!({"botId":bot})).await["followUps"].clone();
+    assert_eq!((&next[0]["note"], &next[0]["chain"]), (&json!("Look once more"), &json!(4)), "{next}");
 }
 
 #[tokio::test]

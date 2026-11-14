@@ -123,12 +123,16 @@ host answers and sends it once the host is up.
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
 | `follow_up_cancelled` | host | A waiting follow-up was dropped | `by` (`bot`: `cancel_follow_up`, `user`: ✕ in the routines list, the API call `cancelFollowUp`, so with `client` and a phone's `platform`; not sent when the follow-up was already gone, `stop`: the bot's Stop) |
+| `task_started` | host | A bot's `start_task` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`started`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, `live`: a task already runs, `limit`: too many tasks, `usage`: the agent is near its limit, `hops`: too many in a row, `failed`), `parallel` |
+| `task_finished` | host | A task ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off and it couldn't pick up, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`), `forkFailed` (the agent could fork but the fork failed), `minutes` |
+| `task_told` | host | A bot's `tell_task` reached its task | — |
+| `task_stopped` | host | `stopTask` (Stop on the capsule, or the desktop tray's **Stop task** while the bot has tasks) | — |
 | `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
 | `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
 | `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |
 | `dev_server_detected` | host | A bot left a listening program running through its own shell | `kind` (`shell`) |
 | `voice_call_started` | host `track` (desktop), iOS, Android | A voice call starts, with the engine it really uses after any fallback | `engine` (`on_device`; `openai`/`gemini` realtime; `cloud`: cloud speech to text and back) |
-| `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`) |
+| `voice_call_quality` | host `track` (desktop), iOS, Android | One engine of a call is replaced or the call ends | `engine` (as `voice_call_started`), `ready_ms` (milliseconds until the provider confirmed the session and the microphone delivered; left out if it never was), `reconnects`, `stuck` (`none`/`connecting`/`reconnecting` over 20 s/`speaking`: playback stalled after the voice's turn), `failure` (`none`/`microphone`/`connection`/`provider`); with Gemini's Google Search on for that engine (the computer confirmed it), `google_search` (`true`) and `searches` (answers that came with Google's search suggestions; never the query, answer or links), left out otherwise |
 | `voice_call_finished` | host | `endCall` (older apps `logCall`) | `seconds` |
 | `remote_screen_opened` | host | `screenPrepare` (each connection, reconnects included; the bot details' Computer tab picture counts too, once per click on Click/Tap to see the screen or on continuing after a pause; opening the tab alone sends nothing) | — |
 | `remote_screen_paused` | host `track` (desktop), iOS, Android | A computer's screen stops streaming after 5 minutes with nobody touching the app | `screen` (`bot_computer`: the bot details' picture, `remote_screen`: the full viewer) |
@@ -190,6 +194,7 @@ host answers and sends it once the host is up.
 | `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |
 | `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
 | `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
+| `task` | a background task's details (sheet) | a background task's details (sheet) | a background task's details |
 
 ## Funnels
 

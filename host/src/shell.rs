@@ -13,20 +13,33 @@ use std::path::PathBuf;
 pub struct Shell {
     pub program: &'static str,
     pub args: Vec<String>,
+    /// An empty value takes the variable away ([`apply_env`]).
     pub env: Vec<(String, String)>,
 }
 
 impl Shell {
     pub fn std(&self) -> std::process::Command {
         let mut command = std::process::Command::new(self.program);
-        command.args(&self.args).envs(self.env.iter().map(|(k, v)| (k, v)));
+        apply_env(command.args(&self.args), &self.env);
         command
     }
 
     pub fn tokio(&self) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(self.program);
-        command.args(&self.args).envs(self.env.iter().map(|(k, v)| (k, v)));
+        apply_env(command.args(&self.args).as_std_mut(), &self.env);
         command
+    }
+}
+
+/// Gives `command` the variables of `env`. An empty value takes the variable away instead: the process doesn't
+/// inherit this one's.
+pub fn apply_env(command: &mut std::process::Command, env: &[(String, String)]) {
+    for (name, value) in env {
+        if value.is_empty() {
+            command.env_remove(name);
+        } else {
+            command.env(name, value);
+        }
     }
 }
 
@@ -161,15 +174,19 @@ pub fn is_env_name(name: &str) -> bool {
 }
 
 /// `KEY=value ` assignments before a command. Unix goes through `env` so the result
-/// still works after `exec`; Windows' [`line`] lifts them into the environment.
+/// still works after `exec`; Windows' [`line`] lifts them into the environment. An empty value takes the
+/// variable away ([`apply_env`]): `-u NAME` on Unix, ahead of the assignments, where `env` stops reading options.
 pub fn env_prefix<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> String {
-    let mut out = String::new();
-    for (k, v) in pairs {
-        if is_env_name(k) {
-            let _ = write!(out, "{k}={} ", quote(v));
+    let (mut unset, mut set) = (String::new(), String::new());
+    for (k, v) in pairs.into_iter().filter(|(k, _)| is_env_name(k)) {
+        if v.is_empty() && cfg!(unix) {
+            let _ = write!(unset, "-u {k} ");
+        } else {
+            // Windows' `line` hands an empty value to `apply_env`.
+            let _ = write!(set, "{k}={} ", quote(v));
         }
     }
-    let pairs = out;
+    let pairs = unset + &set;
     if pairs.is_empty() || cfg!(windows) { pairs } else { format!("env {pairs}") }
 }
 
@@ -250,6 +267,16 @@ mod tests {
         assert_eq!(quote("/usr/bin/x"), "/usr/bin/x");
         assert_eq!(quote("a b'c"), "'a b'\\''c'");
         assert_eq!(env_prefix([("K", "v"), ("BAD;rm", "x")]), "env K=v ");
+        assert_eq!(env_prefix([("K", "v"), ("GONE", "")]), "env -u GONE K=v ", "`env` reads no option after K=v");
+        // An empty value takes a variable away from the process, in the command line and in `env`.
+        let has = |shell: Shell| shell.std().env("CODYNC_T", "1").status().unwrap().success();
+        assert!(has(line("printenv CODYNC_T")));
+        let prefix = env_prefix([("CODYNC_K", "v"), ("CODYNC_T", "")]);
+        assert!(!has(line(&format!("{prefix}printenv CODYNC_T"))));
+        assert!(has(line(&format!("{prefix}printenv CODYNC_K"))), "the command still runs");
+        let mut command = line("printenv CODYNC_T").std();
+        apply_env(command.env("CODYNC_T", "1"), &[("CODYNC_T".to_owned(), String::new())]);
+        assert!(!command.status().unwrap().success());
     }
 
     #[cfg(unix)]

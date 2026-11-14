@@ -106,12 +106,13 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
                 choices.model(provider, VoiceChoices.Model.Transcribe), link, WebRtcPeer(application)) { secret, offer ->
                 OpenAIRealtimeEngine.answer(voiceHttp, secret, offer)
             }
-            else -> GeminiLiveEngine(contextScope, settings, model, voice, link, mic(), AndroidPcmPlayer(), voiceHttp)
+            else -> GeminiLiveEngine(contextScope, settings, model, voice, choices.googleSearch, link, mic(), AndroidPcmPlayer(), voiceHttp)
         }
     }
     call.engine = engine
     call.quality.begin(kind)
     (engine as? GeminiLiveEngine)?.onStall = { contextScope.launch { if (call.engine === engine) call.quality.stalled() } }
+    (engine as? GeminiLiveEngine)?.onSearch = { use -> contextScope.launch { if (call.engine === engine) call.quality.search(use) } }
     if (muted) engine.mute(true)
     call.cloudSince = if (provider != null) SystemClock.elapsedRealtime() else null
     contextScope.launch {

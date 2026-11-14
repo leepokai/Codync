@@ -265,6 +265,7 @@
 }
 .card-section-rows {
   background: var(--surface);
+  --edge-fill: var(--surface);
   border-radius: var(--radius-l);
   display: flex;
   flex-direction: column;
@@ -285,6 +286,51 @@
   color: var(--secondary);
   line-height: 1.4;
   padding: 0 2px;
+}
+
+/* A scroll view's rows blur and fade out under either edge, like the sidebar's header and footer; an
+   edge shows only while there is more past it (scroll-driven, so a list that fits shows neither).
+   It fades to the page's background with `--edge-fill` over it: the fill the list sits on, which in
+   a sheet is a tint (`.card-section-rows` sets it). */
+.scroll-edges::before,
+.scroll-edges::after {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  display: block;
+  height: 32px;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  animation: edge-shown linear both;
+  animation-timeline: scroll();
+}
+.scroll-edges::before {
+  top: 0;
+  margin-bottom: -32px;
+  background: linear-gradient(to bottom, var(--edge-fill, transparent) 20%, transparent),
+    linear-gradient(to bottom, var(--background) 20%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent);
+  mask-image: linear-gradient(to bottom, black 40%, transparent);
+  animation-range: 0 24px;
+}
+.scroll-edges::after {
+  bottom: 0;
+  margin-top: -32px;
+  background: linear-gradient(to top, var(--edge-fill, transparent) 20%, transparent),
+    linear-gradient(to top, var(--background) 20%, transparent);
+  -webkit-mask-image: linear-gradient(to top, black 40%, transparent);
+  mask-image: linear-gradient(to top, black 40%, transparent);
+  animation-direction: reverse;
+  animation-range: calc(100% - 24px) 100%;
+}
+@keyframes edge-shown {
+  to { opacity: 1; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .scroll-edges::before,
+  .scroll-edges::after { -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 .hairline {

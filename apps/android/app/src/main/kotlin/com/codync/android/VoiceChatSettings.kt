@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -106,6 +108,8 @@ import kotlinx.coroutines.launch
     dictationOnly: Boolean = false) {
     // Speech mode and dictation with this provider both use its speech-to-text model.
     val transcribes = dictationOnly || speech || (choices.dictation as? DictationEngine.Cloud)?.provider == provider
+    var googleSearch by remember { mutableStateOf(choices.googleSearch) }
+    var supportsSearch by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val host = state.hostName
     /** null while the computer hasn't answered yet. */
@@ -133,7 +137,7 @@ import kotlinx.coroutines.launch
         if (state.actualConnection !is LinkState.Ready) { saved = false; result = false to "Not connected to $host."; return@LaunchedEffect }
         try {
             val status = store.voiceStatus()
-            choices.remember(status); saved = status.configured(provider)
+            choices.remember(status); saved = status.configured(provider); supportsSearch = status.googleSearch
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { saved = false; result = false to (error.message ?: "Couldn't reach $host."); return@LaunchedEffect }
         if (saved == true) loadModels()
@@ -192,6 +196,13 @@ import kotlinx.coroutines.launch
             if (speech) row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
             else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
             row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
+            if (provider == VoiceProvider.Gemini && !speech && supportsSearch) row {
+                val searchLabel = tr("Google Search")
+                ValueRow("Google Search", detail = "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.") {
+                    CodyncSwitch(googleSearch, { googleSearch = it; choices.googleSearch = it },
+                        Modifier.width(34.dp).semantics { contentDescription = searchLabel }) {}
+                }
+            }
             row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
         }
     }

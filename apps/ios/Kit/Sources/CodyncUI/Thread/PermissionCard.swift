@@ -39,6 +39,12 @@ struct PermissionCard: View {
             Label(L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""]), systemImage: "desktopcomputer")
                 .font(.caption)
                 .foregroundStyle(Palette.tertiary)
+            if let task = d.task, !task.title.isEmpty {
+                Label(L10n.tr("In the background") + " · " + task.title, systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(Palette.tertiary)
+                    .lineLimit(1)
+            }
 
             if hasDetail {
                 Disclosure(isExpanded: $expanded) {

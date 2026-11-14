@@ -2091,5 +2091,22 @@
   "Follow-up due now": "곧 다시 확인",
   "Cancel follow-up": "다시 확인 취소",
   "Follow-up cancelled": "다시 확인 취소됨",
-  "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다"
+  "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "새 기능: Codync Cloud(베타). 내 Boat 또는 InstaBox 계정에서 클라우드 컴퓨터를 시작하면 컴퓨터가 꺼져 있어도 봇이 계속 작업합니다.",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "새 기능: 로그인 프로필. 에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요.",
+  "Picking up from the chat…": "채팅 내용을 이어받는 중…",
+  "In the background": "백그라운드",
+  "{count} tasks running": "작업 {count}개",
+  "Stop the background work?": "백그라운드 작업을 중지할까요?",
+  "What it already changed stays.": "이미 변경한 내용은 그대로 남습니다.",
+  "In the background: {what}": "백그라운드: {what}",
+  "Nothing in the background": "백그라운드에서 진행 중인 작업이 없습니다",
+  "B opens": "B 열기",
+  "X stops": "X 중지",
+  "T full": "T 전체 보기",
+  "r retries": "r로 다시 시도",
+  "↵ opens": "↵ 열기",
+  "Google Search": "Google 검색",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "통화 중 Gemini가 웹을 검색하도록 허용합니다. Google 검색 할당량이 필요하며 요금이 발생할 수 있습니다.",
+  "Couldn't open the link.": "링크를 열 수 없습니다."
 }

@@ -106,6 +106,12 @@ pub enum Reported {
         reconnects: u32,
         stuck: VoiceStuck,
         failure: VoiceFailure,
+        /// Gemini's Google Search was on for this engine (the computer confirmed it); left out when it wasn't.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        google_search: bool,
+        /// Answers that came with Google's search suggestions; sent only with `google_search`. Never the query.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        searches: Option<u32>,
     },
     WindowRecovery {
         outcome: WindowRecoveryOutcome,
@@ -291,6 +297,8 @@ pub enum Screen {
     Library,
     Artifact,
     Network,
+    /// A background task's details.
+    Task,
     #[serde(other)]
     Other,
 }
@@ -587,6 +595,11 @@ mod tests {
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
                     "reconnects": 1, "stuck": "none", "failure": "none"}),
+                Event::VoiceCallQuality,
+            ),
+            (
+                json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 900,
+                    "reconnects": 0, "stuck": "none", "failure": "none", "google_search": true, "searches": 2}),
                 Event::VoiceCallQuality,
             ),
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "reloaded"}), Event::WindowRecovery),

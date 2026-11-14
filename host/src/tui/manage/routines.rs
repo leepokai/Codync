@@ -35,11 +35,10 @@ impl App {
         let bot = l.bot.clone();
         match (k.code, l.picked()) {
             (KeyCode::Esc | KeyCode::Char('q' | 'R'), _) => return None,
+            // The row stays until the host answers: a cancel that failed leaves a follow-up that still happens.
             (KeyCode::Char('x'), Some(RoutineRow::FollowUp(f))) => {
-                self.sheet("cancelFollowUp", json!({"botId": bot, "id": f["id"]}), Reply::Routines(bot.clone()));
-                l.follow_ups.remove(l.cursor);
-                l.cursor = l.cursor.min(n.saturating_sub(2));
-                self.flash("Follow-up cancelled");
+                let body = json!({"botId": bot, "id": f["id"]});
+                self.sheet("cancelFollowUp", body, Reply::FollowUpCancelled(bot.clone()));
             }
             (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(RoutineRow::FollowUp(_))) => {
                 self.flash("A follow-up is the bot's own: x cancels it");

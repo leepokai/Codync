@@ -224,6 +224,7 @@ pub(crate) async fn start_agent(
         additional_directories: init["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"].is_object(),
         // Claude's, Codex's and omp's adapters say so in the top-level `_meta`.
         steering: init["_meta"]["steering"]["supported"] == true,
+        fork: init["agentCapabilities"]["sessionCapabilities"]["fork"].is_object(),
     };
     Ok(Conn {
         acp,

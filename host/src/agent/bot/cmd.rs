@@ -14,6 +14,8 @@ pub enum Cmd {
     Routine(String),
     /// A follow-up the bot set for itself is due (`routines::follow_up`): a turn in its own chat.
     FollowUp(String),
+    /// One of the bot's tasks ended (`chat::tasks`): its report, for a turn in the bot's chat.
+    TaskReport(crate::chat::tasks::Report),
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -113,6 +115,7 @@ pub enum Cmd {
 pub(super) enum Queued {
     Routine(String),
     FollowUp(String),
+    TaskReport(crate::chat::tasks::Report),
     User {
         lane: Lane,
         entry_id: String,
@@ -140,13 +143,16 @@ pub(super) enum HostTurn {
     /// A follow-up the bot set for itself (`Cmd::FollowUp`): alerts like a reply, unless it had nothing to say,
     /// and is resumed after a restart as the follow-up it is.
     FollowUp,
+    /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
+    /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`tasks::restore`).
+    TaskReport,
 }
 
 impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening => false,
+            Self::Opening | Self::TaskReport => false,
             Self::FollowUp => true,
         }
     }
@@ -155,14 +161,14 @@ impl HostTurn {
     pub(super) fn alerts(self) -> bool {
         match self {
             Self::Opening => false,
-            Self::FollowUp => true,
+            Self::FollowUp | Self::TaskReport => true,
         }
     }
 
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening => TurnSource::Host,
+            Self::Opening | Self::TaskReport => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
         }
     }

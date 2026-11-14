@@ -125,7 +125,9 @@ by every slot (its keyring names them by server, not by home).
 - **A login profile's saved keys stay out.** A process on a login profile starts without the login keys saved for the agent
   (Claude Code: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; Codex: `OPENAI_API_KEY`,
   `CODEX_API_KEY`), the address saved with one, and a cloud computer's proxied ones: the agent prefers a key, and
-  would run on it while the bot shows the login profile (`auth::launch_env`).
+  would run on it while the bot shows the login profile (`auth::launch_env`). The same keys in the host's own
+  environment (a host started from a shell that exports one) are taken away from that process too, in its sign-in,
+  sign-in check and usage check as well (`login_profiles::only_own_login`, `shell::apply_env`).
 - **Each login is told apart everywhere it has state**: signed in or out, the refusal that outranks a check that still
   says signed in, the sign-in card (its `connectionRequest` carries `loginProfile`, and the apps open that login profile's
   sign-in), and the [fallback rest](agent-fallback.md) (`rest.<agent>#profile-<id>`). A usage
@@ -135,7 +137,8 @@ by every slot (its keyring names them by server, not by home).
 - Removing a login profile is refused while a bot or one of its fallbacks uses it (saving that bot would fail once the
   account is gone), while an agent process still runs on it (a bot moved off it mid-turn restarts only when the
   turn ends), while its usage is being checked (up to a minute) and while its sign-in is open, in a terminal or in the agent's own browser flow. Otherwise an account's
-  CLI signs it out and the slot is deleted; an API key profile's vault record is deleted, which needs no open vault.
+  CLI signs it out and the slot is deleted; an API key profile's vault record is deleted, which needs no open vault. While that
+  cleanup runs the profile already counts as gone, so no bot is set to it meanwhile.
 
 API: `addLoginProfile` (with `kind`), `renameLoginProfile`, `removeLoginProfile`, `setLoginProfileKeys`,
 `loginShellVariables`; `agentSetup` (a terminal sign-in), `agentAuthenticate` (the agent's own, for an agent whose

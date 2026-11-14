@@ -8,8 +8,8 @@ import { tightest, tightestLogin } from '../usage/usage-logins'
 import { providerTintCSS, resetDescription, usedText, windowReading, windowTitle } from '../usage/usage-model'
 import type { IslandModel } from './island-model'
 
-// Codync's own part of the island: the plan limits the menu bar already tracks (local usage
-// only), as a meter in the header and a Usage tab.
+// Codync's own part of the island: this computer's plan limits, the login nearest a limit per
+// agent, as a meter in the header and a Usage tab.
 
 /** A provider's character for the black island, whatever the system appearance. */
 function Mascot({ provider, size }: { provider: UsageProvider; size: number }) {

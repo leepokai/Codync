@@ -111,6 +111,7 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::MessageSent
         }
         "stop" => Event::TurnStopped,
+        "stopTask" => Event::TaskStopped,
         "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,

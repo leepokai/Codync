@@ -2091,5 +2091,22 @@
   "Follow-up due now": "Follow-up a momenti",
   "Cancel follow-up": "Annulla follow-up",
   "Follow-up cancelled": "Follow-up annullato",
-  "A follow-up is the bot's own: x cancels it": "Un follow-up è del bot: x lo annulla"
+  "A follow-up is the bot's own: x cancels it": "Un follow-up è del bot: x lo annulla",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Novità: Codync Cloud (beta). Avvia un computer cloud sul tuo account Boat o InstaBox, così i tuoi bot lavorano mentre il tuo computer è spento.",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Novità: profili di accesso. Collega un agente a più account o aggiungi chiavi API in «Profili di accesso», nella sua configurazione, poi scegli quale usa ogni bot.",
+  "Picking up from the chat…": "Ripresa dalla chat…",
+  "In the background": "In background",
+  "{count} tasks running": "{count} attività",
+  "Stop the background work?": "Interrompere il lavoro in background?",
+  "What it already changed stays.": "Le modifiche già fatte restano.",
+  "In the background: {what}": "In background: {what}",
+  "Nothing in the background": "Niente in background",
+  "B opens": "B apre",
+  "X stops": "X ferma",
+  "T full": "T tutto",
+  "r retries": "r riprova",
+  "↵ opens": "↵ apre",
+  "Google Search": "Ricerca Google",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "Consenti a Gemini di cercare sul Web durante le chiamate. Richiede la quota di Google Search; potrebbero essere applicati costi.",
+  "Couldn't open the link.": "Impossibile aprire il link."
 }

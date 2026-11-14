@@ -64,6 +64,8 @@ quotes itself.
   `(pass)` costs no extra rounds. Members speak one at a time; each round starts one member later.
 - `message_bot` is refused in a room turn (its reply would go to the member's own chat); members
   @-mention each other instead ([bot collaboration](bot-collaboration.md)).
+- `follow_up` is refused in a room turn for the same reason (its line and its later turn would go to
+  the member's own chat): the member says it can't check back there ([follow-ups](follow-ups.md)).
 - A group's `description` ("About") tells its members what the room is for.
 - A member runs the turn in its **own main session** (its history is unified across chats),
   told who's in the room and what was said since it last spoke there, framed as

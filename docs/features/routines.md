@@ -4,7 +4,8 @@ Routines belong to an agent bot and are usually created by talking to it ("I wan
 a routine that…"); the host gives the [lead bot](lead-bot.md) one of its own, *Check in*. Every agent receives the built-in `routines` MCP server. The Details page
 of the bot's details (the desktop's details panel; the phones' details sheet, which tapping the
 chat's title or a routine's notice opens) shows a compact list
-(name, schedule, on/off switch). **+** opens the form for doing it by hand;
+(name, schedule, on/off switch), with the [follow-ups](follow-ups.md#in-the-routines-list) the bot set for
+itself listed above it on dashed cards. **+** opens the form for doing it by hand;
 requests to the bot are typed directly in the chat. A row opens
 the same form filled in, with delete and test run beside Save; the row's switch
 pauses and resumes. Run results appear in the chat. The form is name, instruction, a **When to run** type (Schedule or Webhook, the two
@@ -36,7 +37,10 @@ rest of Codync, with Reduce Motion support.
 
 Every agent receives the `routines` MCP server automatically; no marketplace
 installation is needed. Its tools are `list_routines`, `save_routine`,
-`set_routine_enabled`, `delete_routine`, `run_routine` and `routine_webhook`.
+`set_routine_enabled`, `delete_routine`, `run_routine` and `routine_webhook`, plus
+`save_progress` and `read_progress` for a routine's [progress note](#progress-note)
+and `follow_up` and `cancel_follow_up` for [follow-ups](follow-ups.md), the bot's
+own one-off reminders in its chat.
 They reach only the bot's own routines, so every bot test-runs its own with
 `run_routine`, also when another bot asks it to (such as a
 [team manager](bot-collaboration.md#team-management)). A bot never
@@ -54,9 +58,10 @@ reported as awaiting connection. Testing runs the actual instruction, so creatin
 a schedule alone should not trigger an unsolicited test execution.
 
 A deterministic ACP fixture exercises the actual advertised MCP subprocess:
-initialize, discover all six tools, reject an invalid schedule, create, read,
+initialize, discover all ten tools, reject an invalid schedule, create, read,
 edit, pause/resume, fetch webhook credentials, delete, refuse a routine that
-isn't the bot's, and execute a test run.
+isn't the bot's, save and read a progress note, set and cancel a follow-up, and
+execute a test run.
 This verifies tool wiring and persisted behavior; it does not guarantee how every
 provider model will interpret an ambiguous natural-language request.
 
@@ -75,6 +80,30 @@ A routine has an OR list of triggers:
 For example, Sunday at 14:20 in Taipei is `20 14 * * 0` with `Asia/Taipei`.
 The host computes and displays the next occurrence. Calendar parsing uses
 [Croner](https://docs.rs/croner/3.0.1/croner/), with chrono-tz for named zones.
+
+## Progress note
+
+Every run starts in a session of its own, so a routine done in parts ("ten issues an hour until the backlog is
+empty"), or one that mustn't report the same thing twice, would know nothing of its last run. Each routine
+therefore keeps one progress note (`host/src/routines/progress.rs`): where its runs stand and what is left.
+
+- **Read:** every run's prompt carries the whole note after the instruction (`(none yet)` at first), marked as
+  the bot's own notes, data and not instructions, and says how to replace it. It goes in the run's prompt, not
+  the bot's instructions: those are cached for the bot's own chat, and a run's session is new each time.
+  `read_progress {id}` reads it from any other conversation.
+- **Written:** `save_progress {id, content}` replaces the whole note; an empty one clears it. There is no append:
+  a run rewrites where things stand, so the note is a position ("handled up to #60"), not a log. What each run
+  reported is already in the bot's chat, where `search_history` finds it.
+- **At most 2,000 tokens** (counted as memory counts them; a memory note's cap). A longer one is refused with the
+  count and how to shorten it, never cut: the part a cut dropped could be what is left to do. The saved note stays.
+- **Checked** like memory (`routines/kept.rs`: hidden characters, prompt-carrying links, planted instructions,
+  secrets), because a run reads the web and the note comes back in the next prompt.
+- **Kept with the routine** (`routines.v1`): editing the routine keeps it, deleting the routine deletes it. Only
+  the routine's own bot reads or writes it. The apps don't show it yet.
+- `routine_progress_saved` reports each save's `outcome` and size.
+
+A bot that needs more than fits (a list of every link it has seen) keeps that in a file in its folder and writes
+where the file is in the note.
 
 ## Execution
 

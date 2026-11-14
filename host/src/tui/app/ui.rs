@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, Library, Market, MemorySheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, KeyImport, Library, Market, MemorySheet,
     NetworkSheet, RoutineForm, RoutineList, SkillSheet,
 };
 use super::{Editor, Mark, WhatsNew};
@@ -174,6 +174,8 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
+    /// Which of the agent's logins the bot runs on; only for an agent that can have login profiles.
+    LoginProfile,
     Model,
     ModelOptions,
     Fast,
@@ -193,10 +195,11 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 21] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
+    Field::LoginProfile,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -228,6 +231,8 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
+    /// The login profile it runs on; `None`: the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -363,6 +368,8 @@ pub enum Overlay {
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
+    /// The login shell's variables an API key login profile can import, over its key form.
+    KeyImport(KeyImport),
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),

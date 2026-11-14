@@ -21,7 +21,7 @@ pub use catalog::HARNESSES;
 pub use search_path::{hydrate_path, on_path, which};
 pub use sign_in::{
     SignInCheck, agent_checks_off, apply_prompt_refusal, clear_prompt_refused, cli_signed_in, note_prompt_refused,
-    refresh_sign_in, set_signed_in, signed_in,
+    refresh_sign_in, run_cli, set_signed_in, signed_in,
 };
 pub use workbuddy::{apply_process_env, move_saved_session_aside, session_proves_sign_in};
 
@@ -83,6 +83,11 @@ pub fn harness(id: &str) -> Option<&'static Harness> {
 /// The harness a bot's `backend` is: by its own id or its registry entry's.
 pub fn harness_of(backend: &str) -> Option<&'static Harness> {
     HARNESSES.iter().find(|h| h.answers_to(backend))
+}
+
+/// The agent `backend` is: its harness id, also for its registry entry's. One with no harness goes by its own id.
+pub fn agent_id(backend: &str) -> &str {
+    harness_of(backend).map_or(backend, |h| h.id)
 }
 
 /// `id`'s CLI is on this computer.

@@ -77,7 +77,7 @@ Set with `gh secret set <name>`. The workflow that reads each one is in `.github
 | `POSTHOG_CLI_API_KEY` | `ios-dsyms` | Uploads iPhone dSYMs to PostHog | Make a new personal API key |
 | `DISCORD_RELEASES_WEBHOOK` | `auto-tag` | Posts release notes to Discord | Delete the webhook, make a new one |
 | `DISCORD_MENTIONS_SECRET` | `auto-tag` | Signs the release notes it sends to the Discord Worker's `/mentions`; the same key as its `MENTIONS_SECRET` | Change it on both ends |
-| `CODYNC_MEM_DEPLOY_KEY`, `CODYNC_NETWORK_DEPLOY_KEY` | `memory-crate`, `network-crate` | Deploy keys that mirror the crates to their own repositories | Make a new deploy key on that repository |
+| `CODYNC_MEM_DEPLOY_KEY`, `CODYNC_NETWORK_DEPLOY_KEY`, `CODYNC_ACCOUNTS_DEPLOY_KEY` | `memory-crate`, `network-crate`, `accounts-crate` | Deploy keys that mirror the crates to their own repositories | Make a new deploy key on that repository |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `issue-triage` | Labels new issues and pull requests | `claude setup-token`, then set it again |
 
 ## Sign-in providers (in Clerk)

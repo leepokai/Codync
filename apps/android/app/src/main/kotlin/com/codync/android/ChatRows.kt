@@ -148,7 +148,8 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
             }
         }
         else -> if (entry.isDecision) Box(Modifier.padding(top = 12.dp)) {
-            DecisionCard(entry, answering = "decision:" + entry.id in state.busy) { store.decide(entry, it) }
+            DecisionCard(entry, answering = "decision:" + entry.id in state.busy, respond = { store.decide(entry, it) },
+                reply = { store.sendText(entry.botId, it) })
         } else if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
         } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {

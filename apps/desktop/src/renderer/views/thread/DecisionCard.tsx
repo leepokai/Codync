@@ -7,10 +7,15 @@ import { Icon } from '../../components/Icon'
 import { trNow } from '../../lib/l10n.ts'
 import './permission-card.css'
 
-/** The card a bot's `request_decision` puts in the chat: its question, a button per option, the suggested one marked,
- *  and what the user picked. The press goes back as their message and as the bot's answer (`respondDecision`), so the
- *  card reads the same after it and when it is loaded again. */
-export function DecisionCard({ entry, answering, respond }: { entry: Entry; answering: string | null; respond: (choice: string) => void }) {
+/** The card a bot's `request_decision` puts in the chat: its question, a numbered row per option (the suggested one
+ *  marked), a last row for the user's own words, and what was picked. A press goes back as the bot's answer
+ *  (`respondDecision`); own words go as an ordinary message, which the computer takes as the answer. */
+export function DecisionCard({ entry, answering, respond, reply }: {
+  entry: Entry
+  answering: string | null
+  respond: (choice: string) => void
+  reply: (text: string) => void
+}) {
   const d = entry.data
   const status = d.status as DecisionStatus | undefined
   const question = useRef<HTMLElement>(null)
@@ -22,46 +27,82 @@ export function DecisionCard({ entry, answering, respond }: { entry: Entry; answ
   const suggested = d.recommended ?? null
   return (
     <div className="agent-inset">
-      <VStack gap={10} className="permission-card decision-card">
-        <HStack gap={8}>
-          <Icon name="questionmark.bubble" size={12} color="var(--secondary)" />
-          <Text size="headline" tone="text">{trNow('Needs your choice')}</Text>
-          {pending ? <span className="permission-card-dot" /> : null}
-        </HStack>
-        <div className="decision-card-question-box" style={{ maxHeight: height ?? undefined }} onTransitionEnd={settle}>
-          <Text ref={question} as="div" size="subheadline" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
-            {d.question ?? ''}
-          </Text>
-        </div>
-        {pending ? (
-          <div className="permission-card-options">
-            {choices.map((choice, i) => (
-              <div key={`${i}-${choice}`}>
-                {i > 0 ? <div className="thread-hairline" /> : null}
-                <button
-                  className={answering === null || answering === choice ? 'permission-option decision-option' : 'permission-option decision-option dimmed'}
-                  disabled={answering !== null}
-                  onClick={() => respond(choice)}
-                >
-                  <Text size="body" weight={suggested === i ? 'semibold' : 'regular'} tone="text" className="permission-option-label">{choice}</Text>
-                  {suggested === i ? <Text size="caption" tone="tertiary">{trNow('Suggested')}</Text> : null}
-                  {answering === choice ? <Spinner size={14} /> : null}
-                </button>
-              </div>
-            ))}
+      <VStack gap={12} className="permission-card decision-card">
+        <HStack gap={8} align="flex-start">
+          <div className="decision-card-question-box" style={{ maxHeight: height ?? undefined }} onTransitionEnd={settle}>
+            <Text ref={question} as="div" size="headline" weight="semibold" tone="text" lines={expanded ? undefined : 4} className="selectable permission-card-title decision-card-question">
+              {d.question ?? ''}
+            </Text>
           </div>
+          {expanded || clamped ? (
+            <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={toggle} />
+          ) : null}
+        </HStack>
+        {pending ? (
+          <VStack gap={2} className="decision-options">
+            {choices.map((choice, i) => (
+              <button
+                key={`${i}-${choice}`}
+                className={answering === null || answering === choice ? 'decision-option' : 'decision-option dimmed'}
+                disabled={answering !== null}
+                onClick={() => respond(choice)}
+              >
+                <Badge>{answering === choice ? <Spinner size={12} /> : i + 1}</Badge>
+                <Text size="body" weight={suggested === i ? 'semibold' : 'regular'} tone="text" className="decision-option-label">{choice}</Text>
+                {suggested === i ? <Text size="caption" tone="tertiary">{trNow('Suggested')}</Text> : null}
+              </button>
+            ))}
+            <OwnAnswer disabled={answering !== null} reply={reply} />
+          </VStack>
         ) : (
           <HStack gap={6}>
             <Icon name={status === 'answered' ? 'checkmark' : 'clock'} size={10} color="var(--secondary)" />
-            <Text as="div" size="caption" weight="medium" tone="secondary">
+            <Text as="div" size="caption" weight="medium" tone="secondary" className="decision-outcome">
               {status === 'answered' && chosen ? chosen : trNow('No answer — the bot moved on')}
             </Text>
           </HStack>
         )}
-        {expanded || clamped ? (
-          <IconButton title={expanded ? 'Collapse' : 'Expand'} icon={expanded ? 'chevron.up' : 'chevron.down'} size={24} className="decision-card-more" onClick={toggle} />
-        ) : null}
       </VStack>
+    </div>
+  )
+}
+
+/** A row's number, or the own answer's pencil: a screen reader reads the row itself. */
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="decision-badge" aria-hidden>
+      <Text size="caption" weight="semibold" tone="secondary" tabular>{children}</Text>
+    </span>
+  )
+}
+
+/** The last row: the user's own answer, sent with Return or the send button. A pencil marks it, not a number: a typed
+ *  number only ever picks an option. */
+function OwnAnswer({ disabled, reply }: { disabled: boolean; reply: (text: string) => void }) {
+  const [text, setText] = useState('')
+  const send = () => {
+    if (!text.trim() || disabled) return
+    reply(text.trim())
+    setText('')
+  }
+  const prompt = trNow('Something else')
+  return (
+    <div className={disabled ? 'decision-option decision-own dimmed' : 'decision-option decision-own'}>
+      <Badge><Icon name="pencil" size={11} /></Badge>
+      <input
+        value={text}
+        placeholder={prompt}
+        aria-label={prompt}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            send()
+          }
+        }}
+      />
+      {text.trim() ? <IconButton title="Send" icon="arrow.up" size={24} disabled={disabled} onClick={send} /> : null}
     </div>
   )
 }

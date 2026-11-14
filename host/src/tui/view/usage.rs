@@ -15,19 +15,46 @@ use super::time::{DAYS, MONTHS, clock, local, month_day, now_ms};
 /// One line of the sheet's list.
 enum Line<'a> {
     Provider(&'a str),
+    /// A login of an agent that has several, by what it's called: the default login may have no name.
+    Login(Option<&'a str>),
     Window(&'a Value),
+    NoReading,
     Gap,
 }
 
-/// Each provider's name, its windows and a gap.
+/// Each provider's name, its windows and a gap. One with login profiles lists each login's windows under its name,
+/// the default login first.
 fn lines(providers: &[Value]) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     for p in providers {
         lines.push(Line::Provider(p["name"].as_str().unwrap_or_default()));
-        lines.extend(p["windows"].as_array().into_iter().flatten().map(Line::Window));
+        match p["loginProfiles"].as_array().filter(|profiles| !profiles.is_empty()) {
+            None => lines.extend(windows(p).iter().map(Line::Window)),
+            Some(profiles) => {
+                let default = p["defaultLoginProfile"].as_str();
+                let named = profiles.iter().map(|l| (l["name"].as_str(), windows(l)));
+                for (name, windows) in std::iter::once((default, windows(p))).chain(named) {
+                    lines.push(Line::Login(name));
+                    lines.extend(windows.iter().map(Line::Window));
+                    if windows.is_empty() {
+                        lines.push(Line::NoReading);
+                    }
+                }
+            }
+        }
         lines.push(Line::Gap);
     }
     lines
+}
+
+fn windows(of: &Value) -> &[Value] {
+    of["windows"].as_array().map_or(&[], Vec::as_slice)
+}
+
+/// One of the agent's logins has windows: listed only for its login profiles, it has none yet.
+fn has_reading(provider: &Value) -> bool {
+    let profiles = provider["loginProfiles"].as_array().into_iter().flatten();
+    std::iter::once(provider).chain(profiles).any(|login| !windows(login).is_empty())
 }
 
 /// The sheet on a screen `area`, and how many list lines fit in it.
@@ -66,7 +93,21 @@ pub(super) fn usage(buf: &mut Buffer, area: Rect, app: &App, scroll: usize) {
             Line::Provider(name) => {
                 put(buf, inner.x, y, inner.width, name, t.bold.patch(t.panel));
             }
+            Line::Login(name) => {
+                let name = name.map_or_else(|| tr("Default login profile"), std::borrow::Cow::Borrowed);
+                put(buf, inner.x + 1, y, inner.width.saturating_sub(1), name.as_ref(), t.secondary.patch(t.panel));
+            }
             Line::Window(win) => window(buf, inner, y, win),
+            Line::NoReading => {
+                put(
+                    buf,
+                    inner.x + 2,
+                    y,
+                    inner.width.saturating_sub(2),
+                    tr("No reading yet").as_ref(),
+                    t.dim.patch(t.panel),
+                );
+            }
             Line::Gap => {}
         }
     }
@@ -89,7 +130,7 @@ pub(super) fn usage_chooser(buf: &mut Buffer, area: Rect, app: &App, row: usize)
         let shown = service["shown"].as_bool() == Some(true);
         let cursor = i + skip == row;
         let style = if cursor { t.bold } else { t.text }.patch(t.panel);
-        let unread = shown && !providers.iter().any(|p| p["id"] == service["id"]);
+        let unread = shown && !providers.iter().any(|p| p["id"] == service["id"] && has_reading(p));
         let name = service["name"].as_str().unwrap_or_default();
         let line = format!("{} [{}] {name}", if cursor { "›" } else { " " }, if shown { "x" } else { " " });
         let end = put(buf, inner.x, y, inner.width, &line, style);
@@ -192,6 +233,26 @@ mod tests {
         assert!(text.contains("  [x] Claude"), "{text}");
         assert!(text.contains("[x] Google Antigravity  No reading yet"), "{text}");
         assert!(text.contains("› [ ] Cursor"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn an_agent_with_login_profiles_lists_each_login_with_its_own_limits() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(Client::new("http://127.0.0.1:1", None), tx, String::new());
+        app.usage = json!({"providers": [{
+            "id": "claude", "name": "Claude", "windows": [{"label": "Weekly", "percent": 10}],
+            "loginProfiles": [
+                {"id": "a", "name": "Work", "windows": [{"label": "Weekly", "percent": 90}]},
+                {"id": "b", "name": "Side", "windows": []},
+            ],
+        }]});
+        let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        super::usage(&mut buf, area, &app, 0);
+        let text: String = buf.content().iter().map(ratatui::buffer::Cell::symbol).collect();
+        let at = |what: &str| text.find(what).unwrap_or_else(|| panic!("{what} in {text}"));
+        assert!(at("Default login profile") < at("10% used") && at("10% used") < at("Work"), "{text}");
+        assert!(at("Work") < at("90% used") && at("90% used") < at("Side") && at("Side") < at("No reading yet"));
     }
 
     #[tokio::test]

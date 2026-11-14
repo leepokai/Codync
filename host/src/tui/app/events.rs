@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use super::{After, App, Bot, Dir, Entry, Focus, Msg, Overlay, Status, merge_toggles};
+use super::{After, App, Bot, Dir, Entry, Focus, Kind, Msg, Overlay, Status, merge_toggles};
 
 /// An entry the mirror doesn't hold, below the floor its bot's loaded chat had when this
 /// connection began: `seq` grows with insertion, so it predates the window and only arrived because
@@ -84,6 +84,10 @@ impl App {
                 {
                     if !self.entries.get(&bot).is_some_and(|m| m.contains_key(&e.seq)) {
                         self.entry_added(&bot, &e);
+                        // A routine's run and a follow-up say in the chat that they began or were dropped.
+                        if e.kind == Kind::Notice {
+                            self.reload_routines(&bot);
+                        }
                     }
                     self.kofi_reply(&bot, &e);
                     self.entries.entry(bot).or_default().insert(e.seq, e);

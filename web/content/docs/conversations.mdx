@@ -6,9 +6,9 @@ The chat shows your messages, the bot's messages, approval cards, choice cards a
 
 ## Choice cards
 
-When your bot needs you to pick a way forward, it can show a question with two to twelve buttons. On **iPhone**, **Android** and **Desktop**, tap the option you want. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options. Your choice appears as your message and the bot continues its current work.
+When your bot needs you to pick a way forward, it can show a question with two to twelve numbered options. On **iPhone**, **Android** and **Desktop**, tap the option you want, or type your own answer in the last row, **Something else**. **Suggested** marks its recommendation; nothing is selected for you. In the **Terminal UI**, use F1–F12, or 1–9 for the first nine options, or type your own answer in the message box. Your choice appears as your message and the bot continues its current work.
 
-On an older app, the question and numbered options appear as text. Reply with the full option or its number. If an option itself is a number, the exact option text takes priority. Sending a different message moves the bot on from the question. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
+You can also answer in the message box: the full option, its number, or anything else in your own words. If an option itself is a number, the exact option text takes priority. A message with files, a quote or a `/` command doesn't answer the card; it moves the bot on from the question. On an older app, the question and numbered options appear as text, answered the same way. A card waits up to four and a half minutes; stopping the bot or restarting its computer also expires it. An answered or expired card cannot be answered again.
 
 While the bot works, a line under the last message shows what it's doing and for how long. It reads **Typing…** while the bot writes you a message.
 
@@ -149,6 +149,23 @@ Type `/` at the start of a message to see the bot's commands:
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 
 Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
+
+## Follow-ups
+
+When something needs another look later (a build that's still running, a reply that hasn't arrived), a bot can set itself a follow-up instead of only saying it will check back. Ask in plain words:
+
+> Check the deploy again in 20 minutes and tell me if it failed.
+
+- A line in the chat confirms it, such as "Follow-up in 20 minutes: Check the deploy". If there's no such line, no follow-up was set.
+- When it's due, a "Follow-up · Check the deploy" line appears and the bot takes one turn in the same chat, with everything said before. Its reply notifies you like any other. If there's nothing worth telling you yet, it stays silent, and it can set another follow-up to keep watching.
+- A follow-up happens once. For something that repeats, ask for a [routine](/docs/routines).
+- Follow-ups work in a bot's own chat. In a [group](/docs/groups), or while it answers [another bot](/docs/teamwork), the bot can't set one: it tells you it can't check back from there. Ask it in its own chat.
+- Waiting follow-ups are listed above the bot's [routines](/docs/routines#find-a-bots-routines), each on a card with a dashed outline, a clock and the time it happens. The ✕ on a card cancels it (terminal UI: pick it and press `x`), and a "Follow-up cancelled" line appears in the chat. You can also ask the bot what's waiting or to cancel one.
+- Stopping the bot also drops a follow-up that was due and waiting for its turn; ones set for later stay.
+
+A follow-up can wait from 1 minute to 30 days, and a bot can have 10 waiting at once. A bot that sets a new follow-up each time one comes due stops after 25 in a row and asks you whether to keep watching.
+
+Follow-ups run on your computer, so the host has to be running and the computer awake. While one is waiting, Codync keeps the computer from going to sleep when idle. One that came due while the computer was off or asleep happens as soon as it's back.
 
 ## Fresh conversations
 

@@ -17,6 +17,12 @@ pub fn local_zone() -> String {
     iana_time_zone::get_timezone().ok().filter(|z| valid(z)).unwrap_or_else(|| "UTC".into())
 }
 
+/// `at` (Unix milliseconds) on this computer's clock, with its zone: what a bot tells the user.
+pub(super) fn local_time(at: i64) -> Option<String> {
+    let zone = Tz::from_str(&local_zone()).ok()?;
+    Some(DateTime::from_timestamp_millis(at)?.with_timezone(&zone).format("%Y-%m-%d %H:%M (%Z)").to_string())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Trigger {

@@ -243,6 +243,15 @@ textarea.routine-input {
   min-width: 0;
   text-align: left;
 }
+/* A follow-up is the bot's own one-off, not a standing routine: the card's outline in dashes, a clock and no switch. */
+.outlined-card.follow-up-card {
+  padding: 10px 8px 10px 14px;
+  border-style: dashed;
+}
+/* The clock sits on the note's first line. */
+.follow-up-icon {
+  padding-top: 2px;
+}
 
 .routine-fade {
   animation: fade-in var(--hover) both;

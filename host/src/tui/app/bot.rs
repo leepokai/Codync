@@ -27,6 +27,8 @@ pub struct Bot {
     pub color: String,
     pub shape: String,
     pub backend: String,
+    /// The login profile it runs on; none for the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub cwd: String,
     pub managed_workspace: bool,
     pub auto: bool,
@@ -70,6 +72,8 @@ pub struct Bot {
     pub self_fallbacks: bool,
     /// The fallback agent it's on now; `None` on its own.
     pub agent_step: Option<String>,
+    /// The login profile of that agent the step runs on; `None`: its default one.
+    pub step_login_profile: Option<String>,
     /// Agents of its chain resting now.
     pub resting: Vec<Rest>,
     /// What it keeps running.
@@ -91,10 +95,13 @@ pub struct Bot {
     pub working_chat: Option<String>,
 }
 
-/// An agent of a bot's chain that rests (`agent::fallback::resting`) until `until` (epoch ms).
+/// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
+/// (`agent::fallback::resting`) until `until` (epoch ms).
 #[derive(Deserialize, Clone, Debug)]
 pub struct Rest {
     pub agent: String,
+    #[serde(default, rename = "loginProfile")]
+    pub login_profile: Option<String>,
     pub until: i64,
     pub reason: Reason,
 }
@@ -180,6 +187,7 @@ impl Bot {
             color: v["avatarColor"].as_str().unwrap_or("blue").to_owned(),
             shape: v["avatarShape"].as_str().unwrap_or("blob").to_owned(),
             backend: s("backend"),
+            login_profile: v["loginProfile"].as_str().map(str::to_owned),
             cwd: s("cwd"),
             managed_workspace: v["managedWorkspace"] == true,
             auto: v["permission"] == "auto",
@@ -215,6 +223,7 @@ impl Bot {
             fallbacks: serde_json::from_value(v["fallbacks"].clone()).unwrap_or_default(),
             self_fallbacks: v["selfFallbacks"].as_bool().unwrap_or(true),
             agent_step: v["agentStep"]["agent"].as_str().map(str::to_owned),
+            step_login_profile: v["agentStep"]["loginProfile"].as_str().map(str::to_owned),
             resting: serde_json::from_value(v["resting"].clone()).unwrap_or_default(),
             dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
@@ -242,9 +251,9 @@ impl Bot {
         u8::from(!self.pinned)
     }
 
-    /// Agent `agent`'s rest, while it lasts at `now`.
-    pub fn rests(&self, agent: &str, now: i64) -> Option<&Rest> {
-        self.resting.iter().find(|r| r.agent == agent && r.until > now)
+    /// The rest of agent `agent` on `login_profile`, while it lasts at `now`.
+    pub fn rests(&self, agent: &str, login_profile: Option<&str>, now: i64) -> Option<&Rest> {
+        self.resting.iter().find(|r| r.agent == agent && r.login_profile.as_deref() == login_profile && r.until > now)
     }
 
     /// A turn is running: working, or waiting on the user.

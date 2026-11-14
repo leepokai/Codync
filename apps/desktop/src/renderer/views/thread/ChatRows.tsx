@@ -81,10 +81,17 @@ function LivePermission({ entry }: { entry: Entry }) {
   return <PermissionCard entry={entry} hostName={store.hostName} answering={store.answering.get(entry.id) ?? null} respond={(o) => store.respond(entry, o)} />
 }
 
-/** The user's press on a choice card is on its way to the computer. */
+/** The user's press on a choice card, or their own words, on its way to the computer. */
 function LiveDecision({ entry }: { entry: Entry }) {
   const store = useLiveStore()
-  return <DecisionCard entry={entry} answering={store.answering.get(entry.id) ?? null} respond={(option) => store.decide(entry, option)} />
+  return (
+    <DecisionCard
+      entry={entry}
+      answering={store.answering.get(entry.id) ?? null}
+      respond={(option) => store.decide(entry, option)}
+      reply={(text) => store.send(text, entry.botId)}
+    />
+  )
 }
 
 /** Who wrote a message: their avatar and name in their color, or `name` for a bot on another computer. */

@@ -12,6 +12,28 @@ class RoutineTest {
         assertEquals("Retrying", run.copy(notBefore = 1).label)
     }
 
+    @Test fun `a listing carries the follow-ups still waiting, and an older host's has none`() {
+        val listing = WireJson.decodeFromString<RoutineListing>("""{"routines":[],"runs":[],"followUps":[{"id":"f","botId":"b","at":1794650400000,"note":"Check the build","createdAt":1794649200000,"chain":0}]}""")
+        assertEquals("Check the build", listing.followUps.single().note)
+        assertTrue(WireJson.decodeFromString<RoutineListing>("""{"routines":[],"runs":[]}""").followUps.isEmpty())
+    }
+
+    @Test fun `a waiting follow-up says when it happens`() {
+        val zone = java.time.ZoneId.of("Asia/Taipei")
+        val now = java.time.ZonedDateTime.of(2026, 11, 14, 15, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val followUp = FollowUp("f", "b", now + 20 * 60_000, "Check the build")
+        // The app language's way of writing a time, whatever the phone's is.
+        val locale = java.util.Locale.forLanguageTag("zh-Hant")
+        val time = { at: Long, format: java.time.format.DateTimeFormatter -> java.time.Instant.ofEpochMilli(at).atZone(zone).format(format.withLocale(locale)) }
+        val short = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT)
+        assertEquals("Follow-up at " + time(followUp.at, short), followUp.line(locale, now, zone))
+        val tomorrow = followUp.copy(at = now + 24 * 3_600_000)
+        val dated = java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT)
+        assertEquals("Follow-up at " + time(tomorrow.at, dated), tomorrow.line(locale, now, zone))
+        // Due, and waiting its turn behind what the bot is doing.
+        assertEquals("Follow-up due now", followUp.copy(at = now - 1).line(locale, now, zone))
+    }
+
     @Test fun `editing unsupported schedules preserves every trigger field`() {
         val original = WireJson.parseToJsonElement("""[{"type":"event","source":"github","event":"*","filters":{"repo":"org/project"},"future":true},{"type":"interval","seconds":5400}]""").jsonArray.map { it.jsonObject }
         val schedule = RoutineScheduleDraft(kind = "interval", original = original).forMobileEditor()

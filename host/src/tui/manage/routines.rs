@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use super::super::app::{After, App, Confirm, ConfirmAct, Editor, FIELDS, Field, Overlay};
 use super::when::{complete_zone, parse_when, when_text};
-use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, ctrl, newline, s};
+use super::{Page, Reply, RoutineField, RoutineForm, RoutineList, RoutineRow, ctrl, newline, s};
 use crate::routines::local_zone;
 
 impl App {
@@ -16,7 +16,14 @@ impl App {
         };
         let bot = b.id.clone();
         self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.clone()));
-        self.overlays.push(Overlay::Routines(RoutineList { bot, items: None, runs: Vec::new(), cursor: 0 }));
+        self.overlays.push(Overlay::Routines(RoutineList { bot, ..Default::default() }));
+    }
+
+    /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
+    pub(in crate::tui) fn reload_routines(&mut self, bot: &str) {
+        if self.overlays.iter().any(|o| matches!(o, Overlay::Routines(l) if l.bot == bot)) {
+            self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.to_owned()));
+        }
     }
 
     pub(in crate::tui) fn routines_key(&mut self, mut l: RoutineList, k: KeyEvent) -> Option<Overlay> {
@@ -24,11 +31,19 @@ impl App {
             self.open_page(page);
             return None;
         }
-        let n = l.items.as_ref().map_or(0, Vec::len);
-        let current = l.items.as_ref().and_then(|v| v.get(l.cursor)).cloned();
+        let n = l.rows().count();
         let bot = l.bot.clone();
-        match (k.code, current) {
+        match (k.code, l.picked()) {
             (KeyCode::Esc | KeyCode::Char('q' | 'R'), _) => return None,
+            (KeyCode::Char('x'), Some(RoutineRow::FollowUp(f))) => {
+                self.sheet("cancelFollowUp", json!({"botId": bot, "id": f["id"]}), Reply::Routines(bot.clone()));
+                l.follow_ups.remove(l.cursor);
+                l.cursor = l.cursor.min(n.saturating_sub(2));
+                self.flash("Follow-up cancelled");
+            }
+            (KeyCode::Enter | KeyCode::Char('e' | ' ' | 'r' | 'w' | 'W'), Some(RoutineRow::FollowUp(_))) => {
+                self.flash("A follow-up is the bot's own: x cancels it");
+            }
             // The agent, model and instructions shown above the routines are edited in Settings.
             (KeyCode::Char('i'), _) => {
                 self.open_page(Page::Settings);
@@ -59,68 +74,69 @@ impl App {
                 })));
                 return None;
             }
-            (KeyCode::Enter | KeyCode::Char('e'), Some(r)) => {
+            (KeyCode::Enter | KeyCode::Char('e'), Some(RoutineRow::Routine(r))) => {
                 let triggers = r["triggers"].clone();
                 let text = when_text(&triggers, &local_zone());
                 let original_text = r["triggerDescriptions"]
                     .as_array()
                     .map(|d| d.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" · "))
                     .unwrap_or_default();
-                self.overlays.push(Overlay::Routines(l));
-                self.overlays.push(Overlay::Routine(Box::new(RoutineForm {
+                let form = RoutineForm {
                     bot,
-                    id: Some(s(&r, "id")),
-                    name: Editor::with(&s(&r, "name")),
-                    instruction: Editor::with(&s(&r, "instruction")),
+                    id: Some(s(r, "id")),
+                    name: Editor::with(&s(r, "name")),
+                    instruction: Editor::with(&s(r, "instruction")),
                     when: Editor::with(text.as_deref().unwrap_or_default()),
                     original: if text.is_some() { Value::Null } else { triggers },
                     original_text,
                     field: RoutineField::Name,
                     error: None,
                     saving: false,
-                })));
+                };
+                self.overlays.push(Overlay::Routines(l));
+                self.overlays.push(Overlay::Routine(Box::new(form)));
                 return None;
             }
-            (KeyCode::Char(' '), Some(r)) => {
-                let on = !r["enabled"].as_bool().unwrap_or(false);
+            (KeyCode::Char(' '), Some(RoutineRow::Routine(r))) => {
+                let (id, on) = (r["id"].clone(), !r["enabled"].as_bool().unwrap_or(false));
                 self.sheet(
                     "setRoutineEnabled",
-                    json!({"botId": bot, "id": r["id"], "enabled": on}),
+                    json!({"botId": bot, "id": id, "enabled": on}),
                     Reply::Routines(bot.clone()),
                 );
-                if let Some(item) = l.items.as_mut().and_then(|v| v.get_mut(l.cursor)) {
+                if let Some(item) = l.items.iter_mut().flatten().find(|item| item["id"] == id) {
                     item["enabled"] = on.into();
                 }
             }
-            (KeyCode::Char('r'), Some(r)) => {
+            (KeyCode::Char('r'), Some(RoutineRow::Routine(r))) => {
                 self.sheet("runRoutine", json!({"botId": bot, "id": r["id"]}), Reply::Routines(bot.clone()));
-                self.flash(&format!("Running {} now", s(&r, "name")));
+                self.flash(&format!("Running {} now", s(r, "name")));
             }
-            (KeyCode::Char('w' | 'W'), Some(r)) if !has_webhook(&r) => {
+            (KeyCode::Char('w' | 'W'), Some(RoutineRow::Routine(r))) if !has_webhook(r) => {
                 self.flash("Only a routine that runs on a webhook has a URL and key");
             }
-            (KeyCode::Char('w'), Some(r)) => {
+            (KeyCode::Char('w'), Some(RoutineRow::Routine(r))) => {
                 self.sheet("routineWebhook", json!({"botId": bot, "id": r["id"]}), Reply::Webhook);
             }
-            (KeyCode::Char('W'), Some(r)) => {
+            (KeyCode::Char('W'), Some(RoutineRow::Routine(r))) => {
                 let c = Confirm {
-                    title: format!("Replace the webhook key of {}?", s(&r, "name")),
+                    title: format!("Replace the webhook key of {}?", s(r, "name")),
                     detail: "Senders using the current key stop working.".into(),
                     note: "The new one is copied in a curl command.".into(),
                     button: "Replace",
-                    act: ConfirmAct::RotateRoutineKey(bot, s(&r, "id")),
+                    act: ConfirmAct::RotateRoutineKey(bot, s(r, "id")),
                 };
                 self.overlays.push(Overlay::Routines(l));
                 self.overlays.push(Overlay::Confirm(c));
                 return None;
             }
-            (KeyCode::Char('x'), Some(r)) => {
+            (KeyCode::Char('x'), Some(RoutineRow::Routine(r))) => {
                 let c = Confirm {
-                    title: format!("Delete the routine {}?", s(&r, "name")),
+                    title: format!("Delete the routine {}?", s(r, "name")),
                     detail: "It stops running.".into(),
                     note: "What it already posted stays in the chat.".into(),
                     button: "Delete",
-                    act: ConfirmAct::DeleteRoutine(bot, s(&r, "id")),
+                    act: ConfirmAct::DeleteRoutine(bot, s(r, "id")),
                 };
                 self.overlays.push(Overlay::Routines(l));
                 self.overlays.push(Overlay::Confirm(c));

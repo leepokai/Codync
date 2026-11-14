@@ -37,6 +37,12 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             str_arg(&b, "id")?,
             b["rotate"].as_bool().unwrap_or(false),
         )?,
+        "cancelFollowUp" => hub.routines.cancel_follow_up(
+            hub,
+            str_arg(&b, "botId")?,
+            str_arg(&b, "id")?,
+            crate::routines::Cancelled::User,
+        )?,
         "routineCall" => crate::routines::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])?,
         "memoryCall" => {
             crate::chat::memory::tool_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?

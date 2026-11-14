@@ -2,10 +2,10 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type R
 import { IconButton } from '../../components/Controls'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { Icon } from '../../components/Icon'
-import { HStack, Spacer, VStack } from '../../components/Stack'
+import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
-import { EXTENSION_SECTIONS, type ExtensionSection } from './market-models'
+import { EXTENSION_SECTIONS, errorText, type ExtensionSection } from './market-models'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import './marketplace.css'
 import './extensions-layout.css'
@@ -309,6 +309,46 @@ export function Field({ value, onChange, placeholder, secret = false, lines, mon
 export function ErrorText({ text }: { text: string }) {
   const tr = useTr()
   return <Text tone="danger" className="selectable">{tr(text)}</Text>
+}
+
+/** A row that starts something: an icon, a title, an optional line under it, and what trails (a spinner, a chevron). */
+export function OptionRow({ icon, title, detail, disabled = false, trailing, onClick }: {
+  icon: string
+  title: string
+  detail?: string
+  disabled?: boolean
+  trailing?: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button className="option-row" disabled={disabled} onClick={onClick}>
+      <IconSlot width={26} tone="secondary" aria-hidden>
+        <Icon name={icon} size={13} />
+      </IconSlot>
+      <VStack as="span" gap={2} grow>
+        <Text size="body" weight="medium" tone="text">{title}</Text>
+        {detail ? <Text size="subheadline" tone="secondary" lines={3}>{detail}</Text> : null}
+      </VStack>
+      {trailing}
+    </button>
+  )
+}
+
+/** Runs one change at a time: which one is running (`busy`, its key), and why the last one failed. */
+export function useBusyAction() {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const run = async (key: string, change: () => Promise<void>) => {
+    setBusy(key)
+    try {
+      await change()
+      setError(null)
+    } catch (e) {
+      setError(errorText(e))
+    }
+    setBusy(null)
+  }
+  return { busy, error, run }
 }
 
 /** Values with something typed in. */

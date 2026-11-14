@@ -13,6 +13,7 @@ mod forms;
 mod group_form;
 mod input;
 mod kofi;
+mod login_profiles;
 mod model;
 mod navigate;
 mod new_bot;
@@ -517,6 +518,17 @@ pub fn tilde(path: &str, home: &str) -> String {
 pub(in crate::tui) fn test_app() -> App {
     let (tx, _) = tokio::sync::mpsc::unbounded_channel();
     App::new(Client::new("http://127.0.0.1:1", None), tx, String::new())
+}
+
+/// What `draw` leaves in `area`, line by line.
+#[cfg(test)]
+pub(in crate::tui) fn screen(
+    area: ratatui::layout::Rect,
+    draw: impl FnOnce(&mut ratatui::buffer::Buffer),
+) -> Vec<String> {
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    draw(&mut buf);
+    (0..area.height).map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
 }
 
 #[cfg(test)]

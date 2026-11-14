@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
+import com.codync.android.core.login
+import com.codync.android.core.logins
+import com.codync.android.core.restOf
 import com.codync.android.core.ScreenState
 import com.codync.android.design.*
 import com.kyant.shapes.RoundedRectangle
@@ -99,7 +102,7 @@ internal enum class FormPart { All, Often, Rarely }
     }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
     CodyncSheet(addingFallback, { addingFallback = false }) {
-        AddFallbackSheet(state, store, draft.backend, draft.fallbacks.orEmpty()) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
+        AddFallbackSheet(state, store, draft.logins) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
     }
 }
 
@@ -161,7 +164,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
             agents = agentChoices(state) + ("custom" to "Custom command"),
             chooseAgent = { if (it != draft.backend) change(draft.withAgent(it)) }, onReload = reloadModels) {
-                bot?.restOf(draft.backend)?.let { Text(it.line(RelativeTime.clock(it.until)), style = Type.caption, color = Palette.secondary) }
+                bot?.restOf(draft.login)?.let { Text(it.line(RelativeTime.clock(it.until)), style = Type.caption, color = Palette.secondary) }
                 backends(state).firstOrNull { it.text("id") == draft.backend && !it.available }?.text("installHint")?.takeIf(String::isNotBlank)?.let {
                     Text(it, style = Type.caption, color = Palette.warning)
                 }
@@ -169,9 +172,10 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
                     "ACP command, e.g. my-agent --acp", style = Type.callout.monospaced, capitalize = false)
             }
     }
+    loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
-    row { FallbackList(state, draft.backend, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }
+    row { FallbackList(state, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }
     row {
         SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,
             { change(draft.copy(selfFallbacks = it)) })

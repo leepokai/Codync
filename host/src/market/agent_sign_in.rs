@@ -5,7 +5,11 @@
 use super::requests::{MAX_AGE, RequestKind, RequestStatus};
 use crate::{
     LockExt,
-    agent::{backends, bot::Cmd},
+    agent::{
+        backends,
+        bot::Cmd,
+        login_profiles::{self, Login},
+    },
     hub::Hub,
     store::{BotConfig, EntryKind, Lane, now_ms},
 };
@@ -26,15 +30,16 @@ const HOLDING: &str = "Needs you to sign in. Your message goes out again once yo
 /// background.
 pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
     let Some(h) = backends::harness(&cfg.backend) else { return };
-    if backends::signed_in(&cfg.backend) == Some(true) {
+    let login = Login::of(&hub.store, cfg);
+    if login.profile.is_none() && backends::signed_in(&cfg.backend) == Some(true) {
         return;
     }
     let (hub, bot, backend) = (hub.clone(), cfg.id.clone(), cfg.backend.clone());
     tokio::spawn(async move {
-        let asked = match check(&hub, &backend).await {
-            Ok(Some(false)) => invite_saying(&hub, &bot, &Lane::main(&bot), &backend, h.name, &[], BEFORE_FIRST),
-            // Other chats waiting on this agent go on.
-            Ok(Some(true)) => agent_signed_in(&hub, &backend),
+        let asked = match check(&hub, &backend, login.profile.as_deref()).await {
+            Ok(Some(false)) => invite_saying(&hub, &bot, &Lane::main(&bot), &login, h.name, &[], BEFORE_FIRST),
+            // Other chats waiting on this login go on.
+            Ok(Some(true)) => signed_in(&hub, &backend, login.profile.as_deref()),
             Ok(None) => Ok(()),
             Err(error) => {
                 tracing::info!(bot, backend, error = format!("{error:#}"), "sign-in check failed");
@@ -47,17 +52,25 @@ pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
     });
 }
 
-/// What the agent's own check says about its sign-in (`None`: can't tell).
+/// What the agent's own check says about the sign-in of `login_profile`, or of the computer's own login (`None`:
+/// can't tell).
 #[cfg(not(test))]
-async fn check(hub: &Hub, backend: &str) -> Result<Option<bool>> {
-    Ok(crate::agent::auth::check(&hub.store, backend).await?["signedIn"].as_bool())
+async fn check(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<Option<bool>> {
+    Ok(match login_profile {
+        Some(id) => Some(login_profiles::check(&hub.store, id).await?.account.signed_in),
+        None => crate::agent::auth::check(&hub.store, backend).await?["signedIn"].as_bool(),
+    })
 }
 #[cfg(test)]
 use tests::check;
 
-/// Re-checks every installed agent's sign-in; chats waiting on one that's signed in now go on.
+/// Re-checks every installed agent's sign-in, and who each is signed in as; chats waiting on one that's signed
+/// in now go on.
 pub async fn refresh(hub: &Hub) {
     backends::refresh_sign_in().await;
+    login_profiles::refresh_default().await;
+    // The Usage screens call each default login by who it signs in.
+    crate::usage::login_profiles_changed(hub);
     for h in backends::HARNESSES.iter().filter(|h| backends::signed_in(h.id) == Some(true)) {
         if let Err(error) = agent_signed_in(hub, h.id) {
             tracing::warn!(backend = h.id, error = format!("{error:#}"), "couldn't complete the sign-in cards");
@@ -65,13 +78,13 @@ pub async fn refresh(hub: &Hub) {
     }
 }
 
-/// `bot`'s turn failed because agent `backend` (`name`) needs signing in: a card in `lane` asks
+/// `bot`'s turn failed because `login` (its agent is `name`) needs signing in: a card in `lane` asks
 /// the user to, and `entries` (the user messages it couldn't answer) go out again once they have.
-/// A bot keeps one such card in each chat; messages that fail later join it.
-pub fn invite(hub: &Hub, bot: &str, lane: &Lane, backend: &str, name: &str, entries: &[String]) -> Result<()> {
+/// A bot keeps one such card per login in each chat; messages that fail later join it.
+pub fn invite(hub: &Hub, bot: &str, lane: &Lane, login: &Login, name: &str, entries: &[String]) -> Result<()> {
     // A routine's, a room's or another bot's turn has no message of the user's to send again.
     let text = if entries.is_empty() { NEEDED } else { HOLDING };
-    invite_saying(hub, bot, lane, backend, name, entries, text)
+    invite_saying(hub, bot, lane, login, name, entries, text)
 }
 
 /// The card, saying `text` when it's new.
@@ -79,14 +92,20 @@ fn invite_saying(
     hub: &Hub,
     bot: &str,
     lane: &Lane,
-    backend: &str,
+    login: &Login,
     name: &str,
     entries: &[String],
     text: &str,
 ) -> Result<()> {
     let _guard = SIGN_IN.locked();
+    let backend = login.backend.as_str();
     // In a room the card's chat is the room's: `botId` says whose it is.
-    let mine = |card: &crate::store::Entry| card.bot_id == lane.chat && card.data["connectionRequest"]["botId"] == bot;
+    let mine = |card: &crate::store::Entry| {
+        let request = &card.data["connectionRequest"];
+        card.bot_id == lane.chat
+            && request["botId"] == bot
+            && request["loginProfile"].as_str() == login.profile.as_deref()
+    };
     if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(mine) {
         let mut data = card.data;
         let mut ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
@@ -104,8 +123,12 @@ fn invite_saying(
         hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not update the sign-in request"))?;
         return Ok(());
     }
-    let request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name, "botId": bot,
-        "backend": backend, "entryIds": entries});
+    let mut request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name,
+        "botId": bot, "backend": backend, "entryIds": entries});
+    // A login profile's: the apps open that sign-in, not the computer's own.
+    if let Some(profile) = &login.profile {
+        request["loginProfile"] = profile.as_str().into();
+    }
     hub.add_entry(
         lane,
         EntryKind::Notice,
@@ -116,29 +139,80 @@ fn invite_saying(
     Ok(())
 }
 
-/// A turn of agent `backend` just finished, so it's signed in whatever Codync last found (the
+/// A turn of `cfg`'s agent just finished, so the login it ran on is signed in whatever Codync last found (the
 /// user signed in outside Codync, or since the host started): its cards complete.
-pub fn answered(hub: &Hub, backend: &str) {
+pub fn answered(hub: &Hub, cfg: &BotConfig) {
+    let backend = cfg.backend.as_str();
     if backends::harness(backend).is_none() {
         return;
     }
-    // A prompt got through, so an earlier auth refusal is over.
-    backends::clear_prompt_refused(backend);
-    if backends::signed_in(backend) == Some(true) {
-        return;
-    }
-    backends::set_signed_in(backend, Some(true));
-    if let Err(error) = agent_signed_in(hub, backend) {
+    let profile = login_profiles::of_bot(&hub.store, backend, cfg);
+    let news = if let Some(id) = profile {
+        login_profiles::note_signed_in(&hub.store, id, true)
+    } else {
+        // A prompt got through, so an earlier auth refusal is over.
+        backends::clear_prompt_refused(backend);
+        let known = backends::signed_in(backend) == Some(true);
+        backends::set_signed_in(backend, Some(true));
+        !known
+    };
+    if news && let Err(error) = signed_in(hub, backend, profile) {
         tracing::warn!(backend, error = format!("{error:#}"), "couldn't complete the sign-in cards");
     }
 }
 
-/// Agent `backend` is signed in now: its sign-in cards complete, and the messages they hold go
-/// out again (a message older than a day doesn't).
+/// Agent `backend` is signed in now on the computer's own login: the sign-in cards of the bots on it complete,
+/// and the messages they hold go out again (a message older than a day doesn't).
 pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
-    crate::agent::fallback::signed_in(hub, backend);
+    signed_in(hub, backend, None)
+}
+
+/// The card `bot` got for agent `backend` is answered: whether the login it waits on is signed in now, which
+/// completes that login's cards.
+pub async fn confirm(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<bool> {
+    if check(hub, backend, login_profile).await? != Some(true) {
+        return Ok(false);
+    }
+    signed_in(hub, backend, login_profile)?;
+    Ok(true)
+}
+
+/// Checks login profile `id`'s sign-in for the apps: `{signedIn, loginProfile}`. Chats that asked the user to
+/// sign it in go on once it is.
+pub async fn check_login_profile(hub: &Hub, id: &str) -> Result<Value> {
+    settled(hub, &login_profiles::check(&hub.store, id).await?)
+}
+
+/// Gives API key login profile `id` its keys (`login_profiles::keys::set`), and answers as
+/// [`check_login_profile`] does.
+pub async fn set_keys(hub: &Hub, id: &str, typed: &serde_json::Map<String, Value>, import: &[String]) -> Result<Value> {
+    settled(hub, &login_profiles::keys::set(&hub.store, id, typed, import).await?)
+}
+
+/// `profile` as just checked or changed: once it's signed in, the cards that wait on it complete.
+fn settled(hub: &Hub, profile: &login_profiles::Profile) -> Result<Value> {
+    if profile.account.signed_in {
+        signed_in(hub, &profile.account.agent, Some(&profile.account.id))?;
+    } else {
+        // Signed out, it leaves the Usage screens.
+        crate::usage::login_profiles_changed(hub);
+    }
+    Ok(profile.status())
+}
+
+/// `backend` is signed in now on `login_profile`, or on the computer's own login: the cards of the bots on that
+/// login complete.
+pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Result<()> {
+    crate::agent::fallback::signed_in(hub, backend, login_profile);
+    if login_profile.is_some() {
+        // Its limits are read and listed from now on.
+        crate::usage::login_profiles_changed(hub);
+    }
     let _guard = SIGN_IN.locked();
     for card in hub.store.pending_sign_ins(backend)? {
+        if card.data["connectionRequest"]["loginProfile"].as_str() != login_profile {
+            continue;
+        }
         let mut data = card.data.clone();
         data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
         hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not complete the sign-in request"))?;
@@ -146,6 +220,18 @@ pub fn agent_signed_in(hub: &Hub, backend: &str) -> Result<()> {
         send_again(hub, &card.bot_id, ids.iter().filter_map(Value::as_str))?;
     }
     Ok(())
+}
+
+/// Signs account login profile `id` in through its agent itself (a browser on this computer), then checks it as
+/// [`check_login_profile`] does. An API key profile has no such sign-in.
+pub async fn sign_in_account(hub: &Hub, id: &str) -> Result<Value> {
+    let backend = login_profiles::find_account(&hub.store, id)?.agent;
+    // The login profile isn't removed under its sign-in.
+    let _running = login_profiles::Running::on(id);
+    crate::agent::auth::authenticate_account(&hub.store, &backend, id).await?;
+    // A finished sign-in counts again, whatever a prompt was refused for before.
+    backends::clear_prompt_refused(id);
+    check_login_profile(hub, id).await
 }
 
 /// `bot` answers the user messages `ids` it couldn't answer (a message older than a day doesn't go out).
@@ -172,8 +258,13 @@ mod tests {
     static CHECKS: std::sync::Mutex<Vec<(&str, bool)>> = std::sync::Mutex::new(Vec::new());
 
     #[allow(clippy::unused_async)] // the real check's signature
-    pub(super) async fn check(_: &Hub, backend: &str) -> Result<Option<bool>> {
+    pub(super) async fn check(_: &Hub, backend: &str, _login_profile: Option<&str>) -> Result<Option<bool>> {
         Ok(CHECKS.locked().iter().find(|(b, _)| *b == backend).map(|(_, ok)| *ok))
+    }
+
+    /// The computer's own login of agent `backend`.
+    fn own(backend: &str) -> Login {
+        Login { backend: backend.to_owned(), profile: None }
     }
 
     fn cards(hub: &Hub, backend: &str, bot: &str) -> Vec<crate::store::Entry> {
@@ -203,9 +294,9 @@ mod tests {
 
     #[tokio::test]
     async fn signing_in_brings_bots_back_from_their_fallbacks() {
-        use crate::agent::fallback::{Reason, rest};
+        use crate::agent::fallback::{Reason, login, rest};
         let (hub, dir) = fixture();
-        let wrapped = rest::account_of("kiro", Some("kiro-cli acp"));
+        let wrapped = login::key("kiro", Some("kiro-cli acp"), None);
         rest::record(&hub.store, &wrapped, Reason::SignedOut, now_ms(), None);
         rest::record(&hub.store, "kiro", Reason::UsageLimit, now_ms(), None);
         agent_signed_in(&hub, "kiro").unwrap();
@@ -239,14 +330,14 @@ mod tests {
     async fn the_first_card_holds_the_messages_that_fail_later() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite_saying(&hub, "bot", &lane, "fixture-first", "Fixture", &[], BEFORE_FIRST).unwrap();
+        invite_saying(&hub, "bot", &lane, &own("fixture-first"), "Fixture", &[], BEFORE_FIRST).unwrap();
         let sent = message(&hub, &lane, "hi");
-        invite(&hub, "bot", &lane, "fixture-first", "Fixture", std::slice::from_ref(&sent)).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture-first"), "Fixture", std::slice::from_ref(&sent)).unwrap();
         let cards = cards(&hub, "fixture-first", "bot");
         assert_eq!(cards.len(), 1, "the failed message joins the first card");
         assert_eq!(cards[0].data["connectionRequest"]["entryIds"], json!([sent]));
         assert_eq!(cards[0].data["text"], HOLDING);
-        invite(&hub, "other", &Lane::main("other"), "fixture-first", "Fixture", &[]).unwrap();
+        invite(&hub, "other", &Lane::main("other"), &own("fixture-first"), "Fixture", &[]).unwrap();
         let routine = &hub.store.pending_sign_ins("fixture-first").unwrap()[1];
         assert_eq!(routine.data["text"], NEEDED, "a turn without the user's message promises none");
         hub.shutdown().await;
@@ -258,8 +349,8 @@ mod tests {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
         let (first, second) = (message(&hub, &lane, "alpha-7"), message(&hub, &lane, "bravo-9"));
-        invite(&hub, "bot", &lane, "fixture", "Fixture", std::slice::from_ref(&first)).unwrap();
-        invite(&hub, "bot", &lane, "fixture", "Fixture", &[second.clone(), first.clone()]).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture"), "Fixture", std::slice::from_ref(&first)).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture"), "Fixture", &[second.clone(), first.clone()]).unwrap();
         let cards = hub.store.pending_sign_ins("fixture").unwrap();
         assert_eq!(cards.len(), 1, "a bot keeps one sign-in card");
         assert_eq!(cards[0].data["connectionRequest"]["entryIds"], json!([first, second]));
@@ -276,13 +367,13 @@ mod tests {
     async fn only_messages_younger_than_a_day_go_out_again_whatever_the_cards_age() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite_saying(&hub, "bot", &lane, "fixture-old", "Fixture", &[], BEFORE_FIRST).unwrap();
+        invite_saying(&hub, "bot", &lane, &own("fixture-old"), "Fixture", &[], BEFORE_FIRST).unwrap();
         let card = cards(&hub, "fixture-old", "bot")[0].id.clone();
         let day_ago = now_ms() - MAX_AGE - 1;
         hub.store.backdate_entry(&card, day_ago);
         let (stale, fresh) = (message(&hub, &lane, "stale"), message(&hub, &lane, "fresh"));
         hub.store.backdate_entry(&stale, day_ago);
-        invite(&hub, "bot", &lane, "fixture-old", "Fixture", &[stale.clone(), fresh.clone()]).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture-old"), "Fixture", &[stale.clone(), fresh.clone()]).unwrap();
         agent_signed_in(&hub, "fixture-old").unwrap();
         assert_eq!(hub.store.entry(&fresh).unwrap().data["status"], "queued", "a day-old card still sends");
         assert_eq!(hub.store.entry(&stale).unwrap().data["status"], "sent", "a day-old message doesn't");
@@ -291,11 +382,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_login_profiles_sign_in_completes_only_the_cards_of_the_bots_on_it() {
+        use crate::agent::fallback::{Reason, login, rest};
+        let (hub, dir) = fixture();
+        login_profiles::tests::insert(&hub.store, &[("a1", "claude")]);
+        let bot = |profile: Value| {
+            let cfg = json!({"id": "", "name": "claude", "backend": "claude", "cwd": dir, "loginProfile": profile});
+            hub.create_bot(serde_json::from_value(cfg).unwrap()).unwrap()["id"].as_str().unwrap().to_owned()
+        };
+        let (own, other) = (bot(Value::Null), bot(json!("a1")));
+        for id in [&own, &other] {
+            let login = Login::of(&hub.store, &hub.store.bot(id).unwrap().unwrap().config);
+            invite(&hub, id, &Lane::main(id), &login, "Claude Code", &[]).unwrap();
+        }
+        let request = |bot: &str| cards(&hub, "claude", bot)[0].data["connectionRequest"].clone();
+        assert_eq!(request(&other)["loginProfile"], "a1", "the card says which login to sign in");
+        assert!(request(&own).get("loginProfile").is_none());
+        // Each login rests by itself: the login profile's usage limit and sign-out aren't the computer's own login's.
+        let config = |bot: &str| hub.store.bot(bot).unwrap().unwrap().config;
+        let (on_own, on_profile) = (login::of(&config(&own)), login::of(&config(&other)));
+        let resting = |login: &str| rest::get(&hub.store, login, now_ms()).map(|r| r.reason);
+        rest::record(&hub.store, &on_profile, Reason::UsageLimit, now_ms(), None);
+        assert_eq!(resting(&on_own), None, "the login profile's usage limit");
+        rest::record(&hub.store, &on_profile, Reason::SignedOut, now_ms(), None);
+        rest::record(&hub.store, &on_own, Reason::SignedOut, now_ms(), None);
+        signed_in(&hub, "claude", Some("a1")).unwrap();
+        assert_eq!((resting(&on_profile), resting(&on_own)), (None, Some(Reason::SignedOut)));
+        assert!(cards(&hub, "claude", &other).is_empty(), "the login profile's bot goes on");
+        assert_eq!(cards(&hub, "claude", &own).len(), 1, "the computer's own login is still signed out");
+        rest::record(&hub.store, &on_profile, Reason::SignedOut, now_ms(), None);
+        agent_signed_in(&hub, "claude").unwrap();
+        assert_eq!((resting(&on_profile), resting(&on_own)), (Some(Reason::SignedOut), None));
+        assert!(cards(&hub, "claude", &own).is_empty());
+        // A prompt the login profile answered is news about it alone.
+        login_profiles::note_signed_in(&hub.store, "a1", false);
+        backends::set_signed_in("claude", Some(false));
+        let cfg = hub.store.bot(&other).unwrap().unwrap().config;
+        answered(&hub, &cfg);
+        assert_eq!(backends::signed_in("claude"), Some(false));
+        backends::set_signed_in("claude", None);
+        hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn a_finished_turn_completes_the_card_of_an_agent_signed_in_elsewhere() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite(&hub, "bot", &lane, "fixture-known", "Fixture", &[]).unwrap();
-        answered(&hub, "fixture-known");
+        invite(&hub, "bot", &lane, &own("fixture-known"), "Fixture", &[]).unwrap();
+        let on = |backend: &str| {
+            serde_json::from_value::<BotConfig>(json!({"id": "bot", "name": "bot", "backend": backend})).unwrap()
+        };
+        answered(&hub, &on("fixture-known"));
         assert_eq!(cards(&hub, "fixture-known", "bot").len(), 1, "an agent Codync doesn't know has none");
         // A bot of its own on a fixture agent that answers, under a harness id no other test uses.
         let agent = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
@@ -305,7 +443,7 @@ mod tests {
         // After a host restart nothing says signed out any more.
         backends::set_signed_in("junie", None);
         let lane = Lane::main(&bot);
-        invite(&hub, &bot, &lane, "junie", "Junie", &[]).unwrap();
+        invite(&hub, &bot, &lane, &own("junie"), "Junie", &[]).unwrap();
         let hi = message(&hub, &lane, "hi");
         hub.send_cmd(&bot, Cmd::Send { lane, entry_id: hi, text: "hi".into() }).unwrap();
         until("the answered turn to complete the card", || cards(&hub, "junie", &bot).is_empty()).await;

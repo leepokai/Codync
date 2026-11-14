@@ -112,9 +112,17 @@ async fn health(
     Json(health)
 }
 
+/// The login the status line's session runs on: a login profile, or with none the default login.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StatuslineFrom {
+    login_profile: Option<String>,
+}
+
 async fn statusline(
     State(hub): State<Arc<Hub>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Query(from): Query<StatuslineFrom>,
     headers: HeaderMap,
     body: Bytes,
 ) -> StatusCode {
@@ -124,7 +132,7 @@ async fn statusline(
     let Ok(body) = serde_json::from_slice::<Value>(&body) else {
         return StatusCode::BAD_REQUEST;
     };
-    usage::ingest_statusline(&hub, &body);
+    usage::ingest_statusline(&hub, from.login_profile.as_deref(), &body);
     StatusCode::NO_CONTENT
 }
 

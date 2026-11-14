@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { TRAY_SYMBOLS, type TrayImage, type TraySummary } from '@shared/ipc'
-import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageWindow } from '@shared/models'
+import { TRAY_SYMBOLS, type TrayImage, type TraySummary, type TrayUsageAgent, type TrayUsageComputer } from '@shared/ipc'
+import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
 import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
@@ -11,7 +11,8 @@ import { resetLine, resolvedLanguage, systemLanguage, translate } from '../lib/l
 import { prefs, usePref } from '../lib/prefs'
 import { avatarColor, isDark, palette } from '../lib/theme'
 import type { AppModel } from '../store/app-model'
-import { tightestLogin } from './usage/usage-logins'
+import { computerSymbol } from './ComputerBadge'
+import { logins } from './usage/usage-logins'
 import { providerTint, resetDate, untilText, windowReading, windowTitle } from './usage/usage-model'
 import { drawMascot, nearlyUsedUp } from './usage/ProviderMascot'
 
@@ -148,6 +149,32 @@ function usageLine(w: UsageWindow) {
   return `${tr(windowTitle(w))} · ${windowReading(w, tr)}${spoken ? ` · ${spoken}` : ''}`
 }
 
+/** An agent's limits for the menu, login by login: one with nothing read says so. */
+function usageAgent(p: UsageProvider, iconStyle: 'character' | 'original'): TrayUsageAgent {
+  return {
+    name: p.name,
+    icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
+    logins: logins(p).map((login) => ({
+      name: login.name ?? tr('Default login profile'),
+      lines: login.windows.length
+        ? login.windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) }))
+        : [{ title: tr('No reading yet'), bar: null }],
+    })),
+  }
+}
+
+/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. */
+function usageComputers(app: AppModel, iconStyle: 'character' | 'original'): TrayUsageComputer[] {
+  return app.computers
+    .flatMap((c) => app.store(c.id) ?? [])
+    .filter((store) => store.usage.providers.length > 0)
+    .map((store) => ({
+      name: app.computers.length > 1 ? store.computer.name : null,
+      symbol: computerSymbol(store.computer.device),
+      agents: store.usage.providers.map((p) => usageAgent(p, iconStyle)),
+    }))
+}
+
 /** Sends what the menu bar shows whenever the stores change. */
 export function useTraySummary(app: AppModel) {
   const [, redraw] = useState(0)
@@ -185,11 +212,7 @@ export function useTraySummary(app: AppModel) {
           working: isWorking(i.bot),
           avatar: avatarIcon(i.bot),
         })),
-        usage: (local?.usage.providers ?? []).map((p) => ({
-          name: p.name,
-          icon: canvasImage(`mascot|${p.id}|${iconStyle}|${nearlyUsedUp(p)}`, 16, 16, (ctx) => drawMascot(ctx, p, 16, iconStyle, isDark())),
-          lines: tightestLogin(p).windows.map((w) => ({ title: usageLine(w), bar: w.text ? null : barIcon(p.id, w) })),
-        })),
+        usage: usageComputers(app, iconStyle),
         screen: screen
           ? {
               enabled: screen.enabled,

@@ -1,4 +1,5 @@
 import { deviceHello, FrameCodec, unb64url, type DeviceKey } from './crypto.ts'
+import { RelayPacer } from './relay-pacer.ts'
 
 // One end-to-end encrypted channel to an account computer over the Codync relay (docs/reference/remote-relay.md
 // §6–§7), as the iPhone's `ChannelTransport` does it, relay only: the computers the desktop app reaches this way
@@ -66,6 +67,8 @@ const asleep = (): ChannelError => ({ status: 0, message: 'Your computer is offl
 export class RelayChannel {
   state: 'idle' | 'connecting' | 'asleep' | 'ready' | 'refused' = 'idle'
   private socket: Socket | null = null
+  /** The socket's outgoing messages, held to the relay's per-link budget. */
+  private out: RelayPacer | null = null
   private codec: FrameCodec | null = null
   private hello: ReturnType<typeof deviceHello> | null = null
   private nextId = 0
@@ -101,7 +104,7 @@ export class RelayChannel {
         reject,
         timer: setTimeout(() => {
           if (!this.calls.delete(call)) return
-          if (call.id !== null) this.sendInner({ id: call.id, cancel: true })
+          if (call.id !== null) this.sendInner(() => ({ id: call.id, cancel: true }))
           reject(this.state === 'asleep' ? asleep() : unreachable())
           this.settle()
         }, timeoutMs),
@@ -124,7 +127,7 @@ export class RelayChannel {
     if (this.codec) this.sendSub(s)
     return () => {
       if (!this.subs.delete(s)) return
-      if (s.id !== null) this.sendInner({ id: s.id, cancel: true })
+      if (s.id !== null) this.sendInner(() => ({ id: s.id, cancel: true }))
       this.settle()
     }
   }
@@ -178,6 +181,7 @@ export class RelayChannel {
       return this.again()
     }
     this.socket = socket
+    this.out = new RelayPacer((text) => socket.send(text))
     this.state = 'connecting'
     this.heard = Date.now()
     socket.addEventListener('message', (e) => {
@@ -194,7 +198,7 @@ export class RelayChannel {
     socket.addEventListener('error', () => this.socket === socket && socket.close(BROKEN))
     this.heartbeat = setInterval(() => {
       if (Date.now() - this.heard > SILENCE) socket.close(BROKEN)
-      else socket.send(PING)
+      else this.out?.send(() => [PING])
     }, HEARTBEAT)
   }
 
@@ -223,12 +227,16 @@ export class RelayChannel {
   }
 
   private startHandshake() {
-    this.hello = deviceHello(this.setup.device, unb64url(this.setup.signKey))
+    const hello = deviceHello(this.setup.device, unb64url(this.setup.signKey))
+    this.hello = hello
     this.state = 'connecting'
-    this.socket?.send(JSON.stringify(this.hello.hello))
     const socket = this.socket
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer)
-    this.handshakeTimer = setTimeout(() => this.hello && this.socket === socket && socket?.close(1000), HANDSHAKE)
+    // The deadline runs from when `hello` leaves: it may wait out the relay's window first.
+    this.out?.send(() => {
+      this.handshakeTimer = setTimeout(() => this.hello === hello && this.socket === socket && socket?.close(1000), HANDSHAKE)
+      return [JSON.stringify(hello.hello)]
+    })
   }
 
   private welcome(wire: { ek: string; sig: string }) {
@@ -294,6 +302,8 @@ export class RelayChannel {
   }
 
   private stopTimers() {
+    this.out?.clear()
+    this.out = null
     if (this.heartbeat) clearInterval(this.heartbeat)
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer)
     if (this.idle) clearTimeout(this.idle)
@@ -310,9 +320,13 @@ export class RelayChannel {
     }, delay)
   }
 
-  /** The channel is gone: what was sent on it can't be answered any more. What still waits to be sent waits on. */
+  /**
+   * The channel is gone: what was sent on it can't be answered any more, and frames sealed for it but still held
+   * back by the pacer can't be opened by the next one. Calls and subscriptions not sent yet wait on.
+   */
   private drop(error: ChannelError) {
     this.codec = null
+    this.out?.clear()
     for (const call of this.calls) {
       if (call.id === null) continue
       this.calls.delete(call)
@@ -348,14 +362,24 @@ export class RelayChannel {
 
   // MARK: inner RPC
 
+  /**
+   * A call or subscription gets its id when it leaves, so one given up on while it waited for the relay's window
+   * (`call`'s timeout, an unsubscribe) never goes out, and `drop` keeps it waiting for the next channel.
+   */
   private sendCall(call: Call) {
-    call.id = this.id()
-    this.sendInner({ id: call.id, m: call.method, b: call.body ?? null })
+    this.sendInner(() => {
+      if (!this.calls.has(call)) return null
+      call.id = this.id()
+      return { id: call.id, m: call.method, b: call.body ?? null }
+    })
   }
 
   private sendSub(sub: Sub) {
-    sub.id = this.id()
-    this.sendInner({ id: sub.id, sub: sub.sub, b: sub.body })
+    this.sendInner(() => {
+      if (!this.subs.has(sub)) return null
+      sub.id = this.id()
+      return { id: sub.id, sub: sub.sub, b: sub.body }
+    })
   }
 
   private id() {
@@ -363,8 +387,13 @@ export class RelayChannel {
     return this.nextId
   }
 
-  private sendInner(message: unknown) {
-    if (!this.codec || !this.socket) return
-    for (const frame of this.codec.seal(message)) this.socket.send(JSON.stringify(frame))
+  /** Seals what `make` returns once the pacer lets it out, on the channel it was queued for. */
+  private sendInner(make: () => unknown) {
+    const codec = this.codec
+    if (!codec || !this.out) return
+    this.out.send(() => {
+      const message = make()
+      return message === null ? [] : codec.seal(message).map((frame) => JSON.stringify(frame))
+    })
   }
 }

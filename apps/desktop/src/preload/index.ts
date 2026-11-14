@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { sshBridge } from './ssh'
 import type { CallError, CodyncBridge, HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
 
-let streamId = 0
-const streams = new Map<string, { onData: (line: string) => void; onEnd: (error: CallError | null) => void }>()
+/** Open streams by id, each with the close that ends it in the main process. */
+const streams = new Map<string, { onData: (line: string) => void; onEnd: (error: CallError | null) => void; close: () => void }>()
 
 ipcRenderer.on('host:stream:data', (_e, id: string, line: string) => streams.get(id)?.onData(line))
 ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
@@ -11,16 +11,35 @@ ipcRenderer.on('host:stream:end', (_e, id: string, error: CallError | null) => {
   streams.delete(id)
   s?.onEnd(error)
 })
-// A page that goes (a reload, its window closing) closes its streams: the next page numbers its own from 1 again.
+// A page that goes (a reload, its window closing) closes its streams, local and remote alike.
 window.addEventListener('pagehide', () => {
-  for (const id of streams.keys()) ipcRenderer.send('host:stream:close', id)
-  streams.clear()
+  for (const s of [...streams.values()]) s.close()
 })
 
 function listen<T>(channel: string, cb: (value: T) => void) {
   const handler = (_e: IpcRendererEvent, value: T) => cb(value)
   ipcRenderer.on(channel, handler)
   return () => void ipcRenderer.removeListener(channel, handler)
+}
+
+/** A main-process call answering `{ ok, value }` or `{ ok, error }`: the value, or a rejection with the `CallError`. */
+async function invoke(channel: string, ...args: unknown[]) {
+  const result = (await ipcRenderer.invoke(channel, ...args)) as { ok: true; value: unknown } | { ok: false; error: CallError }
+  if (!result.ok) throw result.error
+  return result.value
+}
+
+/** Lines from a stream the main process runs (`<prefix>:stream:open`), until `onEnd` or the returned close. */
+function openStream(prefix: string, args: unknown[], onData: (line: string) => void, onEnd: (error: CallError | null) => void) {
+  // Unique across reloads: a late line for a stream of the page before never reaches one of this page.
+  const id = crypto.randomUUID()
+  const close = () => {
+    if (!streams.delete(id)) return
+    ipcRenderer.send(`${prefix}:stream:close`, id)
+  }
+  streams.set(id, { onData, onEnd, close })
+  ipcRenderer.send(`${prefix}:stream:open`, id, ...args)
+  return close
 }
 
 // A dev sandbox starts past onboarding (`skip`: only a window that never chose is seeded) or back at
@@ -61,40 +80,12 @@ const bridge: CodyncBridge = {
     onChange: (cb) => listen('host:change', cb),
     install: () => ipcRenderer.send('host:install'),
     restart: () => ipcRenderer.send('host:restart'),
-    async call(baseURL, token, method, body, timeoutMs) {
-      const result = (await ipcRenderer.invoke('host:call', baseURL, token, method, body, timeoutMs)) as
-        | { ok: true; value: unknown }
-        | { ok: false; error: CallError }
-      if (!result.ok) throw result.error
-      return result.value
-    },
-    stream(url, token, onData, onEnd) {
-      const id = `s${++streamId}`
-      streams.set(id, { onData, onEnd })
-      ipcRenderer.send('host:stream:open', id, url, token)
-      return () => {
-        if (!streams.delete(id)) return
-        ipcRenderer.send('host:stream:close', id)
-      }
-    },
+    call: (baseURL, token, method, body, timeoutMs) => invoke('host:call', baseURL, token, method, body, timeoutMs),
+    stream: (url, token, onData, onEnd) => openStream('host', [url, token], onData, onEnd),
   },
   channel: {
-    async call(computerId, signKey, method, body, timeoutMs) {
-      const result = (await ipcRenderer.invoke('channel:call', computerId, signKey, method, body, timeoutMs)) as
-        | { ok: true; value: unknown }
-        | { ok: false; error: CallError }
-      if (!result.ok) throw result.error
-      return result.value
-    },
-    stream(computerId, signKey, path, onData, onEnd) {
-      const id = `s${++streamId}`
-      streams.set(id, { onData, onEnd })
-      ipcRenderer.send('channel:stream:open', id, computerId, signKey, path)
-      return () => {
-        if (!streams.delete(id)) return
-        ipcRenderer.send('channel:stream:close', id)
-      }
-    },
+    call: (computerId, signKey, method, body, timeoutMs) => invoke('channel:call', computerId, signKey, method, body, timeoutMs),
+    stream: (computerId, signKey, path, onData, onEnd) => openStream('channel', [computerId, signKey, path], onData, onEnd),
   },
   account: {
     state: () => ipcRenderer.invoke('account:state'),
@@ -137,7 +128,18 @@ const bridge: CodyncBridge = {
   },
   cloud: {
     request: (method, path, body, signed) => ipcRenderer.invoke('cloud:request', method, path, body, signed),
-    requestAccess: (computerId) => ipcRenderer.invoke('cloud:requestAccess', computerId),
+    async requestAccess(computer, onCode) {
+      // Its own code only: a late one of a request withdrawn before this one never shows here.
+      const requestId = crypto.randomUUID()
+      const handler = (_e: IpcRendererEvent, id: string, code: string) => id === requestId && onCode?.(code)
+      ipcRenderer.on('cloud:accessCode', handler)
+      try {
+        return await ipcRenderer.invoke('cloud:requestAccess', computer, requestId)
+      } finally {
+        ipcRenderer.removeListener('cloud:accessCode', handler)
+      }
+    },
+    cancelAccess: (computerId) => ipcRenderer.send('cloud:cancelAccess', computerId),
   },
   updates: {
     state: () => ipcRenderer.invoke('updates:state'),

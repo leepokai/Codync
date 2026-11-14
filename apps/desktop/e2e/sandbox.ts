@@ -102,3 +102,16 @@ export function api<T>(page: Page, method: string, body: unknown): Promise<T> {
     return host.call(local.baseURL, local.token, method, body, 30_000)
   }, [method, body] as const) as Promise<T>
 }
+
+/** Opens this computer's Extensions: from its sidebar heading when several computers are listed, else the footer's. */
+export async function openLocalExtensions(page: Page) {
+  const computerId = await page.evaluate(async () => {
+    const host = (window as unknown as { codync: { host: Host } }).codync.host
+    const local = (await host.snapshot()).local
+    if (!local) throw new Error('The sandbox host has not answered yet.')
+    return local.computerId
+  })
+  const extensions = { name: /Extensions/ }
+  await page.locator(`[data-computer-section="${computerId}"]`).getByRole('button', extensions)
+    .or(page.locator('.sidebar-footer').getByRole('button', extensions)).click()
+}

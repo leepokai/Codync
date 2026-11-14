@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { api, attach } from './sandbox.ts'
+import { api, attach, openLocalExtensions } from './sandbox.ts'
 
 type Connector = { id: string; name: string }
 
@@ -11,7 +11,7 @@ test('a custom connector can’t take an installed connector’s name, and the s
   try {
     await page.reload()
     botId = (await api<{ bot: { id: string } }>(page, 'createBot', { name, backend: 'custom', command: 'unused', connectors: [], skills: [], notify: false })).bot.id
-    await page.getByRole('button', { name: /Extensions/ }).click()
+    await openLocalExtensions(page)
     await page.getByRole('tab', { name: 'Connectors' }).click()
     const sheet = page.locator('.modal-content', { has: page.getByPlaceholder('npx -y @scope/server') })
     const add = async (command: string) => {

@@ -103,15 +103,20 @@ The TUI connects to one host at a time, so it keeps its single roster.
   work). The tray icon is the app icon; left-click opens the chat, right-click the menu.
 - **Remote screen** on macOS registers `CodyncScreen.app` (built from the Xcode `Screen` target)
   as an SMAppService agent; Linux starts its helper from the host, as before.
-- **Other computers in the account** are reached through this computer's own host and SSH
-  tunnels, except the account's Codync Cloud computers: the main process opens the relay's encrypted channel to each
-  (`main/channel/`, the iPhone's `ChannelTransport` over the relay only, since a cloud computer has no address to
-  dial), asks each for access once per launch (they approve the account's devices by themselves), and the window uses them
-  like any computer: chats, bots and their settings, setup terminals. The channel is open only while someone looks
-  at the window (shown, not minimized, the computer used in the last 10 minutes: `main/attention.ts`), as a phone
-  connects only in the foreground, since a connected device keeps a cloud computer awake and billed. Other
-  computers' "Ask for access" rows show status only: the product targets one computer. Every offline row
-  but a cloud computer's (deleted in its own section) has *Remove from account* (confirmed first); an older copy of a computer the app uses also reads
+- **Other computers in the account** that approved this install open through the account's relay: the main
+  process opens the relay's end-to-end encrypted channel to each (`main/channel/`, the iPhone's `ChannelTransport`
+  over the relay only), unless an SSH tunnel already reaches it, and the window uses them like any computer: chats,
+  bots and their settings, setup terminals. A computer that refuses this install reads *No access* and stops
+  retrying; outgoing frames are paced to the relay's per-link budget (`main/channel/relay-pacer.ts`), so a large
+  upload never trips its `4008 rateLimited`. A request is sealed and numbered only when the pacer lets it out, so one
+  that times out while it waits never reaches the computer, and the handshake's deadline runs from when `hello`
+  leaves. Codync Cloud computers are asked for access once per launch (they
+  approve the account's devices by themselves); any other computer's online row has *Ask for access*, which runs
+  the phones' 6-digit access request. The channel is open only while someone looks at the window (shown, not
+  minimized, the computer used in the last 10 minutes: `main/attention.ts`), as a phone connects only in the
+  foreground, since a connected device keeps a cloud computer awake and billed. Every offline row but a cloud
+  computer's (deleted in its own section) has *Remove from account* (confirmed first); an older copy of a computer
+  the app uses also reads
   *Older copy · last seen …*.
 - **Updates**: electron-updater reads the release GitHub marks latest, and only the release gate
   (`tools/release-gate.py`) sets that mark

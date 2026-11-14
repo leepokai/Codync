@@ -221,8 +221,9 @@ export class BotSync extends BotMirror {
         if (!alive()) return
         const message = error instanceof Error ? error.message : String(error)
         this.finishRefresh?.(new Error(message))
+        // Refused (a revoked token or device): retrying can't help until access changes.
+        if (error instanceof HostError && error.status === 401) return this.setConnection({ kind: 'unauthorized', message })
         this.setConnection(error instanceof HostError && error.offline ? { kind: 'computerOffline', lastSeen: null } : { kind: 'offline', message })
-        if (error instanceof HostError && error.status === 401) return
       }
       if (!alive()) return
       await sleep(backoff)

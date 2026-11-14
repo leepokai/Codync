@@ -25,8 +25,8 @@ impl Hub {
                 return Ok(self.bot_value(&existing).unwrap_or(Value::Null));
             }
         }
+        crate::agent::login_profiles::settle(&self.store, &mut cfg)?;
         crate::agent::fallback::tidy(&mut cfg);
-        crate::agent::accounts::settle(&self.store, &mut cfg)?;
         cfg.section = sections::normalize_section(cfg.section.as_deref())?;
         validate(&cfg)?;
         crate::agent::workspace::prepare(&mut cfg)?;
@@ -54,8 +54,8 @@ impl Hub {
             if cfg.is_group() {
                 cfg.members = crate::chat::group::valid_members(&self.store, &cfg.id, &cfg.members)?;
             }
+            crate::agent::login_profiles::settle(&self.store, &mut cfg)?;
             crate::agent::fallback::tidy(&mut cfg);
-            crate::agent::accounts::settle(&self.store, &mut cfg)?;
             cfg.section = sections::normalize_section(cfg.section.as_deref())?;
             // ponytail: validated under the lock, so a workspace folder on a hung network share (its
             // `is_dir`) stalls every bot's events until it answers. Upgrade: build and validate outside the

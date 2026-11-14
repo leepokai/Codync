@@ -640,7 +640,7 @@ async fn statusline(port: u16, wrapped: String) {
     let _ = std::io::stdin().read_to_string(&mut input);
     let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
     // The limits the host shows are the computer's own login's, so an agent account's aren't forwarded.
-    let own_login = std::env::var_os(agent::accounts::ACCOUNT_VAR).is_none();
+    let own_login = std::env::var_os(agent::login_profiles::PROFILE_VAR).is_none();
     if own_login && let Ok(token) = std::fs::read_to_string(service::data_dir().join("token")) {
         let _ = http()
             .post(format!("http://127.0.0.1:{port}/ingest/statusline"))

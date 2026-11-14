@@ -165,7 +165,7 @@ async fn create(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     crate::hub::validate(&cfg)?;
     fields.insert("backend".into(), cfg.backend.clone().into());
     let name = cfg.name.clone();
-    approve(hub, source, format!("Create bot {name}"), describe(&fields, &lines)).await?;
+    approve(hub, source, format!("Create bot {name}"), describe(&hub.store, &fields, &lines)).await?;
     let created = {
         let hub = hub.clone();
         tokio::task::spawn_blocking(move || hub.create_bot(cfg)).await??
@@ -190,7 +190,7 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     if fields.is_empty() && routines.is_empty() {
         bail!("nothing to change");
     }
-    approve(hub, source, format!("Change bot {}", target.name), describe(&fields, &lines)).await?;
+    approve(hub, source, format!("Change bot {}", target.name), describe(&hub.store, &fields, &lines)).await?;
     let mut changed: Vec<String> =
         FIELDS.iter().filter(|(key, _)| fields.contains_key(*key)).map(|(_, label)| label.to_lowercase()).collect();
     if !fields.is_empty() {
@@ -306,7 +306,7 @@ fn routines(hub: &Hub, bot: &str, args: &Value) -> Result<(Vec<Value>, Vec<Strin
 }
 
 /// What a change sets, for its approval card: a line per field, then the routines and the instructions in full.
-fn describe(fields: &Map<String, Value>, routines: &[String]) -> String {
+fn describe(store: &crate::store::Store, fields: &Map<String, Value>, routines: &[String]) -> String {
     let mut lines: Vec<String> = FIELDS
         .iter()
         .filter(|(key, _)| *key != "description")
@@ -314,7 +314,7 @@ fn describe(fields: &Map<String, Value>, routines: &[String]) -> String {
             let value = match fields.get(*key)? {
                 list @ Value::Array(_) if *key == "fallbacks" => {
                     let list: Vec<crate::store::Fallback> = serde_json::from_value(list.clone()).unwrap_or_default();
-                    crate::chat::fallbacks::describe(&list)
+                    crate::chat::fallbacks::describe(store, &list)
                 }
                 Value::String(s) if s.is_empty() => "default".to_owned(),
                 Value::String(s) => s.clone(),

@@ -47,10 +47,12 @@ struct AgentSheet: View {
     /// Opened from a chat's sign-in request, whose agent refused a turn: the agent is asked
     /// again however signed in it looked.
     var recheck = false
-    /// The request is for this agent account: its sign-in opens, not a check of the computer's own login.
-    var signInAccount: String?
+    /// The request is for this login profile: its sign-in or key form opens, not a check of the computer's own login.
+    var signInLoginProfile: String?
     @Environment(BotStore.self) private var model
     @State private var route: SetupRoute?
+    /// `signInLoginProfile`'s sign-in started in its Login profiles section, when its agent signs itself in: once per sheet.
+    @State private var signInStarted = false
     @State private var auth: AgentAuth?
     @State private var checking = false
     @State private var authenticating: String?
@@ -81,14 +83,23 @@ struct AgentSheet: View {
         // A known "signed in" needs no agent start; one set up asks the agent (which can't start
         // without its Node.js). Opening never downloads one: that waits for Set up.
         .task {
-            if let signInAccount { go(.terminal(nil, account: signInAccount)) }
+            switch backend.loginProfiles?.first(where: { $0.id == signInLoginProfile }) {
+            case let profile? where profile.kind == .apiKey: go(.profileKeys(profile.id))
+            case let profile? where !backend.loginProfilesSignInInBrowser: go(.terminal(nil, loginProfile: profile.id))
+            default: break
+            }
             if recheck || (setUp && backend.signedIn != true), !backend.needsNode { await check() }
         }
         .onChange(of: route) { old, new in
             // Back from a terminal or key form: see what changed, for the login it was about.
             guard new == nil, let old else { return }
             Task {
-                if case .terminal(_, let account?) = old { await checkAccount(account) } else { await check() }
+                switch old {
+                case .terminal(_, let loginProfile?): await checkLoginProfile(loginProfile)
+                // Its save already brought the new list.
+                case .profileKeys: break
+                default: await check()
+                }
             }
         }
     }
@@ -98,8 +109,12 @@ struct AgentSheet: View {
         switch route {
         case .install: SetupTerminalView(backend: backend, step: .install, back: back)
         case .node: SetupTerminalView(backend: backend, step: .node, back: back)
-        case .terminal(let method, let account): SetupTerminalView(backend: backend, step: .login, method: method, account: account, back: back)
+        case .terminal(let method, let loginProfile): SetupTerminalView(backend: backend, step: .login, method: method, loginProfile: loginProfile, back: back)
         case .keys(let method): AgentKeysForm(backend: backend, method: method, saved: auth?.savedEnv ?? [], back: back) { auth = $0 }
+        case .profileKeys(let id):
+            if let profile = backend.loginProfiles?.first(where: { $0.id == id }) {
+                LoginProfileKeysForm(backend: backend, profile: profile, back: back)
+            }
         }
     }
 
@@ -150,9 +165,6 @@ struct AgentSheet: View {
                 }
             }
             signInSection
-            if backend.accounts != nil, installed {
-                AgentAccounts(backend: backend) { go(.terminal(nil, account: $0)) }
-            }
             AgentBrings(backendId: backend.id)
             if let error {
                 CardSection { Text(L10n.tr(error)).foregroundStyle(Palette.danger).textSelection(.enabled) }
@@ -160,66 +172,80 @@ struct AgentSheet: View {
         }
     }
 
-    private var signInSection: some View {
-        CardSection(footer: signedIn != true && auth?.methods.contains(where: { $0.kind == .agent }) == true
+    private var browserNote: String? {
+        signedIn != true && auth?.methods.contains(where: { $0.kind == .agent }) == true
             ? "Browser sign-ins open on \(model.hostName) itself. Away from it? Use Remote screen to finish there."
-            : nil) {
-            HStack(spacing: 0) {
-                SetupStepRow(
-                    number: 1 + (curated ? 1 : 0) + (backend.node != nil ? 1 : 0),
-                    title: "Sign in",
-                    detail: statusText,
-                    done: signedIn == true,
-                    action: nil
-                )
-                if checking {
-                    ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
-                } else {
-                    Button(L10n.tr("Check again"), systemImage: "arrow.clockwise") { Task { await check() } }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.secondary)
-                        .help("Check again")
+            : nil
+    }
+
+    /// An agent with login profiles shows its sign-in as the default one's, among them; any other (an older host's)
+    /// as its Sign in step.
+    @ViewBuilder private var signInSection: some View {
+        if backend.loginProfiles != nil {
+            LoginProfiles(backend: backend, status: statusText, checking: checking, check: { Task { await check() } },
+                          signIn: { go(.terminal(nil, loginProfile: $0)) }, editKeys: { go(.profileKeys($0)) },
+                          signInNow: signInStarted ? nil : signInLoginProfile, signInStarted: { signInStarted = true }) {
+                signInOptions
+                if let browserNote {
+                    Text(L10n.tr(browserNote)).font(.footnote).foregroundStyle(Palette.secondary)
                 }
             }
-            if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
-                Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+        } else {
+            CardSection(footer: browserNote) {
+                HStack(spacing: 0) {
+                    SetupStepRow(
+                        number: 1 + (curated ? 1 : 0) + (backend.node != nil ? 1 : 0),
+                        title: "Sign in",
+                        detail: statusText,
+                        done: signedIn == true,
+                        action: nil
+                    )
+                    CheckAgain(checking: checking) { Task { await check() } }
+                }
+                signInOptions
             }
-            // A registry agent downloads on its first start; an app's own CLI comes from Install above.
-            if !setUp, !curated, !checking, !backend.needsNode {
-                optionRow("Set up", detail: "Downloads \(backend.name) on \(model.hostName) if it needs to, then checks its sign-in.",
-                          icon: "arrow.down.circle") {
-                    Task { await check() }
+        }
+    }
+
+    /// What the agent says about its sign-in, and the ways to sign the computer's own login in.
+    @ViewBuilder private var signInOptions: some View {
+        if signedIn != true, let detail = auth?.detail, !detail.isEmpty {
+            Text(detail).font(.footnote).foregroundStyle(Palette.secondary).textSelection(.enabled)
+        }
+        // A registry agent downloads on its first start; an app's own CLI comes from Install above.
+        if !setUp, !curated, !checking, !backend.needsNode {
+            optionRow("Set up", detail: "Downloads \(backend.name) on \(model.hostName) if it needs to, then checks its sign-in.",
+                      icon: "arrow.down.circle") {
+                Task { await check() }
+            }
+        }
+        // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
+        if signedIn != true, !checking {
+            if auth?.login == true {
+                optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
+                    go(.terminal(nil, loginProfile: nil))
                 }
             }
-            // Some CLIs drop the current sign-in the moment a new one starts: no options once signed in.
-            if signedIn != true, !checking {
-                if auth?.login == true {
-                    optionRow("Sign in", detail: "In a terminal on \(model.hostName). Links open here.", icon: "terminal") {
-                        go(.terminal(nil, account: nil))
+            ForEach(auth?.methods ?? []) { m in
+                switch m.kind {
+                case .terminal?:
+                    optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
+                        go(.terminal(m, loginProfile: nil))
                     }
-                }
-                ForEach(auth?.methods ?? []) { m in
-                    switch m.kind {
-                    case .terminal?:
-                        optionRow(m.name, detail: m.description ?? "In a terminal on \(model.hostName).", icon: "terminal") {
-                            go(.terminal(m, account: nil))
-                        }
-                    case .envVar?:
-                        optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
-                            go(.keys(m))
-                        }
-                    case .agent?, nil:
-                        optionRow(
-                            m.name,
-                            detail: authenticating == m.id
-                                ? "Finish signing in in the browser on \(model.hostName)…"
-                                : m.description ?? "Opens a browser on \(model.hostName).",
-                            icon: "safari",
-                            busy: authenticating == m.id
-                        ) {
-                            Task { await authenticate(m) }
-                        }
+                case .envVar?:
+                    optionRow(m.name, detail: m.description ?? "Saved on \(model.hostName) only.", icon: "key") {
+                        go(.keys(m))
+                    }
+                case .agent?, nil:
+                    optionRow(
+                        m.name,
+                        detail: authenticating == m.id
+                            ? "Finish signing in in the browser on \(model.hostName)…"
+                            : m.description ?? "Opens a browser on \(model.hostName).",
+                        icon: "safari",
+                        busy: authenticating == m.id
+                    ) {
+                        Task { await authenticate(m) }
                     }
                 }
             }
@@ -255,9 +281,9 @@ struct AgentSheet: View {
         await model.refreshBackends()
     }
 
-    private func checkAccount(_ account: String) async {
+    private func checkLoginProfile(_ loginProfile: String) async {
         do {
-            try await model.checkAgentAccount(backend.id, account: account)
+            try await model.checkLoginProfile(backend.id, loginProfile: loginProfile)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -281,15 +307,36 @@ struct AgentSheet: View {
 private enum SetupRoute: Hashable {
     case install
     case node
-    /// `account`: the agent account it signs in; nil for the computer's own.
-    case terminal(AuthMethod?, account: String?)
+    /// `loginProfile`: the login profile it signs in; nil for the computer's own.
+    case terminal(AuthMethod?, loginProfile: String?)
     case keys(AuthMethod)
+    /// The key form of an API key login profile (its id).
+    case profileKeys(String)
 }
 
-/// One way forward in an agent's setup: a titled row that opens the next step.
+/// Asks the agent about its sign-in again; an orb while it's asked.
+struct CheckAgain: View {
+    let checking: Bool
+    let check: () -> Void
+
+    var body: some View {
+        if checking {
+            ThinkingOrb(state: .connecting, size: 16, color: Palette.secondary)
+        } else {
+            Button(L10n.tr("Check again"), systemImage: "arrow.clockwise", action: check)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.secondary)
+                .help("Check again")
+        }
+    }
+}
+
+/// One way forward in an agent's setup: a titled row that opens the next step (with a `detail`), or one that acts
+/// where it is (without).
 struct SetupOptionRow: View {
     let title: String
-    let detail: String
+    var detail: String?
     let icon: String
     var busy = false
     let action: () -> Void
@@ -304,12 +351,14 @@ struct SetupOptionRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr(title)).font(.body.weight(.medium)).foregroundStyle(Palette.text)
-                    Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                    if let detail {
+                        Text(L10n.tr(detail)).font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(3)
+                    }
                 }
                 Spacer(minLength: 8)
                 if busy {
                     ThinkingOrb(size: 16, color: Palette.secondary)
-                } else {
+                } else if detail != nil {
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.tertiary)
                 }
             }

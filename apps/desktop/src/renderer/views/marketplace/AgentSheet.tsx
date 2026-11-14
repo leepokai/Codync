@@ -4,19 +4,20 @@ import { AgentIcon, agentTint } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, IconButton, Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
-import { HStack, IconSlot, VStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
 import { useStore } from '../../store/context'
 import { useTr } from '../../lib/use-language'
 import { fill } from '../../lib/fill.ts'
 import { errorText, market, type AgentAuth, type AuthMethod } from './market-models'
-import { ErrorText, Field, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
-import { AgentAccounts } from './AgentAccounts'
+import { ErrorText, Field, OptionRow, ScreenHeader, SlideStack, WebLink, filled } from './pieces'
+import { LoginProfileKeys } from './LoginProfileKeys'
+import { CheckAgain, LoginProfiles } from './LoginProfiles'
 import { AgentBrings } from './AgentBrings'
 import { SetupTerminalView } from './SetupTerminal'
 
-type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; account?: string } | { kind: 'keys'; method: AuthMethod }
+type SetupRoute = { kind: 'install' } | { kind: 'node' } | { kind: 'terminal'; method: AuthMethod | null; loginProfile?: string } | { kind: 'keys'; method: AuthMethod } | { kind: 'profileKeys'; loginProfile: string }
 
 /** An agent's registry logo on a rounded tile. */
 export function AgentTile({ registry, icon, tile, radius }: { registry?: string | null; icon: number; tile: number; radius: number }) {
@@ -53,11 +54,16 @@ export function NodeNotice({ onAdd }: { onAdd: () => void }) {
  * CLIs it knows. Bots are made from New bot, not here.
  */
 /** `recheck`: opened from a chat's sign-in request, whose agent refused a turn, so the agent is
- *  asked again however signed in it looked. `signInAccount`: the request is for that agent account,
- *  so its sign-in opens, not a check of the computer's own login. */
-export function AgentSheet({ initial, recheck = false, signInAccount }: { initial: Backend; recheck?: boolean; signInAccount?: string | null }) {
+ *  asked again however signed in it looked. `signInProfile`: the request is for that login profile,
+ *  so its sign-in (an account) or its key form (an API key) opens, not a check of the computer's own login. */
+export function AgentSheet({ initial, recheck = false, signInProfile }: { initial: Backend; recheck?: boolean; signInProfile?: string | null }) {
   const store = useStore()
-  const [route, setRoute] = useState<SetupRoute | null>(signInAccount ? { kind: 'terminal', method: null, account: signInAccount } : null)
+  const asked = signInProfile ? initial.loginProfiles?.find((p) => p.id === signInProfile) : undefined
+  const [route, setRoute] = useState<SetupRoute | null>(
+    asked?.kind === 'apiKey' ? { kind: 'profileKeys', loginProfile: asked.id }
+      : asked && initial.loginProfileSignIn !== 'browser' ? { kind: 'terminal', method: null, loginProfile: asked.id }
+      : null,
+  )
   const [auth, setAuth] = useState<AgentAuth | null>(null)
   const [checking, setChecking] = useState(false)
   const [authenticating, setAuthenticating] = useState<string | null>(null)
@@ -111,10 +117,10 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
     if ((recheck || (setUp && backend.signedIn !== true)) && !nodeMissing) void check()
   }, [])
 
-  /** Asks an account's agent whether its sign-in went through, and as whom. */
-  const checkAccount = async (account: string) => {
+  /** Asks a login profile's agent whether its sign-in went through, and as whom. */
+  const checkProfile = async (loginProfile: string) => {
     try {
-      await store.checkAgentAccount(backend.id, account)
+      await store.checkLoginProfile(backend.id, loginProfile)
     } catch (e) {
       setError(errorText(e))
     }
@@ -124,8 +130,9 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
   const lastRoute = useRef<SetupRoute | null>(route)
   useEffect(() => {
     const last = lastRoute.current
-    if (route === null && last?.kind === 'terminal' && last.account) void checkAccount(last.account)
-    else if (route === null && last) void check()
+    if (route === null && last?.kind === 'terminal' && last.loginProfile) void checkProfile(last.loginProfile)
+    // A login profile's key form shows what it saved itself.
+    else if (route === null && last && last.kind !== 'profileKeys') void check()
     lastRoute.current = route
   }, [route])
 
@@ -133,7 +140,8 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
   const routed = route === null ? null
     : route.kind === 'install' ? <SetupTerminalView backend={backend} step="install" back={back} />
     : route.kind === 'node' ? <SetupTerminalView backend={backend} step="node" back={back} />
-    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} account={route.account} back={back} />
+    : route.kind === 'terminal' ? <SetupTerminalView backend={backend} step="login" method={route.method} loginProfile={route.loginProfile} back={back} />
+    : route.kind === 'profileKeys' ? <LoginProfileKeys backend={backend} loginProfile={route.loginProfile} back={back} />
     : <AgentKeysForm backend={backend} method={route.method} saved={auth?.savedEnv ?? []} back={back} done={setAuth} />
 
   const statusText = checking
@@ -145,17 +153,18 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
     : `Couldn't tell. Skip this if you've already signed in on ${host}.`
 
   const optionRow = (key: string, title: string, detail: string, icon: string, action: () => void, busy = false) => (
-    <button key={key} className="option-row" disabled={authenticating !== null} onClick={action}>
-      <IconSlot width={26} tone="secondary" aria-hidden>
-        <Icon name={icon} size={13} />
-      </IconSlot>
-      <VStack as="span" gap={2} grow>
-        <Text size="body" weight="medium" tone="text">{title}</Text>
-        <Text size="subheadline" tone="secondary" lines={3}>{detail}</Text>
-      </VStack>
-      <span className="agent-row-gap" />
-      {busy ? <ThinkingOrb size={16} color="var(--secondary)" /> : <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
-    </button>
+    <OptionRow
+      key={key}
+      icon={icon}
+      title={title}
+      detail={detail}
+      disabled={authenticating !== null}
+      onClick={action}
+      trailing={<>
+        <span className="agent-row-gap" />
+        {busy ? <ThinkingOrb size={16} color="var(--secondary)" /> : <Icon name="chevron.right" size={10} weight="semibold" color="var(--tertiary)" />}
+      </>}
+    />
   )
 
   const options: ReactNode[] = []
@@ -181,6 +190,11 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
       }
     }
   }
+
+  const signInDetail = signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null
+  const browserNote = signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
+    ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
+    : null
 
   const overview = (
     <SheetPage>
@@ -212,27 +226,30 @@ export function AgentSheet({ initial, recheck = false, signInAccount }: { initia
             />
           </CardSection>
         ) : null}
-        <CardSection
-          footer={signedIn !== true && auth?.methods.some((m) => m.kind === 'agent')
-            ? `Browser sign-ins open on ${host} itself. Away from it? Use Remote screen to finish there.`
-            : null}
-        >
-          <HStack>
-            <VStack grow>
-              <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
-            </VStack>
-            {checking ? (
-              <ThinkingOrb state="connecting" size={16} color="var(--secondary)" />
-            ) : (
-              <button title="Check again" aria-label="Check again" className="agent-check-again" onClick={() => void check()}>
-                <Icon name="arrow.clockwise" size={13} />
-              </button>
-            )}
-          </HStack>
-          {signedIn !== true && auth?.detail ? <Text size="footnote" tone="secondary" className="selectable agent-auth-detail">{auth.detail}</Text> : null}
-          {options}
-        </CardSection>
-        {backend.accounts && installed ? <AgentAccounts backend={backend} signIn={(account) => setRoute({ kind: 'terminal', method: null, account })} /> : null}
+        {backend.loginProfiles ? (
+          <LoginProfiles
+            backend={backend}
+            own={{ status: statusText, checking, check: () => void check() }}
+            signIn={(loginProfile) => setRoute({ kind: 'terminal', method: null, loginProfile })}
+            editKeys={(loginProfile) => setRoute({ kind: 'profileKeys', loginProfile })}
+            signInNow={asked?.kind === 'account' ? asked.id : undefined}
+          >
+            {signInDetail}
+            {options}
+            {browserNote ? <Text size="footnote" tone="secondary">{browserNote}</Text> : null}
+          </LoginProfiles>
+        ) : (
+          <CardSection footer={browserNote}>
+            <HStack>
+              <VStack grow>
+                <SetupStepRow number={1 + Number(curated) + Number(Boolean(backend.node))} title="Sign in" detail={statusText} done={signedIn === true} action={null} />
+              </VStack>
+              <CheckAgain checking={checking} check={() => void check()} />
+            </HStack>
+            {signInDetail}
+            {options}
+          </CardSection>
+        )}
         <AgentBrings backendId={backend.id} />
         {error ? <CardSection><ErrorText text={error} /></CardSection> : null}
       </CardForm>

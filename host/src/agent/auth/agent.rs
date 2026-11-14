@@ -24,17 +24,22 @@ pub(crate) struct Started {
 
 /// Starts `backend` and completes `initialize`, trying each way to launch it.
 pub(super) async fn start(store: &Store, backend: &str) -> Result<Started> {
-    start_with(store, backend, &[]).await
+    start_with(store, backend, None, &[]).await
 }
 
-/// [`start`], with `extra` added to the agent's environment.
-pub(crate) async fn start_with(store: &Store, backend: &str, extra: &[(&str, &str)]) -> Result<Started> {
+/// [`start`] on `login_profile` (none: the computer's own login), with `extra` added to the agent's environment.
+pub(crate) async fn start_with(
+    store: &Store,
+    backend: &str,
+    login_profile: Option<&str>,
+    extra: &[(&str, &str)],
+) -> Result<Started> {
     let mut candidates = backends::launch_candidates(backend)?;
     // The installed CLI alone when there is one: resolving the registry build can mean a long download.
     if matches!(candidates.first(), Some(Candidate::Ready(_))) {
         candidates.truncate(1);
     }
-    let (mut env, mut grants) = launch_env(store, backend, None)?;
+    let (mut env, mut grants) = launch_env(store, backend, login_profile)?;
     env.extend(extra.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned())));
     let dir = probe_dir();
     tokio::fs::create_dir_all(&dir).await?;
@@ -93,20 +98,35 @@ pub async fn authenticate(store: &Store, backend: &str, method: &str) -> Result<
             .await
             .context("couldn't prepare WorkBuddy sign-in")?;
     }
-    let Started { acp, mut inbox, .. } = start(store, backend).await?;
-    let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
-    acp.kill().await;
-    match res {
-        Ok(r) => {
-            r.context("signing in")?;
-        }
-        Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
-    }
+    let Started { acp, inbox, .. } = start(store, backend).await?;
+    finish_sign_in(acp, inbox, method).await?;
     // The browser flow finished. Ask the account again; a prompt refusal no longer overrides it.
     // Completing `authenticate` is not itself proof: WorkBuddy still answers the next prompt
     // with "Authentication required" when the account isn't usable.
     backends::clear_prompt_refused(backend);
     check(store, backend).await
+}
+
+/// Signs account login profile `id` in the way its agent does itself: the first sign-in it offers that it runs on its
+/// own (a browser on this computer). The caller checks what came of it.
+pub(crate) async fn authenticate_account(store: &Store, backend: &str, id: &str) -> Result<()> {
+    let Started { acp, inbox, init, cmd } = start_with(store, backend, Some(id), &[]).await?;
+    let own = |m: &super::Method| matches!(m.kind, super::MethodKind::Agent);
+    let Some(method) = super::methods(backend, &init, &cmd).into_iter().find(own) else {
+        acp.kill().await;
+        bail!("the agent offers no sign-in of its own");
+    };
+    finish_sign_in(acp, inbox, &method.id).await
+}
+
+/// Waits for the agent to finish sign-in `method`, then stops it.
+async fn finish_sign_in(acp: Arc<Acp>, mut inbox: mpsc::UnboundedReceiver<Incoming>, method: &str) -> Result<()> {
+    let res = tokio::time::timeout(Duration::from_mins(10), sign_in(&acp, &mut inbox, method)).await;
+    acp.kill().await;
+    match res {
+        Ok(r) => r.map(drop).context("signing in"),
+        Err(_) => bail!("Sign-in didn't finish within 10 minutes."),
+    }
 }
 
 /// The agent's answer to `authenticate`. A headless CLI that only posts its sign-in page (`WorkBuddy`'s) gets it

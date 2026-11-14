@@ -43,7 +43,7 @@ pub fn signed_in(id: &str) -> Option<bool> {
     SIGNED_IN.locked().iter().find(|(h, _)| h == id).map(|(_, ok)| *ok)
 }
 
-/// Logins (an agent's own, by the agent's id, or an agent account's, by its id) whose prompt was refused because
+/// Logins (an agent's own, by the agent's id, or a login profile's, by its id) whose prompt was refused because
 /// the agent asked for auth. Their own account check can still say signed in after that (`claude auth status`
 /// with a revoked token, `WorkBuddy`'s account).
 static PROMPT_REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());

@@ -40,14 +40,14 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model, mode, account }
+    private enum CodingKeys: String, CodingKey { case model, mode, loginProfile }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         if draft.model == nil { try container.encodeNil(forKey: .model) }
         if draft.mode == nil { try container.encodeNil(forKey: .mode) }
-        if draft.account == nil { try container.encodeNil(forKey: .account) }
+        if draft.loginProfile == nil { try container.encodeNil(forKey: .loginProfile) }
     }
 }
 
@@ -458,13 +458,13 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `account`: the agent
-    /// account a `login` signs in; nil for the computer's own.
-    func agentSetup(backend: String, step: SetupStep, method: String?, account: String? = nil, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var account: String?; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `loginProfile`: the
+    /// login profile a `login` signs in; nil for the computer's own.
+    func agentSetup(backend: String, step: SetupStep, method: String?, loginProfile: String? = nil, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var loginProfile: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
         // The first sign-in through a registry build can download it.
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, account: account, cols: cols, rows: rows), timeout: 300)
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, loginProfile: loginProfile, cols: cols, rows: rows), timeout: 300)
         return res.term
     }
 
@@ -477,25 +477,60 @@ public extension HostClient {
         try await call("agentAuth", ["backend": backend], timeout: 300)
     }
 
-    /// A new, signed-out account for `backend`, and the agent list with it.
-    func addAgentAccount(_ backend: String) async throws -> (account: AgentAccount, backends: [Backend]) {
-        struct Res: Decodable { var account: AgentAccount; var backends: [Backend] }
-        let res: Res = try await call("addAgentAccount", ["backend": backend])
-        return (res.account, res.backends)
+    /// A new login profile for `backend` (an account one is signed out, an API key one has no key yet), and the
+    /// agent list with it.
+    func addLoginProfile(_ backend: String, kind: LoginProfile.Kind) async throws -> (loginProfile: LoginProfile, backends: [Backend]) {
+        struct Res: Decodable { var loginProfile: LoginProfile; var backends: [Backend] }
+        let res: Res = try await call("addLoginProfile", ["backend": backend, "kind": kind.rawValue])
+        return (res.loginProfile, res.backends)
     }
 
-    /// Asks the account's agent whether its sign-in went through, and as whom.
-    func agentAccountAuth(_ backend: String, account: String) async throws -> [Backend] {
+    /// Asks the login profile's agent whether its sign-in went through, and as whom.
+    func loginProfileAuth(_ backend: String, loginProfile: String) async throws -> [Backend] {
         struct Res: Decodable { var backends: [Backend] }
-        let res: Res = try await call("agentAuth", ["backend": backend, "account": account], timeout: 300)
+        let res: Res = try await call("agentAuth", ["backend": backend, "loginProfile": loginProfile], timeout: 300)
         return res.backends
     }
 
-    /// Fails while a bot still uses the account.
-    func removeAgentAccount(_ account: String) async throws -> [Backend] {
+    /// Has the login profile's agent sign it in itself, in a browser on the computer; returns once that's done.
+    func signInLoginProfile(_ backend: String, loginProfile: String) async throws -> [Backend] {
         struct Res: Decodable { var backends: [Backend] }
-        let res: Res = try await call("removeAgentAccount", ["account": account])
+        let res: Res = try await call("agentAuthenticate", ["backend": backend, "loginProfile": loginProfile], timeout: 660)
         return res.backends
+    }
+
+    /// Names a login profile (`loginProfile` nil: the default one); an empty name clears it back to who it signs in.
+    func renameLoginProfile(_ backend: String, loginProfile: String?, name: String) async throws -> [Backend] {
+        struct Body: Encodable { var backend: String; var loginProfile: String?; var name: String }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("renameLoginProfile", Body(backend: backend, loginProfile: loginProfile, name: name))
+        return res.backends
+    }
+
+    /// Fails while something still uses the login profile.
+    func removeLoginProfile(_ loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("removeLoginProfile", ["loginProfile": loginProfile])
+        return res.backends
+    }
+
+    /// An API key login profile's variables. `vars`: what the user typed (an empty value removes that variable);
+    /// `importing`: names whose values the computer reads from its login shell now.
+    func setLoginProfileKeys(_ loginProfile: String, vars: [String: String], importing: [String]) async throws -> [Backend] {
+        struct Body: Encodable {
+            var loginProfile: String; var vars: [String: String]; var importing: [String]
+            private enum CodingKeys: String, CodingKey { case loginProfile, vars, importing = "import" }
+        }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("setLoginProfileKeys", Body(loginProfile: loginProfile, vars: vars, importing: importing), timeout: 60)
+        return res.backends
+    }
+
+    /// The names (never the values) of the login shell's variables, to import into an API key login profile.
+    func loginShellVariables() async throws -> [String] {
+        struct Res: Decodable { var names: [String] }
+        let res: Res = try await call("loginShellVariables", timeout: 60)
+        return res.names
     }
 
     /// Lets the agent sign itself in; returns once it's done (or gave up).

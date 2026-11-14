@@ -3,7 +3,7 @@
 use super::{Event, capture};
 use crate::hub::Hub;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// How an agent's turn ended (`turn_finished`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,9 +80,18 @@ fn outcome_name(outcome: TurnOutcome, error: Option<&str>) -> &'static str {
 }
 
 /// `agent_fell_back`: a turn moved on from `agent` to the bot's next one, and why (never the error's text).
-pub fn agent_fell_back(hub: &Hub, agent: &str, reason: crate::agent::fallback::Reason) {
-    let p = json!({"agent": agent, "reason": reason});
+/// `login_profile`: the step it left or the one taking over runs on a login profile (never which).
+pub fn agent_fell_back(hub: &Hub, agent: &str, login_profile: bool, reason: crate::agent::fallback::Reason) {
+    let p = on_login_profile(json!({"agent": agent, "reason": reason}), login_profile);
     capture(hub, Event::AgentFellBack, p.as_object().cloned().unwrap_or_default());
+}
+
+/// `p` with `loginProfile: true` when a login profile is involved, as the sign-in events mark it (`observe`).
+fn on_login_profile(mut p: Value, login_profile: bool) -> Value {
+    if login_profile {
+        p["loginProfile"] = true.into();
+    }
+    p
 }
 
 /// What an agent taking over the main chat was told first (`handoff_carried`).
@@ -96,9 +105,11 @@ pub enum Carried {
 }
 
 /// `handoff_carried`: `agent` took over a bot's chat and was told `bytes` of it first (never the text).
-/// `window_known`: a recap sized to the agent's window; a catch-up never is.
-pub fn handoff_carried(hub: &Hub, agent: &str, kind: Carried, bytes: usize, window_known: bool) {
+/// `login_profile`: it runs on a login profile (never which). `window_known`: a recap sized to the agent's window;
+/// a catch-up never is.
+pub fn handoff_carried(hub: &Hub, agent: &str, login_profile: bool, kind: Carried, bytes: usize, window_known: bool) {
     let p = json!({"agent": agent, "kind": kind, "bytes": bytes, "window_known": window_known});
+    let p = on_login_profile(p, login_profile);
     capture(hub, Event::HandoffCarried, p.as_object().cloned().unwrap_or_default());
 }
 

@@ -112,18 +112,25 @@ The **Sign in** step shows whether the agent is signed in on that computer, with
 
 You can always sign in yourself in a terminal on the computer instead, using the commands in the table above. Sign in as the same user the host runs as.
 
-For an agent Codync knows by name, the chat also tells you when it needs signing in: if the agent isn't signed in when you create the bot, or a turn fails because it signed out, the chat shows a card with **Sign in**. For a bot on one of the agent's [other accounts](#more-than-one-account), the card opens that account's sign-in. Once you've signed in, Codync sends your waiting message again. Other agents show their own error in the chat.
+For an agent Codync knows by name, the chat also tells you when it needs signing in: if the agent isn't signed in when you create the bot, or a turn fails because it signed out, the chat shows a card with **Sign in**. For a bot on another [login profile](#login-profiles), the card opens that login profile's sign-in, or its key form for an API key. Once you've signed in or saved a key, Codync sends your waiting message again. Other agents show their own error in the chat.
 
-### More than one account
+### Login profiles
 
-Claude Code and Codex can be signed in to more than one account on a computer, so two bots can work at the same time on different ones.
+A login profile is one more login to an agent, so two bots can work at the same time on different ones. The agent's sheet lists them under **Login profiles**. The first is the **default login profile**: the one the computer was already signed in to, which bots use unless they pick another. There are two kinds:
 
-- **Add an account:** in the agent's sheet, under **Other accounts**, choose **Add account**. The agent's own sign-in runs in a terminal on the computer, the same way as the first one. The account then shows who it's signed in as. The trash button signs it out and removes it; an account a bot still uses can't be removed.
-- **Pick a bot's account:** in the bot's settings, under **Agent**, choose **Account**. **This computer's sign-in** is the one the computer already had. Changing it restarts the bot's agent; the chat history stays.
+- **An account:** the agent's own sign-in, again. Claude Code, Codex, OpenCode, Pi, Google Antigravity, Devin and Gemini CLI can be signed in to more than one account. Choose **Add account**: the agent's sign-in follows, in a terminal on the computer for most agents and in a browser on the computer for Google Antigravity. The login profile then shows who it's signed in as, where the agent says. An account needs the agent installed on the computer.
+- **An API key:** for any agent. Choose **Add API key** and type the variables the agent reads its key from, such as `ANTHROPIC_API_KEY`, or a name of your own for a custom model (a config like OpenCode's `"apiKey": "{env:MY_KEY}"` reads `MY_KEY`). **Import from login shell** lists the variables your terminal sets, such as a key you `export` in `~/.zshrc`; tick the ones to use and Codync copies their values then. Nothing from your shell reaches an agent unless you import it, and changing the variable in your shell later doesn't change the login profile: use **Edit keys** and import again.
 
-In the terminal UI, the agent's sheet lists the accounts under its other rows: `↵` on **Add account** adds one, `↵` on an account that isn't signed in opens its sign-in, and `x` removes the account under the cursor. In the bot's form, `←`/`→` on **Account** steps through the choices.
+What you can do with a login profile:
 
-An account keeps only its sign-in to itself. Your skills, rules, MCP servers and settings are shared with it, and a bot moved to another account carries on its conversation. Codync never reads or stores the sign-in: the agent keeps it, as it does for the first one. The [Usage](#usage-limits) screen shows the computer's own sign-in only.
+- **Name it:** the pencil gives any login profile, the default one too, a name of your own, such as Work. An empty name goes back to who it's signed in as.
+- **Remove it:** the trash button signs an account out and removes it, or forgets an API key's variables. A login profile a bot still uses can't be removed, and the default one stays.
+- **Pick a bot's login profile:** in the bot's settings, under **Agent**, choose **Login profile**. Changing it restarts the bot's agent; the chat history stays.
+- **Fall back to another one:** a [fallback](/docs/agent-fallbacks) can be the same agent on another of its login profiles, so the bot carries on there when the first one runs out of usage.
+
+In the terminal UI, the agent's sheet lists the login profiles under its other rows, and the keys in the sheet's footer add, sign in, rename, edit or remove the one under the cursor. In the bot's form, `←`/`→` on **Login profile** steps through the choices.
+
+An account keeps only its sign-in to itself: your skills, rules, MCP servers and settings are shared with it, and with Claude Code, Codex, Pi, Antigravity and Gemini CLI a bot moved to another account carries on its conversation (OpenCode and Devin start a new one). Codync never stores an account's sign-in or uses it itself. An API key's values are saved encrypted on that computer only, given to the agent when it starts, and never shown again. On a Codync Cloud computer a provider's key is held outside the agent's reach, as its other [saved keys](/docs/codync-cloud) are. The [Usage](#usage-limits) screen shows the default login profile only.
 
 ## Models and options
 

@@ -175,8 +175,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     }
     if kind == RequestKind::Agent {
         let backend = text(request, "backend")?;
-        let bot = request["botId"].as_str().unwrap_or(&e.bot_id);
-        if !super::agent_sign_in::confirm(hub, bot, backend).await? {
+        if !super::agent_sign_in::confirm(hub, backend, request["loginProfile"].as_str()).await? {
             bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
         }
         return Ok(json!({"entry": hub.store.entry(id)}));

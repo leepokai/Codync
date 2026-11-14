@@ -59,8 +59,8 @@ fun externalHttps(value: String): URI {
     val toolkit: String? = null, val registryName: String? = null, val connectorId: String? = null,
     val field: String? = null, val location: String? = null, val site: String? = null,
     val backend: String? = null, val logo: String? = null,
-    /** Agent sign-in requests: the agent account to sign in, when it isn't the computer's own login. */
-    val account: String? = null) {
+    /** Agent sign-in requests: the login profile to sign in (or give keys), when it isn't the computer's own login. */
+    val loginProfile: String? = null) {
     val canConnect: Boolean get() = status == "pending" && when (kind) {
         "login", "secret" -> true
         "agent" -> !backend.isNullOrBlank()

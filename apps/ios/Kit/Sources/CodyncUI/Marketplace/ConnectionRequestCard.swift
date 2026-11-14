@@ -64,7 +64,7 @@ struct ConnectionRequestCard: View {
         .codyncSheet(item: $app) { app in
             ComposioConnectSheet(app: app, requestId: entry.id) { self.app = nil }
         }
-        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.account == nil, signInAccount: request.account) }
+        .codyncSheet(item: $agent) { AgentSheet(initial: $0, recheck: request.loginProfile == nil, signInLoginProfile: request.loginProfile) }
         .signInCodeDialog(signInFlow.codePrompt)
         .onDisappear { value = ""; username = "" }
     }

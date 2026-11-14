@@ -18,9 +18,9 @@ In the desktop and iPhone apps:
 2. In **Add fallback**, expand the agent summary. Click the agent to search harnesses, then select its model. Selecting a model hides the search list; the agent, model and any reasoning settings remain accessible.
 3. Add up to three. Use each row's ⋯ menu to **Move up**, **Move down** or **Remove**.
 
-Each agent can appear once, and the bot's own agent isn't offered. The info button next to Fallbacks explains the feature.
+Each agent can appear once on each of its [login profiles](/docs/agents#login-profiles): an agent with more than one login profile can be a fallback again on another of them, the bot's own agent included, and the add sheet then asks which login profile. An agent with one login appears once, and the bot's own isn't offered. The info button next to Fallbacks explains the feature.
 
-In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `[` and `]` move it, and `x` removes it.
+In the terminal UI, ←/→ picks a fallback, space adds the next free agent or changes a fallback's model, `a` changes its agent, `c` changes its login profile, `[` and `]` move it, and `x` removes it.
 
 Everything else stays the bot's own whichever agent is answering: its folder, approvals, connectors, skills, computer use and memory, and Fast mode where the fallback's agent has it. With **Auto** under Permissions, each agent works in its own Auto mode. A fallback without the bot's mode (Claude Code's Plan, say) works in its own closest mode that is no less careful, such as Codex's Read-only, and the chat says which. A fallback with no mode that careful, or one that won't switch to it, doesn't take the turn: the next one does.
 
@@ -30,7 +30,7 @@ Everything else stays the bot's own whichever agent is answering: its folder, ap
 
 Codync moves on only when the agent returns an error that says it can't answer. The agents retry on their own first, so Codync doesn't ask the same agent again. Each agent is tried at most once per turn.
 
-The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying. A bot on one of the agent's [other accounts](/docs/agents#more-than-one-account) rests only that account: bots on the computer's own sign-in carry on, and the other way round.
+The agent it leaves then rests: every bot on the computer skips it for a while, so one bot finding Claude Code out of usage spares the others from trying. A bot on another [login profile](/docs/agents#login-profiles) rests only that login profile: bots on the default one carry on, and the other way round.
 
 | The chat says the agent… | Bots skip it until |
 | --- | --- |

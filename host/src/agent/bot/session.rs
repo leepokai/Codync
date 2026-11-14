@@ -155,8 +155,9 @@ impl Actor {
     /// Makes sure the agent runs and `slot`'s session (main, or a routine run's) is live;
     /// sets `turn_session`.
     async fn ensure_session(&mut self, slot: Option<&str>) -> Result<()> {
+        let profile = self.cfg.login_profile.as_deref();
         if !self.cfg.connectors.is_empty()
-            || crate::market::vault::saved(&self.hub.store, &format!("agent-env:{}", self.cfg.backend))?
+            || crate::agent::auth::launch_reads_vault(&self.hub.store, &self.cfg.backend, profile)?
         {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
@@ -183,9 +184,9 @@ impl Actor {
             };
             let candidates = launch_commands(&self.cfg)?;
             // Keys saved from an "environment variable" sign-in, and what the harness needs to start.
-            let account = self.cfg.account.as_deref();
-            let on_account = crate::agent::accounts::prepare(&self.hub.store, &self.cfg.backend, account).await?;
-            let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, account)?;
+            let profile = self.cfg.login_profile.as_deref();
+            let on_profile = crate::agent::login_profiles::prepare(&self.hub.store, &self.cfg.backend, profile).await?;
+            let (mut env, grants) = crate::agent::auth::launch_env(&self.hub.store, &self.cfg.backend, profile)?;
             if self.cfg.backend == "codex" && !env.iter().any(|(k, _)| k == "CODEX_CONFIG") {
                 // Codex's `/compact` takes no instructions: the keep-list is its config's `compact_prompt`.
                 let config = json!({"compact_prompt": codync_mem::compaction::KEEP});
@@ -201,7 +202,7 @@ impl Actor {
             })
             .await?;
             conn.acp.hold(grants);
-            conn.on_account = on_account;
+            conn.on_profile = on_profile;
             self.conn = Some(conn);
         }
         if self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Codex) {

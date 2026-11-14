@@ -9,9 +9,9 @@ description = "Runs your coding-agent bots and serves the Codync apps"
 license = "Apache-2.0"
 repository = "https://github.com/leepokai/Codync"
 
-# The memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
+# The accounts, memory and network crates build here; memory is mirrored to its own repository (docs/design/bot-memory.md#packaging).
 [workspace]
-members = ["crates/memory", "crates/network"]
+members = ["crates/accounts", "crates/memory", "crates/network"]
 # Patched dependencies (`[patch.crates-io]` below) build as they are, outside the workspace rules.
 exclude = ["vendor"]
 
@@ -22,6 +22,7 @@ base64 = "0.23.1"
 chacha20poly1305 = "0.11.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
+codync-accounts = { path = "crates/accounts" }
 codync-mem = { path = "crates/memory" }
 # aws-lc-rs, like reqwest and tokio-tungstenite. With ring built in too (a `--workspace` build turns
 # on the crate's default), rustls has no default provider, so `main` installs one.

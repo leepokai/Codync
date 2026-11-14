@@ -174,28 +174,42 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "setSpeechServer" if b["url"].as_str().is_some_and(|u| !u.trim().is_empty()) => Event::SpeechServerLinked,
         "voiceTranscribe" if b["provider"] == "local" => Event::LocalDictationTranscribed,
         "agentSetup" | "agentAuthenticate" | "agentAuth" => {
-            // Checking the computer's own login is no event; an account's check is its sign-in (`answered`).
-            let account = b["account"].is_string();
-            if method == "agentAuth" && !account {
+            // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
+            let on_profile = b["loginProfile"].is_string();
+            if method == "agentAuth" && !on_profile {
                 return None;
             }
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
-            if account {
-                p.insert("account".into(), true.into());
+            if on_profile {
+                p.insert("loginProfile".into(), true.into());
             }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
-        // Never the account's name or id.
-        "addAgentAccount" | "removeAgentAccount" => {
-            let action = method.strip_suffix("AgentAccount").unwrap_or(method);
+        // Never the profile's name or id.
+        "addLoginProfile" | "renameLoginProfile" | "removeLoginProfile" => {
+            let action = method.strip_suffix("LoginProfile").unwrap_or(method);
             p.insert("action".into(), action.into());
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
-            Event::AgentAccountChanged
+            // A kind the host doesn't know fails the call, and isn't reported.
+            if method == "addLoginProfile"
+                && let Ok(kind) = crate::agent::login_profiles::Kind::parse(&b["kind"])
+            {
+                p.insert("kind".into(), serde_json::json!(kind));
+            }
+            Event::LoginProfileChanged
+        }
+        // An API key profile's keys: how many were typed and how many came from the login shell, never their
+        // names or values.
+        "setLoginProfileKeys" => {
+            p.insert("action".into(), "keys".into());
+            p.insert("typed".into(), b["vars"].as_object().map_or(0, Map::len).into());
+            p.insert("imported".into(), b["import"].as_array().map_or(0, Vec::len).into());
+            Event::LoginProfileChanged
         }
         // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
@@ -286,8 +300,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
             let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
         }
-        // An account's check that still finds it signed out is no sign-in.
-        Event::AgentSignedIn if p.contains_key("account") && answer["signedIn"] != true => return None,
+        // A login profile's check that still finds it signed out is no sign-in.
+        Event::AgentSignedIn if p.contains_key("loginProfile") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -299,7 +313,7 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and an agent account, a connector edit
+/// `action`) as `network_failed` with `stage` `action`, and a login profile, a connector edit
 /// or a speech server reports its category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     let category = match event {
@@ -307,9 +321,10 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
             p.insert("stage".into(), "action".into());
             return Some((Event::NetworkFailed, p));
         }
-        // `in_use`: removing an account bots still run on. `unsupported`: an agent that can't have accounts.
-        Event::AgentAccountChanged => {
-            error.downcast_ref::<crate::agent::accounts::Refused>().map_or("other", |e| e.category)
+        // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
+        // one sign-in.
+        Event::LoginProfileChanged => {
+            error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category)
         }
         Event::ConnectorUpdated => {
             error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category())

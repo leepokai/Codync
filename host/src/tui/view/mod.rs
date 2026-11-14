@@ -37,6 +37,8 @@ mod whats_new;
 pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, window};
 pub(super) use chat::composer_lines;
 pub(super) use fallbacks::{chain_line, using_line};
+#[cfg(test)]
+pub(super) use fallbacks::{rest_note, step_item};
 pub(super) use lead_agent::lead_agent_scroll_max;
 pub(super) use overlay::{field_line, input_line};
 pub(super) use style::theme;

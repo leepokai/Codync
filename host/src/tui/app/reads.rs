@@ -56,10 +56,13 @@ impl App {
 
     fn send_mark(&mut self, method: &'static str, body: Value, after: After) {
         let id = body["botId"].as_str().unwrap_or_default().to_owned();
-        self.reads.made += 1;
-        self.reads.marks.insert(id.clone(), self.reads.made);
-        self.reads.unsent_opens.remove(&id);
-        self.reads.due_opens.remove(&id);
+        // An automatic read can't clear a hold, so it mustn't stand in for the user's open it follows.
+        if body["automatic"] != true {
+            self.reads.made += 1;
+            self.reads.marks.insert(id.clone(), self.reads.made);
+            self.reads.unsent_opens.remove(&id);
+            self.reads.due_opens.remove(&id);
+        }
         let before = self.reads.last.remove(&id);
         let call = self.client.spawn_call_after(before, method, body, after, self.tx.clone());
         self.reads.last.insert(id, call);
@@ -260,6 +263,21 @@ mod tests {
         app.read_what_is_on_screen();
         app.relinked();
         assert_eq!(app.read_due(), None, "sent again once");
+    }
+
+    #[tokio::test]
+    async fn a_failed_open_is_sent_again_after_an_automatic_read() {
+        let mut app = app_with(&[("a", 0)]);
+        app.online = true;
+        app.select("a");
+        app.read_what_is_on_screen();
+        let mark = app.reads.marks["a"];
+        app.upsert_bot(&json!({"id": "a", "name": "a", "unread": 1}));
+        app.read_what_is_on_screen();
+        assert_eq!(app.reads.marks["a"], mark, "the automatic read keeps the open's mark");
+        app.on_msg(Msg::Reply(After::Opened("a".into(), mark), Err("Can't reach codync-host".into())));
+        app.relinked();
+        assert_eq!(app.read_due(), Some(by_the_user("a")));
     }
 
     #[tokio::test]

@@ -16,6 +16,7 @@
 //! written to the group's transcript; see `group`). A routine run talks in its chat
 //! from a session of its own (see `session`).
 
+mod always_allowed;
 mod background_work;
 mod cmd;
 mod codex_names;
@@ -131,6 +132,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
+        always_allowed: always_allowed::AlwaysAllowed::default(),
         stop_requested: false,
         cancel_deadline: None,
         exit_tail: None,
@@ -330,6 +332,8 @@ struct Actor {
     perms: HashMap<String, updates::Answer>,
     /// Decision card id -> the live tool call waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
+    /// What the user chose Always allow for, by session: answered by Codync when the agent asks again.
+    always_allowed: always_allowed::AlwaysAllowed,
     stop_requested: bool,
     /// A cancelled turn still running past this stops its agent process.
     cancel_deadline: Option<Instant>,

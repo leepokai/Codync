@@ -24,6 +24,7 @@ qwen-code 0.26.5.
 | Grok Build | [grok-build.md](grok-build.md) |
 | Hermes | [hermes.md](hermes.md) |
 | Kilo | [kilo.md](kilo.md) |
+| MiniMax Code | [minimax-code.md](minimax-code.md) |
 | oh-my-pi | [oh-my-pi.md](oh-my-pi.md) |
 | OpenCode | [opencode.md](opencode.md) |
 | Qwen Code | [qwen-code.md](qwen-code.md) |

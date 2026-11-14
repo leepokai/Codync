@@ -4,9 +4,10 @@
 //! realtime model relays it; on-device and speech-to-text calls read it aloud); the app hands it to its voice.
 
 use super::speech::spoken;
-use super::tools::{approval, runtime};
+use super::tools::approval;
 use super::{CallMode, state};
 use crate::LockExt;
+use crate::chat::insight::runtime;
 use crate::hub::{BotStatus, Hub, Runtime};
 use crate::store::{BotConfig, Entry, EntryKind, Store, now_ms};
 use serde::Serialize;

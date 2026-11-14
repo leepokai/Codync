@@ -118,6 +118,84 @@ fn finals(history: &Value) -> Vec<&str> {
 }
 
 #[tokio::test]
+async fn a_bot_looks_at_another_and_answers_its_approval_only_after_the_user_agrees() {
+    let host = Host::start().await;
+    let lead = host.bot("lead").await;
+    let worker = host.bot("worker").await;
+    // The voice's tools on the worker: the lead reads what the worker shows and what it said.
+    host.call("send", json!({"botId": worker, "text": "Hello from the user"})).await;
+    let said = format!(r#"TEAM bot_status {{"botId": "{worker}", "messages": 5}}"#);
+    let status_call = host.call("send", json!({"botId": lead, "text": said})).await;
+    let queued = status_call["entry"]["id"].as_str().unwrap().to_owned();
+    let shown = host
+        .wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["final"] == true && e["id"] != queued.as_str())
+        .await;
+    let shown = shown["data"]["text"].as_str().unwrap();
+    assert!(shown.starts_with("Done: "), "{shown}");
+    let shown: Value = serde_json::from_str(shown.trim_start_matches("Done: ")).unwrap();
+    assert_eq!((shown["name"].as_str(), shown["status"].as_str()), (Some("worker"), Some("idle")), "{shown}");
+    let texts: Vec<&str> =
+        shown["recentMessages"].as_array().unwrap().iter().filter_map(|m| m["text"].as_str()).collect();
+    assert!(texts.contains(&"Hello from the user") && texts.contains(&"reply: Hello from the user"), "{shown}");
+    let history = host.call("history", json!({"botId": lead})).await;
+    assert_eq!(finals(&history).len(), 1, "{history}");
+
+    // The worker waits for an approval; the lead asks for one of its options, which is the user's to give.
+    host.call("send", json!({"botId": worker, "text": "PERMISSION needs a decision"})).await;
+    let card = host.wait_for(&worker, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    let ask = format!(r#"TEAM answer_approval {{"botId": "{worker}", "option": "allow"}}"#);
+    let ask_call = host.call("send", json!({"botId": lead, "text": ask})).await;
+    let asking = ask_call["entry"]["id"].as_str().unwrap().to_owned();
+    let asked = host.wait_for(&lead, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    assert_eq!(asked["data"]["title"], "Answer an approval");
+    assert!(asked["data"]["detail"].as_str().unwrap().contains("The option: Allow"), "{asked}");
+    let worker_card = host.wait_for(&worker, |e| e["id"] == card["id"]).await;
+    assert_eq!(worker_card["data"]["status"], "pending", "the worker's own card waits until the user agrees");
+    host.call("respondPermission", json!({"entryId": asked["id"], "optionId": "allow"})).await;
+    // Only the real team tool may answer the worker; a direct response would hide a broken forwarding path.
+    host.wait_for(&worker, |e| e["id"] == card["id"] && e["data"]["status"] == "answered").await;
+    let answered = host
+        .wait_for(&lead, |e| {
+            e["kind"] == "agent"
+                && e["id"] != asking.as_str()
+                && e["data"]["text"].as_str().is_some_and(|t| t.contains("answered"))
+        })
+        .await;
+    assert_eq!(answered["data"]["text"], r#"Done: {"answered":"Allow"}"#);
+    host.wait_for(&worker, |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+
+    // Declined, nothing changes: the tool says so.
+    host.call("send", json!({"botId": worker, "text": "PERMISSION again"})).await;
+    let again = host.wait_for(&worker, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
+    let deny = format!(r#"TEAM stop_bot {{"botId": "{worker}"}}"#);
+    let asked_again = host.call("send", json!({"botId": lead, "text": deny})).await;
+    let stop_card = host.wait_for(&lead, |e| e["kind"] == "permission" && e["data"]["title"] == "Stop worker").await;
+    host.call("respondPermission", json!({"entryId": stop_card["id"], "optionId": "deny"})).await;
+    let asked_again = asked_again["entry"]["id"].as_str().unwrap().to_owned();
+    let refused = host
+        .wait_for(&lead, |e| {
+            e["kind"] == "agent"
+                && e["id"] != asked_again.as_str()
+                && e["data"]["text"].as_str().is_some_and(|t| t.contains("declined"))
+        })
+        .await;
+    assert!(refused["data"]["text"].as_str().unwrap().starts_with("Done: "), "{refused}");
+    assert_eq!(
+        host.call("history", json!({"botId": worker})).await["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == again["id"])
+            .unwrap()["data"]["status"],
+        "pending",
+        "a declined stop leaves the worker's work alone"
+    );
+    // The worker's own approval, then the message it queued behind it.
+    host.call("respondPermission", json!({"entryId": again["id"], "optionId": "allow"})).await;
+    host.wait_finished().await;
+}
+
+#[tokio::test]
 async fn a_bot_messages_another_and_relays_its_reply_to_the_user() {
     let host = Host::start().await;
     let lead = host.bot("lead").await;

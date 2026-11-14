@@ -86,9 +86,20 @@ pub enum Cmd {
         choice: String,
         reply: tokio::sync::oneshot::Sender<Result<Value>>,
     },
+    /// Cancel only the turn the user approved stopping, without clearing newer queued work.
+    StopTurn {
+        key: uuid::Uuid,
+        reply: tokio::sync::oneshot::Sender<bool>,
+    },
     Permission {
         entry_id: String,
         option_id: Option<String>,
+    },
+    /// A team tool must know whether this exact card still accepted the answer.
+    AnswerPermission {
+        entry_id: String,
+        option_id: String,
+        reply: tokio::sync::oneshot::Sender<bool>,
     },
     /// A Codync tool asks the user before it acts (`chat::manage`), on the agent's kind of approval card.
     Approve {

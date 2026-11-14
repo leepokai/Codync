@@ -117,7 +117,13 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
-            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
+            // The team server's own words follow the bot's approvals; they travel with the server's start.
+            let env = if name == "team" {
+                vec![(crate::mcp::INSTRUCTIONS_ENV, crate::chat::team::instructions(self.cfg.permission))]
+            } else {
+                Vec::new()
+            };
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port, &env));
         }
         Ok(Value::Array(servers))
     }

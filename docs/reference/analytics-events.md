@@ -156,6 +156,7 @@ host answers and sends it once the host is up.
 | `decision_answered` | host | The actor delivered a choice to its live waiter, once | `via`: `button`, `text` (a typed option or its number) or `custom` (the user's own words); never which option or the words |
 | `decision_expired` | host | A choice card stopped waiting unanswered, once per card | `reason`: `timeout`, `cancelled` (the agent cancelled its call), `stopped`, `turn_ended`, `other_message` (the user sent files, a quote, a `/` command or call speech instead) or `restart`; never the question or its options |
 | `decision_failed` | host | The user's choice was saved but its call had already stopped waiting, so the bot never got it | none |
+| `bot_inspected` | host | A bot's team tool about another bot (`teamCall`): `bot_status` or `recent_messages` read one; the target accepted `answer_approval`, or accepted a `stop_bot` cancellation request. Declined or stale actions are not counted | `tool` (`bot_status`/`recent_messages`/`answer_approval`/`stop_bot`); on the last two, `by` (`user`: the card in the sender's chat; `auto`: the sender approves automatically); never what it read or which bots |
 
 ## Screens
 

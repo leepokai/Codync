@@ -31,6 +31,22 @@ fn observed_events_carry_no_content() {
 }
 
 #[test]
+fn team_reads_are_counted_without_content_but_actions_wait_for_their_outcome() {
+    for tool in ["bot_status", "recent_messages"] {
+        let (event, properties) = props(
+            "teamCall",
+            &json!({"name": tool, "botId": "private-source", "arguments": {"botId": "private-target"}}),
+        )
+        .unwrap();
+        assert_eq!(event, Event::BotInspected);
+        assert_eq!(properties, json!({"tool": tool, "client": "local"}));
+    }
+    for tool in ["answer_approval", "stop_bot"] {
+        assert!(props("teamCall", &json!({"name": tool})).is_none());
+    }
+}
+
+#[test]
 fn handoff_and_credentials_name_a_fixed_action() {
     assert_eq!(
         props("keepConversation", &json!({})),

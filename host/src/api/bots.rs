@@ -67,6 +67,11 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "teamCall" => {
             crate::chat::team::call_async(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
+        // The team server's instructions, worded by the bot's approvals (looped back by the MCP server as it starts).
+        "teamInstructions" => {
+            let cfg = hub.store.bot(str_arg(&b, "botId")?)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
+            json!({"instructions": crate::chat::team::instructions(cfg.permission)})
+        }
         "manageCall" => {
             crate::chat::manage::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }

@@ -16,6 +16,42 @@ computer, and the reply comes back as the same reply turn. `list_bots` takes `qu
 (`codync`, `claude-code`, `codex`, `terminal`, `other`), `limit` and `cursor`. Notices for such an exchange carry
 `botMessage.peerName`. Setup, roles and limits: [codync-network](codync-network.md).
 
+## Looking at another bot
+
+A bot can also read what another bot on the same computer is doing, without asking it to do anything. `bot_status
+{botId, messages?}` says whether it is idle or working, what it is doing, the approval it is waiting for (its title and
+options), and with `messages` its latest messages with the user; `recent_messages {botId, count?}` lists those messages,
+oldest first, naming who wrote each. Both are read-only, and the target's chat stays the user's: a bot never writes in
+another bot's chat (its replies go to the user, as always).
+
+The two tools that act on another bot are the user's decision, not the bot's:
+
+- `answer_approval {botId, option}` answers the approval the target waits for, with one of its own options (by name, any
+  case, or an unambiguous part of its name).
+- `stop_bot {botId}` asks to cancel its current turn, preserving queued messages. `stopRequested: true` means the
+  target accepted cancellation; `bot_status` reports when the turn has finished.
+
+Under **Ask**, each call first posts a Codync approval card (Allow / Deny) in the sender's chat whose details say which
+bot and what will happen ("Stop Reviewer"; "Reviewer: Edit a.txt" and the option picked). It waits up to four and a half
+minutes, under Codex's five-minute MCP tool timeout; a card whose call stopped waiting expires. Under **Approve
+automatically** the call goes ahead at once, as the sender's own cards do, and the tool's answer says so. Declining
+changes nothing and says so in the answer, without telling the target anything.
+
+The team HTTP bridge leaves room for that full approval window and the target's acknowledgement. If the target's
+original card was answered or cancelled meanwhile, `answer_approval` returns `done: false, stale: true` instead of
+claiming success or answering a replacement card. Successful actions are counted once, after acceptance; declined
+and stale answers are not counted as applied actions.
+Likewise, a stop card belongs to the turn that was running when it appeared. If that turn ends or is replaced while
+the user decides, the result is stale and the new turn and its queued messages are left alone.
+
+A bot on another computer has no chat on this computer to read: these tools say so, and `message_bot` reaches it
+instead. A group has no chat of its own either. The team instructions word `answer_approval` and `stop_bot` by the bot's
+approvals (they travel to the `team` server in its environment, `CODYNC_TEAM_INSTRUCTIONS`), and say to ask the user
+first.
+
+The voice of a call answers the same questions through its own `bot_status`, `recent_messages`, `answer_approval` and
+`stop_bot`, on the call's bot ([voice call](voice-call.md)); both read a bot through `host/src/chat/insight.rs`.
+
 ## Notice data
 
 New bot-to-bot notices retain all fields written by the team tools in the base:

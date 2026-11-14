@@ -2,7 +2,7 @@
 //! empty ones left out, each saying where it came from. It goes to the voice provider, on the user's own key.
 
 use super::speech::{call_so_far, spoken};
-use super::tools::{runtime, waiting};
+use crate::chat::insight;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
 use crate::voice::Provider;
@@ -31,7 +31,7 @@ const OPENAI_TENTHS: usize = 6;
 const MESSAGES: i64 = 20;
 const MESSAGE_CHARS: usize = 600;
 /// Entries looked through for the bot's current work, past calls and shared files.
-pub(super) const RECENT: i64 = 300;
+pub(super) const RECENT: i64 = insight::RECENT_ENTRIES;
 
 struct Caps {
     now: usize,
@@ -238,7 +238,7 @@ fn bot(hub: &Hub, cfg: &BotConfig) -> String {
 }
 
 fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
-    let rt = runtime(hub, cfg);
+    let rt = insight::runtime(hub, cfg);
     let status = match rt.status {
         BotStatus::Idle => "idle",
         BotStatus::Working => "working",
@@ -249,7 +249,7 @@ fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
     if !rt.activity.trim().is_empty() {
         lines.push(format!("Doing: {}", rt.activity.trim()));
     }
-    if let Some(w) = waiting(recent) {
+    if let Some(w) = insight::waiting(recent) {
         lines.push(format!("Waiting for approval: {} (options: {})", w.request, w.options.join(", ")));
     }
     let queued = recent.iter().filter(|e| e.kind == EntryKind::User.as_str() && e.data["status"] == "queued").count();
@@ -276,7 +276,6 @@ pub(super) fn said(hub: &Hub, cfg: &BotConfig, count: i64, chars: usize) -> Vec<
         })
         .collect()
 }
-
 fn conversation(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
     let mut lines: Vec<String> =
         said(hub, cfg, MESSAGES, MESSAGE_CHARS).into_iter().map(|(who, text)| format!("{who}: {text}")).collect();

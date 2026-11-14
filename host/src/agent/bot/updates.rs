@@ -269,22 +269,34 @@ impl Actor {
         }
     }
 
-    pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) {
-        let Some(answer) = self.perms.remove(entry_id) else { return };
-        let mut status = if option_id.is_some() { "answered" } else { "cancelled" };
-        match answer {
+    pub(super) async fn answer_permission(&mut self, entry_id: &str, option_id: Option<String>) -> bool {
+        let Some(answer) = self.perms.remove(entry_id) else { return false };
+        let applied = match answer {
             Answer::Agent(rpc_id) => {
                 if let Some(conn) = &self.conn {
-                    let _ = conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await;
+                    match conn.acp.respond(rpc_id, acp::permission_answer(option_id.as_deref())).await {
+                        Ok(()) => true,
+                        Err(error) => {
+                            tracing::warn!(bot = %self.id(), %error, "could not deliver permission answer");
+                            false
+                        }
+                    }
+                } else {
+                    false
                 }
             }
             Answer::Codync(reply) => {
                 // The tool stopped waiting (see `expire_abandoned`): nothing acts on the answer.
-                if reply.send(option_id.as_deref() == Some("allow")).is_err() {
-                    status = "expired";
-                }
+                reply.send(option_id.as_deref() == Some("allow")).is_ok()
             }
-        }
+        };
+        let status = if !applied {
+            "expired"
+        } else if option_id.is_some() {
+            "answered"
+        } else {
+            "cancelled"
+        };
         if let Some(mut e) = self.hub.store.entry(entry_id) {
             e.data["status"] = status.into();
             e.data["selected"] = option_id.into();
@@ -296,6 +308,7 @@ impl Actor {
                 r.activity = "Continuing…".into();
             });
         }
+        applied
     }
 
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the

@@ -39,7 +39,9 @@ pub async fn refresh_default() {
 /// The variables that point `account`'s agent at its slot.
 pub(super) fn env(account: &Account) -> Result<Vec<(String, String)>> {
     let Some(agent) = accounts_of(&account.agent) else { return Ok(Vec::new()) };
-    Ok(agent.env(&account.slot(&slots())?, &account.id))
+    let mut env = agent.env(&account.slot(&slots())?, &account.id);
+    super::only_own_login(&account.agent, &mut env);
+    Ok(env)
 }
 
 /// Gives `account`'s slot the user's own setup (skills, rules, MCP servers, sessions).
@@ -57,7 +59,7 @@ pub(super) async fn remove(account: &Account) -> Result<()> {
     // Its own CLI forgets a login kept outside the slot (on macOS, Claude Code's is in the Keychain).
     if let Some((agent, h)) = agent
         && let Some(sign_out) = agent.sign_out
-        && backends::run_cli(h, sign_out, &agent.env(&dir, &account.id)).await.is_none()
+        && backends::run_cli(h, sign_out, &env(account)?).await.is_none()
     {
         tracing::warn!(agent = h.id, "couldn't sign the account out");
     }
@@ -86,7 +88,7 @@ pub(super) async fn state(account: &Account) -> Result<(Option<bool>, Option<Str
         .zip(backends::harness_of(&account.agent))
         .ok_or_else(|| anyhow!("{} has no accounts", account.agent))?;
     let dir = account.slot(&slots())?;
-    let env = agent.env(&dir, &account.id);
+    let env = env(account)?;
     let said = match agent.signed_in {
         SignedIn::AgentCheck => backends::cli_signed_in(h, &env).await,
         SignedIn::Lists { args, none } => backends::run_cli(h, args, &env)

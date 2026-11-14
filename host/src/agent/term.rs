@@ -152,7 +152,7 @@ impl Terms {
         let mut builder = CommandBuilder::new(shell.program);
         builder.args(&shell.args);
         for (k, v) in &shell.env {
-            builder.env(k, v);
+            if v.is_empty() { builder.env_remove(k) } else { builder.env(k, v) }
         }
         builder.env("TERM", "xterm-256color");
         builder.env("COLORTERM", "truecolor");

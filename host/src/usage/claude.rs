@@ -24,12 +24,12 @@ const USAGE_ARGS: [&str; 9] = [
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
 /// `env` points it at a login profile's folder; empty for the default login.
 pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
-    let bin = super::command::program("claude")?;
+    let mut command = tokio::process::Command::new(super::command::program("claude")?);
+    crate::shell::apply_env(command.as_std_mut(), &env);
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
-        tokio::process::Command::new(bin)
+        command
             .args(USAGE_ARGS)
-            .envs(env)
             .current_dir(dirs::home_dir()?)
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)

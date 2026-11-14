@@ -39,7 +39,11 @@ fn an_account_points_its_own_agent_at_its_folder_and_no_other() {
     assert_eq!(env[0], ("CLAUDE_CONFIG_DIR".to_owned(), dir.to_string_lossy().into_owned()));
     assert_eq!(env[1], (PROFILE_VAR.to_owned(), "a1".to_owned()));
     // The registry id of the same agent is the same agent.
-    assert_eq!(super::env(&store, "claude-acp", Some("a1")).expect("env").0.len(), 2);
+    assert_eq!(super::env(&store, "claude-acp", Some("a1")).expect("env").0, env);
+    // A login key the host itself was started with is taken away from the process (`shell::apply_env`).
+    let taken: Vec<&str> =
+        env[2..].iter().filter(|(_, value)| value.is_empty()).map(|(name, _)| name.as_str()).collect();
+    assert_eq!(taken, login_keys("claude"));
     assert_eq!(super::env(&store, "claude", None).expect("own login").0, Vec::new());
     assert_eq!(super::env(&store, "codex", Some("a1")).expect("a fallback's agent").0, Vec::new());
     assert!(super::env(&store, "claude", Some("gone")).is_err(), "never the wrong login in silence");
@@ -56,6 +60,68 @@ fn an_account_counts_as_running_for_as_long_as_a_process_holds_it() {
     assert_eq!(running("held"), 1, "another process is still on it");
     drop(second);
     assert_eq!(running("held"), 0);
+}
+
+#[test]
+fn a_profile_being_removed_is_gone_for_a_bot_that_would_be_set_to_it() {
+    let store = store_with(&[("leaving", "claude")]);
+    let removing = Removing::on("leaving");
+    assert!(settle(&store, &mut bot("claude", Some("leaving"))).is_err());
+    drop(removing);
+    settle(&store, &mut bot("claude", Some("leaving"))).expect("a removal that was refused leaves it usable");
+}
+
+#[tokio::test]
+async fn a_refused_removal_leaves_the_profile_usable() {
+    let dir = std::env::temp_dir().join(format!("codync-login-profiles-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).expect("folder");
+    let identity = crate::remote::identity::Identity::load_or_create(&dir).expect("identity");
+    let hub = Hub::new(store_with(&[("kept", "claude")]), "login-profiles-test".into(), identity, "test".into(), 0);
+    let category = |refused: anyhow::Error| refused.downcast_ref::<Refused>().map(|refused| refused.category);
+
+    // An agent still runs on it: refused once it's marked, and the mark goes with the refusal.
+    let running = Running::on("kept");
+    assert_eq!(category(remove(&hub, "kept").await.expect_err("in use")), Some("in_use"));
+    drop(running);
+    settle(&hub.store, &mut bot("claude", Some("kept"))).expect("still there for a bot");
+
+    // A removal already under way: a second one finds it gone, and leaves the first one's mark.
+    let removing = Removing::on("kept");
+    assert!(remove(&hub, "kept").await.is_err());
+    assert!(settle(&hub.store, &mut bot("claude", Some("kept"))).is_err(), "the first removal still holds it");
+    drop(removing);
+
+    // A bot set to it: refused, and it stays.
+    let mut cfg = bot("claude", Some("kept"));
+    cfg.cwd = dir.to_string_lossy().into_owned();
+    hub.store.save_bot(&cfg).expect("saved");
+    assert_eq!(category(remove(&hub, "kept").await.expect_err("a bot uses it")), Some("in_use"));
+    find(&hub.store, "kept").expect("not removed");
+}
+
+#[tokio::test]
+async fn an_api_key_profile_takes_the_agents_other_login_keys_away() {
+    let store = unlocked(&[]);
+    let added = add(&store, "claude", Kind::ApiKey).await.expect("added");
+    let id = added["id"].as_str().expect("id");
+    let value = |vars: &[(String, String)], name: &str| -> Vec<String> {
+        vars.iter().filter(|(key, _)| key == name).map(|(_, value)| value.clone()).collect()
+    };
+
+    let typed = json!({"MADE_UP_KEY": "x"});
+    keys::set(&store, id, typed.as_object().expect("vars"), &[]).await.expect("saved");
+    let vars = env(&store, "claude", Some(id)).expect("env").0;
+    assert_ne!(login_keys("claude"), &[] as &[&str]);
+    for key in login_keys("claude") {
+        assert_eq!(value(&vars, key), [""], "{key}: not the host's own");
+    }
+
+    // A login key the profile sets itself keeps its value, once.
+    let own = login_keys("claude")[0];
+    let typed = json!({own: "made-up"});
+    keys::set(&store, id, typed.as_object().expect("vars"), &[]).await.expect("saved");
+    let vars = env(&store, "claude", Some(id)).expect("env").0;
+    assert_eq!(value(&vars, own), ["made-up"]);
 }
 
 #[test]

@@ -41,7 +41,11 @@ export function LoginProfiles({ backend, own, signIn, editKeys, signInNow, child
   // Its agent signs the account in itself (a browser on the computer), or its CLI does in a terminal.
   const inBrowser = backend.loginProfileSignIn === 'browser'
   const start = (id: string) => (inBrowser ? run(id, () => store.signInLoginProfile(backend.id, id)) : signIn(id))
-  const addAccount = () => run('account', async () => start(await store.addLoginProfile(backend.id, 'account')))
+  // The sign-in starts once adding is done, as its own action: nested, a failed sign-in's message would be cleared.
+  const addAccount = async () => {
+    const added = await run('account', () => store.addLoginProfile(backend.id, 'account'))
+    if (added) await start(added)
+  }
   const addKey = () => run('apiKey', async () => editKeys(await store.addLoginProfile(backend.id, 'apiKey')))
   const remove = (id: string) => run(id, () => store.removeLoginProfile(id))
   const rename = (id: string | null, name: string) => run(id ?? 'default', () => store.renameLoginProfile(backend.id, id, name))

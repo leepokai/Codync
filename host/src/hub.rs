@@ -103,8 +103,9 @@ pub struct Hub {
     pub token: String,
     pub port: u16,
     pub events: broadcast::Sender<Value>,
-    /// Held across "mutate store + broadcast" so events leave in rev order.
-    emit_lock: Mutex<()>,
+    /// Held across "mutate store + broadcast" so events leave in rev order. A bot's config is also settled and
+    /// saved under it: `login_profiles::remove` checks a profile's bots and marks it as being removed under it.
+    pub(crate) emit_lock: Mutex<()>,
     bots: Mutex<HashMap<String, BotHandle>>,
     runtime: Mutex<HashMap<String, Runtime>>,
     pub phone_clients: AtomicUsize,

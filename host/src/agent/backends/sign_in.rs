@@ -100,9 +100,10 @@ pub async fn run_cli(h: &Harness, args: &str, env: &[(String, String)]) -> Optio
         return None;
     }
     let bin = h.bins.iter().find_map(|b| which(b))?;
-    let run = tokio::process::Command::new(bin)
+    let mut command = tokio::process::Command::new(bin);
+    crate::shell::apply_env(command.as_std_mut(), env);
+    let run = command
         .args(args.split_whitespace())
-        .envs(env.iter().map(|(k, v)| (k, v)))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)

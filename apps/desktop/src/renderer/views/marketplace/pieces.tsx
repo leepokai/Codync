@@ -334,19 +334,22 @@ export function OptionRow({ icon, title, detail, disabled = false, trailing, onC
   )
 }
 
-/** Runs one change at a time: which one is running (`busy`, its key), and why the last one failed. */
+/** Runs one change at a time: which one is running (`busy`, its key), and why the last one failed. `run` gives the change's result, or nothing when it failed. */
 export function useBusyAction() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const run = async (key: string, change: () => Promise<void>) => {
+  const run = async <T,>(key: string, change: () => Promise<T>): Promise<T | undefined> => {
     setBusy(key)
     try {
-      await change()
+      const result = await change()
       setError(null)
+      return result
     } catch (e) {
       setError(errorText(e))
+      return undefined
+    } finally {
+      setBusy(null)
     }
-    setBusy(null)
   }
   return { busy, error, run }
 }

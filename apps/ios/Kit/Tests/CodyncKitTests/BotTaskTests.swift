@@ -83,6 +83,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
     @Test func theRosterPreviewReadsLikeTheCapsule() {
         #expect([task(activity: "Reading files")].rosterPreview(english) == "In the background: Reading files")
         #expect([task("a"), task("b", .needsInput)].rosterPreview(english) == "In the background: 2 tasks running · needs you")
+        #expect([task(activity: "Reading files")].rosterPreview(traditional) == "背景：Reading files")
     }
 
     @Test func theWordsAreInTraditionalChinese() {

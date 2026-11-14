@@ -1,6 +1,6 @@
 //! The mark of a running turn in the bot's own chat (`turn.inflight.<bot>`), which a restarted host resumes.
 
-use crate::store::Store;
+use crate::store::{Store, now_ms};
 use anyhow::Result;
 
 /// What the mark holds: when the turn started and, for a follow-up's turn, its place in its
@@ -43,6 +43,15 @@ impl Inflight {
         }
     }
 }
+
+/// Whether `bot`'s actor resumes a turn when it starts: the previous host process never finished one (crash, update,
+/// restart), and it isn't stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
+pub(crate) fn resumable(store: &Store, bot: &str) -> bool {
+    Inflight::load(store, bot).is_some_and(|turn| now_ms() - turn.started < STALE_RESUME_MS)
+}
+
+/// A cut-off turn older than this isn't resumed.
+const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
 
 fn key(bot: &str) -> String {
     format!("turn.inflight.{bot}")

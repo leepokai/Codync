@@ -80,6 +80,19 @@ it has no pointer tooltip or link-opening action.
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
 
+## Background tasks in the chat
+
+A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
+
+- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}`, shown with the line
+  `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
+- **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
+  is `from: host`, shows no bubble, and isn't the user's words to memory.
+- **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
+  `The task "<title>" finished: …` or `… did not finish: …`.
+
+The capsule above the composer isn't an entry: it is the bot's `tasks`.
+
 ## While it works
 
 The working line under the last message shows the bot's activity; composing a `send_message`

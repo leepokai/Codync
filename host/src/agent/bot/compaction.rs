@@ -47,17 +47,22 @@ pub fn context_window(store: &Store, bot: &str) -> Option<u64> {
     store.kv_get(&window_key(bot)).and_then(|v| v.parse().ok())
 }
 
+fn conversation_key(bot: &str, session: &str) -> String {
+    format!("compaction.{bot}.{session}")
+}
+
+/// What is known of `bot`'s conversation in `session`: how full its window is, and its compactions.
+pub(crate) fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
+    store.kv_get(&conversation_key(bot, session)).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
 impl Actor {
     fn conversation_key(&self, session: &str) -> String {
-        format!("compaction.{}.{session}", self.cfg.id)
+        conversation_key(&self.cfg.id, session)
     }
 
     fn conversation(&self, session: &str) -> Conversation {
-        self.hub
-            .store
-            .kv_get(&self.conversation_key(session))
-            .and_then(|v| serde_json::from_str(&v).ok())
-            .unwrap_or_default()
+        conversation(&self.hub.store, &self.cfg.id, session)
     }
 
     fn save_conversation(&self, session: &str, c: &Conversation) {

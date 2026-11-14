@@ -95,7 +95,7 @@ public extension Array where Element == BotTask {
 
     /// A roster row's preview while the chat itself is idle and tasks go on.
     func rosterPreview(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
-        "\(tr("In the background")): \(what(tr))"
+        L10n.fill(tr("In the background: {what}"), ["what": what(tr)])
     }
 
     /// When the oldest of them started: the capsule's time.

@@ -169,6 +169,9 @@ pub struct BotConfig {
 /// A task bot's id starts with this; a bot's and a group's are plain UUIDs.
 pub const TASK_PREFIX: &str = "task-";
 
+/// [`TASK_PREFIX`] as SQLite's `GLOB` matches it, for the queries that keep task bots and their transcripts apart.
+pub(super) const TASK_GLOB: &str = "task-*";
+
 /// Whether `id` is a task bot's (and so a chat no client lists).
 pub fn is_task_id(id: &str) -> bool {
     id.starts_with(TASK_PREFIX)
@@ -301,6 +304,11 @@ pub struct BotRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_task_glob_matches_what_the_prefix_names() {
+        assert_eq!(TASK_GLOB, format!("{TASK_PREFIX}*"));
+    }
 
     #[test]
     fn permission_wire_values_round_trip() {

@@ -40,6 +40,10 @@ internal fun tasksWhat(tasks: List<BotTask>, tr: (String) -> String): String = w
         if (summary.needsInput) " · " + tr("Needs you").replaceFirstChar(Char::lowercase) else ""
 }
 
+/** A roster row's preview while the chat itself is idle and tasks go on (iOS `rosterPreview`). */
+internal fun rosterTaskLine(tasks: List<BotTask>, tr: (String) -> String): String =
+    fill(tr("In the background: {what}"), "what" to tasksWhat(tasks, tr))
+
 /**
  * The bot's work away from the chat, directly above the composer (iOS `TaskCapsule`): what it is doing and for how
  * long. The text opens the details ([open]); Stop asks once, then stops the one task or, with several, all of them ([stop]).

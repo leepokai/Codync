@@ -5,7 +5,7 @@ use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
-use crate::chat::tasks::Outcome;
+use crate::chat::tasks::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{EntryKind, Lane, now_ms};
@@ -33,7 +33,7 @@ impl Actor {
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
         let remind_follow_ups = !snapshot.system.contains("follow_up");
-        let remind_tasks = !snapshot.system.contains("start_task");
+        let briefed_on_tasks = snapshot.system.contains("start_task");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.
         for first in [self.relay.carried.take(), self.handoff.take()].into_iter().flatten() {
@@ -75,11 +75,8 @@ impl Actor {
         if remind_follow_ups && own_chat {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
-        // A known harness hears of tasks with every message (`EACH_TURN` says why); a custom command gets the
-        // message as written, with the brief only where its instructions predate tasks.
         let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
-        if own_chat && !self.cfg.is_task() && (remind_tasks || known) {
-            let about = if remind_tasks { crate::chat::tasks::BRIEF } else { crate::chat::tasks::EACH_TURN };
+        if let Some(about) = tasks::reminder(briefed_on_tasks, known).filter(|_| own_chat && !self.cfg.is_task()) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
         }
         Ok(prompt)
@@ -201,8 +198,9 @@ impl Actor {
                 Some("The agent could not reload this run's saved session".into()),
                 None,
             );
+            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
             self.turn = None;
-            self.end_host_turn();
+            self.end_host_turn(false);
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
@@ -374,25 +372,19 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
-        if self.cfg.is_task() {
-            // Its last message is its report to its bot.
-            let outcome = if stopped {
-                Outcome::Stopped
-            } else if let Some(error) = done.as_ref().err() {
-                Outcome::Failed(format!("its agent failed: {error}"))
-            } else if stop_reason != "end_turn" {
-                Outcome::Failed(format!("it ended early ({stop_reason})"))
-            } else {
-                Outcome::Done(final_text.clone())
-            };
-            crate::chat::tasks::finished(&self.hub, &self.cfg, outcome);
+        // A task's last message is its report to its bot.
+        self.turn_over(if stopped {
+            Outcome::Stopped
+        } else if let Some(error) = done.as_ref().err() {
+            Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
+        } else if stop_reason != "end_turn" {
+            Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
         } else {
-            self.hub.tasks.turn_ended(&self.cfg.id);
-            crate::chat::tasks::launch_pending(&self.hub, &self.cfg.id, stopped);
-        }
+            Outcome::Done(final_text.clone())
+        });
         self.turn = None;
         self.reply_hops = None;
-        let host_turn = self.end_host_turn();
+        let host_turn = self.end_host_turn(done.is_ok() && !stopped && stop_reason == "end_turn");
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }

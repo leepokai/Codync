@@ -13,7 +13,8 @@ class TasksTest {
     private fun task(status: TaskStatus = TaskStatus.Working, activity: String = "", id: String = "task-1") =
         BotTask(id, "Fix login", status, activity, startedAt = 1)
     private val english = { text: String -> text }
-    private val chinese = mapOf("Needs you" to "需要你", "Starting…" to "開始中…", "{count} tasks running" to "{count} 件事", "Thinking…" to "思考中…")
+    private val chinese = mapOf("Needs you" to "需要你", "Starting…" to "開始中…", "{count} tasks running" to "{count} 件事", "Thinking…" to "思考中…",
+        "In the background: {what}" to "背景：{what}")
     private val traditional = { text: String -> chinese[text] ?: text }
 
     @Test fun `one task reads as its status, its step or its title`() {
@@ -34,6 +35,11 @@ class TasksTest {
         assertEquals("思考中…", tasksWhat(listOf(task(activity = "Thinking…")), traditional))
         assertEquals("Fix login", tasksWhat(listOf(task()), traditional))
         assertEquals("2 件事 · 需要你", tasksWhat(listOf(task(), task(TaskStatus.NeedsInput, id = "task-2")), traditional))
+    }
+
+    @Test fun `a roster row's line is placed by the catalog`() {
+        assertEquals("In the background: Thinking…", rosterTaskLine(listOf(task(activity = "Thinking…")), english))
+        assertEquals("背景：Fix login", rosterTaskLine(listOf(task()), traditional))
     }
 
     @Test fun `a task's entry never makes a chat unread`() {

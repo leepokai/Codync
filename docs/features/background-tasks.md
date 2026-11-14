@@ -12,7 +12,8 @@ one capsule above the composer, and its report comes back as the bot's own messa
 | Who talks to it | The user | The bot (`tell_task`) |
 | Its result | A message | A report the bot turns into a message |
 
-Design and what is still to build: [the plan](../plans/background-tasks.md). Code: `host/src/chat/tasks.rs`; the
+Design and what is still to build: [the plan](../plans/background-tasks.md). Code: `host/src/chat/tasks/` (`mod.rs`: a task's record and
+its life, `tools.rs`: the bot's tools and what a task may not call, `prompts.rs`: the words); the
 actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the launch and the report,
 `updates.rs` for cards).
 
@@ -33,14 +34,19 @@ entries leave as `taskEntry` events, not `entry`.
   launches **when that turn ends**: a fork taken mid-turn would carry an unanswered tool call. Stopping that turn
   cancels it.
 - `tell_task {message, task?}`: a message in the task's transcript, with the user's own words of the running turn
-  attached. The task's queue takes it like any message (folded into its next turn, or steered into the running one).
-  A finished task takes it as more work and reports again.
+  attached. The task's queue takes it like any message: it waits for the running turn to end and is the task's next
+  turn. A task with told work still waiting keeps `working` and reports once, when the last of it ends. A finished
+  task takes it as more work and reports again.
 - `task_status {}`: each task's status, current step, seconds, latest three messages.
 - `stop_task {task?}`.
 
-Refused in a task (`tasks::refuse_in_task`): these four, the `routines`, `team` and `manage` tools,
-`request_decision`, `send_file`, artifacts, and changes to the bot's profile or fallbacks. The refusal says to put
-what it needs in its report.
+Refused in a task: these four, `request_decision`, `send_file`, artifacts, and changes to the bot's profile or
+fallbacks (`tasks::refuse_chat_only`, the `chat` server's), and the `routines`, `team` and `manage` tools
+(`tasks::refuse_in_task`). The refusal says to put what it needs in its report.
+
+A task may start [dev servers](dev-servers.md). They are its bot's: listed on the bot, stopped there, counted toward
+its limit, and so is what the task's agent leaves listening through its own shell. The approval card is the task's,
+in the chat like its others.
 
 `start_task` is refused outside the bot's own chat (a room, another bot's request), while a task is live unless
 `parallel: true`, past 3 live tasks for the bot or 6 on the computer, while the agent is near its usage limit, and
@@ -66,9 +72,16 @@ user (`tasks::first_prompt`).
 
 When a task's turn ends, its last message goes to its bot as `Cmd::TaskReport` and becomes a turn in the chat
 (`HostTurn::TaskReport`; reports that arrive together are one turn). The bot's reply there is an ordinary message
-with the usual alert; `(pass)` stays silent. A report is kept on the task until that turn has started, so a host
-restart sends it again. A task the user stopped reports nothing. Reports are `from: host`: memory and dreaming don't
-take them as the user's words.
+with the usual alert; `(pass)` stays silent. A report is kept on the task until that turn has ended: a host restart
+before then sends it again (the cut-off report turn isn't resumed). When the turn ends without the bot's answer
+(stopped, failed, or it never started), the chat shows the report as a notice (`The task "<title>" finished: …`), so
+what the task found isn't lost with the turn. A task the user stopped reports nothing. Reports are `from: host`:
+memory and dreaming don't take them as the user's words.
+
+A task that doesn't finish reports why, the same way: its agent couldn't start (`it could not start: …`), failed
+mid-turn, ended short of `end_turn`, or was cut off by a restart it couldn't pick up from. Every way a task's turn
+ends goes through `Actor::turn_over`, so none leaves the capsule spinning; Stop on the capsule also ends a task that
+has no turn running.
 
 ## Approvals
 
@@ -93,7 +106,8 @@ The same on iPhone, Android, desktop and the terminal ([client spec](../plans/ba
 - **Details**, from the capsule: the task's own transcript, read only, fetched with `taskEntries` and kept current
   from `taskEntry` events while it is open. A sheet on the phones and the desktop, a full view in the terminal.
 - **A task's approval card** in the chat says `In the background · <title>`.
-- **Roster row**: `In the background: <what>` while the chat itself is idle.
+- **Roster row**: `In the background: <what>` while the chat itself is idle. The desktop's menu bar or tray menu
+  shows the same line under the bot's name, and its **Stop task** stops the chat's turn and the bot's tasks.
 - Opening the details reports `screen_viewed` with screen `task`.
 
 Code: desktop `src/shared/tasks.ts`, `views/thread/TaskCapsule.tsx`, `TaskDetails.tsx`; iPhone
@@ -103,8 +117,9 @@ Code: desktop `src/shared/tasks.ts`, `views/thread/TaskCapsule.tsx`, `TaskDetail
 
 ## Restart and cleanup
 
-A task bot is spawned at host start when its turn was cut off (its restart mark resumes it); one still `starting`
-launches; one that was working with nothing left to resume fails with a report. A finished task is kept 7 days.
+A task bot is spawned at host start when its turn was cut off and its actor will resume it (`agent::bot::resumable`:
+a restart mark under an hour old); one still `starting` launches; one that was working with nothing to resume, or
+whose agent can't reload its session, fails with a report. A finished task is kept 7 days.
 Deleting a bot deletes its tasks.
 
 ## Limits of this version
@@ -112,7 +127,11 @@ Deleting a bot deletes its tasks.
 - A task's memory tools run as its bot, so a task's `edit_memory` is credited to the chat's session, and its edits
   through file tools are taken at the bot's next scan as changes outside a turn.
 - No worktree for a parallel task; no subagent rows.
+- A voice call doesn't know of tasks: its `bot_status` and `stop_bot` are the chat's turn only.
 
 Tests: desktop `e2e/tasks.spec.ts` (capsule, details, stop, a task's card) and each client's unit tests of the
-label, the decoding and the transcript merge; `host/tests/tasks_e2e.rs` (fork, brief, a card answered from the chat, refusals in a task, one at a time,
-tell, stop, a host restart mid-task) with `tests/fixtures/task_agent.py`.
+label, the decoding and the transcript merge; `host/tests/tasks_e2e.rs` (fork, brief, a card answered from the chat, refusals in a task from each server, one at
+a time, tell to a running and to a finished task, parallel tasks up to the limit, an agent that can't start, stop, a
+stopped turn dropping the task it started, a deleted bot taking its tasks, a host restart mid-task) with
+`tests/fixtures/task_agent.py`. Not covered by a test: the usage and in-a-row limits, `start_task` refused in a room
+or a bot's request, a report turn that fails, and a task's dev server.

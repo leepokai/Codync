@@ -35,8 +35,8 @@ impl Scroll {
 }
 
 /// The same keys on a conversation read from its end, `lines` up from the bottom: `max` and `page` are what the last
-/// draw found. False for a key it doesn't take.
-pub(super) fn up_from_end(lines: &mut usize, max: usize, page: usize, k: KeyEvent) -> bool {
+/// draw found.
+pub(super) fn up_from_end(lines: &mut usize, max: usize, page: usize, k: KeyEvent) {
     let half = (page / 2).max(1);
     *lines = match k.code {
         KeyCode::Up | KeyCode::Char('k') => (*lines + 1).min(max),
@@ -45,9 +45,8 @@ pub(super) fn up_from_end(lines: &mut usize, max: usize, page: usize, k: KeyEven
         KeyCode::PageDown => lines.saturating_sub(half),
         KeyCode::Char('u') if ctrl(k) => (*lines + half).min(max),
         KeyCode::Char('d') if ctrl(k) => lines.saturating_sub(half),
-        _ => return false,
+        _ => *lines,
     };
-    true
 }
 
 #[cfg(test)]

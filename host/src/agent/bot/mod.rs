@@ -38,8 +38,10 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
+pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
 use inflight::Inflight;
+pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
@@ -48,7 +50,7 @@ use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
 use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -76,11 +78,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
     let cfg = fallback::resume_step(&hub, &base);
-    // A turn the previous host process never finished (crash, update, restart), unless
-    // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
-    let interrupted = Inflight::load(&hub.store, &cfg.id)
-        .filter(|turn| now_ms() - turn.started < STALE_RESUME_MS)
-        .map(|_| Lane::main(&cfg.id));
+    let interrupted = resumable(&hub.store, &cfg.id).then(|| Lane::main(&cfg.id));
     // A task's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
     let dreamer =
         if cfg.is_task() { mpsc::unbounded_channel().0 } else { memory::spawn_dreamer(hub.clone(), cfg.id.clone()) };
@@ -123,6 +121,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         active_request: None,
         reply_hops: None,
         host_turn: None,
+        reports: Vec::new(),
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
@@ -315,6 +314,8 @@ struct Actor {
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
     host_turn: Option<HostTurn>,
+    /// The reports the running turn answers (`HostTurn::TaskReport`), kept until it ends (`end_host_turn`).
+    reports: Vec<crate::chat::tasks::Report>,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
@@ -496,9 +497,6 @@ const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted 
 
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);
-
-/// An interrupted turn older than this isn't resumed.
-const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {

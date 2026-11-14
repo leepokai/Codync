@@ -139,7 +139,7 @@ impl Actor {
         let conn = start_agent(&self.cfg.backend, &command[0], &self.cfg.cwd, &env, budget).await.inspect_err(|e| {
             tracing::info!(command = command[0].as_str(), error = format!("{e:#}"), "agent failed to start");
         })?;
-        self.hub.dev_servers.agent_started(&self.cfg.id, &conn.acp, &self.cfg.backend, &command[0]);
+        self.hub.dev_servers.agent_started(&self.cfg, &conn.acp, &command[0]);
         Ok(conn)
     }
 
@@ -242,12 +242,7 @@ impl Actor {
             }
             let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
-            // The agent replays history as session/update before answering; drop it.
-            while let Ok(inc) = conn.rx.try_recv() {
-                if let Incoming::Request { id, .. } = inc {
-                    let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-                }
-            }
+            drop_replay(conn).await;
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
@@ -312,26 +307,38 @@ impl Actor {
             .await?
         };
         let mut params = self.session_params(&servers, None);
-        match instructions {
-            Instructions::ClaudeMeta => params["_meta"] = claude_meta(&self.cfg, &system),
-            Instructions::SystemPrompt => params["systemPrompt"] = system_prompt(&system),
-            Instructions::FirstMessage => {}
-        }
+        self.instruct(&mut params, instructions, &system);
         let res = self.session_request("session/new", params).await?;
-        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
-        conn.loaded.insert(sid.clone(), Instant::now());
-        conn.renamed.insert(sid.clone(), renamed);
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
-        self.note_options(&sid, &options, Listing::Session);
-        self.set_session(slot, Some(&sid));
-        self.session_fresh = true;
-        self.turn_session = Some(sid.clone());
+        let sid = self.adopt_opened(&res, slot, renamed).await?;
         context::adopt(&self.hub.store, &self.cfg.as_owner(), &sid, system.clone(), revision)?;
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, system);
         }
         Ok(())
+    }
+
+    /// Puts the bot's instructions in a session request's `params`, for an agent that takes them there.
+    fn instruct(&self, params: &mut Value, instructions: Instructions, system: &str) {
+        match instructions {
+            Instructions::ClaudeMeta => params["_meta"] = claude_meta(&self.cfg, system),
+            Instructions::SystemPrompt => params["systemPrompt"] = system_prompt(system),
+            Instructions::FirstMessage => {}
+        }
+    }
+
+    /// Takes the session the agent just opened (`res`: its answer to `session/new` or `session/fork`) as `slot`'s
+    /// and this turn's: on the bot's model, with its options noted. Its id.
+    async fn adopt_opened(&mut self, res: &Value, slot: Option<&str>, renamed: codex_names::Renamed) -> Result<String> {
+        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
+        let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
+        conn.loaded.insert(sid.clone(), Instant::now());
+        conn.renamed.insert(sid.clone(), renamed);
+        let options = select_model(&conn.acp, res, &sid, &self.cfg).await?;
+        self.note_options(&sid, &options, Listing::Session);
+        self.set_session(slot, Some(&sid));
+        self.session_fresh = true;
+        self.turn_session = Some(sid.clone());
+        Ok(sid)
     }
 
     /// Opens a task's session as a fork of its bot's main one (`session/fork`), from this task's own agent process:
@@ -356,28 +363,14 @@ impl Actor {
             tokio::task::spawn_blocking(move || context::resolve(&hub.store, &owner, &source)).await??
         };
         let mut params = self.session_params(servers, Some(&source));
-        match instructions {
-            Instructions::ClaudeMeta => params["_meta"] = claude_meta(&self.cfg, &parent.system),
-            Instructions::SystemPrompt => params["systemPrompt"] = system_prompt(&parent.system),
-            Instructions::FirstMessage => {}
-        }
+        self.instruct(&mut params, instructions, &parent.system);
         self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
         let res = self.session_request("session/fork", params).await?;
-        let Some(conn) = self.conn.as_mut() else { bail!("agent not running") };
-        let sid = res["sessionId"].as_str().ok_or_else(|| anyhow!("agent returned no sessionId"))?.to_owned();
-        // A fork may replay the chat's history as session/update before it answers; drop it.
-        while let Ok(inc) = conn.rx.try_recv() {
-            if let Incoming::Request { id, .. } = inc {
-                let _ = conn.acp.respond_error(id, -32601, "not supported").await;
-            }
+        // A fork may replay the chat's history, as a reopened session does.
+        if let Some(conn) = self.conn.as_mut() {
+            drop_replay(conn).await;
         }
-        conn.loaded.insert(sid.clone(), Instant::now());
-        conn.renamed.insert(sid.clone(), renamed.clone());
-        let options = select_model(&conn.acp, &res, &sid, &self.cfg).await?;
-        self.note_options(&sid, &options, Listing::Session);
-        self.set_session(None, Some(&sid));
-        self.session_fresh = true;
-        self.turn_session = Some(sid.clone());
+        let sid = self.adopt_opened(&res, None, renamed.clone()).await?;
         // It already holds the instructions and memory as the chat's session had them: nothing to send again.
         let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
         context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
@@ -432,3 +425,13 @@ impl Actor {
 
 /// How long opening a session (`session/new`, `session/load`, `session/resume`) may take.
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
+
+/// An agent replays a session's history as `session/update` before it answers a reopen or a fork: drops it, and
+/// refuses the requests in it.
+async fn drop_replay(conn: &mut Conn) {
+    while let Ok(inc) = conn.rx.try_recv() {
+        if let Incoming::Request { id, .. } = inc {
+            let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+        }
+    }
+}

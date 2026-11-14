@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { api, attach, taskBot } from './sandbox.ts'
+import { api, attach, taskBot, typeMessage } from './sandbox.ts'
 
 /** Stops the bot's tasks and deletes it. */
 async function cleanUp(page: Page, botId: string | undefined) {
@@ -28,6 +28,10 @@ test('a background task shows above the composer, opens its details, and stops o
     await expect(capsule).toContainText(/\d+:\d\d/)
     // The chat itself is free again: the roster row says what goes on in the background.
     await expect(page.locator('.roster-row', { hasText: name })).toContainText('In the background:')
+    // And it answers: a message typed under the capsule gets its reply while the task goes on.
+    await typeMessage(page, 'are you there?')
+    await expect(page.locator('.transcript')).toContainText('reply: are you there?')
+    await expect(capsule).toBeVisible()
 
     await capsule.locator('.task-capsule-open').click()
     const details = page.getByRole('dialog')

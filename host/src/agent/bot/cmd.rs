@@ -144,7 +144,7 @@ pub(super) enum HostTurn {
     /// and is resumed after a restart as the follow-up it is.
     FollowUp,
     /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
-    /// a reply, and is resumed after a restart.
+    /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`tasks::restore`).
     TaskReport,
 }
 
@@ -152,8 +152,8 @@ impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening => false,
-            Self::FollowUp | Self::TaskReport => true,
+            Self::Opening | Self::TaskReport => false,
+            Self::FollowUp => true,
         }
     }
 

@@ -58,4 +58,5 @@ onFlowComplete:
 - takeScreenshot: tasks-card
 - tapOn: "Allow once"
 - assertVisible: "Relayed: .*"
-- assertNotVisible: "In the background · .*"
+# The answered card keeps its line; the capsule, and its Stop, is what goes.
+- assertNotVisible: "Stop"

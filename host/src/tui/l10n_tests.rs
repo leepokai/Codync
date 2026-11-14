@@ -259,6 +259,7 @@ fn background_task_words_read_in_traditional_chinese() {
         ("Stopped", "已停止"),
         ("B opens", "B 開啟"),
         ("X stops", "X 停止"),
+        ("Picking up from the chat…", "正在從聊天接著做…"),
     ] {
         assert_eq!(translate_with(english, &super::HANT), chinese);
     }

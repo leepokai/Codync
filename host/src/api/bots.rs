@@ -53,15 +53,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "chatCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            // What a task can't do from where it is: ask the user, share with them, or change the bot.
-            let chat_only = crate::chat::profile::TOOLS.contains(&name)
-                || name == crate::chat::decision::TOOL
-                || crate::chat::fallbacks::TOOLS.contains(&name)
-                || crate::chat::artifacts::TOOLS.contains(&name)
-                || name == "send_file";
-            if chat_only {
-                crate::chat::tasks::refuse_in_task(hub, bot, name)?;
-            }
+            crate::chat::tasks::refuse_chat_only(hub, bot, name)?;
             if crate::chat::tasks::TOOLS.contains(&name) {
                 let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), b["arguments"].clone());
                 tokio::task::spawn_blocking(move || crate::chat::tasks::call(&hub, &bot, &name, &args)).await??

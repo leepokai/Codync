@@ -296,7 +296,7 @@ Each stage is its own change through `after-change`, on all four clients where i
 `dev` when it is green. Tick a stage only with its evidence.
 
 - [x] **0. Spikes** 1 to 4 (below), with Claude.
-- [x] **1. Host**: `BotConfig::task_of`, `chat/tasks.rs`, the actor's hooks, the sync changes, `taskEntries` /
+- [x] **1. Host**: `BotConfig::task_of`, `chat/tasks/`, the actor's hooks, the sync changes, `taskEntries` /
   `stopTask`, analytics. `tests/tasks_e2e.rs`; a real Claude bot started a task by fork, worked, and reported.
 - [ ] **2. Clients**: capsule, details, card line, roster line on iPhone, Android, desktop and terminal. Built and
   unit-tested on all four; desktop walked with Playwright and with a real Claude bot. Still owed before merge: the

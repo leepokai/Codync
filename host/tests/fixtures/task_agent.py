@@ -1,6 +1,6 @@
 """Deterministic ACP agent for task tests: a bot that starts, tells and stops tasks, and the task itself.
 
-Argument `no-fork`: the agent doesn't advertise `session/fork`.
+Argument `no-fork`: the agent doesn't advertise `session/fork`. A `no-start` file in its folder: it doesn't start.
 """
 
 import json
@@ -13,6 +13,9 @@ import threading
 
 sys.stdin.reconfigure(encoding="utf-8")
 sys.stdout.reconfigure(encoding="utf-8")
+
+if pathlib.Path("no-start").exists():
+    sys.exit(1)
 
 CAN_FORK = "no-fork" not in sys.argv
 output_lock = threading.Lock()
@@ -64,7 +67,8 @@ def answer(text, session):
     """What this turn replies."""
     if "[Codync: your task" in text:
         report = text.split("\n\n[Codync: these are your tasks' reports", 1)[0]
-        return "Relayed: " + report.split("]", 1)[1].strip()
+        # A finished task's report follows the bracket; one that didn't finish is all in it.
+        return "Relayed: " + (report.split("]", 1)[1].strip() or report)
     if "[From the chat" in text:
         return "Told: " + text.split("[From the chat, passed on by you there] ", 1)[1].split("\n\n", 1)[0]
     if "[Task]" in text:
@@ -94,7 +98,10 @@ def answer(text, session):
         arguments = {"title": title, "brief": brief}
         if "parallel" in flags:
             arguments["parallel"] = True
-        return said(chat_tool("start_task", arguments), "Started: ")
+        started = said(chat_tool("start_task", arguments), "Started: ")
+        while "hold" in flags and not cancel.wait(0.01):
+            pass
+        return started
     if name == "TELL":
         return said(chat_tool("tell_task", {"message": rest}), "Passed on: ")
     if name == "STATUS":

@@ -1,4 +1,4 @@
-// Background tasks (host/src/chat/tasks.rs): long work a bot does away from its chat. The chat shows one capsule
+// Background tasks (host/src/chat/tasks/): long work a bot does away from its chat. The chat shows one capsule
 // above the composer; a task's own transcript is read from its details and never enters a chat.
 
 import type { Entry } from './models'
@@ -55,7 +55,7 @@ export function parseTaskEntry(raw: Record<string, unknown>): { task: string; en
 export function taskWhat(task: BotTask, tr: Translate): string {
   if (task.status === 'needsInput') return tr('Needs you')
   if (task.status === 'starting') return tr('Starting…')
-  return task.activity || task.title
+  return task.activity ? tr(task.activity) : task.title
 }
 
 /** What the tasks are doing: the one task's, or how many there are (and whether any waits for the user). */
@@ -70,7 +70,8 @@ export const tasksSince = (tasks: BotTask[]) => Math.min(...tasks.map((t) => t.s
 
 /** A roster row's preview while the chat itself is idle and tasks go on; null when the row reads as usual. */
 export function rosterTaskLine(bot: { status: string; tasks: BotTask[] }, tr: Translate): string | null {
-  return bot.status === 'idle' && bot.tasks.length > 0 ? `${tr('In the background')}: ${tasksWhat(bot.tasks, tr)}` : null
+  if (bot.status !== 'idle' || bot.tasks.length === 0) return null
+  return tr('In the background: {what}').replaceAll('{what}', () => tasksWhat(bot.tasks, tr))
 }
 
 /** A task's status in words: the live one's from its bot, an ended one's from its record. */

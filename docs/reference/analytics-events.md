@@ -124,9 +124,9 @@ host answers and sends it once the host is up.
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
 | `follow_up_cancelled` | host | A waiting follow-up was dropped | `by` (`bot`: `cancel_follow_up`, `user`: ✕ in the routines list, the API call `cancelFollowUp`, so with `client` and a phone's `platform`; not sent when the follow-up was already gone, `stop`: the bot's Stop) |
 | `task_started` | host | A bot's `start_task` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`started`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, `live`: a task already runs, `limit`: too many tasks, `usage`: the agent is near its limit, `hops`: too many in a row, `failed`), `parallel` |
-| `task_finished` | host | A task ended | `outcome` (`done`, `failed`, `stopped`), `start` (`fork`, `brief`), `forkFailed` (the agent could fork but the fork failed), `minutes` |
+| `task_finished` | host | A task ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off and it couldn't pick up, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`), `forkFailed` (the agent could fork but the fork failed), `minutes` |
 | `task_told` | host | A bot's `tell_task` reached its task | — |
-| `task_stopped` | host | `stopTask` (Stop on the capsule) | — |
+| `task_stopped` | host | `stopTask` (Stop on the capsule, or the desktop tray's **Stop task** while the bot has tasks) | — |
 | `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
 | `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
 | `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |

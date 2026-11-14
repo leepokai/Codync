@@ -161,7 +161,20 @@ async fn one_task_at_a_time_takes_more_work_and_stops_without_a_report() {
     host.reply(&bot, "TELL also check the logout").await;
     reply(&host, &bot, "Passed on:").await;
 
+    // What a task may not do from where it is, whichever server it asks.
     let task = tasks(&host, &bot).await[0]["id"].as_str().unwrap().to_owned();
+    for (method, tool) in [
+        ("chatCall", "send_file"),
+        ("chatCall", "publish_artifact"),
+        ("chatCall", "set_name"),
+        ("teamCall", "message_bot"),
+        ("routineCall", "follow_up"),
+        ("manageCall", "create_bot"),
+    ] {
+        let refused = host.refused(method, json!({"botId": task, "name": tool, "arguments": {}})).await;
+        assert!(refused.contains(&format!("{tool} isn't available in a task")), "{method} {tool}: {refused}");
+    }
+
     host.call("stopTask", json!({"botId": bot, "taskId": task})).await;
     wait("the capsule to go", async || tasks(&host, &bot).await.is_empty().then_some(())).await;
     let details = host.call("taskEntries", json!({"botId": bot, "taskId": task})).await;
@@ -184,4 +197,94 @@ async fn a_task_cut_off_by_a_host_restart_picks_up_and_still_reports() {
     let relayed = reply(&host, &bot, "Relayed:").await;
     assert!(relayed.contains("Codync restarted"), "{relayed}");
     assert_eq!(tasks(&host, &bot).await, [] as [Value; 0]);
+}
+
+/// The chat-visible `Relayed:` replies, oldest first.
+async fn relayed(host: &Host, bot: &str) -> Vec<String> {
+    let texts = history(host, bot).await.into_iter().filter_map(|e| e["data"]["text"].as_str().map(str::to_owned));
+    texts.filter(|t| t.starts_with("Relayed:")).collect()
+}
+
+#[tokio::test]
+async fn more_work_told_to_a_running_task_is_part_of_it_and_a_finished_one_reports_again() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "START First|HOLD until told").await;
+    wait("the task at work", async || tasks(&host, &bot).await.first().filter(|t| t["status"] == "working").cloned())
+        .await;
+    host.reply(&bot, "TELL also check the logout").await;
+    reply(&host, &bot, "Passed on:").await;
+
+    // Its first turn ends with the told work still waiting: one report, when the last of it ends.
+    std::fs::write(host.home.join("bots").join(&bot).join("workspace/release"), "").unwrap();
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Told: also check the logout");
+    assert_eq!(relayed(&host, &bot).await.len(), 1, "the turn before it reported nothing by itself");
+    assert_eq!(tasks(&host, &bot).await, [] as [Value; 0]);
+
+    // Told more once finished, it works again and reports again; no client ever hears of the task as a bot.
+    let mut events = host.events().await;
+    host.reply(&bot, "TELL and the sign-up").await;
+    wait("the second report", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+    assert_eq!(relayed(&host, &bot).await[1], "Relayed: Told: and the sign-up");
+    while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(300), events.recv()).await {
+        let id = event["bot"]["id"].as_str().unwrap_or_default();
+        assert!(event["type"] != "bot" || !id.starts_with("task-"), "{event}");
+    }
+}
+
+#[tokio::test]
+async fn a_task_whose_agent_cannot_start_says_so_and_frees_the_bot_for_the_next() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "hello").await;
+    let no_start = host.home.join("bots").join(&bot).join("workspace/no-start");
+    std::fs::write(&no_start, "").unwrap();
+
+    host.reply(&bot, "START Broken|anything").await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("your task \"Broken\" did not finish: it could not start"), "{relayed}");
+    assert_eq!(tasks(&host, &bot).await, [] as [Value; 0], "nothing is left spinning over the composer");
+
+    std::fs::remove_file(no_start).unwrap();
+    host.reply(&bot, "START Next|HOLD until told").await;
+    wait("the next task at work", async || {
+        tasks(&host, &bot).await.first().filter(|t| t["title"] == "Next" && t["status"] == "working").cloned()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn tasks_run_side_by_side_up_to_the_limit_and_go_with_their_bot() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "START One|HOLD until told").await;
+    host.reply(&bot, "START Two|HOLD until told|parallel").await;
+    host.reply(&bot, "START Three|HOLD until told|parallel").await;
+    let live = wait("three tasks", async || Some(tasks(&host, &bot).await).filter(|live| live.len() == 3)).await;
+    host.reply(&bot, "START Four|more|parallel").await;
+    reply(&host, &bot, "Refused: too many tasks are running").await;
+
+    host.call("deleteBot", json!({"botId": bot})).await;
+    for task in live {
+        let gone = host.refused("taskEntries", json!({"botId": bot, "taskId": task["id"]})).await;
+        assert_eq!(gone, "unknown task");
+    }
+}
+
+#[tokio::test]
+async fn stopping_the_turn_that_started_a_task_drops_it_before_it_begins() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    let nonce = uuid::Uuid::new_v4().to_string();
+    host.call("send", json!({"botId": bot, "text": "START Never|anything|hold", "clientNonce": nonce})).await;
+    let task = wait("the task to be recorded", async || {
+        tasks(&host, &bot).await.first().filter(|t| t["status"] == "starting").cloned()
+    })
+    .await;
+
+    host.call("stop", json!({"botId": bot})).await;
+    wait("the capsule to go", async || tasks(&host, &bot).await.is_empty().then_some(())).await;
+    let gone = host.refused("taskEntries", json!({"botId": bot, "taskId": task["id"]})).await;
+    assert_eq!(gone, "unknown task");
+    assert!(host.log(&bot, "prompts.jsonl").iter().all(|p| !p["text"].as_str().unwrap().contains("[Task]")));
 }

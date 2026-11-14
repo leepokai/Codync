@@ -12,7 +12,7 @@ import { useScreenViewed } from '../../store/analytics'
 import { useStore } from '../../store/context'
 import { useFollowEnd } from './follow-end'
 import { TraceRow } from './TraceView'
-import { traceTurns } from './trace-turns'
+import { runningTurn, traceTurns } from './trace-turns'
 import { Timer } from './WorkingIndicator'
 import './trace.css'
 import './tasks.css'
@@ -119,7 +119,7 @@ function TaskTranscript({ botId, taskId, live, retry, actions }: { botId: string
   const { fetched: record, error } = useFetched(() => store.loadTask(botId, taskId), [store, botId, taskId, !live])
   const entries = store.taskEntriesOf(taskId)
   const turns = traceTurns(entries)
-  const runningTurn = live ? turns.at(-1)?.[0] : undefined
+  const running = runningTurn(entries, !!live)
   const follow = useFollowEnd()
   const status = live?.status ?? record?.status
   const startedAt = live?.startedAt ?? record?.startedAt
@@ -142,7 +142,7 @@ function TaskTranscript({ botId, taskId, live, retry, actions }: { botId: string
           {!error && record !== null && entries.length === 0 ? <Text as="div" size="footnote" tone="tertiary" className="task-note">{tr('Nothing yet.')}</Text> : null}
           {turns.map(([turn, rows]) => (
             <CardSection key={turn}>
-              {rows.map((e) => <TaskRow key={e.id} entry={e} unfolded={turn === runningTurn} />)}
+              {rows.map((e) => <TaskRow key={e.id} entry={e} unfolded={turn === running} />)}
             </CardSection>
           ))}
         </VStack>

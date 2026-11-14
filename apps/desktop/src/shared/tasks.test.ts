@@ -31,6 +31,9 @@ test('one task reads as what it is doing', () => {
   assert.equal(tasksWhat([task('a')], same), 'Title a', 'its title until it says what it does')
   assert.equal(tasksWhat([task('a', { status: 'starting', activity: 'x' })], same), 'Starting…')
   assert.equal(tasksWhat([task('a', { status: 'needsInput', activity: 'x' })], same), 'Needs you')
+  const hant = (text: string) => (text === 'Thinking…' ? '思考中…' : text)
+  assert.equal(tasksWhat([task('a', { activity: 'Thinking…' })], hant), '思考中…', 'a step the host names reads in the app\'s language')
+  assert.equal(tasksWhat([task('a')], (text) => `[${text}]`), 'Title a', 'its title stays as the bot wrote it')
 })
 
 test('several tasks read as how many, whether one needs the user, and the oldest one\'s time', () => {
@@ -46,6 +49,8 @@ test('a roster row says what goes on in the background only while its chat is id
   assert.equal(rosterTaskLine({ status: 'idle', tasks }, same), 'In the background: Reading')
   assert.equal(rosterTaskLine({ status: 'working', tasks }, same), null)
   assert.equal(rosterTaskLine({ status: 'idle', tasks: [] }, same), null)
+  const hant = (text: string) => (text === 'In the background: {what}' ? '背景：{what}' : text)
+  assert.equal(rosterTaskLine({ status: 'idle', tasks }, hant), '背景：Reading', 'the catalog places the words')
 })
 
 test('every status has its word', () => {

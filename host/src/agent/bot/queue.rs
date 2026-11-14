@@ -1,9 +1,12 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, Queued, RESUME_PROMPT, RoutineCompletion};
+use super::{
+    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+};
 use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
+use crate::chat::tasks::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
@@ -281,13 +284,11 @@ impl Actor {
                     }
                     self.host_turn = Some(HostTurn::TaskReport);
                     let hops = reports.iter().map(|r| r.hops).max().unwrap_or(0);
-                    let prompt = crate::chat::tasks::report_prompt(&reports);
+                    let prompt = tasks::report_prompt(&reports);
+                    self.reports = reports;
                     match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
-                        Ok(()) => {
-                            // A task this turn starts carries the chain on.
-                            self.hub.tasks.answering(&self.cfg.id, hops);
-                            crate::chat::tasks::reported(&self.hub.store, &reports);
-                        }
+                        // A task this turn starts carries the chain on.
+                        Ok(()) => self.hub.tasks.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
                     }
                     continue;
@@ -384,6 +385,7 @@ impl Actor {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
+        self.turn_over(Outcome::Failed(Failure::Start, format!("it could not start: {e:#}")));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
             self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
@@ -392,7 +394,7 @@ impl Actor {
         self.relay.carried = None;
         self.turn = None;
         self.reply_hops = None;
-        self.end_host_turn();
+        self.end_host_turn(false);
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {
             self.set_inflight(false);
@@ -465,13 +467,40 @@ impl Actor {
             .is_ok()
     }
 
-    /// The host-started turn is over; what it was, for the turn's end to act on.
-    pub(super) fn end_host_turn(&mut self) -> Option<HostTurn> {
+    /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it
+    /// with a reply of its own.
+    pub(super) fn end_host_turn(&mut self, answered: bool) -> Option<HostTurn> {
         let ended = self.host_turn.take();
-        if ended == Some(HostTurn::FollowUp) {
-            self.hub.routines.end_follow_up(&self.cfg.id);
+        match ended {
+            Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
+            Some(HostTurn::TaskReport) => self.reports_over(answered),
+            Some(HostTurn::Opening) | None => {}
         }
         ended
+    }
+
+    /// The turn for the tasks' reports is over. Unanswered (stopped, failed, never started), they show in the chat
+    /// as they came, so what a task found isn't lost with the turn.
+    fn reports_over(&mut self, answered: bool) {
+        let reports = std::mem::take(&mut self.reports);
+        if !answered {
+            for report in &reports {
+                self.notice(&tasks::report_notice(report), NoticeStyle::Info);
+            }
+        }
+        tasks::reported(&self.hub.store, &reports);
+    }
+
+    /// The turn is over, however it ended (or never began): a task's record says how and its bot gets the report;
+    /// a bot's tasks started in the turn launch.
+    pub(super) fn turn_over(&mut self, outcome: Outcome) {
+        if !self.cfg.is_task() {
+            self.hub.tasks.turn_ended(&self.cfg.id);
+            tasks::launch_pending(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
+        } else if !self.queue.iter().any(|q| matches!(q, Queued::User { .. })) {
+            // With more its bot told it still waiting (`tell_task`), it keeps working and reports when that ends.
+            tasks::finished(&self.hub, &self.cfg, outcome);
+        }
     }
 
     pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {
@@ -547,6 +576,7 @@ impl Actor {
                 Some("No saved agent session is available".into()),
                 None,
             );
+            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
             return;
         }
         let prompt = if self.active_routine.is_some() {

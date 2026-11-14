@@ -255,8 +255,11 @@ impl Hub {
     }
 
     /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
-    /// may call it whenever a chat is on screen.
+    /// may call it whenever a chat is on screen. So is a task bot: no client lists it, so it has no unread to show.
     pub fn mark_read(&self, id: &str) -> Result<()> {
+        if crate::store::is_task_id(id) {
+            return Ok(());
+        }
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
         if self.store.unread(id, row.read_rev) == 0 {
             return Ok(());

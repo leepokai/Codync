@@ -12,9 +12,6 @@ private actor SearchRemote: RemoteTransport {
     init(_ acknowledged: Bool?) { self.acknowledged = acknowledged }
 
     func call(_ method: String, body: Data, timeout: TimeInterval) async throws -> Data {
-        if method == "voiceStatus" {
-            return Data("{\"providers\":[],\"googleSearch\":\(acknowledged == true)}".utf8)
-        }
         guard method == "startCall" else { return try await base.call(method, body: body, timeout: timeout) }
         requests.append(body)
         var reply: [String: Any] = ["credential": "test-token", "instructions": "Relay", "tools": [["name": "bot_status", "description": "Status"]]]
@@ -35,13 +32,13 @@ private actor SearchRemote: RemoteTransport {
 
 extension CallRecoveryTests {
     @Test func geminiSetupKeepsBotToolsAndOnlyEnablesAcknowledgedSearch() async throws {
-        for enabled in [nil, false, true] as [Bool?] {
+        for (enabled, asked) in [(nil, false), (nil, true), (false, true), (true, true)] as [(Bool?, Bool)] {
             let (storage, suite) = context()
             let remote = SearchRemote(enabled)
             let store = BotStore(computer: randomComputer("Search test"), storage: storage) { _ in remote }
             store.setActive(true)
             let sockets = ScriptedSockets()
-            let engine = GeminiLiveEngine(model: "gemini-live", voice: "Kore", link: CallLink(model: store, botId: "b1", call: UUID().uuidString, googleSearch: { enabled == true }),
+            let engine = GeminiLiveEngine(model: "gemini-live", voice: "Kore", googleSearch: asked, link: CallLink(model: store, botId: "b1", call: UUID().uuidString),
                                           audio: ScriptedAudio()) { sockets.open($0) }
             defer { engine.end(); store.retire(); UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
             #expect(await until { await remote.base.subscribed })
@@ -55,24 +52,25 @@ extension CallRecoveryTests {
             #expect(functions.first?["name"] as? String == "bot_status")
             let request = try #require(await remote.requests.last)
             let fields = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
-            #expect(fields["googleSearch"] as? Bool == (enabled == true))
+            #expect(fields["googleSearch"] as? Bool == asked)
             #expect(engine.searchResult == nil)
             sockets.last?.play(#"{"serverContent":{"outputTranscription":{"text":"A grounded answer."}}}"#)
             sockets.last?.play(#"{"serverContent":{"groundingMetadata":{"searchEntryPoint":{"renderedContent":"<p>Google suggestions</p>"}},"turnComplete":true}}"#)
             #expect(await until { engine.searchResult?.text == "A grounded answer." })
             #expect(engine.searchResult?.html == "<p>Google suggestions</p>")
-            sockets.last?.play(#"{"serverContent":{"outputTranscription":{"text":"Next answer"},"turnComplete":true}}"#)
+            sockets.last?.play(#"{"serverContent":{"outputTranscription":{"text":" Late piece."}}}"#)
+            #expect(await until { engine.searchResult?.text == "A grounded answer. Late piece." })
+            #expect(engine.searchResult?.html == "<p>Google suggestions</p>")
+            sockets.last?.play(#"{"serverContent":{"modelTurn":{"parts":[]},"outputTranscription":{"text":"Next answer"},"turnComplete":true}}"#)
             #expect(await until { engine.searchResult == nil })
         }
     }
 
-    @Test func requestingSearchFromAnOlderHostKeepsVoiceWorking() async throws {
-        let remote = SearchRemote(nil)
-        let client = HostClient(transport: remote)
-        let session = try await client.startCall(botId: "b", call: "c", mode: "realtime", provider: .gemini, language: "en", googleSearch: true)
-        #expect(!session.googleSearch)
-        let request = try #require(await remote.requests.last)
-        let fields = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
-        #expect(fields["googleSearch"] as? Bool == false)
+    @Test func searchSuggestionsStayWithTheirTurnWhenTranscriptionArrivesLate() {
+        var turn = CallSearchTurn()
+        let html = "<p>Google suggestions</p>"
+        _ = turn.receive(["modelTurn": [:], "groundingMetadata": ["searchEntryPoint": ["renderedContent": html]], "turnComplete": true])
+        #expect(turn.receive(["outputTranscription": ["text": "Late piece."]]) == CallSearchResult(html: html, text: "Late piece."))
+        #expect(turn.receive(["modelTurn": [:], "outputTranscription": ["text": "Next turn."]]) == nil)
     }
 }

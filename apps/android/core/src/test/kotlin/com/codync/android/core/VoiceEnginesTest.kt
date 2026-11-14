@@ -106,14 +106,14 @@ class VoiceEnginesTest {
     }
 
     /** The computer's side of a call, for the engines' tests: one session, tools answered here. */
-    private class Link(val credential: String = "ek_secret", val googleSearch: Boolean? = null) : CallLink {
+    private class Link(val credential: String = "ek_secret", val confirmsSearch: Boolean? = null) : CallLink {
         val tools = mutableListOf<Pair<String, JsonObject>>(); val lines = mutableListOf<Pair<String, String>>(); var turns = 0
-        var started: Triple<VoiceProvider, String, String>? = null; var starts = 0
-        override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession {
-            started = Triple(provider, model, voice); starts++
+        var started: Triple<VoiceProvider, String, String>? = null; var starts = 0; var askedSearch: Boolean? = null
+        override suspend fun start(provider: VoiceProvider, model: String, voice: String, googleSearch: Boolean): CallSession {
+            started = Triple(provider, model, voice); starts++; askedSearch = googleSearch
             return CallSession.decode(Json.parseToJsonElement("""{"credential":"$credential","instructions":"You are the voice relay for Ada",
                 "tools":[{"name":"send_to_bot","description":"Send","parameters":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}},
-                {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject).copy(googleSearch = googleSearch == true)
+                {"name":"bot_status","description":"Status","parameters":{"type":"object","properties":{}}}]}""").jsonObject).copy(googleSearch = confirmsSearch == true)
         }
         override suspend fun tool(name: String, arguments: JsonObject): JsonElement {
             tools += name to arguments
@@ -328,11 +328,13 @@ class VoiceEnginesTest {
         override suspend fun close() { closed++ }
     }
 
-    @Test fun geminiLiveSetsUpTalksAndRunsToolsOverTheSocket() = geminiLiveWithSearch(null)
-    @Test fun geminiLiveSearchKeepsTheBotTools() = geminiLiveWithSearch(true)
-    @Test fun geminiLiveSearchStaysOffWhenDisabled() = geminiLiveWithSearch(false)
+    @Test fun geminiLiveSetsUpTalksAndRunsToolsOverTheSocket() = geminiLiveWithSearch(null, asked = false)
+    @Test fun geminiLiveSearchKeepsTheBotTools() = geminiLiveWithSearch(true, asked = true)
+    @Test fun geminiLiveSearchStaysOffWhenDisabled() = geminiLiveWithSearch(false, asked = true)
+    @Test fun geminiLiveSearchStaysOffOnAnOlderHost() = geminiLiveWithSearch(null, asked = true)
 
-    private fun geminiLiveWithSearch(googleSearch: Boolean?) = runBlocking {
+    /** `googleSearch`: the computer's answer; `asked`: the search choice the engine is built with. */
+    private fun geminiLiveWithSearch(googleSearch: Boolean?, asked: Boolean) = runBlocking {
         val inbound = LinkedBlockingQueue<JsonObject>(); var server: WebSocket? = null
         val opened = CompletableDeferred<Unit>()
         MockWebServer().use { mock ->
@@ -344,7 +346,7 @@ class VoiceEnginesTest {
             val scope = CoroutineScope(SupervisorJob() + dispatcher)
             val mic = Mic(); val player = Player(); val link = Link("token/1", googleSearch)
             val endpoint = mock.url("/live").toString().replace("http://", "ws://")
-            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player,
+            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", asked, link, mic, player,
                 OkHttpClient(), endpoint)
             fun next() = requireNotNull(inbound.poll(5, TimeUnit.SECONDS)) { "Nothing arrived" }
             suspend fun until(check: (VoiceState) -> Boolean) = withTimeout(5_000) { engine.state.first(check) }
@@ -353,6 +355,7 @@ class VoiceEnginesTest {
             val setup = next()["setup"]!!.jsonObject
             assertEquals("models/gemini-live-test", setup["model"]!!.jsonPrimitive.content)
             assertEquals("Puck", setup["generationConfig"]!!.jsonObject["speechConfig"]!!.jsonObject["voiceConfig"]!!.jsonObject["prebuiltVoiceConfig"]!!.jsonObject["voiceName"]!!.jsonPrimitive.content)
+            assertEquals(asked, link.askedSearch)
             assertEquals(googleSearch == true, setup["tools"]!!.jsonArray.any { "googleSearch" in it.jsonObject })
             assertEquals(2, setup["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray.size)
             assertEquals("You are the voice relay for Ada", setup["systemInstruction"]!!.jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
@@ -369,7 +372,10 @@ class VoiceEnginesTest {
             server!!.send("""{"serverContent":{"groundingMetadata":{"searchEntryPoint":{"renderedContent":"<p>Search suggestions</p>"}},"turnComplete":true}}""")
             until { it.searchResult != null }
             assertEquals(CallSearchResult("<p>Search suggestions</p>", "A grounded answer."), engine.state.value.searchResult)
-            server!!.send("""{"serverContent":{"outputTranscription":{"text":"Another answer"},"turnComplete":true}}""")
+            server!!.send("""{"serverContent":{"outputTranscription":{"text":" Late piece."}}}""")
+            until { it.searchResult?.text == "A grounded answer. Late piece." }
+            assertEquals("<p>Search suggestions</p>", engine.state.value.searchResult?.html)
+            server!!.send("""{"serverContent":{"modelTurn":{"parts":[]},"outputTranscription":{"text":"Another answer"},"turnComplete":true}}""")
             until { it.searchResult == null }
 
             assertEquals("audio/pcm;rate=16000", next()["realtimeInput"]!!.jsonObject["audio"]!!.jsonObject["mimeType"]!!.jsonPrimitive.content)
@@ -407,7 +413,7 @@ class VoiceEnginesTest {
             val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
             val scope = CoroutineScope(SupervisorJob() + dispatcher)
             val mic = Mic(); val player = Player(); val link = Link("token")
-            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", link, mic, player, OkHttpClient(),
+            val engine = GeminiLiveEngine(scope, VoiceSettings(), "gemini-live-test", "Puck", false, link, mic, player, OkHttpClient(),
                 mock.url("/live").toString().replace("http://", "ws://"))
             var stalls = 0
             engine.onStall = { stalls++ }

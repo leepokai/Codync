@@ -129,7 +129,7 @@ struct CallView: View {
             let voice = VoiceSettings.voice(provider)
             engine = switch provider {
             case .openAI: OpenAIRealtimeEngine(model: chosen, voice: voice, link: link)
-            case .gemini: GeminiLiveEngine(model: chosen, voice: voice, link: link)
+            case .gemini: GeminiLiveEngine(model: chosen, voice: voice, googleSearch: VoiceSettings.googleSearch, link: link)
             }
             cloudStartedAt = .now
         } else {

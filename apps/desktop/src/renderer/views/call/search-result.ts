@@ -1,21 +1,23 @@
 /** One grounded answer, held only while the call is open. Suggestions are Google's original HTML. */
 export interface SearchResult { html: string; text: string }
 
-/** Joins independently streamed transcription and grounding metadata for the same model turn. */
+/** Joins transcription and grounding metadata for the same model turn. Transcription is not ordered with the other
+ * server messages, so a piece that arrives after `turnComplete` still belongs to that turn: only the next turn's
+ * model content starts a new one. */
 export class SearchTurn {
   result: SearchResult | null = null
   private text = ''
   private html: string | null = null
-  private complete = true
+  private complete = false
 
   receive(content: Record<string, any>): SearchResult | null {
     const text = content.outputTranscription?.text
     const html = content.groundingMetadata?.searchEntryPoint?.renderedContent
-    if (typeof text === 'string' || typeof html === 'string') {
-      if (this.complete) { this.text = ''; this.html = null }
-      this.complete = false
-      if (typeof text === 'string') this.text += text
-      if (typeof html === 'string' && html.trim()) this.html = html
+    const next = this.complete && content.modelTurn != null
+    if (next) { this.text = ''; this.html = null; this.complete = false }
+    if (typeof text === 'string') this.text += text
+    if (typeof html === 'string' && html.trim()) this.html = html
+    if (next || typeof text === 'string' || typeof html === 'string') {
       this.result = this.html ? { html: this.html, text: this.text } : null
     }
     if (content.turnComplete === true || content.interrupted === true) this.complete = true

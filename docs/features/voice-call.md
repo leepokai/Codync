@@ -227,12 +227,14 @@ before setup completes. Closing settings during a call replaces the engine, so
 both enabling and disabling take effect without hanging up. Speech, dictation and OpenAI are unaffected.
 The terminal has no live audio engine or voice settings, so there is no corresponding terminal switch.
 
-The host advertises `googleSearch` in `voiceStatus`; clients hide the switch when it is absent or false and ignore
-a saved opt-in for that host. The client requests `googleSearch` on `startCall`; the host acknowledges it only for Gemini realtime, includes the
-public-search exception in its instructions, and returns `googleSearch`. The Gemini engines append `googleSearch: {}`
-alongside their existing function declarations only when the host confirms it. Older clients omit the option and
-keep search off; a new client keeps Gemini voice working without search on an older host.
-A provider reconnect obtains a fresh acknowledged configuration. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
+The host advertises `googleSearch` in `voiceStatus`; clients hide the switch when it is absent or false. The Gemini
+engine is built with the saved choice and requests `googleSearch` on `startCall`; the host acknowledges it only for
+Gemini realtime, includes the public-search exception in its instructions, and returns `googleSearch`. The Gemini
+engines append `googleSearch: {}` alongside their existing function declarations only when the host confirms it.
+Older clients omit the option and keep search off; an older host ignores the request and omits the field, so Gemini
+voice keeps working without search. A provider reconnect obtains a fresh acknowledged configuration. Transcription
+isn't ordered with Google's other messages, so a piece that arrives after `turnComplete` stays with its answer; the
+next model turn starts a new one. When Google returns `groundingMetadata.searchEntryPoint.renderedContent`,
 clients display its original suggestions next to that answer's transcription under the call bar. The HTML is held
 only in the engine's memory and cleared on replacement or end; it never enters chat, memory, analytics or disk.
 The embedded document disables JavaScript, storage, forms and background network access; HTTP(S) links open directly

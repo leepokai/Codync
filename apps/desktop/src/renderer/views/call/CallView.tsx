@@ -129,7 +129,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
       next =
         provider === 'openai'
           ? new OpenAIRealtimeEngine(model, voice, call)
-          : new GeminiLiveEngine(model, voice, call)
+          : new GeminiLiveEngine(model, voice, VoiceSettings.googleSearch(provider), call)
       cloudStartedAt.current = Date.now()
       engineName.current = provider
     } else {

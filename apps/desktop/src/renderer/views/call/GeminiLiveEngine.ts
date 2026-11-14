@@ -61,13 +61,16 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   private model: string
   private voice: string
+  /** Asks the computer for Google's built-in search; it's on only when the computer's session confirms it. */
+  private googleSearch: boolean
   private link: CallLink
   private ports: GeminiPorts
 
-  constructor(model: string, voice: string, link: CallLink, ports: GeminiPorts = browserPorts) {
+  constructor(model: string, voice: string, googleSearch: boolean, link: CallLink, ports: GeminiPorts = browserPorts) {
     super()
     this.model = model
     this.voice = voice
+    this.googleSearch = googleSearch
     this.link = link
     this.ports = ports
   }
@@ -78,11 +81,10 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   private async connect() {
     try {
-      const session = await this.link.start('realtime', 'gemini', this.model, this.voice)
+      const session = await this.link.start('realtime', 'gemini', this.model, this.voice, this.googleSearch)
       if (this.ended) return
       if (!session.credential) throw new Error(trNow('Gemini sent no session credential.'))
-      this.searchTurn = new SearchTurn()
-      this.searchResult = null
+      this.clearSearch()
       this.session = session
       const socket = this.ports.socket(`${URL_BASE}?access_token=${encodeURIComponent(session.credential)}`)
       this.socket = socket
@@ -127,8 +129,7 @@ export class GeminiLiveEngine extends VoiceEngine {
 
   end() {
     this.ended = true
-    this.searchResult = null
-    this.searchTurn = new SearchTurn()
+    this.clearSearch()
     this.onActivityChanged?.(false)
     const socket = this.socket
     this.socket = null
@@ -141,6 +142,14 @@ export class GeminiLiveEngine extends VoiceEngine {
     this.output?.close()
     this.output = null
   }
+  /** Search suggestions belong to one session's answers. */
+  private clearSearch() {
+    this.searchTurn = new SearchTurn()
+    if (this.searchResult === null) return
+    this.searchResult = null
+    this.changed()
+  }
+
 
   protected mutedChanged(on: boolean) {
     this.level = 0

@@ -366,18 +366,10 @@ public extension HostClient {
             var botId, callId, mode: String; var provider, model, voice, language: String?
             var googleSearch: Bool
         }
-        var requestedSearch = false
-        if googleSearch && mode == "realtime" && provider == .gemini {
-            requestedSearch = try await voiceStatus().googleSearch == true
-        }
         let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
-                        language: language, googleSearch: requestedSearch)
+                        language: language, googleSearch: googleSearch)
         let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
-        let session = try CallSession(json: data)
-        if requestedSearch && !session.googleSearch {
-            throw HostError.http(0, "Update Codync on the computer to use Google Search in calls.")
-        }
-        return session
+        return try CallSession(json: data)
     }
 
     /// Runs one of the voice's tool calls on the computer, with what was said that it hasn't got yet (`lines`);

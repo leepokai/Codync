@@ -2,14 +2,24 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SearchTurn, searchLink } from './search-result.ts'
 
+const audio = { modelTurn: { parts: [] } }
+
 test('grounding can precede transcription and never carries suggestions into a later plain answer', () => {
   const turn = new SearchTurn()
   assert.equal(turn.receive({ turnComplete: true }), null)
   const html = '<p>Original suggestions</p>'
-  assert.deepEqual(turn.receive({ groundingMetadata: { searchEntryPoint: { renderedContent: html } } }), { html, text: '' })
+  assert.deepEqual(turn.receive({ ...audio, groundingMetadata: { searchEntryPoint: { renderedContent: html } } }), { html, text: '' })
   assert.deepEqual(turn.receive({ outputTranscription: { text: 'One' } }), { html, text: 'One' })
   assert.deepEqual(turn.receive({ outputTranscription: { text: ' answer.' }, turnComplete: true }), { html, text: 'One answer.' })
-  assert.equal(turn.receive({ outputTranscription: { text: 'No search in this turn.' } }), null)
+  assert.equal(turn.receive({ ...audio, outputTranscription: { text: 'No search in this turn.' } }), null)
+})
+
+test('transcription that arrives after turnComplete stays with its turn and keeps the suggestions', () => {
+  const turn = new SearchTurn()
+  const html = '<p>Original suggestions</p>'
+  turn.receive({ ...audio, groundingMetadata: { searchEntryPoint: { renderedContent: html } }, turnComplete: true })
+  assert.deepEqual(turn.receive({ outputTranscription: { text: 'Late piece.' } }), { html, text: 'Late piece.' })
+  assert.equal(turn.receive({ ...audio, outputTranscription: { text: 'Next turn.' } }), null)
 })
 
 test('search links can only open explicit HTTP or HTTPS destinations', () => {

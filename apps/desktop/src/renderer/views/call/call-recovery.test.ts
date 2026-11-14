@@ -66,15 +66,18 @@ const until = async (condition: () => boolean, ms = 2000) => {
   return condition()
 }
 
-function call(googleSearch?: boolean) {
+/** `confirmed`: the computer's `googleSearch` answer; `asked`: the search choice the engine is built with. */
+function call(confirmed?: boolean, asked = confirmed === true) {
   const sockets: FakeSocket[] = []
   const plays: (() => void)[] = []
+  const searchAsks: unknown[] = []
   let mic: ((pcm: Int16Array, level: number) => void) | null = null
   let starts = 0
   const link = {
-    start: async () => {
+    start: async (...args: unknown[]) => {
       starts++
-      return { credential: `token-${starts}`, instructions: 'Be the relay.', tools: [], googleSearch }
+      searchAsks.push(args[4])
+      return { credential: `token-${starts}`, instructions: 'Be the relay.', tools: [], googleSearch: confirmed }
     },
     add() {},
     endTurn() {},
@@ -102,11 +105,12 @@ function call(googleSearch?: boolean) {
       close() {},
     }),
   }
-  const engine = new GeminiLiveEngine('gemini-live', 'Kore', link as never, ports)
+  const engine = new GeminiLiveEngine('gemini-live', 'Kore', asked, link as never, ports)
   return {
     engine,
     sockets,
     plays,
+    searchAsks,
     get starts() {
       return starts
     },
@@ -129,18 +133,19 @@ async function ready(c: ReturnType<typeof call>) {
   assert.equal(c.engine.phase, 'listening')
 }
 
-test('Gemini only enables built-in search when the host confirms it, including replacement sessions', async () => {
-  for (const enabled of [undefined, false, true]) {
-    const c = call(enabled)
+test('Gemini asks for built-in search as chosen and enables it only when the host confirms it, including replacement sessions', async () => {
+  for (const [confirmed, asked] of [[undefined, false], [undefined, true], [false, true], [true, true]] as const) {
+    const c = call(confirmed, asked)
     try {
       await ready(c)
       const tools = c.last().of('setup')[0]!.setup.tools
-      assert.equal(tools.some((tool: Record<string, unknown>) => 'googleSearch' in tool), enabled === true)
+      assert.equal(tools.some((tool: Record<string, unknown>) => 'googleSearch' in tool), confirmed === true)
       assert.deepEqual(tools[0], { functionDeclarations: [] })
       c.last().play({ goAway: { timeLeft: '1s' } })
       assert.ok(await until(() => c.sockets.length === 2))
       c.last().open()
       assert.deepEqual(c.last().of('setup')[0]!.setup.tools, tools)
+      assert.deepEqual(c.searchAsks, [asked, asked])
     } finally {
       c.engine.end()
     }
@@ -155,7 +160,7 @@ test('Gemini surfaces original search suggestions beside the matching answer and
   const html = '<a href="https://www.google.com/search?q=test">Search</a>'
   c.last().play({ serverContent: { groundingMetadata: { searchEntryPoint: { renderedContent: html } }, turnComplete: true } })
   assert.deepEqual(c.engine.searchResult, { html, text: 'The answer.' })
-  c.last().play({ serverContent: { outputTranscription: { text: 'A different answer.' }, turnComplete: true } })
+  c.last().play({ serverContent: { modelTurn: { parts: [] }, outputTranscription: { text: 'A different answer.' }, turnComplete: true } })
   assert.equal(c.engine.searchResult, null)
   c.engine.end()
   assert.equal(c.engine.searchResult, null)

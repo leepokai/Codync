@@ -7,7 +7,7 @@ import Foundation
 public struct CallSession: Sendable {
     /// A realtime provider's short-lived credential.
     public var credential: String?
-    /// Confirmed by the host; false when talking to an older host.
+    /// Google's built-in search is on for this session (the computer added it to the role); false from older hosts.
     public var googleSearch: Bool
     /// The voice's instructions: its role, then the background.
     public var instructions: String

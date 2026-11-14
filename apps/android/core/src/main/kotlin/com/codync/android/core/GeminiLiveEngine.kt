@@ -22,6 +22,8 @@ import okio.ByteString
  * the server ends (`goAway`) is resumed with a fresh one, and a dropped one is tried again.
  */
 class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private val model: String, private val voice: String,
+    /** Asks the computer for Google's built-in search; it's on only when the computer's session confirms it. */
+    private val googleSearch: Boolean,
     private val link: CallLink,
     private val mic: MicSource, private val player: PcmPlayer, private val http: OkHttpClient,
     private val endpoint: String = ENDPOINT,
@@ -81,7 +83,7 @@ class GeminiLiveEngine(parent: CoroutineScope, settings: VoiceSettings, private 
     }
 
     private suspend fun connect() {
-        val session = try { link.start(VoiceProvider.Gemini, model, voice) } catch (error: Exception) {
+        val session = try { link.start(VoiceProvider.Gemini, model, voice, googleSearch) } catch (error: Exception) {
             // Starting fails over; mid-call, the computer or Google may be back in a moment.
             if (connected) return dropped(error.message.orEmpty()) else throw error
         }

@@ -2098,5 +2098,6 @@
   "Couldn't open the link.": "リンクを開けませんでした。",
   "Server": "サーバー",
   "Your own server works in Speech mode only.": "自分のサーバーではスピーチモードのみ使えます。",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "スピーチモード用の OpenAI 互換サーバー：https、またはこのコンピュータ上の http。空欄なら OpenAI を使います。"
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "スピーチモード用の OpenAI 互換サーバー：https、またはこのコンピュータ上の http。空欄なら OpenAI を使います。",
+  "Select Text": "テキストを選択"
 }

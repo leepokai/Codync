@@ -50,6 +50,7 @@ MAP = {
     "bubble.left.and.bubble.right.fill": "forum+",
     "calendar": "calendar_today",
     "camera.fill": "photo_camera+",
+    "character.cursor.ibeam": "text_select_start",
     "chart.bar": "bar_chart",
     "chart.bar.doc.horizontal": "lab_profile",
     "checklist": "checklist",

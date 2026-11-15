@@ -1,7 +1,7 @@
 import { FileDownloadCard, VoiceNotePlayer } from './FileDownloadCard'
 import { ArtifactCard } from '../library/ArtifactCard'
 import { memo, useRef, useState } from 'react'
-import { groupBotReactions, isGroup, isReplyable, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
+import { groupBotReactions, isGroup, isReplyable, quoteOf, voiceNoteOf, type Bot, type Entry, type ReplyQuote, type SharedFile } from '@shared/models'
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -18,6 +18,7 @@ import { copyMessageText, messageCopyItems, type MessageMenu } from './use-image
 import { callLength, relativeTime } from './chat-items'
 import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
+import { canReplyToPart, useSelectedPart } from './selected-part'
 import { DecisionCard } from './DecisionCard'
 import { PermissionCard } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
@@ -33,25 +34,27 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   groupStart: boolean
   chat: Bot | null
   openTrace: () => void
-  /** Quotes this message in the composer; absent where the computer can't take replies. */
-  onReply?: (e: Entry) => void
+  /** Quotes this message in the composer, or the part of it that is selected; absent where the computer can't take replies. */
+  onReply?: (quote: ReplyQuote) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
   openAgent?: (botId: string) => void
   /** Opens an artifact card's artifact over the chat. */
   openArtifact?: (artifactId: string) => void
 }) {
-  const reply = onReply && isReplyable(entry) ? () => onReply(entry) : undefined
+  const store = useStore()
+  const selected = useSelectedPart()
+  const reply = onReply && isReplyable(entry) ? () => onReply(quoteOf(entry, canReplyToPart(store.hostVersion?.version) ? selected.part() : '')) : undefined
   switch (entry.kind) {
     case 'user':
       return (
-        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
+        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
           <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
     case 'agent':
       return (
-        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'}>
+        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
           <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>

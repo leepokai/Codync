@@ -2098,5 +2098,6 @@
   "Couldn't open the link.": "No se pudo abrir el enlace.",
   "Server": "Servidor",
   "Your own server works in Speech mode only.": "Tu propio servidor solo funciona en el modo Habla.",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "Un servidor compatible con OpenAI para el modo Habla: https, o http en este ordenador. Vacío usa OpenAI."
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "Un servidor compatible con OpenAI para el modo Habla: https, o http en este ordenador. Vacío usa OpenAI.",
+  "Select Text": "Seleccionar texto"
 }

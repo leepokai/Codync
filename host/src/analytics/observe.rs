@@ -111,6 +111,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "send" => {
             let reply = b["replyTo"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("reply".into(), reply.into());
+            // A reply to a part of the message the user selected.
+            p.insert(
+                "replyPart".into(),
+                (reply && b["replyPart"].as_str().is_some_and(|t| !t.trim().is_empty())).into(),
+            );
             p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
             Event::MessageSent
         }

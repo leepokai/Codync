@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
+import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -55,7 +55,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
-  const [replyTo, setReplyTo] = useState<Entry | null>(null)
+  const [replyTo, setReplyTo] = useState<ReplyQuote | null>(null)
   const cancelReply = useCallback(() => setReplyTo(null), [])
   const [botChat, setBotChat] = useState<string | null>(null)
   /** The voice call whose conversation is open (its line's entry id). */
@@ -300,7 +300,7 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -437,7 +437,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   )
 })
 
-function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   if (item.kind === 'separator') {
     return <TimeSeparator date={item.date} />
   }

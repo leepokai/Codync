@@ -7,7 +7,7 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.0
+## 2.48.1
 ### zh-Hant
 - Bot 會把比較久的工作交給背景進行，聊天不會被占住，可以繼續傳訊息。輸入框上方會顯示「背景」和進度，點一下看它做了什麼，也可以停止。
 - 背景工作需要核准時，卡片會出現在聊天裡並標示「背景」。
@@ -23,6 +23,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 例行任務會記住上次做到哪裡，下次接著做。
 - Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 - 語音通話設定會顯示電腦的 OpenAI 引擎使用的「伺服器」；使用自有伺服器時，模式固定為語音識別。
+- 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好後點「回覆」。
 
 ### en-US
 - Bots do long work in the background, so the chat stays free and keeps answering. A capsule above the message box shows what it is doing; tap it for details, or stop it.
@@ -37,3 +38,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Routines resume where the last run stopped.
 - Optional Google Search in Gemini realtime calls, off by default.
 - Voice chat settings show the Server your computer's OpenAI engine uses; with your own, Mode stays on Speech.
+- Reply to one part of a message: hold it, choose Select Text, select, then Reply.

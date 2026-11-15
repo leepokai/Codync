@@ -19,7 +19,11 @@ fn observed_events_carry_no_content() {
     let b = json!({"botId": "b1", "text": "secret plan", "replyTo": "e1", "attachments": ["u1", "u2"]});
     let (event, p) = props("send", &b).expect("send is tracked");
     assert_eq!(event, Event::MessageSent);
-    assert_eq!(p, json!({"reply": true, "attachments": 2, "client": "local"}));
+    assert_eq!(p, json!({"reply": true, "replyPart": false, "attachments": 2, "client": "local"}));
+    assert!(!p.to_string().contains("secret"));
+    let part = json!({"botId": "b1", "text": "why?", "replyTo": "e1", "replyPart": "the secret step"});
+    let (_, p) = props("send", &part).expect("send is tracked");
+    assert_eq!(p["replyPart"], true);
     assert!(!p.to_string().contains("secret"));
 
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});

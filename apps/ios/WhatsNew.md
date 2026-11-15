@@ -6,7 +6,7 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.0
+## 2.48.1
 ### zh-Hant
 - Bot 會把比較久的工作交給背景進行：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。輸入框上方會顯示「背景」和目前的進度與時間，點一下可以看它做了什麼，也可以停止（已經改的內容會留著）。
 - 背景工作需要你核准時，卡片會出現在聊天裡並標示「背景」，照平常的方式回答就好。
@@ -22,6 +22,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 例行任務會記住上次做到哪裡，分批進行的工作下次會接著做。
 - Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 - 語音通話設定的 OpenAI 區塊會顯示電腦目前使用的「伺服器」：OpenAI，或你在電腦上設定的自有語音伺服器。使用自有伺服器時，模式固定為語音識別。
+- 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好文字後在選單點「回覆」，Bot 會知道你問的是哪一段。
 
 ### en-US
 - Bots do long work in the background: the chat stays free, so you can keep writing and the bot keeps answering. A capsule above the message box shows "In the background", what it is doing and for how long; tap it to see what it did, or stop it (what it already changed stays).
@@ -38,3 +39,4 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - A routine remembers where its last run stopped, so work done in parts carries on from there.
 - Optional Google Search in Gemini realtime calls, off by default.
 - Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or a speech server of your own set on the computer. With your own server, Mode stays on Speech.
+- Reply to one part of a message: touch and hold it, choose Select Text, select the words, then Reply. The bot is told which part you mean.

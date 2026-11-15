@@ -274,6 +274,14 @@ public final class BotStore {
 
     static let queueActionsHost = "2.39.0"
 
+    /// From host 2.48.1 a reply can quote a part of a message (`send`'s `replyPart`); an older host drops the part
+    /// and quotes the whole message, so its messages offer no Select Text.
+    public var supportsReplyPart: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.replyPartHost) } ?? false
+    }
+
+    static let replyPartHost = "2.48.1"
+
     static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).

@@ -112,12 +112,18 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
     public var author: String
     public var text: String
     public var artifact: String?
+    /// The reply answers the part of the message the user selected, which `text` then is.
+    public var part: Bool?
 
-    public init(id: String, author: String, text: String, artifact: String? = nil) {
+    /// The selected part, as `send` takes it beside the message's id.
+    public var selectedPart: String? { part == true ? text : nil }
+
+    public init(id: String, author: String, text: String, artifact: String? = nil, part: Bool? = nil) {
         self.id = id
         self.author = author
         self.text = text
         self.artifact = artifact
+        self.part = part
     }
 
     public init(from decoder: any Decoder) throws {
@@ -126,6 +132,7 @@ public struct ReplyQuote: Codable, Hashable, Sendable {
         author = try c.decodeIfPresent(String.self, forKey: .author) ?? ""
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
         artifact = try c.decodeIfPresent(String.self, forKey: .artifact)
+        part = try c.decodeIfPresent(Bool.self, forKey: .part)
     }
 }
 

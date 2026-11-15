@@ -99,10 +99,13 @@ import kotlinx.coroutines.delay
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    // The message the composer quotes, until it sends or this chat closes.
+    // The message the composer quotes, and the part of it the user selected (null: all of it), until it sends or this chat closes.
     var replyId by rememberSaveable(bot.id) { mutableStateOf<String?>(null) }
-    val replyTo = state.entries.firstOrNull { it.id == replyId && it.botId == bot.id }?.replyQuote
-    val reply = { entry: Entry -> replyId = entry.id }
+    var replyPart by rememberSaveable(bot.id) { mutableStateOf<String?>(null) }
+    val replyTo = state.entries.firstOrNull { it.id == replyId && it.botId == bot.id }?.replyQuote(replyPart)
+    val reply = { entry: Entry, part: String? -> replyId = entry.id; replyPart = part }
+    // The message whose text is open to select a part of.
+    var selecting by remember(bot.id) { mutableStateOf<Entry?>(null) }
     // The chat ignores Full conversation over it: it stays put underneath.
     val chatState = state.copy(trace = false)
     // Find in the conversation: null while its bar is closed; each step bumps `findStep` to bring the match into view.
@@ -157,12 +160,12 @@ import kotlinx.coroutines.delay
             // An artifact's viewer has its own box for the same draft; two would overwrite each other.
             else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
                 onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
-                replyTo = replyTo, cancelReply = { replyId = null },
+                replyTo = replyTo, cancelReply = { replyId = null; replyPart = null },
                 queued = queuedMessages(state.chatEntries(bot), bot.isWorking))
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
-            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = reply,
+            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = { reply(it, null) }, selectText = { selecting = it },
             addFallback = { details = DetailsRequest(botId = it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
             found = shown?.id, findStep = findStep) { peer = it }
     }
@@ -182,6 +185,7 @@ import kotlinx.coroutines.delay
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
     }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
+    CodyncSheet(selecting, { selecting = null }) { entry -> SelectTextSheet(entry.text) { selecting = null; reply(entry, it) } }
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
     CodyncSheet(tasksOpen, { tasksOpen = false }) { TasksSheet(bot, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
@@ -290,7 +294,7 @@ private fun AppState.chatItems(bot: Bot) =
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
-    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
+    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, selectText: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
     openCall: (String) -> Unit, found: String?, findStep: Int, openPeer: (String) -> Unit) {
     val entries = state.chatEntries(bot)
     val items = state.chatItems(bot)
@@ -337,7 +341,8 @@ private fun AppState.chatItems(bot: Bot) =
                     }
                     else ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) },
                         // An update card takes the composer's place, so there's nothing to reply with.
-                        reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null, connect = connect,
+                        reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null,
+                        selectText = if (state.supportsReplyPart) { { selectText(item.entry) } } else null, connect = connect,
                         addFallback = addFallback, openArtifact = openArtifact)
                 }
                 is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)

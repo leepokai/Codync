@@ -61,6 +61,16 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
                           artifact: data.artifact?.id)
     }
 
+    /// The quote of a part the user selected in this message. An empty part, or an artifact card, quotes the whole message.
+    public func replyQuote(part: String) -> ReplyQuote {
+        var quote = replyQuote
+        let part = part.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !part.isEmpty, quote.artifact == nil else { return quote }
+        quote.text = String(part.prefix(4000))
+        quote.part = true
+        return quote
+    }
+
     public var date: Date { Date(milliseconds: createdAt) }
 }
 

@@ -39,6 +39,7 @@ import androidx.annotation.DrawableRes
     "bubble.left.and.bubble.right.fill" -> R.drawable.sf_bubble_left_and_bubble_right_fill
     "calendar" -> R.drawable.sf_calendar
     "camera.fill" -> R.drawable.sf_camera_fill
+    "character.cursor.ibeam" -> R.drawable.sf_character_cursor_ibeam
     "chart.bar" -> R.drawable.sf_chart_bar
     "chart.bar.doc.horizontal" -> R.drawable.sf_chart_bar_doc_horizontal
     "checklist" -> R.drawable.sf_checklist

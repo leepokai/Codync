@@ -103,6 +103,18 @@ pub fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Kills process `pid` at once.
+#[allow(dead_code, reason = "only tests that leave a process of their own use it")]
+pub fn kill(pid: &str) {
+    let mut command = Command::new(if cfg!(windows) { "taskkill" } else { "kill" });
+    if cfg!(windows) {
+        command.args(["/F", "/PID", pid])
+    } else {
+        command.args(["-KILL", pid])
+    };
+    command.status().unwrap();
+}
+
 /// Waits until `done` holds, checking every 100 ms; fails naming `what` after `within`.
 #[allow(dead_code, reason = "only some tests wait this way")]
 pub async fn eventually(what: &str, within: Duration, mut done: impl AsyncFnMut() -> bool) {

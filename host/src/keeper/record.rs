@@ -16,6 +16,9 @@ pub const GEMINI: &str = "https://generativelanguage.googleapis.com";
 pub struct Record {
     /// Every request through a grant goes here (its path, then the client's): `https://`, no query or user.
     pub upstream: String,
+    /// Connector connection revision: changing it retires grants even within the same origin.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub auth_revision: String,
     /// Added to every request, replacing whatever the client sent under these names (lowercase).
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
@@ -69,7 +72,13 @@ pub struct Keep {
 impl Record {
     /// `headers` sent to `upstream`.
     pub fn new(upstream: &str, headers: BTreeMap<String, String>) -> Self {
-        Self { upstream: upstream.to_owned(), headers, strip_query: Vec::new(), oauth: None }
+        Self {
+            upstream: upstream.to_owned(),
+            auth_revision: String::new(),
+            headers,
+            strip_query: Vec::new(),
+            oauth: None,
+        }
     }
 
     /// A key sent to `upstream` as one header.
@@ -150,6 +159,16 @@ pub fn upstream(raw: &str) -> Result<reqwest::Url> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn older_records_keep_their_wire_format_until_a_revision_is_set() {
+        let old = serde_json::json!({"upstream":"https://example.com", "headers":{"x-key":"key"}});
+        let mut record: Record = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(record.auth_revision, "");
+        assert_eq!(serde_json::to_value(&record).unwrap(), old);
+        record.auth_revision = "after".into();
+        let saved: Record = serde_json::from_value(serde_json::to_value(&record).unwrap()).unwrap();
+        assert_eq!(saved.auth_revision, "after");
+    }
     #[test]
     fn upstreams_are_plain_https() {
         assert!(upstream("https://api.openai.com/v1").is_ok());

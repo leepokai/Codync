@@ -1,5 +1,6 @@
 //! A remote connector behind a local stdio MCP server, with the sign-in the host gives it.
 
+use crate::LockExt;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -11,7 +12,7 @@ use tokio::sync::mpsc;
 /// HTTP, and falls back to the older HTTP+SSE transport when the server doesn't.
 pub async fn serve_remote(connector: String, port: u16) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
-    let remote = Remote { port, token: token.trim().to_owned(), connector };
+    let remote = Remote { port, token: token.trim().to_owned(), connector, endpoint: std::sync::Mutex::new(None) };
     // Both transports answer through one writer: the SSE one answers from its own stream.
     let (tx, mut rx) = mpsc::unbounded_channel::<Value>();
     let writer = tokio::spawn(async move {
@@ -72,6 +73,15 @@ struct Remote {
     port: u16,
     token: String,
     connector: String,
+    // Sessions and legacy posting endpoints belong to the first connection this proxy used.
+    endpoint: std::sync::Mutex<Option<Connection>>,
+}
+
+/// The connector's saved URL and connection revision, from the host's target.
+#[derive(PartialEq)]
+struct Connection {
+    url: String,
+    revision: String,
 }
 
 /// Where messages go on the older transport: a URL, or, on a Codync Cloud computer, a path under each exchange's
@@ -122,6 +132,17 @@ impl Remote {
         let target: Value = res.json().await?;
         if !ok {
             anyhow::bail!("{}", target["error"].as_str().unwrap_or("the Codync host refused"));
+        }
+        let text = |key: &str| {
+            target[key].as_str().map(str::to_owned).ok_or_else(|| anyhow::anyhow!("the Codync host sent no {key}"))
+        };
+        let connection = Connection { url: text("connectorUrl")?, revision: text("authRevision")? };
+        {
+            let mut endpoint = self.endpoint.locked();
+            if endpoint.as_ref().is_some_and(|original| *original != connection) {
+                anyhow::bail!("The connector connection settings changed. Restart its tools before continuing.");
+            }
+            *endpoint = Some(connection);
         }
         let mut headers = reqwest::header::HeaderMap::new();
         for (k, v) in target["headers"].as_object().into_iter().flatten() {
@@ -315,6 +336,10 @@ fn sse_data(event: &str) -> Option<Value> {
 }
 
 #[cfg(test)]
+#[path = "remote_update_tests.rs"]
+mod update_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -339,3 +364,7 @@ mod tests {
         assert!(sse_data(": ping\n\n").is_none());
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "remote_managed_tests.rs"]
+mod managed_tests;

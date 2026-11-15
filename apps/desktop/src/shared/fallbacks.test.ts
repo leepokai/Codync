@@ -55,6 +55,18 @@ test('the banner names the fallback, and when the own agent is back if it says',
   assert.equal(stepBanner(onProfile, called, now), "Using Claude Code (Work) while Claude Code (Default login profile) can't answer")
 })
 
+test('only a usage limit gives the banner a reset time; other rests name their reason (#444)', () => {
+  const step = { step: 1, agent: 'codex', model: null, since: now, reason: 'signedOut' }
+  const called = (login: { backend: string }) => name(login.backend)
+  const resting = (reason: string) =>
+    normalizeBot({ id: 'b', backend: 'claude', agentStep: step, resting: [{ agent: 'claude', until: at3, reason }] })
+  assert.equal(stepBanner(resting('usageLimit'), called, now), `Using Codex until Claude Code resets at ${time(at3)}`)
+  for (const reason of ['signedOut', 'rateLimited', 'outOfCredits', 'overloaded', 'notStarting']) {
+    assert.doesNotMatch(stepBanner(resting(reason), called, now) ?? '', /resets/, reason)
+  }
+  assert.equal(stepBanner(resting('signedOut'), called, now), 'Using Codex while Claude Code is signed out')
+})
+
 test('fallbacks move within the list', () => {
   const f = (backend: string) => ({ backend, model: null, modelOptions: {} })
   const list = [f('codex'), f('gemini'), f('grok')]

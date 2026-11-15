@@ -18,10 +18,11 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 可以只回覆訊息的其中一段：長按訊息選「選取文字」。
 - 開始 OpenAI 即時語音通話或遠端螢幕時，App 不會再關閉。
 - 選擇卡片可以直接打字回答。
+- 改用備援時，智慧體卡片會說明原因，只有用量上限才顯示重設時間。
 
 ### en-US
 - Bots do long work in the background and keep answering.
-- Tap the capsule over the message box for Details: Threads (running) and Event box (waiting: First, Cut in, Drop).
+- The capsule over the message box opens Details: Threads and Event box.
 - Its approval cards appear in the chat.
 - Agents at once is in the bot's Settings.
 - Share text, links, photos or files to a bot from any app.
@@ -29,3 +30,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Reply to one part of a message.
 - OpenAI calls and remote screen no longer close the app.
 - Choice cards take your own answer.
+- On a fallback, the Agent card says why.

@@ -44,8 +44,11 @@ public extension Bot {
         guard let step = stepLogin else { return nil }
         let same = step.backend == backend
         let to = name(step, same), own = name(login, same)
-        guard let rest = rest(of: login, now: now) else { return "Using \(to) while \(own) can't answer" }
-        return "Using \(to) until \(own) resets at \(RelativeTime.clock(Date(milliseconds: rest.until)))"
+        let rest = rest(of: login, now: now)
+        if let rest, rest.reason == "usageLimit" {
+            return "Using \(to) until \(own) resets at \(RelativeTime.clock(Date(milliseconds: rest.until)))"
+        }
+        return "Using \(to) while \(own) \(rest?.phrase ?? "can't answer")"
     }
 }
 

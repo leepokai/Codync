@@ -46,9 +46,11 @@ each thread's first user reply got a `replyTo` quoting its root.
 
 ## Session fork, as it was implemented
 
-Threads were the only user of ACP `session/fork` (a draft RFD, "Session Fork"); since 2.20.1 Codync
-never forks. The code is in `host/src/agent/bot/session.rs` at `ecc955018da2`: the fork branch of
-`ensure_session` (lines 200–236) and `thread_intro` (lines 62–95).
+Threads were the first user of ACP `session/fork` (a draft RFD, "Session Fork"). Forking is in use again: a
+[background task](../features/background-tasks.md#how-a-tasks-session-begins)'s first session is a fork of the
+bot's main one (`fork_owner_session` in `host/src/agent/bot/session.rs`), with the same request and the same steps
+after it. What follows is the thread fork as it was, in `host/src/agent/bot/session.rs` at `ecc955018da2`: the fork
+branch of `ensure_session` (lines 200–236) and `thread_intro` (lines 62–95).
 
 - **Capability.** At `initialize`, `launch.rs` set `SessionCaps.fork` when the agent advertised
   `agentCapabilities.sessionCapabilities.fork` as an object.
@@ -155,9 +157,10 @@ never forks. The code is in `host/src/agent/bot/session.rs` at `ecc955018da2`: t
 ## Worth reusing for teams
 
 - **Forked sessions** are the cheap way to give a topic its own context: the fork shares the chat's
-  cached prompt and history, and nothing flows back. A team member working on a sub-task could run
-  in one, as a thread did.
+  cached prompt and history, and nothing flows back. [Background tasks](../features/background-tasks.md)
+  run in one today, so a team member working on a sub-task needs no fork code of its own.
 - **Lanes** (`chat` + an optional sub-conversation) were the one type the queue, rooms, read state
-  and traces keyed on; adding the field back to `Lane` is where a revival starts.
+  and traces keyed on. A sub-conversation today would plug in as a task bot working an item of the
+  bot's box (its own actor, session and transcript), not as a field added back to `Lane`.
 - **Rooms per lane** let a group hold several conversations at once without their room turns ending
   each other.

@@ -375,6 +375,9 @@ function serviceRuns(bin: string) {
   if (service === null) return false
   // Windows' service starts the launcher next to the host (codync-hostw.exe).
   const runs = (path: string) => service.includes(isWindows ? path.replace(/codync-host\.exe$/, identity.supervisor) : path)
+  // A Mac service written before it named this app gets no Local Network access: write it again.
+  // A host outside an app (a development build) has no app to name.
+  if (isMac && bin.includes('.app/') && !service.includes('<key>AssociatedBundleIdentifiers</key>')) return false
   return runs(bin) || runs(resolved(bin))
 }
 

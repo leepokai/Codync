@@ -86,8 +86,8 @@ import kotlinx.coroutines.delay
     var peer by remember(bot.id) { mutableStateOf<String?>(null) }
     /** The voice call whose conversation is open (its line's entry id). */
     var callLine by remember(bot.id) { mutableStateOf<String?>(null) }
-    // The bot's background tasks are open (their list, or the one task's details).
-    var tasksOpen by remember(bot.id) { mutableStateOf(false) }
+    // The approval card a needs-you item's row in the details led to: brought into view once.
+    var card by remember(bot.id) { mutableStateOf<String?>(null) }
     var micDenied by remember { mutableStateOf(false) }
     var setupEntry by rememberSaveable { mutableStateOf<String?>(null) }
     var app by remember { mutableStateOf<ComposioApp?>(null) }
@@ -99,10 +99,13 @@ import kotlinx.coroutines.delay
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    // The message the composer quotes, until it sends or this chat closes.
+    // The message the composer quotes, and the part of it the user selected (null: all of it), until it sends or this chat closes.
     var replyId by rememberSaveable(bot.id) { mutableStateOf<String?>(null) }
-    val replyTo = state.entries.firstOrNull { it.id == replyId && it.botId == bot.id }?.replyQuote
-    val reply = { entry: Entry -> replyId = entry.id }
+    var replyPart by rememberSaveable(bot.id) { mutableStateOf<String?>(null) }
+    val replyTo = state.entries.firstOrNull { it.id == replyId && it.botId == bot.id }?.replyQuote(replyPart)
+    val reply = { entry: Entry, part: String? -> replyId = entry.id; replyPart = part }
+    // The message whose text is open to select a part of.
+    var selecting by remember(bot.id) { mutableStateOf<Entry?>(null) }
     // The chat ignores Full conversation over it: it stays put underneath.
     val chatState = state.copy(trace = false)
     // Find in the conversation: null while its bar is closed; each step bumps `findStep` to bring the match into view.
@@ -117,7 +120,7 @@ import kotlinx.coroutines.delay
         find?.searched()?.let { find = it; Analytics.capture(AnalyticsEvent.ConversationFindSearched(found)) }
     }
     val openFind = {
-        if (find == null) { Analytics.capture(AnalyticsEvent.ConversationFindOpened); find = ConversationFind() }
+        if (find == null) { Analytics.capture(AnalyticsEvent.ConversationFindOpened); find = ConversationFind(); card = null }
     }
     val stepFind = { forward: Boolean -> find = find?.step(forward, matches); findStep++; reportFind(matches.isNotEmpty()) }
     // A new text shows its first match; it counts as searched once typing pauses.
@@ -148,23 +151,23 @@ import kotlinx.coroutines.delay
         // Measured with the keyboard and navigation bar under it, so the last message clears them too.
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { composerHeight = it.height }
             .imePadding().navigationBarsPadding()) {
-            // A bot's own chat only: a group has no tasks.
-            if (bot.kind != "group") TaskCapsule(bot, stopping = stopTaskKey(bot.id) in state.busy, open = { tasksOpen = true },
-                stop = { store.stopTask(bot.id, it) })
+            // A bot's own chat only: a group has no work of its own.
+            if (bot.kind != "group") WorkCapsule(bot, stopping = workKey(bot.id) in state.busy, open = { details = DetailsRequest() },
+                stop = { store.stopWork(bot.id, it.id) })
             // Nothing sent now could be read on the other side.
             val mismatch = state.mismatch
             if (mismatch != null) UpdateNeededCard(state, mismatch, store::requestHostUpdate, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
             // An artifact's viewer has its own box for the same draft; two would overwrite each other.
             else if (viewing == null) MessageComposer(bot, chatState, store, onCall = if (state.voice == null && state.actualConnection is LinkState.Ready) startCall else null,
                 onInterrupt = if (state.voice?.botId == bot.id && state.voice.state.phase == VoicePhase.Speaking) store::interruptVoice else null,
-                replyTo = replyTo, cancelReply = { replyId = null },
+                replyTo = replyTo, cancelReply = { replyId = null; replyPart = null },
                 queued = queuedMessages(state.chatEntries(bot), bot.isWorking))
         }
     }) {
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
-            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = reply,
-            addFallback = { details = DetailsRequest(botId = it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
-            found = shown?.id, findStep = findStep) { peer = it }
+            bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = { reply(it, null) }, selectText = { selecting = it },
+            addFallback = { details = DetailsRequest.fallbacks(it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
+            found = shown?.id, revealed = card, findStep = findStep) { peer = it }
     }
     CodyncDialog("Microphone access is off", micDenied, { micDenied = false },
         message = "Allow the microphone in Android settings to talk to your bot.") {
@@ -176,14 +179,14 @@ import kotlinx.coroutines.delay
     }
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
-        if (shown != null) BotDetailsView(shown, request, state, store) { viewing = it }
+        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { details = null; card = it.id; findStep++ }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
     }
     CodyncSheet(peer, { peer = null }) { BotConversationView(bot, it, state, store) }
+    CodyncSheet(selecting, { selecting = null }) { entry -> SelectTextSheet(entry.text) { selecting = null; reply(entry, it) } }
     CodyncSheet(callLine, { callLine = null }) { CallConversationView(bot.id, it, state, store) }
-    CodyncSheet(tasksOpen, { tasksOpen = false }) { TasksSheet(bot, state, store) }
     CodyncSheet(app, { app = null; setupEntry = null }) { ComposioConnectSheet(it, state, store, setupEntry) { store.refreshPlugins() } }
     CodyncSheet(connector, { connector = null; setupEntry = null }) { InstallConnectorSheet(it, state, store, setupEntry) }
 }
@@ -290,8 +293,8 @@ private fun AppState.chatItems(bot: Bot) =
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
-    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
-    openCall: (String) -> Unit, found: String?, findStep: Int, openPeer: (String) -> Unit) {
+    indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, selectText: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
+    openCall: (String) -> Unit, found: String?, revealed: String?, findStep: Int, openPeer: (String) -> Unit) {
     val entries = state.chatEntries(bot)
     val items = state.chatItems(bot)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
@@ -304,8 +307,8 @@ private fun AppState.chatItems(bot: Bot) =
     var settled by remember { mutableStateOf(false) }
     val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
-    // Find's shown match: its row, after the earlier-messages row when there is one.
-    val reveal = items.indexOfFirst { it.id == found }.takeIf { it >= 0 }?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
+    // Find's shown match, else the approval card the details led to: its row, after the earlier-messages row when there is one.
+    val reveal = items.indexOfFirst { it.id == (found ?: revealed) }.takeIf { it >= 0 }?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
     ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
         reveal = reveal, onOpened = { settled = true }) {
         if (more) item("earlier") {
@@ -337,7 +340,8 @@ private fun AppState.chatItems(bot: Bot) =
                     }
                     else ChatRow(item.entry, item.groupStart, bot, state, store, openTrace = { store.showTrace(true) },
                         // An update card takes the composer's place, so there's nothing to reply with.
-                        reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null, connect = connect,
+                        reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null,
+                        selectText = if (state.supportsReplyPart) { { selectText(item.entry) } } else null, connect = connect,
                         addFallback = addFallback, openArtifact = openArtifact)
                 }
                 is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)

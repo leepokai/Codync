@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { TRAY_SYMBOLS, type TrayImage, type TraySummary, type TrayUsageAgent, type TrayUsageComputer } from '@shared/ipc'
-import { isGroup, isWorking, needsInput, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
+import { isGroup, needsInput, folderName, type Bot, type UsageProvider, type UsageWindow } from '@shared/models'
 import type { NetworkView } from '@shared/network'
-import { rosterTaskLine } from '@shared/tasks'
+import { isBusy, summaryLine } from '@shared/work'
 import { iconBitmap, drawIconBitmap } from '../lib/icon-bitmap'
 import { drawCharacter, moodOf } from '../components/Avatar'
 import { fallbackPath } from '../components/icon-fallbacks'
@@ -68,12 +68,9 @@ function avatarIcon(bot: Bot) {
   })
 }
 
-/** A bot's line under its name: that it needs you, what it's doing (in its chat, else in the background), or its last message. */
-export function botDetail(bot: Bot) {
-  if (needsInput(bot)) return 'Needs your response'
-  if (isWorking(bot)) return bot.activity || 'Working…'
-  return rosterTaskLine(bot, tr) ?? bot.lastMessage ?? folderName(bot)
-}
+/** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
+ * with nothing to say, where it works. */
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {
@@ -212,7 +209,7 @@ export function useTraySummary(app: AppModel) {
           ref: `${i.ref.computerId}/${i.ref.botId}`,
           name: app.computers.length > 1 ? `${i.bot.name} · ${i.computer.name}` : i.bot.name,
           detail: botDetail(i.bot),
-          working: isWorking(i.bot) || i.bot.tasks.length > 0,
+          working: isBusy(i.bot),
           avatar: avatarIcon(i.bot),
         })),
         usage: usageComputers(app, iconStyle),

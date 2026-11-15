@@ -43,6 +43,8 @@ data class BotDraft(
     val compaction: Compaction? = null,
     /** The login profile it runs on; null, sent as null, is the login the computer already has. */
     val loginProfile: String? = null,
+    /** The most agents it runs at once ([Bot.maxAgents]); null where the host has none, so it isn't sent. */
+    val maxAgents: Int? = null,
 ) {
     /** A saved bot keeps a name; only a new one goes without (the host names it after its first conversations). */
     val isValid: Boolean get() = name.isNotBlank()
@@ -74,7 +76,7 @@ data class BotDraft(
     companion object {
         /** A new bot starts with a random face, like iOS. */
         val AVATAR_COLORS = listOf("black", "brown", "red", "orange", "yellow", "green", "cyan", "blue", "violet", "magenta", "gray")
-        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction")
+        private val UNSET = setOf("fastMode", "notify", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants", "compaction", "maxAgents")
         /** Who reaches a bot and the login profile it runs on belong to its computer, not its setup. */
         private val TEMPLATE_SKIPS =
             setOf("id", "pinned", "hidden", "loginProfile", "fallbacks", "selfFallbacks", "offeredToNetwork", "reachableByAssistants")
@@ -84,6 +86,6 @@ data class BotDraft(
         fun from(bot: Bot): BotDraft = BotDraft(bot.id, bot.name, bot.description, bot.avatarColor, bot.avatarShape,
             bot.backend, bot.command, if (bot.managedWorkspace) "" else bot.cwd, bot.permission, bot.model,
             bot.modelOptions, bot.fastMode, bot.pinned, bot.hidden, bot.notify, bot.connectors, bot.skills, bot.computer, bot.manageTeam ?: false, bot.fallbacks, bot.selfFallbacks,
-            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction, bot.loginProfile)
+            bot.offeredToNetwork, bot.reachableByAssistants, bot.mode, bot.compaction, bot.loginProfile, bot.maxAgents)
     }
 }

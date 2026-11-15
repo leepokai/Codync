@@ -25,10 +25,10 @@ mod roster;
 mod section_order;
 mod slash;
 mod steps;
-mod tasks;
 mod ui;
 mod usage_chooser;
 mod whats_new;
+mod work;
 
 pub use approvals::parse_modes;
 pub use bot::{AgentModel, Bot, ModelOption, OwnMemory};
@@ -40,13 +40,13 @@ pub use model::{After, Entry, Kind, Mark, Msg, Status};
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
-pub use tasks::{Background, Task, TaskStatus};
 pub use ui::{
     ACTIONS, Action, COLORS, Click, Confirm, ConfirmAct, Dir, FIELDS, FILTERS, Field, Focus, FolderMode, FolderPicker,
     Form, Goto, GotoItem, GroupField, GroupForm, Hits, NewBot, NewBotField, Overlay, PairCode, SHAPES, Toast, Toggle,
     TraceMode, Width,
 };
 pub use whats_new::WhatsNew;
+pub use work::{Background, MAX_AGENTS, Sections, WorkItem, WorkStatus, can_cut_in, counts, places, word};
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};
@@ -349,8 +349,8 @@ impl App {
             || self.hint.is_some()
             || !self.online
             || !self.answering.is_empty()
-            // A task's time runs while its bot's chat is idle.
-            || self.bots.values().any(|b| b.status == Status::Working || !b.tasks.is_empty())
+            // A working item's time runs while its bot's chat is idle.
+            || self.bots.values().any(|b| b.status == Status::Working || b.work.iter().any(|i| i.status.live()))
     }
 
     /// The user picks a chat, also the one already selected.

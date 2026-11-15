@@ -38,7 +38,7 @@ impl App {
             Msg::Connected { since } => {
                 self.stream_since = since;
                 self.floors.clear();
-                // A task's entries aren't in the catch-up: the open details ask for what they missed.
+                // A task's entries aren't in the catch-up: the open transcripts ask for what they missed.
                 self.reload_task_details();
             }
             Msg::Event(v) => self.on_event(&v),
@@ -89,7 +89,7 @@ impl App {
                         self.entry_added(&bot, &e);
                         // A routine's run and a follow-up say in the chat that they began or were dropped.
                         if e.kind == Kind::Notice {
-                            self.reload_routines(&bot);
+                            self.reload_details(&bot);
                         }
                     }
                     self.kofi_reply(&bot, &e);
@@ -124,7 +124,7 @@ impl App {
         let Some(id) = v["id"].as_str() else { return };
         if v["deleted"].as_bool().unwrap_or(false) {
             if let Some(gone) = self.bots.remove(id) {
-                self.tasks_ended(&gone.tasks, &[]);
+                self.tasks_ended(&gone.work, &[]);
             }
             self.entries.remove(id);
             self.floors.remove(id);
@@ -147,7 +147,8 @@ impl App {
         }
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
-        self.tasks_ended(&old.tasks, &new.tasks);
+        self.tasks_ended(&old.work, &new.work);
+        self.keep_details_cursor(&new.id, (&old.work, old.max_agents));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
         if !new.notify || watching || old.away().is_some() || new.away().is_some() {

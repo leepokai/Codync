@@ -188,6 +188,16 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(store.supportsQueueActions)
 }
 
+@MainActor @Test func aPartReplyNeedsAHostThatTakesIt() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    #expect(!store.supportsReplyPart) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.48.0")
+    #expect(!store.supportsReplyPart, "it would quote the whole message")
+    store.hostVersion = HostVersion(version: "2.48.1")
+    #expect(store.supportsReplyPart)
+}
+
 @MainActor @Test func aQueuedMessageTakenBackGoesAtOnceAndComesBackWhenRefused() async throws {
     let (store, done) = rosterStore([])
     defer { done() }

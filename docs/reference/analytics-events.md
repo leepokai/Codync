@@ -100,7 +100,7 @@ host answers and sends it once the host is up.
 | `bots_reordered` | host | `reorderBots` | — |
 | `section_renamed` | host | `renameSection` | `removed`: whether it removed the section (`to` empty or `null`); never the names |
 | `bot_deleted` | host | `deleteBot` | — |
-| `message_sent` | host | `send` (a resend counts once) | `kind`, `agent`, `reply` (whether it quotes a message), `attachments` (count) |
+| `message_sent` | host | `send` (a resend counts once) | `kind`, `agent`, `reply` (whether it quotes a message), `replyPart` (whether it quotes a part the user selected in it), `attachments` (count) |
 | `message_steered` | host | *Send now* on a queued message (`steer`), once its outcome is known | `agent`, `how` (`joined` the running turn / `next` turn, the turn ended first / `interrupted` the user's turn / `moved_up` behind other work / `failed`, it waits) |
 | `queued_message_removed` | host | *Remove* on a queued message (`unqueue`) | — |
 | `chat_marked_unread` | host | *Mark as unread* on a chat (`markUnread`) | `outcome` (`marked`; `empty`: nothing in the chat could count as unread; or `failed`, with `error`: `unknown_bot`/`other`) |
@@ -124,10 +124,9 @@ host answers and sends it once the host is up.
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
 | `follow_up_cancelled` | host | A waiting follow-up was dropped | `by` (`bot`: `cancel_follow_up`, `user`: ✕ in the routines list, the API call `cancelFollowUp`, so with `client` and a phone's `platform`; not sent when the follow-up was already gone, `stop`: the bot's Stop) |
-| `task_started` | host | A bot's `start_task` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`started`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, `live`: a task already runs, `limit`: too many tasks, `usage`: the agent is near its limit, `hops`: too many in a row, `failed`), `parallel` |
-| `task_finished` | host | A task ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off and it couldn't pick up, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`), `forkFailed` (the agent could fork but the fork failed), `minutes` |
-| `task_told` | host | A bot's `tell_task` reached its task | — |
-| `task_stopped` | host | `stopTask` (Stop on the capsule, or the desktop tray's **Stop task** while the bot has tasks) | — |
+| `work_added` | host | A bot's `add_work` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`added`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, or `after` names no live item, `full`: 20 items wait already, `hops`: too many in a row, `failed`), `after` (it follows another item) |
+| `work_finished` | host | An item of a bot's box ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its task's turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off twice, `lost`: the hourly look found its task running nothing, twice, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`; none for an item stopped while it waited), `forkFailed` (the agent could fork but the fork failed), `minutes` |
+| `work_steered` | host | An item was changed | `how` (`first`, `now`: cut in, `replace`, `stop`, and from the user only `drop`, `retry`), `by` (`bot`: `steer_work`, `user`: the API calls `workFirst`, `workCutIn`, `stopWork`, `dropWork`, `retryWork`, so with `client` and a phone's `platform`) |
 | `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
 | `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
 | `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |
@@ -156,7 +155,7 @@ host answers and sends it once the host is up.
 | `agent_signed_in` | host | `agentAuthenticate`, or a check that finds a login profile signed in | `agent`, `loginProfile` (`true` for a login profile) |
 | `login_profile_changed` | host | A [login profile](../features/login-profiles.md) is added, renamed or removed, or an API key one gets keys; never its name, a variable's name or a value | `action` (`add`/`rename`/`remove`/`keys`), `agent` on `add` and `rename`, `kind` (`account`/`apiKey`) on `add`, `typed` and `imported` (how many variables) on `keys`; when it couldn't: `outcome` (`failed`) and `error` (`in_use`: a bot, a running agent or an open sign-in still uses it; `unsupported`: the agent keeps one sign-in, so it can't have an account profile; `bad_name`: a variable name that isn't the user's to set; `not_in_shell`: the login shell doesn't set an imported name; `too_many`: more variables than a profile holds; `other`) |
 | `reach_account_answered` | host `track` (desktop) | The ask before *Reach from anywhere* turns on for a computer in no account ended | `outcome` (`added`/`own_relay`/`cancelled`/`failed`), `error` on `failed` (`unreachable`: the cloud couldn't be reached; `refused`: it refused; `host`: the host failed) |
-| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`auto_order` (a bot with a new message moves to the top)/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
+| `setting_changed` | host, iOS, Android | A setting is switched | `setting` (host: `remote_access`/`remote_access_url` (`on`: a relay address is saved, never the address)/`approval` (`on`: approved without the code)/`automatic_updates`/`remote_screen`/`cloud_assistants`/`auto_order` (a bot with a new message moves to the top)/`voice_server` (`on`: the OpenAI voice engine uses a server of the user's own, never its address; when it wasn't saved: `outcome` (`failed`) and `error` (`bad_address`: not https, or http off this computer; `unreachable`: the server didn't answer; `refused`: it didn't take the saved key; `unsupported`: Gemini, or a cloud computer; `other`))/`usage_shown` (with `agent`: which agent's limits the Usage screen lists)/`usage_order` (the agents were arranged); phones: `push`/`live_activities`), `on` |
 | `host_update_installed` | host | `installHostUpdate` | — |
 | `network_joined` | host | `networkCreate` / `networkJoin`: the computer is in a network of the user's computers | `via` (`create`/`invite`), never a name, invite or connector address |
 | `network_changed` | host | `networkInvite` / `networkPromote` / `networkRemove` / `networkRecover` / `setNetworkRules` / `networkLeave` | `action` (`invite`/`promote`/`remove`/`recover`/`rules`/`leave`), never a computer's name, the invite, the recovery code or a rule |
@@ -179,7 +178,7 @@ host answers and sends it once the host is up.
 | `bot_details` | bot details | details panel | settings page |
 | `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
-| `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | routines overlay |
+| `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | the bot's Details page (its work, follow-ups and routines) |
 | `marketplace` | extensions | extensions | marketplace overlay |
 | `settings` | Settings tab | settings | — |
 | `computers` | Computer management, from Manage computers or a link | computers & devices | — |
@@ -193,7 +192,7 @@ host answers and sends it once the host is up.
 | `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |
 | `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
 | `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
-| `task` | a background task's details (sheet) | a background task's details (sheet) | a background task's details |
+| `task` | a task's transcript, opened from an item's row (sheet) | a task's transcript, opened from an item's row (sheet) | a task's transcript, opened from an item's row |
 
 ## Funnels
 

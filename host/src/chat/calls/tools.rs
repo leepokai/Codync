@@ -13,13 +13,13 @@ pub fn declarations() -> Value {
     json!([
         {"name": "send_to_bot", "description": "Send a message to the bot on the computer, as if the user typed it. Its reply arrives later.",
          "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The message"}}, "required": ["text"]}},
-        {"name": "bot_status", "description": "Whether the bot is idle or working, what it is doing, and any approval it is waiting for.",
+        {"name": "bot_status", "description": "Whether the bot is idle or working, what it is doing, any approval it is waiting for, and its work in the background (what is working, waiting or needs the user).",
          "parameters": {"type": "object", "properties": {}}},
         {"name": "recent_messages", "description": "The latest messages in the chat with the bot, oldest first.",
          "parameters": {"type": "object", "properties": {"count": {"type": "integer", "description": "How many, 1-20"}}}},
         {"name": "answer_approval", "description": "Answer the bot's pending approval request with one of its options.",
          "parameters": {"type": "object", "properties": {"option": {"type": "string", "description": "The option's name"}}, "required": ["option"]}},
-        {"name": "stop_bot", "description": "Stop what the bot is doing now.",
+        {"name": "stop_bot", "description": "Stop what the bot is doing now, its work in the background included.",
          "parameters": {"type": "object", "properties": {}}},
         {"name": "search_memory", "description": "Search what the bot remembers about the user and their work.",
          "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Words to look for"}}, "required": ["query"]}},
@@ -73,6 +73,10 @@ fn status(hub: &Hub, cfg: &BotConfig) -> Value {
     let recent = hub.store.history(&cfg.id, i64::MAX, RECENT).unwrap_or_default();
     if let Some(w) = waiting(&recent) {
         out["approval"] = json!({"request": w.request, "options": w.options});
+    }
+    // What it works on away from the chat, and what waits.
+    if let Some(lines) = crate::chat::tasks::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
+        out["background"] = lines.into();
     }
     out
 }
@@ -145,6 +149,8 @@ fn stop(hub: &Arc<Hub>, cfg: &BotConfig) -> Result<Value> {
         crate::chat::group::stop(hub, &cfg.id);
     } else {
         hub.send_cmd(&cfg.id, Cmd::Stop)?;
+        // Its work in the background too: "stop" on a call means all of it.
+        crate::chat::tasks::stop(hub, &cfg.id, None)?;
     }
     Ok(json!({"stopped": true}))
 }
@@ -185,6 +191,10 @@ mod tests {
             status(&hub, &bot)["approval"],
             json!({"request": "Edit a.txt", "options": ["Allow", "Always", "Reject"]})
         );
+        crate::chat::tasks::put_working_for_test(&hub.store, "b1", "task-1");
+        let background = status(&hub, &bot)["background"].as_str().unwrap().to_owned();
+        assert!(background.starts_with("Its work in the background: 1 working, 0 waiting"), "{background}");
+        assert!(background.ends_with("- working: \"Work\" (i1)"), "{background}");
 
         let group =
             BotConfig { kind: BotKind::Group, members: vec!["b1".into()], ..context::tests::bot("g", "Team", "") };

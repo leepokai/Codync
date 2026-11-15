@@ -14,31 +14,25 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
 
-## 2.48.0
+## 2.48.2
 ### zh-Hant
-- Bot 會把比較久的工作交給背景進行，聊天不會被占住，可以繼續傳訊息。輸入框上方會顯示「背景」和進度，點一下看它做了什麼，也可以停止。
-- 背景工作需要核准時，卡片會出現在聊天裡並標示「背景」。
-- 完成後 Bot 會用一則訊息告訴你結果。
-- 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好，原本輸入框裡的草稿不會被動到。
-- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
-- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
-- 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
-- 智慧體可以有多個「登入設定」：新增賬戶（Claude Code、Codex 等），或為任何智慧體新增 API 金鑰；每個都能取名，bot 在「智慧體」選擇要用哪一個。
-- 備援可以選同一個智慧體的另一個登入設定。
-- 「用量上限」會分別列出每個賬戶的額度（Claude Code、Codex）。
-- Bot 說「晚點回來看」時會設定跟進，時間到了自己回到聊天告訴你結果；等待中的跟進列在例行任務上方，可以取消。
-- 例行任務會記住上次做到哪裡，下次接著做。
-- Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
+- Bot 把比較久的工作放到背景做，聊天照常回你。
+- 點輸入框上方的膠囊開啟 Bot 的「詳情」：Threads（正在跑的）和 Event Box（等待中的：先做、插隊、丟掉）。
+- 背景工作要核准時，卡片出現在聊天裡。
+- 「同時幾個 agent」在 Bot 的「設定」。
+- 從任何 App 的分享選單把文字、連結、照片或檔案傳給 Bot。
+- Bot 可以設定跟進，晚點自己回來；例行任務接著上次做。
+- 可以只回覆訊息的其中一段：長按訊息選「選取文字」。
+- 開始 OpenAI 即時語音通話或遠端螢幕時，App 不會再關閉。
+- 選擇卡片可以直接打字回答。
 
 ### en-US
-- Bots do long work in the background, so the chat stays free and keeps answering. A capsule above the message box shows what it is doing; tap it for details, or stop it.
-- Approval cards from background work appear in the chat, marked "In the background".
-- When it's done, the bot tells you what it found.
+- Bots do long work in the background and keep answering.
+- Tap the capsule over the message box for Details: Threads (running) and Event box (waiting: First, Cut in, Drop).
+- Its approval cards appear in the chat.
+- Agents at once is in the bot's Settings.
 - Share text, links, photos or files to a bot from any app.
-- Update notices say whether this app or your computer needs updating.
-- A voice note no longer plays after you leave its chat.
-- Choice cards show numbered options and take your own answer.
-- Agents can have several login profiles (account or API key): pick a bot's under Agent, fall back to another, see each account's limits in Usage.
-- Bots can check back later; cancel one under Routines.
-- Routines resume where the last run stopped.
-- Optional Google Search in Gemini realtime calls, off by default.
+- Bots can check back later; routines resume.
+- Reply to one part of a message.
+- OpenAI calls and remote screen no longer close the app.
+- Choice cards take your own answer.

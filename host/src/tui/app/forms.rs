@@ -6,7 +6,8 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, App, COLORS, Editor, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle, merge_toggles,
+    After, App, COLORS, Editor, Field, Form, GroupField, GroupForm, MAX_AGENTS, Overlay, SHAPES, Toggle, cycle,
+    merge_toggles,
 };
 use crate::tui::manage::Page;
 
@@ -45,6 +46,7 @@ impl App {
             fallbacks: b.fallbacks.clone(),
             self_fallbacks: b.self_fallbacks,
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
+            max_agents: b.max_agents,
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -127,6 +129,10 @@ impl App {
                 self.open_agent(&backend, false);
                 return None;
             }
+            // The bot's own agent again, while it runs on a fallback.
+            KeyCode::Char('b') if field == Field::Agent && self.on_fallback(&f.bot_id) => {
+                self.call("switchBack", json!({"botId": f.bot_id}), After::Nothing);
+            }
             KeyCode::Char('i') if field == Field::Skills => {
                 let id = f.skills.get(f.sub).map(|t| t.id.clone());
                 let skill = self.plugins.1.iter().find(|v| v["id"].as_str() == id.as_deref()).cloned();
@@ -153,6 +159,7 @@ impl App {
                         | Field::LoginProfile
                         | Field::Fast
                         | Field::SelfFallbacks
+                        | Field::MaxAgents
                         | Field::Approvals
                         | Field::Compaction
                         | Field::Notify
@@ -189,6 +196,10 @@ impl App {
                     Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
+                    Field::MaxAgents if !space => {
+                        let step = |n: u8| if d < 0 { n.saturating_sub(1) } else { n + 1 };
+                        f.max_agents = f.max_agents.map(|n| step(n).clamp(1, MAX_AGENTS));
+                    }
                     Field::Approvals => self.cycle_approval(&mut f, d),
                     Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
@@ -262,6 +273,11 @@ impl App {
         self.call("updateBot", body, After::Saved);
     }
 
+    /// Whether bot `id` runs on a fallback now.
+    pub(in crate::tui) fn on_fallback(&self, id: &str) -> bool {
+        self.bots.get(id).is_some_and(|b| b.agent_step.is_some())
+    }
+
     /// Agents a bot can switch to: runnable ones on this computer first.
     pub(super) fn agent_choices(&self) -> Vec<String> {
         let mut v: Vec<&Value> = self
@@ -284,6 +300,7 @@ impl Form {
             "backend": self.backend,
             "loginProfile": self.login_profile,
             "cwd": self.cwd,
+            "maxAgents": self.max_agents,
             "permission": if self.auto { "auto" } else { "ask" },
             "mode": self.mode,
             "model": if model.is_empty() { Value::Null } else { model.into() },
@@ -473,6 +490,35 @@ mod tests {
         assert_eq!(f.changes(), json!({"compaction": 260_000}), "held to the largest size the window takes");
         let f = press(&mut app, f, [KeyCode::Backspace; 3].into_iter().chain("155".chars().map(KeyCode::Char)));
         assert_eq!(f.changes(), json!({"compaction": 160_000}), "to the nearest 10K");
+    }
+
+    #[tokio::test]
+    async fn agents_at_once_steps_from_one_to_six_on_a_host_that_has_the_box() {
+        let mut app = test_app();
+        let at = FIELDS.iter().position(|x| *x == Field::MaxAgents).expect("an agents field");
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "maxAgents": 5});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.field_shown(&f, Field::MaxAgents));
+        f.field = at;
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right, KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"maxAgents": 6}), "six at most");
+        let f = press(&mut app, f, [KeyCode::Left; 9]);
+        assert_eq!(f.changes(), json!({"maxAgents": 1}), "one at least");
+
+        // A host from before the box: no field to step to, and nothing sent.
+        let old = json!({"id": "o", "name": "Old", "backend": "claude"});
+        app.bots.insert("o".into(), Bot::parse(&old).expect("a bot"));
+        app.selected = Some("o".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = at - 1;
+        let f = press(&mut app, f, [KeyCode::Tab]);
+        assert_eq!(f.field, at + 1, "past the field it doesn't have");
+        let f = press(&mut app, f, [KeyCode::BackTab]);
+        assert_eq!((f.field, f.changes()), (at - 1, json!({})));
     }
 
     #[tokio::test]

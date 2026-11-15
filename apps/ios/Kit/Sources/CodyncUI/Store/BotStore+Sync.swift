@@ -252,11 +252,11 @@ extension BotStore {
         return e.seq < floor
     }
 
-    /// A task that ended leaves its bot's `tasks`; its details read it back (`taskEntries`) from then on.
+    /// A task no item names any more is gone from the computer too; its transcript goes with it.
     private func dropEndedTasks() {
         guard !taskEntries.isEmpty else { return }
-        let live = Set(bots.values.flatMap(\.tasks).map(\.id))
-        taskEntries = taskEntries.filter { live.contains($0.key) }
+        let named = Set(bots.values.flatMap(\.work).compactMap(\.task))
+        taskEntries = taskEntries.filter { named.contains($0.key) }
     }
 
     func upsert(_ e: Entry) {

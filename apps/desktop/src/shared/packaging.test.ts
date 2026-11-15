@@ -21,6 +21,10 @@ test('Linux packages and Windows installation resources have separate developmen
   assert.equal(dev.extraMetadata.desktopName, 'codync-dev.desktop')
 })
 
+test('macOS packaging declares local network access', () => {
+  for (const config of [prod, dev]) assert.ok(config.mac.extendInfo.NSLocalNetworkUsageDescription)
+})
+
 test('development packaging registers only development callbacks and background helpers', () => {
   assert.equal(dev.appId, 'com.pokai.Codync.dev')
   assert.equal(dev.productName, 'Codync Dev')

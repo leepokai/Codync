@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
+import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { isLive } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
@@ -106,7 +108,7 @@ export function ChatWindow() {
             if (!ref || !store) return
             // The tray's one Stop is for all the bot does: its chat's turn and its work in the background.
             store.stop(ref.botId)
-            if (store.bots.get(ref.botId)?.tasks.length) store.stopTask(ref.botId)
+            if (store.bots.get(ref.botId)?.work.some(isLive)) store.stopWork(ref.botId)
             return
           }
           case 'refresh':
@@ -234,7 +236,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - detailMinWidth)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -331,11 +333,11 @@ function ChatSplitView() {
 
   // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - 420)
+  const sidebarMax = Math.min(420, window.innerWidth - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
     const nextCompact = proposed < 180
     if (nextCompact !== compact) setCompact(nextCompact)
-    if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
+    if (!nextCompact) setSidebarWidth(Math.min(Math.max(sidebarMinWidth, proposed), sidebarMax))
   }
 
   const errorMessage = app.errorMessage

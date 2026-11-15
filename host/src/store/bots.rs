@@ -274,6 +274,7 @@ mod tests {
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
             task_of: None,
+            max_agents: 3,
             created_at: 0,
         }
     }

@@ -52,7 +52,7 @@ mod tests {
         app.on_key(KeyEvent::from(KeyCode::Char('O')));
         assert!(matches!(app.overlays.last(), Some(Overlay::Computer(b)) if b == "b"));
         app.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
-        assert!(matches!(app.overlays.as_slice(), [Overlay::Routines(_)]), "in place of the Computer page");
+        assert!(matches!(app.overlays.as_slice(), [Overlay::Details(_)]), "in place of the Computer page");
         app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::SHIFT));
         assert!(matches!(app.overlays.as_slice(), [Overlay::Computer(_)]));
         app.on_key(KeyEvent::from(KeyCode::Esc));

@@ -91,12 +91,12 @@ extension BotStore {
         if let bot = bots[botId] { onSent?(bot, .sending) }
         // The relay mailbox holds text only: files, and the call a message was said in, wait for the computer.
         if canQueue, files.isEmpty, call == nil, let remote = transport as? any RemoteTransport {
-            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
+            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted)
         }
-        return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call)
+        return deliver(trimmed, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted, call: call)
     }
 
-    private func deliver(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String] = [],
+    private func deliver(_ text: String, botId: String, replyTo: ReplyQuote?, nonce: String, pasted: [String] = [],
                          call: String? = nil) -> Task<SendProgress, Never> {
         Task {
             do {
@@ -110,8 +110,8 @@ extension BotStore {
                             ids = uploaded
                         }
                         try Task.checkCancellation()
-                        return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
-                                                     pasted: pasted, call: call)
+                        return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo?.id,
+                                                     replyPart: replyTo?.selectedPart, attachments: ids, pasted: pasted, call: call)
                     }
                 }
                 let e = try await withTaskCancellationHandler { try await sending.value } onCancel: { sending.cancel() }
@@ -132,7 +132,7 @@ extension BotStore {
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String,
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: ReplyQuote?, nonce: String,
                          pasted: [String]) -> Task<SendProgress, Never> {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
@@ -140,7 +140,8 @@ extension BotStore {
             defer { saveCache() }
             do {
                 try Task.checkCancellation()
-                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, pasted: pasted)
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo?.id,
+                                         replyPart: replyTo?.selectedPart, pasted: pasted)
                 onPromptSent()
                 if let bot = bots[botId] { onSent?(bot, .queued) }
                 return .queued
@@ -162,7 +163,7 @@ extension BotStore {
         }
     }
 
-    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String]) async -> SendProgress {
+    private func deliverWhenOnline(_ text: String, botId: String, replyTo: ReplyQuote?, nonce: String, pasted: [String]) async -> SendProgress {
         let deadline = ContinuousClock.now + .seconds(30)
         while !retired, !Task.isCancelled, connection != .online, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(200))

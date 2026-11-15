@@ -23,6 +23,13 @@ class ConversationCollectionView: UICollectionView {
         max(contentSize.height + adjustedContentInset.bottom - bounds.height, -adjustedContentInset.top)
     }
 
+    /// Where the list rests with a row at `frame` in the middle, as far as its ends allow.
+    func centeredOffset(of frame: CGRect) -> CGFloat {
+        let insets = adjustedContentInset
+        let centered = frame.midY - insets.top - (bounds.height - insets.top - insets.bottom) / 2
+        return min(max(centered, -insets.top), endOffset)
+    }
+
     /// Keyboard/composer layout is one change: intermediate offsets aren't reader scrolling.
     func updateViewport(frame: CGRect, insets: UIEdgeInsets, indicators: UIEdgeInsets) {
         guard self.frame != frame || contentInset != insets else { return }

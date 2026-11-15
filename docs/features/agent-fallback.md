@@ -32,7 +32,7 @@ What their issues taught, and the answer here:
 - **Bound everything.** v1 retried forever (#41848); a malformed entry looped (#34043). → Each agent is tried at most
   once per turn, at most three fallbacks, entries checked when saved.
 - **Say who answered.** A plugin moved users to expensive models silently (#46894). → A chat line on every switch and
-  on going back, the agent in use in Details, a cost note.
+  on going back, the agent in use in the bot's Settings, a cost note.
 - **A full context isn't a reason to switch.** All of them compact instead.
 - **Let the agent finish its own recovery.** → Codync acts only on the error the agent returns. The agents retry first
   (Claude Code up to 10 times; Codex 4 requests and 5 streams, not 429s), so Codync never asks the same agent again.
@@ -165,7 +165,7 @@ step's login profile ("Fallbacks set: Claude Code (Work)").
 
 iPhone, Android, desktop and terminal show the same things:
 
-- **Details → Agent card**: while on a fallback, a first row "Using Codex until Claude Code resets at 3:00 PM" with
+- **Settings → Agent card** (the Settings page of the bot's details): while on a fallback, a first row "Using Codex until Claude Code resets at 3:00 PM" with
   **Switch back** (a login on a login profile goes by it, "Claude Code (Work)", and when both are one agent so does the
   computer's own, "Claude Code (Default login profile)"); under Model and Fast mode, **Fallbacks** with an info button and
   **+** (an Add fallback sheet with the Agent and Model pickers and, for an agent with login profiles, a Login profile picker:
@@ -179,10 +179,10 @@ iPhone, Android, desktop and terminal show the same things:
   its start and its end: the messages in the middle are in the chat). Moving past a
   signed-out agent also posts its sign-in card (`connectionRequest` kind `agent`), whose Sign in opens the agent's
   sign-in sheet. A failure with
-  `addFallback` offers **Add a fallback**, which opens the Agent card.
+  `addFallback` offers **Add a fallback**, which opens the bot's Settings at the Agent card.
 - **Terminal**: the bot form's Fallbacks field (←→ pick, space adds the next free agent or cycles a fallback's model,
-  `a` changes its agent, `c` changes its login profile, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them); Details shows the agent in use and the chain,
-  `B` switches back; in the chat `↪` lines unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
+  `a` changes its agent, `c` changes its login profile, `[`/`]` move, `x` removes) and "Bot edits" (whether the bot may change them); while the bot is on a fallback the Settings page says which agent is in use ("Using Codex until Claude Code resets 15:00"),
+  and `b` on its Agent field switches back; in the chat `↪` lines unfold with `o`, and `A` on a picked failure opens that bot's Fallbacks field
   (in a group, the member whose agent failed).
 
 ## Wire

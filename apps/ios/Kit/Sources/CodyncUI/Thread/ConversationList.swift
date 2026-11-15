@@ -201,10 +201,15 @@ private struct ConversationCollection: UIViewRepresentable {
         private func reveal(_ reveal: ConversationReveal?) {
             guard let reveal, reveal != lastReveal, let path = dataSource.indexPath(for: reveal.id) else { return }
             lastReveal = reveal
+            view.layoutIfNeeded()
+            // Already where it would be brought (a row by the end can't reach the middle): nothing moves,
+            // and a list at the end keeps following.
+            if let frame = view.layoutAttributesForItem(at: path)?.frame,
+               abs(view.centeredOffset(of: frame) - view.contentOffset.y) < 1 { return }
             view.cancelScrollingToEnd()
             setFollowing(false)
-            view.layoutIfNeeded()
             view.scrollToItem(at: path, at: .centeredVertically, animated: !reduceMotion)
+            if reduceMotion { settle() }
         }
 
         /// Rows going in or out above: the first row on screen stays where it is.
@@ -297,7 +302,7 @@ private struct ConversationCollection: UIViewRepresentable {
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-            if view.following { view.pinToEnd() }
+            settle()
         }
 
         /// Long enough to read as a refresh even when the link comes back at once; then the chat
@@ -328,7 +333,8 @@ private struct ConversationCollection: UIViewRepresentable {
             pull.progress = progress
         }
 
-        /// The reader stopped scrolling: resting at the end follows again; anywhere else stays put.
+        /// The list stopped moving (the reader's scrolling, a row brought into view): resting at the end follows again;
+        /// anywhere else stays put.
         private func settle() {
             setFollowing(view.followingAfterInteraction())
             if view.following { view.pinToEnd() }

@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from '@playwright/test'
+import { chromium, expect, type Browser, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -12,7 +12,7 @@ const root = resolve(__dirname, '../../..')
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
-// A scripted agent that starts background tasks and is the task itself (host/tests/fixtures/task_agent.py).
+// A scripted agent that puts items in its box and is the task that works them (host/tests/fixtures/task_agent.py).
 const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 
 /** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
@@ -78,7 +78,7 @@ export async function echoBot(page: Page, name: string) {
   return bot
 }
 
-/** A bot on the scripted agent that starts a background task for `START <title>|<brief>`; it asks before it acts. */
+/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. */
 export async function taskBot(page: Page, name: string) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
     name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
@@ -97,6 +97,19 @@ export async function typeMessage(page: Page, text: string) {
 export async function openGeneralSettings(page: Page) {
   await page.locator('.sidebar-account').click()
   await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+}
+
+/** Settings › Voice chat. */
+export async function openVoiceSettings(page: Page) {
+  await openGeneralSettings(page)
+  await page.locator('.settings-item', { hasText: 'Voice chat' }).click()
+}
+
+/** Picks `option` in the settings picker now showing `current`. */
+export async function pick(page: Page, current: string, option: string) {
+  await page.locator(`.choice-picker[title="${current}"]`).click()
+  await page.getByRole('menuitemradio', { name: option, exact: true }).click()
+  await expect(page.locator(`.choice-picker[title="${option}"]`)).toBeVisible()
 }
 
 type Host = {

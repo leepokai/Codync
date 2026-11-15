@@ -289,7 +289,7 @@ impl Actor {
                 Ok(false) => {}
                 Err(error) => {
                     tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't fork the chat's session; starting from a brief");
-                    crate::chat::tasks::fork_failed(&self.hub.store, &self.cfg.id);
+                    crate::chat::tasks::fork_failed(&self.hub, &self.cfg);
                 }
             }
             // A fork that timed out stopped the agent: start over, on the brief's way.
@@ -297,7 +297,7 @@ impl Actor {
                 return Box::pin(self.ensure_session(slot)).await;
             }
             self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
-            crate::chat::tasks::started(&self.hub, &self.cfg.id, crate::chat::tasks::Start::Brief);
+            crate::chat::tasks::started(&self.hub, &self.cfg, crate::chat::tasks::Start::Brief);
         }
         let (revision, system) = {
             let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
@@ -350,7 +350,7 @@ impl Actor {
         renamed: &codex_names::Renamed,
         instructions: Instructions,
     ) -> Result<bool> {
-        let Some(source) = crate::chat::tasks::take_fork_source(&self.hub.store, &self.cfg.id) else {
+        let Some(source) = crate::chat::tasks::take_fork_source(&self.hub, &self.cfg) else {
             return Ok(false);
         };
         if !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
@@ -378,7 +378,7 @@ impl Actor {
         if instructions == Instructions::ClaudeMeta {
             self.applied_system.insert(sid, parent.system);
         }
-        crate::chat::tasks::started(&self.hub, &self.cfg.id, crate::chat::tasks::Start::Fork);
+        crate::chat::tasks::started(&self.hub, &self.cfg, crate::chat::tasks::Start::Fork);
         Ok(true)
     }
 

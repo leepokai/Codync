@@ -239,8 +239,10 @@ impl Actor {
             Some(bot) => {
                 // To the user it is the bot asking; the answer finds this actor by the task (`tasks::card_actor`).
                 data["author"] = bot.clone().into();
-                data["task"] =
-                    json!({"id": self.cfg.id, "title": crate::chat::tasks::title(&self.hub.store, &self.cfg.id)});
+                // The item it works on: what the user knows the card by.
+                let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
+                data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
+                data["item"] = item.into();
                 self.hub.add_entry(&Lane::main(&bot), EntryKind::Permission, self.hub.store.max_turn(&bot), &data)
             }
             None => self.add(EntryKind::Permission, turn, data),

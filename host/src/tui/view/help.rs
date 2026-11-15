@@ -10,7 +10,7 @@ use super::buffer::{centered, frame_box, put, u};
 use super::overlay::field_line;
 use super::style::theme;
 
-const HELP: [(&str, &str, &str); 80] = [
+const HELP: [(&str, &str, &str); 82] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -29,8 +29,8 @@ const HELP: [(&str, &str, &str); 80] = [
     ("CHAT", "s", "stop the bot"),
     ("CHAT", "S", "send the next queued message now"),
     ("CHAT", "D", "take back the last queued message"),
-    ("CHAT", "B", "show what the bot does in the background"),
-    ("CHAT", "X", "stop the background work"),
+    ("CHAT", "B", "details: what the bot does in the background"),
+    ("CHAT", "X", "stop the one item in the background"),
     ("CHAT", ">", "show / hide the working turn's steps (thinking details on)"),
     ("CHAT", "o", "last turn's steps"),
     ("CHAT", "c", "copy the last reply"),
@@ -70,8 +70,10 @@ const HELP: [(&str, &str, &str); 80] = [
     ("BOTS", "W", "rename / remove section"),
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
-    ("BOTS", "R", "details: agent, routines"),
-    ("BOTS", "B", "details: switch back to the bot's own agent"),
+    ("BOTS", "R", "details: threads, event box, routines, recent"),
+    ("BOTS", "↵ X", "details, on an item: its transcript / stop"),
+    ("BOTS", "F C D A", "details, on an item: first / cut in / drop / try again"),
+    ("BOTS", "b", "settings, on Agent: switch back to the bot's own agent"),
     ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),
     ("BOTS", "⇧← ⇧→", "between details, computer, library, memory and settings"),

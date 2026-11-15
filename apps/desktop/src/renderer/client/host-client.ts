@@ -8,6 +8,7 @@ import {
   type Entry,
   type Hello,
   type PairingRequest,
+  type ReplyQuote,
   type ScreenState,
   type Usage,
 } from '@shared/models'
@@ -242,10 +243,11 @@ export class HostClient {
   }
 
   /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
-   * chat message this one replies to. */
+   * chat message this one replies to, or the part of it the user selected (`replyPart`). */
   /** `call`: the voice call it was said in (on-device or speech to text). */
-  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, call: string | null = null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: ReplyQuote | null = null, call: string | null = null) {
+    const reply = replyTo ? { replyTo: replyTo.id, ...(replyTo.part ? { replyPart: replyTo.text } : {}) } : {}
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...reply, ...(call ? { call } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

@@ -44,6 +44,18 @@ import UIKit
     #expect(!list.followingAfterInteraction())
 }
 
+@MainActor @Test func aRowByTheEndCannotBeBroughtToTheMiddle() {
+    let list = ViewportConversationView(frame: CGRect(x: 0, y: 0, width: 390, height: 700),
+                                        collectionViewLayout: ViewportConversationLayout())
+    list.layoutIfNeeded()
+    list.contentSize = CGSize(width: 390, height: 2_000)
+    list.pinToEnd()
+    // The last row: the list is already where bringing it into view would leave it.
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 1_800, width: 390, height: 200)) == list.contentOffset.y)
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 900, width: 390, height: 200)) == 650)
+    #expect(list.centeredOffset(of: CGRect(x: 0, y: 0, width: 390, height: 200)) == 0)
+}
+
 @MainActor @Test func stationaryTouchResumesViewportFollowingWithoutADragCallback() async throws {
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
     let controller = UIViewController()

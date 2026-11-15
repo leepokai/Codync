@@ -33,7 +33,7 @@ impl Actor {
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
         let remind_follow_ups = !snapshot.system.contains("follow_up");
-        let briefed_on_tasks = snapshot.system.contains("start_task");
+        let briefed_on_tasks = snapshot.system.contains("add_work");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.
         for first in [self.relay.carried.take(), self.handoff.take()].into_iter().flatten() {
@@ -76,8 +76,17 @@ impl Actor {
             prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
         }
         let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
-        if let Some(about) = tasks::reminder(briefed_on_tasks, known).filter(|_| own_chat && !self.cfg.is_task()) {
+        let own_box = own_chat && !self.cfg.is_task();
+        if let Some(about) = tasks::reminder(briefed_on_tasks, known).filter(|_| own_box) {
             prompt = format!("{prompt}\n\n[Codync: {about}]");
+        }
+        // Its box, so it can say what it is doing and place more work without asking. Where `EACH_TURN` goes: a
+        // custom command gets the message as written.
+        if own_box
+            && known
+            && let Some(lines) = tasks::lines(&self.hub, &self.cfg, "Your")
+        {
+            prompt = format!("{prompt}\n\n[Codync: {lines}]");
         }
         Ok(prompt)
     }

@@ -18,6 +18,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var sent: [String] = []
     /// Each `send`'s quoted message, in order.
     private(set) var replyTos: [String?] = []
+    /// Each `send`'s selected part of the quoted message, in order.
+    private(set) var replyParts: [String?] = []
     private(set) var readReceipts: [Data] = []
     /// Whether each read receipt said it was automatic.
     var automaticReads: [Bool] {
@@ -125,6 +127,7 @@ actor FakeRemote: RemoteTransport {
             let b = (try JSONSerialization.jsonObject(with: body) as? [String: String]) ?? [:]
             sent.append(b["text"] ?? "")
             replyTos.append(b["replyTo"])
+            replyParts.append(b["replyPart"])
             let entry = #"{"id":"e\#(sent.count)","seq":\#(sent.count),"botId":"\#(b["botId"] ?? "")","rev":\#(sent.count),"kind":"user","turn":1,"data":{"text":"\#(b["text"] ?? "")","clientNonce":"\#(b["clientNonce"] ?? "")"},"createdAt":1,"updatedAt":1}"#
             return Data(#"{"entry":\#(entry)}"#.utf8)
         case "startCall":
@@ -181,7 +184,7 @@ actor FakeRemote: RemoteTransport {
     /// Every later `enqueue` throws `error`.
     func failEnqueue(_ error: any Error) { enqueueError = error }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws {
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, replyPart: String?, pasted: [String]?) async throws {
         if let enqueueError { throw enqueueError }
         enqueued.append(clientNonce)
     }

@@ -17,6 +17,7 @@ test('going from agents back to models leaves no agent rows behind', async () =>
     botId = (await steerBot(page, name, 1)).id
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
+    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
     const picker = page.locator('.details-panel .agent-picker')
     await picker.locator('.agent-picker-summary').click()
     const items = picker.locator('.agent-picker-item')
@@ -44,6 +45,7 @@ test('the agent list blurs under an edge only while there is more past it', asyn
     botId = (await steerBot(page, name, 1)).id
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
+    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
     const picker = page.locator('.details-panel .agent-picker')
     await picker.locator('.agent-picker-summary').click()
     await picker.locator('.agent-picker-choice').first().click()

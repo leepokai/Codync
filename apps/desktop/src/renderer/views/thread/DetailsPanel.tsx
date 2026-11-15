@@ -15,6 +15,7 @@ import { RoutinesView } from '../routines/RoutinesView'
 import { LibraryView } from '../library/LibraryView'
 import { DevServersSection } from './DevServersSection'
 import { ComputerTab } from './ComputerTab'
+import { WorkTimeline } from './WorkTimeline'
 import { MacChatButton } from './MacChatButton'
 import '../bots/bots.css'
 import './details-panel.css'
@@ -31,15 +32,17 @@ const TABS: { id: DetailsTab; label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ]
 
-/** The inspector beside a conversation (Grok Bot's): who the bot is, then its details, its computer, library, memory and
- * settings. */
-export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArtifact, share, close }: {
+/** The inspector beside a conversation (Grok Bot's): who the bot is, then what it does (Details), its computer, library,
+ * memory and how it is set up (Settings). */
+export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArtifact, openCard, share, close }: {
   botId: string
   routineId: string | null
   tab: DetailsTab
   setTab: (tab: DetailsTab) => void
   editGroup: () => void
   openArtifact: (artifactId: string) => void
+  /** Shows the chat at the approval card of an item that needs the user. */
+  openCard: (itemId: string) => void
   share: () => void
   close: () => void
 }) {
@@ -63,11 +66,12 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
             <TabChoice label="Conversation details" selection={tab} options={hasLibrary(store.hostVersion?.version) ? TABS : TABS.filter((t) => t.id !== 'library')} onChange={setTab} />
             <div key={tab} className="details-tab fade-in">
               {tab === 'details' ? (
-                <>
-                  {bot ? <DevServersSection bot={bot} /> : null}
-                  <BotSettingsPanel botId={botId} part="often" />
-                  <RoutinesView botId={botId} initialId={routineId} />
-                </>
+                bot ? (
+                  <WorkTimeline bot={bot} openCard={openCard}>
+                    <RoutinesView botId={botId} initialId={routineId} />
+                    <DevServersSection bot={bot} />
+                  </WorkTimeline>
+                ) : null
               ) : tab === 'computer' ? (
                 bot ? <ComputerTab bot={bot} /> : null
               ) : tab === 'library' ? (
@@ -75,7 +79,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, editGroup, openArt
               ) : tab === 'memory' ? (
                 <MemoryCard botId={botId} />
               ) : (
-                <BotSettingsPanel botId={botId} part="rarely" />
+                <BotSettingsPanel botId={botId} />
               )}
             </div>
           </>

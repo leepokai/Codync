@@ -1,20 +1,7 @@
-import { test, expect, type Page } from '@playwright/test'
-import { api, attach, openGeneralSettings } from './sandbox.ts'
+import { test, expect } from '@playwright/test'
+import { api, attach, openVoiceSettings, pick } from './sandbox.ts'
 
 const prefs = ['callEngine', 'callMode.gemini', 'callGoogleSearch.gemini']
-
-/** Settings › Voice chat. */
-async function openVoiceSettings(page: Page) {
-  await openGeneralSettings(page)
-  await page.locator('.settings-item', { hasText: 'Voice chat' }).click()
-}
-
-/** Picks `option` in the voice page's picker now showing `current`. */
-async function pick(page: Page, current: string, option: string) {
-  await page.locator(`.choice-picker[title="${current}"]`).click()
-  await page.getByRole('menuitemradio', { name: option, exact: true }).click()
-  await expect(page.locator(`.choice-picker[title="${option}"]`)).toBeVisible()
-}
 
 test('Gemini realtime offers a Google Search switch, off by default, kept, and only for Gemini realtime', async () => {
   const { browser, page } = await attach()

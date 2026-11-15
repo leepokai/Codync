@@ -25,6 +25,7 @@ mod replies;
 mod routines;
 mod scroll;
 mod skill;
+mod tasks;
 mod when;
 
 pub use analytics::AnalyticsSheet;
@@ -41,6 +42,7 @@ pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
+pub use tasks::{Fetched, TaskEntries, TaskList, TaskSheet};
 pub use when::complete_zone;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -63,6 +65,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
+    FollowUpCancelled(String),
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),
@@ -77,6 +81,8 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
+    /// A background task's transcript and how it stands (`taskEntries`), by task id.
+    TaskEntries(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
         search: String,

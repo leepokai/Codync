@@ -346,6 +346,16 @@ extension BotStore {
         try await ready().callEntries(botId: botId, call: call)
     }
 
+    /// A background task and its transcript, for its details. Never `upsert`ed: a task's entries stay out of chats.
+    public func fetchTask(_ botId: String, task: String) async throws -> (task: BotTask, entries: [Entry]) {
+        try await withLink(replay: true) { try await $0.taskEntries(botId: botId, taskId: task) }
+    }
+
+    /// Stops one background task of the bot's, or all of them (nil).
+    public func stopTask(_ botId: String, task: String?) {
+        perform(replay: true) { try await $0.stopTask(botId: botId, taskId: task) }
+    }
+
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the
     /// mirror would break `loadOlder`, which pages from the oldest loaded `seq`.
     public func botConversation(_ botId: String, peer: String) async throws -> [Entry] {

@@ -62,14 +62,15 @@ function WorkingSteps({ steps }: { steps: Entry[] }) {
   )
 }
 
-/** `Text(date, style: .timer)`: 0:42, 12:05, 1:02:33. */
-function Timer({ since }: { since: number }) {
+/** `Text(date, style: .timer)`: 0:42, 12:05, 1:02:33. `until` holds it at a time that has passed. */
+export function Timer({ since, until }: { since: number; until?: number }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
+    if (until !== undefined) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [])
-  const s = Math.max(0, Math.floor((now - since) / 1000))
+  }, [until])
+  const s = Math.max(0, Math.floor(((until ?? now) - since) / 1000))
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = String(s % 60).padStart(2, '0')

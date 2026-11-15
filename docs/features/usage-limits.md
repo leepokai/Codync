@@ -41,8 +41,12 @@ first, each with its own windows. An agent on one login looks as it always did.
   and the agent's row in the chooser while none of its logins has any.
 - **What goes by them:** background work (`near_limit`) and a fallback's rest (`rest::reset_time`) go by the windows
   of the login the bot runs on (`Usage::windows`).
-- **One agent, one line:** the menu bar, the notch island, the widgets and the mascot's "nearly used up" show the
-  login nearest a limit (`tightestLogin`), without its name. The Usage screens and the terminal UI's sheet show all.
+- **One agent, one line:** the notch island, the widgets and the mascot's "nearly used up" show the login nearest a
+  limit (`tightestLogin`), without its name. The Usage screens and the terminal UI's sheet show all.
+- **The menu bar, a level at a time** (`shared/tray-usage.ts`): an agent on one login lists its limits under its name,
+  and one with several is a single row that opens every login's, a login with nothing read saying **No reading yet**.
+  With more than one computer in the app, a **Usage limits** title leads a row per computer that has limits to show,
+  and each opens its own agents.
 
 ## Readers
 

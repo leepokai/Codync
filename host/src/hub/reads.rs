@@ -8,7 +8,7 @@ use serde_json::Value;
 
 impl Hub {
     /// The user read the chat: opened it, picked "Mark as read" or sent from it, which also ends a mark as unread.
-    /// Nothing unread there is a no-op.
+    /// Nothing unread there is a no-op, and so is a task bot: no client lists it, so it has no unread to show.
     pub fn mark_read(&self, id: &str) -> Result<()> {
         let _g = self.emit_lock.locked();
         self.read_locked(id)
@@ -27,6 +27,9 @@ impl Hub {
     /// Checked under `emit_lock`: a second concurrent read must see the first and no-op, not overwrite the read
     /// position `mark_unread` restores.
     fn read_locked(&self, id: &str) -> Result<()> {
+        if crate::store::is_task_id(id) {
+            return Ok(());
+        }
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
         if self.store.unread(id, row.read_rev) == 0 && !self.store.kept_unread(id) {
             return Ok(());
@@ -85,6 +88,13 @@ mod tests {
         assert_eq!((held["keptUnread"].clone(), held["unread"].clone()), (json!(true), json!(1)));
         assert_eq!(events.try_recv().unwrap()["bot"]["keptUnread"], true);
         assert!(hub.mark_unread("missing").is_err());
+    }
+
+    #[test]
+    fn reading_a_task_bot_is_a_no_op() {
+        let hub = hub_with_bot();
+        hub.mark_read("task-1").unwrap();
+        hub.read_on_screen("task-1").unwrap();
     }
 
     #[test]

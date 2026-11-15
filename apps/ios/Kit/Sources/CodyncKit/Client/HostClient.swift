@@ -8,6 +8,9 @@ public enum HostEvent: Sendable {
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
+    /// An entry of a background task's transcript (`task` is the task's id): never part of a chat, and never in the
+    /// catch-up (`taskEntries` reads a task back).
+    case taskEntry(task: String, Entry)
     case usage(Usage)
     case screen(ScreenState)
     /// An artifact published or renamed (the catch-up replays it too).
@@ -133,6 +136,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(BotWrap.self, from: data)).map { .bot($0.bot) } ?? .undecodable(type: "bot")
         case "entry":
             return (try? d.decode(EntryWrap.self, from: data)).map { .entry($0.entry) } ?? .undecodable(type: "entry")
+        case "taskEntry":
+            // Not worth a rewind: the task's details read its transcript again.
+            struct TaskEntryWrap: Decodable { var task: String; var entry: Entry }
+            return (try? d.decode(TaskEntryWrap.self, from: data)).map { .taskEntry(task: $0.task, $0.entry) }
         case "usage":
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
@@ -192,6 +199,19 @@ public extension HostClient {
         struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await self.call("callEntries", ["botId": botId, "callId": call])
         return res.entries
+    }
+
+    /// A background task of the bot's and its transcript (the newest 500 entries, oldest first), ended or not.
+    func taskEntries(botId: String, taskId: String) async throws -> (task: BotTask, entries: [Entry]) {
+        struct Res: Decodable { var task: BotTask; var entries: [Entry] }
+        let res: Res = try await call("taskEntries", ["botId": botId, "taskId": taskId])
+        return (res.task, res.entries)
+    }
+
+    /// Stops one background task of the bot's, or all of them.
+    func stopTask(botId: String, taskId: String?) async throws {
+        struct Body: Encodable { var botId: String; var taskId: String? }
+        let _: Empty = try await call("stopTask", Body(botId: botId, taskId: taskId))
     }
 
     /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.
@@ -336,12 +356,13 @@ public extension HostClient {
     /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
     /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
     func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
-                   voice: String? = nil, language: String?) async throws -> CallSession {
+                   voice: String? = nil, language: String?, googleSearch: Bool = false) async throws -> CallSession {
         struct Body: Encodable {
             var botId, callId, mode: String; var provider, model, voice, language: String?
+            var googleSearch: Bool
         }
         let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
-                        language: language)
+                        language: language, googleSearch: googleSearch)
         let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
         return try CallSession(json: data)
     }

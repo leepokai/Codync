@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use crate::agent::fallback::Reason;
 
 use super::model::{Mark, Status};
+use super::tasks::Task;
 use super::tilde;
 
 /// The harness's own memory as the bot's Memory screen shows it.
@@ -93,6 +94,8 @@ pub struct Bot {
     pub members: Vec<String>,
     /// Where the running turn talks: a chat (`None` = its own).
     pub working_chat: Option<String>,
+    /// Its background tasks still going, in start order; its own `status` stays the chat's.
+    pub tasks: Vec<Task>,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -243,6 +246,7 @@ impl Bot {
             group: v["kind"] == "group",
             members: strs(&v["members"]),
             working_chat: v["workingChat"].as_str().map(str::to_owned),
+            tasks: Task::list(&v["tasks"]),
         })
     }
 

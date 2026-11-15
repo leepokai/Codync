@@ -148,6 +148,11 @@ pub(super) fn chosen_line(out: &mut Built, e: &Entry) {
     ]));
 }
 
+/// Where a background task's card comes from.
+fn background_line(task: &str) -> String {
+    format!("{} · {task}", tr("In the background"))
+}
+
 pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, width: usize) {
     let t = theme();
     let home = app.home.as_str();
@@ -160,6 +165,9 @@ pub(super) fn permission_card(out: &mut Built, app: &App, e: &Entry, b: &Bot, wi
     let room = inner.saturating_sub(w(&fill(&template, &[("name", &b.name), ("title", "")])) + 4);
     let head = format!(" ◆ {} ", fill(&template, &[("name", &b.name), ("title", &truncate(title, room))]));
     card_head(out, &head, bw);
+    if let Some(task) = e.data["task"]["title"].as_str() {
+        card_row(out, vec![Span::styled(truncate(&background_line(task), inner), t.dim)], inner);
+    }
     if let Some(cmd) = e.data["command"].as_str().filter(|c| !c.is_empty()) {
         for (i, l) in md::wrap(&[Span::styled(cmd.to_owned(), t.bold)], inner.saturating_sub(2), &[], &[])
             .into_iter()
@@ -293,6 +301,26 @@ mod tests {
         let o = |k: &str| (String::new(), String::new(), k.to_owned());
         let keys = option_keys(&[o("allow_once"), o("allow_always"), o("reject_once"), o("reject_always")]);
         assert_eq!(keys, ["y", "a", "n", "4"]);
+    }
+
+    #[tokio::test]
+    async fn a_tasks_card_says_it_comes_from_the_background() {
+        use serde_json::json;
+        let app = crate::tui::app::test_app();
+        let bot = Bot::parse(&json!({"id": "a", "name": "Ada"})).expect("a bot with an id parses");
+        let card = |data: serde_json::Value| {
+            let entry = json!({"id": "p", "botId": "a", "seq": 1, "kind": "permission", "data": data});
+            let (_, e) = Entry::parse(&entry).expect("an entry parses");
+            let mut out = Built::default();
+            permission_card(&mut out, &app, &e, &bot, 60);
+            out.lines.iter().map(ToString::to_string).collect::<Vec<_>>()
+        };
+        let own = card(json!({"status": "pending", "title": "Run tests", "options": []}));
+        let task = card(json!({"status": "pending", "title": "Run tests", "options": [],
+            "task": {"id": "task-1", "title": "Fix login"}}));
+        assert_eq!(task.len(), own.len() + 1);
+        assert!(task[1].contains("In the background · Fix login"), "{task:?}");
+        assert!(!own.iter().any(|l| l.contains("In the background")));
     }
 
     #[test]

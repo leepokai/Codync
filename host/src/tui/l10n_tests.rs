@@ -244,3 +244,25 @@ fn host_schedule_sentences_match_their_catalog_templates() {
     );
     assert_eq!(translate_with("When a webhook fires", &super::IT), "Quando arriva un webhook");
 }
+
+#[test]
+fn background_task_words_read_in_traditional_chinese() {
+    for (english, chinese) in [
+        ("In the background", "背景"),
+        ("Needs you", "需要你"),
+        ("{count} tasks running", "{count} 件事"),
+        ("Stop the background work?", "停止背景的工作？"),
+        ("What it already changed stays.", "已經改的內容會留著。"),
+        ("In the background: {what}", "背景：{what}"),
+        ("Done", "完成"),
+        ("Failed", "失敗"),
+        ("Stopped", "已停止"),
+        ("B opens", "B 開啟"),
+        ("X stops", "X 停止"),
+        ("Picking up from the chat…", "正在從聊天接著做…"),
+    ] {
+        assert_eq!(translate_with(english, &super::HANT), chinese);
+    }
+    // A step's own words stay as the task wrote them.
+    assert_eq!(translate_with("In the background: Reading files", &super::HANT), "背景：Reading files");
+}

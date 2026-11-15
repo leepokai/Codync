@@ -8,10 +8,11 @@ import kotlinx.serialization.json.*
 // lasts, carry the call's id; the chat shows them only in the call's conversation, which its line opens.
 
 /** What a client needs to run a call's voice, from the computer (`startCall`). */
-data class CallSession(val credential: String?, val instructions: String, val tools: List<CallTool>) {
+data class CallSession(val credential: String?, val instructions: String, val tools: List<CallTool>, val googleSearch: Boolean = false) {
     companion object {
         fun decode(value: JsonObject) = CallSession(
             credential = value.text("credential"),
+            googleSearch = value["googleSearch"]?.jsonPrimitive?.booleanOrNull == true,
             instructions = value.text("instructions") ?: throw IllegalStateException("The computer sent no call instructions."),
             tools = (value["tools"] as? JsonArray).orEmpty().mapNotNull { tool ->
                 val fields = tool as? JsonObject ?: return@mapNotNull null
@@ -24,8 +25,9 @@ data class CallSession(val credential: String?, val instructions: String, val to
 
 /** A call as the computer runs it; one per call, so it outlives an engine switch. */
 interface CallLink {
-    /** Starts the call on the computer (again, when a provider session is replaced): what the voice needs. */
-    suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession
+    /** Starts the call on the computer (again, when a provider session is replaced): what the voice needs.
+     * `googleSearch` asks for Gemini's built-in search; the session says whether it's on. */
+    suspend fun start(provider: VoiceProvider, model: String, voice: String, googleSearch: Boolean = false): CallSession
     /** One of the voice's tool calls, run on the computer. A failure is the answer. */
     suspend fun tool(name: String, arguments: JsonObject): JsonElement
     /** A piece of what `from` (`user` or `voice`) said; the pieces of one turn join into one line. */

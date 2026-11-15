@@ -186,7 +186,7 @@ mod tests {
         crate::agent::login_profiles::tests::insert(&store, &[("a1", "claude")]);
         let (vars, grants) = super::super::launch_env(&store, "claude", Some("a1")).unwrap();
         let env: BTreeMap<String, String> = vars.into_iter().collect();
-        assert!(!env.contains_key("ANTHROPIC_API_KEY") && !env.contains_key("ANTHROPIC_BASE_URL"), "{env:?}");
+        assert!(env["ANTHROPIC_API_KEY"].is_empty() && !env.contains_key("ANTHROPIC_BASE_URL"), "{env:?}");
         assert!(grants.is_empty() && env.contains_key("CLAUDE_CONFIG_DIR"));
         assert_eq!(env["OPENAI_API_KEY"], "sk-oai", "not a key Claude Code signs in with");
 
@@ -269,7 +269,8 @@ mod tests {
         assert_eq!(env, [("ANTHROPIC_API_KEY".to_owned(), "sk-ant".to_owned()), ("OTHER".to_owned(), "o".to_owned())]);
         crate::agent::login_profiles::tests::insert(&store, &[("a1", "claude")]);
         let (env, _) = super::super::launch_env(&store, "claude", Some("a1")).unwrap();
-        let names: Vec<&str> = env.iter().map(|(name, _)| name.as_str()).collect();
+        let names: Vec<&str> =
+            env.iter().filter(|(_, value)| !value.is_empty()).map(|(name, _)| name.as_str()).collect();
         assert!(
             names.contains(&"OTHER") && !names.contains(&"ANTHROPIC_API_KEY"),
             "the login profile's login: {names:?}"

@@ -65,9 +65,9 @@ The routine scheduler's one-second tick (`routines/runner.rs`) hands each due fo
 - **It is a host turn** (`HostTurn::FollowUp`, analytics source `follow_up`), not the user's: memory may only gain
   lines, and `request_decision` isn't available.
 - **Restart mid-turn:** resumed, since the follow-up is already gone, and as the follow-up it is: the running
-  turn's mark (`turn.inflight`) says so, the resume prompt allows `(pass)` again, a pass still alerts no one and
-  `turn_finished` still reports `follow_up`. Only the chain starts over: a follow-up set after the restart has
-  `chain` 0.
+  turn's mark (`turn.inflight`, `agent/bot/inflight.rs`) says so and keeps its place in the chain, the resume
+  prompt allows `(pass)` again, a pass still alerts no one, `turn_finished` still reports `follow_up`, and a
+  follow-up set after the restart continues the chain, so a restart never resets the limit on a watch.
 - **The state can't be saved** (the disk is full, SQLite is busy) when its turn begins or Stop drops it: the
   follow-up stays in the list and is handed to the bot again on the next tick.
 - **The computer was off or asleep:** it goes out on the first tick after. A waiting follow-up keeps the computer
@@ -114,9 +114,10 @@ already read that listing every three seconds.
 - **The time is in the app's language**, like the routine editor's dates (`useIntlLocale`, the iPhone's
   `\.locale`, Android's `appLocale`), not the device's.
 - **Terminal:** the follow-ups come first in the list (`RoutineList::rows`), marked `◷` where a routine has its
-  on/off dot; `x` cancels the one picked, and a routine's other keys do nothing on it. The sheet loads again when
-  a notice arrives in that chat, so one that fires or is dropped leaves the list; the cursor stays on the row it
-  picked, so a key pressed just then never lands on another row.
+  on/off dot; `x` cancels the one picked, and a routine's other keys do nothing on it. The row leaves once the
+  host has dropped it; a cancel that failed says why, and the follow-up stays in the list. The sheet loads again
+  when a notice arrives in that chat, so one that fires or is dropped leaves the list; the cursor stays on the
+  row it picked, so a key pressed just then never lands on another row.
 - Code: desktop `views/routines/RoutinesView.tsx` (`followUpLine` in `routine.ts`), iPhone
   `CodyncUI/Routines/RoutinesView.swift` (`FollowUp.line`), Android `RoutinesView.kt` (`FollowUp.line` in core),
   terminal `tui/sheets.rs` and `tui/manage/routines.rs`. The dashed card is `outlinedCard(dashed:)` on both
@@ -133,16 +134,18 @@ user's comes from `api::dispatch` like every API call, so it also says which app
 
 - The list: `the_user_cancels_a_waiting_follow_up_from_the_routines_list` (host), `followUpLine` (desktop
   `routine.test.ts`), `FollowUp.line` and the listing's decoding (iPhone `RoutineTests.swift`, Android
-  `RoutineTest.kt`), `a_follow_up_sits_above_the_routines_and_x_cancels_it`,
-  `a_reload_keeps_the_cursor_on_the_row_it_picked` and the sheet's render test (terminal).
+  `RoutineTest.kt`), `a_follow_up_sits_above_the_routines_and_x_cancels_it` (also: a cancel that failed leaves
+  the row), `a_reload_keeps_the_cursor_on_the_row_it_picked` and the sheet's render test (terminal).
 - Unit (`routines/follow_up.rs`, `kept.rs`): the wait's wording, the note's checks, the ten and the chain limit,
   only from the bot's own chat, surviving a restart, leaving with the bot, what Stop drops, one that couldn't be
-  taken or dropped is handed over again.
+  taken or dropped is handed over again. `agent/bot/inflight.rs`: the running turn's mark keeps a follow-up's
+  place in its chain; what is no mark resumes nothing.
 - End to end (`host/tests/routines_e2e/follow_ups.rs`, a real host and a fixture agent): a follow-up that came due
   while the host was off takes one turn in the chat's own session and is gone; one with nothing to say leaves no
   reply; one set from that turn has `chain: 1`; one asked for in a room turn is refused and the same call in the
-  bot's own chat is taken; one cut off by a restart is resumed as a follow-up; Stop drops the one queued behind a
-  running turn; the tools over the real MCP subprocess (`routine_agent.py`).
+  bot's own chat is taken; one cut off by a restart is resumed as a follow-up, and one it sets then continues the
+  chain (`chain: 3`, then 4); Stop drops the one queued behind a running turn; the tools over the real MCP
+  subprocess (`routine_agent.py`).
 - Each client's language test: the lines translate around the wait, also when the note reads like a wait.
 - With a real agent (Claude Code, 2026-11-14, an isolated host and `codync-host send --wait`): asked to check
   back in a minute, the bot set a follow-up, the line appeared, and a minute later it answered in the same chat; a

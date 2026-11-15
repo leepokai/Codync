@@ -10,9 +10,11 @@ import {
   type PairingRequest,
   type ScreenState,
   type Usage,
+  normalizeBot,
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
+import { mergeTaskEntries } from '@shared/tasks'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
@@ -84,6 +86,8 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
+  /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
+  private taskTranscripts = new Map<string, Entry[]>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -320,6 +324,25 @@ export class BotMirror extends Observable {
     this.entries.set(e.botId, list)
   }
 
+  /** Holds a task's transcript from now until the returned function is called: its details are open. */
+  watchTask(taskId: string): () => void {
+    if (!this.taskTranscripts.has(taskId)) this.taskTranscripts.set(taskId, [])
+    return () => {
+      this.taskTranscripts.delete(taskId)
+    }
+  }
+
+  /** A watched task's transcript, oldest first. */
+  taskEntriesOf(taskId: string): Entry[] {
+    return this.taskTranscripts.get(taskId) ?? []
+  }
+
+  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nobody watches the task. */
+  protected mergeTask(taskId: string, entries: Entry[]) {
+    const held = this.taskTranscripts.get(taskId)
+    if (held) this.taskTranscripts.set(taskId, mergeTaskEntries(held, entries))
+  }
+
   setError(message: string | null) {
     this.lastError = message
     this.changed()
@@ -352,7 +375,8 @@ export class BotMirror extends Observable {
       this.cacheStamp = cache.stamp ?? ''
       this.hostId = cache.hostId ?? null
       this.rev = cache.rev
-      this.bots = new Map(cache.bots.map((b) => [b.id, b]))
+      // A copy cached by an older app lacks the fields added since.
+      this.bots = new Map(cache.bots.map((b) => [b.id, normalizeBot(b)]))
       const grouped = new Map<string, Entry[]>()
       for (const e of cache.entries) grouped.set(e.botId, [...(grouped.get(e.botId) ?? []), e])
       this.entries = grouped

@@ -349,6 +349,8 @@ impl App {
             }
             KeyCode::Char('S') => self.steer_next(),
             KeyCode::Char('D') => self.unqueue_last(),
+            KeyCode::Char('B') => self.open_tasks(),
+            KeyCode::Char('X') => self.ask_stop_tasks(),
             KeyCode::Char('*') => self.make_lead(),
             KeyCode::Char('x') => {
                 // An older host keeps its lead.

@@ -72,6 +72,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
           <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
         </HStack>
+        {d.task ? <Text as="div" size="caption" tone="tertiary" truncate>{tr('In the background')} · {d.task.title}</Text> : null}
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
             <VStack gap={8} className="permission-card-details">

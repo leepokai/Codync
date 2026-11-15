@@ -102,7 +102,11 @@ export function ChatWindow() {
           }
           case 'stopBot': {
             const ref = parseRef(c.ref)
-            if (ref) app.store(ref.computerId)?.stop(ref.botId)
+            const store = ref && app.store(ref.computerId)
+            if (!ref || !store) return
+            // The tray's one Stop is for all the bot does: its chat's turn and its work in the background.
+            store.stop(ref.botId)
+            if (store.bots.get(ref.botId)?.tasks.length) store.stopTask(ref.botId)
             return
           }
           case 'refresh':

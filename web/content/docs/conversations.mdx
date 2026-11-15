@@ -102,13 +102,29 @@ With **Approve automatically**, no cards appear: Codync allows each request for 
 
 Some agents keep working after their reply, for example a background helper that finishes a long job. With **Approve automatically**, what that work asks is allowed too, unless you stopped the bot's latest reply; under any other setting it's declined, since no card can wait for you. Once the bot is idle there's no **Stop**: to stop approving that work, switch the bot to **Ask me**. When that work is done, the bot can still send you its result as a message in its chat, unless you stopped its latest reply.
 
+A [background task](#background-tasks) asks in the same chat. Its card has the line **In the background ·** and the task's name, and you answer it like any other card. A task keeps the **Permissions** setting its bot had when it started.
+
+## Background tasks
+
+For long work (changing code, running builds or tests, research, writing a document), a bot starts a background task: another session of the same bot that works away from the chat. The chat stays free, so you can keep writing to the bot and it keeps answering while the task goes on.
+
+- **While a task runs,** a capsule above the message box reads **In the background ·** and what the task is doing, with the time it has been running. It reads **Needs you** while the task waits on an approval card, and how many tasks are running when there are several. The bot's row in the bot list reads **In the background:** and the same words while the chat itself is idle.
+- **To see what a task did,** open its details: tap or click the capsule's text. You get the task's own steps and messages, to read only. With several tasks you pick one from a list first.
+- **To stop a task,** use **Stop** on the capsule or in its details. Codync asks **Stop the background work?** first. What the task already changed stays. With several tasks, the capsule's Stop stops all of them; the details stop one.
+- **Terminal UI:** the task shows as a line over the message box. Press Esc to leave typing, then `B` to open its details and `X` to stop it. `X` asks before it stops.
+- **When a task finishes,** the bot tells you what it found in an ordinary message, with the usual notification. If a task couldn't finish, the bot tells you why. A task you stopped sends nothing.
+
+A bot runs one task at a time and adds to it when you ask for more; it starts a second one beside it only when you want two unrelated things at once. A bot can have 3 tasks running, and all bots on a computer 6 together. A task can't ask you a question or share a file: it puts what it needs in its report, and the bot takes it from there in the chat.
+
+Tasks run on your computer and pick up again after the host restarts. A finished task's details are kept for 7 days.
+
 ## Stopping a turn
 
 - **Desktop and iPhone:** while the bot works and the box is empty, the send button turns into **Stop**.
-- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**.
+- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**. It also stops the bot's [background tasks](#background-tasks).
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
-Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent.
+Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. A [background task](#background-tasks) keeps going: it has its own **Stop**, on the capsule above the message box. A task the bot started in the turn you stopped never begins.
 
 ## Replying to a message
 

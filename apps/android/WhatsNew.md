@@ -7,15 +7,18 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.0
+## 2.49.0
 ### zh-Hant
 - 在 bot 的選單裡可以「標為未讀」：未讀徽章和數量會回來，而且在每台裝置上都會保留，直到你重新打開聊天、標為已讀或在聊天裡傳送訊息。
 
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
 
-## 2.47.0
+## 2.48.0
 ### zh-Hant
+- Bot 會把比較久的工作交給背景進行，聊天不會被占住，可以繼續傳訊息。輸入框上方會顯示「背景」和進度，點一下看它做了什麼，也可以停止。
+- 背景工作需要核准時，卡片會出現在聊天裡並標示「背景」。
+- 完成後 Bot 會用一則訊息告訴你結果。
 - 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好，原本輸入框裡的草稿不會被動到。
 - 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
 - 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
@@ -25,8 +28,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 「用量上限」會分別列出每個賬戶的額度（Claude Code、Codex）。
 - Bot 說「晚點回來看」時會設定跟進，時間到了自己回到聊天告訴你結果；等待中的跟進列在例行任務上方，可以取消。
 - 例行任務會記住上次做到哪裡，下次接著做。
+- Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 
 ### en-US
+- Bots do long work in the background, so the chat stays free and keeps answering. A capsule above the message box shows what it is doing; tap it for details, or stop it.
+- Approval cards from background work appear in the chat, marked "In the background".
+- When it's done, the bot tells you what it found.
 - Share text, links, photos or files to a bot from any app.
 - Update notices say whether this app or your computer needs updating.
 - A voice note no longer plays after you leave its chat.
@@ -34,3 +41,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Agents can have several login profiles (account or API key): pick a bot's under Agent, fall back to another, see each account's limits in Usage.
 - Bots can check back later; cancel one under Routines.
 - Routines resume where the last run stopped.
+- Optional Google Search in Gemini realtime calls, off by default.

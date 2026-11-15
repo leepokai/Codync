@@ -45,7 +45,8 @@ impl Hub {
     /// its preview shows (`Store::last_message`): the user's, or an agent's finished reply. Dragging still
     /// works; the chat's next message moves it again.
     pub(crate) fn order_on_message(&self, entry: &Entry) {
-        if !entry.is_message() || !entry.data["call"].is_null() || !self.auto_order() {
+        let listed = !crate::store::is_task_id(&entry.bot_id);
+        if !listed || !entry.is_message() || !entry.data["call"].is_null() || !self.auto_order() {
             return;
         }
         match self.move_to_top(&entry.bot_id) {

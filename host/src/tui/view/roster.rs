@@ -5,8 +5,10 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use super::super::app::{App, Bot, Click, Focus, Mark, RosterLine, Status, cursor_line, roster_lines, stops};
-use super::super::l10n::tr;
+use super::super::app::{
+    App, Background, Bot, Click, Focus, Mark, RosterLine, Status, cursor_line, roster_lines, stops,
+};
+use super::super::l10n::{self, tr};
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
 use super::style::{avatar, glyph, theme};
@@ -159,6 +161,13 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
+    // An idle chat whose bot works away from it says so.
+    if b.status == Status::Idle
+        && let Some(background) = Background::of(&b.tasks)
+    {
+        let line = l10n::fill(&tr("In the background: {what}"), &[("what", &background.what)]);
+        return (line, if background.needs_you { t.amber } else { t.secondary });
+    }
     match b.mark() {
         Mark::Need => (
             if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
@@ -250,6 +259,19 @@ mod tests {
         section_row(&mut buf, row, None, &"n".repeat(40), 12, 7, true);
         let text = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
         assert_eq!(text, " ▸ nnnnnnnnnn… (12)  7  ");
+    }
+
+    #[test]
+    fn an_idle_bot_with_tasks_previews_what_runs_in_the_background() {
+        let bot = |status: &str| {
+            let tasks = serde_json::json!([{"id": "task-1", "title": "Fix login", "status": "working"}]);
+            Bot::parse(&serde_json::json!({"id": "a", "status": status, "lastMessage": "On it.", "tasks": tasks}))
+                .expect("a bot with an id parses")
+        };
+        assert_eq!(preview(&bot("idle")).0, "In the background: Fix login");
+        assert_eq!(preview(&bot("working")).0, "Working…", "its own turn comes first");
+        let none = Bot::parse(&serde_json::json!({"id": "a", "lastMessage": "On it."})).expect("a bot");
+        assert_eq!(preview(&none).0, "On it.", "a host from before tasks");
     }
 
     #[test]

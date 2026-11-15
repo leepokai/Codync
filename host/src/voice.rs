@@ -3,12 +3,13 @@
 //! call gets a short-lived credential minted here and then streams audio to the
 //! provider directly, so audio never crosses the channel or the relay.
 
+mod compatible;
 mod keys;
 
 use crate::store::Store;
 use anyhow::{Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use keys::Access;
+use keys::{Access, Upstream};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -121,6 +122,9 @@ async fn send(p: Provider, req: reqwest::RequestBuilder) -> Result<Value> {
 /// or a one-use Gemini ephemeral token.
 async fn mint(p: Provider, access: &Access, model: &str, voice: &str) -> Result<String> {
     let v = match p {
+        Provider::OpenAi if access.upstream == Upstream::Compatible => {
+            bail!("Realtime talks to OpenAI itself. With CODYNC_OPENAI_BASE_URL set, use Speech mode.")
+        }
         Provider::OpenAi => {
             let body = json!({
                 "expires_after": {"anchor": "created_at", "seconds": 600},
@@ -149,7 +153,7 @@ async fn mint(p: Provider, access: &Access, model: &str, voice: &str) -> Result<
         .ok_or_else(|| anyhow!("{} sent no session credential.", p.name()))
 }
 
-/// Which providers have a key here, with their default models.
+/// Which providers have a key here, with their default models, and that Gemini realtime calls can use Google Search.
 pub fn status(store: &Store) -> Result<Value> {
     let providers = Provider::ALL
         .iter()
@@ -158,7 +162,7 @@ pub fn status(store: &Store) -> Result<Value> {
             Ok(json!({"provider": p.id(), "configured": keys::configured(store, p)?, "defaults": defaults}))
         })
         .collect::<Result<Vec<Value>>>()?;
-    Ok(json!({"providers": providers}))
+    Ok(json!({"providers": providers, "googleSearch": true}))
 }
 
 /// Checks the key with the provider (one credential mint), then keeps it. An empty key removes it.
@@ -169,7 +173,13 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
             Provider::OpenAi => "marin",
             Provider::Gemini => "Kore",
         };
-        mint(p, &Access::direct(p, key), &defaults(store, p).realtime, voice).await?;
+        let access = Access::direct(p, key)?;
+        if access.upstream == Upstream::Compatible {
+            // The compatible server mints no Realtime credentials; its model list checks the key.
+            send(p, access.request(p, Method::GET, "/v1/models")).await?;
+        } else {
+            mint(p, &access, &defaults(store, p).realtime, voice).await?;
+        }
     }
     keys::save(store, p, key)?;
     if !key.is_empty() {
@@ -401,7 +411,9 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
     }
     match p {
         Provider::OpenAi => {
-            let body = json!({"model": model, "voice": voice, "input": text, "response_format": "aac"});
+            // A compatible server answers WAV, so it needs no AAC encoder; every client plays both.
+            let format = if access.upstream == Upstream::Compatible { "wav" } else { "aac" };
+            let body = json!({"model": model, "voice": voice, "input": text, "response_format": format});
             let res = access
                 .request(p, Method::POST, "/v1/audio/speech")
                 .json(&body)
@@ -419,7 +431,7 @@ pub async fn speak(store: &Store, p: Provider, model: &str, voice: &str, text: &
                         .map_or_else(|| format!("{} answered {status}.", p.name()), str::to_owned)
                 );
             }
-            Ok(json!({"audio": STANDARD.encode(&bytes), "format": "aac"}))
+            Ok(json!({"audio": STANDARD.encode(&bytes), "format": format}))
         }
         Provider::Gemini => {
             let body = json!({
@@ -471,6 +483,12 @@ fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_says_calls_can_use_google_search() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        assert_eq!(status(&store).unwrap()["googleSearch"], true);
+    }
 
     fn ids(p: Provider, ids: &[&str]) -> (Vec<String>, Vec<String>, Vec<String>) {
         let models: Vec<Model> = ids

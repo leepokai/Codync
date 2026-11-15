@@ -11,6 +11,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
+/// The tool that shares a file with the user.
+pub const SEND_FILE: &str = "send_file";
+
 /// How to talk to the user: part of every bot's instructions (`context`), and the `chat` server's.
 pub const INSTRUCTIONS: &str = "In your chat with the user, the user sees only what you send with send_message; \
 text you write as your reply never reaches them. Send a message whenever you have something worth telling them: \
@@ -44,7 +47,7 @@ pub fn tools() -> Value {
         },
         "annotations": {"readOnlyHint": false, "idempotentHint": false},
     }, {
-        "name": "send_file",
+        "name": SEND_FILE,
         "description": "Share one regular file with the user in your own chat. Any file type, including empty files, up to 100 MiB. The host saves an immutable copy. Paths are absolute or relative to your working directory. With text, the file is a voice note (mp3, m4a, wav or aac, up to 20 MiB) that plays at the top of that message, which counts as one you sent. A successful response means the file message was published; do not repeat it.",
         "inputSchema": {"type": "object", "properties": {
             "path": {"type": "string"},
@@ -56,7 +59,7 @@ pub fn tools() -> Value {
 }
 
 pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
-    if name == "send_file" {
+    if name == SEND_FILE {
         return send_file(hub, bot, args).await;
     }
     if name == crate::chat::reactions::TOOL {

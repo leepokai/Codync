@@ -6,15 +6,18 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.0
+## 2.49.0
 ### zh-Hant
 - 在 bot 的選單裡可以「標為未讀」：未讀徽章和數量會回來，而且在每台裝置上都會保留，直到你重新打開聊天、標為已讀或在聊天裡傳送訊息。
 
 ### en-US
 - Mark a bot's chat as unread from its menu: the unread badge and count come back and stay on every device until you open the chat again, mark it read or send from it.
 
-## 2.47.0
+## 2.48.0
 ### zh-Hant
+- Bot 會把比較久的工作交給背景進行：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。輸入框上方會顯示「背景」和目前的進度與時間，點一下可以看它做了什麼，也可以停止（已經改的內容會留著）。
+- 背景工作需要你核准時，卡片會出現在聊天裡並標示「背景」，照平常的方式回答就好。
+- 背景工作完成後，Bot 會用一則訊息告訴你結果；沒有完成也會說明原因。
 - 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好。
 - 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
 - 智慧體可以有多個「登入設定」：在智慧體設定頁的「登入設定」新增賬戶（Claude Code、Codex、OpenCode、Pi、Google Antigravity 等可在同一台電腦登入多個賬戶），或為任何智慧體新增 API 金鑰（自行輸入環境變數，或從電腦的登入 shell 匯入；值只留在電腦上）。每個登入設定（包含預設的）都能自己取名，再到 bot 設定的「智慧體」選擇它要用的登入設定，兩個 bot 就能同時用不同的登入工作。
@@ -24,8 +27,12 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
 - Bot 說「晚點回來看」時會真的設定跟進：聊天裡會出現「20 分鐘後跟進」的提示，時間到了它會自己回到聊天告訴你結果，還沒有進展就不打擾你。等待中的跟進會列在例行任務上方，可以直接取消。
 - 例行任務會記住上次做到哪裡，分批進行的工作下次會接著做。
+- Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 
 ### en-US
+- Bots do long work in the background: the chat stays free, so you can keep writing and the bot keeps answering. A capsule above the message box shows "In the background", what it is doing and for how long; tap it to see what it did, or stop it (what it already changed stays).
+- When background work needs your approval, its card appears in the chat marked "In the background"; answer it like any other.
+- When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
 - Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
 - Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more can be signed in to several on one computer), or add an API key for any agent (environment variables you type or import from the computer's login shell; their values stay on the computer). Name any login profile (the default one too), then pick a bot's under Agent in its settings, so two bots can work at once on different logins.
@@ -35,3 +42,4 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
 - A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
 - A routine remembers where its last run stopped, so work done in parts carries on from there.
+- Optional Google Search in Gemini realtime calls, off by default.

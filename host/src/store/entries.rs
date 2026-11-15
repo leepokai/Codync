@@ -1,6 +1,6 @@
 //! The `entries` table: the transcript of every chat.
 
-use super::model::{Entry, EntryKind, Lane};
+use super::model::{Entry, EntryKind, Lane, TASK_GLOB};
 use super::{Store, logged, next_rev, now_ms};
 use crate::LockExt;
 use anyhow::{Result, ensure};
@@ -164,17 +164,21 @@ impl Store {
         )?)
     }
 
-    /// Entries changed after `since`. A fresh client (`since == 0`) only gets the
+    /// Entries changed after `since`, in the chats clients list: a task's transcript is fetched by itself
+    /// (`taskEntries`). A fresh client (`since == 0`) only gets the
     /// newest `cap` entries per bot and pages older ones in with `history`.
     pub fn entries_since(&self, since: i64, cap: i64) -> Result<Vec<Entry>> {
         let c = self.db.locked();
         let sql = if since == 0 {
             format!(
-                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries)
+                "SELECT {ENTRY_COLS} FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY bot_id ORDER BY seq DESC) AS rn FROM entries
+                   WHERE bot_id NOT GLOB '{TASK_GLOB}')
                  WHERE rn <= ?2 AND rev > ?1 ORDER BY seq"
             )
         } else {
-            format!("SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 ORDER BY seq")
+            format!(
+                "SELECT {ENTRY_COLS} FROM entries WHERE rev > ?1 AND ?2 > 0 AND bot_id NOT GLOB '{TASK_GLOB}' ORDER BY seq"
+            )
         };
         let mut st = c.prepare(&sql)?;
         Ok(st.query_map(params![since, cap], row_entry)?.collect::<rusqlite::Result<_>>()?)

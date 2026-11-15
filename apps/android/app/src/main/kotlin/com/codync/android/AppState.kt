@@ -104,6 +104,8 @@ data class AppState(
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
+    /** The transcripts of the background tasks whose details are open, by task id; never part of [entries]. */
+    val taskEntries: Map<String, List<Entry>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */

@@ -2082,5 +2082,22 @@
   "Follow-up due now": "Скоро проверка",
   "Cancel follow-up": "Отменить проверку",
   "Follow-up cancelled": "Проверка отменена",
-  "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет"
+  "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет",
+  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Новое: Codync Cloud (бета). Запустите облачный компьютер в собственном аккаунте Boat или InstaBox, чтобы боты работали, пока ваш компьютер выключен.",
+  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Новое: профили входа. Войдите агентом в несколько аккаунтов или добавьте API-ключи в разделе «Профили входа» в его настройках, а затем выберите профиль для каждого бота.",
+  "Picking up from the chat…": "Продолжаем из чата…",
+  "In the background": "В фоне",
+  "{count} tasks running": "Задач: {count}",
+  "Stop the background work?": "Остановить фоновую работу?",
+  "What it already changed stays.": "Уже внесённые изменения останутся.",
+  "In the background: {what}": "В фоне: {what}",
+  "Nothing in the background": "В фоне ничего нет",
+  "B opens": "B открывает",
+  "X stops": "X останавливает",
+  "T full": "T полностью",
+  "r retries": "r — повторить",
+  "↵ opens": "↵ открывает",
+  "Google Search": "Google Поиск",
+  "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "Разрешить Gemini искать в интернете во время звонков. Нужна квота Google Search; может взиматься плата.",
+  "Couldn't open the link.": "Не удалось открыть ссылку."
 }

@@ -33,6 +33,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::set_key(&hub.store, provider, b["key"].as_str().unwrap_or_default()).await?
         }
+        "setVoiceServer" => {
+            let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
+            crate::voice::set_server(&hub.store, provider, b["url"].as_str().unwrap_or_default()).await?
+        }
         "voiceSession" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::session(&hub.store, provider, str_arg(&b, "model")?, str_arg(&b, "voice")?).await?

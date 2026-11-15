@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from '@playwright/test'
+import { chromium, expect, type Browser, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -97,6 +97,19 @@ export async function typeMessage(page: Page, text: string) {
 export async function openGeneralSettings(page: Page) {
   await page.locator('.sidebar-account').click()
   await page.locator('.account-panel').getByText('Settings', { exact: true }).click()
+}
+
+/** Settings › Voice chat. */
+export async function openVoiceSettings(page: Page) {
+  await openGeneralSettings(page)
+  await page.locator('.settings-item', { hasText: 'Voice chat' }).click()
+}
+
+/** Picks `option` in the settings picker now showing `current`. */
+export async function pick(page: Page, current: string, option: string) {
+  await page.locator(`.choice-picker[title="${current}"]`).click()
+  await page.getByRole('menuitemradio', { name: option, exact: true }).click()
+  await expect(page.locator(`.choice-picker[title="${option}"]`)).toBeVisible()
 }
 
 type Host = {

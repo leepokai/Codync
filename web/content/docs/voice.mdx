@@ -89,6 +89,12 @@ Keys are entered on the computer, never on the phone:
 
 Once saved, the section shows **Key saved** with **Test key**, **Replace key** and **Remove key**. The iPhone shows whether the computer has a key and can test it, and tells you where to add one if it doesn't.
 
+### Use your own speech server
+
+The **OpenAI** section has a **Server** row. It reads `api.openai.com` until you type the address of an OpenAI-compatible server of your own there, such as a local speech-to-text and text-to-speech server (`http://127.0.0.1:8890`). The address must be https, or http on the computer itself. The computer checks the saved key with that server before it keeps the address, and from then on your recordings and spoken replies go to that server instead of OpenAI. Such a server works in **Speech** mode only, so **Mode** then reads Speech on every device, and the mode you had picked comes back when you clear the row to go back to OpenAI. If the saved key doesn't work with the server, remove the key, save the server, then add the server's key.
+
+Like the key, the server is set in the desktop app on the computer itself. The iPhone and Android apps show which server the computer uses. A Codync Cloud computer always uses OpenAI.
+
 The key is stored encrypted in Codync's vault on the computer (with the system keychain, as for [connector credentials](/docs/connectors-and-skills)), so one key serves the iPhone and the desktop app. It's never logged and never sent to the relay or to Codync's cloud.
 
 ## What goes where
@@ -97,9 +103,9 @@ The key is stored encrypted in Codync's vault on the computer (with the system k
 | --- | --- | --- |
 | On device | Stays on your device. Only the recognized text goes to the computer, as a message. Apple's speech recognition may use Apple's servers when on-device recognition isn't available for your language. On Android, calls are always recognized on the phone; dictation uses the phone's speech service when the phone can't recognize your language itself, and that service may use its provider's servers (Google's on most phones). | Not needed |
 | Realtime | Streams directly between your device and the provider (OpenAI over WebRTC, Gemini over a WebSocket). It doesn't pass through your computer or the relay. The written transcript of the call is kept on your computer. | Stays on the computer, which gives your device a short-lived credential for each call |
-| Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer |
+| Speech mode, or dictation with a provider | Recordings go to your computer over the encrypted connection, and the computer sends them to the provider, or to the [server of your own](#use-your-own-speech-server) you set for the OpenAI engine, with the names of the bots on the computer as spelling hints. The spoken replies come back the same way. | Stays on the computer, which sends it with each request |
 
-The relay only ever sees encrypted data. Whenever audio leaves your device, the call bar names the provider.
+The relay only ever sees encrypted data. Whenever audio leaves your device, the call bar names the provider (the engine, OpenAI, also when it uses your own server).
 
 ## Dictation
 

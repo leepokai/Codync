@@ -2095,5 +2095,8 @@
   "↵ opens": "↵ 開く",
   "Google Search": "Google 検索",
   "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "通話中に Gemini がウェブを検索できます。Google 検索の割り当てが必要で、料金が発生する場合があります。",
-  "Couldn't open the link.": "リンクを開けませんでした。"
+  "Couldn't open the link.": "リンクを開けませんでした。",
+  "Server": "サーバー",
+  "Your own server works in Speech mode only.": "自分のサーバーではスピーチモードのみ使えます。",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "スピーチモード用の OpenAI 互換サーバー：https、またはこのコンピュータ上の http。空欄なら OpenAI を使います。"
 }

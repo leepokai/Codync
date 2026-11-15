@@ -38,6 +38,9 @@ const SETTINGS: [(&str, &str); 6] = [
     ("setAutoOrder", "auto_order"),
 ];
 
+/// `setVoiceServer`'s setting, the one switch whose failure is reported (`failed`).
+const VOICE_SERVER: &str = "voice_server";
+
 /// The event an API call stands for, with its properties, read before the call runs.
 pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
     let mut p = Map::new();
@@ -66,10 +69,11 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
 /// The rest of `observe`: one arm per method.
 fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Event> {
     Some(match method {
-        "setCloudUrl" => {
-            // The address itself stays off the event. `on` is only whether a custom URL was saved.
+        "setCloudUrl" | "setVoiceServer" => {
+            // The address itself stays off the event. `on` is only whether one of the user's own was saved.
             let on = b["url"].as_str().is_some_and(|url| !url.trim().is_empty());
-            p.insert("setting".into(), "remote_access_url".into());
+            let setting = if method == "setCloudUrl" { "remote_access_url" } else { VOICE_SERVER };
+            p.insert("setting".into(), setting.into());
             p.insert("on".into(), on.into());
             Event::SettingChanged
         }
@@ -310,8 +314,8 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
-/// never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit, a login profile and a voice
+/// server report their category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -330,6 +334,12 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::ConnectorUpdated => {
             let category =
                 error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::SettingChanged if p.get("setting").and_then(Value::as_str) == Some(VOICE_SERVER) => {
+            let category = error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

@@ -15,6 +15,8 @@ final class SharedAudio {
     private(set) var state = State.idle
     /// Seconds the sound runs, known once its first load decoded.
     private(set) var duration: TimeInterval?
+    /// The length the preload read off the fetched bytes; the clock falls back to it when the player drops.
+    @ObservationIgnored private var known: TimeInterval?
     /// Seconds into the sound; ticks about four times a second while it plays.
     private(set) var elapsed: TimeInterval = 0
     @ObservationIgnored private var player: AVAudioPlayer?
@@ -84,11 +86,18 @@ final class SharedAudio {
     }
 
     /// The sound's bytes, ready to play before the first tap: fetched as the card shows (the card skips the fetch
-    /// when the network is off or costly for its size). The fetch is the tap's, so a tap during it only waits,
-    /// and its answer never downloads again; a fetch that fails stays quiet: the tap retries and reports it.
-    /// `generation` guards the fetch's users in `prepared`, so a card stopped while it runs plays nothing.
+    /// when the network is off or costly for its size), their length read off them so the bar and clock show at
+    /// once. The fetch is the tap's, so a tap during it only waits, and its answer never downloads again; a fetch
+    /// that fails stays quiet: the tap retries and reports it. `generation` guards the fetch's users, so a card
+    /// stopped while it runs plays nothing and shows no clock.
     func preload(_ file: SharedFile, entryId: String, model: BotStore) async {
-        _ = await bytes(file, entryId: entryId, model: model)
+        let started = generation
+        // A tap already on these bytes, or a sound once played, says its length itself.
+        guard let data = await bytes(file, entryId: entryId, model: model),
+              generation == started, state == .idle, duration == nil,
+              let sound = try? AVAudioPlayer(data: data) else { return }
+        known = sound.duration
+        duration = known
     }
 
     /// Whether the card preloads a sound as it shows: the computer online, and the fetch never costly — under
@@ -147,7 +156,7 @@ final class SharedAudio {
     /// The sound or the session failed: the player is dropped so the next tap fetches and decodes again.
     private func fail() {
         (player, done, fetched) = (nil, nil, nil)
-        duration = nil
+        duration = known
         elapsed = 0
         stopClock()
         state = .failed

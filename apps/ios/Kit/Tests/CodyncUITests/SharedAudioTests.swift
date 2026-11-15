@@ -108,6 +108,7 @@ private func silentWAV() -> Data {
             load.answer(silentWAV())
             await preloading.value
             #expect(audio.state == .idle, "the preload only fetches: nothing plays")
+            #expect(audio.duration == 1, "the preload read the length off the bytes, so the clock shows")
 
             await audio.toggle(note, entryId: "entry", model: store)
             #expect(load.calls == 1)
@@ -138,6 +139,7 @@ private func silentWAV() -> Data {
             load.answer(nil)
             await preloading.value
             #expect(audio.state == .idle, "a failed fetch stays quiet until a tap")
+            #expect(audio.duration == nil)
 
             // The failed fetch is forgotten: the tap fetches again and reports it.
             let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
@@ -157,6 +159,26 @@ private func silentWAV() -> Data {
             await preloading.value
             #expect(audio.state == .idle)
             #expect(audio.duration == nil)
+        }
+    }
+
+    @Test func aVoiceNoteFailingAfterItsPreloadKeepsTheLengthItRead() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.duration == 1)
+
+            // The preload's fetch answered and is forgotten, so the tap fetches again (the held answer cleared):
+            // that fetch fails, and the failure drops the player but keeps the length the preload read.
+            load.answer(nil)
+            let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(nil)
+            await tap.value
+            #expect(audio.state == .failed)
+            #expect(audio.duration == 1)
         }
     }
 

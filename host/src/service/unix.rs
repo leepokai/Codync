@@ -75,6 +75,20 @@ fn systemd_unit() -> PathBuf {
     dirs::config_dir().unwrap_or_else(|| home().join(".config")).join("systemd/user").join(UNIT)
 }
 
+/// The app whose bundle holds this binary (the Mac app ships it in `Contents/Resources`). launchd
+/// names it in `AssociatedBundleIdentifiers` so macOS charges the host's Local Network access to that
+/// app, which declares `NSLocalNetworkUsageDescription`; without it the request is denied unprompted.
+fn app_bundle_id(exe: &Path) -> Option<String> {
+    let app = exe.ancestors().find(|dir| dir.extension().is_some_and(|ext| ext == "app"))?;
+    let output = Command::new("/usr/bin/plutil")
+        .args(["-extract", "CFBundleIdentifier", "raw", "-o", "-"])
+        .arg(app.join("Contents/Info.plist"))
+        .output()
+        .ok()?;
+    let id = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (output.status.success() && !id.is_empty()).then_some(id)
+}
+
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
@@ -100,7 +114,7 @@ pub fn install(port: u16) -> Result<()> {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>{LABEL}</string>
+  <key>Label</key><string>{LABEL}</string>{associated}
   <key>ProgramArguments</key><array><string>{exe}</string><string>serve</string><string>--port</string><string>{port}</string></array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>{path}</string><key>CODYNC_HOME</key><string>{data}</string></dict>
   <key>RunAtLoad</key><true/>
@@ -112,6 +126,10 @@ pub fn install(port: u16) -> Result<()> {
 </dict>
 </plist>
 "#,
+            associated = app_bundle_id(Path::new(exe.as_ref())).map_or_else(String::new, |id| format!(
+                "\n  <key>AssociatedBundleIdentifiers</key><array><string>{}</string></array>",
+                xml_escape(&id)
+            )),
             exe = xml_escape(&exe),
             path = xml_escape(&path),
             data = xml_escape(&data_dir().to_string_lossy()),

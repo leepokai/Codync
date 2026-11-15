@@ -18,6 +18,7 @@ pub fn post(hub: &Arc<Hub>, cfg: &BotConfig, data: Value) -> Result<Entry> {
 /// [`post`]'s first half, `data` saved as the user's newest message in `cfg`'s chat: for a caller to whom a message
 /// that was never saved differs from one that was saved and not taken.
 pub fn save(hub: &Hub, cfg: &BotConfig, mut data: Value) -> Result<Entry> {
+    crate::chat::goal::user_spoke(hub, &cfg.id)?;
     // A group has no agent of its own to queue behind: its message is simply sent.
     data["status"] = (if cfg.is_group() { "sent" } else { "queued" }).into();
     let turn = hub.store.max_turn(&cfg.id) + 1;

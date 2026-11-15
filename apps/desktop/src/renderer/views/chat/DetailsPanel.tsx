@@ -24,6 +24,7 @@ import { PanelPane, type PaneView } from './PanelPane'
 import { ThreadChat } from './ThreadChat'
 import { NO_BAR_SLOTS, WindowBarSlots } from '../WindowBar'
 import { WorkTimeline } from './WorkTimeline'
+import { GoalSection } from './GoalSection'
 import '../bots/bots.css'
 import './details-panel.css'
 import { prefs, usePref } from '../../lib/prefs'
@@ -89,6 +90,7 @@ export function DetailsPanel({ botId, routineId, editGroup, openArtifact, openCa
   const view = (id: string, at: number) =>
     !bot ? null : id === 'details' ? (
       <WorkTimeline bot={bot} openCard={openCard} openThread={(taskId) => setStored(showView(layout, threadTab(taskId), at))}>
+        <GoalSection key={bot.id} bot={bot} />
         <RoutinesView botId={botId} initialId={routineId} />
         <DevServersSection bot={bot} />
       </WorkTimeline>

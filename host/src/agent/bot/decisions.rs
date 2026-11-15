@@ -69,6 +69,11 @@ impl Actor {
             decision::expire(&self.hub, &open);
             Expiry::AskedAgain.capture(&self.hub);
         }
+        // A choice needs the user just like an approval, even if saving the goal's end fails.
+        if let Some(step) = self.goal_step.as_mut() {
+            step.stopped = Some(crate::chat::goal::Stopped::NeedsUser);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), crate::chat::goal::Stopped::NeedsUser);
+        }
         self.close_seg();
         // A thread's card is answered by a press alone: what the user types in the chat is for the bot there.
         let data = if self.cfg.is_thread() { decision::pressed_only(data) } else { data };

@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 pub enum Cmd {
     /// A connector the bot has on was edited or set up: its agent starts again for its next turn (`restart_stale`).
+    /// Continue this generation of the conversation's goal.
+    Goal(String),
     RefreshTools,
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
@@ -128,6 +130,7 @@ pub enum Cmd {
 }
 
 pub(super) enum Queued {
+    Goal(String),
     Routine(String),
     FollowUp(String),
     TaskReport(crate::chat::work::Report),

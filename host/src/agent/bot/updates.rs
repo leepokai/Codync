@@ -254,6 +254,11 @@ impl Actor {
 
     /// Posts an approval card where the user is and tells them it needs them.
     fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
+        // Requiring approval ends automatic work even if persisting that end fails.
+        if let Some(step) = self.goal_step.as_mut() {
+            step.stopped = Some(crate::chat::goal::Stopped::NeedsUser);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), crate::chat::goal::Stopped::NeedsUser);
+        }
         self.close_seg();
         let card = self.add_for_user(EntryKind::Permission, data);
         let target = card.as_ref().map_or_else(|| self.cfg.clone(), |card| self.chat_of(card));

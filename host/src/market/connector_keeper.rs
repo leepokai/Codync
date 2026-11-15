@@ -59,14 +59,12 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
                 resource: Some(url.clone()),
             });
         }
+        // `target` fills 1Password references' values at each use: keep the last ones, so a save with the same
+        // connection revision leaves the slot and its grants alone, and a new revision still retires the grants.
         let keep = Keep {
-            headers: c.headers.iter().filter(|(_, v)| *v == PLACEHOLDER).map(|(k, _)| k.clone()).collect(),
+            headers: c.headers.iter().filter(|(_, v)| !literal(v)).map(|(k, _)| k.clone()).collect(),
             oauth: token.is_none() && c.oauth.as_ref().is_some_and(|o| o.access_token == PLACEHOLDER),
         };
-        // `target` fills this slot from 1Password references at each use: keep it and its grants.
-        if c.headers.values().any(|v| v.starts_with("op://")) {
-            live.insert(slot(&c.id));
-        }
         // Rebuild even when only placeholders remain: omitted headers must disappear.
         // With nothing to retain, cleanup below deletes the old slot and its grants.
         if record.headers.is_empty() && record.oauth.is_none() && keep.headers.is_empty() && !keep.oauth {
@@ -256,7 +254,17 @@ mod tests {
             &Keep::default(),
         )
         .unwrap();
-        save_connectors(&store, &[c]).unwrap();
+        let grant = keeper.keeper.grant("connector:op", None).unwrap().token;
+        save_connectors(&store, std::slice::from_ref(&c)).unwrap();
         assert!(client::has(&store, "connector:op").unwrap(), "a save must not cut the bridge's grant");
+        assert!(keeper.keeper.granted(&grant).is_some(), "the same connection revision keeps its grants");
+
+        // A new reference is a new connection revision: the old grants end at the save, before it ever resolves.
+        let mut edited = c;
+        edited.headers.insert("Authorization".into(), "op://vault/other/field".into());
+        edited.auth_revision = "after".into();
+        save_connectors(&store, &[edited]).unwrap();
+        assert!(keeper.keeper.granted(&grant).is_none(), "old grants can't keep sending the old credentials");
+        assert_eq!(keeper.keeper.record("connector:op").unwrap().unwrap().auth_revision, "after");
     }
 }

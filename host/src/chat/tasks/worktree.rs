@@ -1,8 +1,9 @@
 //! A git worktree for a task that starts while another task of its bot works in the same repository, so the two
 //! don't write over each other: `~/.codync/worktrees/<bot>/<item>`, on a branch `codync/<title>` from the
 //! workspace's HEAD. When its item is over, a worktree with no changes and no commits of its own goes, with its
-//! branch; anything else stays, and the item's report says where. Codync never merges, rebases, resets or forces:
-//! work on a branch is the user's to take.
+//! branch; anything else stays, and the item's report says where. Codync never merges, rebases or resets, and forces
+//! nothing that held work (only a worktree it made a moment ago and can't use is taken back): work on a branch is
+//! the user's to take.
 
 use super::items::{Item, Status};
 use crate::hub::Hub;
@@ -133,19 +134,16 @@ fn folder(bot: &str, item: &str) -> Result<PathBuf> {
 }
 
 /// Whether `worktree` is one Codync made: under its own folder, with nothing in the path that leaves it, on a
-/// branch of its own naming. What a box says is checked before git is pointed at it.
+/// branch of its own naming, its task's folder inside it. What a box says is checked before git is pointed at it.
 fn ours(worktree: &Worktree) -> bool {
+    let plain = |rest: &Path| rest.components().all(|part| matches!(part, Component::Normal(_)));
     let path = Path::new(&worktree.path);
-    let inside = path.strip_prefix(root()).is_ok_and(|rest| {
-        let mut parts = rest.components();
-        let two = parts.by_ref().take(2).filter(|part| matches!(part, Component::Normal(_))).count() == 2;
-        two && parts.next().is_none()
-    });
+    let inside = path.strip_prefix(root()).is_ok_and(|rest| plain(rest) && rest.components().count() == 2);
     let branch = worktree.branch.strip_prefix(BRANCH_PREFIX);
     let named = branch.is_some_and(|name| {
         !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     });
-    inside && named && Path::new(&worktree.cwd).starts_with(path)
+    inside && named && Path::new(&worktree.cwd).strip_prefix(path).is_ok_and(plain)
 }
 
 /// Whether `worktree` is still there to work in.
@@ -173,12 +171,37 @@ pub async fn create(workspace: &str, bot: &str, item: &str, title: &str) -> Resu
         branch = format!("{BRANCH_PREFIX}{name}-{n}");
     }
     let path = dir.to_string_lossy().into_owned();
-    crate::git::run(workspace, &["worktree", "add", "-b", &branch, &path, &base], LIMIT).await?;
-    let inner = dir.join(within.trim_end_matches('/'));
-    let cwd = if inner.is_dir() { inner } else { dir };
-    let made = Worktree { branch, path, cwd: cwd.to_string_lossy().into_owned(), base, left: Left::InUse };
-    ensure!(ours(&made), "the worktree isn't where Codync keeps them");
-    Ok(made)
+    let made = async {
+        crate::git::run(workspace, &["worktree", "add", "-b", &branch, &path, &base], LIMIT).await?;
+        let cwd = dir.join(within.trim_end_matches('/'));
+        // A folder git doesn't track (ignored, or never added) isn't in the checkout: the task would work at the
+        // repository's top, without the bot's files.
+        ensure!(cwd.is_dir(), "the bot's folder isn't in the repository's checkout");
+        let cwd = cwd.to_string_lossy().into_owned();
+        let made = Worktree { branch: branch.clone(), path: path.clone(), cwd, base, left: Left::InUse };
+        ensure!(ours(&made), "the worktree isn't where Codync keeps them");
+        Ok(made)
+    }
+    .await;
+    if made.is_err() {
+        discard(workspace, &dir, &branch).await;
+    }
+    made
+}
+
+/// Takes back the worktree `create` made at `dir` a moment ago and can't use (git checked it out and still failed,
+/// as with a hook that fails, or it lacks the bot's folder), with its `branch`: nothing has worked there. Without
+/// a folder git made nothing here, and `branch` may be one that was already there: it stays.
+async fn discard(workspace: &Path, dir: &Path, branch: &str) {
+    if !dir.exists() {
+        return;
+    }
+    let path = dir.to_string_lossy();
+    for args in [&["worktree", "remove", "--force", &path][..], &["branch", "-D", branch]] {
+        if let Err(error) = crate::git::run(workspace, args, LIMIT).await {
+            tracing::warn!(path = %path, error = format!("{error:#}"), "couldn't take back an unusable worktree");
+        }
+    }
 }
 
 /// `worktree`'s item is over: a worktree with no changes and no commits of its own goes, with its branch; anything
@@ -200,7 +223,9 @@ async fn remove_if_untouched(worktree: &Worktree) -> Result<Left> {
         bail!("its folder is gone");
     }
     let git = |args: &'static [&'static str]| crate::git::run(dir, args, LIMIT);
-    let dirty = !git(&["status", "--porcelain"]).await?.is_empty();
+    // Untracked files count whatever the user's `status.showUntrackedFiles` says, which git's own check on
+    // removal follows: this one is what keeps a task's new files.
+    let dirty = !git(&["status", "--porcelain", "--untracked-files=all"]).await?.is_empty();
     let head = git(&["rev-parse", "HEAD"]).await?;
     let on = git(&["rev-parse", "--abbrev-ref", "HEAD"]).await?;
     let tip = crate::git::run(dir, &["rev-parse", &format!("refs/heads/{}", worktree.branch)], LIMIT).await?;
@@ -356,7 +381,9 @@ mod tests {
         assert!(!ours(&Worktree { cwd: climbs.clone(), path: climbs, ..made.clone() }), "a path that leaves it");
         assert!(!ours(&Worktree { branch: "main".into(), ..made.clone() }), "a branch that isn't Codync's");
         assert!(!ours(&Worktree { branch: "codync/../main".into(), ..made.clone() }));
-        assert!(!ours(&Worktree { cwd: "/tmp".into(), ..made }), "a folder to work in outside it");
+        assert!(!ours(&Worktree { cwd: "/tmp".into(), ..made.clone() }), "a folder to work in outside it");
+        let leaves = format!("{}/../../../elsewhere", made.path);
+        assert!(!ours(&Worktree { cwd: leaves, ..made }), "a folder to work in that climbs out of it");
         assert!(folder("../x", BOT).is_err(), "only ids become folder names");
     }
 
@@ -379,6 +406,8 @@ mod tests {
         std::fs::write(Path::new(&committed.cwd).join("index.html"), "<p>new</p>").expect("a file");
         let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am", "second"];
         crate::git::run(Path::new(&committed.path), &commit, LIMIT).await.expect("a commit");
+        // A repository that hides untracked files from `git status` still keeps a task's new file.
+        crate::git::run(&repo, &["config", "status.showUntrackedFiles", "no"], LIMIT).await.expect("a setting");
 
         assert_eq!(settle(&clean).await, Left::Removed);
         assert!(!Path::new(&clean.path).exists());
@@ -396,6 +425,18 @@ mod tests {
         for kept in [&dirty, &committed] {
             let _ = std::fs::remove_dir_all(&kept.path);
         }
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[tokio::test]
+    async fn a_folder_git_does_not_track_gets_no_worktree_and_leaves_none_behind() {
+        let Some(repo) = repo().await else { return };
+        std::fs::create_dir_all(repo.join("notes")).expect("a folder");
+        let notes = repo.join("notes").to_string_lossy().into_owned();
+        let id = item();
+        assert!(create(&notes, BOT, &id, "Notes").await.is_err());
+        assert!(!folder(BOT, &id).expect("a folder").exists(), "the checkout it made is taken back");
+        assert_eq!(branches(&repo).await, "", "and so is its branch");
         let _ = std::fs::remove_dir_all(repo);
     }
 

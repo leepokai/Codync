@@ -3,7 +3,7 @@
 use super::items::{self, Item, Status};
 use super::sources::{self, Begin};
 use super::worktree::{self, Place, Worktree};
-use super::{Failure, Outcome, finished, of, prompts};
+use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, TASK_PREFIX, now_ms};
@@ -296,7 +296,7 @@ fn begin(hub: &Arc<Hub>, task: &BotConfig, item: &Item, first: bool) {
     let text = if item.source.is_bot() { prompts::item_prompt(item, first) } else { item.brief.clone() };
     if let Err(error) = crate::chat::messages::post(hub, task, json!({"text": text, "from": "host"})) {
         tracing::error!(task = %task.id, error = format!("{error:#}"), "couldn't hand work to a task");
-        finished(hub, task, Outcome::Failed(Failure::Start, "it could not start".into()));
+        finished(hub, task, Outcome::not_started(&error));
     }
 }
 

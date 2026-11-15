@@ -78,6 +78,8 @@ device acceptance, and the account flows on main (they were walked on dev; main 
   (the card shows *Downloaded*); shared copies are deleted after a day (`AppStoreFiles.kt`,
   `AttachmentFiles.kt`).
 - **Pull to refresh** on the roster and in Computer management uses the chat's indicator; iOS uses the system one.
+- **A needs-you row's card** (the Work sheet, Details): the chat opens at the card when the rows it has loaded
+  hold it; the iPhone also pages back up to five pages for an older one (`ChatScreen.kt`, `BotStore.card(for:in:)`).
 - **The saved conversation across updates**: the mirror is a database of every row paged in, stored as the
   computer sent it, so a new app or host version keeps all of it and takes the events again onto it, as the iPhone
   does with its cursor; Android also reads the bots again. When the host's store schema changes, Android still

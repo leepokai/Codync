@@ -52,7 +52,6 @@ import com.kyant.shapes.RoundedRectangle
             if (expanded || clamped) IconButton(if (expanded) "Collapse" else "Expand", if (expanded) "chevron.up" else "chevron.down",
                 Modifier.testTag("decision-expand")) { expanded = !expanded }
         }
-        TaskLine(entry, Modifier.padding(horizontal = 8.dp))
         if (pending) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             choices.forEachIndexed { index, choice ->
                 val (source, pressed) = rememberPress()
@@ -73,6 +72,8 @@ import com.kyant.shapes.RoundedRectangle
             if (!entry.fromTask) OwnAnswer(enabled = !answering, reply)
         } else Text(if (entry.decisionStatus == DecisionStatus.Answered) d.text("selected") ?: tr("Answered") else tr("No answer — the bot moved on"),
             Modifier.padding(horizontal = 8.dp).testTag("decision-outcome"), style = Type.caption.medium, color = Palette.secondary)
+        // Last on the card, under the answers or the outcome, as on the iPhone.
+        TaskLine(entry, Modifier.padding(horizontal = 8.dp))
     }
 }
 

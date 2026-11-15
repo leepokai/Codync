@@ -110,21 +110,15 @@ export const normalizeOutside = (raw: unknown): OutsideStatus | null => {
   return outside && typeof outside.status === 'string' ? { status: outside.status, startedAt: outside.startedAt ?? null } : null
 }
 
-/** The bot is at work: its chat is in a turn, or a task has one of its items. Only what a host that sends no
- * `outside` is read with (`outsideStatus`). */
-const isBusy = (bot: { status: string; work: WorkItem[] }) => bot.status === 'working' || bot.status === 'needsInput' || bot.work.some(isLive)
-
-/** The status a bot has for what shows it outside its chat (the tray, the notch island): it needs the user while its
- * chat or one of its items does, it works while its chat or its box does, else the chat's own status. The host's
- * word where it sends one; worked out from the chat and the box for an older host. */
-export function outsideStatus(bot: { status: string; work: WorkItem[]; outside: OutsideStatus | null }): string {
-  if (bot.outside) return bot.outside.status
-  if (bot.status === 'needsInput' || bot.work.some((i) => i.status === 'needsYou')) return 'needsInput'
-  return isBusy(bot) ? 'working' : bot.status
+/** The status a bot has for what shows it outside its chat (its avatar, the tray, the notch island): it needs the
+ * user while its chat or one of its items does, it works while its chat or its box does, else the chat's own status.
+ * The host's word (`bot.outside`); the chat's own status from a host before it, as on every client. */
+export function outsideStatus(bot: { status: string; outside: OutsideStatus | null }): string {
+  return bot.outside?.status ?? bot.status
 }
 
 /** Working or waiting on the user, outside its chat: the tray's working mark. */
-export function worksOutside(bot: { status: string; work: WorkItem[]; outside: OutsideStatus | null }): boolean {
+export function worksOutside(bot: { status: string; outside: OutsideStatus | null }): boolean {
   const status = outsideStatus(bot)
   return status === 'working' || status === 'needsInput'
 }

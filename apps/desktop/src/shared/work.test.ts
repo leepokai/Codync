@@ -186,28 +186,23 @@ test('the view of all bots lists the ones with live or waiting items, in roster 
   assert.equal(allWork([roster[3]!, roster[4]!]).working, 0, 'the button shows without a count')
 })
 
-test("outside its chat a bot stands as the host says, and as its chat and box say on an older host", () => {
-  const stands = (status: string, work: WorkItem[], outside: { status: string; startedAt: number | null } | null = null) => outsideStatus({ status, work, outside })
-  // The host's word wins, whatever the chat and the box look like here.
-  assert.equal(stands('idle', [], { status: 'working', startedAt: 5 }), 'working', 'a report the chat has not taken yet')
-  assert.equal(stands('idle', [item('a', 'waiting')], { status: 'working', startedAt: 5 }), 'working')
-  assert.equal(stands('working', [], { status: 'needsInput', startedAt: 5 }), 'needsInput')
-  assert.equal(stands('working', [item('a')], { status: 'idle', startedAt: null }), 'idle')
-  // An older host: worked out from the chat and the box.
-  assert.equal(stands('needsInput', []), 'needsInput')
-  assert.equal(stands('working', [item('a', 'needsYou')]), 'needsInput', "an item's card comes first")
-  assert.equal(stands('idle', [item('a', 'needsYou')]), 'needsInput')
-  assert.equal(stands('working', []), 'working')
-  assert.equal(stands('idle', [item('a')]), 'working')
-  assert.equal(stands('idle', [item('a', 'waiting'), item('b', 'done')]), 'idle')
-  assert.equal(stands('error', []), 'error')
-  assert.equal(stands('idle', []), 'idle')
+test("outside its chat a bot stands as the host says, and as its chat does on an older host", () => {
+  const stands = (status: string, outside: { status: string; startedAt: number | null } | null = null) => outsideStatus({ status, outside })
+  // The host's word wins, whatever the chat looks like here.
+  assert.equal(stands('idle', { status: 'working', startedAt: 5 }), 'working', 'a report the chat has not taken yet')
+  assert.equal(stands('working', { status: 'needsInput', startedAt: 5 }), 'needsInput')
+  assert.equal(stands('working', { status: 'idle', startedAt: null }), 'idle')
+  // A host before `outside`: the chat's own status.
+  assert.equal(stands('needsInput'), 'needsInput')
+  assert.equal(stands('working'), 'working')
+  assert.equal(stands('error'), 'error')
+  assert.equal(stands('idle'), 'idle')
   // The tray's working mark.
-  assert.equal(worksOutside({ status: 'idle', work: [], outside: { status: 'working', startedAt: 1 } }), true)
-  assert.equal(worksOutside({ status: 'idle', work: [], outside: { status: 'needsInput', startedAt: 1 } }), true)
-  assert.equal(worksOutside({ status: 'working', work: [], outside: { status: 'idle', startedAt: null } }), false)
-  assert.equal(worksOutside({ status: 'idle', work: [item('a')], outside: null }), true)
-  assert.equal(worksOutside({ status: 'error', work: [], outside: null }), false)
+  assert.equal(worksOutside({ status: 'idle', outside: { status: 'working', startedAt: 1 } }), true)
+  assert.equal(worksOutside({ status: 'idle', outside: { status: 'needsInput', startedAt: 1 } }), true)
+  assert.equal(worksOutside({ status: 'working', outside: { status: 'idle', startedAt: null } }), false)
+  assert.equal(worksOutside({ status: 'working', outside: null }), true)
+  assert.equal(worksOutside({ status: 'error', outside: null }), false)
 })
 
 test('a bot says how it stands outside its chat, whether its tasks get worktrees, and an item its worktree', () => {

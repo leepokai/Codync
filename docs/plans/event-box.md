@@ -285,11 +285,15 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   is in a git repository and sends the setting, with the caption `Agents that work at once in this repository each
   get their own branch.` The item's branch is in its task's transcript header (terminal: `⎇ <branch>` after the
   status; the desktop shows the folder on hover), not on its Details row.
-- **8.** Each client reads `bot.outside` (worked out from the chat and the box for a host that doesn't send it).
+- **8.** Each client reads `bot.outside` (the chat's own `status` for a host that doesn't send it). On every
+  client a bot's avatar follows it, its mood and its needs-you badge alike (terminal: the roster row's mark), so a
+  bot whose chat is idle shows working while its items work and needing you while one waits on a card.
   Desktop: the island's face, badge and dot and the tray's face, dot and working mark follow it; they show no
-  counts line. iPhone: the Live Activity (the updates the app makes while it runs), the widgets and the avatar's
-  mood follow it, and the activity and a widget's bot row show the roster's line (`Needs you`, the chat's activity,
-  `2 working · 3 waiting`). Android: the ongoing notification follows it and shows the same line. An update that
+  counts line. iPhone: the Live Activity (the updates the app makes while it runs) and the widgets follow it, and
+  the activity and a widget's bot row show the roster's line (`Needs you`, the chat's activity,
+  `2 working · 3 waiting`). Android: the ongoing notification and the widgets follow it and show the same line.
+  A widget says `Failed` only when that status is `error`: a chat that failed while items still work reads as
+  working on both phones. An update that
   arrives by push carries the status only, on both phones.
 
 ## Stages

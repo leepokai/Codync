@@ -6,6 +6,9 @@ import { addAccount, api, attach, loginProfilesOf, openAgentSheet, standInAgent,
 // real agent or touches a real account (login-profiles-real.spec.ts opens a real agent's sign-in, only when asked).
 test.skip(process.platform === 'win32', 'The stand-in agent is a script: not on Windows.')
 
+// Adding an account starts a real agent's sign-in on this computer: not part of the default suite.
+test.skip(() => process.env.CODYNC_E2E_REAL_LOGINS !== '1', 'Runs only with CODYNC_E2E_REAL_LOGINS=1.')
+
 const WORK = 'E2E work'
 const OWN = 'E2E default'
 

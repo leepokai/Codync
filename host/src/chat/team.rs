@@ -76,6 +76,28 @@ pub fn tools() -> Value {
     ])
 }
 
+/// Why a request got no reply, as the asking bot reads it: the same from a turn in the recipient's chat and from an
+/// item in its box.
+pub mod no_reply {
+    use anyhow::{Error, anyhow};
+
+    pub fn stopped() -> Error {
+        anyhow!("recipient was stopped; partial work may have happened")
+    }
+
+    pub fn did_not_finish(why: &str) -> Error {
+        anyhow!("recipient did not finish ({why}); partial work may have happened")
+    }
+
+    pub fn no_text() -> Error {
+        anyhow!("recipient finished without a text reply")
+    }
+
+    pub fn not_started(why: impl std::fmt::Display) -> Error {
+        anyhow!("couldn't start recipient: {why}")
+    }
+}
+
 /// Sent through the recipient's normal actor queue, but never merged with user messages or
 /// another request. It owns the exchange notices and the reply that goes back to the sender.
 pub struct BotRequest {

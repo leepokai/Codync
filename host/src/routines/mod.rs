@@ -14,7 +14,7 @@ mod progress;
 mod retry;
 mod runner;
 mod schedule;
-pub use runner::{Ran, start};
+pub use runner::{Ran, STOPPED_BY_USER, TIMED_OUT, could_not_start, did_not_finish, start};
 pub use schedule::{Trigger, local_zone};
 
 use crate::{

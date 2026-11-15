@@ -281,7 +281,7 @@ public extension Bot {
     /// The state word the widgets show and its color: only what needs you (or failed) stands out.
     var widgetState: (label: String, tint: Color) {
         if needsYouOutside { return ("Needs you", Palette.attention) }
-        if status == "error" { return ("Failed", Palette.danger) }
+        if outsideStatus == "error" { return ("Failed", Palette.danger) }
         if isBusyOutside { return ("Working", Palette.text) }
         return ("Ready", Palette.secondary)
     }
@@ -352,7 +352,7 @@ public struct BotsTeamCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 16))
         .overlay(alignment: .topTrailing) {
-            if bot.isBusyOutside || bot.status == "error" {
+            if bot.isBusyOutside || bot.outsideStatus == "error" {
                 Circle().fill(bot.widgetState.tint).frame(width: 7, height: 7).padding(7)
             }
         }

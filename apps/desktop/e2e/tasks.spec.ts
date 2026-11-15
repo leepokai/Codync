@@ -249,7 +249,7 @@ test("a task's choice card and the file it shares say they come from the backgro
     await expect(card).toContainText('In the background · Pick one')
     // No row for the user's own words: a typed message is for the bot in the chat, not the task.
     await expect(card.locator('.decision-own')).toHaveCount(0)
-    await expect(capsule(page)).toContainText('In the background · Needs you')
+    await expect(capsule(page)).toContainText(/In the background ·\s*Needs you/)
     await typeMessage(page, 'are you there?')
     await expect(page.locator('.transcript')).toContainText('reply: are you there?')
     await expect(card.locator('.decision-option')).toHaveCount(2)

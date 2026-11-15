@@ -39,27 +39,23 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 輸入 `/` 時，清單最後會列出 Bot 所用智慧體自己的指令（Claude Code、Codex、OpenCode 等），和 Codync 自己的指令、技能分開，標上智慧體的名稱、圖示和說明；選一個會填入 `/<指令>`，送出後由智慧體直接執行。
 
 ### en-US
-- Bots do long work in the background, several things at once: the chat stays free, so you can keep writing and the bot keeps answering.
-- One capsule above the message box says "In the background" with how many are working and waiting; with a single one it shows what it is doing and for how long, and you can stop it there (what it already changed stays). Tap it to open the bot's Details.
-- Details now lists what the bot does: Threads shows the work that runs now and the places still free, and a row opens what it did; Event box shows what waits, in order, where you can move one First, Cut in when every place is taken (you pick what gives way; it starts again later), or touch and hold to Drop it.
-- Recent lists the work that ended in the last day: open a finished one to see what it did; a stopped or failed one says why and has Try again.
-- Agents at once, in the bot's Settings, sets how many work at the same time (1 to 6).
-- Instructions and Agent (model, fast mode, fallbacks) moved from Details to the top of the bot's Settings.
-- When background work needs your approval, its card appears in the chat marked "In the background"; answer it like any other.
-- When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
-- Routines and other bots' requests now run in the background too and no longer hold the chat: you can keep talking to the bot while a routine runs.
-- A Work button at the top of the bot list (there while any bot has background work) shows every bot's work that is running or waiting, with the same actions as in Details.
-- Background work can ask you a question in the chat (a choice card) and send you a file or a voice note there, marked "In the background" with the name of the work.
+- Bots do long work in the background, several things at once: the chat stays free, so you can keep writing and the bot keeps answering. When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
+- One capsule above the message box says "In the background" with how many are working and waiting; with a single one it shows what it is doing and for how long, and you can stop it there. Tap it to open the bot's Details.
+- Details lists what the bot does. Threads: the work that runs now and the places still free; a row opens what it did. Event box: what waits, in order, where you can move one First, Cut in when every place is taken (you pick what gives way; it starts again later), or touch and hold to Drop it. Recent: what ended in the last day; a stopped or failed one says why and has Try again.
+- Agents at once, in the bot's Settings, sets how many work at the same time (1 to 6). Instructions and Agent (model, fast mode, fallbacks) moved there from Details.
+- Background work can ask for your approval or a choice in the chat and send you a file or a voice note there, marked "In the background" with the name of the work; answer a card like any other.
+- Routines and other bots' requests run in the background too: you can keep talking to the bot while a routine runs.
+- A Work button at the top of the bot list shows every bot's work that is running or waiting, with the same actions as in Details.
 - Worktree per agent, in the bot's Settings (shown when its folder is a Git repository): agents working at once in one repository each get their own branch, so they don't change the same files. Codync never merges or deletes a branch that has work on it.
 - The Live Activity stays while background work runs, and shows when it needs you.
-- Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
+- Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent.
 - Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
-- Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more can be signed in to several on one computer), or add an API key for any agent (environment variables you type or import from the computer's login shell; their values stay on the computer). Name any login profile (the default one too), then pick a bot's under Agent in its settings, so two bots can work at once on different logins.
+- Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more), or an API key for any agent (its values stay on the computer). Name each one, then pick a bot's under Agent in its settings, so two bots can work at once on different logins.
 - A fallback can be the same agent on another of its login profiles: when one runs out of usage, the bot carries on with the next.
 - Usage limits lists each account of an agent with its own limits (Claude Code, Codex), and widgets show the one nearest its limit.
 - After your computer restarts or the app or Codync updates, the iPhone catches up on only what's new instead of reloading every chat.
 - Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
-- A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
+- A bot that says it will check back later now sets a follow-up: "Follow-up in 20 minutes" shows in the chat, and when it's due the bot comes back to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
 - A routine remembers where its last run stopped, so work done in parts carries on from there.
 - Optional Google Search in Gemini realtime calls, off by default.
 - Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or a speech server of your own set on the computer. With your own server, Mode stays on Speech.

@@ -22,7 +22,7 @@ fun AppStore.openBot(id: String?) {
         mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
     }
     mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
-        detailsRequest = it.detailsRequest.takeUnless { leaving }) }
+        detailsRequest = it.detailsRequest.takeUnless { leaving }, cardRequest = it.cardRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
     // The open chat swaps its preview for its window.
     if (leaving) contextScope.launch { refresh() }
@@ -52,6 +52,19 @@ internal fun AppStore.openDetails(botId: String) {
 internal fun AppStore.takeDetailsRequest(botId: String): Boolean {
     if (state.value.detailsRequest != botId) return false
     mutableState.update { it.copy(detailsRequest = null) }
+    return true
+}
+
+/** Opens [botId]'s chat at the card its [item] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
+internal fun AppStore.openCard(botId: String, item: WorkItem) {
+    openBot(botId)
+    mutableState.update { it.copy(cardRequest = botId to item) }
+}
+
+/** Once. */
+internal fun AppStore.takeCardRequest(botId: String): Boolean {
+    if (state.value.cardRequest?.first != botId) return false
+    mutableState.update { it.copy(cardRequest = null) }
     return true
 }
 

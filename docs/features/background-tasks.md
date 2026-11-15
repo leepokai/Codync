@@ -204,7 +204,8 @@ prompt or the request as it is, not an item's brief, and **their result takes no
   chat (the latest instruction and progress note, the `Routine · <name>` line). Its last message is posted in the
   chat as the bot's message, in the turn that line took, and the run's outcome is saved: the alert, `(pass)`, the
   failure line, the retries after 1, 5 and 15 minutes and the Try again button are the routine's as before. The
-  routine's time limit stops its task. The item's title is the routine's name.
+  routine's time limit stops its task, its session's setup included, and only while the run is what the task works
+  on (an item that followed the run into its task has no limit). The item's title is the routine's name.
 - **A request** ([bot collaboration](bot-collaboration.md#how-a-message-runs)): the exchange's notices read
   `Running…` when a task takes it, and the item's last message is the reply the asking bot gets, with the same
   hop count, as it is: a reply of exactly `(pass)` goes back as those words, and a turn that ends with no text is
@@ -262,8 +263,13 @@ of the bot's own items that starts **while another task of the bot is working** 
 - **The first task alone keeps the bot's folder**; a routine's run and a request never get a worktree; an item that
   follows another (`after`) goes on in that task's folder, worktree or not.
 - It is made by the task itself as its first turn starts. When git fails (no commit yet, git missing, the folder in
-  the way), the task works in the bot's folder as before, and the failure is logged.
-- **When the item is over** and nothing waits to follow it: a worktree with nothing in `git status --porcelain`, on
+  the way, a checkout hook that fails) or the checkout lacks the bot's folder (git doesn't track it: ignored, or
+  never added), the task works in the bot's folder as before, and the failure is logged. A worktree git made and
+  the task can't use is taken back at once, with its branch (`git worktree remove --force`, `git branch -D`):
+  nothing has worked there.
+- **When the item is over** and nothing waits to follow it (an item the hourly look or a host restart ended
+  included): a worktree with nothing in `git status --porcelain --untracked-files=all` (untracked files count
+  whatever the user's `status.showUntrackedFiles` says), on
   its own branch, with that branch still at the commit it started from, is removed (`git worktree remove`, then
   `git branch -d`, neither forced), and the report says so. Anything else is kept, with its branch, and the
   item's report to the chat names the branch and the folder, for the bot to tell the user and merge when asked.

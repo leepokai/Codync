@@ -832,7 +832,8 @@ async fn a_tasks_edit_memory_is_its_own_turns_so_it_adds_and_never_takes_out() {
 }
 
 /// git in `dir` alone: a pre-commit hook running these tests sets `GIT_DIR` and `GIT_INDEX_FILE` for the commit
-/// being made, which would point every git here at the repository under test's own checkout.
+/// being made, which would point every git here at the repository under test's own checkout. The host's own
+/// (`host/src/git.rs` `command`) clears the same; this test can't reach it.
 fn git_in(dir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     for (key, _) in std::env::vars_os().filter(|(k, _)| k.to_string_lossy().starts_with("GIT_")) {

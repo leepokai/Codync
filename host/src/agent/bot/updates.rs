@@ -4,7 +4,6 @@ use super::fast_mode::Listing;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
-use crate::chat::tasks::Source;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
@@ -323,15 +322,12 @@ impl Actor {
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
         let Some(turn) = self.turn else { return self.send_between_turns(&text) };
         // A background result can't be told from this turn's own send (no session in the call): it may try again later.
-        if self.active_request.is_some() || matches!(self.task_source, Source::Request { .. }) {
+        if self.in_request() {
             anyhow::bail!(
                 "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there {LATER}"
             );
         }
-        if self.active_group.is_some()
-            || self.active_routine.is_some()
-            || matches!(self.task_source, Source::Routine { .. })
-        {
+        if self.active_group.is_some() || self.in_routine() {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();

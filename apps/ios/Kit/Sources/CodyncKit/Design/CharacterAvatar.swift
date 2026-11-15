@@ -360,7 +360,7 @@ public struct AvatarWithStatus: View {
     public var body: some View {
         BotAvatar(bot: bot, members: members, size: size)
             .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
-                if bot.needsInput {
+                if bot.needsYouOutside {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
                         .foregroundStyle(.white)

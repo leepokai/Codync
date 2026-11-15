@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.AllWork
 import com.codync.android.core.Bot
+import com.codync.android.core.WorkItem
 import com.codync.android.core.allWork
 import com.codync.android.core.fill
 import com.codync.android.core.workSections
@@ -57,9 +58,12 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
     AnimatedVisibility(shown, enter = fadeIn(Motion.fade()) + scaleIn(Motion.layout()), exit = fadeOut(Motion.fade()) + scaleOut(Motion.layout())) {
         val label = tr("Work")
         val count = fill(tr("{count} working"), "count" to "$working").takeIf { working > 0 }
-        Box(Modifier.padding(end = 8.dp).size(44.dp).glass(Capsule()).plainButton(action = open)
-            .semantics { contentDescription = label; count?.let { stateDescription = it } }, contentAlignment = Alignment.Center) {
-            Symbol("tray.full", size = 24.dp, tint = Palette.text)
+        Box(Modifier.padding(end = 8.dp)) {
+            Box(Modifier.size(44.dp).glass(Capsule()).plainButton(action = open)
+                .semantics { contentDescription = label; count?.let { stateDescription = it } }, contentAlignment = Alignment.Center) {
+                Symbol("tray.full", size = 24.dp, tint = Palette.text)
+            }
+            // Beside the glass, not in it: the glass clips its content to the circle.
             if (working > 0) Box(Modifier.align(Alignment.TopEnd).height(16.dp).widthIn(min = 16.dp).clip(Capsule()).background(Palette.accentFill)
                 .padding(horizontal = 4.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
                 Text("$working", style = Type.caption2.bold, color = Palette.onAccent)
@@ -71,7 +75,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 /**
  * Every bot that has live or waiting items, in one sheet (the desktop's `AllWorkSheet`): the bot as a heading, which
  * opens its details ([openDetails]), over the rows its details have for them, with the same actions. A row that needs
- * the user opens the bot's chat ([openChat]), where its card waits. It closes when the last item ends. [grouped]:
+ * the user opens the bot's chat at its card ([openCard]). It closes when the last item ends. [grouped]:
  * several computers show, so a heading also names the bot's computer.
  */
 @Composable internal fun AllWorkSheet(open: Boolean, bots: List<WorkingBot>, grouped: Boolean, accounts: AccountStore, close: () -> Unit) {
@@ -83,7 +87,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
             Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 for (working in bots) {
                     val store = accounts.store(working.state.computer.id) ?: continue
-                    BotWork(working, store, grouped, openDetails = { close(); store.openDetails(working.bot.id) }, openChat = { close(); store.openBot(working.bot.id) })
+                    BotWork(working, store, grouped, openDetails = { close(); store.openDetails(working.bot.id) }, openCard = { close(); store.openCard(working.bot.id, it) })
                 }
             }
         }
@@ -91,7 +95,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 }
 
 /** One bot: its heading, then one card of its threads' rows and its event box's numbered rows. */
-@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openChat: () -> Unit) {
+@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openCard: (WorkItem) -> Unit) {
     val (state, bot) = working.state to working.bot
     val work = workSections(bot.work, bot.maxAgents)
     val label = fill(tr("{name}, view details"), "name" to bot.name)
@@ -103,7 +107,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.right", size = 12.dp, tint = Palette.tertiary)
         }
-        WorkRowsHost(bot, state, store, openCard = { openChat() }, openChat = openChat) { rows ->
+        WorkRowsHost(bot, state, store, openCard = {}, openCardOf = openCard) { rows ->
             CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) { CardSection { rows(work.threads, false); rows(work.box, true) } }
         }
     }

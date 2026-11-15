@@ -334,14 +334,17 @@ fn describe(store: &crate::store::Store, fields: &Map<String, Value>, routines: 
 }
 
 /// Saves each routine for `bot`; one that fails says why in its place.
-fn save_routines(hub: &Hub, bot: &str, routines: &[Value]) -> Vec<Value> {
-    routines
+fn save_routines(hub: &Arc<Hub>, bot: &str, routines: &[Value]) -> Vec<Value> {
+    let saved = routines
         .iter()
         .map(|r| match hub.routines.save(hub, bot, r) {
             Ok(saved) => saved["routine"].clone(),
             Err(e) => json!({"name": r["name"], "error": format!("{e:#}")}),
         })
-        .collect()
+        .collect();
+    // One saved as paused cancels its waiting runs: those leave `bot`'s box.
+    crate::chat::tasks::routines_changed(hub, bot);
+    saved
 }
 
 /// A line in the managing bot's chat, where it works now.

@@ -4,20 +4,17 @@
 //! as a run in the chat posted it, and a request's is the reply the asking bot gets.
 
 use super::items::{self, Item, Source, Status};
-use super::{Failure, MAX_TITLE, dispatch, end, ended};
+use super::{Failure, MAX_TITLE, NOT_STARTED, dispatch, end, ended};
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::analytics::{self, Event};
-use crate::chat::team::BotRequest;
+use crate::chat::team::{BotRequest, no_reply};
 use crate::hub::Hub;
 use crate::routines;
 use crate::store::{BotConfig, EntryKind, Lane, Store};
 use anyhow::{Result, anyhow};
 use serde_json::json;
 use std::sync::Arc;
-
-/// Why a run that went past its routine's time limit didn't finish.
-const TIMED_OUT: &str = "Routine exceeded its execution time limit; its agent process was stopped";
 
 /// Whether `cfg`'s routine runs and the requests other bots send it are items in its box. A bot that uses the
 /// computer or manages the team keeps them as turns in its chat: a task has neither (one screen and one team stay
@@ -143,11 +140,11 @@ pub(super) fn watch(hub: &Arc<Hub>, bot: &str, task: &str, item: &Item) {
     // Unit tests drive the dispatcher without a runtime.
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
     let (limit, weak, bot, task) = (hub.routines.timeout(run), Arc::downgrade(hub), bot.to_owned(), task.to_owned());
+    let its_item = item.id.clone();
     runtime.spawn(async move {
         tokio::time::sleep(limit).await;
         let Some(hub) = weak.upgrade() else { return };
-        let timed_out = super::Outcome::Failed(Failure::TimedOut, TIMED_OUT.into());
-        match items::change(&hub, &bot, |items| Ok(end(items, &task, timed_out))) {
+        match items::change(&hub, &bot, |items| Ok(time_out(items, &its_item, &task))) {
             Ok(Some(item)) => {
                 ended(&hub, &bot, &item);
                 // Its turn's end clears the task away.
@@ -159,6 +156,14 @@ pub(super) fn watch(hub: &Arc<Hub>, bot: &str, task: &str, item: &Item) {
             Err(error) => tracing::error!(task, error = format!("{error:#}"), "couldn't end a run past its limit"),
         }
     });
+}
+
+/// Ends the routine run `item`, which `task` took, as past its time limit. None when it ended in time: the task
+/// may be on an item that followed the run by now, which the limit isn't for.
+fn time_out(items: &mut [Item], item: &str, task: &str) -> Option<Item> {
+    let works = items.iter().any(|i| i.id == item && i.status == Status::Working);
+    let timed_out = super::Outcome::Failed(Failure::TimedOut, routines::TIMED_OUT.into());
+    works.then(|| end(items, task, timed_out)).flatten()
 }
 
 /// Task `cfg` resumes the turn a host restart cut off: a routine run's time limit counts again from here.
@@ -192,17 +197,14 @@ fn routine_result(hub: &Hub, bot: &str, item: &Item, run: &str) -> Result<()> {
     use routines::Status as Run;
     let outcome = item.report.as_ref().map(|report| &report.outcome);
     let (status, detail, text) = match (item.status, item.failure, outcome) {
-        (Status::Stopped, ..) | (.., None) => (Run::Cancelled, Some("Stopped by user".to_owned()), None),
+        (Status::Stopped, ..) | (.., None) => (Run::Cancelled, Some(routines::STOPPED_BY_USER.to_owned()), None),
         (_, _, Some(Ok(text))) => (Run::Succeeded, None, Some(text.clone()).filter(|text| !text.is_empty())),
-        (_, Some(Failure::TimedOut), Some(Err(_))) => (Run::Failed, Some(TIMED_OUT.to_owned()), None),
+        (_, Some(Failure::TimedOut), Some(Err(_))) => (Run::Failed, Some(routines::TIMED_OUT.to_owned()), None),
         (_, Some(Failure::Restart | Failure::Lost), Some(Err(why))) => (Run::Interrupted, Some(why.clone()), None),
         (_, Some(Failure::Start), Some(Err(why))) => {
-            let why = why.trim_start_matches("it could not start: ");
-            (Run::Failed, Some(format!("Could not start routine: {why}")), None)
+            (Run::Failed, Some(routines::could_not_start(why.strip_prefix(NOT_STARTED).unwrap_or(why))), None)
         }
-        (_, _, Some(Err(why))) => {
-            (Run::Failed, Some(format!("Routine did not finish ({why}); inspect the run conversation")), None)
-        }
+        (_, _, Some(Err(why))) => (Run::Failed, Some(routines::did_not_finish(why)), None),
     };
     if let Some(text) = &text {
         let line = hub.store.entry(&routines::notice_id(run));
@@ -221,20 +223,15 @@ fn answer(request: BotRequest, item: &Item) {
     match (item.status, outcome) {
         // Never started: dropping it says it was cancelled before it ran.
         (Status::Stopped, _) | (_, None) if item.task.is_none() => drop(request),
-        (Status::Stopped, _) | (_, None) => {
-            request.complete(Err(anyhow!("recipient was stopped; partial work may have happened")), true);
-        }
+        (Status::Stopped, _) | (_, None) => request.complete(Err(no_reply::stopped()), true),
         (_, Some(Ok(text))) => request.complete(Ok(text.clone()), false),
         (_, Some(Err(_))) if item.failure == Some(Failure::NoReport) => {
-            request.complete(Err(anyhow!("recipient finished without a text reply")), false);
+            request.complete(Err(no_reply::no_text()), false);
         }
         (_, Some(Err(why))) if item.failure == Some(Failure::Start) => {
-            let why = why.trim_start_matches("it could not start: ");
-            request.complete(Err(anyhow!("couldn't start recipient: {why}")), false);
+            request.complete(Err(no_reply::not_started(why.strip_prefix(NOT_STARTED).unwrap_or(why))), false);
         }
-        (_, Some(Err(why))) => {
-            request.complete(Err(anyhow!("recipient did not finish ({why}); partial work may have happened")), false);
-        }
+        (_, Some(Err(why))) => request.complete(Err(no_reply::did_not_finish(why)), false),
     }
 }
 
@@ -299,6 +296,24 @@ mod tests {
         assert_eq!(title("\n  Review the diff \nand report"), "Review the diff");
         assert_eq!(title(&"x".repeat(200)).chars().count(), MAX_TITLE);
         assert_eq!(title("  \n"), "Request");
+    }
+
+    #[test]
+    fn a_runs_time_limit_ends_the_run_and_never_the_item_that_followed_it() {
+        let item = |id: &str, status: &str, source: serde_json::Value| -> Item {
+            serde_json::from_value(json!({"id": id, "title": id, "brief": "x", "status": status, "order": 1,
+                "createdAt": 0, "task": "t1", "source": source}))
+            .expect("an item")
+        };
+        let run = json!({"kind": "routine", "id": "r", "run": "run"});
+        let mut late = [item("a", "working", run.clone())];
+        let ended = time_out(&mut late, "a", "t1").expect("the run ends");
+        assert_eq!((ended.status, ended.failure), (Status::Failed, Some(Failure::TimedOut)));
+
+        // The run finished early and its task went on to an item that follows it.
+        let mut early = [item("a", "done", run), item("b", "working", json!({"kind": "bot"}))];
+        assert!(time_out(&mut early, "a", "t1").is_none());
+        assert_eq!(early[1].status, Status::Working);
     }
 
     #[test]

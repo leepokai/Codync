@@ -47,8 +47,12 @@ import kotlinx.serialization.json.jsonPrimitive
  * from the background, and which item. Nothing for the chat's own.
  */
 @Composable internal fun TaskLine(entry: Entry, modifier: Modifier = Modifier) {
-    val title = (entry.data["task"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull } ?: return
-    Text(tr("In the background") + " · " + title, modifier, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val title = (entry.data["task"] as? JsonObject)?.let { (it["title"] as? JsonPrimitive)?.contentOrNull }?.takeIf(String::isNotEmpty) ?: return
+    // A clock leads it, as the computer leads "Runs on" (iOS `Label(…, systemImage: "clock")`).
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Symbol("clock", size = 14.dp, tint = Palette.tertiary)
+        Text(tr("In the background") + " · " + title, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** One of the bot's tasks put [this] in the chat. */

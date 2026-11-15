@@ -18,8 +18,6 @@ Everyday tests use the fake agents, which only answer the way we expect. Run the
 2. A change touches how the host talks to an agent: ACP methods, sessions, turns.
 3. Before a release.
 
-That turn runs on each agent's default login only. Anything that needs more than one real account of an agent ([login profiles](../features/login-profiles.md): signing a second account in, switching a bot between accounts, a fallback across them) runs only when the maintainer asks for that test, never on an agent's own initiative, with a change or with a release: repeated automated sign-ins and switches can get the accounts banned by their provider. The fake-agent tests cover login profiles the rest of the time.
-
 ## Desktop: Playwright
 
 Playwright attaches to the worktree's running sandbox over the DevTools protocol. It doesn't launch Electron itself: the sandbox already owns the host, data, sign-in and single-instance lock, and an app launched without them would open against the shared Codync Dev.

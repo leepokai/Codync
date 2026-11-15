@@ -58,6 +58,8 @@ const MAX_BRIEF: usize = 32_000;
 const MAX_REPORT: usize = 8_000;
 /// Why an item that a host restart cut off, and that can't pick up, didn't finish.
 pub const CUT_OFF: &str = "the computer's Codync restarted while it worked";
+/// Why an item whose task's turn never began didn't finish; the error follows.
+const NOT_STARTED: &str = "it could not start: ";
 
 /// How a task's session began.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -87,6 +89,13 @@ pub enum Outcome {
     /// Why, in words for its bot.
     Failed(Failure, String),
     Stopped,
+}
+
+impl Outcome {
+    /// Its task's turn never began, for `error`.
+    pub fn not_started(error: &anyhow::Error) -> Self {
+        Self::Failed(Failure::Start, format!("{NOT_STARTED}{error:#}"))
+    }
 }
 
 /// What kept an item from finishing: `work_finished`'s `error`.
@@ -234,26 +243,42 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 /// reports nothing: they know.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
     let Some(bot) = cfg.task_of.as_deref() else { return };
-    let over = items::change(hub, bot, |items| {
-        let item = end(items, &cfg.id, outcome);
-        // Its worktree, to look over before its report says where the work is.
-        let worktree = item.as_ref().and_then(|item| worktree::claim(items, &item.id));
-        Ok(item.map(|item| (item, worktree)))
-    });
-    match over {
-        Ok(Some((item, Some(left)))) => {
-            let (bot, task) = (bot.to_owned(), cfg.id.clone());
-            return worktree::settle_then(hub, &bot.clone(), &item.id.clone(), left, move |hub| {
-                let item = items::load(&hub.store, &bot).into_iter().find(|i| i.id == item.id).unwrap_or(item);
-                ended(hub, &bot, &item);
-                dispatch::run(hub, &bot, Some(&task));
-            });
+    let (owner, task) = (bot.to_owned(), cfg.id.clone());
+    let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&task));
+    match items::change(hub, bot, |items| Ok(end_claimed(items, &cfg.id, outcome))) {
+        Ok(Some(over)) => close(hub, bot, over, next),
+        Ok(None) => next(hub),
+        Err(error) => {
+            tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't save an item's end");
+            next(hub);
         }
-        Ok(Some((item, None))) => ended(hub, bot, &item),
-        Ok(None) => {}
-        Err(error) => tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't save an item's end"),
     }
-    dispatch::run(hub, bot, Some(&cfg.id));
+}
+
+/// An item that just ended, with its worktree when that is to be looked over before its report says where the
+/// work is.
+type Over = (Item, Option<Worktree>);
+
+/// [`end`], with the ended item's worktree claimed.
+fn end_claimed(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Over> {
+    let item = end(items, task, outcome)?;
+    let worktree = worktree::claim(items, &item.id);
+    Some((item, worktree))
+}
+
+/// `bot`'s item ended: its worktree is looked over if it has one to, it says so and its result goes where its
+/// source reads it ([`ended`]), and `then` follows.
+fn close(hub: &Arc<Hub>, bot: &str, (item, worktree): Over, then: impl FnOnce(&Arc<Hub>) + Send + 'static) {
+    let Some(worktree) = worktree else {
+        ended(hub, bot, &item);
+        return then(hub);
+    };
+    let owner = bot.to_owned();
+    worktree::settle_then(hub, bot, &item.id.clone(), worktree, move |hub| {
+        let item = items::load(&hub.store, &owner).into_iter().find(|i| i.id == item.id).unwrap_or(item);
+        ended(hub, &owner, &item);
+        then(hub);
+    });
 }
 
 /// Ends the item `task` works on, in `items`. None: it has none (stopped, or it gave way), or a host restart or a
@@ -399,11 +424,13 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
             .filter(|i| i.status == Status::Working)
             .filter_map(|i| i.task.clone())
             .partition(|task| crate::agent::bot::resumable(&hub.store, task));
-        let failed: Vec<_> = cut_off
+        // The reports that never arrived, before this start's own are added.
+        let undelivered: Vec<Item> = items.iter().filter(|i| i.report.is_some()).cloned().collect();
+        let failed: Vec<Over> = cut_off
             .iter()
-            .filter_map(|task| end(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
+            .filter_map(|task| end_claimed(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
             .collect();
-        Ok((resumed, failed, items.iter().filter(|i| i.report.is_some()).cloned().collect::<Vec<_>>()))
+        Ok((resumed, failed, undelivered))
     })?;
     for task in resumed {
         if let Ok(Some(row)) = hub.store.bot(&task) {
@@ -411,8 +438,8 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
             hub.spawn_bot(row.config);
         }
     }
-    for item in &failed {
-        analytics::capture(hub, Event::WorkFinished, finished_properties(item));
+    for over in failed {
+        close(hub, bot, over, |_| {});
     }
     for item in &undelivered {
         deliver(hub, bot, item);

@@ -15,6 +15,18 @@ pub struct Prepared {
     pub timeout: Duration,
 }
 
+/// What a run's record says of how it ended, the same for a run in the chat and one in the box.
+pub const TIMED_OUT: &str = "Routine exceeded its execution time limit; its agent process was stopped";
+pub const STOPPED_BY_USER: &str = "Stopped by user";
+
+pub fn did_not_finish(why: &str) -> String {
+    format!("Routine did not finish ({why}); inspect the run conversation")
+}
+
+pub fn could_not_start(why: impl std::fmt::Display) -> String {
+    format!("Could not start routine: {why}")
+}
+
 /// How a run that ended went, for what follows a failure.
 pub struct Ran<'a> {
     /// It hit its time limit, so it isn't tried again on its own.

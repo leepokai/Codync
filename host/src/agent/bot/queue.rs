@@ -240,11 +240,8 @@ impl Actor {
                             self.hub.routines.release(&self.cfg.id);
                         }
                         Err(error) => {
-                            self.finish_routine(
-                                crate::routines::Status::Failed,
-                                Some(format!("Could not start routine: {error:#}")),
-                                None,
-                            );
+                            let why = crate::routines::could_not_start(format_args!("{error:#}"));
+                            self.finish_routine(crate::routines::Status::Failed, Some(why), None);
                         }
                     }
                     continue;
@@ -386,10 +383,11 @@ impl Actor {
         if self.turn.is_some() {
             self.report_turn(false, Some(e), "start_failed");
         }
-        self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
-        self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
+        let why = crate::routines::could_not_start(format_args!("{e:#}"));
+        self.finish_routine(crate::routines::Status::Failed, Some(why), None);
+        self.complete_request(Err(crate::chat::team::no_reply::not_started(format_args!("{e:#}"))), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
-        self.turn_over(Outcome::Failed(Failure::Start, format!("it could not start: {e:#}")));
+        self.turn_over(Outcome::not_started(e));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
             self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");

@@ -60,10 +60,10 @@ internal fun cardLine(card: Entry?): String? = card?.data?.let { it.string("titl
 /**
  * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions, the transcript a
  * row opens, and the Stop and Cut in dialogs. [content] places the rows: its `rows(items, numbered)` adds one per item
- * to a card, [numbered] with its turn in the mark's place. A row that needs the user goes to its card in the chat
- * ([openCard]), or just to the chat where there is [openChat] (away from that chat, its cards aren't at hand).
+ * to a card, [numbered] with its turn in the mark's place. A row that needs the user goes to its card in the chat:
+ * [openCard] over that chat, where the card is at hand, else [openCardOf] with the item, for the chat to find it.
  */
-@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openChat: (() -> Unit)? = null,
+@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openCardOf: ((WorkItem) -> Unit)? = null,
     content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
     // A change reaches the computer one at a time, and only while it's there.
     val enabled = state.actualConnection is LinkState.Ready && workKey(bot.id) !in state.busy
@@ -84,7 +84,7 @@ internal fun cardLine(card: Entry?): String? = card?.data?.let { it.string("titl
         for ((index, item) in items.withIndex()) row {
             val card = if (item.status == WorkStatus.NeedsYou) pendingCard(chat, item) else null
             val open: (() -> Unit)? = when {
-                item.status == WorkStatus.NeedsYou && openChat != null -> openChat
+                item.status == WorkStatus.NeedsYou && openCardOf != null -> { { openCardOf(item) } }
                 card != null -> { { openCard(card) } }
                 else -> item.task?.let { task -> { reading = item.id to task } }
             }

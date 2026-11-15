@@ -5,6 +5,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
+import { chatWindowMinWidth } from '../shared/chat-layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
@@ -87,7 +88,7 @@ function openChat() {
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 760,
+    minWidth: chatWindowMinWidth,
     minHeight: 500,
     title: app.getName(),
     show: false,

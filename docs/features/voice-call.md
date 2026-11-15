@@ -54,7 +54,15 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 
 The composer's mic (beside send / call, as in Grok Bot) types what you say into the box with the
 same on-device recognizer and the call's language setting; nothing is sent until you send it.
-Words appear as they're recognized, after what's already typed. While it listens the mic becomes
+Words appear as they're recognized, after what's already typed. On-device `SFSpeechRecognizer`
+(iOS 18+, macOS 15+) starts its transcript over after a pause of a second or two without a final
+result; `SpeechSegments` (iOS `Call/OnDeviceSpeech.swift`, desktop `views/thread/speech-segments.ts`,
+used by dictation and the on-device call) keeps each segment and puts the next after it. A segment
+ends on a final result or on recognition metadata on a result that isn't final (the desktop speech
+helper sends it as `ends`); without either, a result a second or more after the last one starts a
+new segment unless it begins with at least half of the last one (ignoring case and punctuation),
+and quicker results are revisions. Android's `SpeechRecognizer` ends at the pause with `onResults`,
+so it needs none of this. While it listens the mic becomes
 a recording pill (stop, the time, dots that follow your voice), on the iPhone and the desktop, and
 a call takes the microphone from it. On the desktop, dictation ends only on the pill's stop (or the
 shortcut's tap), which waits for the last words, on an error (shown in the window), or when another

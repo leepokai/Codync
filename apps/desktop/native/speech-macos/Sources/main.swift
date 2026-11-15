@@ -3,7 +3,8 @@ import Foundation
 import Speech
 
 // codync-speech: transcribes the microphone on device with SFSpeechRecognizer and prints one
-// JSON event per line: {"type":"started"}, {"type":"partial"|"final","text":…},
+// JSON event per line: {"type":"started"}, {"type":"partial"|"final","text":…,"ends":bool} (`ends`: the recognizer
+// closed what was said at a pause; its next result starts over),
 // {"type":"level","value":0…1}, {"type":"error","message":…}. It runs until stdin closes or
 // SIGTERM. `--locales` prints the languages it can transcribe (a JSON array) and exits. The desktop app (src/main/speech.ts) owns endpointing: it stops this process when
 // the speaker pauses.
@@ -93,9 +94,12 @@ final class Recognizer {
         { result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
+            // On-device recognition (macOS 15+) closes what was said at a pause with metadata, not a final result,
+            // and starts its transcript over.
+            let ends = !final && result?.speechRecognitionMetadata != nil
             let message = error.map(Self.message)
             Task { @MainActor in
-                if let text { emit(["type": final ? "final" : "partial", "text": text]) }
+                if let text { emit(["type": final ? "final" : "partial", "text": text, "ends": ends]) }
                 // An error after the stream was ended on purpose is just the end.
                 if let message, !final, owner.request != nil { emit(["type": "error", "message": message]) }
             }

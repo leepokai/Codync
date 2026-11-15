@@ -86,7 +86,7 @@ struct Composer: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if !commands.isEmpty {
-                CommandList(commands: commands, agentRegistry: model.agentRegistry, pick: run)
+                CommandList(commands: commands, agentRegistry: model.agentRegistry, agentName: model.backendName, pick: run)
                     .padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }

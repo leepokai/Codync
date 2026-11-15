@@ -33,6 +33,9 @@ class SlashCommandsTest {
         assertEquals(listOf("review"), SlashCommands.list(claude, "rev", skills).map { it.name })
         val onFallback = claude.copy(agentStep = AgentStep(step = 1, agent = "codex"))
         assertEquals("codex", SlashCommands.list(onFallback, "rev", skills).single().agent)
+        val groups = SlashCommands.groups(list)
+        assertEquals("Codync's, then the agent's", listOf(null, "claude"), groups.map { it.first })
+        assertEquals(listOf(listOf("pdf"), listOf("review", "compact")), groups.map { g -> g.second.map { it.name } })
         val group = Bot("g", "Team", kind = "group", members = listOf("b"), agentCommands = commands)
         assertEquals("a group has no agent of its own", listOf("pdf"), SlashCommands.list(group, "", skills, listOf(claude)).map { it.name })
     }

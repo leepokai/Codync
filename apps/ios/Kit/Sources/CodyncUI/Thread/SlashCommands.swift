@@ -45,6 +45,18 @@ enum SlashCommands {
         return codync + agent.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
 
+    /// The list in runs by where each command comes from: Codync (`agent` nil), or the agent that lists it.
+    static func groups(_ commands: [SlashCommand]) -> [(agent: String?, commands: [SlashCommand])] {
+        commands.reduce(into: []) { groups, command in
+            let agent: String? = if case .agent(_, let agent) = command.action { agent } else { nil }
+            if groups.last?.agent == agent, !groups.isEmpty {
+                groups[groups.count - 1].commands.append(command)
+            } else {
+                groups.append((agent, [command]))
+            }
+        }
+    }
+
     /// A draft that is just a built-in command (`/fast`): sending it runs the command.
     static func builtIn(for bot: Bot?, members: [Bot] = [], draft: String) -> SlashCommand? {
         guard let bot, let name = query(draft.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }

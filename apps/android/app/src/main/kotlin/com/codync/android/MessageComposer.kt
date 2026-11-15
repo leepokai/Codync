@@ -174,7 +174,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
-        CommandList(commands, { agentRegistry(state, it) }, ::run, Modifier.padding(horizontal = 16.dp))
+        CommandList(commands, { agentRegistry(state, it) }, { backendName(state, it) }, ::run, Modifier.padding(horizontal = 16.dp))
     }
     AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {

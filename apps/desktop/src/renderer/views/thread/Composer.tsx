@@ -195,7 +195,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
         }}
       >
         <div className="composer-surface">
-          <CommandMenu menu={commandMenu} agentRegistry={(id) => store.agentRegistry(id)} />
+          <CommandMenu menu={commandMenu} agent={{ registry: (id) => store.agentRegistry(id), name: (id) => store.backendName(id) }} />
           <MentionMenu menu={mentionMenu} />
           <ComposerReveal open={!!reply}>
             {reply ? (

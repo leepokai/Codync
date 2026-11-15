@@ -43,6 +43,14 @@ internal object SlashCommands {
         return codync + agent.filter { query.isEmpty() || it.name.contains(query, true) }
     }
 
+    /** The list in runs by where each command comes from: Codync (a null agent), or the agent that lists it (iOS `groups`). */
+    fun groups(commands: List<SlashCommand>): List<Pair<String?, List<SlashCommand>>> =
+        commands.fold(mutableListOf<Pair<String?, MutableList<SlashCommand>>>()) { groups, command ->
+            if (groups.isNotEmpty() && groups.last().first == command.agent) groups.last().second += command
+            else groups += command.agent to mutableListOf(command)
+            groups
+        }
+
     /** A draft that is just a built-in command (`/fast`): sending it runs the command. */
     fun builtIn(bot: Bot, draft: String, members: List<Bot> = emptyList()): SlashCommand? =
         query(draft.trim())?.let { name -> builtIn(bot, members).firstOrNull { it.name == name } }

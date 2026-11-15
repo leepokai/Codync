@@ -81,7 +81,7 @@ Typing `/` at the start of a message to a bot (desktop, iPhone, Android, termina
 | `/fast` | Fast mode | Switches [Fast mode](#fast-mode) with `updateBot`; listed only while the bot offers it. Its detail says what picking it does, or why the agent refused it (warning color). |
 | `/servers` | Dev servers | Terminal only, listed while the bot has [dev servers](dev-servers.md): opens the sheet, which it has in place of the other clients' inspector section. |
 | `/<skill id>` | the skill's name | Fills in `/<skill id> ` for the rest of the message. |
-| `/<agent command>` | the command's name, with the agent's logo | Fills in `/<name> ` for the rest of the message. The detail is the agent's description, or its input hint. |
+| `/<agent command>` | the command's name, with the agent's logo | Fills in `/<name> ` for the rest of the message. The detail is the agent's description, or its input hint. While any is listed, the desktop, iPhone and Android lists head Codync's own commands (Fast mode, skills) **Codync** and the agent's with the agent's name; the terminal names the agent on each of its rows. |
 
 Picking a built-in command, or sending a message that is just one (`/fast`), runs it in the client and clears the box; nothing reaches the agent. Return on a skill whose name is already typed out sends the message. The host sees a message starting with `/<id of a skill the bot has on>` and hands the agent `[Codync: the user picked the "<name>" skill for this message. Read <path> first and follow it.]` followed by the rest of the message; the chat keeps the text as typed. Any other `/command`, including `/fast` for a bot without Fast mode on offer and `/servers` for a bot without dev servers, reaches the agent unchanged, so its own commands keep working.
 

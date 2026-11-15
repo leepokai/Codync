@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SharedAudio, type SharedAudioPlatform, type SoundEvents } from './shared-audio.ts'
 
-/** A card's player whose fetch from the computer the test answers when it chooses. */
+/** A card's player whose fetch from the computer the test answers when it chooses; its sound's headers say 9.4 s. */
 function setup() {
   const log: string[] = []
   const loads: ((data: Uint8Array | null) => void)[] = []
@@ -20,8 +20,9 @@ function setup() {
       events = wired
       return sound
     },
+    length: async () => { log.push('length'); return 9.4 },
   }
-  return { audio: new SharedAudio(platform, () => {}), log, loads, events: () => events, sound }
+  return { audio: new SharedAudio(platform, () => {}), platform, log, loads, events: () => events, sound }
 }
 
 test('a second tap while the sound loads plays it once', async () => {
@@ -138,37 +139,53 @@ test('seeking holds the playhead to the sound and keeps it playing or paused', a
   assert.deepEqual(audio.snapshot, { phase: 'paused', elapsed: 12, duration: 48 })
 })
 
-test('a preloaded sound plays on the tap, fetching once', async () => {
+test('a preloaded sound shows its length before the first play, and plays on the tap, fetching once', async () => {
   const { audio, log, loads } = setup()
   const preloaded = audio.preload()
   loads[0](new Uint8Array([1]))
   await preloaded
-  assert.deepEqual(log, [], 'the preload fetches only: no player opens')
-  assert.equal(audio.snapshot.phase, 'idle')
+  assert.deepEqual(log, ['length'], 'only the headers are read: no player opens')
+  assert.deepEqual(audio.snapshot, { phase: 'idle', elapsed: 0, duration: 9.4 })
   await audio.toggle()
   assert.equal(loads.length, 1, 'the tap plays the bytes the preload fetched')
-  assert.deepEqual(log, ['open', 'play'])
+  assert.deepEqual(log, ['length', 'open', 'play'])
   assert.equal(audio.snapshot.phase, 'playing')
+})
+
+test('a sound that fails after its preload keeps the length it read', async () => {
+  const { audio, loads, events } = setup()
+  const preloaded = audio.preload()
+  loads[0](new Uint8Array([1]))
+  await preloaded
+  await audio.toggle()
+  events().time(7, 48)
+  events().failed()
+  assert.deepEqual(audio.snapshot, { phase: 'failed', elapsed: 0, duration: 9.4 })
 })
 
 test('a tap while the preload runs shows loading and plays once the bytes arrive', async () => {
   const { audio, log, loads } = setup()
-  void audio.preload()
+  const preloaded = audio.preload()
   const tap = audio.toggle()
   assert.equal(audio.snapshot.phase, 'loading')
   loads[0](new Uint8Array([1]))
-  await tap
+  await Promise.all([tap, preloaded])
   assert.equal(loads.length, 1, 'the tap waits on the preload, no second fetch')
-  assert.deepEqual(log, ['open', 'play'])
+  assert.deepEqual(log, ['open', 'play'], 'the loaded sound says its own length: the headers are not read')
   assert.equal(audio.snapshot.phase, 'playing')
 })
 
-test('a failed preload stays quiet, and the tap fetches again', async () => {
-  const { audio, log, loads } = setup()
+test('a failed or thrown preload stays quiet, and the tap fetches again', async () => {
+  const { audio, platform, log, loads } = setup()
   const preloaded = audio.preload()
   loads[0](null)
   await preloaded
-  assert.equal(audio.snapshot.phase, 'idle')
+  assert.deepEqual(audio.snapshot, { phase: 'idle', elapsed: 0, duration: 0 })
+  const load = platform.load
+  platform.load = () => Promise.reject(new Error('offline'))
+  await audio.preload()
+  assert.deepEqual(audio.snapshot, { phase: 'idle', elapsed: 0, duration: 0 }, 'a thrown fetch is a failed one')
+  platform.load = load
   const tap = audio.toggle()
   assert.equal(loads.length, 2, 'a failed fetch is forgotten: the tap fetches again')
   loads[1](new Uint8Array([1]))
@@ -177,12 +194,12 @@ test('a failed preload stays quiet, and the tap fetches again', async () => {
   assert.equal(audio.snapshot.phase, 'playing')
 })
 
-test('a card gone while its sound preloads plays nothing', async () => {
+test('a card gone while its sound preloads reads and plays nothing', async () => {
   const { audio, log, loads } = setup()
   const preloaded = audio.preload()
   audio.dispose()
   loads[0](new Uint8Array([1]))
   await preloaded
   assert.deepEqual(log, [])
-  assert.equal(audio.snapshot.phase, 'idle')
+  assert.deepEqual(audio.snapshot, { phase: 'idle', elapsed: 0, duration: 0 })
 })

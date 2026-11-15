@@ -7,13 +7,15 @@ import { SharedAudio, type AudioSnapshot, type Sound, type SoundEvents } from '.
 const IDLE: AudioSnapshot = { phase: 'idle', elapsed: 0, duration: 0 }
 
 /** A voice note's player for its card: fetched once from the computer as the card shows (a tap then plays at
- *  once), stopped when the card goes. */
+ *  once, and its length read off those bytes shows the bar and clock before the first play), stopped when the
+ *  card goes. */
 export function useSharedAudio(file: SharedFile, entryId: string) {
   const store = useStore()
   const [snapshot, setSnapshot] = useState<AudioSnapshot>(IDLE)
   const [audio] = useState(() => new SharedAudio({
     load: () => store.sharedFileData(file, entryId),
     open: (data, events) => audioElement(data, events),
+    length: headerLength,
   }, setSnapshot))
   useEffect(() => () => audio.dispose(), [audio])
   // The sound is fetched once the computer is online: a chat shown before it connects reads nothing.
@@ -47,4 +49,15 @@ function audioElement(data: Uint8Array, events: SoundEvents): Sound {
     seek: (seconds) => { player.currentTime = seconds },
     dispose: () => URL.revokeObjectURL(player.src),
   }
+}
+
+/** The sound's length from its headers: `preload = 'metadata'` reads only those, nothing plays. */
+function headerLength(data: Uint8Array): Promise<number> {
+  const player = new Audio()
+  player.preload = 'metadata'
+  return new Promise<number>((resolve) => {
+    player.onloadedmetadata = () => resolve(Number.isFinite(player.duration) ? player.duration : 0)
+    player.onerror = () => resolve(0)
+    player.src = URL.createObjectURL(new Blob([data as BlobPart]))
+  }).finally(() => URL.revokeObjectURL(player.src))
 }

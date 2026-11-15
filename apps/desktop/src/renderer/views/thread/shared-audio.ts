@@ -37,6 +37,8 @@ export interface SharedAudioPlatform {
   load(): Promise<Uint8Array | null>
   /** A player for the bytes. */
   open(data: Uint8Array, events: SoundEvents): Sound
+  /** The bytes' length (seconds) from their headers, without playing them; 0 when they don't say. */
+  length(data: Uint8Array): Promise<number>
 }
 
 /** Plays a sound a bot shared (a voice note); one card's player, disposed when the card goes. */
@@ -44,6 +46,8 @@ export class SharedAudio {
   private phase: AudioPhase = 'idle'
   private elapsed = 0
   private duration = 0
+  /** The length the preload read off the bytes (0 until then), shown before the first play and after a failure. */
+  private known = 0
   private sound: Sound | null = null
   private disposed = false
   /** The step this tap is on, so a failure says which one broke. */
@@ -96,15 +100,23 @@ export class SharedAudio {
     this.changed(this.snapshot)
   }
 
-  /** Fetches the sound as the card shows, so a tap plays at once. A fetch that fails stays quiet: it is forgotten
-   *  and the tap retries and reports it. */
+  /** Fetches the sound as the card shows, so a tap plays at once, and reads its length off the bytes so the bar and
+   *  clock show before the first play. A fetch that fails stays quiet: it is forgotten and the tap retries and
+   *  reports it. */
   async preload() {
     if (this.disposed) return
-    await this.data()
+    const data = await this.data()
+    // A tap already on these bytes, or a sound once played, says its length itself.
+    if (!data || this.disposed || this.phase !== 'idle' || this.duration > 0) return
+    const seconds = await this.platform.length(data)
+    if (this.disposed || this.duration > 0 || seconds <= 0) return
+    this.known = this.duration = seconds
+    this.changed(this.snapshot)
   }
 
+  /** The shared fetch; one that fails or throws answers null and is forgotten. */
   private data() {
-    this.bytes ??= this.platform.load().then((data) => {
+    this.bytes ??= this.platform.load().catch(() => null).then((data) => {
       if (!data) this.bytes = null
       return data
     })
@@ -145,13 +157,14 @@ export class SharedAudio {
     await this.sound.play()
   }
 
-  /** Drops the player and its clock, so a failure shows no stale progress and the next tap fetches and decodes again. */
+  /** Drops the player and its clock, so a failure shows no stale progress and the next tap fetches and decodes again;
+   *  the length the preload read stays. */
   private drop() {
     const sound = this.sound
     this.bytes = null
     this.sound = null
     this.elapsed = 0
-    this.duration = 0
+    this.duration = this.known
     sound?.pause()
     sound?.dispose()
   }

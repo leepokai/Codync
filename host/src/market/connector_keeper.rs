@@ -63,6 +63,10 @@ pub fn hand_over(store: &Store, items: &mut [Connector]) -> Result<()> {
             headers: c.headers.iter().filter(|(_, v)| *v == PLACEHOLDER).map(|(k, _)| k.clone()).collect(),
             oauth: token.is_none() && c.oauth.as_ref().is_some_and(|o| o.access_token == PLACEHOLDER),
         };
+        // `target` fills this slot from 1Password references at each use: keep it and its grants.
+        if c.headers.values().any(|v| v.starts_with("op://")) {
+            live.insert(slot(&c.id));
+        }
         // Rebuild even when only placeholders remain: omitted headers must disappear.
         // With nothing to retain, cleanup below deletes the old slot and its grants.
         if record.headers.is_empty() && record.oauth.is_none() && keep.headers.is_empty() && !keep.oauth {
@@ -230,5 +234,29 @@ mod tests {
         assert_eq!(record.upstream, "https://new.example");
         assert_eq!(record.headers["x-key"], "new");
         assert!(crate::market::oauth::target(&store, "stale", false).await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn saving_keeps_the_slot_a_1password_connector_fills_at_each_use() {
+        let keeper = crate::keeper::tests::test_keeper();
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        keeper.manage(&store);
+        let c: Connector = serde_json::from_value(json!({
+            "id":"op", "name":"Op", "url":"https://mcp.example.com/mcp",
+            "headers":{"Authorization":"op://vault/item/field"}
+        }))
+        .unwrap();
+        save_connectors(&store, std::slice::from_ref(&c)).unwrap();
+        // What `target` puts there once the reference resolves.
+        let resolved = BTreeMap::from([("authorization".to_owned(), "resolved".to_owned())]);
+        client::put_proxied(
+            &store,
+            "connector:op",
+            &Record::new("https://mcp.example.com", resolved),
+            &Keep::default(),
+        )
+        .unwrap();
+        save_connectors(&store, &[c]).unwrap();
+        assert!(client::has(&store, "connector:op").unwrap(), "a save must not cut the bridge's grant");
     }
 }

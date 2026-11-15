@@ -1,5 +1,6 @@
 //! A remote connector behind a local stdio MCP server, with the sign-in the host gives it.
 
+use crate::LockExt;
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -72,8 +73,15 @@ struct Remote {
     port: u16,
     token: String,
     connector: String,
-    // Sessions and legacy posting endpoints belong to the first endpoint this proxy used.
-    endpoint: std::sync::Mutex<Option<(String, String)>>,
+    // Sessions and legacy posting endpoints belong to the first connection this proxy used.
+    endpoint: std::sync::Mutex<Option<Connection>>,
+}
+
+/// The connector's saved URL and connection revision, from the host's target.
+#[derive(PartialEq)]
+struct Connection {
+    url: String,
+    revision: String,
 }
 
 /// Where messages go on the older transport: a URL, or, on a Codync Cloud computer, a path under each exchange's
@@ -125,17 +133,16 @@ impl Remote {
         if !ok {
             anyhow::bail!("{}", target["error"].as_str().unwrap_or("the Codync host refused"));
         }
-        let identity = (
-            target["connectorUrl"].as_str().or_else(|| target["url"].as_str()).unwrap_or_default().to_owned(),
-            target["authRevision"].as_str().unwrap_or_default().to_owned(),
-        );
+        let text = |key: &str| {
+            target[key].as_str().map(str::to_owned).ok_or_else(|| anyhow::anyhow!("the Codync host sent no {key}"))
+        };
+        let connection = Connection { url: text("connectorUrl")?, revision: text("authRevision")? };
         {
-            use crate::LockExt;
             let mut endpoint = self.endpoint.locked();
-            if endpoint.as_ref().is_some_and(|original| original != &identity) {
+            if endpoint.as_ref().is_some_and(|original| *original != connection) {
                 anyhow::bail!("The connector connection settings changed. Restart its tools before continuing.");
             }
-            *endpoint = Some(identity);
+            *endpoint = Some(connection);
         }
         let mut headers = reqwest::header::HeaderMap::new();
         for (k, v) in target["headers"].as_object().into_iter().flatten() {

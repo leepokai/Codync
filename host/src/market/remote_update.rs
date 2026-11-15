@@ -2,34 +2,21 @@
 
 use super::custom::validate_url;
 use super::{Connector, connector_update, connectors, oauth, passwords};
-use crate::LockExt;
 use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Local edits keep their check-before-save contract. Remote connection edits must be
-/// saved first so OAuth and the proxy can address the new endpoint by its existing ID.
-pub async fn update_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
-    use connector_update::EditFailure;
-    let before = connectors(store)?
-        .into_iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
-    if before.registry_name.is_some() {
-        return Err(EditFailure::Refused
-            .error("This connector came from the MCP registry; use its setup inputs when reinstalling"));
-    }
-    if before.command.is_some() {
-        if b.get("url").is_some() || b.get("headers").is_some() {
-            return Err(
-                EditFailure::Invalid.error("A local connector accepts command, args and env, not URL or headers")
-            );
-        }
-        return connector_update::update_custom_connector(store, id, b, port).await;
-    }
-    let (saved, needs_check) = save_remote(store, &before, b).await?;
+/// Remote connection edits are saved first so OAuth and the proxy can address the new endpoint by
+/// its existing ID.
+pub(super) async fn update_remote(
+    store: &crate::store::Store,
+    before: &Connector,
+    b: &Value,
+    port: u16,
+) -> Result<Value> {
+    let (saved, needs_check) = save_remote(store, before, b).await?;
     if needs_check {
-        checked_remote(store, &saved, super::verify::verify(store, id, port)).await
+        checked_remote(store, &saved, super::verify::verify(store, &before.id, port)).await
     } else {
         Ok(serde_json::json!({"connector": saved.public(), "verify": null}))
     }
@@ -95,12 +82,10 @@ async fn save_remote(store: &crate::store::Store, before: &Connector, b: &Value)
             edited.oauth = Some(oauth::OAuth::default());
         }
     }
-    let connector = {
-        // Keep the lock through the reread: managed storage hands secrets to the keeper
-        // and replaces them with placeholders before verification sees this definition.
-        let _guard = store.connector_lock.locked();
-        let mut all = connectors(store)?;
-        connector_update::check_rename(before, &edited, &all)?;
+    // Managed storage hands secrets to the keeper and replaces them with placeholders before
+    // verification sees this definition, so take the row as stored.
+    let ((), all) = super::update_saved(store, |all| {
+        connector_update::check_rename(before, &edited, all)?;
         let current = all
             .iter_mut()
             .find(|c| c.id == before.id)
@@ -110,12 +95,10 @@ async fn save_remote(store: &crate::store::Store, before: &Connector, b: &Value)
             return Err(EditFailure::Conflict.error("The connector changed during this edit. Read it again and retry."));
         }
         *current = edited;
-        super::save_connectors(store, &all)?;
-        connectors(store)?
-            .into_iter()
-            .find(|c| c.id == before.id)
-            .ok_or_else(|| EditFailure::Conflict.error("Unknown connector"))?
-    };
+        Ok(())
+    })?;
+    let connector =
+        all.into_iter().find(|c| c.id == before.id).ok_or_else(|| EditFailure::Conflict.error("Unknown connector"))?;
     Ok((connector, needs_check))
 }
 
@@ -146,7 +129,7 @@ fn prepare(before: &Connector, b: &Value) -> Result<Connector> {
         merge_headers(&mut edited, headers)?;
     }
     if edited.url != before.url || edited.headers != before.headers {
-        edited.auth_revision = uuid::Uuid::new_v4().to_string();
+        edited.new_auth_revision();
     }
     Ok(edited)
 }

@@ -102,8 +102,18 @@ pub fn put(store: &Store, slot: &str, value: &str) -> Result<()> {
 
 /// Saves `record` in `slot`, keeping what `keep` names from the record before it (same upstream only).
 pub fn put_proxied(store: &Store, slot: &str, record: &Record, keep: &Keep) -> Result<()> {
-    let request = Request::PutProxied { slot: slot.into(), record: Box::new(record.clone()), keep: keep.clone() };
-    call(store, &request).map(|_: bool| ())
+    let send = |record: &Record| {
+        let request = Request::PutProxied { slot: slot.into(), record: Box::new(record.clone()), keep: keep.clone() };
+        call(store, &request).map(|_: bool| ())
+    };
+    match send(record) {
+        // A keeper from before connection revisions refuses the field as a bad request. Without it, that keeper
+        // still ends the slot's grants when its origin or headers change, only not on a path-only edit.
+        Err(e) if !record.auth_revision.is_empty() && e.to_string() == "the keeper refused: bad request" => {
+            send(&Record { auth_revision: String::new(), ..record.clone() })
+        }
+        answer => answer,
+    }
 }
 
 pub fn delete(store: &Store, slot: &str) -> Result<()> {

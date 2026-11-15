@@ -16,7 +16,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "credentialUpdateConnector" => {
             let id = str_arg(&b, "id")?;
             let fields = b["fields"].as_object().ok_or_else(|| anyhow!("Credential fields are required"))?;
-            market::update_connectors(&hub.store, |all| {
+            let rotated = market::update_connectors(&hub.store, |all| {
                 let c = all.iter_mut().find(|c| c.id == id).ok_or_else(|| anyhow!("Unknown connector"))?;
                 let remote = c.command.is_none();
                 let values = if remote { &mut c.headers } else { &mut c.env };
@@ -33,13 +33,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                     values.insert(key.clone(), value.to_owned());
                 }
                 if remote && changed {
-                    c.auth_revision = uuid::Uuid::new_v4().to_string();
+                    c.new_auth_revision();
                 }
-                Ok(())
+                Ok(remote && changed)
             })?;
-            let ready = market::verify::verify(&hub.store, id, hub.port).await?;
-            refresh_tools_for_bots_using(hub, id);
-            ready
+            let ready = market::verify::verify(&hub.store, id, hub.port).await;
+            // A new revision already stopped the bots' running proxies, even when the check fails.
+            if ready.is_ok() || rotated {
+                refresh_tools_for_bots_using(hub, id);
+            }
+            ready?
         }
         "credentialStatus" => market::passwords::status(&hub.store)?,
         "credentialLogins" => market::logins::list(&hub.store)?,
@@ -146,13 +149,19 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             json!({"connector": c})
         }
         "updateConnector" => {
-            let id = str_arg(&b, "id")?;
-            let updated = market::update_connector(&hub.store, id.trim(), &b, hub.port).await?;
-            // Without a check how it runs didn't change, so no bot has anything to pick up.
-            if !updated["verify"].is_null() {
-                refresh_tools_for_bots_using(hub, id.trim());
+            let id = str_arg(&b, "id")?.trim();
+            let revision = auth_revision(hub, id);
+            let updated = market::update_connector(&hub.store, id, &b, hub.port).await;
+            // Without a check how it runs didn't change, so no bot has anything to pick up. A remote
+            // edit is saved before its check: a new revision stopped the bots' proxies even if it failed.
+            let refresh = match &updated {
+                Ok(updated) => !updated["verify"].is_null(),
+                Err(_) => auth_revision(hub, id) != revision,
+            };
+            if refresh {
+                refresh_tools_for_bots_using(hub, id);
             }
-            updated
+            updated?
         }
         "connectorSignIn" => {
             // The browser can only reach this host's loopback page when it runs on this computer.
@@ -220,6 +229,10 @@ fn refresh_tools_for_bots_using(hub: &Hub, id: &str) {
             tracing::warn!(bot = %row.config.id, error = format!("{error:#}"), "couldn't refresh a bot's tools");
         }
     }
+}
+
+fn auth_revision(hub: &Hub, id: &str) -> Option<String> {
+    market::connectors(&hub.store).ok()?.into_iter().find(|c| c.id == id).map(|c| c.auth_revision)
 }
 
 #[cfg(test)]

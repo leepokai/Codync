@@ -8,7 +8,9 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
     let address = listener.local_addr().unwrap();
     let old_url = format!("http://{address}/old");
     let new_url = format!("http://{address}/new");
-    let target = Arc::new(Mutex::new(json!({"url":old_url,"headers":{"X-Key":"old-key"},"authRevision":"before"})));
+    let target = Arc::new(Mutex::new(
+        json!({"url":old_url,"connectorUrl":old_url,"headers":{"X-Key":"old-key"},"authRevision":"before"}),
+    ));
     let read_target = target.clone();
     let requests = Arc::new(Mutex::new(Vec::new()));
     let received = requests.clone();
@@ -28,7 +30,8 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
         .route("/new", routing::post(sink));
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     for replacement in [&old_url, &new_url] {
-        *target.lock().unwrap() = json!({"url":old_url,"headers":{"X-Key":"old-key"},"authRevision":"before"});
+        *target.lock().unwrap() =
+            json!({"url":old_url,"connectorUrl":old_url,"headers":{"X-Key":"old-key"},"authRevision":"before"});
         let remote = Remote {
             port: address.port(),
             token: "fixture".into(),
@@ -36,7 +39,8 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
             endpoint: Mutex::new(None),
         };
         remote.target(false).await.unwrap();
-        *target.lock().unwrap() = json!({"url":replacement,"headers":{"X-Key":"new-key"},"authRevision":"after"});
+        *target.lock().unwrap() =
+            json!({"url":replacement,"connectorUrl":replacement,"headers":{"X-Key":"new-key"},"authRevision":"after"});
         let message = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
         let mut session = Some("old-private-session".into());
         assert!(

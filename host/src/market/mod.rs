@@ -37,10 +37,10 @@ mod remote_update;
 mod skills;
 mod updates;
 
+pub use connector_update::update_connector;
 pub use custom::add_custom_connector;
 pub use install::{import_connectors, install_connector, list_connectors, remove_connector};
 pub use registry::{browse_connectors, connector_info, refresh_first_page};
-pub use remote_update::update_connector;
 pub use skills::{
     add_custom_skill, browse_skills, expand_command, install_skill, list_skills, remove_skill, skill_details,
     skills_brief, slash_command, turn_on_installed_once, update_custom_skill,
@@ -100,6 +100,12 @@ pub struct Connector {
 }
 
 impl Connector {
+    /// Retires this connection's sign-ins, keeper grants and running proxies: call it on every remote
+    /// URL or header change.
+    pub fn new_auth_revision(&mut self) {
+        self.auth_revision = uuid::Uuid::new_v4().to_string();
+    }
+
     /// ACP `McpServer`. Remote servers run through this host's `remote` proxy (`codync-host mcp remote`),
     /// which keeps sign-in tokens fresh and works with agents that only speak stdio.
     /// A remote server still waiting for sign-in is left out.
@@ -278,13 +284,14 @@ fn save<T: Serialize>(store: &crate::store::Store, key: &str, items: &[T]) -> Re
     store.kv_set(key, &serde_json::to_string(items)?)
 }
 
-pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<()> {
+/// Saves `items` and returns them as stored: on a managed computer, with the keeper's secrets replaced by placeholders.
+pub fn save_connectors(store: &crate::store::Store, items: &[Connector]) -> Result<Vec<Connector>> {
+    let mut items = items.to_vec();
     if crate::remote::managed::is_managed(store) {
-        let mut items = items.to_vec();
         connector_keeper::hand_over(store, &mut items)?;
-        return vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?);
     }
-    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(items)?)
+    vault::write(store, CONNECTORS_SLOT, &serde_json::to_string(&items)?)?;
+    Ok(items)
 }
 
 /// Serialize read/modify/write so OAuth refreshes and installations cannot replace each other.
@@ -292,11 +299,19 @@ pub fn update_connectors<T>(
     store: &crate::store::Store,
     change: impl FnOnce(&mut Vec<Connector>) -> Result<T>,
 ) -> Result<T> {
+    update_saved(store, change).map(|(result, _)| result)
+}
+
+/// [`update_connectors`], also returning the list as stored.
+fn update_saved<T>(
+    store: &crate::store::Store,
+    change: impl FnOnce(&mut Vec<Connector>) -> Result<T>,
+) -> Result<(T, Vec<Connector>)> {
     let _guard = store.connector_lock.locked();
     let mut all = connectors(store)?;
     let result = change(&mut all)?;
-    save_connectors(store, &all)?;
-    Ok(result)
+    let saved = save_connectors(store, &all)?;
+    Ok((result, saved))
 }
 
 fn add_connector(store: &crate::store::Store, mut c: Connector) -> Result<Value> {

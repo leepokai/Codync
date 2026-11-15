@@ -290,6 +290,14 @@ impl Hub {
         self.bot_value(id).unwrap_or(Value::Null)
     }
 
+    /// Stands in for bot `id`'s actor: what is sent to it arrives on the returned receiver.
+    #[cfg(test)]
+    pub fn attach_bot_for_test(&self, id: &str) -> tokio::sync::mpsc::UnboundedReceiver<Cmd> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.bots.locked().insert(id.into(), BotHandle { tx, task: tokio::spawn(async {}) });
+        rx
+    }
+
     fn bot_value(&self, id: &str) -> Option<Value> {
         self.store.bot(id).ok().flatten().map(|r| self.bot_json(&r))
     }

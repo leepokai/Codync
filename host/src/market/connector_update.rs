@@ -51,11 +51,31 @@ impl std::fmt::Display for EditFailed {
 
 impl std::error::Error for EditFailed {}
 
+/// Edits a custom connector in place. Registry connectors are refused: their setup inputs rebuild them.
+/// A local edit is checked before it is saved; a remote URL or header edit is saved first (`remote_update`).
+pub async fn update_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
+    let before = connectors(store)?
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
+    if before.registry_name.is_some() {
+        return Err(EditFailure::Refused
+            .error("This connector came from the MCP registry; use its setup inputs when reinstalling"));
+    }
+    if before.command.is_none() {
+        return super::remote_update::update_remote(store, &before, b, port).await;
+    }
+    if b.get("url").is_some() || b.get("headers").is_some() {
+        return Err(EditFailure::Invalid.error("A local connector accepts command, args and env, not URL or headers"));
+    }
+    update_custom_connector(store, id, b, port).await
+}
+
 /// Edits an installed local connector: omitted fields keep their value, `args` replaces the
 /// argument list, and `env` merges, with `null` removing a key. A change to how it runs is checked
 /// first and exactly what started is what gets saved, so an error means this edit changed nothing,
 /// and overlapping edits never combine. A new name or description starts nothing: `verify` is null.
-pub async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
+async fn update_custom_connector(store: &crate::store::Store, id: &str, b: &Value, port: u16) -> Result<Value> {
     let all = connectors(store)?;
     let before =
         all.iter().find(|c| c.id == id).cloned().ok_or_else(|| EditFailure::Invalid.error("Unknown connector"))?;
@@ -231,7 +251,7 @@ mod tests {
         (registry.id, registry.registry_name) = ("registry".into(), Some("io.example/server".into()));
         let store = store_with(&[remote, registry]);
         for (id, why) in [("remote", "remote connector"), ("registry", "MCP registry")] {
-            let err = crate::market::update_connector(&store, id, &json!({"command": "node"}), 0).await.expect_err(id);
+            let err = update_connector(&store, id, &json!({"command": "node"}), 0).await.expect_err(id);
             assert!(err.to_string().contains(why), "{err}");
             assert_eq!(category(&err), if id == "registry" { "refused" } else { "invalid" });
         }

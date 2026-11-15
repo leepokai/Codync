@@ -93,9 +93,10 @@ that can't be told is logged and doesn't fail the saved edit (`host/src/market/c
 
 Custom URL connectors use the same loopback-only method with `url` and `headers`.
 Remote connection changes are saved before verification, allowing sign-in against
-the new endpoint; failed verification leaves the edit saved and refreshes no bots.
-Old running proxies are already invalidated, so affected bots cannot use the connector
-until a successful retry checks the saved settings and refreshes their tools.
+the new endpoint; failed verification leaves the edit saved. Old running proxies are
+already invalidated, so affected bots refresh their tools whenever the revision moved,
+whether or not the check passed (`credentialUpdateConnector` on a remote connector too);
+the new proxies use the saved settings once the server or sign-in is fixed.
 Metadata-only edits need no check. Explicit URL/header retries verify even when
 unchanged, so repeating the current URL after sign-in refreshes affected bots.
 The saved connection is checked before and after verification; token refreshes may
@@ -103,9 +104,7 @@ advance the same grant, but intervening edits cannot supply its readiness result
 URL changes require explicit replacement headers,
 and clear the old OAuth grant. URL or header changes advance the revision and
 invalidate pending sign-ins and running proxies.
-Revisioned managed edits require an updated keeper. An older keeper rejects the new record field before the connector list is saved.
-
-On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them.
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it, so the host sends that keeper the record without it: it still retires grants when the origin or headers change, but not on a path-only or query-only edit.
 
 See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
 Registry connectors are still refused.

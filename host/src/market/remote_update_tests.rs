@@ -1,5 +1,5 @@
 use super::*;
-use crate::market::{save_connectors, update_connectors, vault};
+use crate::market::{save_connectors, update_connector, update_connectors, vault};
 use crate::store::Store;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -162,6 +162,23 @@ async fn replacement_endpoint_receives_only_explicit_headers_and_requires_new_si
         assert!(!requests[0].contains_key("authorization"));
         assert!(!requests[0].contains_key("x-api-key"));
     }
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn a_rejected_authorization_key_stays_a_header_that_can_be_retried() {
+    use axum::{Router, http::StatusCode, routing};
+    let app = Router::new().route("/mcp", routing::post(|| async { StatusCode::UNAUTHORIZED }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (store, old) = fixture();
+    save_edit(&store, &json!({"id":old.id,"url":url,"headers":{"Authorization":"Bearer bad"}})).await.unwrap();
+    let c = connectors(&store).unwrap().remove(0);
+    assert_eq!(c.oauth, None);
+    assert_eq!(c.headers["Authorization"], "Bearer bad");
+    prepare(&c, &json!({"headers":{"Authorization":"Bearer good"}})).unwrap();
     server.abort();
     let _ = server.await;
 }

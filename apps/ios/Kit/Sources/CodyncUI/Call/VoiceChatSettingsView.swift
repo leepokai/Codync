@@ -71,21 +71,30 @@ public struct VoiceChatSettingsView: View {
     }
 }
 
-/// A provider's mode, and the pause that ends what you say when it's Speech.
+/// A provider's mode, and the pause that ends what you say when it's Speech: the only mode while the computer
+/// sends this engine to a server of the user's own.
 private struct ModeRows: View {
     @AppStorage private var mode: String
+    @AppStorage private var server: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(provider: VoiceProvider) {
         _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
+        _server = AppStorage(VoiceSettings.serverKey(provider))
     }
 
+    private var speechOnly: Bool { VoiceSettings.speechOnly(server) }
+
     var body: some View {
-        ValueRow("Mode", detail: mode == "speech" ? "Sent when you pause, replies read aloud." : "A live conversation. Talk over replies.") {
-            ChoicePicker(selection: $mode.animation(Motion.reduced(Motion.layout, reduceMotion)),
-                         options: [("realtime", "Realtime"), ("speech", "Speech")])
+        if speechOnly {
+            ValueRow("Mode", detail: "Your own server works in Speech mode only.", value: "Speech")
+        } else {
+            ValueRow("Mode", detail: mode == "speech" ? "Sent when you pause, replies read aloud." : "A live conversation. Talk over replies.") {
+                ChoicePicker(selection: $mode.animation(Motion.reduced(Motion.layout, reduceMotion)),
+                             options: [("realtime", "Realtime"), ("speech", "Speech")])
+            }
         }
-        if mode == "speech" { PauseRow() }
+        if speechOnly || mode == "speech" { PauseRow() }
     }
 }
 
@@ -100,8 +109,8 @@ private struct PauseRow: View {
     }
 }
 
-/// One provider: mode, the key the computer keeps, models, voice and this month's minutes.
-/// `dictationOnly` keeps the key and speech-to-text model.
+/// One provider: the key the computer keeps, the server its Speech mode goes to, models, voice and this month's
+/// minutes. `dictationOnly` keeps the key, the server and the speech-to-text model.
 private struct ProviderVoiceSettings: View {
     @AppStorage(VoiceSettings.googleSearchKey) private var googleSearch = false
     @State private var supportsSearch = false
@@ -113,6 +122,7 @@ private struct ProviderVoiceSettings: View {
     @AppStorage(VoiceSettings.dictationEngineKey) private var dictationEngine = "device"
     /// nil while the computer hasn't answered yet.
     @State private var saved: Bool?
+    @AppStorage private var server: String?
     @State private var replacing = false
     @State private var key = ""
     @State private var busy = false
@@ -127,9 +137,10 @@ private struct ProviderVoiceSettings: View {
         self.provider = provider
         self.dictationOnly = dictationOnly
         _mode = AppStorage(wrappedValue: "realtime", VoiceSettings.modeKey(provider))
+        _server = AppStorage(VoiceSettings.serverKey(provider))
     }
 
-    private var speechMode: Bool { mode == "speech" }
+    private var speechMode: Bool { VoiceSettings.speechOnly(server) || mode == "speech" }
     /// Speech mode and dictation with this provider both use its speech-to-text model.
     private var transcribes: Bool { dictationOnly || speechMode || dictationEngine == provider.rawValue }
     private var hasKey: Bool { saved == true }
@@ -149,6 +160,12 @@ private struct ProviderVoiceSettings: View {
                         .font(.footnote)
                         .foregroundStyle(result.ok ? Palette.secondary : Palette.danger)
                         .transition(.opacity)
+                }
+            }
+            if let server {
+                // Chosen on the computer itself, like the key (the host takes `setVoiceServer` from loopback only).
+                ValueRow("Server") {
+                    Text(verbatim: VoiceStatus.serverLabel(server)).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
             Group {

@@ -189,7 +189,7 @@ export class FakeHost {
         const chat = this.bots.get(str('botId'))
         if (!chat) throw fail('That bot was deleted.')
         const target = this.entries.find((e) => e.id === str('replyTo') && e.botId === chat.id && isReplyable(e))
-        const replyTo = target && quoteOf(target)
+        const replyTo = target && quoteOf(target, str('replyPart'))
         const entry = this.add({ botId: chat.id, kind: 'user', data: { text: str('text'), status: 'sent', clientNonce: str('clientNonce'), ...(replyTo ? { replyTo } : {}) } })
         void this.converse(chat, str('text'), replyTo?.author)
         return { entry }

@@ -22,7 +22,11 @@ export interface VoiceDefaults {
 export interface VoiceStatus {
   /** Absent on hosts that cannot configure search for a call. */
   googleSearch?: boolean
-  providers: { provider: VoiceProvider; configured: boolean; defaults?: VoiceDefaults | null }[]
+  /**
+   * `server`: the OpenAI-compatible server the computer sends this engine's Speech mode to, `''` for the provider
+   * itself. Absent where there is none to choose: Gemini, a cloud computer, an older host.
+   */
+  providers: { provider: VoiceProvider; configured: boolean; defaults?: VoiceDefaults | null; server?: string }[]
 }
 
 /** Whether the computer's linked speech server can transcribe dictation; `message` says what to do when it can't. */
@@ -67,6 +71,8 @@ export const voiceInfo: Record<VoiceProvider, {
 
 export const isVoiceProvider = (s: string): s is VoiceProvider => s === 'openai' || s === 'gemini'
 export const configured = (s: VoiceStatus, p: VoiceProvider) => s.providers.some((x) => x.provider === p && x.configured)
+/** What the Server row reads: the saved address, or OpenAI's own (only the OpenAI engine has the row). */
+export const serverLabel = (saved: string) => saved || 'api.openai.com'
 
 /** `device` (on-device speech), `local` (the computer's speech model) or a provider. */
 function enginePref(stored: Pref<string>): Pref<string> {
@@ -127,6 +133,11 @@ function keyed<T>(key: string, fallback: T): Pref<T> {
 
 /** `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud). */
 export const mode = (p: VoiceProvider) => keyed<string>(`callMode.${p}`, 'realtime')
+/** The server `p`'s Speech mode goes to, as the computer last said: `''` for the provider itself, null where it has none to choose. */
+export const server = (p: VoiceProvider) => keyed<string | null>(`callServer.${p}`, null)
+/** A server of the user's own holds no Realtime conversation, so Speech is its only mode; the picked mode comes back with the provider. */
+export const speechOnly = (savedServer: string | null) => Boolean(savedServer)
+export const isSpeechMode = (p: VoiceProvider) => speechOnly(server(p).get()) || mode(p).get() === 'speech'
 const voicePref = (p: VoiceProvider) => keyed<string | null>(`callVoice.${p}`, null)
 const defaultsPref = (p: VoiceProvider) => keyed<VoiceDefaults | null>(`callDefaults.${p}`, null)
 /** The provider's model list as last fetched with the user's key. */
@@ -173,12 +184,17 @@ export const voiceMinutes = (p: VoiceProvider, at = new Date()) => Math.floor((k
 
 // Host calls
 
-/** Which providers the computer has keys for; the newest models it reports become the defaults. */
-export async function voiceStatus(c: HostClient) {
-  const status = await c.call<VoiceStatus>('voiceStatus')
-  for (const entry of status.providers) rememberDefaults(entry.provider, entry.defaults)
+/** Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the mode. */
+function remember(status: VoiceStatus) {
+  for (const entry of status.providers) {
+    rememberDefaults(entry.provider, entry.defaults)
+    server(entry.provider).set(entry.server ?? null)
+  }
   return status
 }
+
+/** Which providers the computer has keys for, and the server each one's Speech mode goes to. */
+export const voiceStatus = async (c: HostClient) => remember(await c.call<VoiceStatus>('voiceStatus'))
 
 /** The linked speech server and whether dictation can use it; hosts before `localDictation` are told to update. */
 export async function localDictation(c: HostClient): Promise<LocalDictation> {
@@ -191,7 +207,12 @@ export async function localDictation(c: HostClient): Promise<LocalDictation> {
 }
 
 /** Checks the key with the provider before the computer keeps it; an empty key removes it. */
-export const setVoiceKey = (c: HostClient, p: VoiceProvider, key: string) => c.call<VoiceStatus>('setVoiceKey', { provider: p, key }, 30_000)
+export const setVoiceKey = async (c: HostClient, p: VoiceProvider, key: string) =>
+  remember(await c.call<VoiceStatus>('setVoiceKey', { provider: p, key }, 30_000))
+
+/** Points the engine's Speech mode at an OpenAI-compatible server, or back at the provider (empty). The computer checks a saved key with it first. */
+export const setVoiceServer = async (c: HostClient, p: VoiceProvider, url: string) =>
+  remember(await c.call<VoiceStatus>('setVoiceServer', { provider: p, url }, 30_000))
 
 /** The computer gives the speech server two minutes per request (host `voice::local` `TIMEOUT`) — linking's test piece and every dictated piece, a big model on a slow CPU — plus the trip there and back. */
 export const SPEECH_SERVER_MS = 135_000

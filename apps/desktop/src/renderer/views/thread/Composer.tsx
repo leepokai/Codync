@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
-import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
+import { isGroup, isWorkingIn, type Bot, type ReplyQuote } from '@shared/models'
 import type { PickedFile } from '@shared/ipc'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
@@ -35,7 +35,7 @@ type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
  */
 export function Composer({ botId, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
   botId: string
-  reply?: Entry | null
+  reply?: ReplyQuote | null
   about?: Artifact | null
   cancelReply?: () => void
   /** Starts a voice call; while the box is empty it takes the send button's place. */
@@ -50,7 +50,7 @@ export function Composer({ botId, reply = null, about = null, cancelReply, onCal
 }
 
 function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInterrupt }: {
-  botId: string; reply: Entry | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
+  botId: string; reply: ReplyQuote | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
   const tr = useTr()
@@ -160,7 +160,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     // Words still on their way would land in the emptied box (and the shortcut's tap would send them again).
     dictation.cancel()
     if (command) return run(command)
-    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ? quoteOf(reply) : about && artifactQuote(about) })
+    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
     cancelReply?.()
     pasted.current = []
     setDraft('')
@@ -197,7 +197,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
           <ComposerReveal open={!!reply}>
             {reply ? (
               <HStack gap={4} className="composer-reply">
-                <QuoteRow quote={quoteOf(reply)} className="composer-reply-quote" />
+                <QuoteRow quote={reply} className="composer-reply-quote" />
                 <IconButton title="Cancel reply" icon="xmark" size={24} onClick={cancelReply} />
               </HStack>
             ) : null}

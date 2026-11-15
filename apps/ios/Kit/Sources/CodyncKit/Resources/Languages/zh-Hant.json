@@ -2108,5 +2108,9 @@
   "↵ opens": "↵ 開啟",
   "Google Search": "Google 搜尋",
   "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.": "允許 Gemini 在通話中搜尋網頁。需要 Google 搜尋配額，可能產生費用。",
-  "Couldn't open the link.": "無法開啟連結。"
+  "Couldn't open the link.": "無法開啟連結。",
+  "Server": "伺服器",
+  "Your own server works in Speech mode only.": "自己的伺服器只能用語音識別模式。",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "與 OpenAI 相容的伺服器，用於語音識別模式：需為 https，或這台電腦上的 http。留空則使用 OpenAI。",
+  "Select Text": "選取文字"
 }

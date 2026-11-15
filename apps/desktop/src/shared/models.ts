@@ -244,8 +244,10 @@ export interface ReplyQuote {
   id: string
   /** `user`, or the bot that wrote it. */
   author: string
-  /** Its text (or file names), at most 500 characters. */
+  /** Its text (or file names), at most 500 characters; the part the user selected in it when `part` is set. */
   text: string
+  /** The reply answers the part of the message the user selected, not all of it. */
+  part?: boolean
   /** The artifact, when it quotes an artifact card: the message is about that artifact. */
   artifact?: string
 }
@@ -463,11 +465,12 @@ export function isReplyable(e: Entry): boolean {
   return !e.id.startsWith('local-') && (e.kind === 'user' || (e.kind === 'agent' && e.data.final === true))
 }
 
-/** The quote a sending reply shows until the computer's own replaces it. */
-export function quoteOf(e: Entry): ReplyQuote {
+/** The quote a sending reply shows until the computer's own replaces it; of `part`, the text selected in the message, when there is one. */
+export function quoteOf(e: Entry, part = ''): ReplyQuote {
   const names = [...(e.data.attachments ?? []), ...(e.data.files ?? [])].map((f) => f.name).join(', ')
   const quote: ReplyQuote = { id: e.id, author: e.kind === 'user' ? 'user' : (e.data.author ?? e.botId), text: (e.data.text || names).slice(0, 500) }
   if (e.data.artifact) quote.artifact = e.data.artifact.id
+  else if (part.trim()) Object.assign(quote, { text: part.trim().slice(0, 4000), part: true })
   return quote
 }
 

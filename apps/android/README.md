@@ -87,7 +87,7 @@ The roster shows activity, previews, unread counts, groups, pin/hide actions and
 touch and hold a bot, then move it, to reorder within its section (the order syncs through the host). Cached bots remain readable offline and are labeled as saved. An
 unreachable computer is distinguished from an empty online roster. Chat supports
 final replies, Markdown/code, permissions, reactions, quote replies (touch and hold a
-message, then Reply), history and Full conversation. A bot's
+message, then Reply; Select Text there replies to the part of it you select), history and Full conversation. A bot's
 [background tasks](../../docs/features/background-tasks.md) show as one capsule above the composer; its text opens the
 task's own transcript, held in memory per task and never in the chat or the mirror.
 

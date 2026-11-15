@@ -85,7 +85,7 @@ async fn route(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Resul
         || (method == "computerCall" && b["name"] == "type_login")
         // Dictation on the user's own speech server (`localDictation`, `setSpeechServer`, local `voiceTranscribe`) has no key.
         || (method.starts_with("voice") && !(method == "voiceTranscribe" && b["provider"] == "local"))
-        || method == "setVoiceKey"
+        || matches!(method, "setVoiceKey" | "setVoiceServer")
         || matches!(method, "agentAuth" | "agentAuthenticate" | "setAgentEnv" | "setLoginProfileKeys")
     {
         market::vault::unlock(hub.clone()).await?;

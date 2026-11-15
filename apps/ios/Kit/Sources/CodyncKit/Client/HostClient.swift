@@ -280,17 +280,17 @@ public extension HostClient {
         return res.entry
     }
 
-    /// `replyTo`: the chat message this one quotes.
+    /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
-    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
-              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
+              attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
         struct Body: Encodable {
-            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
-            var pasted: [String]?; var call: String?
+            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var replyPart: String?
+            var attachments: [String]?; var pasted: [String]?; var call: String?
         }
         struct Res: Decodable { var entry: Entry }
-        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
+        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, replyPart: replyPart, attachments: attachments,
                         pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
         let res: Res = try await self.call("send", body)
         return res.entry

@@ -11,8 +11,10 @@ public struct ThreadView: View {
     public init(botId: String) { self.botId = botId }
     @Environment(BotStore.self) var model
     @State var showTrace = false
-    /// The message the composer's next send quotes.
-    @State var replyingTo: Entry?
+    /// What the composer's next send quotes: a message, or the part of it the user selected.
+    @State var replyingTo: ReplyQuote?
+    /// The message whose text is open for selecting a part to reply to.
+    @State var selectingText: Entry?
     @State var botChat: BotChatTarget?
     @State var openArtifact: ArtifactTarget?
     @State var openCall: Entry?
@@ -140,6 +142,12 @@ public struct ThreadView: View {
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
             }
+            .codyncSheet(item: $selectingText) { e in
+                SelectTextSheet(text: e.data.text ?? "") { part in
+                    selectingText = nil
+                    reply(to: e.replyQuote(part: part))
+                }
+            }
             .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $openArtifact) { ArtifactView(target: $0) }
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
@@ -182,7 +190,8 @@ public struct ThreadView: View {
             } else {
                 ChatRow(entry: e, groupStart: groupStart, chat: bot, openTrace: { showTrace = true },
                         // An update card takes the composer's place, so there's nothing to reply with.
-                        reply: e.isReplyable && model.mismatch == nil ? { reply(to: e) } : nil,
+                        reply: e.isReplyable && model.mismatch == nil ? { reply(to: e.replyQuote) } : nil,
+                        selectText: model.supportsReplyPart ? { selectingText = e } : nil,
                         // In a group, the bot whose agent failed.
                         addFallback: { details = DetailsRequest(botId: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
@@ -192,8 +201,8 @@ public struct ThreadView: View {
         }
     }
 
-    private func reply(to entry: Entry) {
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { replyingTo = entry }
+    private func reply(to quote: ReplyQuote) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { replyingTo = quote }
     }
 
     // MARK: chrome

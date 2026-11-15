@@ -19,7 +19,11 @@ fn observed_events_carry_no_content() {
     let b = json!({"botId": "b1", "text": "secret plan", "replyTo": "e1", "attachments": ["u1", "u2"]});
     let (event, p) = props("send", &b).expect("send is tracked");
     assert_eq!(event, Event::MessageSent);
-    assert_eq!(p, json!({"reply": true, "attachments": 2, "client": "local"}));
+    assert_eq!(p, json!({"reply": true, "replyPart": false, "attachments": 2, "client": "local"}));
+    assert!(!p.to_string().contains("secret"));
+    let part = json!({"botId": "b1", "text": "why?", "replyTo": "e1", "replyPart": "the secret step"});
+    let (_, p) = props("send", &part).expect("send is tracked");
+    assert_eq!(p["replyPart"], true);
     assert!(!p.to_string().contains("secret"));
 
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
@@ -58,6 +62,15 @@ fn handoff_and_credentials_name_a_fixed_action() {
 #[test]
 fn settings_routines_screen_and_devices() {
     let setting = |m: &str, b: Value| props(m, &b).map(|(e, p)| (e, p["setting"].clone(), p["on"].clone()));
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": "http://127.0.0.1:8890"})),
+        Some((Event::SettingChanged, json!("voice_server"), json!(true))),
+        "never the address"
+    );
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": " "})).map(|(_, _, on)| on),
+        Some(json!(false))
+    );
     assert_eq!(
         setting("setCloud", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("remote_access"), json!(true)))
@@ -415,4 +428,20 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
         Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
+    assert_eq!(failed_call("setCloudUrl", &json!({"url": "https://relay.example.com"})), None);
+}
+
+#[test]
+fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
+    let (event, p) =
+        observe(&Caller::Local, "setVoiceServer", &json!({"provider": "openai", "url": "http://x"})).unwrap();
+    let refused = crate::voice::ServerRefused::error("unreachable", "Can't reach your server.");
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(e, p)| (e, Value::Object(p)));
+    let with = |category: &str| {
+        let props =
+            json!({"setting": "voice_server", "on": true, "client": "local", "outcome": "failed", "error": category});
+        Some((Event::SettingChanged, props))
+    };
+    assert_eq!(reported(&refused), with("unreachable"));
+    assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
 }

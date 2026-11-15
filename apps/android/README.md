@@ -144,7 +144,10 @@ byte. `LiveRosterTest` offers separately opted-in read-only inspection of an
 existing connection; it is not the ordinary reset suite.
 
 The emulator-only `-PcodyncReleaseTests=true` variant signs an R8 acceptance build
-with the debug key; ordinary release builds take only the upload key. Physical camera,
+with the debug key; ordinary release builds take only the upload key. Its
+`VoiceReleaseRunner` checks the minified WebRTC offer, Vosk speech and the widgets; the widget
+stage needs exactly one paired computer, the fixture `9ESVKkTXlLyIExxnW7-PIg`. CI compiles the
+variant on `dev` and `main`; run it on the emulator by hand. Physical camera,
 keyboard/TalkBack, provider login, background push, voice and release acceptance
 are separate [checklist](../../docs/plans/android-app.md) gates.
 

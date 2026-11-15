@@ -9,35 +9,19 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 
 ## 2.48.1
 ### zh-Hant
-- Bot 會把比較久的工作交給背景進行，聊天不會被占住，可以繼續傳訊息。輸入框上方會顯示「背景」和進度，點一下看它做了什麼，也可以停止。
-- 背景工作需要核准時，卡片會出現在聊天裡並標示「背景」。
-- 完成後 Bot 會用一則訊息告訴你結果。
-- 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好，原本輸入框裡的草稿不會被動到。
-- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
-- 在語音訊息載入時離開聊天，該語音不會在離開後才開始播放。
-- 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
-- 智慧體可以有多個「登入設定」：新增賬戶（Claude Code、Codex 等），或為任何智慧體新增 API 金鑰；每個都能取名，bot 在「智慧體」選擇要用哪一個。
-- 備援可以選同一個智慧體的另一個登入設定。
-- 「用量上限」會分別列出每個賬戶的額度（Claude Code、Codex）。
-- Bot 說「晚點回來看」時會設定跟進，時間到了自己回到聊天告訴你結果；等待中的跟進列在例行任務上方，可以取消。
-- 例行任務會記住上次做到哪裡，下次接著做。
-- Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
-- 語音通話設定會顯示電腦的 OpenAI 引擎使用的「伺服器」；使用自有伺服器時，模式固定為語音識別。
+- Bot 會把較久的工作交給背景進行，聊天不會被占住：輸入框上方顯示進度，點一下可查看或停止；需要核准時卡片會出現在聊天裡，完成後 Bot 會告訴你結果。
+- 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot。
+- 智慧體可以有多個「登入設定」（賬戶或 API 金鑰）：bot 在「智慧體」選用哪一個，備援可選另一個，「用量上限」分別列出每個賬戶的額度。
+- Bot 可以設定跟進，晚點自己回來告訴你結果；例行任務會從上次做到的地方接著做。
 - 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好後點「回覆」。
-- Bot 設定的「技能」只列出名稱，點旁邊的資訊按鈕可以看完整說明。
+- 開始 OpenAI 即時語音通話或遠端螢幕時，App 不會再直接關閉。
+- 選擇卡片改用編號選項，也能直接打字回答。
 
 ### en-US
-- Bots do long work in the background, so the chat stays free and keeps answering. A capsule above the message box shows what it is doing; tap it for details, or stop it.
-- Approval cards from background work appear in the chat, marked "In the background".
-- When it's done, the bot tells you what it found.
+- Bots work in the background and keep chatting; a capsule above the message box shows or stops the work.
 - Share text, links, photos or files to a bot from any app.
-- Update notices say whether this app or your computer needs updating.
-- A voice note no longer plays after you leave its chat.
-- Choice cards show numbered options and take your own answer.
-- Agents can have several login profiles (account or API key): pick a bot's under Agent, fall back to another, see each account's limits in Usage.
-- Bots can check back later; cancel one under Routines.
-- Routines resume where the last run stopped.
-- Optional Google Search in Gemini realtime calls, off by default.
-- Voice chat settings show the Server your computer's OpenAI engine uses; with your own, Mode stays on Speech.
-- Reply to one part of a message: hold it, choose Select Text, select, then Reply.
-- A bot's Skills settings list only each skill's name; the info button beside one shows its description.
+- Agents can have several login profiles (account or API key), with fallbacks and per-account limits.
+- Bots can check back later; routines resume where they stopped.
+- Reply to one part of a message.
+- Starting an OpenAI realtime call or the remote screen no longer closes the app.
+- Choice cards take your own answer.

@@ -28,7 +28,7 @@ never to a question or a request. When a message needs no words, the reaction is
 end your turn by replying exactly \"(pass)\".";
 /// The `chat` server's instructions: [`INSTRUCTIONS`] plus how to ask the user to choose.
 pub fn instructions() -> String {
-    format!("{INSTRUCTIONS} {}", crate::chat::decision::INSTRUCTIONS)
+    format!("{INSTRUCTIONS} {} {}", crate::chat::decision::INSTRUCTIONS, crate::chat::plan::INSTRUCTIONS)
 }
 
 /// Longest message accepted, in bytes.

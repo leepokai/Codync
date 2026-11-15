@@ -1,0 +1,63 @@
+/* The checklist above the message box. */
+.task-checklist {
+  margin: 0 16px 6px;
+  border: 1px solid var(--separator, rgba(128, 128, 128, 0.25));
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.task-checklist-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.task-checklist-title {
+  font-weight: 600;
+}
+.task-checklist-count {
+  font-variant-numeric: tabular-nums;
+}
+.task-checklist-active,
+.task-checklist-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.task-checklist-active {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tertiary);
+}
+.task-checklist-list {
+  list-style: none;
+  margin: 6px 0 2px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.task-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+}
+.task-checklist-item.in_progress {
+  color: var(--text, inherit);
+  font-weight: 500;
+}
+.task-checklist-done {
+  text-decoration: line-through;
+  color: var(--tertiary);
+}

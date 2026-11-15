@@ -7,7 +7,7 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.1
+## 2.48.2
 ### zh-Hant
 - Bot 把比較久的工作放到背景做，聊天照常回你。
 - 點輸入框上方的膠囊開啟 Bot 的「詳情」：Threads（正在跑的）和 Event Box（等待中的：先做、插隊、丟掉）。

@@ -5,14 +5,15 @@
 // Codync Dev from a worktree, --sandbox runs a sandbox from the main checkout, --name <name> runs
 // the sandbox of that name, --cloud lets the sandbox use the dev cloud, --local-cloud gives it its own
 // local cloud (the default on a branch that changes cloud/: local-cloud.mjs), --cdp opens the
-// DevTools protocol on the sandbox port + 10000, --onboarding shows the welcome flow (a sandbox
-// starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is gone
-// (and their Clerk test accounts and iPhone simulators).
+// DevTools protocol on the sandbox port + 10000 and gives the host the stand-in agent CLIs,
+// --onboarding shows the welcome flow (a sandbox starts past it), --list shows every sandbox,
+// --prune deletes the ones whose worktree is gone (and their Clerk test accounts and iPhone
+// simulators).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -191,6 +192,9 @@ async function sandbox() {
   cloud = await sandboxCloud({ mode, root, home, port }).catch((e) => fail(`Local cloud: ${e.message}`))
   // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
   const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...cloud.hostEnv }
+  // --cdp: the stand-in agent CLIs come first on PATH, so the specs sign no real agent in
+  // (host/tests/fixtures/bin/README.md). They are scripts: not on Windows.
+  if (flags.cdp && !windows) hostEnv.PATH = [join(root, 'host/tests/fixtures/bin'), hostEnv.PATH].join(delimiter)
   const out = openSync(log, 'a')
   hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
   hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))

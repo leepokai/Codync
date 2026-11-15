@@ -32,6 +32,36 @@ npm run e2e            # in a second shell: e2e/*.spec.ts against that sandbox
 
 `e2e/sandbox.ts` finds the sandbox from its `sandbox.json` and attaches to its main window; `e2e/smoke.spec.ts` checks the app renders and runs against the sandbox's own host. A spec reaches the main process only through the `window.codync` bridge, as the renderer does. Keys sent over the DevTools protocol never reach the app menu's shortcuts (⌘F, ⌘G): `e2e/find.spec.ts` picks those menu items through System Events instead, so it runs on macOS only and needs Accessibility access for the terminal running Playwright. Every unpackaged sandbox app is a process named "Electron", so it picks the attached app by the process ID its DevTools protocol reports (`SystemInfo.getProcessInfo`), never by name. One worker per worktree, since one app runs per sandbox; worktrees run in parallel with each other.
 
+### Stand-in agents
+
+Some screens need an agent the host knows by name: an agent's sheet in Extensions, its sign-in terminal, its [login profiles](../features/login-profiles.md). A scripted agent on a custom command (the `echoBot` kind) can't reach them, and the real agents on the computer must not be signed in and out by a test: repeated automated sign-ins can get an account banned by its provider. So an e2e sandbox runs stand-ins of real agents' CLIs.
+
+**How it works.** The host finds an agent by its CLI's name on `PATH`. `npm run dev -- --cdp` puts `host/tests/fixtures/bin` first on the sandbox host's `PATH` (`apps/desktop/tools/dev.mjs`), so a script there named like an agent's CLI is that agent for this host: listed as installed, signed in by the host's own sign-in command, started by the host's own ACP command. Nothing in the host knows about the stand-ins, so a spec on one runs the same code a real agent does. Only a `--cdp` sandbox has them: a sandbox started without the flag, Codync Dev and every released build see the computer's real agents only.
+
+The one stand-in so far is `host/tests/fixtures/bin/devin`, for the Devin CLI: an agent whose account login profiles sign in in a terminal and keep the login as a file in the profile's folder. What each of its commands does, and how to try one by hand, is in [`host/tests/fixtures/bin/README.md`](../../host/tests/fixtures/bin/README.md).
+
+**What runs on it.** `e2e/login-profiles.spec.ts`, in the whole suite every time: Add account opens the sign-in terminal and leaving it signs nothing in; the row's Sign in finishes the sign-in and the row reads Signed in; a bot on the login profile answers from it; the bot's settings move it back to the default login and its fallbacks follow; an API key login profile gets its keys from its sign-in card and its key form; and each login profile is removed once no bot uses it. A spec that needs a stand-in asks for it with `standInAgent` (`e2e/sandbox.ts`), which checks the agent's `path` in `hello` is the script and fails with the command to start the sandbox when it isn't.
+
+**Phones.** A phone paired with a `--cdp` sandbox (as `after-change` pairs them) sees the stand-in Devin as installed too. The Maestro flow `apps/maestro/login-profiles.yaml` (tag `agents`) gives each phone an agent whose accounts sign in in a terminal: the iPhone the first in the host's list, which is a real agent on the computer (Claude Code when it is installed), and Android the last, which in such a sandbox is the stand-in Devin. The flow adds its login profiles through the host API and never opens a sign-in, so neither half signs an account in; the iPhone's half still runs on the real agent's CLI.
+
+**Not on a stand-in.** `e2e/usage-logins.spec.ts` (the limits per login) runs the computer's real Claude Code, and skips itself without it: the host reads the default login's limits with `claude -p /usage`, and runs the CLI's own checks on an empty throwaway login profile, which the spec marks signed in through the host's store. It never opens a sign-in.
+
+**Limits.** The stand-ins are Python scripts started by their `#!` line: they don't run on Windows, where `dev.mjs` leaves `PATH` alone and the spec is skipped. In a `--cdp` sandbox Devin shows as installed, and a real Devin on the computer is hidden behind the stand-in. Start the sandbox without `--cdp` to use the real one.
+
+**Adding one.** The steps are in the same [README](../../host/tests/fixtures/bin/README.md#adding-a-stand-in): pick the catalog agent whose sign-in and login storage match the screen under test, name the script after its CLI, and add its row to the README's table.
+
+### Real login tests
+
+`e2e/login-profiles-real.spec.ts` is the one spec that opens a real agent's own sign-in: on Claude Code or Codex it adds an account, checks the sign-in terminal opens, leaves without signing in and removes the login profile. It is skipped unless it is asked for, so `npm run e2e` and `after-change` never run it:
+
+```sh
+cd apps/desktop
+npm run dev -- --cdp                                          # the worktree's sandbox
+CODYNC_E2E_REAL_LOGINS=1 npm run e2e -- login-profiles-real   # in a second shell
+```
+
+Run it only when the maintainer asks for a real login test. It needs Claude Code or Codex installed on the computer, and skips itself without.
+
 ## Phones: Maestro
 
 One flow in `apps/maestro/` serves both phones: it launches the iPhone or Android Dev app by platform (`runFlow` with `when: platform`) and asserts the same copy, since the apps match screen for screen. Run every phone in one Maestro process, with the tags [the check needs](#what-each-e2e-check-runs):

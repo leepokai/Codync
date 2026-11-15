@@ -99,6 +99,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// The most agents that work its items at once (1 to 6). Nil from an older host: no setting to show.
     public var maxAgents: Int?
     public var unread: Int
+    /// Marked unread from the roster: it stays unread on screen until opened again, marked read or sent from.
+    public var keptUnread: Bool = false
     public var lastMessage: String?
     public var lastAt: Int64
 
@@ -173,6 +175,7 @@ extension Bot {
         work = (try? c.decodeIfPresent(WorkList.self, forKey: .work))?.items ?? []
         maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
+        keptUnread = try c.decodeIfPresent(Bool.self, forKey: .keptUnread) ?? false
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt
     }

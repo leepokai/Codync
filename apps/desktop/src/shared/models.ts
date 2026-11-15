@@ -95,6 +95,8 @@ export interface Bot {
   /** The most agents it runs at once, 1 to 6; null from a host before the box. */
   maxAgents: number | null
   unread: number
+  /** Marked unread from the roster: it stays unread on screen until opened again, marked read or sent from. */
+  keptUnread: boolean
   lastMessage?: string | null
   lastAt: number
 }
@@ -157,6 +159,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     work: normalizeWork(raw.work),
     maxAgents: normalizeMaxAgents(raw.maxAgents),
     unread: raw.unread ?? 0,
+    keptUnread: raw.keptUnread ?? false,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }

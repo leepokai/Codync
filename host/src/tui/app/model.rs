@@ -60,6 +60,10 @@ pub enum After {
     Network(super::super::manage::NetReply),
     /// A move in the Usage chooser, to this row.
     UsageOrder(usize),
+    /// `markUnread`, which may have had nothing to mark.
+    MarkedUnread,
+    /// The user's read of a chat they opened, and which of this screen's marks it was.
+    Opened(String, u64),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
 
 use super::app::{After, Msg};
 use super::manage::Reply;
@@ -108,23 +109,45 @@ impl Client {
 
     /// Runs a command in the background; the reply comes back as `Msg::Reply`.
     pub fn spawn_call(&self, method: &'static str, body: Value, after: After, tx: UnboundedSender<Msg>) {
+        drop(self.spawn_call_after(None, method, body, after, tx));
+    }
+
+    /// `spawn_call` once the call `before` it is done, retries included.
+    pub fn spawn_call_after(
+        &self,
+        before: Option<JoinHandle<()>>,
+        method: &'static str,
+        body: Value,
+        after: After,
+        tx: UnboundedSender<Msg>,
+    ) -> JoinHandle<()> {
         let c = self.clone();
         tokio::spawn(async move {
+            if let Some(before) = before {
+                let _ = before.await;
+            }
             let r = c.call(method, &body).await;
             let _ = tx.send(Msg::Reply(after, r));
-        });
+        })
     }
 
     /// Uploads `files` in 384 KiB chunks (under the channel's message limit, like the apps), then sends
-    /// `body` with them attached. The reply comes back as `Msg::Reply(after, …)`.
-    pub fn spawn_send_files(&self, mut body: Value, files: Vec<PathBuf>, after: After, tx: UnboundedSender<Msg>) {
+    /// `body` with them attached once the call `before` it is done. The reply comes back as `Msg::Reply(after, …)`.
+    pub fn spawn_send_files(
+        &self,
+        before: Option<JoinHandle<()>>,
+        mut body: Value,
+        files: Vec<PathBuf>,
+        after: After,
+        tx: UnboundedSender<Msg>,
+    ) -> JoinHandle<()> {
         use base64::Engine as _;
         const CHUNK: usize = 384 * 1024;
         const MAX: u64 = 100 * 1024 * 1024;
         let c = self.clone();
         tokio::spawn(async move {
             let upload = async {
-                let mut ids = Vec::new();
+                let mut ids: Vec<String> = Vec::new();
                 for path in &files {
                     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     let data = tokio::fs::read(path).await.map_err(|e| format!("Can't read {name}: {e}"))?;
@@ -150,11 +173,21 @@ impl Client {
                     }
                     ids.push(id);
                 }
-                body["attachments"] = ids.into();
-                c.call("send", &body).await
+                Ok(ids)
             };
-            let _ = tx.send(Msg::Reply(after, upload.await));
-        });
+            let uploaded = upload.await;
+            if let Some(before) = before {
+                let _ = before.await;
+            }
+            let r = match uploaded {
+                Ok(ids) => {
+                    body["attachments"] = ids.into();
+                    c.call("send", &body).await
+                }
+                Err(e) => Err(e),
+            };
+            let _ = tx.send(Msg::Reply(after, r));
+        })
     }
 
     /// Streams a setup terminal's output (scrollback first) until it exits; returns where its
@@ -353,6 +386,55 @@ mod tests {
         let _ = socket.read(&mut [0; 4096]).await.unwrap();
         socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
         assert_eq!(call.await.unwrap(), Ok(serde_json::json!({})));
+    }
+
+    #[tokio::test]
+    async fn a_call_after_another_goes_once_that_one_is_done() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = super::Client::new(&format!("http://{}", listener.local_addr().unwrap()), Some("t"));
+        let (done, finished) = tokio::sync::oneshot::channel::<()>();
+        let before = tokio::spawn(async move {
+            let _ = finished.await;
+        });
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let call = client.spawn_call_after(Some(before), "stop", serde_json::json!({}), super::After::Nothing, tx);
+
+        let waiting = tokio::time::timeout(std::time::Duration::from_millis(100), listener.accept()).await;
+        assert!(waiting.is_err(), "nothing reaches the host yet");
+
+        done.send(()).unwrap();
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let _ = socket.read(&mut [0; 4096]).await.unwrap();
+        socket.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await.unwrap();
+        call.await.unwrap();
+        assert!(rx.try_recv().is_ok(), "the reply came back");
+    }
+
+    #[tokio::test]
+    async fn a_send_whose_files_fail_still_waits_for_the_call_before_it() {
+        let client = super::Client::new("http://127.0.0.1:9", Some("t"));
+        let (done, finished) = tokio::sync::oneshot::channel::<()>();
+        let before = tokio::spawn(async move {
+            let _ = finished.await;
+        });
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let missing = std::env::temp_dir().join(format!("codync-missing-{}", uuid::Uuid::new_v4()));
+        let send = client.spawn_send_files(
+            Some(before),
+            serde_json::json!({"botId": "b"}),
+            vec![missing],
+            super::After::Nothing,
+            tx,
+        );
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(!send.is_finished(), "a later action can't overtake the one before it");
+
+        done.send(()).unwrap();
+        send.await.unwrap();
+        let Some(super::Msg::Reply(_, r)) = rx.recv().await else { panic!("no reply") };
+        assert!(r.unwrap_err().starts_with("Can't read"));
     }
 
     #[test]

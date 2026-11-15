@@ -40,7 +40,7 @@ extension AppStore {
         showUsage = false
         marketplace = nil
         tab = .bots
-        accounts.selection = ref
+        accounts.open(ref)
         accounts.setActive(true)
     }
 }

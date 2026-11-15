@@ -175,7 +175,9 @@ impl App {
     /// j/k in the roster: the next shown bot, a folded section counting as one.
     pub(super) fn move_bot(&mut self, delta: isize) {
         let Some(id) = step(&roster_lines(&self.roster(), &self.folded), self.bot(), delta) else { return };
-        self.select(&id);
+        if self.selected.as_deref() != Some(&id) {
+            self.select(&id);
+        }
     }
 
     /// The bot key `n` (from 0 for `1`) selects: the n-th stop, a folded section being one (its first bot).
@@ -208,7 +210,9 @@ impl App {
         if self.folded.contains(name) {
             return;
         }
-        if let Some(id) = self.roster().iter().find(|b| b.shown_section() == Some(name)).map(|b| b.id.clone()) {
+        if let Some(id) = self.roster().iter().find(|b| b.shown_section() == Some(name)).map(|b| b.id.clone())
+            && self.selected.as_deref() != Some(&id)
+        {
             self.select(&id);
         }
     }

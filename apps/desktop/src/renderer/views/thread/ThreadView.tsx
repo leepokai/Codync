@@ -37,6 +37,7 @@ import { BotEditorView } from '../bots/BotEditorView'
 import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
+import { TaskChecklist } from './TaskChecklist'
 import { ArtifactView } from '../library/ArtifactView'
 import { KofiInviteCard } from './KofiInvite'
 import { useKofiInviteAt } from '../../lib/use-kofi-invite'
@@ -229,6 +230,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
             // The artifact over the chat has its own box (two would both take the voice shortcut).
             <>
               <WorkCapsule botId={botId} open={openWork} />
+              <TaskChecklist botId={botId} />
               <QueuedMessages botId={botId} />
               <Composer
                 botId={botId}

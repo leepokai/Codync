@@ -55,6 +55,13 @@ it has no pointer tooltip or link-opening action.
   settings would, and a notice ("Renamed to …", "Instructions updated") shows it in the main chat. A name set this
   way ends automatic naming. Its `save_skill` writes a skill for the bot, which the user can turn on for others
   ([skills bots write](marketplace.md)).
+- `update_plan {items: [{content, status}]}` (`host/src/chat/plan.rs`) keeps the bot's checklist for work with
+  several steps, for agents with no task list of their own: `status` is `pending`, `in_progress` or `completed`, at
+  most 30 steps of 300 characters, always the whole list. It writes the same `plan` entry an ACP agent's own plan
+  makes, one per turn that later calls replace in place (the call is bookkeeping, so it stays out of the working
+  steps). The desktop shows the latest turn's plan above the message box (`TaskChecklist`): open while the bot works
+  or a step is open, folded to the step under way on a click, gone once every step is done and the bot is idle.
+  The full conversation keeps every plan.
 - A bot-to-bot exchange (`message_bot`) is one compact notice row, "Messaged Owen" /
   "Message from Egan". Its text lives only in the bot conversation sheet it opens; follow-ups
   are normal bubbles. Consecutive exchanges with the same peer in the main chat (either

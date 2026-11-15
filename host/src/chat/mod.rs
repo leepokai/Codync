@@ -17,6 +17,7 @@ pub mod messages;
 pub mod naming;
 pub mod oneshot;
 pub mod outbox;
+pub mod plan;
 pub mod profile;
 pub mod prompt;
 pub mod reactions;

@@ -103,7 +103,10 @@ fn keeps_memory(cfg: &BotConfig, renamed: &Renamed, data: &Value) -> bool {
 /// working steps a chat unfolds leave out. An update can change the title or paths, so the flag follows them.
 /// Always written, so clients tell an older host's unflagged call from one that isn't bookkeeping.
 pub(super) fn mark_bookkeeping(cfg: &BotConfig, renamed: &Renamed, data: &mut Value) {
-    let flag = sends_message(data["title"].as_str().unwrap_or_default(), renamed) || keeps_memory(cfg, renamed, data);
+    let title = data["title"].as_str().unwrap_or_default();
+    let flag = sends_message(title, renamed)
+        || calls(title, renamed, "chat", "update_plan")
+        || keeps_memory(cfg, renamed, data);
     data["bookkeeping"] = flag.into();
 }
 

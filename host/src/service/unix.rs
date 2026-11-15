@@ -45,14 +45,9 @@ pub fn started_by_service() -> bool {
 /// Refuse to replace one installation while restarting a service owned by another.
 pub fn require_executable(expected: &Path) -> Result<()> {
     let configured = if cfg!(target_os = "macos") {
-        let output = Command::new("/usr/bin/plutil")
-            .args(["-extract", "ProgramArguments.0", "raw", "-o", "-"])
-            .arg(launchd_plist())
-            .output()?;
-        if !output.status.success() {
-            bail!("cannot read the installed host service");
-        }
-        PathBuf::from(String::from_utf8(output.stdout)?.trim())
+        PathBuf::from(
+            plist_value(&launchd_plist(), "ProgramArguments.0").context("reading the installed host service")?,
+        )
     } else {
         let unit = std::fs::read_to_string(systemd_unit())?;
         let command =
@@ -80,13 +75,23 @@ fn systemd_unit() -> PathBuf {
 /// app, which declares `NSLocalNetworkUsageDescription`; without it the request is denied unprompted.
 fn app_bundle_id(exe: &Path) -> Option<String> {
     let app = exe.ancestors().find(|dir| dir.extension().is_some_and(|ext| ext == "app"))?;
-    let output = Command::new("/usr/bin/plutil")
-        .args(["-extract", "CFBundleIdentifier", "raw", "-o", "-"])
-        .arg(app.join("Contents/Info.plist"))
-        .output()
-        .ok()?;
-    let id = String::from_utf8(output.stdout).ok()?.trim().to_owned();
-    (output.status.success() && !id.is_empty()).then_some(id)
+    match plist_value(&app.join("Contents/Info.plist"), "CFBundleIdentifier") {
+        Ok(id) if !id.is_empty() => Some(id),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!(app = %app.display(), error = format!("{e:#}"), "no bundle id for AssociatedBundleIdentifiers");
+            None
+        }
+    }
+}
+
+/// One value from a property list, read with `plutil`.
+fn plist_value(file: &Path, key: &str) -> Result<String> {
+    let output = Command::new("/usr/bin/plutil").args(["-extract", key, "raw", "-o", "-"]).arg(file).output()?;
+    if !output.status.success() {
+        bail!("{} has no {key}", file.display());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
 fn xml_escape(s: &str) -> String {
@@ -104,6 +109,9 @@ fn systemd_quote(s: &str, exec: bool) -> String {
 /// PATH is captured so the service finds `npx`, `claude`, `codex`, …
 pub fn install(port: u16) -> Result<()> {
     let exe = current_exe().context("locating the codync-host binary")?;
+    let associated = app_bundle_id(&exe).map_or_else(String::new, |id| {
+        format!("\n  <key>AssociatedBundleIdentifiers</key><array><string>{}</string></array>", xml_escape(&id))
+    });
     let exe = exe.to_string_lossy();
     let path = std::env::var("PATH").unwrap_or_default();
     let log = data_dir().join("host.log");
@@ -126,10 +134,6 @@ pub fn install(port: u16) -> Result<()> {
 </dict>
 </plist>
 "#,
-            associated = app_bundle_id(Path::new(exe.as_ref())).map_or_else(String::new, |id| format!(
-                "\n  <key>AssociatedBundleIdentifiers</key><array><string>{}</string></array>",
-                xml_escape(&id)
-            )),
             exe = xml_escape(&exe),
             path = xml_escape(&path),
             data = xml_escape(&data_dir().to_string_lossy()),
@@ -195,6 +199,23 @@ fn current_uid() -> String {
 #[cfg(test)]
 mod tests {
     use super::systemd_quote;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn host_in_an_app_names_that_app() {
+        let dir = std::env::temp_dir().join(format!("codync-service-{}", uuid::Uuid::new_v4()));
+        let app = dir.join("X.app");
+        std::fs::create_dir_all(app.join("Contents/Resources")).unwrap();
+        std::fs::write(
+            app.join("Contents/Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.test</string></dict></plist>"#,
+        )
+        .unwrap();
+        let exe = app.join("Contents/Resources/codync-host");
+        assert_eq!(super::app_bundle_id(&exe).as_deref(), Some("com.example.test"));
+        assert_eq!(super::app_bundle_id(&dir.join("bin/codync-host")), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn unit_values_stay_one_word() {

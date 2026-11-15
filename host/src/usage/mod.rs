@@ -56,8 +56,13 @@ const HEADROOM_PERCENT: f64 = 75.0;
 /// Usage of the plan `cfg`'s agent runs on (its login profile's, or the default login's) above
 /// [`HEADROOM_PERCENT`] in any window. A note (today's tokens, a dollar balance) is not a plan window.
 pub fn near_limit(hub: &Hub, cfg: &crate::store::BotConfig) -> bool {
-    let profile = crate::agent::login_profiles::of_bot(&hub.store, &cfg.backend, cfg);
-    hub.usage.locked().windows(&cfg.backend, profile).is_some_and(over_headroom)
+    near_limit_for(hub, cfg, &cfg.backend)
+}
+
+/// [`near_limit`] for work that runs on `backend` instead: a goal step follows the bot's fallback rotation.
+pub fn near_limit_for(hub: &Hub, cfg: &crate::store::BotConfig, backend: &str) -> bool {
+    let profile = crate::agent::login_profiles::of_bot(&hub.store, backend, cfg);
+    hub.usage.locked().windows(backend, profile).is_some_and(over_headroom)
 }
 
 fn over_headroom(windows: &[Window]) -> bool {

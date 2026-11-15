@@ -18,7 +18,10 @@ use tokio::sync::mpsc;
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
-            Cmd::RefreshTools => self.restart_stale(),
+            Cmd::Goal(id) => self.enqueue(Queued::Goal(id), done_tx).await,
+            Cmd::RefreshTools => {
+                self.restart_before_turn = true;
+            }
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
@@ -171,6 +174,7 @@ impl Actor {
     }
 
     pub(super) async fn stop(&mut self) {
+        crate::chat::goal::finish(&self.hub, &self.cfg.id, None, crate::chat::goal::Stopped::Manual);
         self.hub.team.end_turn(&self.cfg.id);
         if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
@@ -308,6 +312,11 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::Goal(_)) => {
+                    let Some(Queued::Goal(id)) = self.queue.pop_front() else { unreachable!("goal step") };
+                    self.dequeue_goal(id, done_tx).await;
+                    continue;
+                }
                 Some(Queued::TaskReport(_)) => {
                     // Reports that came in while the bot worked are one turn, as replies are.
                     let mut reports = Vec::new();
@@ -415,6 +424,10 @@ impl Actor {
     pub(super) fn start_failed(&mut self, e: &anyhow::Error) {
         if self.turn.is_some() {
             self.report_turn(false, Some(e), "start_failed");
+        }
+        if let Some(step) = self.goal_step.take() {
+            let why = step.stopped.unwrap_or(crate::chat::goal::Stopped::Failed);
+            crate::chat::goal::finish(&self.hub, &self.cfg.id, Some(&step.id), why);
         }
         let why = crate::routines::could_not_start(format_args!("{e:#}"));
         self.finish_routine(crate::routines::Status::Failed, Some(why), None);

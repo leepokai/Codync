@@ -17,6 +17,7 @@ import { DevServersSection } from './DevServersSection'
 import { ComputerTab } from './ComputerTab'
 import { WorkThread } from './WorkThread'
 import { WorkTimeline } from './WorkTimeline'
+import { GoalSection } from './GoalSection'
 import { MacChatButton } from './MacChatButton'
 import { useThreadPage } from './use-thread-page'
 import '../bots/bots.css'
@@ -88,6 +89,7 @@ export function DetailsPanel({ botId, routineId, tab, setTab, thread, openThread
                         openThread(taskId)
                       }}
                     >
+                      <GoalSection key={bot.id} bot={bot} />
                       <RoutinesView botId={botId} initialId={routineId} />
                       <DevServersSection bot={bot} />
                     </WorkTimeline>

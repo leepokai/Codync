@@ -386,6 +386,7 @@ impl App {
             }
             KeyCode::Char('w') => self.ask_section(),
             KeyCode::Char('W') => self.ask_rename_section(),
+            KeyCode::Char('E') => self.open_all_work(),
             KeyCode::Char('z') => self.toggle_section(),
             KeyCode::Char('c') => self.copy_last(),
             _ => {}

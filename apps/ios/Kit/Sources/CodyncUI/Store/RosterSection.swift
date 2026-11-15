@@ -104,6 +104,12 @@ public struct RosterSection: Sendable {
         }
         return lines
     }
+
+    /// A computer's bots in the order `lines` shows them, the ones in a folded section included: what a view of
+    /// every bot lists (all bots' work).
+    public static func onScreen<Item>(_ roster: [Item], order: [String] = [], bot: (Item) -> Bot) -> [Item] {
+        lines(roster, folded: [], order: order, bot: bot).compactMap { if case let .bot(item) = $0 { item } else { nil } }
+    }
 }
 
 /// A section change shown before the computer took it: bot `bot` from section `from` to `to` (nil:

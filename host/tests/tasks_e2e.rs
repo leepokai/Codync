@@ -171,11 +171,11 @@ async fn an_agent_that_cannot_fork_starts_the_item_from_the_chat_so_far() {
 }
 
 #[tokio::test]
-async fn a_tasks_approval_card_is_answered_in_the_chat_and_it_cannot_ask_or_add_work() {
+async fn a_tasks_approval_card_is_answered_in_the_chat_and_it_cannot_add_work() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
     host.call("updateBot", json!({"id": bot, "permission": "ask"})).await;
-    host.reply(&bot, "ADD Run the suite|PERMISSION then ASK and NEST").await;
+    host.reply(&bot, "ADD Run the suite|PERMISSION then NEST").await;
 
     let card = wait("the task's card in the chat", async || {
         history(&host, &bot).await.into_iter().find(|e| e["kind"] == "permission" && e["data"]["status"] == "pending")
@@ -190,8 +190,6 @@ async fn a_tasks_approval_card_is_answered_in_the_chat_and_it_cannot_ask_or_add_
 
     // What a task may not do from where it is, whichever server it asks.
     for (method, tool) in [
-        ("chatCall", "send_file"),
-        ("chatCall", "publish_artifact"),
         ("chatCall", "set_name"),
         ("chatCall", "steer_work"),
         ("chatCall", "work_status"),
@@ -205,7 +203,6 @@ async fn a_tasks_approval_card_is_answered_in_the_chat_and_it_cannot_ask_or_add_
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     let relayed = reply(&host, &bot, "Relayed:").await;
-    assert!(relayed.contains("Refused: request_decision isn't available in a task"), "{relayed}");
     assert!(relayed.contains("Refused: add_work isn't available in a task"), "{relayed}");
     assert!(relayed.ends_with("approved"), "{relayed}");
 }
@@ -522,4 +519,435 @@ async fn stopping_the_turn_that_added_an_item_drops_it_before_it_begins() {
     host.call("stop", json!({"botId": bot})).await;
     wait("the item to go", async || work(&host, &bot).await.is_empty().then_some(())).await;
     assert_eq!(task_prompts(&host, &bot, "Never"), [] as [Value; 0]);
+}
+
+/// A routine of `bot`'s that does what `instruction` says (`task_agent.py`); its id.
+async fn routine(host: &Host, bot: &str, name: &str, instruction: &str) -> String {
+    let body = json!({"botId": bot, "name": name, "instruction": instruction, "triggers": [{"type": "webhook"}]});
+    host.call("saveRoutine", body).await["routine"]["id"].as_str().unwrap().to_owned()
+}
+
+/// A run of `bot`'s routine `routine` that reads `status`, once there is one.
+async fn run(host: &Host, bot: &str, routine: &str, status: &str) -> Value {
+    wait(&format!("a run to be {status}"), async || {
+        let runs = host.call("routines", json!({"botId": bot})).await["runs"].as_array().unwrap().clone();
+        runs.into_iter().find(|run| run["routineId"] == routine && run["status"] == status)
+    })
+    .await
+}
+
+/// The chat's entries of `kind` whose text starts with `prefix`.
+async fn said(host: &Host, bot: &str, kind: &str, prefix: &str) -> Vec<Value> {
+    let starts = |e: &Value| e["kind"] == kind && e["data"]["text"].as_str().is_some_and(|t| t.starts_with(prefix));
+    history(host, bot).await.into_iter().filter(starts).collect()
+}
+
+#[tokio::test]
+async fn a_routine_run_is_an_item_and_its_last_message_is_the_routines_message_in_the_chat() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+    let digest = routine(&host, &bot, "Digest", "HOLD:digest PROGRESS ASK SEND NEST").await;
+    let mut events = host.events().await;
+
+    host.call("runRoutine", json!({"botId": bot, "id": digest})).await;
+    let working = item(&host, &bot, "Digest", "working").await;
+    assert_eq!(working["source"], json!({"kind": "routine", "id": digest}), "the row says where it came from");
+    // Its line is in the chat as a run's is, and the chat itself stays free.
+    let line = wait("the run's line", async || said(&host, &bot, "notice", "Routine · Digest").await.pop()).await;
+    host.reply(&bot, "are you there?").await;
+    // A second routine waits for the bot's one place, like any item.
+    let second = routine(&host, &bot, "Second", "PASS").await;
+    host.call("runRoutine", json!({"botId": bot, "id": second})).await;
+    assert_eq!(item(&host, &bot, "Second", "waiting").await["wait"], json!({"kind": "next"}));
+
+    release(&host, &bot, "digest");
+    let result = reply(&host, &bot, "Routine done:").await;
+    // What a run may not do in the chat it may not do here, and its progress note is its routine's.
+    assert!(result.contains("Progress: {\"ok\":true"), "{result}");
+    assert!(result.contains("Refused: request_decision works only in the current turn of your own chat"), "{result}");
+    assert!(result.contains("Refused: send_message isn't available in this turn"), "{result}");
+    assert!(result.contains("Refused: add_work isn't available in a task"), "{result}");
+    let posted = said(&host, &bot, "agent", "Routine done:").await.remove(0);
+    assert_eq!(posted["turn"], line["turn"], "in the turn its line took");
+    assert_eq!((&posted["data"]["author"], &posted["data"]["final"]), (&json!(bot), &json!(true)));
+    // The silent one ran next, and said nothing.
+    run(&host, &bot, &second, "succeeded").await;
+    assert_eq!(item(&host, &bot, "Second", "done").await["result"], Value::Null);
+    let done = item(&host, &bot, "Digest", "done").await;
+    assert!(done["result"].as_str().unwrap().starts_with("Routine done:"), "{done}");
+
+    // The bot took no turn for either: nothing was relayed, and its run's prompt reached a task as a routine's.
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0]);
+    assert_eq!(said(&host, &bot, "agent", "Routine done:").await.len(), 1, "posted once");
+    let prompts = host.log(&bot, "prompts.jsonl");
+    let ran = prompts.iter().find(|p| p["text"].as_str().unwrap().contains("Scheduled routine: Digest")).unwrap();
+    assert!(ran["text"].as_str().unwrap().contains("Progress note from this routine's earlier runs"), "{ran}");
+    assert!(!ran["text"].as_str().unwrap().contains("[Task]"), "a run's own prompt, not an item's");
+    // It starts as a run in the chat did: a new session with only its own prompt, though the agent can fork.
+    assert_eq!(host.log(&bot, "forks.jsonl"), [] as [Value; 0], "a run never forks the chat");
+    assert_ne!(ran["session"], prompts[0]["session"], "nor works in the chat's session");
+    assert!(!ran["text"].as_str().unwrap().contains("[The chat you come from, so far]"), "{ran}");
+    let tasks = no_task_bot_reached(&mut events).await;
+    assert!(tasks.iter().any(|task| Some(task.as_str()) == done["task"].as_str()), "its trace is its task's");
+
+    // The next run reads what this one saved.
+    host.call("runRoutine", json!({"botId": bot, "id": digest})).await;
+    wait("the second Digest run", async || {
+        let prompts = host.log(&bot, "prompts.jsonl");
+        prompts.iter().any(|p| p["text"].as_str().unwrap().contains("instructions):\nhandled 1")).then_some(())
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_routine_item_is_stopped_dropped_and_tried_again_as_its_routine_is() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+    let held = routine(&host, &bot, "Held", "HOLD:held").await;
+    let later = routine(&host, &bot, "Later", "HOLD:later").await;
+
+    // Stopping a run's item cancels the run, with no failure line.
+    host.call("runRoutine", json!({"botId": bot, "id": held})).await;
+    let working = item(&host, &bot, "Held", "working").await;
+    host.call("runRoutine", json!({"botId": bot, "id": later})).await;
+    let waiting = item(&host, &bot, "Later", "waiting").await;
+    // A routine deleted while its run waits takes the run out of the box.
+    host.call("deleteRoutine", json!({"botId": bot, "id": later})).await;
+    wait("the deleted routine's run to leave", async || {
+        work(&host, &bot).await.iter().all(|i| i["id"] != waiting["id"]).then_some(())
+    })
+    .await;
+    host.call("stopWork", json!({"botId": bot, "itemId": id(&working)})).await;
+    let stopped = item(&host, &bot, "Held", "stopped").await;
+    assert_eq!(run(&host, &bot, &held, "cancelled").await["detail"], "Stopped by user");
+    assert_eq!(said(&host, &bot, "notice", "Routine could not finish").await.len(), 0);
+
+    // Try again runs the routine again: a new run and a new item, in the old one's place.
+    host.call("retryWork", json!({"botId": bot, "itemId": id(&stopped)})).await;
+    let again = item(&host, &bot, "Held", "working").await;
+    assert_ne!(again["id"], stopped["id"]);
+    assert_eq!(work(&host, &bot).await.iter().filter(|i| i["title"] == "Held").count(), 1);
+    // It can't give way to another item, nor take a new brief: it would run twice.
+    host.reply(&bot, "ADD Urgent|quick").await;
+    let urgent = item(&host, &bot, "Urgent", "waiting").await;
+    let refused =
+        host.refused("workCutIn", json!({"botId": bot, "itemId": id(&urgent), "insteadOf": id(&again)})).await;
+    assert_eq!(refused, "\"Held\" is a routine run or another bot's request: it can't give way, stop it instead");
+    host.call("workCutIn", json!({"botId": bot, "itemId": id(&urgent)})).await;
+    item(&host, &bot, "Held", "working").await;
+
+    // A run whose agent can't start fails as a run in the chat does, and the box frees its place.
+    release(&host, &bot, "held");
+    item(&host, &bot, "Urgent", "done").await;
+    let no_start = host.home.join("bots").join(&bot).join("workspace/no-start");
+    std::fs::write(&no_start, "").unwrap();
+    let broken = routine(&host, &bot, "Broken", "anything").await;
+    host.call("runRoutine", json!({"botId": bot, "id": broken})).await;
+    let failed = item(&host, &bot, "Broken", "failed").await;
+    assert!(failed["result"].as_str().unwrap().starts_with("it could not start"), "{failed}");
+    let run = run(&host, &bot, &broken, "failed").await;
+    assert!(run["detail"].as_str().unwrap().starts_with("Could not start routine:"), "{run}");
+    wait("the failure's line", async || said(&host, &bot, "notice", "Routine could not finish").await.pop()).await;
+    std::fs::remove_file(no_start).unwrap();
+}
+
+#[tokio::test]
+async fn a_routine_run_cut_off_by_a_host_restart_picks_up_and_posts_once() {
+    let mut host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+    let held = routine(&host, &bot, "Held", "HOLD:held").await;
+    host.call("runRoutine", json!({"botId": bot, "id": held})).await;
+    let working = item(&host, &bot, "Held", "working").await;
+
+    host.restart(|_| {}).await;
+    // Its task resumes the turn; what that turn says is the routine's message, once.
+    let result = reply(&host, &bot, "reply: [Codync restarted").await;
+    assert!(result.contains("interrupted you mid-task"), "{result}");
+    assert_eq!(item(&host, &bot, "Held", "done").await["task"], working["task"]);
+    run(&host, &bot, &held, "succeeded").await;
+    assert_eq!(said(&host, &bot, "agent", "reply: [Codync restarted").await.len(), 1);
+    assert_eq!(said(&host, &bot, "notice", "Routine could not finish").await.len(), 0);
+}
+
+#[tokio::test]
+async fn another_bots_request_is_an_item_and_its_last_message_is_the_reply() {
+    let host = Host::start().await;
+    let asker = host.fixture_bot("Ada", "task_agent.py", "").await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "hello").await;
+
+    host.reply(&asker, &format!("MESSAGE {bot}|Review the diff HOLD:review ASK SEND FOLLOW NEST")).await;
+    let working = item(&host, &bot, "Review the diff HOLD:review ASK SEND FOLLOW NEST", "working").await;
+    assert_eq!(working["source"], json!({"kind": "request", "id": asker}));
+    let notice = said(&host, &bot, "notice", "Message from Ada").await.remove(0);
+    assert_eq!(notice["data"]["status"], "sent", "the exchange reads as running");
+    // The asked bot's chat stays free while its task answers.
+    host.reply(&bot, "are you there?").await;
+
+    release(&host, &bot, "review");
+    item(&host, &bot, "Review the diff HOLD:review ASK SEND FOLLOW NEST", "done").await;
+    // The reply went to the bot that asked, as a turn of its own, and not into the asked bot's chat.
+    let prompt = wait("the reply turn", async || {
+        let prompts = host.log(&asker, "prompts.jsonl");
+        let reply =
+            prompts.iter().find(|p| p["text"].as_str().unwrap().contains("replied to your message_bot request"));
+        reply.map(|p| p["text"].as_str().unwrap().to_owned())
+    })
+    .await;
+    assert!(prompt.contains("Request done:"), "{prompt}");
+    // What a request's turn may not do in the chat it may not do here.
+    assert!(prompt.contains("Refused: request_decision works only in the current turn of your own chat"), "{prompt}");
+    assert!(prompt.contains("Refused: send_message isn't available in a bot request"), "{prompt}");
+    assert!(prompt.contains("Refused: follow_up works only in your own chat"), "{prompt}");
+    assert!(prompt.contains("Refused: add_work isn't available in a task"), "{prompt}");
+    let notice = said(&host, &bot, "notice", "Message from Ada").await.remove(0);
+    assert_eq!(notice["data"]["status"], "completed");
+    assert!(notice["data"]["botMessage"]["reply"].as_str().unwrap().starts_with("Request done:"), "{notice}");
+    assert_eq!(said(&host, &bot, "agent", "Request done:").await.len(), 0, "no bubble in the asked bot's chat");
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0], "and no turn of its own for it");
+
+    // A reply of exactly `(pass)` goes back as it is, as it did from a turn in the chat.
+    host.reply(&asker, &format!("MESSAGE {bot}|Quiet PASS")).await;
+    assert_eq!(item(&host, &bot, "Quiet PASS", "done").await["result"], "(pass)");
+    wait("the passed reply", async || {
+        let notices = said(&host, &bot, "notice", "Message from Ada").await;
+        notices.iter().any(|n| n["data"]["botMessage"]["reply"] == "(pass)").then_some(())
+    })
+    .await;
+
+    // A request stopped in the box is cancelled for the bot that asked; it can't be tried again.
+    host.reply(&asker, &format!("MESSAGE {bot}|Second HOLD:second")).await;
+    let second = item(&host, &bot, "Second HOLD:second", "working").await;
+    host.call("stopWork", json!({"botId": bot, "itemId": id(&second)})).await;
+    let stopped = item(&host, &bot, "Second HOLD:second", "stopped").await;
+    wait("the exchange to read cancelled", async || {
+        let notices = said(&host, &bot, "notice", "Message from Ada").await;
+        notices.iter().any(|n| n["data"]["status"] == "cancelled").then_some(())
+    })
+    .await;
+    let refused = host.refused("retryWork", json!({"botId": bot, "itemId": id(&stopped)})).await;
+    assert_eq!(refused, "another bot's request can't be tried again: that bot asks again");
+}
+
+#[tokio::test]
+async fn a_task_asks_the_user_to_choose_and_shares_in_the_chat() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "hello").await;
+    host.reply(&bot, "ADD Pick one|ASK then SHARE and ARTIFACT").await;
+
+    let card = wait("the task's choice card in the chat", async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.rfind(|e| e["data"]["status"] == "pending")
+    })
+    .await;
+    let waits = item(&host, &bot, "Pick one", "needsYou").await;
+    assert_eq!(card["data"]["item"], waits["id"], "the card names the item");
+    assert_eq!(card["data"]["task"], json!({"id": waits["task"], "title": "Pick one"}));
+    assert_eq!(card["data"]["author"], bot, "to the user it is the bot asking");
+    assert!(!card["data"]["text"].as_str().unwrap().contains("Reply with"), "only a press answers it");
+    // What the user types meanwhile is for the bot in the chat: it neither answers the card nor ends it.
+    host.reply(&bot, "A").await;
+    let still = host.call("history", json!({"botId": bot})).await;
+    let pending = still["entries"].as_array().unwrap().iter().find(|e| e["id"] == card["id"]).unwrap();
+    assert_eq!(pending["data"]["status"], "pending");
+
+    host.call("respondDecision", json!({"entryId": card["id"], "option": "B"})).await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("Asked: {\"choice\":\"B\"}"), "{relayed}");
+    assert!(relayed.contains("Shared: {\"sent\":true}"), "{relayed}");
+    assert!(relayed.contains("Published: {"), "{relayed}");
+    let chat = history(&host, &bot).await;
+    let answered = chat.iter().find(|e| e["id"] == card["id"]).unwrap();
+    assert_eq!((&answered["data"]["status"], &answered["data"]["selected"]), (&json!("answered"), &json!("B")));
+    let choice = chat.iter().find(|e| e["kind"] == "user" && e["data"]["decisionId"] == card["id"]).unwrap();
+    assert_eq!(choice["data"]["text"], "B", "the user's choice is recorded where they made it");
+
+    // The file and the artifact's card are the bot's messages in the chat, named by the item.
+    let file = chat.iter().find(|e| e["data"]["files"].is_array()).expect("the file's message");
+    assert_eq!(
+        (&file["kind"], &file["data"]["item"], &file["data"]["author"]),
+        (&json!("agent"), &waits["id"], &json!(bot))
+    );
+    assert_eq!(file["data"]["files"][0]["name"], "shared.txt");
+    let stored = host.home.join("bots").join(&bot).join("files").join(file["data"]["files"][0]["id"].as_str().unwrap());
+    assert!(stored.exists(), "kept with the bot, not with the task: {}", stored.display());
+    let page = chat.iter().find(|e| !e["data"]["artifact"].is_null()).expect("the artifact's card");
+    assert_eq!((&page["data"]["item"], &page["data"]["author"]), (&waits["id"], &json!(bot)));
+    let library = host.call("library", json!({"botId": bot})).await;
+    assert!(library.to_string().contains("Page"), "the artifact is in the bot's Library: {library}");
+}
+
+#[tokio::test]
+async fn a_tasks_choice_card_ends_with_its_item() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "ADD Pick one|ASK").await;
+    let pending = async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.next_back()
+    };
+    let card = wait("the card", async || pending().await.filter(|e| e["data"]["status"] == "pending")).await;
+    let waits = item(&host, &bot, "Pick one", "needsYou").await;
+
+    // Stopping the chat's own turn is not the task's: the card still waits. Stopping the item ends it.
+    host.call("stop", json!({"botId": bot})).await;
+    assert_eq!(pending().await.unwrap()["data"]["status"], "pending");
+    host.call("stopWork", json!({"botId": bot, "itemId": id(&waits)})).await;
+    wait("the card to expire", async || pending().await.filter(|e| e["data"]["status"] == "expired")).await;
+    let late = host.refused("respondDecision", json!({"entryId": card["id"], "option": "A"})).await;
+    assert_eq!(late, "that card is already answered or expired");
+}
+
+#[tokio::test]
+async fn a_tasks_edit_memory_is_its_own_turns_so_it_adds_and_never_takes_out() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.write_memory(Some(&bot), "MEMORY.md", "- Likes tea\n- Has two cats\n");
+    host.reply(&bot, "hello").await;
+    host.reply(&bot, "ADD Notes|HOLD:notes REMEMBER FORGET").await;
+    item(&host, &bot, "Notes", "working").await;
+    // The chat runs a turn the user started, which may take lines out; the task's turn is its own, and may not.
+    let nonce = uuid::Uuid::new_v4().to_string();
+    host.call("send", json!({"botId": bot, "text": "ADD Other|x|hold", "clientNonce": nonce})).await;
+    item(&host, &bot, "Other", "waiting").await;
+    release(&host, &bot, "notes");
+    let done = item(&host, &bot, "Notes", "done").await;
+    let result = done["result"].as_str().unwrap();
+    assert!(result.contains("Remembered: {\"status\":\"saved\""), "{result}");
+    assert!(result.contains("Refused: Only in a turn the user started in your own chat"), "{result}");
+    let main = host.memory_folder(Some(&bot)).join("MEMORY.md");
+    assert_eq!(std::fs::read_to_string(main).unwrap(), "- Likes tea\n- Has two cats\n- Works at night\n");
+    // The line it added is the bot's, as one added from the chat is.
+    let detail = host.call("memoryFile", json!({"botId": bot, "file": "MEMORY.md"})).await;
+    assert_eq!(detail["versions"][0]["author"], "bot", "{detail}");
+    // It was written in the task's session, not the chat's: the chat hears of it with its next message, which is
+    // the report's turn.
+    host.call("stop", json!({"botId": bot})).await;
+    let heard = relayed_for(&host, &bot, "Notes").await;
+    assert!(heard.contains("<memory_update>") && heard.contains("- Works at night"), "{heard}");
+}
+
+/// git in `dir` alone: a pre-commit hook running these tests sets `GIT_DIR` and `GIT_INDEX_FILE` for the commit
+/// being made, which would point every git here at the repository under test's own checkout.
+fn git_in(dir: &std::path::Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    for (key, _) in std::env::vars_os().filter(|(k, _)| k.to_string_lossy().starts_with("GIT_")) {
+        cmd.env_remove(key);
+    }
+    cmd.current_dir(dir);
+    cmd
+}
+
+/// Makes `bot`'s folder a git repository with one commit, where the fixture's own files are ignored. False where
+/// git isn't installed.
+fn git_repo(host: &Host, bot: &str) -> bool {
+    let dir = host.home.join("bots").join(bot).join("workspace");
+    std::fs::write(dir.join(".gitignore"), "*.jsonl\nrelease-*\n").unwrap();
+    std::fs::write(dir.join("README.md"), "# Repo\n").unwrap();
+    let git = |args: &[&str]| git_in(&dir).args(args).output().is_ok_and(|out| out.status.success());
+    git(&["init", "-q"])
+        && git(&["add", "."])
+        && git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "first"])
+}
+
+/// The bot's row as a client holds it.
+async fn row(host: &Host, bot: &str) -> Value {
+    host.snapshot().await["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).unwrap().clone()
+}
+
+/// The bot's working item called `title`, once it has a worktree.
+async fn in_worktree(host: &Host, bot: &str, title: &str) -> Value {
+    wait(&format!("{title}'s worktree"), async || {
+        let found = work(host, bot).await.into_iter().find(|i| i["title"] == title && i["status"] == "working");
+        found.filter(|i| i["worktree"].is_object())
+    })
+    .await
+}
+
+/// The chat's `Relayed:` reply for the item called `title`, once it is there.
+async fn relayed_for(host: &Host, bot: &str, title: &str) -> String {
+    let report = format!("Report {title}:");
+    wait(&format!("{title}'s report"), async || relayed(host, bot).await.into_iter().find(|t| t.contains(&report)))
+        .await
+}
+
+#[tokio::test]
+async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 3).await;
+    assert_eq!(row(&host, &bot).await["gitRepo"], false);
+    if !git_repo(&host, &bot) {
+        return;
+    }
+    host.reply(&bot, "hello").await;
+    let settings = row(&host, &bot).await;
+    assert_eq!((&settings["gitRepo"], &settings["taskWorktrees"]), (&json!(true), &json!(true)), "on unless set");
+    let branches = || {
+        let dir = host.home.join("bots").join(&bot).join("workspace");
+        let out = git_in(&dir).args(["branch", "--list", "codync/*"]).output();
+        String::from_utf8(out.unwrap().stdout).unwrap()
+    };
+
+    // The first task alone keeps the bot's folder; each one that starts beside it gets a worktree and a branch.
+    host.reply(&bot, "ADD First|HOLD:first").await;
+    let first = item(&host, &bot, "First", "working").await;
+    host.reply(&bot, "ADD Second task|HOLD:second").await;
+    let second = in_worktree(&host, &bot, "Second task").await;
+    host.reply(&bot, "ADD Third|TOUCH HOLD:third").await;
+    let third = in_worktree(&host, &bot, "Third").await;
+    assert!(item(&host, &bot, "First", "working").await["worktree"].is_null(), "{first}");
+    let folder = |item: &Value| std::path::PathBuf::from(item["worktree"]["path"].as_str().unwrap());
+    assert_eq!(second["worktree"]["branch"], "codync/second-task");
+    assert_eq!(folder(&second), host.home.join("worktrees").join(&bot).join(id(&second)));
+    assert_eq!(third["worktree"]["branch"], "codync/third");
+    // Its agent runs there, from the folder's commit, and was told so.
+    assert!(folder(&second).join("README.md").exists());
+    let told = wait("the task's prompt in its worktree", async || {
+        std::fs::read_to_string(folder(&second).join("prompts.jsonl")).ok()
+    })
+    .await;
+    assert!(told.contains("you work in a git worktree of your own") && told.contains("codync/second-task"), "{told}");
+    assert_eq!(task_prompts(&host, &bot, "Second task"), [] as [Value; 0], "not in the bot's folder");
+    assert_eq!(host.log(&bot, "forks.jsonl").len(), 1, "only the first forked: a worktree's task starts anew");
+
+    // Nothing changed in it: the worktree and its branch go, and the report says so.
+    std::fs::write(folder(&second).join("release-second"), "").unwrap();
+    let report = relayed_for(&host, &bot, "Second task").await;
+    assert!(report.contains("had no changes and no commits and was removed with its branch"), "{report}");
+    let done = item(&host, &bot, "Second task", "done").await;
+    assert!(done["worktree"].is_null() && !folder(&second).exists(), "{done}");
+    assert!(!branches().contains("codync/second-task"), "{}", branches());
+
+    // A file it made: both stay, and the report names the branch and the folder for the bot to tell the user.
+    std::fs::write(folder(&third).join("release-third"), "").unwrap();
+    let report = relayed_for(&host, &bot, "Third").await;
+    let place = format!("branch codync/third, in {}", folder(&third).display());
+    assert!(report.contains(&place) && report.contains("nothing was merged"), "{report}");
+    assert_eq!(item(&host, &bot, "Third", "done").await["worktree"], third["worktree"]);
+    assert!(folder(&third).join("made.txt").exists() && branches().contains("codync/third"));
+    assert!(!host.home.join("bots").join(&bot).join("workspace/made.txt").exists(), "not in the bot's folder");
+
+    // With the switch off, a task beside another works in the bot's folder as before.
+    host.call("updateBot", json!({"id": bot, "taskWorktrees": false})).await;
+    host.reply(&bot, "ADD Plain|HOLD:plain").await;
+    let plain = item(&host, &bot, "Plain", "working").await;
+    wait("its prompt in the bot's folder", async || task_prompts(&host, &bot, "Plain").pop()).await;
+    assert!(item(&host, &bot, "Plain", "working").await["worktree"].is_null(), "{plain}");
+    release(&host, &bot, "plain");
+    release(&host, &bot, "first");
+    item(&host, &bot, "First", "done").await;
+
+    // A folder that is no repository never gets one.
+    let other = bot_with(&host, 3).await;
+    host.reply(&other, "ADD One|HOLD:one").await;
+    item(&host, &other, "One", "working").await;
+    host.reply(&other, "ADD Two|HOLD:two").await;
+    item(&host, &other, "Two", "working").await;
+    wait("its prompt in the bot's folder", async || task_prompts(&host, &other, "Two").pop()).await;
+    assert!(work(&host, &other).await.iter().all(|i| i["worktree"].is_null()));
+    assert_eq!(row(&host, &other).await["gitRepo"], false);
 }

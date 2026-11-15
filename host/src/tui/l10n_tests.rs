@@ -267,6 +267,12 @@ fn event_box_words_read_in_traditional_chinese() {
         ("Cut in", "插隊"),
         ("Drop", "丟掉"),
         ("Agents at once", "同時幾個 agent"),
+        ("Work", "工作"),
+        ("Worktree per agent", "每個 agent 一個 worktree"),
+        (
+            "Agents that work at once in this repository each get their own branch.",
+            "同時在這個 repository 工作的 agent 各有自己的分支。",
+        ),
         ("Let \"{title}\" cut in", "讓「{title}」插隊"),
         (
             "Every place is taken. Pick what gives way: its session closes and it starts again later.",

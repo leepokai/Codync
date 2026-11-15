@@ -60,7 +60,7 @@ pub(super) fn sweep(hub: &Arc<Hub>, bot: &str) {
             .collect::<Vec<_>>())
     });
     match lost {
-        Ok(failed) => failed.iter().for_each(|(item, failure)| ended(hub, bot, item, *failure)),
+        Ok(failed) => failed.iter().for_each(|item| ended(hub, bot, item)),
         Err(error) => tracing::error!(bot, error = format!("{error:#}"), "couldn't look a bot's work over"),
     }
     dispatch::dispatch(hub, bot);

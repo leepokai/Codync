@@ -34,6 +34,7 @@ impl Actor {
             || self.active_request.is_some()
             || self.active_group.is_some()
             || self.active_routine.is_some()
+            || !self.task_source.is_bot()
             || self.host_turn.is_some()
             || self.lane.chat != self.cfg.id
             || self.hub.runtime(&self.cfg.id).started_at != Some(started_at)
@@ -46,7 +47,9 @@ impl Actor {
             return;
         }
         self.close_seg();
-        let Some(card) = self.add(EntryKind::Notice, self.turn.unwrap_or(0), data) else {
+        // A task's card is answered by a press alone: what the user types in the chat is for the bot there.
+        let data = if self.cfg.is_task() { decision::pressed_only(data) } else { data };
+        let Some(card) = self.add_for_user(EntryKind::Notice, data) else {
             let _ = reply.send(Err(anyhow!("couldn't save the card")));
             return;
         };
@@ -55,7 +58,9 @@ impl Actor {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Asks: {question}");
         });
-        push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &acp::truncate(question, 120), AlertKind::NeedsInput);
+        // Tapping it opens where the card is: its bot's chat, for a task.
+        let chat = self.chat_of(&card);
+        push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput);
         analytics::capture(
             &self.hub,
             Event::DecisionAsked,
@@ -104,7 +109,9 @@ impl Actor {
         self.expire_abandoned_decisions();
         let mut card =
             self.hub.store.entry(id).filter(decision::is_card).ok_or_else(|| anyhow!("unknown decision card"))?;
-        if !self.asked.contains_key(id) || self.stop_requested || self.turn != Some(card.turn) {
+        // A task's card is in its bot's chat, numbered with that chat's turns.
+        let this_turn = self.cfg.is_task() || self.turn == Some(card.turn);
+        if !self.asked.contains_key(id) || self.stop_requested || !this_turn {
             decision::expire(&self.hub, id);
             return Err(anyhow!("that card expired: no live call is waiting"));
         }
@@ -128,7 +135,7 @@ impl Actor {
         data["status"] = "sent".into();
         let user = match typed {
             Some(e) => self.hub.set_entry_turn(&e.id, Some(card.turn), &data),
-            None => self.hub.add_entry(&self.lane, EntryKind::User, card.turn, &data),
+            None => self.hub.add_entry(&Lane { chat: card.bot_id.clone() }, EntryKind::User, card.turn, &data),
         }
         .ok_or_else(|| anyhow!("couldn't save the user's choice"))?;
         let asked = self.asked.remove(id).ok_or_else(|| anyhow!("the card stopped waiting"))?;

@@ -225,14 +225,14 @@ export class IslandModel extends Observable {
 
   private apply(summary: IslandSummary) {
     const changes = this.statuses ? transitions(this.statuses, summary.bots) : []
-    this.statuses = new Map(summary.bots.map((b) => [b.ref, b.status]))
+    this.statuses = new Map(summary.bots.map((b) => [b.ref, b.chat]))
     this.update(() => {
       this.summary = summary
       // Answered and expired cards leave the put-off set.
       for (const id of this.deferred) if (!summary.permissions.some((p) => p.entryId === id)) this.deferred.delete(id)
       // A failed bot that works again no longer needs the notice.
       const shown = this.notice ? summary.bots.find((b) => b.ref === this.notice?.ref) : undefined
-      if (shown && inTurn(shown.status)) this.notice = null
+      if (shown && inTurn(shown.chat)) this.notice = null
       const next = changes.at(-1)
       if (next) this.showNotice(next)
     })

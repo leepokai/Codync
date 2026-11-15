@@ -70,6 +70,7 @@ import kotlinx.coroutines.CancellationException
             if (live) IconButton("Stop", "stop.fill", enabled = workKey(bot.id) !in state.busy) { confirming = true }
         })
         work?.let { TaskStatusLine(it) }
+        work?.worktree?.let { BranchLine(it.branch) }
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             val failure = error
             when {
@@ -94,6 +95,15 @@ import kotlinx.coroutines.CancellationException
         val ended = item.endedAt
         if (ended != null) Text(timerText(ended - started), style = Type.footnote.monospacedDigit, color = Palette.tertiary)
         else if (item.status.live) Elapsed(started)
+    }
+}
+
+/** The branch of the worktree the task works in. */
+@Composable private fun BranchLine(branch: String) {
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 8.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Symbol("arrow.triangle.branch", size = 13.dp, tint = Palette.tertiary)
+        Text(branch, style = Type.footnote.monospaced, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

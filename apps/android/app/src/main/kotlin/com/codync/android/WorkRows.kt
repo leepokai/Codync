@@ -25,11 +25,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.codync.android.core.Bot
 import com.codync.android.core.Entry
+import com.codync.android.core.LinkState
+import com.codync.android.core.SourceKind
 import com.codync.android.core.WorkAction
 import com.codync.android.core.WorkItem
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.fill
+import com.codync.android.core.givesWay
+import com.codync.android.core.workActions
 import com.codync.android.design.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -39,26 +44,66 @@ import kotlinx.serialization.json.contentOrNull
 // its time.
 
 /**
- * The approval card a needs-you [item] waits on, among its bot's chat [entries]: the newest pending one that names it
- * (`data.item`) or its task (`data.task.id`).
+ * The card a needs-you [item] waits on, among its bot's chat [entries]: the newest pending approval or choice card
+ * that names it (`data.item`) or its task (`data.task.id`).
  */
 internal fun pendingCard(entries: List<Entry>, item: WorkItem): Entry? = entries.lastOrNull { entry ->
-    entry.kind == "permission" && entry.data.string("status") == "pending" &&
+    (entry.kind == "permission" || entry.isDecision) && entry.data.string("status") == "pending" &&
         (entry.data.string("item") == item.id || item.task != null && (entry.data["task"] as? JsonObject)?.string("id") == item.task)
 }
 
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-/** A needs-you item's second line: what its [card] asks. */
-internal fun cardLine(card: Entry?): String? = card?.data?.string("title")?.takeIf(String::isNotEmpty)
+/** A needs-you item's second line: what its [card] asks (an approval's title, a choice's question). */
+internal fun cardLine(card: Entry?): String? = card?.data?.let { it.string("title") ?: it.string("question") }?.takeIf(String::isNotEmpty)
+
+/**
+ * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions, the transcript a
+ * row opens, and the Stop and Cut in dialogs. [content] places the rows: its `rows(items, numbered)` adds one per item
+ * to a card, [numbered] with its turn in the mark's place. A row that needs the user goes to its card in the chat
+ * ([openCard]), or just to the chat where there is [openChat] (away from that chat, its cards aren't at hand).
+ */
+@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openChat: (() -> Unit)? = null,
+    content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
+    // A change reaches the computer one at a time, and only while it's there.
+    val enabled = state.actualConnection is LinkState.Ready && workKey(bot.id) !in state.busy
+    val chat = state.entries.filter { it.botId == bot.id }
+    /** The item whose task's transcript is open, with that task. */
+    var reading by remember(bot.id) { mutableStateOf<Pair<String, String>?>(null) }
+    /** The item Stop or Cut in asks about. */
+    var stopping by remember(bot.id) { mutableStateOf<WorkItem?>(null) }
+    var cuttingIn by remember(bot.id) { mutableStateOf<WorkItem?>(null) }
+    fun run(action: WorkAction, item: WorkItem) = when (action) {
+        WorkAction.Stop -> stopping = item
+        WorkAction.CutIn -> cuttingIn = item
+        WorkAction.First -> store.workFirst(bot.id, item.id)
+        WorkAction.Drop -> store.dropWork(bot.id, item.id)
+        WorkAction.Retry -> store.retryWork(bot.id, item.id)
+    }
+    content { items, numbered ->
+        for ((index, item) in items.withIndex()) row {
+            val card = if (item.status == WorkStatus.NeedsYou) pendingCard(chat, item) else null
+            val open: (() -> Unit)? = when {
+                item.status == WorkStatus.NeedsYou && openChat != null -> openChat
+                card != null -> { { openCard(card) } }
+                else -> item.task?.let { task -> { reading = item.id to task } }
+            }
+            WorkRow(item, cardLine(card) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open,
+                number = (index + 1).takeIf { numbered }, source = { SourceMark(item, state.bots) }) { run(it, item) }
+        }
+    }
+    CodyncSheet(reading, { reading = null }) { (itemId, taskId) -> TaskDetailsView(bot, itemId, taskId, state, store) }
+    StopWorkDialog(stopping != null, { stopping = null }) { stopping?.let { store.stopWork(bot.id, it.id) } }
+    CutInDialog(cuttingIn, bot.work.filter(::givesWay), { cuttingIn = null }) { item, insteadOf -> store.workCutIn(bot.id, item.id, insteadOf.id) }
+}
 
 /**
  * One item (iOS `WorkRow`): its mark, title and what goes on ([subtitle]), its time, and the action that matters most
  * (the first of [actions]); all of them are in its touch-and-hold menu. Tapping it runs [open]. [number]: its turn in
- * the event box, in the mark's place.
+ * the event box, in the mark's place. [source]: where it came from, before its title.
  */
 @Composable internal fun WorkRow(item: WorkItem, subtitle: String, actions: List<WorkAction>, enabled: Boolean, open: (() -> Unit)?,
-    number: Int? = null, run: (WorkAction) -> Unit) {
+    number: Int? = null, source: @Composable () -> Unit = {}, run: (WorkAction) -> Unit) {
     val ended = item.status.ended
     Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).contextActions(onClick = open) {
         actions.map { action -> MenuItem(action.title, icon = action.symbol, destructive = action.destructive, enabled = enabled) { run(action) } }
@@ -67,7 +112,10 @@ internal fun cardLine(card: Entry?): String? = card?.data?.string("title")?.take
             if (number == null) WorkMark(item.status)
             else Text("$number", Modifier.widthIn(min = 16.dp), style = Type.footnote.monospacedDigit, color = Palette.tertiary, textAlign = TextAlign.Center)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(item.title, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    source()
+                    Text(item.title, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
                 Text(subtitle, style = Type.footnote, color = if (ended && item.status != WorkStatus.Done) Palette.danger else Palette.secondary,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -80,6 +128,17 @@ internal fun cardLine(card: Entry?): String? = card?.data?.string("title")?.take
             style = Type.footnote.medium, color = Palette.text)
         else IconButton(primary.title, primary.symbol, enabled = enabled) { run(primary) }
     }
+}
+
+/**
+ * Where an item came from, before its title: the routine symbol for a routine's run, the asking bot's small avatar
+ * for a request (one of this computer's [bots]); nothing for the bot's own work or an asker that isn't here.
+ */
+@Composable private fun SourceMark(item: WorkItem, bots: List<Bot>) {
+    val source = item.source ?: return
+    if (source.kind == SourceKind.Routine) return Symbol("clock.arrow.circlepath", size = 13.dp, tint = Palette.secondary, contentDescription = tr("Routine"))
+    val asking = bots.firstOrNull { it.id == source.id && !it.deleted } ?: return
+    Box(Modifier.semantics { contentDescription = asking.name }) { BotAvatar(asking, bots, 14.dp, animated = false) }
 }
 
 /** A place of the bot's not in use, among its threads: one faint row, so the ceiling is visible. */

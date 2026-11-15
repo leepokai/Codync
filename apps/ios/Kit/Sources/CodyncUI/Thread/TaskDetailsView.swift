@@ -35,6 +35,14 @@ struct TaskDetailsView: View {
             HStack(spacing: 6) {
                 Text(L10n.tr(item.status.word)).font(.footnote).foregroundStyle(Palette.secondary)
                 WorkElapsed(item: item)
+                if let branch = item.worktree?.branch {
+                    Label(branch, systemImage: "arrow.triangle.branch")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.leading, 6)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)

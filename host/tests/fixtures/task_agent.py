@@ -1,8 +1,15 @@
 """Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the task that does it.
 
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
-`STATUS`. In a task, the brief says what it does: `HOLD:<name>` works until a `release-<name>` file is in its folder,
-`PERMISSION` asks for an approval, `ASK` and `NEST` try what a task may not.
+`STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a task, the brief says what it does: `HOLD:<name>`
+works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval, `ASK` asks the user to
+choose, `SHARE` sends a file, `ARTIFACT` publishes one, `NEST` tries what a task may not, `REMEMBER` adds a line to
+`MEMORY.md` with `edit_memory` and `FORGET` tries to take one out (both once it is released), `TOUCH` writes
+`made.txt` in its folder.
+
+A routine run and another bot's request read the same words in the routine's instruction or the request, and also
+`SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
+`PASS` (nothing to tell).
 
 Argument `no-fork`: the agent doesn't advertise `session/fork`. A `no-start` file in its folder: it doesn't start.
 """
@@ -47,7 +54,11 @@ def new_session():
 
 
 def chat_tool(tool, arguments):
-    server = next(s for s in servers if s["name"] == "chat")
+    return server_tool("chat", tool, arguments)
+
+
+def server_tool(name, tool, arguments):
+    server = next(s for s in servers if s["name"] == name)
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
                           stdout=subprocess.PIPE, encoding="utf-8") as mcp:
         def rpc(identifier, method, params):
@@ -57,7 +68,7 @@ def chat_tool(tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert {"add_work", "steer_work", "work_status"} <= listed, listed
+        assert name != "chat" or {"add_work", "steer_work", "work_status"} <= listed, listed
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -80,6 +91,37 @@ def relayed(text):
     return "Relayed: " + " | ".join(body.strip() or head for head, _, body in parts)
 
 
+def hold(text):
+    """Works until its `release-<name>` file is there, or it is stopped."""
+    name = re.search(r"HOLD:(\w+)", text)
+    while name and not pathlib.Path("release-" + name.group(1)).exists() and not cancel.wait(0.01):
+        pass
+
+
+def ask():
+    return said(chat_tool("request_decision", {"question": "Which?", "options": ["A", "B"]}), "Asked: ")[:90]
+
+
+def elsewhere(kind, text):
+    """A routine run's turn, or one that answers another bot's request: what its words say it does."""
+    notes = []
+    if "ASK" in text:
+        notes.append(ask())
+    if "SEND" in text:
+        notes.append(said(chat_tool("send_message", {"text": "hi"}), "Sent: ")[:70])
+    if "NEST" in text:
+        notes.append(said(chat_tool("add_work", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
+    routine = re.search(r"save_progress with id (\S+)", text)
+    if "PROGRESS" in text and routine:
+        arguments = {"id": routine.group(1), "content": "handled 1"}
+        notes.append(said(server_tool("routines", "save_progress", arguments), "Progress: ")[:40])
+    if "FOLLOW" in text:
+        arguments = {"minutes": 5, "note": "look again"}
+        notes.append(said(server_tool("routines", "follow_up", arguments), "Follow-up: ")[:60])
+    hold(text)
+    return "(pass)" if "PASS" in text else f"{kind} done: " + "; ".join(notes)
+
+
 def work(text, session):
     """A task's turn on its item."""
     lead, rest = text.split("[Task]", 1)[1].split("\n\n", 1)
@@ -90,9 +132,17 @@ def work(text, session):
     if "set aside" in rest:
         notes.append("again")
     if "ASK" in brief:
-        notes.append(said(chat_tool("request_decision", {"question": "Which?", "options": ["A", "B"]}), "Asked: ")[:60])
+        notes.append(ask())
+    if "SHARE" in brief:
+        pathlib.Path("shared.txt").write_text("from a task", encoding="utf-8")
+        notes.append(said(chat_tool("send_file", {"path": "shared.txt"}), "Shared: ")[:60])
+    if "ARTIFACT" in brief:
+        pathlib.Path("page.html").write_text("<h1>Page</h1>", encoding="utf-8")
+        notes.append(said(chat_tool("publish_artifact", {"path": "page.html", "title": "Page"}), "Published: ")[:40])
     if "NEST" in brief:
         notes.append(said(chat_tool("add_work", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
+    if "TOUCH" in brief:
+        pathlib.Path("made.txt").write_text("made by a task", encoding="utf-8")
     if "PERMISSION" in brief:
         send({"id": "permission", "method": "session/request_permission", "params": {
             "sessionId": session, "toolCall": {"toolCallId": "edit", "title": "Run the tests"},
@@ -101,9 +151,13 @@ def work(text, session):
         while not cancel.is_set() and not permission.wait(0.01):
             pass
         notes.append("approved")
-    hold = re.search(r"HOLD:(\w+)", brief)
-    while hold and not pathlib.Path("release-" + hold.group(1)).exists() and not cancel.wait(0.01):
-        pass
+    hold(brief)
+    if "REMEMBER" in brief:
+        arguments = {"file": "MEMORY.md", "append": "- Works at night"}
+        notes.append(said(server_tool("memory", "edit_memory", arguments), "Remembered: ")[:40])
+    if "FORGET" in brief:
+        arguments = {"file": "MEMORY.md", "old": "- Has two cats\n", "new": ""}
+        notes.append(said(server_tool("memory", "edit_memory", arguments), "Forgot: ")[:60])
     return f"Report {title}: " + "; ".join(notes)
 
 
@@ -113,7 +167,11 @@ def answer(text, session):
         return relayed(text)
     if "[Task]" in text:
         return work(text, session)
-    command = re.search(r"^(ADD|STEER|STATUS)\b ?(.*)$", text, re.M)
+    if "Scheduled routine:" in text:
+        return elsewhere("Routine", text)
+    if "sent you this request" in text:
+        return elsewhere("Request", text)
+    command = re.search(r"^(ADD|STEER|STATUS|MESSAGE)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
@@ -127,6 +185,9 @@ def answer(text, session):
         while "hold" in flags and not cancel.wait(0.01):
             pass
         return added
+    if name == "MESSAGE":
+        target, request = rest.split("|", 1)
+        return said(server_tool("team", "message_bot", {"botId": target, "message": request}), "Messaged: ")[:60]
     if name == "STEER":
         how, title, *more = rest.split("|")
         arguments = {"item": item_id(title), "how": how}

@@ -9,7 +9,7 @@ computer doing the remembering instead of the model.
 |---|---|---|
 | Whose | The user's standing task | The bot's own reminder |
 | How often | Every time a trigger fires | Once |
-| Session | A fresh one per run | The bot's chat, with what was said before |
+| Session | A task's, away from the chat | The bot's chat, with what was said before |
 | In the apps | A row under Routines in Details, with a switch | A dashed card under Later in Details, and a line in the chat |
 | When it fails | Retried, with a Try again button | A failure line, like any turn |
 

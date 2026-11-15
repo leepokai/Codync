@@ -39,7 +39,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
             let items = app.goto_items(g);
             goto(buf, area, app, g, &items);
         }
-        Overlay::Help(filter) => help(buf, area, filter),
+        Overlay::Help(filter) => help(buf, area, filter, app.any_work()),
         Overlay::LeadAgent(scroll) => super::lead_agent::lead_agent(buf, area, *scroll),
         Overlay::Confirm(c) => {
             let t = theme();
@@ -145,6 +145,7 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
         Overlay::Task(s) => super::work::task_details(buf, area, app, s),
         Overlay::CutIn(c) => super::work::cut_in(buf, area, app, c),
+        Overlay::AllWork(p) => super::super::sheets::all_work(buf, area, app, p),
         Overlay::DevServers(sheet) => super::dev_servers::dev_servers(buf, area, app, sheet),
         Overlay::Details(l) => super::super::sheets::details(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),

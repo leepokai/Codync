@@ -38,7 +38,23 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: ${output.bot.name}
     timeout: 30000
-- tapOn: ${output.bot.name}
+# All bots' work, from the bot list's header while any bot has an item: the bot as a heading over its rows, with no
+# section titles and no Free rows. (On iPhone the button's count reads after its name.) The heading opens that bot's
+# details, over its chat.
+- extendedWaitUntil:
+    visible: "Work(, .*)?"
+    timeout: 20000
+- tapOn: "Work(, .*)?"
+- assertVisible: "${output.bot.name}, view details"
+- assertVisible: ".*Audit the repo.*"
+- assertNotVisible: "Threads"
+- assertNotVisible: "Free"
+- takeScreenshot: tasks-all-work
+- tapOn: "${output.bot.name}, view details"
+- extendedWaitUntil:
+    visible: "Threads"
+    timeout: 10000
+- tapOn: "Close details"
 # One item working: the capsule.
 - extendedWaitUntil:
     visible: "In the background · .*"
@@ -196,3 +212,20 @@ onFlowComplete:
     timeout: 20000
 # The answered card keeps its line; the capsule, and its Stop, is what goes.
 - assertNotVisible: "Stop"
+# A task's choice card is in the chat too, saying where it comes from, without the row for the user's own words
+# (typing doesn't answer a task): an option answers it.
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Pick a branch|ASK"
+- extendedWaitUntil:
+    visible: "In the background · Pick a branch"
+    timeout: 20000
+- assertVisible: "Which\\?"
+- assertNotVisible: "Something else"
+- takeScreenshot: tasks-choice
+- tapOn:
+    id: decision-option-0
+- extendedWaitUntil:
+    visible: "Relayed: Report Pick a branch.*"
+    timeout: 20000

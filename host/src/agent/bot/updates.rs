@@ -4,9 +4,10 @@ use super::fast_mode::Listing;
 use super::tool_entry::{activity, mark_bookkeeping, merge_tool_content};
 use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
+use crate::chat::tasks::Source;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Lane, Permission};
+use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -234,24 +235,29 @@ impl Actor {
         self.show_card(title, data, Answer::Codync(reply));
     }
 
-    /// Posts an approval card in the turn's lane and tells the user it needs them. A task's card goes where the
-    /// user is, its bot's chat.
-    fn show_card(&mut self, title: &str, mut data: Value, answer: Answer) {
-        let turn = self.turn.unwrap_or(0);
+    /// An entry the user must see or act on, in the running turn: in its lane, or, from a task, where the user is,
+    /// its bot's chat, named by the item it works on.
+    pub(super) fn add_for_user(&self, kind: EntryKind, mut data: Value) -> Option<Entry> {
+        let Some(bot) = self.cfg.task_of.clone() else { return self.add(kind, self.turn.unwrap_or(0), data) };
+        // To the user it is the bot's; an answer finds this actor by the task (`tasks::card_actor`).
+        data["author"] = bot.clone().into();
+        // The item it works on: what the user knows it by.
+        let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
+        data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
+        data["item"] = item.into();
+        self.hub.add_entry(&Lane::main(&bot), kind, self.hub.store.max_turn(&bot), &data)
+    }
+
+    /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a task.
+    pub(super) fn chat_of(&self, entry: &Entry) -> BotConfig {
+        self.hub.store.bot(&entry.bot_id).ok().flatten().map_or_else(|| self.cfg.clone(), |row| row.config)
+    }
+
+    /// Posts an approval card where the user is and tells them it needs them.
+    fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
         self.close_seg();
-        let card = match self.cfg.task_of.clone() {
-            Some(bot) => {
-                // To the user it is the bot asking; the answer finds this actor by the task (`tasks::card_actor`).
-                data["author"] = bot.clone().into();
-                // The item it works on: what the user knows the card by.
-                let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
-                data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
-                data["item"] = item.into();
-                self.hub.add_entry(&Lane::main(&bot), EntryKind::Permission, self.hub.store.max_turn(&bot), &data)
-            }
-            None => self.add(EntryKind::Permission, turn, data),
-        };
-        let chat = card.as_ref().map_or_else(|| self.lane.chat.clone(), |e| e.bot_id.clone());
+        let card = self.add_for_user(EntryKind::Permission, data);
+        let target = card.as_ref().map_or_else(|| self.cfg.clone(), |card| self.chat_of(card));
         if let Some(e) = card {
             self.perms.insert(e.id, answer);
         }
@@ -259,8 +265,6 @@ impl Actor {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        // Tapping it opens where the card is: the group, for a room turn; its bot's chat, for a task.
-        let target = self.hub.store.bot(&chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
         push::notify(
             &self.hub,
             &target,
@@ -319,24 +323,28 @@ impl Actor {
     pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
         let Some(turn) = self.turn else { return self.send_between_turns(&text) };
         // A background result can't be told from this turn's own send (no session in the call): it may try again later.
-        if self.active_request.is_some() {
+        if self.active_request.is_some() || matches!(self.task_source, Source::Request { .. }) {
             anyhow::bail!(
                 "send_message isn't available in a bot request: your final reply goes to the requesting bot, so put your answer there {LATER}"
             );
         }
-        if self.active_group.is_some() || self.active_routine.is_some() {
+        if self.active_group.is_some()
+            || self.active_routine.is_some()
+            || matches!(self.task_source, Source::Routine { .. })
+        {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
-        self.record_sent(turn, json!({"text": text, "final": true}), text)?;
+        let saved = self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}));
+        self.record_sent(saved, text)?;
         self.set_activity("Working…");
         Ok(())
     }
 
     /// Saves a message the agent sent the user this turn (`send_message`, a voice note) and counts it as the turn's
     /// reply, so what the agent writes as its reply stays in the trace.
-    pub(super) fn record_sent(&mut self, turn: i64, data: Value, text: String) -> anyhow::Result<()> {
-        self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+    pub(super) fn record_sent(&mut self, saved: Option<Entry>, text: String) -> anyhow::Result<()> {
+        saved.ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.last_text = None;
         Ok(())

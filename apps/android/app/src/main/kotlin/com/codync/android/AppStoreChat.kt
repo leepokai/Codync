@@ -21,7 +21,8 @@ fun AppStore.openBot(id: String?) {
         windows.remove(left)
         mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
     }
-    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
+        detailsRequest = it.detailsRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
     // The open chat swaps its preview for its window.
     if (leaving) contextScope.launch { refresh() }
@@ -39,6 +40,19 @@ fun AppStore.requestCall(botId: String) {
         if (connected == null) showError(IOException("Can't reach the computer. Check that it's on, then try again."))
         else mutableState.update { it.copy(callRequest = botId) }
     }
+}
+
+/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String) {
+    openBot(botId)
+    mutableState.update { it.copy(detailsRequest = botId) }
+}
+
+/** Once. */
+internal fun AppStore.takeDetailsRequest(botId: String): Boolean {
+    if (state.value.detailsRequest != botId) return false
+    mutableState.update { it.copy(detailsRequest = null) }
+    return true
 }
 
 /** Once: a chat that already has a call takes it too, so it can't start one later. */

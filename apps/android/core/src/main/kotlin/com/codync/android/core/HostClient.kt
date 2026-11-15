@@ -95,6 +95,13 @@ data class Bot(
     /** The most agents it runs at once; null from a host before the box. */
     @Serializable(with = MaxAgentsSerializer::class)
     val maxAgents: Int? = null,
+    /** A task that starts while another of its tasks works in the same repository gets a git worktree of its own; null from an older host. */
+    val taskWorktrees: Boolean? = null,
+    /** Its folder is in a git repository: where [taskWorktrees] matters. */
+    val gitRepo: Boolean = false,
+    /** How it stands outside its chat ([Outside]); null from an older host. */
+    @Serializable(with = OutsideSerializer::class)
+    val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
@@ -109,6 +116,11 @@ data class Bot(
 
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
+
+    /** Its status outside its chat: the chat's own from a host that names none. */
+    val outsideStatus: String get() = outside?.status ?: status
+    /** When what it does outside its chat started. */
+    val outsideStartedAt: Long? get() = if (outside != null) outside.startedAt else startedAt
 
     /** Working anywhere: its own chat, a room or a routine. */
     val isWorking: Boolean get() = status in listOf("working", "needsInput")

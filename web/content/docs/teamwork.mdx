@@ -28,8 +28,8 @@ The recipient's tool calls and thinking are in its own **Full conversation**.
 Bots never wait on each other. When one bot messages another:
 
 1. **The request is queued and the sender goes on at once.** It can finish its turn or keep working.
-2. **The recipient does the work** in its own chat's session, one thing at a time: a busy recipient finishes what it's doing first.
-3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the recipient's **Full conversation**, but not as a message in the recipient's chat.
+2. **The recipient does the work** away from its chat, as an item in its [event box](/docs/conversations#background-tasks): its chat stays free, and the request waits for a free place like its other background work. A recipient with [computer use](/docs/computer-use) or **Manage the team** on does it in its chat instead, one thing at a time.
+3. **The answer goes back to the sender**, not to you. It shows in the conversation sheet and in the item's steps in the recipient's **Details**, but not as a message in the recipient's chat.
 4. **The sender takes the answer as a new turn of its own** and replies to you in its chat, with the usual "done" notification. Answers that arrive while the sender is busy are taken together in one turn. A request that failed comes back the same way, so the sender can tell you.
 
 Because nobody waits, there's no time limit: the recipient takes as long as the work needs.
@@ -48,7 +48,7 @@ In a [group chat](/docs/groups), members don't message each other this way; they
 ## Stopping, limits and restarts
 
 - **Stopping the sender** doesn't cancel what it already sent, but drops answers still waiting for it. Deleting the sender drops its answers too. The rows in both chats still show how each exchange ended.
-- **Stopping or deleting the recipient** cancels its queued requests and stops the one it's working on, which may leave partial changes.
+- **Stopping a request** in the recipient's **Details** (or all of its background work), dropping one that waits, or deleting the recipient cancels it, which may leave partial changes. **Stop** in the recipient's chat stops only the chat.
 - **Limits:** a bot can have up to 16 messages queued or running at once, and the computer up to 64 in all. To keep bots from passing work around forever, a chain of requests stops after eight handoffs. Your next message starts a fresh allowance.
 - **Restarts:** if the host restarts while requests are pending, they're marked as failed and not run again. Check what the bots already did before you ask again. An answer still waiting for a busy sender is lost on a restart, but stays readable in the conversation sheet.
 

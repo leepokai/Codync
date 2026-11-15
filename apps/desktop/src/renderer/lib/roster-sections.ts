@@ -52,6 +52,12 @@ export function shownRows<T>(lines: RosterLine<T>[]): T[] {
   return lines.flatMap((line) => (line.kind === 'row' ? [line.item] : line.kind === 'label' || line.folded ? [] : line.items))
 }
 
+/** Every bot of a computer's roster in the order its rows are on screen, folded sections included: the pinned ones,
+ * then section by section in the user's order. */
+export function rosterRows<T extends { bot: Placed }>(items: T[], order: readonly string[] = []): T[] {
+  return shownRows(rosterLines(items, [], order))
+}
+
 /** The section a bot shows in: none for pinned bots, which stay on top (terminal `Bot::shown_section`). */
 export function shownSection(bot: Omit<Placed, 'unread'>): string | undefined {
   return bot.pinned ? undefined : bot.section || undefined

@@ -91,6 +91,19 @@ impl BotRequest {
         self.lifetime.start();
     }
 
+    /// The bot on this computer that sent it, if one did.
+    pub fn sender(&self) -> Option<&str> {
+        match &self.lifetime.back {
+            Back::Local { sender } => Some(sender),
+            Back::Remote(_) | Back::Assistant { .. } => None,
+        }
+    }
+
+    /// The start of the request, as it was written.
+    pub fn quote(&self) -> &str {
+        &self.lifetime.quote
+    }
+
     /// Finishes the notices and, unless the user stopped the recipient, wakes the sender with the outcome.
     pub fn complete(mut self, result: Result<String>, cancelled: bool) {
         let message = &mut self.lifetime;
@@ -344,8 +357,10 @@ pub(crate) fn visible_bots(store: &Store) -> Result<Vec<BotConfig>> {
 }
 
 /// A team tool call. Listing asks the other computers (briefly) when it hasn't lately, and a
-/// message to a bot on another computer goes over the network; everything else is [`call`].
-pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) -> Result<Value> {
+/// message to a bot on another computer goes over the network; everything else is [`call`]. `turn`: the actor
+/// whose running turn made the call, `from` itself or a task of its on a routine run or another bot's request
+/// (`chat::tasks::acting_as`).
+pub async fn call_async(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
         "list_bots" => {
             visible_bot(hub, from)?;
@@ -355,23 +370,25 @@ pub async fn call_async(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) ->
         "message_bot" => {
             let (to, message) = message_args(args)?;
             match hub.network.recipient(to)? {
-                Recipient::There(target) => remote::message(hub, &visible_bot(hub, from)?, &target, message).await,
-                Recipient::Here(_) => call(hub, from, name, args),
+                Recipient::There(target) => {
+                    remote::message(hub, &visible_bot(hub, from)?, turn, &target, message).await
+                }
+                Recipient::Here(_) => call(hub, from, turn, name, args),
             }
         }
-        _ => call(hub, from, name, args),
+        _ => call(hub, from, turn, name, args),
     }
 }
 
 /// A team tool call among this computer's bots.
-fn call(hub: &Arc<Hub>, from: &str, name: &str, args: &Value) -> Result<Value> {
+fn call(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Result<Value> {
     let source = visible_bot(hub, from)?;
     match name {
         "list_bots" => directory::list(hub, from, args, &[], |_| true),
         "message_bot" => {
             let (to, message) = message_args(args)?;
             match hub.network.recipient(to)? {
-                Recipient::Here(to) => message_bot(hub, &source, &to, message),
+                Recipient::Here(to) => message_bot(hub, &source, turn, &to, message),
                 Recipient::There(target) => bail!("{} is on another computer", target.address),
             }
         }
@@ -392,23 +409,23 @@ fn check_message(message: &str) -> Result<()> {
     Ok(())
 }
 
-/// The checks every request from a bot passes, wherever it goes.
-fn check_request(hub: &Hub, source: &BotConfig, message: &str) -> Result<()> {
+/// The checks every request from a bot passes, wherever it goes. `turn`: the actor whose running turn sends it.
+fn check_request(hub: &Hub, turn: &str, message: &str) -> Result<()> {
     check_message(message)?;
     // The reply would come back to the sender's own chat, away from the room that asked.
-    if hub.runtime(&source.id).lane.is_some_and(|lane| lane.chat != source.id) {
+    if hub.runtime(turn).lane.is_some_and(|lane| lane.chat != turn) {
         bail!("message_bot isn't available in a group chat: @-mention the room's members instead");
     }
     Ok(())
 }
 
-fn message_bot(hub: &Arc<Hub>, source: &BotConfig, to: &str, message: &str) -> Result<Value> {
-    check_request(hub, source, message)?;
+fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message: &str) -> Result<Value> {
+    check_request(hub, turn, message)?;
     if source.id == to {
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
-    let hops = hub.team.reserve_message(&source.id)?;
+    let hops = hub.team.reserve_message_in(&source.id, turn)?;
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.
     let mut lifetime = MessageLifetime::new(hub, &id, message, Back::Local { sender: source.id.clone() }, &target.name);

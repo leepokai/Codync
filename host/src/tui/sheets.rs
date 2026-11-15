@@ -10,6 +10,7 @@ use ratatui::style::{Modifier, Style};
 use crate::tui::l10n::{fill, tr};
 use serde_json::Value;
 
+mod all_work_view;
 mod computer_view;
 mod details_view;
 mod gear_view;
@@ -17,6 +18,7 @@ mod library_view;
 mod login_keys_view;
 mod market_view;
 mod memory_view;
+pub use all_work_view::draw as all_work;
 pub use computer_view::draw as computer;
 pub use details_view::draw as details;
 pub use gear_view::draw as gear;

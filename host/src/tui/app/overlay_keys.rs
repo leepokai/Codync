@@ -16,11 +16,15 @@ impl App {
         let mut bots: Vec<&Bot> = self
             .bots
             .values()
-            .filter(|b| want.is_none_or(|m| b.mark() == m))
+            .filter(|b| want.is_none_or(|m| b.roster_mark() == m))
             .filter(|b| fuzzy(q, &[&b.name, &b.backend]) || contains(q, &[&b.cwd, &b.last_message]))
             .collect();
         bots.sort_by(|a, b| {
-            b.mark().priority().cmp(&a.mark().priority()).then(b.last_at.cmp(&a.last_at)).then(a.name.cmp(&b.name))
+            b.roster_mark()
+                .priority()
+                .cmp(&a.roster_mark().priority())
+                .then(b.last_at.cmp(&a.last_at))
+                .then(a.name.cmp(&b.name))
         });
         let mut items: Vec<GotoItem> = bots.into_iter().map(|b| GotoItem::Bot(b.id.clone())).collect();
         if want.is_none() {
@@ -124,6 +128,7 @@ impl App {
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
             Overlay::Task(s) => self.task_key(s, k),
             Overlay::CutIn(c) => self.cut_in_key(c, k),
+            Overlay::AllWork(p) => self.all_work_key(p, k),
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
             Overlay::Details(l) => self.details_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),

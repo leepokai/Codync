@@ -20,7 +20,7 @@ import { downloadItem } from './file-card'
 import { MarkdownText } from './Markdown'
 import { canReplyToPart, useSelectedPart } from './selected-part'
 import { DecisionCard } from './DecisionCard'
-import { PermissionCard } from './PermissionCard'
+import { PermissionCard, TaskLine } from './PermissionCard'
 import { ConnectionRequestCard } from '../marketplace/ConnectionRequestCard'
 import { AgentSwitchNotice, HandoffNotice } from './HandoffNotice'
 
@@ -227,6 +227,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
         </Bubble>
         <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />
       </div>
+      <TaskLine entry={entry} />
     </div>
   )
 }

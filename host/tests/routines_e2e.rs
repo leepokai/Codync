@@ -69,6 +69,13 @@ impl Host {
         self.bot_fixture(name, "routine_agent.py").await
     }
 
+    /// A bot that takes its routine runs as turns in its chat, not as items in its box: one that manages the team.
+    async fn chat_run_bot(&self, name: &str) -> String {
+        let bot = self.stable_bot(name).await;
+        self.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
+        bot
+    }
+
     async fn bot_fixture(&self, name: &str, fixture: &str) -> String {
         let cwd = self.home.join(name);
         std::fs::create_dir_all(&cwd).unwrap();
@@ -347,7 +354,7 @@ async fn an_agent_started_for_a_run_stops_when_the_run_ends() {
 #[tokio::test]
 async fn a_finished_run_closes_its_session_and_the_main_one_stays() {
     let host = Host::start().await;
-    let bot = host.stable_bot("spent").await;
+    let bot = host.chat_run_bot("spent").await;
     host.send(&bot, "MAIN_CHAT").await;
     let main = host.wait_event("spent", "finished", "MAIN_CHAT").await;
     let id = host.save(&bot, "one-off", "ONE_OFF", json!([{"type":"webhook"}]), 30).await;

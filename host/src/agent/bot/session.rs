@@ -117,9 +117,9 @@ impl Actor {
             composio.then_some("composio"),
         ];
         for name in builtin.into_iter().flatten() {
-            // A task's memory is its bot's; everything else of it is its own.
-            let bot = if name == "memory" { self.cfg.owner() } else { &self.cfg.id };
-            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", bot], port));
+            // A task's `memory` server is the task's too: it reads and writes its bot's memory (`memory::tool_call`),
+            // and what it writes is its own turn's.
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
         }
         Ok(Value::Array(servers))
     }
@@ -282,7 +282,8 @@ impl Actor {
             }
         }
         // A task's first session: a fork of its bot's main one where the agent can, so it starts knowing the chat;
-        // otherwise a new session that is told the chat so far.
+        // otherwise a new session that is told the chat so far. A routine's run gets neither (no fork source, no
+        // chat): a new session with its own prompt, as a run in the chat has.
         if slot.is_none() && crate::chat::tasks::first_session(&self.hub.store, &self.cfg) {
             match self.fork_owner_session(&servers, &renamed, instructions).await {
                 Ok(true) => return Ok(()),
@@ -296,7 +297,9 @@ impl Actor {
             if self.conn.is_none() {
                 return Box::pin(self.ensure_session(slot)).await;
             }
-            self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
+            if crate::chat::tasks::from_chat(&self.task_source) {
+                self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
+            }
             crate::chat::tasks::started(&self.hub, &self.cfg, crate::chat::tasks::Start::Brief);
         }
         let (revision, system) = {

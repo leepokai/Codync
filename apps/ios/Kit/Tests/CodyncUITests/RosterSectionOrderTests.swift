@@ -28,6 +28,10 @@ import Testing
     #expect(shown(["", "Work"]) == ["pin", "loose", "a", "b"])
     #expect(shown(["Work", ""]) == ["pin", "a", "b", "loose"])
     #expect(shown(["", "Work"], folded: ["Work"]) == ["pin", "loose"])
+    // A view of every bot (all bots' work) keeps that order, and lists the bots of a folded section too.
+    #expect(RosterSection.onScreen(bots, order: ["Work", ""]) { $0 }.map(\.id) == ["pin", "a", "b", "loose"])
+    #expect(RosterSection.onScreen(bots, order: ["", "Work"]) { $0 }.map(\.id) == ["pin", "loose", "a", "b"])
+    #expect(RosterSection.onScreen(bots) { $0 }.map(\.id) == shown([]))
 }
 
 @Test func mergingIntoANewGroupKeepsItsDisplayedPosition() {

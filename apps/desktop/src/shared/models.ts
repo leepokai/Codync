@@ -1,7 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
-import { normalizeMaxAgents, normalizeWork, type WorkItem } from './work.ts'
+import { normalizeMaxAgents, normalizeOutside, normalizeWork, type OutsideStatus, type WorkItem } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -96,6 +96,13 @@ export interface Bot {
   work: WorkItem[]
   /** The most agents it runs at once, 1 to 6; null from a host before the box. */
   maxAgents: number | null
+  /** A task that starts while another of the bot's works in the same git repository gets a worktree of its own;
+   * null from a host before worktrees. */
+  taskWorktrees: boolean | null
+  /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
+  gitRepo: boolean
+  /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
+  outside: OutsideStatus | null
   unread: number
   lastMessage?: string | null
   lastAt: number
@@ -159,6 +166,9 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     workingChat: raw.workingChat ?? null,
     work: normalizeWork(raw.work),
     maxAgents: normalizeMaxAgents(raw.maxAgents),
+    taskWorktrees: raw.taskWorktrees ?? null,
+    gitRepo: raw.gitRepo ?? false,
+    outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
@@ -809,6 +819,8 @@ export interface BotDraft {
   compaction?: CompactionThreshold
   /** The most agents at once, 1 to 6; left out for a host before the box. */
   maxAgents?: number
+  /** Left out for a host before worktrees. */
+  taskWorktrees?: boolean
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -840,6 +852,7 @@ export function draftOf(bot: Bot): BotDraft {
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
     maxAgents: bot.maxAgents ?? undefined,
+    taskWorktrees: bot.taskWorktrees ?? undefined,
   }
 }
 

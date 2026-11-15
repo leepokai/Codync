@@ -100,6 +100,13 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var work: [WorkItem] = []
     /// The most agents that work its items at once (1 to 6). Nil from an older host: no setting to show.
     public var maxAgents: Int?
+    /// Agents of its that work at once in one git repository each get a worktree. Nil from an older host: no
+    /// setting to show.
+    public var taskWorktrees: Bool?
+    /// Its folder is in a git repository: where `taskWorktrees` matters.
+    public var gitRepo: Bool = false
+    /// How it stands outside its chat (`Bot.Outside`). Nil from an older host: the chat's own status.
+    public var outside: Outside?
     public var unread: Int
     public var lastMessage: String?
     public var lastAt: Int64
@@ -175,6 +182,9 @@ extension Bot {
         devServers = (try? c.decodeIfPresent([DevServer].self, forKey: .devServers)) ?? []
         work = (try? c.decodeIfPresent(WorkList.self, forKey: .work))?.items ?? []
         maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }
+        taskWorktrees = try? c.decodeIfPresent(Bool.self, forKey: .taskWorktrees)
+        gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
+        outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt

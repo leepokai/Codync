@@ -10,6 +10,7 @@ mod cloud_cli;
 mod compat;
 mod dev_servers;
 mod environment;
+mod git;
 mod hub;
 mod icons;
 mod import;

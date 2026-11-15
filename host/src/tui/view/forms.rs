@@ -80,6 +80,9 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             );
             [about.into_owned(), sizes].join(" ")
         }
+        Field::TaskWorktrees => {
+            tr("Agents that work at once in this repository each get their own branch.").into_owned()
+        }
         Field::Team => {
             "Let this bot create bots and change any bot's setup, its own included. The bots it creates can too.".to_owned()
         }
@@ -108,7 +111,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         put(buf, inner.x + 1, inner.y + 9, 16, COLORS[f.color], t.secondary.patch(t.panel));
         put(buf, inner.x + 1, inner.y + 10, 16, SHAPES[f.shape], t.dim.patch(t.panel));
     }
-    let label_w = 15u16;
+    let label_w = 19u16;
     let vx = fx + label_w;
     let vw = inner.right().saturating_sub(vx);
     let mut y = inner.y + 1;
@@ -136,6 +139,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             Field::SelfFallbacks => "Bot edits",
             Field::Folder => "Workspace",
             Field::MaxAgents => "Agents at once",
+            Field::TaskWorktrees => "Worktree per agent",
             Field::Approvals => "Approvals",
             Field::Compaction => "Summarize",
             Field::Notify => "Notify",
@@ -312,6 +316,10 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 let n = f.max_agents.unwrap_or_default();
                 put(buf, vx, y, vw, &format!("‹ {n} ›"), t.text.patch(base));
             }
+            Field::TaskWorktrees => {
+                let s = if f.task_worktrees == Some(true) { "◉ On   ○ Off" } else { "○ On   ◉ Off" };
+                put(buf, vx, y, vw, s, t.text.patch(base));
+            }
             Field::Approvals => {
                 let label = app.approval(f).label;
                 put(buf, vx, y, vw, &format!("‹ {} ›", tr(&label)), t.text.patch(base));
@@ -417,6 +425,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::Fast
         | Field::SelfFallbacks
         | Field::MaxAgents
+        | Field::TaskWorktrees
         | Field::Color
         | Field::Shape
         | Field::Approvals

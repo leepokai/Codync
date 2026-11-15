@@ -184,6 +184,7 @@ const map: Record<string, IconNode> = {
   terminal: L.Terminal,
   'text.bubble': L.MessageSquareText,
   tray: L.Inbox,
+  'tray.full': L.ListTodo,
   'tray.and.arrow.up': L.ArchiveRestore,
   trash: L.Trash2,
   waveform: L.AudioLines,

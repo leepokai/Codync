@@ -2,11 +2,14 @@ import CodyncKit
 import SwiftUI
 
 /// What a bot does, on its details: Threads (the sessions that run now, and the places not in use) and the event
-/// box (what waits for one) above `between` (what it does later and keeps running), Recent below. A row opens its task's transcript; one that needs the user goes to its card in the chat.
+/// box (what waits for one) above `between` (what it does later and keeps running), Recent below. A row opens its
+/// task's transcript; one that needs the user goes to its card in the chat. `plain` (the view of all bots' work):
+/// only the rows of what runs and what waits, in one card.
 struct WorkTimeline<Between: View>: View {
     let bot: Bot
-    /// Shows a card in the bot's chat; nil where the details aren't over that chat.
-    let openCard: ((Entry) -> Void)?
+    /// Shows the bot's chat at the card an item waits on; nil where the details aren't over that chat.
+    let openCard: ((WorkItem) -> Void)?
+    var plain = false
     @ViewBuilder let between: Between
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,7 +22,12 @@ struct WorkTimeline<Between: View>: View {
     var body: some View {
         let work = WorkSections(bot.work)
         VStack(alignment: .leading, spacing: 28) {
-            if !work.isIdle {
+            if plain {
+                CardSection {
+                    rows(work.live, in: work)
+                    rows(work.waiting, in: work, numbered: true)
+                }
+            } else if !work.isIdle {
                 CardSection("Threads") {
                     rows(work.live, in: work)
                     ForEach(0..<work.free(maxAgents: bot.maxAgents), id: \.self) { _ in FreeRow() }
@@ -28,12 +36,12 @@ struct WorkTimeline<Between: View>: View {
                 }
                 .transition(.opacity)
             }
-            if !work.waiting.isEmpty {
+            if !plain, !work.waiting.isEmpty {
                 CardSection("Event box") { rows(work.waiting, in: work, numbered: true) } accessory: { count("\(work.waiting.count)") }
                     .transition(.opacity)
             }
             between
-            if !work.recent.isEmpty {
+            if !plain, !work.recent.isEmpty {
                 CardSection("Recent") { rows(work.recent, in: work) }.transition(.opacity)
             }
         }
@@ -45,7 +53,7 @@ struct WorkTimeline<Between: View>: View {
         }
         .codyncDialog(L10n.fill(L10n.tr("Let \"{title}\" cut in"), ["title": asked?.title ?? ""]), isPresented: $pickingCutIn,
                       message: "Every place is taken. Pick what gives way: its session closes and it starts again later.") {
-            work.live.map { giving in
+            work.givingWay.map { giving in
                 DialogAction(cutInChoice(giving)) {
                     if let asked { model.workCutIn(bot.id, item: asked.id, insteadOf: giving.id) }
                 }
@@ -57,7 +65,7 @@ struct WorkTimeline<Between: View>: View {
     private func rows(_ items: [WorkItem], in work: WorkSections, numbered: Bool = false) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
             let card = item.status == .needsYou ? model.chat(bot.id).card(for: item) : nil
-            WorkRow(item: item, number: numbered ? index + 1 : nil, subtitle: card?.data.title ?? item.line(),
+            WorkRow(item: item, number: numbered ? index + 1 : nil, subtitle: card?.ask ?? item.line(),
                     actions: work.actions(for: item, maxAgents: bot.maxAgents),
                     open: opener(item, card: card)) { run($0, on: item) }
         }
@@ -69,7 +77,7 @@ struct WorkTimeline<Between: View>: View {
     }
 
     private func opener(_ item: WorkItem, card: Entry?) -> (() -> Void)? {
-        if let card, let openCard { return { openCard(card) } }
+        if item.status == .needsYou, let openCard { return { openCard(item) } }
         return item.task == nil ? nil : { transcript = item }
     }
 
@@ -92,6 +100,13 @@ struct WorkTimeline<Between: View>: View {
         let elapsed = item.startedAt.map { Duration.seconds(max(0, Date.now.timeIntervalSince(Date(milliseconds: $0)))).formatted(.time(pattern: .minuteSecond)) }
         return [item.title, item.status == .needsYou || !item.activity.isEmpty ? item.what() : nil, elapsed]
             .compactMap(\.self).joined(separator: " · ")
+    }
+}
+
+extension WorkTimeline where Between == EmptyView {
+    /// A bot's rows in the view of all bots' work.
+    init(plain bot: Bot, openCard: @escaping (WorkItem) -> Void) {
+        self.init(bot: bot, openCard: openCard, plain: true) {}
     }
 }
 
@@ -128,7 +143,10 @@ private struct WorkRow: View {
                 WorkMark(status: item.status)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).foregroundStyle(Palette.text).lineLimit(1)
+                HStack(spacing: 6) {
+                    source
+                    Text(item.title).foregroundStyle(Palette.text).lineLimit(1)
+                }
                 Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(item.status == .failed || item.status == .stopped ? Palette.danger : Palette.secondary)
@@ -142,6 +160,22 @@ private struct WorkRow: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    /// Where the item came from, before its title: a routine's symbol, or the avatar of the bot that asked. Nothing
+    /// for the bot's own, or for a bot that isn't on this computer.
+    @ViewBuilder private var source: some View {
+        switch item.source?.kind {
+        case .routine:
+            Image(systemName: "clock.arrow.circlepath").font(.footnote).foregroundStyle(Palette.secondary)
+                .accessibilityLabel(L10n.tr("Routine"))
+        case .request:
+            if let asking = item.source?.id.flatMap({ model.bots[$0] }) {
+                BotAvatar(bot: asking, members: model.members(of: asking), size: 16, animated: false)
+                    .accessibilityLabel(asking.name)
+            }
+        case nil: EmptyView()
+        }
     }
 
     /// Icon-only, but Cut in: no icon says it.

@@ -16,6 +16,12 @@ class RosterSectionsTest {
     private val work2 = Bot("w2", section = "Work", unread = 3)
     private val roster = listOf(pinned, work1, loose, personal, work2)
 
+    @Test fun everyBotListsInTheOrderTheRosterShowsThemWithNothingFolded() {
+        assertEquals(listOf(pinned, personal, work1, work2, loose), shownBots(roster))
+        // As the user ordered the sections ("" is the bots in none).
+        assertEquals(listOf(pinned, loose, work1, work2, personal), shownBots(roster, order = listOf("", "Work", "Personal")))
+    }
+
     @Test fun pinnedBotsComeFirstThenEachSectionByNameThenBotsWithoutOneUnderTheLabel() {
         assertEquals(listOf(
             RosterLine.Row(pinned),

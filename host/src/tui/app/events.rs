@@ -76,6 +76,7 @@ impl App {
             Some("pairingRequests") => self.pairing_requests_changed(v),
             Some("bot") => {
                 self.upsert_bot(&v["bot"]);
+                self.close_idle_work_page();
                 self.memory_moved(&v["bot"]);
             }
             Some("artifact") => self.artifact_changed(&v["artifact"]),

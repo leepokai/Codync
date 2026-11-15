@@ -236,6 +236,42 @@ test("an item's approval card in the chat says it comes from the background, and
   }
 })
 
+test("a task's choice card and the file it shares say they come from the background, and only a press answers", async () => {
+  const { browser, page } = await attach()
+  const name = `Work choice e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = await openBot(page, name)
+    // The fixture's task asks `Which?` with the choices A and B, then sends a file.
+    await addWork(page, botId, 'Pick one', 'ASK then SHARE')
+
+    const card = page.locator('.decision-card', { hasText: 'Which?' })
+    await expect(card).toContainText('In the background · Pick one')
+    // No row for the user's own words: a typed message is for the bot in the chat, not the task.
+    await expect(card.locator('.decision-own')).toHaveCount(0)
+    await expect(capsule(page)).toContainText('In the background · Needs you')
+    await typeMessage(page, 'are you there?')
+    await expect(page.locator('.transcript')).toContainText('reply: are you there?')
+    await expect(card.locator('.decision-option')).toHaveCount(2)
+
+    // Its row on Details says what the card asks and opens the chat at it.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Pick one')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Which?')
+    await asking.locator('.work-row-open').click()
+    await expect(card).toBeInViewport()
+
+    await card.locator('.decision-option', { hasText: 'A' }).click()
+    // The file the task shares afterwards is the bot's message, marked the same way.
+    await expect(page.locator('.message.agent', { has: page.locator('.file-message') }).locator('.task-line')).toHaveText('In the background · Pick one')
+    await expect(capsule(page)).toHaveCount(0)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
 test('a working row stops once asked, and a stopped item tries again', async () => {
   const { browser, page } = await attach()
   const name = `Work stop e2e ${Date.now()}`
@@ -263,6 +299,59 @@ test('a working row stops once asked, and a stopped item tries again', async () 
     await expect(row(details, 'Threads', 'Audit the repo')).toHaveAttribute('data-work-status', 'working')
     await expect(section(details, 'Recent')).toHaveCount(0)
     await expect(capsule(page)).toBeVisible()
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("one view lists every bot's work, with the same rows and actions, and leads to a bot's Details", async () => {
+  const { browser, page } = await attach()
+  const name = `Work all e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Shown only while some bot has live or waiting items.
+    const button = page.locator('.sidebar-header').getByRole('button', { name: 'Work', exact: true })
+    const others = await button.count()
+    botId = await openBot(page, name, 1)
+    await addWork(page, botId, 'Long job', HOLD)
+    await addWork(page, botId, 'Next job', HOLD)
+    await expect(button).toBeVisible()
+    // The button counts what is worked on, on every bot.
+    if (!others) await expect(page.locator('.sidebar-header .all-work-count')).toHaveText('1')
+
+    await button.click()
+    const sheet = page.getByRole('dialog').filter({ has: page.locator('.all-work-list') })
+    await expect(sheet).toContainText('Work')
+    const group = sheet.locator(`[data-all-work-bot="${name}"]`)
+    // The bot's threads, then its box: no titles, no free places, nothing that ended.
+    await expect(group.locator('.work-row')).toHaveText([/Long job/, /^1Next job.*Next up/])
+    await expect(group.locator('.work-row.free')).toHaveCount(0)
+    await expect(sheet.locator('.details-section-title')).toHaveCount(0)
+
+    // The same actions as on the bot's Details.
+    await expect(group.getByRole('button', { name: 'Cut in' })).toBeVisible()
+    await hoverAction(group.locator('.work-row', { hasText: 'Next job' }), 'Drop')
+    await expect(group.locator('.work-row')).toHaveText([/Long job/])
+    expect(await statuses(page, botId)).toEqual({ 'Long job': 'working' })
+
+    // The heading opens that bot's Details.
+    await group.locator('.all-work-bot').click()
+    await expect(sheet).toHaveCount(0)
+    const details = page.locator('.details-panel')
+    await expect(details.getByRole('tab', { name: 'Details', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(row(details, 'Threads', 'Long job')).toHaveAttribute('data-work-status', 'working')
+
+    // The view closes by itself when the last item ends, and its button goes with it.
+    await button.click()
+    await expect(sheet).toBeVisible()
+    await api(page, 'stopWork', { botId })
+    if (!others) {
+      await expect(sheet).toHaveCount(0)
+      await expect(button).toHaveCount(0)
+    } else {
+      await expect(group).toHaveCount(0)
+    }
   } finally {
     await cleanUp(page, botId)
     await browser.close()

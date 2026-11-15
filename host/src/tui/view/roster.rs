@@ -127,7 +127,7 @@ fn bot_row(buf: &mut Buffer, row: Rect, app: &mut App, b: &Bot, bar: Option<Styl
         mark_cursor(buf, row, bar);
     }
     put_line(buf, x0 + 2, y, 2, &avatar(app, b));
-    let (g, gs) = glyph(app, b.mark());
+    let (g, gs) = glyph(app, b.roster_mark());
     let time = if b.status == Status::Working { elapsed(b.started_at) } else { when(b.last_at) };
     let tx = rput(buf, row.right() - 1, y, &time, if b.unread > 0 { t.bold } else { t.dim });
     let gx = tx.saturating_sub(2);
@@ -216,7 +216,7 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
             }
             RosterLine::Bot(b) => {
                 put_line(buf, r.x + 1, y, 2, &avatar(app, b));
-                let (g, gs) = glyph(app, b.mark());
+                let (g, gs) = glyph(app, b.roster_mark());
                 put(buf, r.x + 3, y, 1, g, gs);
                 if b.lead && y + 1 < r.bottom() {
                     put(buf, r.x + 2, y + 1, 1, "★", t.amber);
@@ -257,6 +257,23 @@ mod tests {
         section_row(&mut buf, row, None, &"n".repeat(40), 12, 7, true);
         let text = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
         assert_eq!(text, " ▸ nnnnnnnnnn… (12)  7  ");
+    }
+
+    #[test]
+    fn a_row_is_marked_by_how_the_bot_stands_outside_its_chat() {
+        let bot = |more: serde_json::Value| {
+            let mut bot = serde_json::json!({"id": "a", "status": "idle", "unread": 2});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            Bot::parse(&bot).expect("a bot with an id parses")
+        };
+        let background = bot(serde_json::json!({"outside": {"status": "working", "startedAt": 5}}));
+        assert_eq!((background.roster_mark(), background.mark()), (Mark::Work, Mark::Unread), "only its box works");
+        let asked = bot(serde_json::json!({"status": "working", "outside": {"status": "needsInput"}}));
+        assert_eq!((asked.roster_mark(), asked.mark()), (Mark::Need, Mark::Work), "an item waits on a card");
+        assert_eq!(bot(serde_json::json!({"outside": {"status": "idle"}})).roster_mark(), Mark::Unread);
+        let older = bot(serde_json::json!({"status": "needsInput"}));
+        assert_eq!(older.roster_mark(), Mark::Need, "a host before `outside`: the chat's own status");
+        assert_eq!(bot(serde_json::json!({"outside": {"status": "napping"}})).roster_mark(), Mark::Unread, "unknown");
     }
 
     #[test]

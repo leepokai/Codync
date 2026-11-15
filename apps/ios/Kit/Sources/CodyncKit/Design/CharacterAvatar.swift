@@ -59,7 +59,7 @@ public struct CharacterAvatar: View {
 }
 
 public extension Bot {
-    var mood: CharacterAvatar.Mood { needsInput ? .needsInput : isWorking ? .working : .idle }
+    var mood: CharacterAvatar.Mood { needsYouOutside ? .needsInput : isBusyOutside ? .working : .idle }
 }
 
 /// Keep the halftone at every size: 9 × 9 large dots from 18 pt up. Tiny icons use 7 × 7 so the

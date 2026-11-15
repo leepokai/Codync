@@ -122,6 +122,20 @@ async fn a_bot_messages_a_bot_on_another_computer_and_relays_its_reply() {
     assert_eq!(reviewer_row["kind"], "codync");
     assert_eq!(laptop.call("teamCall", list("codex")).await["total"], 0);
 
+    // The desk names the lead from its own listing of the laptop, which it takes when asked: until then the
+    // request's notice could only show the address (`lead@laptop`).
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let peers = desk.call("networkPeers", json!({})).await;
+            if computer(&peers, "laptop")["agents"].as_array().is_some_and(|a| a.iter().any(|a| a["id"] == "lead")) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the desk never listed the laptop's lead");
+
     // The lead lists the reviewer by its address and messages it; its turn ends at once.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk"})).await;
     let permission = desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
@@ -155,7 +169,7 @@ async fn a_stopped_or_failed_request_ends_the_senders_notice() {
     // cancelled, and nothing wakes the lead.
     laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION then stop"})).await;
     desk.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
-    desk.call("stop", json!({"botId": reviewer})).await;
+    desk.call("stopWork", json!({"botId": reviewer})).await;
     let stopped = laptop.wait_for(&lead, exchange("cancelled")).await;
     assert!(stopped["data"]["botMessage"]["detail"].as_str().unwrap().starts_with("Reviewer on desk was stopped"));
 

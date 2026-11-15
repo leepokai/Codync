@@ -14,7 +14,7 @@ mod progress;
 mod retry;
 mod runner;
 mod schedule;
-pub use runner::start;
+pub use runner::{Ran, start};
 pub use schedule::{Trigger, local_zone};
 
 use crate::{
@@ -108,6 +108,9 @@ pub struct Run {
     /// This failed run can be retried by the user, so it keeps its event until then.
     #[serde(default)]
     pub retryable: bool,
+    /// It is an item in its bot's box (`chat::tasks`), which says where it stands, not a turn in the chat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub boxed: bool,
 }
 
 impl Run {
@@ -180,7 +183,8 @@ impl Routines {
         for run in &mut state.runs {
             match run.status {
                 Status::Starting => run.status = Status::Pending,
-                Status::Running | Status::Recovering => {
+                // A run in the box is its task's to resume (`chat::tasks::restore`).
+                Status::Running | Status::Recovering if !run.boxed => {
                     run.status = Status::Recovering;
                     run.finished_at = None;
                     active.insert(run.bot_id.clone());
@@ -467,6 +471,7 @@ fn new_run(r: &Routine, event: Value, delivery_id: Option<String>) -> Run {
         not_before: None,
         retry_at: None,
         retryable: false,
+        boxed: false,
     }
 }
 
@@ -502,6 +507,11 @@ pub fn session_slot(run_id: &str) -> String {
 /// The notice a run posts in the chat when it begins; the run's turn is the notice's.
 pub fn notice_id(run_id: &str) -> String {
     format!("routine-{run_id}")
+}
+
+/// The reply of a run that worked in the box, which the host posts for it (`chat::tasks`).
+pub fn reply_id(run_id: &str) -> String {
+    format!("routine-reply-{run_id}")
 }
 
 /// The chat notice that reports a run's outcome.

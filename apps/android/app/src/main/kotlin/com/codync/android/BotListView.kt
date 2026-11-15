@@ -130,6 +130,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
     }
     val toggleSection = { name: String -> folded = if (name in folded) folded - name else folded + name; FoldedSections.save(context, folded) }
     val agentLogos by AppearancePreferences.agentLogos.collectAsStateWithLifecycle()
+    // Every bot's work in one sheet, from the header's button while any bot has some.
+    val work = allWork(ordered) { rosters[it.computer.id]?.order.orEmpty() }
+    var workOpen by remember { mutableStateOf(false) }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
@@ -140,6 +143,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                 ComputerFilterHeader(states, hidden, { hidden = it; RosterComputers.setHidden(context, it) },
                     { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
             }
+            AllWorkButton(work.bots.isNotEmpty(), work.working) { workOpen = true }
             // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
             NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
                 { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
@@ -186,6 +190,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
             confirmDelete?.let { (id, bot) -> accounts.store(id)?.deleteBot(bot) {} }
         })
     }
+    AllWorkSheet(workOpen, work.bots, grouped, accounts) { workOpen = false }
     NameDialog(naming, "Section name", { naming = null }, ::limitSectionName, ::sectionName)
 }
 

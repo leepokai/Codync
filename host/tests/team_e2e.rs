@@ -122,6 +122,8 @@ async fn a_bot_messages_another_and_relays_its_reply_to_the_user() {
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
+    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE {reviewer}")})).await;
     let permission = host.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     // The lead didn't wait: its turn ended as soon as the request was queued.
@@ -173,6 +175,8 @@ async fn a_bot_request_answers_the_sender_and_never_the_user() {
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
+    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE_REPORT {reviewer}")})).await;
     host.wait_for(&lead, |e| e["kind"] == "agent" && e["data"]["text"] == "Relayed: Answer for the requesting bot")
         .await;
@@ -195,6 +199,8 @@ async fn user_report_queued_behind_a_request_is_delivered_in_the_recipient_chat(
     let host = Host::start().await;
     let lead = host.bot("lead").await;
     let reviewer = host.bot("reviewer").await;
+    // Answers in its chat, not in its box (`tasks_e2e` has that): these are about the chat's own queue and trace.
+    host.call("updateBot", json!({"id": reviewer, "manageTeam": true})).await;
     host.call("send", json!({"botId": lead, "text": format!("DELEGATE {reviewer}")})).await;
     let permission = host.wait_for(&reviewer, |e| e["kind"] == "permission" && e["data"]["status"] == "pending").await;
     host.call("send", json!({"botId": reviewer, "text": "REPORT"})).await;

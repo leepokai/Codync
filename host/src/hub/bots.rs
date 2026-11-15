@@ -102,7 +102,7 @@ impl Hub {
                 let _ = self.events.send(deleted);
             }
         }
-        crate::chat::tasks::forget(&self.store, id);
+        crate::chat::tasks::forget(self, id);
         crate::network::publish(self);
         // Its shared files and artifacts are unreachable once the bot is deleted.
         let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];

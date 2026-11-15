@@ -6,7 +6,7 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.2
+## 2.49.0
 ### zh-Hant
 - Bot 會把比較久的工作交給背景進行，而且可以同時做好幾件：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。
 - 輸入框上方會有一個「背景」膠囊，顯示幾件進行中、幾件等待中；只有一件在做時會顯示它的進度與時間，也可以直接停止（已經改的內容會留著）。點一下會打開 Bot 的「詳情」。
@@ -16,6 +16,11 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 「指令」和「智慧體」（模型、快速模式、備援等）從「詳情」移到 Bot 的「設定」最上方。
 - 背景工作需要你核准時，卡片會出現在聊天裡並標示「背景」，照平常的方式回答就好。
 - 背景工作完成後，Bot 會用一則訊息告訴你結果；沒有完成也會說明原因。
+- 例行任務和其他 Bot 的請求現在也在背景進行，不再占住聊天：例行任務執行時，你可以繼續和 Bot 對話。
+- Bot 列表上方新增「工作」按鈕（有背景工作時才會出現）：一次看到每個 Bot 正在進行和等待中的背景工作，操作和「詳情」裡一樣。
+- 背景工作可以在聊天裡問你問題（選擇卡片）、傳檔案或語音給你，並標示「背景」和那件工作的名稱。
+- 「每個 agent 一個 worktree」在 Bot 的「設定」裡（資料夾是 Git repository 時才會出現）：同時在同一個 repository 工作的 agent 各有自己的分支，不會互相改到檔案。Codync 不會合併或刪除有內容的分支。
+- 背景工作還在進行時，「實時活動」會一直留著，需要你時也會顯示。
 - 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好。
 - 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
 - 智慧體可以有多個「登入設定」：在智慧體設定頁的「登入設定」新增賬戶（Claude Code、Codex、OpenCode、Pi、Google Antigravity 等可在同一台電腦登入多個賬戶），或為任何智慧體新增 API 金鑰（自行輸入環境變數，或從電腦的登入 shell 匯入；值只留在電腦上）。每個登入設定（包含預設的）都能自己取名，再到 bot 設定的「智慧體」選擇它要用的登入設定，兩個 bot 就能同時用不同的登入工作。
@@ -42,6 +47,11 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Instructions and Agent (model, fast mode, fallbacks) moved from Details to the top of the bot's Settings.
 - When background work needs your approval, its card appears in the chat marked "In the background"; answer it like any other.
 - When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
+- Routines and other bots' requests now run in the background too and no longer hold the chat: you can keep talking to the bot while a routine runs.
+- A Work button at the top of the bot list (there while any bot has background work) shows every bot's work that is running or waiting, with the same actions as in Details.
+- Background work can ask you a question in the chat (a choice card) and send you a file or a voice note there, marked "In the background" with the name of the work.
+- Worktree per agent, in the bot's Settings (shown when its folder is a Git repository): agents working at once in one repository each get their own branch, so they don't change the same files. Codync never merges or deletes a branch that has work on it.
+- The Live Activity stays while background work runs, and shows when it needs you.
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
 - Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
 - Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more can be signed in to several on one computer), or add an API key for any agent (environment variables you type or import from the computer's login shell; their values stay on the computer). Name any login profile (the default one too), then pick a bot's under Agent in its settings, so two bots can work at once on different logins.

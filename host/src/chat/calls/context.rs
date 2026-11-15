@@ -217,7 +217,8 @@ fn work(hub: &Hub, cfg: &BotConfig, recent: &[Entry]) -> String {
         lines.push(format!("Doing: {}", rt.activity.trim()));
     }
     if let Some(w) = waiting(recent) {
-        lines.push(format!("Waiting for approval: {} (options: {})", w.request, w.options.join(", ")));
+        let work = w.work.map(|title| format!(" for its work in the background \"{title}\"")).unwrap_or_default();
+        lines.push(format!("Waiting for approval{work}: {} (options: {})", w.request, w.options.join(", ")));
     }
     let queued = recent.iter().filter(|e| e.kind == EntryKind::User.as_str() && e.data["status"] == "queued").count();
     if queued > 0 {
@@ -360,6 +361,7 @@ pub(crate) mod tests {
             auto_name: false,
             task_of: None,
             max_agents: 3,
+            task_worktrees: true,
             lead: false,
             created_at: 0,
         }

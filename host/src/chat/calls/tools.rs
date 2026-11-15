@@ -73,6 +73,10 @@ fn status(hub: &Hub, cfg: &BotConfig) -> Value {
     let recent = hub.store.history(&cfg.id, i64::MAX, RECENT).unwrap_or_default();
     if let Some(w) = waiting(&recent) {
         out["approval"] = json!({"request": w.request, "options": w.options});
+        // Asked by its work in the background: which.
+        if let Some(work) = w.work {
+            out["approval"]["work"] = work.into();
+        }
     }
     // What it works on away from the chat, and what waits.
     if let Some(lines) = crate::chat::tasks::lines(hub, cfg, "Its").filter(|_| !cfg.is_group()) {
@@ -96,6 +100,8 @@ pub(super) struct Waiting<'a> {
     pub card: &'a Entry,
     pub request: &'a str,
     pub options: Vec<&'a str>,
+    /// The work in the background that asks, by its title; none for the chat's own turn.
+    pub work: Option<&'a str>,
 }
 
 /// The newest approval card still pending in `recent` (oldest first).
@@ -103,7 +109,8 @@ pub(super) fn waiting(recent: &[Entry]) -> Option<Waiting<'_>> {
     let card =
         recent.iter().rev().find(|e| e.kind == EntryKind::Permission.as_str() && e.data["status"] == "pending")?;
     let (request, options) = approval(&card.data);
-    Some(Waiting { card, request, options })
+    let work = card.data["task"]["title"].as_str().filter(|title| !title.is_empty());
+    Some(Waiting { card, request, options, work })
 }
 
 /// What an approval card asks and its options' names.
@@ -191,6 +198,10 @@ mod tests {
             status(&hub, &bot)["approval"],
             json!({"request": "Edit a.txt", "options": ["Allow", "Always", "Reject"]})
         );
+        let from_task = json!({"title": "Run tests", "status": "pending", "options": options(),
+            "task": {"id": "task-1", "title": "Fix login"}});
+        hub.store.insert_entry(&Lane::main("b1"), EntryKind::Permission, 1, &from_task).unwrap();
+        assert_eq!(status(&hub, &bot)["approval"]["work"], "Fix login", "the item that asks");
         crate::chat::tasks::put_working_for_test(&hub.store, "b1", "task-1");
         let background = status(&hub, &bot)["background"].as_str().unwrap().to_owned();
         assert!(background.starts_with("Its work in the background: 1 working, 0 waiting"), "{background}");

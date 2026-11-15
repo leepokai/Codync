@@ -47,12 +47,12 @@ fun teamSlots(bots: List<WidgetBot>, picks: List<String?>): List<WidgetBot?> {
 /** Who needs you comes first in the widgets: waiting for you, working, failed, then the rest. */
 fun widgetRank(status: String): Int = when (status) { "needsInput" -> 0; "working" -> 1; "error" -> 2; else -> 3 }
 
-/** Every computer's bots, [bots] by computer ID, who needs you first. */
+/** Every computer's bots, [bots] by computer ID, who needs you first: each as it stands outside its chat, so one whose items work reads as working. */
 fun widgetBots(bots: Map<String, List<Bot>>): List<WidgetBot> = bots.flatMap { (computer, list) -> list.map { computer to it } }
     .filter { (_, bot) -> !bot.hidden && !bot.deleted }
-    .sortedWith(compareBy<Pair<String, Bot>> { (_, bot) -> widgetRank(bot.status) }
+    .sortedWith(compareBy<Pair<String, Bot>> { (_, bot) -> widgetRank(bot.outsideStatus) }
         .thenByDescending { it.second.pinned }.thenByDescending { it.second.lastAt }.thenBy { it.second.name })
-    .take(256).map { (computer, it) -> WidgetBot(it.id, it.name.take(256), it.status, it.unread, it.avatarColor, it.avatarShape, it.customIcon, computer, it.lastAt) }
+    .take(256).map { (computer, it) -> WidgetBot(it.id, it.name.take(256), it.outsideStatus, it.unread, it.avatarColor, it.avatarShape, it.customIcon, computer, it.lastAt) }
 
 /**
  * The feed after reading [computers] (each one's ID and bots; null when it couldn't be read, so the bots it showed stay),

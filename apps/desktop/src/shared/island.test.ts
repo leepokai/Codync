@@ -6,9 +6,9 @@ import {
   type IslandBot, type IslandNotice, type IslandPermission, type IslandSummary, type IslandTab,
 } from './island.ts'
 
-/** `background`: a task has an item of its box. */
+/** `status` is the chat's; `background`: its box holds work, so outside its chat it works. */
 const bot = (ref: string, status: BotStatus, background = false): IslandBot => ({
-  ref, name: ref, shape: 'blob', color: 'blue', status, busy: inTurn(status) || background, backend: 'Claude Code', folder: 'site', detail: '', steps: [], error: null,
+  ref, name: ref, shape: 'blob', color: 'blue', status: background && !inTurn(status) ? 'working' : status, chat: status, backend: 'Claude Code', folder: 'site', detail: '', steps: [], error: null,
 })
 const card = (entryId: string): IslandPermission => ({
   ref: 'c/a', entryId, bot: { name: 'a', shape: 'blob', color: 'blue', backend: 'Claude Code' }, headline: 'Wants to run a command', title: 'ls', options: [], answering: null,

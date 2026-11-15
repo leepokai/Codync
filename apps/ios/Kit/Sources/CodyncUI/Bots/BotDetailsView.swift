@@ -27,8 +27,8 @@ struct DetailsRequest: Identifiable {
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
-    /// Shows a card of the bot's chat (an item that needs the user); nil where the details aren't over that chat.
-    let openCard: ((Entry) -> Void)?
+    /// Shows the card in the bot's chat that an item waits on; nil where the details aren't over that chat.
+    let openCard: ((WorkItem) -> Void)?
     /// An artifact picked in the Library, for the chat's viewer.
     let openArtifact: (ArtifactTarget) -> Void
     @State var tab: DetailsTab
@@ -41,7 +41,7 @@ struct BotDetailsView: View {
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
 
-    init(botId: String, request: DetailsRequest, openCard: ((Entry) -> Void)? = nil, openArtifact: @escaping (ArtifactTarget) -> Void) {
+    init(botId: String, request: DetailsRequest, openCard: ((WorkItem) -> Void)? = nil, openArtifact: @escaping (ArtifactTarget) -> Void) {
         self.botId = botId
         self.openCard = openCard
         self.openArtifact = openArtifact

@@ -135,6 +135,12 @@ public struct ThreadView: View {
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
+            .onChange(of: model.detailsRequest, initial: true) { _, _ in
+                if model.takeDetailsRequest(for: botId) { details = DetailsRequest() }
+            }
+            .onChange(of: model.cardRequest?.item.id, initial: true) { _, _ in
+                if let item = model.takeCardRequest(for: botId) { showCard(item) }
+            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -165,11 +171,15 @@ public struct ThreadView: View {
             }
     }
 
-    /// Closes the details over the chat and brings a card (an item of the bot's that needs the user) into view.
-    private func showCard(_ card: Entry) {
+    /// Closes the details over the chat and brings the card `item` waits on into view, read from the computer first
+    /// when this device doesn't hold it. One that can't be found leaves the chat where it was.
+    private func showCard(_ item: WorkItem) {
         details = nil
-        findReveal += 1
-        cardReveal = ConversationReveal(id: card.id, step: findReveal)
+        Task {
+            guard let card = await model.card(for: item, in: botId) else { return }
+            findReveal += 1
+            cardReveal = ConversationReveal(id: card.id, step: findReveal)
+        }
     }
 
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.

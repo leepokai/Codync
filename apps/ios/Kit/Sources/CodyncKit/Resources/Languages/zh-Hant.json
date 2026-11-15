@@ -2118,5 +2118,8 @@
   "Free": "空位",
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "此版本的其他更新",
-  "Watch the full video": "觀看完整影片"
+  "Watch the full video": "觀看完整影片",
+  "Work": "工作",
+  "Worktree per agent": "每個 agent 一個 worktree",
+  "Agents that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 agent 各有自己的分支。"
 }

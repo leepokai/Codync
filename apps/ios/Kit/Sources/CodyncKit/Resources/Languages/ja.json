@@ -2118,5 +2118,8 @@
   "Free": "空き",
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "このリリースのその他の変更",
-  "Watch the full video": "動画を全編見る"
+  "Watch the full video": "動画を全編見る",
+  "Work": "作業",
+  "Worktree per agent": "エージェントごとに worktree",
+  "Agents that work at once in this repository each get their own branch.": "このリポジトリで同時に作業するエージェントは、それぞれ自分のブランチを使います。"
 }

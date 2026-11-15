@@ -26,6 +26,8 @@ impl Hub {
             v["devServers"] = self.dev_servers.wire(&cfg.id);
             // What the bot works on away from the chat, and what waits for it.
             v["work"] = crate::chat::tasks::wire(self, cfg);
+            // Its folder is in a git repository: where `taskWorktrees` matters, and a client shows its switch.
+            v["gitRepo"] = crate::chat::tasks::in_repo(&cfg.cwd).into();
         }
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.
@@ -40,7 +42,7 @@ impl Hub {
         v["rev"] = row.rev.into();
         v["deleted"] = row.deleted.into();
         v["status"] = json!(rt.status);
-        v["activity"] = rt.activity.into();
+        v["activity"] = rt.activity.clone().into();
         v["startedAt"] = rt.started_at.into();
         v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
         v["fastModeSupport"] = rt.fast_mode.as_str().into();
@@ -48,6 +50,10 @@ impl Hub {
             // The commands of the agent the bot runs on now: a fallback's while it answers.
             let agent = rt.agent_step.as_ref().map_or(cfg.backend.as_str(), |s| s.agent.as_str());
             v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));
+            // How it stands to what shows it outside its chat (a Live Activity, an ongoing notification, a tray):
+            // the chat's status with its work in the background, as the pushes say it.
+            let (status, started_at) = crate::chat::tasks::outside(self, cfg, &rt);
+            v["outside"] = json!({"status": status, "startedAt": started_at});
             v["agentStep"] = json!(rt.agent_step);
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));
         }

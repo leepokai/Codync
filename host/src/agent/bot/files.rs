@@ -67,7 +67,8 @@ impl Actor {
         }
         self.files.pending.push(cancelled.clone());
         let epoch = self.files.epoch;
-        let root = files::root(&self.cfg.id);
+        // A task's file is its bot's: it shows in that chat, and outlives the task.
+        let root = files::root(self.cfg.owner());
         let cwd = PathBuf::from(&self.cfg.cwd);
         let tx = self.files.tx.clone();
         tokio::spawn(async move {
@@ -80,21 +81,26 @@ impl Actor {
         });
     }
 
-    fn can_send_file(&self) -> Result<i64> {
+    fn can_send_file(&self) -> Result<()> {
         ensure!(!self.stop_requested, "turn is stopping");
         ensure!(
-            self.active_group.is_none() && self.active_request.is_none() && self.active_routine.is_none(),
+            self.active_group.is_none()
+                && self.active_request.is_none()
+                && self.active_routine.is_none()
+                && self.task_source.is_bot(),
             "send_file and artifact cards are only available in the bot's own chat"
         );
-        self.turn.ok_or_else(|| anyhow!("no turn is running: between turns, tell the user with send_message"))
+        ensure!(self.turn.is_some(), "no turn is running: between turns, tell the user with send_message");
+        Ok(())
     }
 
     /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.
     pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
-        let turn = self.can_send_file()?;
+        self.can_send_file()?;
         let text = data["text"].as_str().unwrap_or_default().to_owned();
         self.close_seg();
-        let entry = self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
+        let entry =
+            self.add_for_user(EntryKind::Agent, data).ok_or_else(|| anyhow!("couldn't save the artifact card"))?;
         self.files.summary = Some(text);
         self.set_activity("Working…");
         Ok(entry.id)
@@ -109,7 +115,7 @@ impl Actor {
                     && !completed.reply.is_closed(),
                 "file sharing cancelled"
             );
-            let turn = self.can_send_file()?;
+            self.can_send_file()?;
             ensure!(self.hub.store.bot(&self.cfg.id)?.is_some_and(|bot| !bot.deleted), "bot was deleted");
             let mut snapshot = completed.result?;
             ensure!(
@@ -118,8 +124,8 @@ impl Actor {
             );
             self.close_seg();
             let text = match completed.text {
-                Some(text) => self.post_voice_note(turn, text, &snapshot)?,
-                None => self.post_file(turn, &snapshot)?,
+                Some(text) => self.post_voice_note(text, &snapshot)?,
+                None => self.post_file(&snapshot)?,
             };
             snapshot.commit();
             self.files.summary = Some(text);
@@ -130,17 +136,18 @@ impl Actor {
     }
 
     /// A file message: the card, with its name and size for a reader without one.
-    fn post_file(&mut self, turn: i64, snapshot: &Snapshot) -> Result<String> {
+    fn post_file(&mut self, snapshot: &Snapshot) -> Result<String> {
         let text = format!("{} ({} bytes)", snapshot.meta.name, snapshot.meta.size);
-        self.add(EntryKind::Agent, turn, json!({"text": text, "final": true, "files": [snapshot.meta]}))
+        self.add_for_user(EntryKind::Agent, json!({"text": text, "final": true, "files": [snapshot.meta]}))
             .ok_or_else(|| anyhow!("couldn't save the file message"))?;
         Ok(text)
     }
 
     /// A message carrying a voice note: one bubble, the player over the text, sent like `send_message`.
-    fn post_voice_note(&mut self, turn: i64, text: String, snapshot: &Snapshot) -> Result<String> {
+    fn post_voice_note(&mut self, text: String, snapshot: &Snapshot) -> Result<String> {
         let data = json!({"text": text, "final": true, "files": [snapshot.meta], "voiceNote": true});
-        self.record_sent(turn, data, text.clone())?;
+        let saved = self.add_for_user(EntryKind::Agent, data);
+        self.record_sent(saved, text.clone())?;
         Ok(text)
     }
 }

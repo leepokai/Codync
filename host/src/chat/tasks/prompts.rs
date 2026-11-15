@@ -49,7 +49,8 @@ pub(super) fn item_prompt(item: &Item, first: bool) -> String {
         "{lead}: \"{}\".\n\n{}{said}\n\n\
          [Codync: work until it's done. Your last message is the report the chat gets, so end with what you did and \
          found. Messages you send with send_message show in the task's details, not in the chat. Approvals reach the \
-         user in the chat. You can't ask the user a question, share a file, add more work, set a follow-up or \
+         user in the chat, and so does what the user must see or decide before you can go on: request_decision \
+         asks them there, send_file and publish_artifact share there. You can't add more work, set a follow-up or \
          message another bot from here: say in your report what you need.]",
         item.title, item.brief
     )
@@ -59,9 +60,13 @@ pub(super) fn item_prompt(item: &Item, first: bool) -> String {
 pub fn report_prompt(reports: &[Report]) -> String {
     let parts: Vec<String> = reports
         .iter()
-        .map(|r| match &r.outcome {
-            Ok(text) => format!("[Codync: your work \"{}\" finished. Its report:]\n{text}", r.title),
-            Err(why) => format!("[Codync: your work \"{}\" did not finish: {why}]", r.title),
+        .map(|r| {
+            let said = match &r.outcome {
+                Ok(text) => format!("[Codync: your work \"{}\" finished. Its report:]\n{text}", r.title),
+                Err(why) => format!("[Codync: your work \"{}\" did not finish: {why}]", r.title),
+            };
+            // Where its changes are, when it worked in a worktree of its own.
+            r.worktree.as_ref().map_or(said.clone(), |worktree| format!("{said}\n{}", worktree.line()))
         })
         .collect();
     format!(
@@ -73,9 +78,14 @@ pub fn report_prompt(reports: &[Report]) -> String {
 
 /// A report as the chat shows it when the bot's turn for it didn't answer.
 pub fn report_notice(report: &Report) -> String {
-    match &report.outcome {
+    let said = match &report.outcome {
         Ok(text) => format!("\"{}\" finished in the background:\n\n{text}", report.title),
         Err(why) => format!("\"{}\" did not finish: {why}", report.title),
+    };
+    // Still there: its changes are on that branch, not in the bot's folder.
+    match report.worktree.as_ref().filter(|worktree| worktree.wire().is_some()) {
+        Some(w) => format!("{said}\n\nIt worked in a git worktree of its own: branch {}, in {}.", w.branch, w.path),
+        None => said,
     }
 }
 
@@ -86,8 +96,15 @@ mod tests {
 
     #[test]
     fn a_report_turn_reads_each_item_and_says_who_speaks() {
-        let done = Report { item: "i1".into(), title: "Fix login".into(), outcome: Ok("All green.".into()), hops: 1 };
-        let failed = Report { item: "i2".into(), title: "Docs".into(), outcome: Err("it was cut off".into()), hops: 1 };
+        let report = |item: &str, title: &str, outcome: Result<&str, &str>| Report {
+            item: item.into(),
+            title: title.into(),
+            outcome: outcome.map(str::to_owned).map_err(str::to_owned),
+            hops: 1,
+            worktree: None,
+        };
+        let done = report("i1", "Fix login", Ok("All green."));
+        let failed = report("i2", "Docs", Err("it was cut off"));
         assert_eq!(report_notice(&failed), "\"Docs\" did not finish: it was cut off");
         let prompt = report_prompt(&[done, failed]);
         assert!(prompt.contains("your work \"Fix login\" finished. Its report:]\nAll green."));

@@ -184,6 +184,13 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
     draft.maxAgents?.let { count ->
         row { ValueRow("Agents at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
     }
+    // Only where it matters (the bot's folder is in a git repository) and the host has it.
+    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.gitRepo == true }?.let { on ->
+        row {
+            SwitchRow("Worktree per agent", "Agents that work at once in this repository each get their own branch.", on,
+                { change(draft.copy(taskWorktrees = it)) })
+        }
+    }
     row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }
 

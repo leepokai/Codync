@@ -45,7 +45,7 @@ pub use ui::{
     TraceMode, Width,
 };
 pub use whats_new::WhatsNew;
-pub use work::{Background, MAX_AGENTS, Sections, WorkItem, WorkStatus, can_cut_in, counts, places, word};
+pub use work::{Background, MAX_AGENTS, Sections, Source, WorkItem, WorkStatus, can_cut_in, counts, places, word};
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};
@@ -265,7 +265,7 @@ impl App {
     pub fn counts(&self) -> [usize; 4] {
         let mut c = [0; 4];
         for b in self.bots.values().filter(|b| !b.hidden) {
-            match b.mark() {
+            match b.roster_mark() {
                 Mark::Need => c[0] += 1,
                 Mark::Work => c[1] += 1,
                 Mark::Unread => c[2] += 1,
@@ -353,7 +353,7 @@ impl App {
             || self.bots.values().any(|b| b.status == Status::Working || b.work.iter().any(|i| i.status.live()))
     }
 
-    fn select(&mut self, id: &str) {
+    pub(in crate::tui) fn select(&mut self, id: &str) {
         if self.selected.as_deref() != Some(id) {
             self.close_find();
             self.selected = Some(id.to_owned());
@@ -371,7 +371,7 @@ impl App {
         let ids: Vec<(String, bool)> = self
             .roster()
             .iter()
-            .map(|b| (b.id.clone(), b.mark() == want && (want != Mark::Need || b.away().is_none())))
+            .map(|b| (b.id.clone(), b.roster_mark() == want && (want != Mark::Need || b.away().is_none())))
             .collect();
         let start = self.selected.as_ref().and_then(|s| ids.iter().position(|(x, _)| x == s)).map_or(0, |i| i + 1);
         let found = (0..ids.len()).map(|k| &ids[(start + k) % ids.len()]).find(|(_, hit)| *hit).cloned();

@@ -120,11 +120,17 @@ fn peer_name(hub: &Hub, network: &str, address: &Address) -> String {
 }
 
 /// One of this computer's bots asks a bot on another computer.
-pub(super) async fn message(hub: &Arc<Hub>, source: &BotConfig, to: &Target, message: &str) -> Result<Value> {
-    check_request(hub, source, message)?;
+pub(super) async fn message(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    turn: &str,
+    to: &Target,
+    message: &str,
+) -> Result<Value> {
+    check_request(hub, turn, message)?;
     let node = hub.network.slot(Some(&to.network))?.node;
     let from = hub.network.handle_of(&source.id).ok_or_else(|| anyhow!("this bot isn't on the network"))?;
-    let hops = hub.team.reserve_message(&source.id)?;
+    let hops = hub.team.reserve_message_in(&source.id, turn)?;
     // ponytail: the slot covers sending only; the other computer bounds the work it takes on.
     let letter = Letter::new(from, to.address.clone(), message).hops(hops);
     let result = send(hub, &node, source, to, letter).await;

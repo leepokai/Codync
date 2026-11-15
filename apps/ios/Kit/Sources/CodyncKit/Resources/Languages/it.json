@@ -2118,5 +2118,8 @@
   "Free": "Libero",
   "Codync Cloud": "Codync Cloud",
   "Also in this release": "Anche in questa versione",
-  "Watch the full video": "Guarda il video completo"
+  "Watch the full video": "Guarda il video completo",
+  "Work": "Lavoro",
+  "Worktree per agent": "Un worktree per agente",
+  "Agents that work at once in this repository each get their own branch.": "Gli agenti che lavorano contemporaneamente in questo repository hanno ciascuno il proprio branch."
 }

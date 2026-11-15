@@ -121,6 +121,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         steers_in_flight: HashMap::new(),
         held_done: None,
         active_request: None,
+        task_source: crate::chat::tasks::Source::Bot,
         reply_hops: None,
         host_turn: None,
         reports: Vec::new(),
@@ -312,6 +313,9 @@ struct Actor {
     /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
     held_done: Option<Done>,
     active_request: Option<crate::chat::team::BotRequest>,
+    /// A task's running turn works an item that came from here (`chat::tasks`): a routine's run and another bot's
+    /// request keep the rules those turns have in a chat. Anything else: the bot's own.
+    task_source: crate::chat::tasks::Source,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).

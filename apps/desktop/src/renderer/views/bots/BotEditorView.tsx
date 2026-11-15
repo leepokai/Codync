@@ -233,6 +233,15 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               <Stepper label="Agents at once" value={draft.maxAgents ?? saved.maxAgents} min={1} max={MAX_AGENTS} onChange={(count) => set('maxAgents', count)} />
             </ValueRow>
           ) : null}
+          {/* Only where it matters (the bot's folder is in a git repository), from a host that has it. */}
+          {saved?.gitRepo && saved.taskWorktrees !== null ? (
+            <SwitchRow
+              title="Worktree per agent"
+              detail="Agents that work at once in this repository each get their own branch."
+              on={draft.taskWorktrees ?? saved.taskWorktrees}
+              onChange={(on) => set('taskWorktrees', on)}
+            />
+          ) : null}
         </CardSection>
 
         <CardSection title="Activity">

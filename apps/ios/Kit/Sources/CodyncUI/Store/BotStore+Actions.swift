@@ -395,6 +395,37 @@ extension BotStore {
         try await withLink(replay: true) { try await $0.taskEntries(botId: botId, taskId: task) }
     }
 
+    /// Has the bot's conversation open its details once it is on screen.
+    public func requestDetails(of botId: String) { detailsRequest = botId }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeDetailsRequest(for botId: String) -> Bool {
+        guard detailsRequest == botId else { return false }
+        detailsRequest = nil
+        return true
+    }
+
+    /// Has the bot's conversation show the card `item` waits on once it is on screen.
+    public func requestCard(of botId: String, item: WorkItem) { cardRequest = (botId, item) }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeCardRequest(for botId: String) -> WorkItem? {
+        guard let request = cardRequest, request.botId == botId else { return nil }
+        cardRequest = nil
+        return request.item
+    }
+
+    /// The card in the bot's chat that `item` waits on, read from the computer when this device doesn't hold it
+    /// yet: up to five pages of earlier messages. Nil when it isn't there.
+    public func card(for item: WorkItem, in botId: String) async -> Entry? {
+        for _ in 0..<5 {
+            if let card = chat(botId).card(for: item) { return card }
+            guard canLoadOlder(botId) else { return nil }
+            await loadOlder(botId)
+        }
+        return chat(botId).card(for: item)
+    }
+
     /// Stops one working item of the bot's, or all of them (nil).
     public func stopWork(_ botId: String, item: String?) {
         perform(replay: true) { try await $0.stopWork(botId: botId, itemId: item) }

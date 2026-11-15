@@ -6,9 +6,9 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Background, Bot, Entry, Kind, Sections, WorkItem, WorkStatus, word};
+use super::super::app::{App, Background, Bot, Entry, Kind, Source, WorkItem, WorkStatus, word};
 use super::super::l10n::{fill, tr};
-use super::super::manage::{CutIn, DetailRow, Fetched, TaskSheet};
+use super::super::manage::{CutIn, DetailRow, Fetched, TaskSheet, giving_way};
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{centered, frame_box, hline, put, put_line, restyle, rput, u};
 use super::style::theme;
@@ -74,10 +74,19 @@ fn standing(item: &WorkItem) -> String {
     if time.is_empty() { status.into_owned() } else { format!("{status} · {time}") }
 }
 
-/// What the approval card of `item`, waiting in `bot`'s chat, asks.
+/// What the card of `item`, waiting in `bot`'s chat, asks: an approval's title, a choice's question.
 fn asks<'a>(app: &'a App, bot: &str, item: &WorkItem) -> Option<&'a str> {
-    let cards = app.entries.get(bot)?.values().filter(|e| e.kind == Kind::Permission && e.pending());
-    cards.rev().find(|e| e.data["item"].as_str() == Some(item.id.as_str()))?.data["title"].as_str()
+    let card = app.entries.get(bot)?.values().rev().find(|e| e.pending() && e.data["item"] == item.id.as_str())?;
+    card.data["title"].as_str().or_else(|| card.data["question"].as_str())
+}
+
+/// Where an item came from, before its title: the routine mark for a routine's run, the asking bot's name for a
+/// request from a bot on this computer; nothing for the bot's own work.
+fn source_mark(app: &App, item: &WorkItem) -> Option<String> {
+    match item.source.as_ref()? {
+        Source::Routine => Some("↻".into()),
+        Source::Request(from) => app.bots.get(from.as_deref()?).map(|b| format!("{} ›", truncate(&b.name, 12))),
+    }
 }
 
 /// An item's mark, and what its row says after the title: a thread that needs the user says what its card asks.
@@ -110,7 +119,10 @@ pub(in crate::tui) fn work_row(
     let t = theme();
     let (glyph, glyph_style, line, line_style) = mark_and_line(app, bot, row, item);
     // A place in line past the ninth is two cells wide.
-    let x = put(buf, inner.x, y, 3, &glyph, glyph_style.patch(base)) + 1;
+    let mut x = put(buf, inner.x, y, 3, &glyph, glyph_style.patch(base)) + 1;
+    if let Some(source) = source_mark(app, item) {
+        x = put(buf, x, y, 14, &source, t.dim.patch(base)) + 1;
+    }
     let right = rput(buf, inner.right(), y, &time(item), t.dim.patch(base));
     let end = right.saturating_sub(1);
     let title = if selected { t.bold } else { t.text };
@@ -151,7 +163,9 @@ pub(super) fn task_details(buf: &mut Buffer, area: Rect, app: &App, s: &TaskShee
         let (glyph, style) = mark(item.status == WorkStatus::NeedsYou);
         let style = if live { style } else { t.dim };
         let x = put(buf, inner.x, inner.y + 1, 1, if live { glyph } else { "·" }, style.patch(t.panel)) + 1;
-        put(buf, x, inner.y + 1, inner.right().saturating_sub(x), &standing(item), t.secondary.patch(t.panel));
+        // The branch of its worktree, while it works in one.
+        let standing = item.branch.iter().fold(standing(item), |standing, branch| format!("{standing} · ⎇ {branch}"));
+        put(buf, x, inner.y + 1, inner.right().saturating_sub(x), &standing, t.secondary.patch(t.panel));
     } else {
         put(buf, inner.x, inner.y, inner.width, &tr("In the background"), t.bold.patch(t.panel));
     }
@@ -207,11 +221,12 @@ fn told(out: &mut Vec<Line<'static>>, e: &Entry, width: usize, full: bool) {
     }
 }
 
-/// The question a first-in-line item asks when every place is taken: one row per thread, the picked one gives way.
+/// The question a first-in-line item asks when every place is taken: one row per thread that may give way (the
+/// bot's own work), the picked one does.
 pub(super) fn cut_in(buf: &mut Buffer, area: Rect, app: &App, c: &CutIn) {
     let t = theme();
     let work = app.box_of(&c.bot).0;
-    let threads = Sections::of(work).threads;
+    let threads = giving_way(work);
     let r = centered(area, 76, u(threads.len()) + 8);
     let cutting = work.iter().find(|i| i.id == c.item).map_or("", |i| i.title.as_str());
     let title = fill(&tr("Let \"{title}\" cut in"), &[("title", &truncate(cutting, 40))]);
@@ -340,6 +355,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_row_says_where_its_item_came_from_and_what_a_choice_card_asks() {
+        let mut app = test_app();
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "mika", "name": "Mika"}})));
+        bot(
+            &mut app,
+            &json!([
+                {"id": "r", "title": "Morning summary", "status": "working", "source": {"kind": "routine", "id": "r1"}},
+                {"id": "m", "title": "Review the PR", "status": "needsYou", "source": {"kind": "request", "id": "mika"}},
+                {"id": "e", "title": "Elsewhere", "status": "waiting", "source": {"kind": "request"}},
+                {"id": "g", "title": "Gone", "status": "waiting", "source": {"kind": "request", "id": "deleted"}},
+                {"id": "o", "title": "Own", "status": "working", "source": {"kind": "later"}},
+            ]),
+        );
+        app.on_msg(Msg::Event(json!({"type": "entry", "entry": {"id": "card", "botId": "a", "seq": 1,
+            "kind": "notice", "turn": 1, "data": {"decision": true, "status": "pending", "question": "Squash or merge?",
+            "choices": ["Squash", "Merge"], "task": {"id": "task-m", "title": "Review the PR"}, "item": "m"}}})));
+        let work = app.bots["a"].work.clone();
+        let rows = [
+            DetailRow::Thread(&work[0]),
+            DetailRow::Thread(&work[1]),
+            DetailRow::Waiting(1, &work[2]),
+            DetailRow::Waiting(2, &work[3]),
+            DetailRow::Thread(&work[4]),
+        ];
+        let area = Rect::new(0, 0, 60, 5);
+        let lines = screen(area, |buf| {
+            for (y, row) in rows.iter().enumerate() {
+                work_row(buf, area, u(y), (false, Style::new()), &app, "a", row);
+            }
+        });
+        let lines: Vec<&str> = lines.iter().map(|l| l.trim_end()).collect();
+        assert_eq!(lines[0], "● ↻ Morning summary · Working", "a routine's run");
+        assert_eq!(lines[1], "◆ Mika › Review the PR · Squash or merge?", "the asking bot, and the choice's question");
+        assert_eq!(lines[2], "1 Elsewhere · Waiting", "a bot on another computer: nothing");
+        assert_eq!(lines[3], "2 Gone · Waiting", "a bot no longer here: nothing");
+        assert_eq!(lines[4], "● Own · Working", "a source this terminal doesn't know reads as the bot's own");
+    }
+
+    #[tokio::test]
     async fn the_transcript_quotes_what_the_task_was_told_and_shows_its_steps() {
         let mut app = test_app();
         bot(
@@ -387,5 +441,39 @@ mod tests {
         let first = at("◆ Fix login · Needs you").expect("what needs you first");
         assert_eq!(at("● Write docs · Reading files"), Some(first + 1));
         assert!(at("↵ Cut in · esc Cancel").is_some());
+
+        // A routine's run and another bot's request are stopped, never set aside: the dialog doesn't list them.
+        bot(
+            &mut app,
+            &json!([
+                {"id": "w", "title": "Write docs", "status": "working"},
+                {"id": "r", "title": "Morning summary", "status": "working", "source": {"kind": "routine", "id": "r1"}},
+                {"id": "m", "title": "Review the PR", "status": "working", "source": {"kind": "request"}},
+                {"id": "q", "title": "Refactor", "status": "waiting"},
+            ]),
+        );
+        let lines = screen(area, |buf| cut_in(buf, area, &app, &ask));
+        let listed = |text: &str| lines.iter().any(|line| line.contains(text));
+        assert!(listed("● Write docs") && !listed("Morning summary") && !listed("Review the PR"), "{lines:?}");
+    }
+
+    #[tokio::test]
+    async fn the_transcript_heading_names_the_branch_of_its_worktree() {
+        let mut app = test_app();
+        bot(
+            &mut app,
+            &json!([{"id": "i", "title": "Fix login", "status": "working", "task": "task-1",
+                "worktree": {"branch": "codync/fix-login", "path": "/w/a/i"}},
+            {"id": "j", "title": "Docs", "status": "working", "task": "task-2"}]),
+        );
+        let area = Rect::new(0, 0, 100, 20);
+        let heading = |item: &str| {
+            let sheet = TaskSheet::new("a".into(), item.into(), "task".into());
+            let lines = screen(area, |buf| task_details(buf, area, &app, &sheet));
+            let standing = lines.iter().find(|line| line.contains("Working")).expect("how it stands");
+            standing.trim().trim_matches('│').trim().to_owned()
+        };
+        assert_eq!(heading("i"), "◷ Working · ⎇ codync/fix-login");
+        assert_eq!(heading("j"), "◷ Working", "the first task alone keeps the bot's folder");
     }
 }

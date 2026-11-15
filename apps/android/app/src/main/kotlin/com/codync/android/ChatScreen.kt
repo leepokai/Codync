@@ -96,6 +96,8 @@ import kotlinx.coroutines.delay
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
     // "Talk to Codync" asked for a call here: taken even during a call, so it can't start one after it.
     LaunchedEffect(state.callRequest) { if (store.takeCallRequest(bot.id) && state.voice == null) startCall() }
+    // A heading of the view of all bots' work asked for this bot's details.
+    LaunchedEffect(state.detailsRequest) { if (store.takeDetailsRequest(bot.id) && bot.kind != "group") details = DetailsRequest() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current

@@ -90,11 +90,24 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         // A task's transcript, for its details: no chat an app holds has it.
         "taskEntries" => crate::chat::tasks::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "taskId")?, 500)?,
-        // Stop on the capsule: one task, or all of the bot's.
-        "stopTask" => {
-            let (hub, bot, task) =
-                (hub.clone(), str_arg(&b, "botId")?.to_owned(), b["taskId"].as_str().map(str::to_owned));
-            tokio::task::spawn_blocking(move || crate::chat::tasks::stop(&hub, &bot, task.as_deref())).await??;
+        // What the user does to an item of a bot's box.
+        "workFirst" | "workCutIn" | "dropWork" | "stopWork" | "retryWork" => {
+            use crate::chat::tasks;
+            let (hub, bot, method) = (hub.clone(), str_arg(&b, "botId")?.to_owned(), method.to_owned());
+            let item = b["itemId"].as_str().map(str::to_owned);
+            let instead_of = b["insteadOf"].as_str().map(str::to_owned);
+            tokio::task::spawn_blocking(move || {
+                let named = || item.as_deref().ok_or_else(|| anyhow!("itemId required"));
+                match method.as_str() {
+                    "workFirst" => tasks::first(&hub, &bot, named()?),
+                    "workCutIn" => tasks::cut_in(&hub, &bot, named()?, instead_of.as_deref()),
+                    "dropWork" => tasks::drop_item(&hub, &bot, named()?),
+                    "retryWork" => tasks::retry(&hub, &bot, named()?),
+                    // One item, or every one that is working or waiting.
+                    _ => tasks::stop(&hub, &bot, item.as_deref()),
+                }
+            })
+            .await??;
             json!({})
         }
         "history" => {
@@ -121,7 +134,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
             let hub = hub.clone();
-            json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})
+            let updated = tokio::task::spawn_blocking(move || {
+                let bot = hub.update_bot(&b)?;
+                // Its `maxAgents` may have made room.
+                crate::chat::tasks::dispatch(&hub, b["id"].as_str().unwrap_or_default());
+                anyhow::Ok(bot)
+            });
+            json!({"bot": updated.await??})
         }
         // The roster as the user dragged it, top first.
         "reorderBots" => {

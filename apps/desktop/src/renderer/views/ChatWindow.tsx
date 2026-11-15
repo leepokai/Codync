@@ -3,6 +3,7 @@ import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { isLive } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
@@ -106,7 +107,7 @@ export function ChatWindow() {
             if (!ref || !store) return
             // The tray's one Stop is for all the bot does: its chat's turn and its work in the background.
             store.stop(ref.botId)
-            if (store.bots.get(ref.botId)?.tasks.length) store.stopTask(ref.botId)
+            if (store.bots.get(ref.botId)?.work.some(isLive)) store.stopWork(ref.botId)
             return
           }
           case 'refresh':

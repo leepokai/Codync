@@ -120,7 +120,18 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::MessageSent
         }
         "stop" => Event::TurnStopped,
-        "stopTask" => Event::TaskStopped,
+        "workFirst" | "workCutIn" | "dropWork" | "stopWork" | "retryWork" => {
+            let how = match method {
+                "workFirst" => "first",
+                "workCutIn" => "now",
+                "dropWork" => "drop",
+                "stopWork" => "stop",
+                _ => "retry",
+            };
+            p.insert("how".into(), how.into());
+            p.insert("by".into(), "user".into());
+            Event::WorkSteered
+        }
         "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,

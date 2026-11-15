@@ -102,29 +102,39 @@ With **Approve automatically**, no cards appear: Codync allows each request for 
 
 Some agents keep working after their reply, for example a background helper that finishes a long job. With **Approve automatically**, what that work asks is allowed too, unless you stopped the bot's latest reply; under any other setting it's declined, since no card can wait for you. Once the bot is idle there's no **Stop**: to stop approving that work, switch the bot to **Ask me**. When that work is done, the bot can still send you its result as a message in its chat, unless you stopped its latest reply.
 
-A [background task](#background-tasks) asks in the same chat. Its card has the line **In the background ·** and the task's name, and you answer it like any other card. A task keeps the **Permissions** setting its bot had when it started.
+A [background task](#background-tasks) asks in the same chat. Its card has the line **In the background ·** and the item's title, and you answer it like any other card. A task keeps the **Permissions** setting its bot had when it started.
 
 ## Background tasks
 
-For long work (changing code, running builds or tests, research, writing a document), a bot starts a background task: another session of the same bot that works away from the chat. The chat stays free, so you can keep writing to the bot and it keeps answering while the task goes on.
+For long work (changing code, running builds or tests, research, writing a document), a bot puts the work in its **event box** as an item. A task takes it: another session of the same bot that works away from the chat. The chat stays free, so you can keep writing to the bot and it keeps answering. You can give a bot several things: a set number of them are worked on at once, and the rest wait their turn in the box.
 
-- **While a task runs,** a capsule above the message box reads **In the background ·** and what the task is doing, with the time it has been running. It reads **Needs you** while the task waits on an approval card, and how many tasks are running when there are several. The bot's row in the bot list reads **In the background:** and the same words while the chat itself is idle.
-- **To see what a task did,** open its details: tap or click the capsule's text. You get the task's own steps and messages, to read only. With several tasks you pick one from a list first.
-- **To stop a task,** use **Stop** on the capsule or in its details. Codync asks **Stop the background work?** first. What the task already changed stays. With several tasks, the capsule's Stop stops all of them; the details stop one.
-- **Terminal UI:** the task shows as a line over the message box. Press Esc to leave typing, then `B` to open its details and `X` to stop it. `X` asks before it stops.
-- **When a task finishes,** the bot tells you what it found in an ordinary message, with the usual notification. If a task couldn't finish, the bot tells you why. A task you stopped sends nothing.
+- **The capsule.** While anything is being worked on or waits, a capsule above the message box reads **In the background ·** and what goes on. With one item being worked on and nothing waiting, that is what its task is doing and for how long. Otherwise it counts, such as **2 working · 3 waiting**, with **Needs you** first while an item waits on an approval card. The bot's row in the bot list shows the same counts while the chat itself is idle. Tap or click the capsule to open the bot's **Details**.
+- **Details** lists the work, and leaves out a section that has nothing:
+  - **Threads:** the items being worked on now. The heading reads, for example, **2 / 3**: how many run, of the most the bot may run at once. A place not in use reads **Free**.
+  - **Event box:** what waits, numbered in the order it will be taken, each with why it waits: **Next up**, how many are ahead, **Follows what it works on** or **Waiting for usage**.
+  - **Recent:** what ended in the last day.
+- **To see what an item did,** tap or click its row under **Threads** or **Recent**. You get its task's own steps and messages, to read only. A row that needs you opens the chat at its approval card.
+- **First** moves a waiting item to the front of the box.
+- **Cut in** is on the first waiting item when every place is taken. It asks which item gives way: that one's session closes and it starts again later, and the item that cut in starts in its place.
+- **Drop** removes a waiting item.
+- **Stop** is on an item under **Threads**, in its steps, and on the capsule while one item is being worked on. Codync asks **Stop the background work?** first. What the task already changed stays.
+- **Try again** puts a stopped or failed item back in the box, last.
+- **Where the buttons are.** Desktop: move the pointer over a row. iPhone: a row shows one button; touch and hold the row for the rest. Terminal UI: the work shows as a line over the message box. Press Esc to leave typing, then `B` to open Details. On a row, Enter opens its steps, `X` stops it (it asks first), `F` moves it first, `C` cuts in, `D` drops it and `A` tries again.
+- **When an item finishes,** the bot tells you what it found in an ordinary message, with the usual notification. If an item couldn't finish, the bot tells you why. An item you stopped sends nothing.
 
-A bot runs one task at a time and adds to it when you ask for more; it starts a second one beside it only when you want two unrelated things at once. A bot can have 3 tasks running, and all bots on a computer 6 together. A task can't ask you a question or share a file: it puts what it needs in its report, and the bot takes it from there in the chat.
+You can also tell the bot in the chat: to do one thing first, to do it now, to change what an item should do, or to stop it.
 
-Tasks run on your computer and pick up again after the host restarts. A finished task's details are kept for 7 days.
+**Agents at once**, under **Workspace** in the bot's **Settings**, is the most items the bot works on at the same time: 1 to 6, and 3 unless you change it. Each bot has its own number; there is no limit for the computer as a whole. While the bot's agent is near its usage limit, a bot starts one item at a time. A box holds up to 20 waiting items. A task can't ask you a question or share a file: it puts what it needs in its report, and the bot takes it from there in the chat.
+
+Tasks run on your computer and pick up again after the host restarts. An item's steps are kept for 7 days after it ended.
 
 ## Stopping a turn
 
 - **Desktop and iPhone:** while the bot works and the box is empty, the send button turns into **Stop**.
-- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**. It also stops the bot's [background tasks](#background-tasks).
+- **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**. It also stops the bot's [background work](#background-tasks), the waiting items included.
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
-Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. A [background task](#background-tasks) keeps going: it has its own **Stop**, on the capsule above the message box. A task the bot started in the turn you stopped never begins.
+Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. [Background work](#background-tasks) keeps going: it has its own **Stop**, in the bot's **Details**. An item the bot added in the turn you stopped is dropped.
 
 ## Replying to a message
 
@@ -183,7 +193,7 @@ When something needs another look later (a build that's still running, a reply t
 - When it's due, a "Follow-up · Check the deploy" line appears and the bot takes one turn in the same chat, with everything said before. Its reply notifies you like any other. If there's nothing worth telling you yet, it stays silent, and it can set another follow-up to keep watching.
 - A follow-up happens once. For something that repeats, ask for a [routine](/docs/routines).
 - Follow-ups work in a bot's own chat. In a [group](/docs/groups), or while it answers [another bot](/docs/teamwork), the bot can't set one: it tells you it can't check back from there. Ask it in its own chat.
-- Waiting follow-ups are listed above the bot's [routines](/docs/routines#find-a-bots-routines), each on a card with a dashed outline, a clock and the time it happens. The ✕ on a card cancels it (terminal UI: pick it and press `x`), and a "Follow-up cancelled" line appears in the chat. You can also ask the bot what's waiting or to cancel one.
+- Waiting follow-ups are listed under **Later** on the bot's **Details** tab, above its [routines](/docs/routines#find-a-bots-routines), each on a card with a dashed outline, a clock and the time it happens. The ✕ on a card cancels it (terminal UI: pick it and press `x`), and a "Follow-up cancelled" line appears in the chat. You can also ask the bot what's waiting or to cancel one.
 - Stopping the bot also drops a follow-up that was due and waiting for its turn; ones set for later stay.
 
 A follow-up can wait from 1 minute to 30 days, and a bot can have 10 waiting at once. A bot that sets a new follow-up each time one comes due stops after 25 in a row and asks you whether to keep watching.

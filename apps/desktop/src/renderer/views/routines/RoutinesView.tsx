@@ -18,7 +18,8 @@ interface EditorTarget {
   routineId: string | null
 }
 
-/** The routine list in the details panel (and the routines sheet); a row opens its editor. */
+/** What the bot does later and on a schedule, in the details panel (and the routines sheet): its follow-ups under
+ * Later, then the routine list, where a row opens its editor. */
 export function RoutinesView({ botId, initialId, onClose }: { botId: string; initialId: string | null; onClose?: () => void }) {
   const tr = useTr()
   const locale = useIntlLocale()
@@ -112,59 +113,65 @@ export function RoutinesView({ botId, initialId, onClose }: { botId: string; ini
 
   const editingRoutine = routines.find((r) => r.id === editing?.routineId) ?? null
   return (
-    <VStack gap={onClose ? 16 : 10} className="routines">
-      <HStack>
-        <Text size="body" weight="semibold" className="routines-title">{tr(`Routines`)}</Text>
-        <Spacer />
-        <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
-        {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
-      </HStack>
-      {loadError ? <Text size="caption" tone="danger">{loadError}</Text> : null}
-      {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
+    <>
+      {/* What the bot set for itself to do later, ahead of what it does on a schedule. */}
       {followUps.length > 0 ? (
-        <VStack gap={8}>
-          {followUps.map((followUp) => (
-            <HStack key={followUp.id} gap={10} align="flex-start" className="outlined-card follow-up-card">
-              <IconSlot width={14} tone="secondary" className="follow-up-icon"><Icon name="clock" size={13} /></IconSlot>
-              <VStack gap={3} grow>
-                <Text tone="text" lines={2}>{followUp.note}</Text>
-                <Text size="caption" tone="secondary" tabular>{followUpLine(followUp, locale)}</Text>
-              </VStack>
-              <IconButton title="Cancel follow-up" icon="xmark" size={24} disabled={busy || store.isOffline} onClick={() => void action('cancelFollowUp', followUp)} />
-            </HStack>
-          ))}
+        <VStack gap={10} className="routines">
+          <Text size="body" weight="semibold" className="routines-title">{tr(`Later`)}</Text>
+          <VStack gap={8}>
+            {followUps.map((followUp) => (
+              <HStack key={followUp.id} gap={10} align="flex-start" className="outlined-card follow-up-card">
+                <IconSlot width={14} tone="secondary" className="follow-up-icon"><Icon name="clock" size={13} /></IconSlot>
+                <VStack gap={3} grow>
+                  <Text tone="text" lines={2}>{followUp.note}</Text>
+                  <Text size="caption" tone="secondary" tabular>{followUpLine(followUp, locale)}</Text>
+                </VStack>
+                <IconButton title="Cancel follow-up" icon="xmark" size={24} disabled={busy || store.isOffline} onClick={() => void action('cancelFollowUp', followUp)} />
+              </HStack>
+            ))}
+          </VStack>
         </VStack>
       ) : null}
-      {routines.length === 0 ? (
-        <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
-          {loaded ? tr(`No routines yet. Ask the bot for one, or set it up yourself with +.`) : tr(`Loading routines…`)}
-        </Text>
-      ) : (
-        <VStack gap={8}>
-          {routines.map((routine) => (
-            <HStack key={routine.id} gap={12} className="outlined-card routines-card">
-              <button className="routine-row" onClick={() => open(routine.id)}>
-                <Text tone="text">{routine.name}</Text>
-                <Text size="caption" tone={routine.lastError ? 'danger' : 'secondary'}>{summary(routine)}</Text>
-              </button>
-              <HStack as="span" align="stretch" aria-label={routine.name}>
-                <Switch on={routine.enabled} disabled={busy || store.isOffline} onChange={(on) => void action('setRoutineEnabled', routine, on)} />
+      <VStack gap={onClose ? 16 : 10} className="routines">
+        <HStack>
+          <Text size="body" weight="semibold" className="routines-title">{tr(`Routines`)}</Text>
+          <Spacer />
+          <IconButton title="Set up a routine" icon="plus" disabled={store.isOffline} onClick={() => open(null)} />
+          {onClose ? <IconButton title="Close routines" icon="xmark" onClick={onClose} /> : null}
+        </HStack>
+        {loadError ? <Text size="caption" tone="danger">{loadError}</Text> : null}
+        {error ? <Text size="caption" tone="danger" className="routines-error">{error}</Text> : null}
+        {routines.length === 0 ? (
+          <Text as="div" size="callout" tone="secondary" className="outlined-card routines-empty">
+            {loaded ? tr(`No routines yet. Ask the bot for one, or set it up yourself with +.`) : tr(`Loading routines…`)}
+          </Text>
+        ) : (
+          <VStack gap={8}>
+            {routines.map((routine) => (
+              <HStack key={routine.id} gap={12} className="outlined-card routines-card">
+                <button className="routine-row" onClick={() => open(routine.id)}>
+                  <Text tone="text">{routine.name}</Text>
+                  <Text size="caption" tone={routine.lastError ? 'danger' : 'secondary'}>{summary(routine)}</Text>
+                </button>
+                <HStack as="span" align="stretch" aria-label={routine.name}>
+                  <Switch on={routine.enabled} disabled={busy || store.isOffline} onChange={(on) => void action('setRoutineEnabled', routine, on)} />
+                </HStack>
               </HStack>
-            </HStack>
-          ))}
-        </VStack>
-      )}
-      {/* A routine opened before the list arrived waits for it. */}
-      <Sheet open={editing !== null && (editing.routineId === null || editingRoutine !== null)} onClose={() => setEditing(null)} width={540}>
-        {editing ? (
-          <RoutineEditorView
-            key={editing.id}
-            botId={botId}
-            routine={editingRoutine}
-            saved={(saved) => onSaved(editing, saved)}
-          />
-        ) : null}
-      </Sheet>
-    </VStack>
+            ))}
+          </VStack>
+        )}
+        {/* A routine opened before the list arrived waits for it. */}
+        <Sheet open={editing !== null && (editing.routineId === null || editingRoutine !== null)} onClose={() => setEditing(null)} width={540}>
+          {editing ? (
+            <RoutineEditorView
+              key={editing.id}
+              botId={botId}
+              routine={editingRoutine}
+              saved={(saved) => onSaved(editing, saved)}
+            />
+          ) : null}
+        </Sheet>
+      </VStack>
+    </>
   )
 }

@@ -79,6 +79,18 @@ export function Switch({ on, onChange, children, label, disabled, className }: {
   )
 }
 
+/** A whole number stepped between `min` and `max`: less, the number, more. `label` names what it counts. */
+export function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
+  const tr = useTr()
+  return (
+    <HStack as="span" gap={2} role="group" aria-label={tr(label)}>
+      <IconButton title="Decrease" icon="minus.circle" size={24} disabled={value <= min} onClick={() => onChange(value - 1)} />
+      <Text tone="text" tabular className="stepper-value" aria-live="polite">{value}</Text>
+      <IconButton title="Increase" icon="plus.circle" size={24} disabled={value >= max} onClick={() => onChange(value + 1)} />
+    </HStack>
+  )
+}
+
 /** A button that opens a Codync menu. */
 export function DropdownMenu({ items, children, className, style, title, disabled }: { items: () => MenuItem[]; children: ReactNode; className?: string; style?: CSSProperties; title?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false)

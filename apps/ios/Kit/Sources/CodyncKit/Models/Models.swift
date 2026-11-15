@@ -429,6 +429,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var harnessMemory: Bool?
     /// Nil where the host offers no setting (a new bot, an agent it can't ask), so it isn't sent.
     public var compaction: CompactionThreshold?
+    /// Nil where the host has no box (an older one, a new bot), so it isn't sent.
+    public var maxAgents: Int?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -470,6 +472,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
         compaction = bot.compaction
+        maxAgents = bot.maxAgents
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -485,7 +488,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
-        follow(\.compaction)
+        follow(\.compaction); follow(\.maxAgents)
         return draft
     }
 }

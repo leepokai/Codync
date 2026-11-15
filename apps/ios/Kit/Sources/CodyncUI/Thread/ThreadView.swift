@@ -18,7 +18,6 @@ public struct ThreadView: View {
     @State var botChat: BotChatTarget?
     @State var openArtifact: ArtifactTarget?
     @State var openCall: Entry?
-    @State var showTasks = false
     @State var editingGroup = false
     @State var details: DetailsRequest?
     /// A picture in the chat, full size.
@@ -33,11 +32,13 @@ public struct ThreadView: View {
     @State var find: ConversationFind?
     /// Bumped to bring the shown match's message into view (a new text, a step).
     @State var findReveal = 0
+    /// The card last brought into view from the bot's details.
+    @State var cardReveal: ConversationReveal?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var bot: Bot? { model.bots[botId] }
-    /// The bot's background tasks, shown in its own chat only.
-    private var tasks: [BotTask] { bot.flatMap { $0.isGroup ? nil : $0.tasks } ?? [] }
+    /// The bot's work in the background, shown in its own chat only.
+    private var work: WorkSections { WorkSections(bot.flatMap { $0.isGroup ? nil : $0.work } ?? []) }
 
     /// The messages, the composer and the find bar, without the platform's top chrome.
     private var chat: some View {
@@ -55,8 +56,8 @@ public struct ThreadView: View {
                         .padding(.bottom, 8)
                         .transition(.opacity)
                 } else {
-                    if !tasks.isEmpty {
-                        TaskCapsule(botId: botId, tasks: tasks) { showTasks = true }
+                    if !work.isIdle {
+                        WorkCapsule(botId: botId, work: work) { details = DetailsRequest() }
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                     Composer(botId: botId, replyingTo: $replyingTo,
@@ -66,7 +67,7 @@ public struct ThreadView: View {
                 }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: model.mismatch)
-            .animation(Motion.reduced(Motion.layout, reduceMotion), value: tasks.isEmpty)
+            .animation(Motion.reduced(Motion.layout, reduceMotion), value: work.isIdle)
         }
         // Grok Bot's call: a bar floating over the chat, which stays readable and usable.
         .overlay(alignment: .top) {
@@ -110,6 +111,7 @@ public struct ThreadView: View {
 
     func openFind() {
         guard find == nil else { return }
+        cardReveal = nil
         Analytics.shared.capture(.conversationFindOpened)
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = ConversationFind() }
     }
@@ -151,9 +153,9 @@ public struct ThreadView: View {
             .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $openArtifact) { ArtifactView(target: $0) }
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
-            .codyncSheet(isPresented: $showTasks) { TasksSheet(botId: botId, tasks: tasks) }
             .codyncSheet(item: $details) { request in
-                BotDetailsView(botId: request.botId ?? botId, request: request) { artifact in
+                // A card is in this chat: another bot's details (a group member's) have none to go to.
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: request.botId == nil ? { showCard($0) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -163,10 +165,16 @@ public struct ThreadView: View {
             }
     }
 
+    /// Closes the details over the chat and brings a card (an item of the bot's that needs the user) into view.
+    private func showCard(_ card: Entry) {
+        details = nil
+        findReveal += 1
+        cardReveal = ConversationReveal(id: card.id, step: findReveal)
+    }
+
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.
     private func startShortcutCall() {
         showTrace = false
-        showTasks = false
         botChat = nil
         openArtifact = nil
         editingGroup = false
@@ -193,7 +201,7 @@ public struct ThreadView: View {
                         reply: e.isReplyable && model.mismatch == nil ? { reply(to: e.replyQuote) } : nil,
                         selectText: model.supportsReplyPart ? { selectingText = e } : nil,
                         // In a group, the bot whose agent failed.
-                        addFallback: { details = DetailsRequest(botId: e.data.author ?? e.botId) },
+                        addFallback: { details = .fallbacks(of: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
                         openCall: { openCall = e })
                     .equatable()
@@ -465,7 +473,7 @@ extension ThreadView {
             })
         }
         // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
-        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) }
+        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? cardReveal
         return ConversationList(rows: rows, following: $following, reveal: reveal, nearTop: { showEarlier() }, refresh: {
             model.restartStream()
             _ = try? await model.ready()

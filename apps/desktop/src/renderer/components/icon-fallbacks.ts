@@ -43,6 +43,7 @@ const map: Record<string, IconNode> = {
   'arrow.turn.down.right': L.CornerDownRight,
   'arrow.up': L.ArrowUp,
   'arrow.up.right.square': L.SquareArrowOutUpRight,
+  'arrow.up.to.line': L.ArrowUpToLine,
   'arrowshape.turn.up.left': L.Reply,
   'apple.logo': appleLogo,
   'bell.badge': L.BellDot,

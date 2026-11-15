@@ -2,20 +2,16 @@ use super::*;
 
 #[tokio::test]
 async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
-    use crate::tui::manage::RoutineList;
+    use crate::tui::manage::DetailsPage;
     use crossterm::event::{KeyCode, KeyEvent};
 
     let mut app = test_app();
     app.selected = Some("b".into());
     app.drafts.insert("b".into(), Editor::with("My unfinished message"));
-    app.overlays.push(Overlay::Routines(RoutineList {
-        bot: "b".into(),
-        items: Some(Vec::new()),
-        ..Default::default()
-    }));
+    app.overlays.push(Overlay::Details(DetailsPage { bot: "b".into(), items: Some(Vec::new()), ..Default::default() }));
 
     app.on_key(KeyEvent::from(KeyCode::Char('c')));
-    assert!(matches!(app.overlays.last(), Some(Overlay::Routines(_))));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Details(_))));
     assert_eq!(app.drafts["b"].text, "My unfinished message");
 
     app.on_key(KeyEvent::from(KeyCode::Char('n')));
@@ -25,17 +21,17 @@ async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
 
 #[tokio::test]
 async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
-    use crate::tui::manage::{Reply, RoutineList};
+    use crate::tui::manage::{DetailsPage, Reply};
     use crossterm::event::{KeyCode, KeyEvent};
 
-    fn list(app: &App) -> &RoutineList {
-        let Some(Overlay::Routines(l)) = app.overlays.last() else { panic!("the routines are open") };
+    fn list(app: &App) -> &DetailsPage {
+        let Some(Overlay::Details(l)) = app.overlays.last() else { panic!("the routines are open") };
         l
     }
 
     let mut app = test_app();
     app.selected = Some("b".into());
-    app.overlays.push(Overlay::Routines(RoutineList {
+    app.overlays.push(Overlay::Details(DetailsPage {
         bot: "b".into(),
         items: Some(vec![json!({"id": "r", "name": "Morning", "enabled": true, "triggers": []})]),
         follow_ups: vec![json!({"id": "f", "botId": "b", "at": 0, "note": "Check the build"})],
@@ -69,10 +65,10 @@ async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
 
 #[tokio::test]
 async fn a_reload_keeps_the_cursor_on_the_row_it_picked() {
-    use crate::tui::manage::{Reply, RoutineList};
+    use crate::tui::manage::{DetailsPage, Reply};
 
-    fn list(app: &mut App) -> &mut RoutineList {
-        let Some(Overlay::Routines(l)) = app.overlays.last_mut() else { panic!("the routines are open") };
+    fn list(app: &mut App) -> &mut DetailsPage {
+        let Some(Overlay::Details(l)) = app.overlays.last_mut() else { panic!("the routines are open") };
         l
     }
     /// The listing comes again with these follow-ups above the two routines: the id of the row then picked.
@@ -80,11 +76,11 @@ async fn a_reload_keeps_the_cursor_on_the_row_it_picked() {
         let follow_ups: Vec<Value> = follow_ups.iter().map(|id| json!({"id": id, "note": "Check the build"})).collect();
         let listing = json!({"routines": [{"id": "r1"}, {"id": "r2"}], "followUps": follow_ups, "runs": []});
         app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
-        list(app).picked().map(|row| row.id().as_str().unwrap_or_default().to_owned()).unwrap_or_default()
+        list(app).picked(&[], None).map(|row| row.id().to_owned()).unwrap_or_default()
     }
 
     let mut app = test_app();
-    app.overlays.push(Overlay::Routines(RoutineList { bot: "b".into(), ..Default::default() }));
+    app.overlays.push(Overlay::Details(DetailsPage { bot: "b".into(), ..Default::default() }));
     reload(&mut app, &["f"]);
     list(&mut app).cursor = 1;
     // The follow-up above began: `r` or space must not act on the next routine.

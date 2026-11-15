@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
+import com.codync.android.core.MAX_AGENTS
 import com.codync.android.core.login
 import com.codync.android.core.logins
 import com.codync.android.core.restOf
@@ -35,14 +36,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
 /**
- * Which settings a form shows (iOS `FormPart`): all of them (the editor), what changes often (instructions and the agent:
- * the details sheet's Details page) or the rest (its Settings page).
+ * Bot settings, in sections in the Settings style (`CardSection`), with the pickers they open: what it is told and what
+ * runs it first. [inDetails]: on the details sheet, whose Computer page has the computer's switch.
  */
-internal enum class FormPart { All, Often, Rarely }
-
-/** Bot settings, in sections in the Settings style (`CardSection`), with the pickers they open. */
-@Composable internal fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, part: FormPart,
-    modifier: Modifier = Modifier, error: String? = state.error) {
+@Composable internal fun BotSettingsForm(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit,
+    modifier: Modifier = Modifier, inDetails: Boolean = false, error: String? = state.error) {
     var folders by remember { mutableStateOf(false) }
     // The Avatar row unfolds the picker (iOS `pickingAvatar`).
     var pickingAvatar by remember { mutableStateOf(false) }
@@ -54,44 +52,25 @@ internal enum class FormPart { All, Often, Rarely }
     val bot = state.bots.firstOrNull { it.id == draft.id }
     LaunchedEffect(online) { if (online) store.refreshPlugins() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(30.dp)) {
-        when (part) {
-            FormPart.All -> {
-                CardSection("Profile") {
-                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
-                    nameRow(draft, change); instructionsRow(draft, change); createdByRow(state, bot)
-                }
-                CardSection("Agent") {
-                    fallbackBanner(state, store, bot); computerRow(state, online)
-                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
-                    compactionRow(bot, draft, change); placeRows(state, store, draft, change, modelReload) { folders = true }
-                }
-                CardSection("Activity") {
-                    notifyRow(draft, change); computerUseRow(state, draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change)
-                }
-                Plugins(state, draft, change) { viewingSkill = it }
-            }
-            FormPart.Often -> {
-                CardSection("Instructions") { instructionsRow(draft, change) }
-                CardSection("Agent") {
-                    fallbackBanner(state, store, bot)
-                    agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
-                    compactionRow(bot, draft, change)
-                    if (!online) row { OfflineNote() }
-                }
-            }
-            FormPart.Rarely -> {
-                CardSection("Profile") {
-                    avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
-                    nameRow(draft, change); createdByRow(state, bot)
-                }
-                // The agent and its model are on the Details page; what's left is where it works.
-                CardSection("Workspace") {
-                    computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
-                }
-                CardSection("Activity") { notifyRow(draft, change); manageTeamRow(state, draft, change); reachRows(state, draft, change) }
-                Plugins(state, draft, change) { viewingSkill = it }
-            }
+        CardSection("Instructions") { instructionsRow(draft, change) }
+        CardSection("Agent") {
+            fallbackBanner(state, store, bot)
+            agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
+            compactionRow(bot, draft, change)
         }
+        CardSection("Profile") {
+            avatarRows(state, store, draft, change, pickingAvatar) { pickingAvatar = !pickingAvatar }
+            nameRow(draft, change); createdByRow(state, bot)
+        }
+        CardSection("Workspace") {
+            computerRow(state, online); placeRows(state, store, draft, change, modelReload) { folders = true }
+        }
+        CardSection("Activity") {
+            notifyRow(draft, change)
+            if (!inDetails) computerUseRow(state, draft, change)
+            manageTeamRow(state, draft, change); reachRows(state, draft, change)
+        }
+        Plugins(state, draft, change) { viewingSkill = it }
         // A save that didn't take, under the form (iOS `error`).
         error?.let { Text(tr(it), style = Type.footnote, color = Palette.danger) }
     }
@@ -182,7 +161,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     }
 }
 
-/** Where the bot works and what it may do there without asking. */
+/** Where the bot works, how many of its agents work at once and what it may do there without asking. */
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
     row {
@@ -200,6 +179,10 @@ private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft
                 }
             }
         }
+    }
+    // Only from a host that has the box (its bots say).
+    draft.maxAgents?.let { count ->
+        row { ValueRow("Agents at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
     }
     row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
 }

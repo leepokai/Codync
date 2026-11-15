@@ -84,14 +84,15 @@ it has no pointer tooltip or link-opening action.
 
 A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
 
-- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}`, shown with the line
+- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}` (the title is its
+  item's) and `data.item`, the item's id, shown with the line
   `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
 - **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
   is `from: host`, shows no bubble, and isn't the user's words to memory.
 - **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
-  `The task "<title>" finished: …` or `… did not finish: …`.
+  `"<title>" finished in the background: …` or `"<title>" did not finish: …`.
 
-The capsule above the composer isn't an entry: it is the bot's `tasks`.
+The capsule above the composer isn't an entry: it is the bot's `work`.
 
 ## While it works
 

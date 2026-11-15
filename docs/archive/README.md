@@ -8,6 +8,7 @@ These documents retain decisions and observations from before the current refact
 | [Bot/computer/SSH plan](bot-computer-ssh-plan-2026-09-25.md) | 2026-09-25 | [Accounts and SSH](../guides/accounts-and-ssh.md), [file structure](../architecture/file-structure.md) |
 | [UI audit](ui-audit-2026-09-25.md) | 2026-09-25 | [UI conventions](../design/ui-conventions.md), [widgets](../design/mobile-widgets.md) |
 | [SwiftUI Mac chat](macos-chat-swiftui-2026-10-05.md) | 2026-10-05 | [Desktop app](../architecture/desktop-app.md) |
+| [Background tasks: the first design](background-tasks-plan-2026-11-15.md) | 2026-11-15 | [The event box](../plans/event-box.md), [background tasks](../features/background-tasks.md) |
 
 Do not interpret old “not implemented” statements, delegation assignments, version numbers or test reports as the state of the current checkout. Reassess an audit finding against source before turning it into work.
 

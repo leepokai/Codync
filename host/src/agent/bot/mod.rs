@@ -385,7 +385,7 @@ impl Actor {
         let failed = done.as_ref().is_err_and(acp::may_end_session);
         self.finish_turn(&done);
         match session {
-            // A task's session is spent like a run's until its bot tells it more.
+            // A task's session is spent like a run's; an item that follows reopens it.
             Some(sid) if routine || self.cfg.is_task() => self.release_spent(&sid).await,
             Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
@@ -445,6 +445,9 @@ impl Actor {
         self.complete_group(Err(anyhow!("bot shut down")));
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
+        }
+        if self.cfg.is_task() {
+            self.hub.forget_runtime(&self.cfg.id);
         }
     }
 

@@ -168,7 +168,7 @@ impl Actor {
         for queued in std::mem::take(&mut self.queue) {
             match queued {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
-                // A task's report is news the user still wants.
+                // An item's report is news the user still wants.
                 Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
@@ -287,7 +287,7 @@ impl Actor {
                     let prompt = tasks::report_prompt(&reports);
                     self.reports = reports;
                     match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
-                        // A task this turn starts carries the chain on.
+                        // An item this turn adds carries the chain on.
                         Ok(()) => self.hub.tasks.answering(&self.cfg.id, hops),
                         Err(e) => self.start_error(e, done_tx).await,
                     }
@@ -488,18 +488,16 @@ impl Actor {
                 self.notice(&tasks::report_notice(report), NoticeStyle::Info);
             }
         }
-        tasks::reported(&self.hub.store, &reports);
+        tasks::reported(&self.hub, &self.cfg.id, &reports);
     }
 
-    /// The turn is over, however it ended (or never began): a task's record says how and its bot gets the report;
-    /// a bot's tasks started in the turn launch.
+    /// The turn is over, however it ended (or never began): a task's item says how and its bot gets the report;
+    /// the items a bot added in the turn may start.
     pub(super) fn turn_over(&mut self, outcome: Outcome) {
-        if !self.cfg.is_task() {
-            self.hub.tasks.turn_ended(&self.cfg.id);
-            tasks::launch_pending(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
-        } else if !self.queue.iter().any(|q| matches!(q, Queued::User { .. })) {
-            // With more its bot told it still waiting (`tell_task`), it keeps working and reports when that ends.
+        if self.cfg.is_task() {
             tasks::finished(&self.hub, &self.cfg, outcome);
+        } else {
+            tasks::turn_over(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
         }
     }
 

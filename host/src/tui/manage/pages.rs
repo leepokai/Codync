@@ -1,5 +1,5 @@
-//! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (its agent and
-//! routines), Computer (the computer it lives on, and whether it may use it), Library (the artifacts it made
+//! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (what it does: its
+//! threads, event box and routines), Computer (the computer it lives on, and whether it may use it), Library (the artifacts it made
 //! and the files shared in its chat), Memory and Settings. Shift+←→ moves between them. What an agent brings
 //! is on its own sheet.
 

@@ -162,8 +162,18 @@ pub struct BotConfig {
     /// agent process, session and transcript; clients never see it as a bot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_of: Option<String>,
+    /// The most tasks that work on the bot's box at once (see `chat::tasks`): 1 to [`MAX_AGENTS`].
+    #[serde(default = "default_max_agents")]
+    pub max_agents: u8,
     #[serde(default)]
     pub created_at: i64,
+}
+
+/// The most tasks a bot may be set to run at once.
+pub const MAX_AGENTS: u8 = 6;
+
+fn default_max_agents() -> u8 {
+    3
 }
 
 /// A task bot's id starts with this; a bot's and a group's are plain UUIDs.

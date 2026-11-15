@@ -1,8 +1,9 @@
-// Makes the bot `tasks.yaml` opens and has it start a task, on the host the phone is paired with (HOST_PORT and
-// HOST_TOKEN, passed with `-e`). Its agent is host/tests/fixtures/task_agent.py (TASK_AGENT, its full path): a message
-// `START <title>|<brief>` starts a task, which works until stopped when its brief says HOLD and raises an approval card
-// when it says PERMISSION. `SEND` sends another message, and `CLEANUP`, when the flow completes, stops the bot's tasks
-// and deletes it.
+// Makes the bot `tasks.yaml` opens and has it add an item to its box, on the host the phone is paired with (HOST_PORT
+// and HOST_TOKEN, passed with `-e`). Its agent is host/tests/fixtures/task_agent.py (TASK_AGENT, its full path): a
+// message `ADD <title>|<brief>` adds an item, whose task works until stopped when its brief says `HOLD:<name>` and
+// raises an approval card when it says PERMISSION. `ADD` sends another one and waits until the box has it and the
+// bot's own turn is over (a message sent during it would wait above the composer); `MAX` sets how many agents work at
+// once; `CLEANUP`, when the flow completes, stops the bot's work and deletes it.
 const api = (method, body) => {
   const res = http.post(`http://127.0.0.1:${HOST_PORT}/api/${method}`, {
     headers: { Authorization: `Bearer ${HOST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -12,19 +13,34 @@ const api = (method, body) => {
   return json(res.body)
 }
 
+const add = (botId, item) => {
+  const title = item.split('|')[0]
+  api('send', { botId, text: `ADD ${item}` })
+  // An update that changes nothing answers with the bot as the host has it.
+  for (let tries = 0; tries < 100; tries++) {
+    const until = Date.now() + 100
+    while (Date.now() < until) {} // ponytail: the script has no sleep; a busy wait of at most 10 s
+    const bot = api('updateBot', { id: botId }).bot
+    if (bot.status === 'idle' && (bot.work || []).some((w) => w.title === title)) return
+  }
+  throw new Error(`"${title}" never reached the box`)
+}
+
 if (typeof CLEANUP !== 'undefined') {
   if (output.bot) {
-    api('stopTask', { botId: output.bot.id })
+    api('stopWork', { botId: output.bot.id })
     api('deleteBot', { botId: output.bot.id })
   }
-} else if (typeof SEND !== 'undefined') {
-  api('send', { botId: output.bot.id, text: SEND })
+} else if (typeof MAX !== 'undefined') {
+  api('updateBot', { id: output.bot.id, maxAgents: Number(MAX) })
+} else if (typeof ADD !== 'undefined') {
+  add(output.bot.id, ADD)
 } else {
   const name = `Tasks check ${Math.random().toString(36).slice(2, 6)}`
   const bot = api('createBot', {
     name, backend: 'custom', command: `python3 -X utf8 -u '${TASK_AGENT}'`, connectors: [], skills: [], notify: false,
   }).bot
   api('updateBot', { id: bot.id, permission: 'ask' })
-  api('send', { botId: bot.id, text: 'START Audit the repo|HOLD until released' })
   output.bot = { name, id: bot.id }
+  add(bot.id, 'Audit the repo|HOLD:audit')
 }

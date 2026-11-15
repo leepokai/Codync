@@ -82,7 +82,7 @@ impl Hub {
     }
 
     pub fn delete_bot(&self, id: &str) -> Result<()> {
-        // Its tasks go first: they are the bot's own work.
+        // Its tasks go first: they are the bot's own work. Its box goes below.
         for task in crate::chat::tasks::of(&self.store, id) {
             self.delete_bot(&task.id)?;
         }

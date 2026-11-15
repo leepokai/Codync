@@ -1,6 +1,6 @@
 import { memo } from 'react'
-import { folderName, isGroup, isWorking, needsInput, type Bot } from '@shared/models'
-import { rosterTaskLine } from '@shared/tasks'
+import { folderName, isGroup, type Bot } from '@shared/models'
+import { rosterLine } from '@shared/work'
 import { AvatarWithStatus } from '../components/Avatar'
 import { Icon } from '../components/Icon'
 import { HStack, VStack } from '../components/Stack'
@@ -36,28 +36,29 @@ export const BotRow = memo(function BotRow({ bot, store, compact, usingComputer,
   )
 })
 
-/** Live activity while working, otherwise the last message (Grok Bot row behavior). */
+/** The most pressing thing first: it needs you, what its chat does, how many items work and wait in the
+ * background; otherwise the last message (Grok Bot row behavior). */
 function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
   const tr = useTr()
   const place = bot.managedWorkspace ? tr('Personal workspace') : folderName(bot)
-  if (needsInput(bot)) {
+  const line = rosterLine(bot, tr)
+  if (line?.kind === 'needsYou') {
     return (
       <HStack as="span" gap={6} shrink>
         <ThinkingOrb state="listening" size={16} color="var(--warning)" />
-        <Text size="callout" tone="attention" truncate>{tr(bot.activity || 'Needs your approval')}</Text>
+        <Text size="callout" tone="attention" truncate>{line.text}</Text>
       </HStack>
     )
   }
-  if (isWorking(bot)) {
+  if (line?.kind === 'working') {
     return (
       <HStack as="span" gap={6} shrink>
         <ThinkingOrb size={13} color="var(--secondary)" />
-        <Text size="callout" tone="secondary" truncate>{tr(bot.activity || 'Working…')}</Text>
+        <Text size="callout" tone="secondary" truncate>{line.text}</Text>
       </HStack>
     )
   }
-  const inBackground = rosterTaskLine(bot, tr)
-  if (inBackground) return <Text size="callout" tone="secondary" truncate>{inBackground}</Text>
+  if (line) return <Text size="callout" tone="secondary" truncate>{line.text}</Text>
   if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
   return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

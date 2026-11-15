@@ -1,4 +1,4 @@
-# A bot's dev servers on the phones: the port under the chat's title, then their section first in the bot's details, a
+# A bot's dev servers on the phones: the port under the chat's title, then their section in the bot's details (under its routines), a
 # row's ⋯ menu with what applies, the logs sheet, and stop, start and remove. The phone must already be signed in and
 # paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`,
 # whose clearState undoes that; the flow makes its own bot there:
@@ -32,7 +32,9 @@ onFlowComplete:
 - assertVisible: ".*:${output.port}.*"
 - takeScreenshot: dev-servers-title
 - tapOn: ".*:${output.port}.*"
-- assertVisible: "Dev servers"
+- scrollUntilVisible:
+    element: "Dev servers"
+    centerElement: true
 - assertVisible: "web"
 - assertVisible: "docs"
 - assertVisible: "Failed to start"

@@ -123,10 +123,9 @@ host answers and sends it once the host is up.
 | `follow_up_set` | host | A bot's `follow_up` finished ([follow-ups](../features/follow-ups.md)) | `outcome` (`set`, `invalid`: no wait or note, `elsewhere`: asked from a room or another bot's request, why the note's text was refused: `hidden`, `prompt_link`, `instruction`, `secret`, `other`, `limit`: ten waiting, `chain`: too many in a row, or `failed`: the host couldn't save it), `minutes`, `chain` (follow-ups in a row before this one) |
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
 | `follow_up_cancelled` | host | A waiting follow-up was dropped | `by` (`bot`: `cancel_follow_up`, `user`: ✕ in the routines list, the API call `cancelFollowUp`, so with `client` and a phone's `platform`; not sent when the follow-up was already gone, `stop`: the bot's Stop) |
-| `task_started` | host | A bot's `start_task` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`started`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, `live`: a task already runs, `limit`: too many tasks, `usage`: the agent is near its limit, `hops`: too many in a row, `failed`), `parallel` |
-| `task_finished` | host | A task ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off and it couldn't pick up, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`), `forkFailed` (the agent could fork but the fork failed), `minutes` |
-| `task_told` | host | A bot's `tell_task` reached its task | — |
-| `task_stopped` | host | `stopTask` (Stop on the capsule, or the desktop tray's **Stop task** while the bot has tasks) | — |
+| `work_added` | host | A bot's `add_work` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`added`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, or `after` names no live item, `full`: 20 items wait already, `hops`: too many in a row, `failed`), `after` (it follows another item) |
+| `work_finished` | host | An item of a bot's box ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its task's turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off twice, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`; none for an item stopped while it waited), `forkFailed` (the agent could fork but the fork failed), `minutes` |
+| `work_steered` | host | An item was changed | `how` (`first`, `now`: cut in, `replace`, `stop`, and from the user only `drop`, `retry`), `by` (`bot`: `steer_work`, `user`: the API calls `workFirst`, `workCutIn`, `stopWork`, `dropWork`, `retryWork`, so with `client` and a phone's `platform`) |
 | `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
 | `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
 | `dev_server_action` | host (`devServerStop`, `devServerRestart`, `devServerRemove`, `devServerLogs`), host `track` (desktop, terminal UI), iOS, Android | Someone acted on a dev server | `action` (`stop`, `restart`, `remove`, `logs`, `open`, `copy`) |
@@ -192,7 +191,7 @@ host answers and sends it once the host is up.
 | `library` | a chat's Library (iPhone: the details tab; Android: its sheet) | library tab | library overlay |
 | `artifact` | an artifact's viewer | an artifact's viewer | — (opens in the browser) |
 | `network` | network sheet (Network on a computer's card in Manage computers) | — (part of `computers`) | network sheet |
-| `task` | a background task's details (sheet) | a background task's details (sheet) | a background task's details |
+| `task` | a task's transcript, opened from an item's row (sheet) | a task's transcript, opened from an item's row (sheet) | a task's transcript, opened from an item's row |
 
 ## Funnels
 

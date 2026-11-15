@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
+import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
@@ -42,16 +43,23 @@ internal enum class DetailsTab(val title: String) {
 }
 
 /**
- * What to open the details sheet on (iOS `DetailsRequest`): a page, a routine's editor on the Details page, or another bot's
- * details than the chat's (a group member's, from its notice).
+ * What to open the details sheet on (iOS `DetailsRequest`): a page (Details, the bot's timeline, unless said), a routine's
+ * editor on the Details page, or another bot's details than the chat's (a group member's, from its notice).
  */
-internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null)
+internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null) {
+    companion object {
+        /** [botId]'s fallbacks, from a failure they could have carried: the Agent section of its Settings page. */
+        fun fallbacks(botId: String) = DetailsRequest(DetailsTab.Settings, botId = botId)
+    }
+}
 
 /**
- * A bot's details (iOS `BotDetailsView`): who it is, then its details, computer, library and settings. Settings save as you edit.
- * `openArtifact`: an artifact picked in the Library, for the chat's viewer.
+ * A bot's details (iOS `BotDetailsView`): who it is, then what it does (Details), its computer, library, memory and how it
+ * is set up (Settings). Settings save as you edit. `openCard`: the chat at an approval card, from an item
+ * that needs you. `openArtifact`: an artifact picked in the Library, for the chat's viewer.
  */
-@Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openArtifact: (OpenArtifact) -> Unit) {
+@Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openCard: (Entry) -> Unit,
+    openArtifact: (OpenArtifact) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
     val dismiss = LocalDismissModal.current
     var tab by remember(request) { mutableStateOf(request.tab) }
@@ -82,16 +90,14 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
             CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) {
                 Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
                     when (tab) {
-                        DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
-                            if (bot.devServers.isNotEmpty()) DevServersSection(bot, store)
-                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often, error = saveError)
-                            RoutinesView(bot, state, store, routineId)
+                        DetailsTab.Details -> {
+                            WorkTimeline(bot, state, store, routineId, openCard)
                             LaunchedEffect(Unit) { routineId = null }
                         }
                         DetailsTab.Computer -> BotComputerTab(bot, state, store, draft.computer, online) { on -> draft = draft.copy(computer = on) }
                         DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
                         DetailsTab.Memory -> MemoryCard(bot.id, state, store)
-                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely, error = saveError)
+                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, inDetails = true, error = saveError)
                     }
                 }
             }

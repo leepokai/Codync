@@ -1,7 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
-import { normalizeTasks, type BotTask } from './tasks.ts'
+import { normalizeMaxAgents, normalizeWork, type WorkItem } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -89,8 +89,11 @@ export interface Bot {
   activity: string
   startedAt?: number | null
   workingChat?: string | null
-  /** Its background tasks still going, in start order (`tasks.ts`); none from a host before tasks. */
-  tasks: BotTask[]
+  /** Its box (`work.ts`): the live and waiting items in dispatch order, then those ended in the last day; none from
+   * a host before the box. */
+  work: WorkItem[]
+  /** The most agents it runs at once, 1 to 6; null from a host before the box. */
+  maxAgents: number | null
   unread: number
   lastMessage?: string | null
   lastAt: number
@@ -151,7 +154,8 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     activity: raw.activity ?? '',
     startedAt: raw.startedAt ?? null,
     workingChat: raw.workingChat ?? null,
-    tasks: normalizeTasks(raw.tasks),
+    work: normalizeWork(raw.work),
+    maxAgents: normalizeMaxAgents(raw.maxAgents),
     unread: raw.unread ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
@@ -411,6 +415,8 @@ export interface EntryData {
   from?: string
   /** The background task this chat entry comes from (its approval card). */
   task?: { id: string; title: string }
+  /** The item of the bot's box that task works on. */
+  item?: string
   /** notice: what was said on a realtime call, oldest first. */
   transcript?: CallLine[]
 }
@@ -789,6 +795,8 @@ export interface BotDraft {
   harnessMemory?: boolean
   /** Left out where the bot has none: the host keeps what it has. */
   compaction?: CompactionThreshold
+  /** The most agents at once, 1 to 6; left out for a host before the box. */
+  maxAgents?: number
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -819,6 +827,7 @@ export function draftOf(bot: Bot): BotDraft {
     offeredToNetwork: bot.offeredToNetwork ?? undefined,
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
+    maxAgents: bot.maxAgents ?? undefined,
   }
 }
 

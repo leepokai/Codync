@@ -118,23 +118,38 @@ async fn restarted(hub: &Arc<Hub>, boot: &mut Option<String>) -> bool {
 }
 
 fn restart_agents(hub: &Hub) {
-    let bots = match hub.store.bots() {
-        Ok(bots) => bots,
-        Err(e) => {
-            tracing::warn!(error = format!("{e:#}"), "couldn't list the bots to restart their agents");
-            return;
-        }
-    };
-    for row in bots.into_iter().filter(|row| !row.deleted) {
+    for id in agents(&hub.store) {
         // A bot without a running actor has no agent to restart.
-        let _ = hub.send_cmd(&row.config.id, Cmd::KeeperRestarted);
+        let _ = hub.send_cmd(&id, Cmd::KeeperRestarted);
     }
+}
+
+/// The actors whose agent may hold the keeper's grants: every bot, and the tasks at work (a task's agent holds
+/// them as its bot's does).
+fn agents(store: &crate::store::Store) -> Vec<String> {
+    let bots = store.bots().unwrap_or_else(|e| {
+        tracing::warn!(error = format!("{e:#}"), "couldn't list the bots to restart their agents");
+        Vec::new()
+    });
+    let bots = bots.into_iter().filter(|row| !row.deleted).map(|row| row.config);
+    bots.chain(crate::chat::tasks::working_tasks(store)).map(|cfg| cfg.id).collect()
 }
 
 #[cfg(all(test, unix))]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn a_task_at_work_restarts_its_agent_with_the_bots() {
+        let store = crate::store::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let save = |cfg: serde_json::Value| store.save_bot(&serde_json::from_value(cfg).unwrap()).unwrap();
+        save(serde_json::json!({"id": "own", "name": "Own", "backend": "claude"}));
+        save(serde_json::json!({"id": "task-1", "name": "Own", "backend": "claude", "taskOf": "own"}));
+        save(serde_json::json!({"id": "task-2", "name": "Own", "backend": "claude", "taskOf": "own"}));
+        crate::chat::tasks::put_working_for_test(&store, "own", "task-1");
+        assert_eq!(agents(&store), ["own", "task-1"], "a task that ended has no agent");
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_keeper_that_started_again_is_noticed_once() {

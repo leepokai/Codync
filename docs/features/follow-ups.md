@@ -10,7 +10,7 @@ computer doing the remembering instead of the model.
 | Whose | The user's standing task | The bot's own reminder |
 | How often | Every time a trigger fires | Once |
 | Session | A fresh one per run | The bot's chat, with what was said before |
-| In the apps | A row under Details, with a switch | A line in the chat |
+| In the apps | A row under Routines in Details, with a switch | A dashed card under Later in Details, and a line in the chat |
 | When it fails | Retried, with a Try again button | A failure line, like any turn |
 
 Code: `host/src/routines/follow_up.rs`; the turn itself is the bot actor's (`agent/bot/queue.rs`).
@@ -22,8 +22,8 @@ On the built-in `routines` MCP server every agent has:
 - `follow_up {minutes, note}`: `minutes` from now, 1 to 43,200 (30 days). A delay, not a clock time: an agent
   doesn't reliably know what time it is. The answer has the follow-up (`id`, `at`) and `atLocal`, the time on the
   computer's clock, for the bot to tell the user.
-- `cancel_follow_up {id}`. The user's own cancel, from the routines list, is the host method `cancelFollowUp`
-  ([below](#in-the-routines-list)).
+- `cancel_follow_up {id}`. The user's own cancel, from the bot's Details, is the host method `cancelFollowUp`
+  ([below](#in-details)).
 - `list_routines` also answers `followUps`, the ones still waiting.
 
 `follow_up` works only from a turn in the bot's own chat. In a group room, or while the bot answers another bot's
@@ -94,10 +94,10 @@ no code of their own. The first line is one phrase, `Follow-up in {when}: {note}
 its own inside it (`1 minute`, `{count} minutes`, `about {count} hours`, `about {count} days`): the wait ends at
 the first colon, so a note that reads like a wait ("wait 5 minutes: then check") stays a note.
 
-## In the routines list
+## In Details
 
-The follow-ups still waiting are listed where the bot's routines are (the Details page of its details; the
-terminal's routines sheet), above the routines, so the user sees what the bot will come back to and can drop one
+The follow-ups still waiting are listed in a section of their own, **Later**, on the Details page of the bot's
+details, above Routines, so the user sees what the bot will come back to and can drop one
 without asking it. The `routines` method answers them as `followUps` beside `routines` and `runs`, the next one
 to happen first, and the apps
 already read that listing every three seconds.
@@ -113,8 +113,8 @@ already read that listing every three seconds.
   the chat and no event. The bot's own `cancel_follow_up` still gets an error for an id that isn't waiting.
 - **The time is in the app's language**, like the routine editor's dates (`useIntlLocale`, the iPhone's
   `\.locale`, Android's `appLocale`), not the device's.
-- **Terminal:** the follow-ups come first in the list (`RoutineList::rows`), marked `◷` where a routine has its
-  on/off dot; `x` cancels the one picked, and a routine's other keys do nothing on it. The row leaves once the
+- **Terminal:** the follow-ups are the Details page's **Later** section, above Routines, marked `◷` where a routine
+  has its on/off dot; `x` cancels the one picked, and a routine's other keys do nothing on it. The row leaves once the
   host has dropped it; a cancel that failed says why, and the follow-up stays in the list. The sheet loads again
   when a notice arrives in that chat, so one that fires or is dropped leaves the list; the cursor stays on the
   row it picked, so a key pressed just then never lands on another row.

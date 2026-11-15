@@ -27,6 +27,7 @@ mod scroll;
 mod skill;
 mod tasks;
 mod when;
+mod work;
 
 pub use analytics::AnalyticsSheet;
 pub use dev_servers::{DevServer, DevServerSummary, DevServersSheet, LogsView, summary as dev_server_summary};
@@ -42,8 +43,9 @@ pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
-pub use tasks::{Fetched, TaskEntries, TaskList, TaskSheet};
+pub use tasks::{Fetched, TaskEntries, TaskSheet};
 pub use when::complete_zone;
+pub use work::{CutIn, DetailRow, DetailSection, WorkAct};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
@@ -81,7 +83,7 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
-    /// A background task's transcript and how it stands (`taskEntries`), by task id.
+    /// A task's transcript (`taskEntries`), by task id.
     TaskEntries(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
@@ -135,8 +137,10 @@ pub struct Library {
     pub cursor: usize,
 }
 
+/// A bot's Details page: what it does. Its items come from the bot (`work.rs` lays out the rows); the routines and
+/// follow-ups are loaded here.
 #[derive(Default)]
-pub struct RoutineList {
+pub struct DetailsPage {
     pub bot: String,
     pub items: Option<Vec<Value>>,
     /// The bot's runs, newest first.
@@ -145,31 +149,6 @@ pub struct RoutineList {
     pub follow_ups: Vec<Value>,
     /// Over `rows`.
     pub cursor: usize,
-}
-
-/// A row of the routines list.
-pub enum RoutineRow<'a> {
-    FollowUp(&'a Value),
-    Routine(&'a Value),
-}
-
-impl RoutineRow<'_> {
-    pub fn id(&self) -> &Value {
-        let (Self::FollowUp(item) | Self::Routine(item)) = self;
-        &item["id"]
-    }
-}
-
-impl RoutineList {
-    /// The list top to bottom: the follow-ups come first, then the routines.
-    pub fn rows(&self) -> impl Iterator<Item = RoutineRow<'_>> {
-        self.follow_ups.iter().map(RoutineRow::FollowUp).chain(self.items.iter().flatten().map(RoutineRow::Routine))
-    }
-
-    /// The row the cursor is on.
-    pub fn picked(&self) -> Option<RoutineRow<'_>> {
-        self.rows().nth(self.cursor)
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

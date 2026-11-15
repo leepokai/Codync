@@ -6,9 +6,9 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use super::super::app::{
-    App, Background, Bot, Click, Focus, Mark, RosterLine, Status, cursor_line, roster_lines, stops,
+    App, Bot, Click, Focus, Mark, RosterLine, Status, WorkStatus, counts, cursor_line, roster_lines, stops,
 };
-use super::super::l10n::{self, tr};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::{fill, hline, put, put_line, restyle, rput, u};
 use super::style::{avatar, glyph, theme};
@@ -161,22 +161,20 @@ pub(super) fn preview(b: &Bot) -> (String, Style) {
 
 fn preview_raw(b: &Bot) -> (String, Style) {
     let t = theme();
-    // An idle chat whose bot works away from it says so.
-    if b.status == Status::Idle
-        && let Some(background) = Background::of(&b.tasks)
-    {
-        let line = l10n::fill(&tr("In the background: {what}"), &[("what", &background.what)]);
-        return (line, if background.needs_you { t.amber } else { t.secondary });
-    }
+    // The most pressing first: it needs the user (its chat, then an item of its box), what its chat does, how many
+    // items work and wait; else the row reads as usual.
+    let background = counts(&b.work);
     match b.mark() {
         Mark::Need => (
             if b.activity.is_empty() { tr("Needs your approval").into_owned() } else { tr(&b.activity).into_owned() },
             t.amber,
         ),
+        _ if b.work.iter().any(|i| i.status == WorkStatus::NeedsYou) => (tr("Needs you").into_owned(), t.amber),
         Mark::Work => (
             if b.activity.is_empty() { tr("Working…").into_owned() } else { tr(&b.activity).into_owned() },
             t.secondary,
         ),
+        _ if !background.is_empty() => (background, t.secondary),
         Mark::Error => (
             if b.last_message.is_empty() { tr("Something went wrong").into_owned() } else { b.last_message.clone() },
             t.red,
@@ -262,16 +260,22 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_bot_with_tasks_previews_what_runs_in_the_background() {
-        let bot = |status: &str| {
-            let tasks = serde_json::json!([{"id": "task-1", "title": "Fix login", "status": "working"}]);
-            Bot::parse(&serde_json::json!({"id": "a", "status": status, "lastMessage": "On it.", "tasks": tasks}))
-                .expect("a bot with an id parses")
+    fn a_row_previews_the_most_pressing_thing_first() {
+        let line = |status: &str, items: &[&str]| {
+            let work: Vec<_> =
+                items.iter().map(|s| serde_json::json!({"id": s, "title": "Fix login", "status": s})).collect();
+            let bot = serde_json::json!({"id": "a", "status": status, "lastMessage": "On it.", "work": work});
+            preview(&Bot::parse(&bot).expect("a bot with an id parses")).0
         };
-        assert_eq!(preview(&bot("idle")).0, "In the background: Fix login");
-        assert_eq!(preview(&bot("working")).0, "Working…", "its own turn comes first");
-        let none = Bot::parse(&serde_json::json!({"id": "a", "lastMessage": "On it."})).expect("a bot");
-        assert_eq!(preview(&none).0, "On it.", "a host from before tasks");
+        assert_eq!(line("idle", &["working", "working", "waiting", "waiting", "waiting"]), "2 working · 3 waiting");
+        assert_eq!(line("idle", &["working", "done"]), "1 working", "either part alone when the other is zero");
+        assert_eq!(line("idle", &["waiting", "waiting", "failed"]), "2 waiting");
+        assert_eq!(line("needsInput", &["needsYou", "working"]), "Needs your approval", "the chat's own card first");
+        assert_eq!(line("idle", &["working", "needsYou", "waiting"]), "Needs you", "then an item that needs you");
+        assert_eq!(line("working", &["working", "needsYou"]), "Needs you");
+        assert_eq!(line("working", &["working", "waiting"]), "Working…", "then the chat's own activity");
+        assert_eq!(line("idle", &["done", "stopped", "later"]), "On it.", "nothing live or waiting: the last message");
+        assert_eq!(line("idle", &[]), "On it.", "a host from before the box");
     }
 
     #[test]

@@ -1100,7 +1100,6 @@
   "· now": "・ 今",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "{name} に Codync Dev をインストールし、一度開きます。 Linux で、開発ホストを ~/.local/bin/codync-dev-host としてインストールします。",
   "Version {version} is available: run codync-host update": "バージョン {version} が利用可能です: codync-host update を実行します",
-  "View": "表示",
   "Download failed: {error}": "ダウンロードに失敗しました: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} ドラフトは保存されました。再試行を入力し、Ctrl+C でテキストをクリアします。",
   "1 s": "1秒",

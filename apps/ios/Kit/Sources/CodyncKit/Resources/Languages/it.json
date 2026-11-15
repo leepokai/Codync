@@ -1351,7 +1351,6 @@
   "Version {version}": "Versione {version}",
   "Version {version} is available.": "La versione {version} è disponibile.",
   "Version {version} is available: run codync-host update": "La versione {version} è disponibile: esegui codync-host update",
-  "View": "Vista",
   "View conversation details": "Visualizza i dettagli della conversazione",
   "View only. To allow control, open Codync → Settings → Computer access on the computer.": "Solo visualizzazione. Per consentire il controllo, apri Codync → Impostazioni → Accesso al computer sul computer.",
   "Voice": "Voce",

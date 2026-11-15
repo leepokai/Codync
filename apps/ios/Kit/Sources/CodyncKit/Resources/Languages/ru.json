@@ -1100,7 +1100,6 @@
   "· now": "· сейчас",
   "Install Codync Dev on {name} and open it once. On Linux, install the development host as ~/.local/bin/codync-dev-host.": "Установите Codync Dev на {name} и откройте его один раз. На Linux установите хост разработки как ~/.local/bin/codync-dev-host.",
   "Version {version} is available: run codync-host update": "Доступна версия {version}: выполните codync-host update",
-  "View": "Вид",
   "Download failed: {error}": "Ошибка загрузки: {error}",
   "{error} Draft kept; Enter retries, Ctrl+C clears text.": "{error} Черновик сохранён; Enter повторяет, Ctrl+C очищает текст.",
   "1 s": "1 с",

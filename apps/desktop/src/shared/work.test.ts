@@ -164,6 +164,10 @@ test('the first in line can cut in only when every place is taken', () => {
   assert.equal(canCutIn([item('a'), item('b')], 2), false, 'nothing waits')
   assert.equal(canCutIn(work, null), false, 'a host that names no ceiling counts 3')
   assert.equal(canCutIn([item('x'), ...work], null), true)
+  for (const kind of ['after', 'usage'] as const) {
+    const held = item('c', 'waiting', { wait: { kind, ahead: 1 } })
+    assert.equal(canCutIn([item('a'), held], 1), false, `${kind}: a freed place wouldn't start it`)
+  }
 })
 
 test('an item that needs the user is asked what its card in the chat asks', () => {

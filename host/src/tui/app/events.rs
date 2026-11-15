@@ -88,7 +88,7 @@ impl App {
                         self.entry_added(&bot, &e);
                         // A routine's run and a follow-up say in the chat that they began or were dropped.
                         if e.kind == Kind::Notice {
-                            self.reload_routines(&bot);
+                            self.reload_details(&bot);
                         }
                     }
                     self.kofi_reply(&bot, &e);

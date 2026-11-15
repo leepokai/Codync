@@ -3,7 +3,8 @@
 # task's transcript. With the ceiling at 1, what is added next waits in the Event box, numbered in order; First moves a
 # waiting item to the front, Drop (touch and hold) takes one out, and Cut in asks which working item gives way: that
 # one returns to the box. Stop on the capsule asks once. An item's approval card is answered in the chat and says it
-# comes from the background, and its report comes back as the bot's message. A row reads as one element on iPhone
+# comes from the background, its Threads row leads to it, and its report comes back as the bot's message. A stopped
+# item is tried again from Recent, and Agents at once in Settings moves the ceiling. A row reads as one element on iPhone
 # (its number, title and line together) and as separate texts on Android, hence the `.*` around titles. The phone must
 # already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
 # run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
@@ -125,6 +126,51 @@ onFlowComplete:
 - extendedWaitUntil:
     notVisible: "In the background · .*"
     timeout: 10000
+# The stopped item is under Recent in the bot's details, where Try again takes it up again.
+- tapOn: "${output.bot.name}, view details"
+- scrollUntilVisible:
+    element: "Try again"
+    centerElement: true
+- assertVisible: "Recent"
+- tapOn: "Try again"
+- scrollUntilVisible:
+    element: "1 / 1"
+    direction: UP
+# Agents at once, in Settings, is the ceiling Threads counts against (the system stepper on iPhone, ours on Android).
+# The page is still settling after Try again moved the row.
+- waitForAnimationToEnd
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Agents at once"
+    centerElement: true
+# The iPhone's stepper names its buttons by identifier (their text is the value); ours on Android by label.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "Increment"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn: "Increase"
+- scrollUntilVisible:
+    element: "Details"
+    direction: UP
+- tapOn: "Details"
+- extendedWaitUntil:
+    visible: "1 / 2"
+    timeout: 10000
+- assertVisible: "Free"
+- tapOn: "Close details"
+- tapOn: "Stop"
+- tapOn:
+    text: "Stop"
+    below: "What it already changed stays."
+- extendedWaitUntil:
+    notVisible: "In the background · .*"
+    timeout: 10000
 # An item's card is answered in the chat, and says where it comes from.
 - runScript:
     file: tasks.js
@@ -135,6 +181,14 @@ onFlowComplete:
     timeout: 20000
 - assertVisible: "Run the tests"
 - takeScreenshot: tasks-card
+# Its Threads row leads back to the card.
+# The capsule reads as one element on iPhone; on Android its lead is a text of its own. Not the card's line.
+- tapOn: "In the background · (Needs you.*)?"
+- tapOn: ".*Run the suite.*"
+- extendedWaitUntil:
+    visible: "Allow once"
+    timeout: 10000
+- assertNotVisible: "Threads"
 - tapOn: "Allow once"
 # Its report comes back as the bot's message.
 - extendedWaitUntil:

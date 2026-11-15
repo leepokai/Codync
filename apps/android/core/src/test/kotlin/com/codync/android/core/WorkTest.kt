@@ -91,6 +91,11 @@ class WorkTest {
         // A host that sends no ceiling counts as three.
         assertFalse(canCutIn(two, null))
         assertTrue(canCutIn(two + item("e", WorkStatus.Working), null))
+        // A freed place wouldn't start one that follows unfinished work or waits for usage.
+        for (kind in listOf(WaitKind.After, WaitKind.Usage)) {
+            val held = item("c", WorkStatus.Waiting).copy(wait = WorkWait(kind))
+            assertFalse(canCutIn(listOf(item("a", WorkStatus.Working), held), 1))
+        }
     }
 
     @Test fun `a row offers what its item can take, the action that shows first`() {

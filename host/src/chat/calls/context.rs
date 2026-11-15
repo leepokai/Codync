@@ -308,13 +308,13 @@ fn shared(recent: &[Entry]) -> String {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::store::{BotKind, Permission, Store};
     use codync_mem::files::{Author, Cause, Change};
     use serde_json::json;
 
-    pub(in crate::chat::calls) fn hub() -> Arc<Hub> {
+    pub(crate) fn hub() -> Arc<Hub> {
         let dir = std::env::temp_dir().join(format!("codync-call-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(Path::new(":memory:")).unwrap();
@@ -322,7 +322,7 @@ pub(super) mod tests {
         Hub::new(store, "h".into(), identity, "t".into(), 0)
     }
 
-    pub(in crate::chat::calls) fn bot(id: &str, name: &str, cwd: &str) -> BotConfig {
+    pub(crate) fn bot(id: &str, name: &str, cwd: &str) -> BotConfig {
         BotConfig {
             id: id.into(),
             kind: BotKind::Agent,

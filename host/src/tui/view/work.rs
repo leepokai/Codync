@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::super::app::{App, Background, Bot, Entry, Kind, Sections, WorkItem, WorkStatus};
+use super::super::app::{App, Background, Bot, Entry, Kind, Sections, WorkItem, WorkStatus, word};
 use super::super::l10n::{fill, tr};
 use super::super::manage::{CutIn, DetailRow, Fetched, TaskSheet};
 use super::super::md::{self, truncate, width as w};
@@ -70,7 +70,7 @@ fn time(item: &WorkItem) -> String {
 
 /// An item's status in a word and its time.
 fn standing(item: &WorkItem) -> String {
-    let (status, time) = (tr(item.status.word()), time(item));
+    let (status, time) = (tr(word(item.status)), time(item));
     if time.is_empty() { status.into_owned() } else { format!("{status} · {time}") }
 }
 

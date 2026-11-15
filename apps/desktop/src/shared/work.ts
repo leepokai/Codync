@@ -210,9 +210,13 @@ export function itemLine(item: WorkItem, tr: Translate): string {
   }
 }
 
-/** Every place is taken, so the item first in line can only start now if a task gives way. */
-export const canCutIn = (work: WorkItem[], maxAgents: number | null) =>
-  work.some((i) => i.status === 'waiting') && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
+/** Every place is taken, so the item first in line can only start now if a task gives way. Not one that follows
+ * unfinished work or waits for usage: a freed place wouldn't start it. */
+export function canCutIn(work: WorkItem[], maxAgents: number | null): boolean {
+  const first = work.find((i) => i.status === 'waiting')
+  const held = first?.wait?.kind === 'after' || first?.wait?.kind === 'usage'
+  return !!first && !held && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
+}
 
 /** What each item that needs the user is asked, by item id: the titles of the approval cards waiting in the chat. */
 export function pendingAsks(entries: Entry[]): Map<string, string> {

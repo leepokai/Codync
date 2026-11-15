@@ -1,7 +1,8 @@
 //! The `chat` server's work tools (`add_work`, `steer_work`, `work_status`), and what a task itself may not call.
 
 use super::items::{self, Item, Shown, Status};
-use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, steer};
+use super::steer::{self, Steer};
+use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch};
 use crate::LockExt;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
@@ -104,8 +105,39 @@ fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     }))
 }
 
+type Refusal = (Admission, anyhow::Error);
+
+/// A title and a brief `add_work` takes: both there, neither too long.
+fn checked<'a>(title: Option<&'a str>, brief: Option<&'a str>) -> Result<(&'a str, &'a str), Refusal> {
+    let (Some(title), Some(brief)) = (title, brief) else {
+        return Err((Admission::Invalid, anyhow!("title and brief are required")));
+    };
+    if title.chars().count() > MAX_TITLE || brief.len() > MAX_BRIEF {
+        let why = anyhow!("title is at most {MAX_TITLE} characters and brief at most {MAX_BRIEF} bytes");
+        return Err((Admission::Invalid, why));
+    }
+    Ok((title, brief))
+}
+
+/// Puts `item` last in `items`, unless too many wait already or it follows nothing that is working or waiting.
+fn place(items: &mut Vec<Item>, mut item: Item) -> Result<String, Refusal> {
+    if items.iter().filter(|i| i.status == Status::Waiting).count() >= MAX_WAITING {
+        let why = anyhow!("{MAX_WAITING} items already wait: let some finish, or drop one, before adding more");
+        return Err((Admission::Full, why));
+    }
+    if let Some(after) = &item.after
+        && !items.iter().any(|i| i.id == *after && !i.status.ended())
+    {
+        return Err((Admission::Invalid, anyhow!("after names no item that is working or waiting: see work_status")));
+    }
+    item.order = items::last(items);
+    let id = item.id.clone();
+    items.push(item);
+    Ok(id)
+}
+
 /// Puts an item in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot.
-fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, (Admission, anyhow::Error)> {
+fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, Refusal> {
     let failed = |error: anyhow::Error| (Admission::Failed, error);
     let row = hub.store.bot(bot).map_err(failed)?.filter(|r| !r.deleted);
     row.ok_or_else(|| failed(anyhow!("unknown bot")))?;
@@ -116,66 +148,17 @@ fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, (Admission, anyho
         return Err((Admission::Elsewhere, why));
     }
     let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
-    let (Some(title), Some(brief)) = (text("title"), text("brief")) else {
-        return Err((Admission::Invalid, anyhow!("title and brief are required")));
-    };
-    if title.chars().count() > MAX_TITLE || brief.len() > MAX_BRIEF {
-        let why = anyhow!("title is at most {MAX_TITLE} characters and brief at most {MAX_BRIEF} bytes");
-        return Err((Admission::Invalid, why));
-    }
+    let (title, brief) = checked(text("title"), text("brief"))?;
     let hops = hub.tasks.hops(bot) + 1;
     if hops > MAX_HOPS {
         let why =
             anyhow!("too much work was added in a row without the user: tell the user where things stand and wait");
         return Err((Admission::Hops, why));
     }
-    let mut refused = None;
-    let added = items::change(hub, bot, |items| {
-        if items.iter().filter(|i| i.status == Status::Waiting).count() >= MAX_WAITING {
-            let why = anyhow!("{MAX_WAITING} items already wait: let some finish, or drop one, before adding more");
-            refused = Some((Admission::Full, why));
-        } else if let Some(after) = text("after")
-            && !items.iter().any(|i| i.id == after && !i.status.ended())
-        {
-            let why = anyhow!("after names no item that is working or waiting: see work_status");
-            refused = Some((Admission::Invalid, why));
-        }
-        if refused.is_some() {
-            return Ok(None);
-        }
-        let item = Item {
-            id: uuid::Uuid::new_v4().to_string(),
-            title: title.to_owned(),
-            brief: brief.to_owned(),
-            words: users_words(hub, bot),
-            notes: Vec::new(),
-            status: Status::Waiting,
-            order: items::last(items),
-            after: text("after").map(str::to_owned),
-            task: None,
-            cut_in: false,
-            restarted: false,
-            hops,
-            created_at: now_ms(),
-            started_at: None,
-            ended_at: None,
-            result: None,
-            report: None,
-            start: None,
-            fork_from: None,
-            fork_failed: false,
-        };
-        let id = item.id.clone();
-        items.push(item);
-        Ok(Some(id))
-    });
-    match (added.map_err(failed)?, refused) {
-        (Some(id), _) => {
-            hub.tasks.added.locked().entry(bot.to_owned()).or_default().push(id.clone());
-            Ok(id)
-        }
-        (None, refused) => Err(refused.unwrap_or_else(|| failed(anyhow!("couldn't add the work")))),
-    }
+    let item = Item::waiting(title, brief, users_words(hub, bot), text("after"), hops);
+    let id = items::change(hub, bot, |items| Ok(place(items, item))).map_err(failed)??;
+    hub.tasks.added.locked().entry(bot.to_owned()).or_default().push(id.clone());
+    Ok(id)
 }
 
 /// The user's own typed message the bot's running turn answers.
@@ -184,31 +167,23 @@ fn users_words(hub: &Hub, bot: &str) -> Option<String> {
     entry.data["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
 }
 
-/// What `steer_work` does to an item: `work_steered`'s `how`.
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-enum How {
-    First,
-    Now,
-    Replace,
-    Stop,
-}
-
 fn steer_item(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
     let id = text("item").ok_or_else(|| anyhow!("item is required: its id, from work_status"))?;
-    let how = How::deserialize(&args["how"]).map_err(|_| anyhow!("how is first, now, replace or stop"))?;
+    let refused = || anyhow!("how is first, now, replace or stop");
+    let how = Steer::deserialize(&args["how"]).map_err(|_| refused())?;
     match how {
-        How::First => steer::first(hub, bot, id)?,
-        How::Now => steer::cut_in(hub, bot, id, text("insteadOf"))?,
-        How::Replace => {
+        Steer::First => steer::first(hub, bot, id)?,
+        Steer::Now => steer::cut_in(hub, bot, id, text("insteadOf"))?,
+        Steer::Replace => {
             let brief = text("brief").ok_or_else(|| anyhow!("replace needs the new brief"))?;
             if brief.len() > MAX_BRIEF {
                 bail!("brief is at most {MAX_BRIEF} bytes");
             }
             steer::replace(hub, bot, id, brief)?;
         }
-        How::Stop => steer::stop(hub, bot, Some(id))?,
+        Steer::Stop => steer::stop(hub, bot, Some(id))?,
+        Steer::Drop | Steer::Retry => return Err(refused()),
     }
     // What the user said about it stays with it: a task that starts it again reads it.
     if let Some(words) = users_words(hub, bot) {
@@ -239,4 +214,49 @@ fn status(hub: &Hub, bot: &str) -> Result<Value> {
         })
         .collect();
     Ok(json!({"work": work}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn waiting(after: Option<&str>) -> Item {
+        Item::waiting("Fix login", "x", None, after, 1)
+    }
+
+    #[test]
+    fn a_box_takes_twenty_waiting_items_and_refuses_the_next() {
+        let mut items = Vec::new();
+        for n in 0..MAX_WAITING {
+            place(&mut items, waiting(None)).unwrap_or_else(|(_, why)| panic!("item {n}: {why}"));
+        }
+        assert_eq!(items.last().map(|i| i.order), i64::try_from(MAX_WAITING).ok(), "each one last");
+        let (outcome, why) = place(&mut items, waiting(None)).expect_err("the box is full");
+        assert_eq!(outcome, Admission::Full);
+        assert_eq!(why.to_string(), "20 items already wait: let some finish, or drop one, before adding more");
+
+        // Only the waiting count: one that started leaves room for another.
+        items[0].status = Status::Working;
+        let first = items[0].id.clone();
+        place(&mut items, waiting(Some(&first))).unwrap_or_else(|(_, why)| panic!("after a working item: {why}"));
+        items[1].status = Status::Done;
+        let ended = items[1].id.clone();
+        let (outcome, _) = place(&mut items, waiting(Some(&ended))).expect_err("it follows an ended item");
+        assert_eq!(outcome, Admission::Invalid);
+    }
+
+    #[test]
+    fn a_title_or_a_brief_too_long_is_refused() {
+        let (title, brief) = ("t".repeat(MAX_TITLE), "b".repeat(MAX_BRIEF));
+        assert!(checked(Some(&title), Some(&brief)).is_ok(), "at the limits");
+        let long_title = format!("{title}t");
+        let long_brief = format!("{brief}b");
+        for (title, brief) in [(long_title.as_str(), "b"), ("t", long_brief.as_str())] {
+            let (outcome, why) = checked(Some(title), Some(brief)).expect_err("too long");
+            assert_eq!(outcome, Admission::Invalid);
+            assert_eq!(why.to_string(), "title is at most 80 characters and brief at most 32000 bytes");
+        }
+        let (outcome, _) = checked(Some("t"), None).expect_err("no brief");
+        assert_eq!(outcome, Admission::Invalid);
+    }
 }

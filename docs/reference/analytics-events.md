@@ -124,7 +124,7 @@ host answers and sends it once the host is up.
 | `follow_up_fired` | host | A follow-up's turn begins | `late` (`true` when over a minute past due: the computer was off or asleep) |
 | `follow_up_cancelled` | host | A waiting follow-up was dropped | `by` (`bot`: `cancel_follow_up`, `user`: ✕ in the routines list, the API call `cancelFollowUp`, so with `client` and a phone's `platform`; not sent when the follow-up was already gone, `stop`: the bot's Stop) |
 | `work_added` | host | A bot's `add_work` finished ([background tasks](../features/background-tasks.md)) | `outcome` (`added`, `elsewhere`: not the bot's own chat, `invalid`: no title or brief, or `after` names no live item, `full`: 20 items wait already, `hops`: too many in a row, `failed`), `after` (it follows another item) |
-| `work_finished` | host | An item of a bot's box ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its task's turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off twice, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`; none for an item stopped while it waited), `forkFailed` (the agent could fork but the fork failed), `minutes` |
+| `work_finished` | host | An item of a bot's box ended | `outcome` (`done`, `failed`, `stopped`), `error` (only when something went wrong: `start`: its task's turn never began, `agent`: its agent failed mid-turn, `ended_early`: the turn ended short of `end_turn`, `restart`: a host restart cut it off twice, `lost`: the hourly look found its task running nothing, twice, `no_report`: `done` with nothing to report), `start` (`fork`, `brief`; none for an item stopped while it waited), `forkFailed` (the agent could fork but the fork failed), `minutes` |
 | `work_steered` | host | An item was changed | `how` (`first`, `now`: cut in, `replace`, `stop`, and from the user only `drop`, `retry`), `by` (`bot`: `steer_work`, `user`: the API calls `workFirst`, `workCutIn`, `stopWork`, `dropWork`, `retryWork`, so with `client` and a phone's `platform`) |
 | `dev_server_started` | host | A bot's `start_dev_server` finished | `outcome` (`port`, `no_port`, `exited`, `refused`, `limit`, `failed`) |
 | `dev_server_stopped` | host | A dev server ended | `by` (`user`, `bot`, `restart`, `exited`, `failed`) |
@@ -177,7 +177,7 @@ host answers and sends it once the host is up.
 | `bot_details` | bot details | details panel | settings page |
 | `bot_computer` | the Computer tab in bot details | the details panel's Computer tab | Computer page |
 | `memory` | bot memory (Android: the Memory tab in bot details) | memory tab | memory overlay |
-| `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | routines overlay |
+| `routines` | routines (iPhone: a routine's editor, the list being part of bot details) | a routine's editor | the bot's Details page (its work, follow-ups and routines) |
 | `marketplace` | extensions | extensions | marketplace overlay |
 | `settings` | Settings tab | settings | — |
 | `computers` | Computer management, from Manage computers or a link | computers & devices | — |

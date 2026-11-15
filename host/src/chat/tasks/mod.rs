@@ -17,14 +17,15 @@ mod dispatch;
 mod items;
 mod prompts;
 mod steer;
+mod sweep;
 mod tools;
 
-pub use dispatch::dispatch;
+pub use dispatch::{Wait, dispatch};
 #[cfg(test)]
 pub use items::put_working_for_test;
-pub use items::{forget, lines, wire, working_tasks};
+pub use items::{Status, forget, lines, wire, working_tasks};
 pub use prompts::{BRIEF, reminder, report_notice, report_prompt};
-pub use steer::{cut_in, drop_item, first, retry, stop};
+pub use steer::{Steer, cut_in, drop_item, first, retry, stop};
 pub use tools::{TOOLS, call, refuse_chat_only, refuse_in_task, tools};
 
 use crate::LockExt;
@@ -33,7 +34,7 @@ use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
-use items::{Item, Status};
+use items::Item;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -91,6 +92,8 @@ pub enum Failure {
     EndedEarly,
     /// A host restart cut it off and it couldn't pick up.
     Restart,
+    /// Its task ran no turn any more and no end ever arrived, twice (`sweep`).
+    Lost,
     /// It finished with nothing to report.
     NoReport,
 }
@@ -104,6 +107,8 @@ pub struct Tasks {
     added: Mutex<HashMap<String, Vec<String>>>,
     /// Held across each change to a box (`items::change`).
     boxes: Mutex<()>,
+    /// Bot → its box's next hourly look (`sweep`), while the box holds work.
+    sweeps: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
 }
 
 impl Tasks {
@@ -222,13 +227,13 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
     dispatch::run(hub, bot, Some(&cfg.id));
 }
 
-/// Ends the item `task` works on, in `items`. None: it has none (stopped, or it gave way), or a host restart cut it
-/// off for the first time and it waits again.
+/// Ends the item `task` works on, in `items`. None: it has none (stopped, or it gave way), or a host restart or a
+/// lost task cut it off for the first time and it waits again.
 fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<(Item, Option<Failure>)> {
     let front = items::front(items);
     let item = items.iter_mut().find(|i| i.status == Status::Working && i.task.as_deref() == Some(task))?;
     let (status, result, failure) = match outcome {
-        Outcome::Failed(Failure::Restart, _) if !item.restarted => {
+        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !item.restarted => {
             item.set_aside(front);
             item.restarted = true;
             item.cut_in = true;
@@ -262,13 +267,19 @@ fn finished_properties(item: &Item, failure: Option<Failure>) -> serde_json::Map
     properties.as_object().cloned().unwrap_or_default()
 }
 
+/// Hands `report` to `bot`, as a turn in its chat. One that can't reach it stays on its item for the next host start.
+fn deliver(hub: &Hub, bot: &str, report: Report) {
+    let item = report.item.clone();
+    if let Err(error) = hub.send_cmd(bot, Cmd::TaskReport(report)) {
+        tracing::warn!(item, error = format!("{error:#}"), "couldn't hand an item's report to its bot");
+    }
+}
+
 /// `item` of `bot` ended: says so (`work_finished`), and hands its report to its bot.
 fn ended(hub: &Hub, bot: &str, item: &Item, failure: Option<Failure>) {
     analytics::capture(hub, Event::WorkFinished, finished_properties(item, failure));
-    if let Some(report) = item.report.clone()
-        && let Err(error) = hub.send_cmd(bot, Cmd::TaskReport(report))
-    {
-        tracing::warn!(item = %item.id, error = format!("{error:#}"), "couldn't hand an item's report to its bot");
+    if let Some(report) = item.report.clone() {
+        deliver(hub, bot, report);
     }
 }
 
@@ -288,59 +299,58 @@ pub fn reported(hub: &Hub, bot: &str, reports: &[Report]) {
 /// At host start: old items go, and the others pick up where the last process left them.
 pub fn restore(hub: &Arc<Hub>) {
     let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
-    for task in hub.store.task_bots().unwrap_or_default() {
-        if !task.config.task_of.as_deref().is_some_and(lives)
-            && let Err(error) = hub.delete_bot(&task.config.id)
-        {
+    let tasks = hub.store.task_bots().unwrap_or_default();
+    for task in tasks.iter().filter(|task| !task.config.task_of.as_deref().is_some_and(lives)) {
+        if let Err(error) = hub.delete_bot(&task.config.id) {
             tracing::warn!(task = %task.config.id, error = format!("{error:#}"), "couldn't remove a task");
         }
     }
     // Every bot with a box, or with a task bot left to clear away.
     let mut bots: Vec<String> =
         hub.store.kv_prefix(items::PREFIX).iter().map(|key| key.trim_start_matches(items::PREFIX).to_owned()).collect();
-    bots.extend(hub.store.task_bots().unwrap_or_default().into_iter().filter_map(|task| task.config.task_of));
+    bots.extend(tasks.into_iter().filter_map(|task| task.config.task_of));
     bots.sort();
     bots.dedup();
     for bot in &bots {
         if !lives(bot) {
             forget(&hub.store, bot);
-            continue;
+        } else if let Err(error) = pick_up(hub, bot) {
+            tracing::error!(bot, error = format!("{error:#}"), "couldn't pick up a bot's work");
         }
-        let picked_up = items::change(hub, bot, |items| {
-            let now = now_ms();
-            items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
-            // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
-            let (resumed, cut_off): (Vec<String>, Vec<String>) = items
-                .iter()
-                .filter(|i| i.status == Status::Working)
-                .filter_map(|i| i.task.clone())
-                .partition(|task| crate::agent::bot::resumable(&hub.store, task));
-            let failed: Vec<_> = cut_off
-                .iter()
-                .filter_map(|task| end(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
-                .collect();
-            Ok((resumed, failed, items.iter().filter_map(|i| i.report.clone()).collect::<Vec<_>>()))
-        });
-        let (resumed, failed, reports) = match picked_up {
-            Ok(found) => found,
-            Err(error) => {
-                tracing::error!(bot, error = format!("{error:#}"), "couldn't pick up a bot's work");
-                continue;
-            }
-        };
-        for task in resumed {
-            if let Ok(Some(row)) = hub.store.bot(&task) {
-                hub.spawn_bot(row.config);
-            }
-        }
-        for (item, failure) in &failed {
-            analytics::capture(hub, Event::WorkFinished, finished_properties(item, *failure));
-        }
-        for report in reports {
-            let _ = hub.send_cmd(bot, Cmd::TaskReport(report));
-        }
-        dispatch(hub, bot);
     }
+}
+
+/// `bot`'s box at host start: its tasks resume the turns the last process cut off, an item whose task can't ends,
+/// and the reports its bot never answered go to it again.
+fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
+    let (resumed, failed, reports) = items::change(hub, bot, |items| {
+        let now = now_ms();
+        items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
+        let (resumed, cut_off): (Vec<String>, Vec<String>) = items
+            .iter()
+            .filter(|i| i.status == Status::Working)
+            .filter_map(|i| i.task.clone())
+            .partition(|task| crate::agent::bot::resumable(&hub.store, task));
+        let failed: Vec<_> = cut_off
+            .iter()
+            .filter_map(|task| end(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
+            .collect();
+        Ok((resumed, failed, items.iter().filter_map(|i| i.report.clone()).collect::<Vec<_>>()))
+    })?;
+    for task in resumed {
+        if let Ok(Some(row)) = hub.store.bot(&task) {
+            hub.spawn_bot(row.config);
+        }
+    }
+    for (item, failure) in &failed {
+        analytics::capture(hub, Event::WorkFinished, finished_properties(item, *failure));
+    }
+    for report in reports {
+        deliver(hub, bot, report);
+    }
+    dispatch(hub, bot);
+    Ok(())
 }
 
 /// `taskEntries`: a task's transcript, newest `limit`, for its details. `bot` must be the task's own.

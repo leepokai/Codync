@@ -1,56 +1,25 @@
 //! A bot's event box as the host sends it (`docs/features/background-tasks.md`): its items, how they fall into the
 //! Details page's sections, and the lines that say what they do.
 
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::super::l10n::{fill, tr};
+pub use crate::chat::tasks::Status as WorkStatus;
+use crate::chat::tasks::Wait;
+use crate::store::DEFAULT_AGENTS;
+pub use crate::store::MAX_AGENTS;
 
-/// How many agents a bot runs at once unless the user changed it: what a host that sends no `maxAgents` counts as.
-const DEFAULT_AGENTS: u8 = 3;
-/// The most agents a bot may run at once.
-pub const MAX_AGENTS: u8 = 6;
-
-/// The six words for work, the same on the wire and in every client.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum WorkStatus {
-    Waiting,
-    Working,
-    NeedsYou,
-    Done,
-    Failed,
-    Stopped,
-}
-
-impl WorkStatus {
-    /// A task has it: working, or waiting on the user's approval.
-    pub fn live(self) -> bool {
-        matches!(self, Self::Working | Self::NeedsYou)
+/// The status in a word (a catalog phrase).
+pub fn word(status: WorkStatus) -> &'static str {
+    match status {
+        WorkStatus::Waiting => "Waiting",
+        WorkStatus::Working => "Working",
+        WorkStatus::NeedsYou => "Needs you",
+        WorkStatus::Done => "Done",
+        WorkStatus::Failed => "Failed",
+        WorkStatus::Stopped => "Stopped",
     }
-
-    pub fn ended(self) -> bool {
-        matches!(self, Self::Done | Self::Failed | Self::Stopped)
-    }
-
-    /// The status in a word (a catalog phrase).
-    pub fn word(self) -> &'static str {
-        match self {
-            Self::Waiting => "Waiting",
-            Self::Working => "Working",
-            Self::NeedsYou => "Needs you",
-            Self::Done => "Done",
-            Self::Failed => "Failed",
-            Self::Stopped => "Stopped",
-        }
-    }
-}
-
-/// Why an item waits: a place to come free, items ahead of it, the item it follows, or the agent's usage limit.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Wait {
-    Next,
-    Behind(u64),
-    After,
-    Usage,
 }
 
 /// One piece of work in a bot's box (`bot.work`).
@@ -80,24 +49,10 @@ impl WorkItem {
         Some(Self {
             id: v["id"].as_str()?.to_owned(),
             title: text("title"),
-            status: match v["status"].as_str()? {
-                "waiting" => WorkStatus::Waiting,
-                "working" => WorkStatus::Working,
-                "needsYou" => WorkStatus::NeedsYou,
-                "done" => WorkStatus::Done,
-                "failed" => WorkStatus::Failed,
-                "stopped" => WorkStatus::Stopped,
-                _ => return None,
-            },
+            status: WorkStatus::deserialize(&v["status"]).ok()?,
             activity: text("activity"),
             task: v["task"].as_str().map(str::to_owned),
-            wait: match v["wait"]["kind"].as_str() {
-                Some("next") => Some(Wait::Next),
-                Some("behind") => Some(Wait::Behind(v["wait"]["ahead"].as_u64().unwrap_or(1))),
-                Some("after") => Some(Wait::After),
-                Some("usage") => Some(Wait::Usage),
-                _ => None,
-            },
+            wait: Wait::deserialize(&v["wait"]).ok(),
             cut_in: v["cutIn"] == true,
             started_at: v["startedAt"].as_i64(),
             ended_at: v["endedAt"].as_i64(),
@@ -117,7 +72,7 @@ impl WorkItem {
         }
         match self.wait {
             Some(Wait::Next) => tr("Next up").into_owned(),
-            Some(Wait::Behind(ahead)) => fill(&tr("{count} ahead"), &[("count", &ahead.to_string())]),
+            Some(Wait::Behind { ahead }) => fill(&tr("{count} ahead"), &[("count", &ahead.to_string())]),
             Some(Wait::After) => tr("Follows what it works on").into_owned(),
             Some(Wait::Usage) => tr("Waiting for usage").into_owned(),
             None => tr("Waiting").into_owned(),
@@ -131,7 +86,7 @@ impl WorkItem {
             WorkStatus::Waiting => self.wait_text(),
             WorkStatus::Working if !self.activity.is_empty() => tr(&self.activity).into_owned(),
             WorkStatus::Failed | WorkStatus::Stopped if !self.result.is_empty() => self.result.clone(),
-            status => tr(status.word()).into_owned(),
+            status => tr(word(status)).into_owned(),
         }
     }
 }
@@ -257,7 +212,7 @@ mod tests {
         );
         assert_eq!(
             (b.status, b.task.as_deref(), b.wait, b.cut_in),
-            (WorkStatus::Waiting, None, Some(Wait::Behind(2)), true)
+            (WorkStatus::Waiting, None, Some(Wait::Behind { ahead: 2 }), true)
         );
         assert_eq!((c.status, c.ended_at, c.result.as_str()), (WorkStatus::Failed, Some(9), "it could not start"));
         assert!(a.status.live() && !b.status.live() && c.status.ended());

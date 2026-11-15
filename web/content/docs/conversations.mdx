@@ -115,11 +115,11 @@ For long work (changing code, running builds or tests, research, writing a docum
   - **Recent:** what ended in the last day.
 - **To see what an item did,** tap or click its row under **Threads** or **Recent**. You get its task's own steps and messages, to read only. A row that needs you opens the chat at its approval card.
 - **First** moves a waiting item to the front of the box.
-- **Cut in** is on the first waiting item when every place is taken. It asks which item gives way: that one's session closes and it starts again later, and the item that cut in starts in its place.
-- **Drop** removes a waiting item.
+- **Cut in** is on the first waiting item when every place is taken, unless that item follows work that isn't finished or waits for usage. It asks which item gives way: that one's session closes and it starts again later, and the item that cut in starts in its place.
+- **Drop** removes a waiting item, or an ended one from **Recent**.
 - **Stop** is on an item under **Threads**, in its steps, and on the capsule while one item is being worked on. Codync asks **Stop the background work?** first. What the task already changed stays.
 - **Try again** puts a stopped or failed item back in the box, last.
-- **Where the buttons are.** Desktop: move the pointer over a row. iPhone: a row shows one button; touch and hold the row for the rest. Terminal UI: the work shows as a line over the message box. Press Esc to leave typing, then `B` to open Details. On a row, Enter opens its steps, `X` stops it (it asks first), `F` moves it first, `C` cuts in, `D` drops it and `A` tries again.
+- **Where the buttons are.** Desktop: move the pointer over a row. iPhone and Android: a row shows one button; touch and hold the row for the rest. Terminal UI: the work shows as a line over the message box. Press Esc to leave typing, then `B` to open Details. On a row, Enter opens its steps, `X` stops it (it asks first), `F` moves it first, `C` cuts in, `D` drops it and `A` tries again.
 - **When an item finishes,** the bot tells you what it found in an ordinary message, with the usual notification. If an item couldn't finish, the bot tells you why. An item you stopped sends nothing.
 
 You can also tell the bot in the chat: to do one thing first, to do it now, to change what an item should do, or to stop it.
@@ -134,7 +134,7 @@ Tasks run on your computer and pick up again after the host restarts. An item's 
 - **Desktop menu bar or tray menu:** the bot's submenu has **Stop task**. It also stops the bot's [background work](#background-tasks), the waiting items included.
 - **Terminal UI:** press Esc to leave typing, then `s`.
 
-Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. [Background work](#background-tasks) keeps going: it has its own **Stop**, in the bot's **Details**. An item the bot added in the turn you stopped is dropped.
+Stop ends the running turn and drops the messages still queued for it, which then read **Not sent — stopped**. The chat shows "Stopped." and no notification is sent. [Background work](#background-tasks) keeps going: it has its own **Stop**, in the bot's **Details**. Only **Stop task** in the desktop menu and stopping the bot from a [voice call](/docs/voice) stop it too. An item the bot added in the turn you stopped is dropped.
 
 ## Replying to a message
 

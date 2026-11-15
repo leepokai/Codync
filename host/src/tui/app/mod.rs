@@ -45,7 +45,7 @@ pub use ui::{
     TraceMode, Width,
 };
 pub use whats_new::WhatsNew;
-pub use work::{Background, MAX_AGENTS, Sections, WorkItem, WorkStatus, can_cut_in, counts, places};
+pub use work::{Background, MAX_AGENTS, Sections, WorkItem, WorkStatus, can_cut_in, counts, places, word};
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};

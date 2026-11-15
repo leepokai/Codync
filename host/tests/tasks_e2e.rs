@@ -261,6 +261,31 @@ async fn items_wait_for_a_place_in_order_and_one_moved_first_starts_first() {
 }
 
 #[tokio::test]
+async fn an_item_that_could_not_take_the_place_cuts_nothing_out() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = item(&host, &bot, "Slow", "working").await;
+    host.reply(&bot, "ADD More|HOLD:more|after=Slow").await;
+    let more = item(&host, &bot, "More", "waiting").await;
+    assert_eq!(more["wait"], json!({"kind": "after"}));
+
+    // It follows what works: closing that session would only make both start over.
+    host.call("workCutIn", json!({"botId": bot, "itemId": id(&more), "insteadOf": id(&slow)})).await;
+    host.call("workCutIn", json!({"botId": bot, "itemId": id(&more)})).await;
+    let listed = work(&host, &bot).await;
+    let still = listed.iter().find(|i| i["title"] == "Slow").unwrap();
+    assert!(still["status"] == "working" && still["task"] == slow["task"] && still["cutIn"] == false, "{still}");
+    assert_eq!(item(&host, &bot, "More", "waiting").await["wait"], json!({"kind": "after"}));
+
+    release(&host, &bot, "slow");
+    let joined = item(&host, &bot, "More", "working").await;
+    assert_eq!(joined["task"], slow["task"], "in the same session, as it asked");
+    release(&host, &bot, "more");
+    wait("both reports", async || (relayed(&host, &bot).await.len() == 2).then_some(())).await;
+}
+
+#[tokio::test]
 async fn an_item_cuts_in_and_the_one_that_gave_way_starts_again_in_a_new_task() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;

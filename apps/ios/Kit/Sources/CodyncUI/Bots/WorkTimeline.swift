@@ -57,7 +57,7 @@ struct WorkTimeline<Between: View>: View {
     private func rows(_ items: [WorkItem], in work: WorkSections, numbered: Bool = false) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
             let card = item.status == .needsYou ? model.chat(bot.id).card(for: item) : nil
-            WorkRow(item: item, number: numbered ? index + 1 : nil, subtitle: subtitle(item, card: card),
+            WorkRow(item: item, number: numbered ? index + 1 : nil, subtitle: card?.data.title ?? item.line(),
                     actions: work.actions(for: item, maxAgents: bot.maxAgents),
                     open: opener(item, card: card)) { run($0, on: item) }
         }
@@ -66,15 +66,6 @@ struct WorkTimeline<Between: View>: View {
     /// A heading's count: how many run of the most allowed, how many wait.
     private func count(_ text: String) -> some View {
         Text(verbatim: text).font(.footnote.monospacedDigit()).foregroundStyle(Palette.tertiary).padding(.trailing, 2)
-    }
-
-    private func subtitle(_ item: WorkItem, card: Entry?) -> String {
-        switch item.status {
-        case .needsYou: card?.data.title ?? L10n.tr("Needs you")
-        case .working: L10n.tr(item.activity.isEmpty ? "Working" : item.activity)
-        case .waiting: item.waitLine()
-        case .done, .failed, .stopped: item.endLine()
-        }
     }
 
     private func opener(_ item: WorkItem, card: Entry?) -> (() -> Void)? {
@@ -114,15 +105,17 @@ private struct WorkRow: View {
     let actions: [WorkAction]
     let open: (() -> Void)?
     let run: (WorkAction) -> Void
+    @Environment(BotStore.self) private var model
 
     var body: some View {
+        let offline = model.isOffline
         HStack(spacing: 8) {
             if let open { Button(action: open) { line }.buttonStyle(.plain) } else { line }
-            if let primary = actions.first { button(primary) }
+            if let primary = actions.first { button(primary).disabled(offline) }
         }
         .contextActions {
             actions.map { action in
-                MenuItem(action.title, icon: action.symbol, destructive: action == .stop || action == .drop) { run(action) }
+                MenuItem(action.title, icon: action.symbol, destructive: action == .stop || action == .drop, enabled: !offline) { run(action) }
             }
         }
     }

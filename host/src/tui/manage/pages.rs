@@ -48,7 +48,7 @@ impl App {
     /// Opens `page` of the bot in view, in place of the page it came from.
     pub(in crate::tui) fn open_page(&mut self, page: Page) {
         match page {
-            Page::Details => self.open_routines(),
+            Page::Details => self.open_details(),
             Page::Computer => self.open_computer(),
             Page::Library => self.open_library(),
             Page::Memory => self.open_memory(),

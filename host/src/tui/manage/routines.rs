@@ -10,7 +10,7 @@ use super::{DetailRow, DetailsPage, Page, Reply, RoutineField, RoutineForm, ctrl
 use crate::routines::local_zone;
 
 impl App {
-    pub fn open_routines(&mut self) {
+    pub fn open_details(&mut self) {
         let Some(b) = self.bot().filter(|b| !b.group) else {
             self.flash("Routines belong to a bot, not a group");
             return;
@@ -21,7 +21,7 @@ impl App {
     }
 
     /// Loads `bot`'s routines sheet again, if it is open: its runs and follow-ups change with no key pressed.
-    pub(in crate::tui) fn reload_routines(&mut self, bot: &str) {
+    pub(in crate::tui) fn reload_details(&mut self, bot: &str) {
         if self.overlays.iter().any(|o| matches!(o, Overlay::Details(l) if l.bot == bot)) {
             self.sheet("routines", json!({"botId": bot}), Reply::Routines(bot.to_owned()));
         }

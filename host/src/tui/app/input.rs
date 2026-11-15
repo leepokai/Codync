@@ -329,7 +329,7 @@ impl App {
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
             // `B` is the same page from the chat, where the line over the composer names it.
-            KeyCode::Char('R' | 'B') => self.open_routines(),
+            KeyCode::Char('R' | 'B') => self.open_details(),
             KeyCode::Char('O') => self.open_computer(),
             KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),

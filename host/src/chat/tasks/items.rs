@@ -33,7 +33,12 @@ pub enum Status {
 }
 
 impl Status {
-    pub(super) fn ended(self) -> bool {
+    /// A task has it: working, or waiting on the user's approval.
+    pub fn live(self) -> bool {
+        matches!(self, Self::Working | Self::NeedsYou)
+    }
+
+    pub fn ended(self) -> bool {
         matches!(self, Self::Done | Self::Failed | Self::Stopped)
     }
 }
@@ -91,6 +96,32 @@ pub(super) struct Item {
 }
 
 impl Item {
+    /// A new item, waiting; its place is its box's to give.
+    pub(super) fn waiting(title: &str, brief: &str, words: Option<String>, after: Option<&str>, hops: u8) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: title.to_owned(),
+            brief: brief.to_owned(),
+            words,
+            notes: Vec::new(),
+            status: Status::Waiting,
+            order: 0,
+            after: after.map(str::to_owned),
+            task: None,
+            cut_in: false,
+            restarted: false,
+            hops,
+            created_at: now_ms(),
+            started_at: None,
+            ended_at: None,
+            result: None,
+            report: None,
+            start: None,
+            fork_from: None,
+            fork_failed: false,
+        }
+    }
+
     /// Back to waiting at the front of `items`, to start again in a new task.
     pub(super) fn set_aside(&mut self, front: i64) {
         self.status = Status::Waiting;

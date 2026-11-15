@@ -3,6 +3,7 @@
 
 use super::{Event, platform_of};
 use crate::api::devices::Caller;
+use crate::chat::tasks::Steer;
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use codync_mem::compaction::Threshold;
@@ -58,6 +59,10 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
         p.insert("setting".into(), setting.into());
         p.insert("on".into(), on.into());
         Event::SettingChanged
+    } else if let Some(steer) = Steer::of_method(method) {
+        p.insert("how".into(), serde_json::json!(steer));
+        p.insert("by".into(), "user".into());
+        Event::WorkSteered
     } else {
         call_event(method, b, &mut p)?
     };
@@ -120,18 +125,6 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::MessageSent
         }
         "stop" => Event::TurnStopped,
-        "workFirst" | "workCutIn" | "dropWork" | "stopWork" | "retryWork" => {
-            let how = match method {
-                "workFirst" => "first",
-                "workCutIn" => "now",
-                "dropWork" => "drop",
-                "stopWork" => "stop",
-                _ => "retry",
-            };
-            p.insert("how".into(), how.into());
-            p.insert("by".into(), "user".into());
-            Event::WorkSteered
-        }
         "unqueue" => Event::QueuedMessageRemoved,
         "newSession" => Event::SessionReset,
         "respondPermission" => Event::PermissionAnswered,

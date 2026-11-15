@@ -140,6 +140,11 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(actions("e", max: 2) == [.drop])
         #expect(actions("f", max: 2) == [.retry, .drop])
         #expect(actions("g", max: 2) == [.retry, .drop])
+        // A freed place wouldn't start one that follows unfinished work or waits for usage: no Cut in.
+        for kind in [WorkItem.Wait.Kind.after, .usage] {
+            let held = item("h", .waiting, wait: .init(kind))
+            #expect(sections(item("a"), held).actions(for: held, maxAgents: 1) == [.drop])
+        }
     }
 
     @Test func threadsSayHowManyRunOfTheMostAllowedAndHowManyPlacesAreFree() {
@@ -215,6 +220,10 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(try bot(#","work":[{"id":"c","status":"waiting"},{"id":"e","status":"waiting"},{"id":"d","status":"done"}]"#).rosterLine == .work)
         #expect(try bot(#","work":[{"id":"d","status":"done"}]"#).rosterLine == .lastMessage)
         #expect(try bot("").rosterLine == .lastMessage)
+        // The chat's own request says what it asks; an item's only that it needs the user, as on every client.
+        #expect(try bot(#","status":"needsInput","activity":"Run the tests""# + asking).needsYouLine == "Run the tests")
+        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs your approval")
+        #expect(try bot(asking).needsYouLine == "Needs you")
     }
 
     @Test func theRosterRowCountsWorkingAndWaitingEitherAloneWhenTheOtherIsZero() {

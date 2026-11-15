@@ -75,7 +75,9 @@ ahead, `after` (it follows a working item), `usage`.
 **Cutting in** (`now`), when every place is taken: the user picks which working item gives way (or the coordinator
 names it; with none named, the one that started last). That task is stopped and deleted, its item returns to the
 front of the box with `cutIn` set, and starts again later in a new session from its brief and notes. The freed place
-starts the item that cut in. With a place free, `now` is just `first`.
+starts the item that cut in. With a place free, `now` is just `first`; so it is for an item that couldn't take the
+freed place (it follows unfinished work, or waits for usage): no session is closed for it, and the clients don't
+offer Cut in on such a row.
 
 **Changing an item** (`replace`): its brief is replaced. Waiting: nothing else. Working: its task's work is closed
 the same way and the item starts again from the new brief.
@@ -128,8 +130,8 @@ the time, as today. It opens Details. Its Stop (one item working) asks once, the
 
 | Section | Rows |
 | --- | --- |
-| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Items that need you first (the attention mark, what the card asks; opens the chat at the card), then working items (a moving dot, the task's activity, elapsed time, Stop). A row opens the task's transcript. A place not in use is one faint row, `Free`, so the ceiling is visible. |
-| **Event box** | What waits for a thread, numbered 1, 2, 3 in the order it will be taken, with why it waits. The heading carries how many. **First** on every row but the first; **Cut in** on the first row when every place of the bot is taken, which asks which working item gives way; **Drop**. Left out when nothing waits. |
+| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Items that need you first (the attention mark, what the card asks; opens the chat at the card), then working items (a moving dot, the task's activity, elapsed time). Both kinds of row have Stop. A row opens the task's transcript. A place not in use is one faint row, `Free`, so the ceiling is visible. |
+| **Event box** | What waits for a thread, numbered 1, 2, 3 in the order it will be taken, with why it waits. The heading carries how many. **First** on every row but the first; **Cut in** on the first row when every place of the bot is taken (not on a row that follows unfinished work or waits for usage), which asks which working item gives way; **Drop**. Left out when nothing waits. |
 | **Later** | Follow-ups the bot set (the dashed card, as today). |
 | **Routines** | As today, with **+**. |
 | **Dev servers** | As today, when the bot has some. |
@@ -168,6 +170,10 @@ apply are reused; `{count} tasks running` goes.
 - At host start: a working item whose task resumes stays working; one whose task can't goes back to waiting once
   (as an item that was cut in on, from its brief), then fails.
 - A task that fails fails its item with the reason; the coordinator hears it in a report.
+- Every hour while a box holds waiting or working items, the host looks it over again (`tasks/sweep.rs`): the
+  dispatcher takes a pass, and a working item whose task runs no turn waits again once, then fails. A turn that
+  runs, however long and quiet, is left alone. The hour counts from the box's last change; an empty box sets no
+  look. Nothing here wakes an agent unless an item was lost.
 - Stopping a working item stops its task; items waiting `after` it become ordinary waiting items.
 - Items ended over seven days ago are deleted, and a task bot with no item left is deleted with its transcript.
 - Chains: items added from a report's turn carry its hops; the ninth is refused.

@@ -140,6 +140,16 @@ public extension WorkItem {
         status == .done || result.isEmpty ? tr(status.word) : result
     }
 
+    /// An item's second line: why it waits, what its task does, or how it ended.
+    func line(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
+        switch status {
+        case .needsYou: tr("Needs you")
+        case .working: tr(activity.isEmpty ? "Working" : activity)
+        case .waiting: waitLine(tr)
+        case .done, .failed, .stopped: endLine(tr)
+        }
+    }
+
     /// How long its task had it, once it ended.
     var timeTaken: Duration? {
         guard let startedAt, let endedAt else { return nil }
@@ -208,6 +218,12 @@ public struct WorkSections: Equatable, Sendable {
         !live.isEmpty && free(maxAgents: maxAgents) == 0
     }
 
+    /// Whether the first waiting item may cut in: every place is taken, and a freed one would start it (not one
+    /// that follows unfinished work, or waits for usage).
+    private func canCutIn(_ item: WorkItem, maxAgents: Int?) -> Bool {
+        isFull(maxAgents: maxAgents) && item.wait?.kind != .after && item.wait?.kind != .usage
+    }
+
     /// The Threads heading's `2 / 3`: how many run, of the most allowed.
     public func threadsCount(maxAgents: Int?) -> String {
         "\(live.count) / \(maxAgents ?? Bot.defaultMaxAgents)"
@@ -217,7 +233,7 @@ public struct WorkSections: Equatable, Sendable {
     public func actions(for item: WorkItem, maxAgents: Int?) -> [WorkAction] {
         switch item.status {
         case .working, .needsYou: [.stop]
-        case .waiting where item.id == waiting.first?.id: isFull(maxAgents: maxAgents) ? [.cutIn, .drop] : [.drop]
+        case .waiting where item.id == waiting.first?.id: canCutIn(item, maxAgents: maxAgents) ? [.cutIn, .drop] : [.drop]
         case .waiting: [.first, .drop]
         case .failed, .stopped: [.retry, .drop]
         case .done: [.drop]
@@ -253,6 +269,13 @@ public extension Bot {
         /// Its work in the background: `WorkSections.counts`.
         case work
         case lastMessage
+    }
+
+    /// What the row says when `rosterLine` is `.needsYou` (a phrase to look up): the chat's own request, else that
+    /// an item waits on the user.
+    var needsYouLine: String {
+        guard needsInput else { return "Needs you" }
+        return activity.isEmpty ? "Needs your approval" : activity
     }
 
     var rosterLine: RosterLine {

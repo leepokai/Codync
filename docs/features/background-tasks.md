@@ -103,7 +103,9 @@ bot can say what it is doing and place an `after` without a tool call.
 - **Cut in** (`workCutIn`, `steer_work now`): the item moves to the front. With every place taken a working item
   gives way (the one named with `insteadOf`, else the one that started last): its task is stopped and deleted, and it
   waits at the front, behind the item that cut in, with `cutIn` set. It starts again later in a new task and session,
-  told that the work was begun before. With a place free, cutting in is moving first.
+  told that the work was begun before. With a place free, cutting in is moving first; so it is for an item that
+  wouldn't start in the freed place (it follows unfinished work, or waits for usage), and the clients don't offer
+  Cut in on such a row.
 - **Replace** (`steer_work replace`): the brief is replaced. A working item's task is closed the same way and the
   item starts again from the new brief, at the front (`cutIn` stays as it was).
 - **Stop** (`stopWork`, `steer_work stop`): the item is `stopped`; a working one's task is stopped. Without an item,
@@ -176,6 +178,13 @@ actor resumes the turn; one whose task can't goes back to waiting once, as an it
 a report the second time. An ended item's undelivered report is sent again. Task bots whose bot is gone, or that no
 item names, are deleted. Deleting a bot deletes its box and its tasks.
 
+The hourly look (`tasks/sweep.rs`) catches what no event said. After every dispatcher pass that leaves waiting or
+working items in a box, one timer per bot is set for an hour later (reset by the next pass, none for an empty box).
+When it fires, the host takes a dispatcher pass again, and a working item whose task runs no turn (its actor is
+gone or idle, and nothing is about to resume) follows the restart rule: back to waiting once, then failed with a
+report (`work_finished` `error: lost`). A turn that runs is never touched, however long and quiet. The look is host
+code only: no agent is woken unless an item was lost.
+
 ## Limits of this version
 
 - A task's memory tools run as its bot, so a task's `edit_memory` is credited to the chat's session, and its edits
@@ -195,8 +204,9 @@ Tests: `host/tests/tasks_e2e.rs` with `tests/fixtures/task_agent.py` (fork, brie
 from the chat, refusals in a task from each server, the ceiling and the order, first, drop, cut in from the user and
 from the bot, replace on a waiting and on a working item, `after` in the same session, stop one and all, retry, an
 agent that can't start, a stopped turn dropping the item it added, a deleted bot taking its box and tasks, a host
-restart mid-item, no `bot` or `entry` event for a task bot); unit tests of the dispatch order and the `wait` reasons
-(`dispatch.rs`), an item's end and the restart rule (`mod.rs`), the prompts and the box's lines. Not covered by a
-test: the usage and in-a-row limits, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
+restart mid-item, cut in on an item that follows working one closing nothing, no `bot` or `entry` event for a task
+bot); unit tests of the dispatch order and the `wait` reasons
+(`dispatch.rs`), an item's end and the restart rule (`mod.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
+covered by a test: the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
 task's dev server, an item sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
 known harness's prompt.

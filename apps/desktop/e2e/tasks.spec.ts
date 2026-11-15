@@ -139,7 +139,7 @@ test('with one agent at once the next items wait, and First and Drop change the 
     await addWork(page, botId, 'Second job', HOLD)
     await addWork(page, botId, 'Third job', HOLD)
 
-    await expect(capsule(page)).toContainText('In the background · 1 working · 2 waiting')
+    await expect(capsule(page)).toContainText(/In the background ·\s*1 working · 2 waiting/)
     await expect(page.locator('.roster-row', { hasText: name })).toContainText('1 working · 2 waiting')
 
     const details = await openDetails(page)
@@ -208,7 +208,7 @@ test("an item's approval card in the chat says it comes from the background, and
 
     const card = page.locator('.permission-card')
     await expect(card).toContainText('In the background · Run the suite')
-    await expect(capsule(page)).toContainText('In the background · Needs you')
+    await expect(capsule(page)).toContainText(/In the background ·\s*Needs you/)
     await expect(page.locator('.roster-row', { hasText: name })).toContainText('Needs you')
 
     // On Details it leads Threads with what the card asks, and opens the chat at the card.

@@ -155,7 +155,7 @@ public struct ThreadView: View {
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
             .codyncSheet(item: $details) { request in
                 // A card is in this chat: another bot's details (a group member's) have none to go to.
-                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: request.botId == nil ? { showCard($0) } : nil) { artifact in
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: (request.botId ?? botId) == botId ? { showCard($0) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }

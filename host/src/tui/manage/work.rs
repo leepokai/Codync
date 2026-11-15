@@ -9,6 +9,7 @@ use super::super::app::{
 };
 use super::super::l10n::tr;
 use super::DetailsPage;
+use crate::chat::tasks::Wait;
 
 /// A row of the Details page.
 pub enum DetailRow<'a> {
@@ -126,7 +127,8 @@ impl WorkAct {
             }
             (Self::Stop, DetailRow::Thread(_)) | (Self::Drop, DetailRow::Waiting(..) | DetailRow::Recent(_)) => true,
             (Self::First, DetailRow::Waiting(place, _)) => *place > 1,
-            (Self::CutIn, DetailRow::Waiting(1, _)) => full,
+            // One that follows unfinished work, or waits for usage, couldn't take the place a task gives up.
+            (Self::CutIn, DetailRow::Waiting(1, item)) => full && !matches!(item.wait, Some(Wait::After | Wait::Usage)),
             (Self::Retry, DetailRow::Recent(item)) => matches!(item.status, WorkStatus::Failed | WorkStatus::Stopped),
             _ => false,
         }
@@ -228,7 +230,7 @@ impl App {
         };
         match b.work.iter().find(|i| background.stops.as_deref() == Some(i.id.as_str())).cloned() {
             Some(item) => self.confirm_stop(b.id.clone(), &item),
-            None => self.open_routines(),
+            None => self.open_details(),
         }
     }
 
@@ -402,6 +404,10 @@ pub(in crate::tui) mod tests {
         assert_eq!(acts(&DetailRow::Waiting(1, &waiting), true), [CutIn, Drop], "first in line, every place taken");
         assert_eq!(acts(&DetailRow::Waiting(1, &waiting), false), [Drop], "a place is free: it starts by itself");
         assert_eq!(acts(&DetailRow::Waiting(2, &waiting), true), [First, Drop], "only the first cuts in");
+        for wait in [Wait::After, Wait::Usage] {
+            let held = WorkItem { wait: Some(wait), ..waiting.clone() };
+            assert_eq!(acts(&DetailRow::Waiting(1, &held), true), [Drop], "{wait:?}: a freed place wouldn't start it");
+        }
         assert_eq!(acts(&DetailRow::Recent(&done), true), [Open, Drop]);
         assert_eq!(acts(&DetailRow::Recent(&failed), true), [Drop, Retry], "no task took it: nothing to open");
         assert_eq!(acts(&DetailRow::Recent(&stopped), true), [Open, Drop, Retry]);

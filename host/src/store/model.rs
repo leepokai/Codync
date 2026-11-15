@@ -171,9 +171,11 @@ pub struct BotConfig {
 
 /// The most tasks a bot may be set to run at once.
 pub const MAX_AGENTS: u8 = 6;
+/// The tasks a bot runs at once unless the user changed it.
+pub const DEFAULT_AGENTS: u8 = 3;
 
 fn default_max_agents() -> u8 {
-    3
+    DEFAULT_AGENTS
 }
 
 /// A task bot's id starts with this; a bot's and a group's are plain UUIDs.

@@ -6,7 +6,7 @@ use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, TASK_PREFIX, now_ms};
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ pub(super) enum TaskState {
 }
 
 /// Why an item waits (`work[].wait`).
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Wait {
     /// It starts when a place is free.
@@ -174,6 +174,8 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         Ok(plan) => plan,
         Err(error) => {
             tracing::error!(bot, error = format!("{error:#}"), "couldn't look over a bot's work");
+            // The hourly look tries again.
+            super::sweep::arm(hub, bot);
             return;
         }
     };
@@ -197,6 +199,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     }
     hub.emit_bot(bot);
+    super::sweep::arm(hub, bot);
 }
 
 fn plan(hub: &Hub, cfg: &BotConfig, items: &mut [Item], over: Option<&str>) -> Result<Plan> {

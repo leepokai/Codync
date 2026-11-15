@@ -119,8 +119,14 @@ fun workSections(work: List<WorkItem>, maxAgents: Int?): WorkSections {
         box = work.filter { it.status == WorkStatus.Waiting }, recent = work.filter { it.status.ended })
 }
 
-/** Every place of the bot is taken, so the item first in line can only start now if a task gives way. */
-fun canCutIn(work: List<WorkItem>, maxAgents: Int?): Boolean = work.count { it.status.live } >= (maxAgents ?: DEFAULT_MAX_AGENTS)
+/**
+ * Every place of the bot is taken, so the item first in line can only start now if a task gives way. Not one that
+ * follows unfinished work or waits for usage: a freed place wouldn't start it.
+ */
+fun canCutIn(work: List<WorkItem>, maxAgents: Int?): Boolean {
+    val held = work.firstOrNull { it.status == WorkStatus.Waiting }?.wait?.kind.let { it == WaitKind.After || it == WaitKind.Usage }
+    return !held && work.count { it.status.live } >= (maxAgents ?: DEFAULT_MAX_AGENTS)
+}
 
 /** What the user can do to an item from its row (iOS `WorkAction`): a phrase to look up and its symbol. */
 enum class WorkAction(val title: String, val symbol: String) {

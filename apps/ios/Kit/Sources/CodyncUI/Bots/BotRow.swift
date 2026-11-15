@@ -63,7 +63,7 @@ public struct BotRow: View {
         switch bot.rosterLine {
         case .needsYou:
             Label {
-                Text(L10n.tr(bot.needsInput && !bot.activity.isEmpty ? bot.activity : "Needs your approval"))
+                Text(L10n.tr(bot.needsYouLine))
             } icon: {
                 ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
             }

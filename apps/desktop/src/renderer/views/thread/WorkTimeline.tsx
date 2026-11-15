@@ -31,12 +31,13 @@ export function WorkTimeline({ bot, openCard, children }: { bot: Bot; openCard: 
   const [stopping, setStopping] = useState<string | null>(null)
   const [cuttingIn, setCuttingIn] = useState<WorkItem | null>(null)
   const read = (item: WorkItem) => (item.task ? () => setReading(item) : undefined)
+  const stop = (item: WorkItem) => <IconButton title="Stop" icon="stop.fill" size={24} disabled={offline} onClick={() => setStopping(item.id)} />
   return (
     <>
       <WorkSection title="Threads" count={`${threads.length} / ${places}`} shown={threads.length + box.length > 0}>
         {threads.map((item) =>
           item.status === 'needsYou' ? (
-            <WorkRow key={item.id} item={item} line={asks.get(item.id) || itemLine(item, tr)} open={() => openCard(item.id)} />
+            <WorkRow key={item.id} item={item} line={asks.get(item.id) || itemLine(item, tr)} open={() => openCard(item.id)} onHover={stop(item)} />
           ) : (
             <WorkRow
               key={item.id}
@@ -44,7 +45,7 @@ export function WorkTimeline({ bot, openCard, children }: { bot: Bot; openCard: 
               line={itemLine(item, tr)}
               open={read(item)}
               time={item.startedAt !== null ? <Timer since={item.startedAt} /> : null}
-              onHover={<IconButton title="Stop" icon="stop.fill" size={24} disabled={offline} onClick={() => setStopping(item.id)} />}
+              onHover={stop(item)}
             />
           ),
         )}

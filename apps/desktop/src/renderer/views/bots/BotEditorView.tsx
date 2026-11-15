@@ -290,10 +290,13 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <PluginToggles
           title="Skills"
           empty="No skills yet. Get some from Extensions, or write your own."
-          items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
+          items={skills.map((s) => ({ id: s.id, name: s.name, detail: '' }))}
           selection={draft.skills ?? []}
           onChange={(ids) => set('skills', ids)}
-          onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
+          onInfo={(item) => {
+            const s = skills.find((x) => x.id === item.id)
+            if (s) setViewingSkill({ id: s.id, name: s.name, description: s.description })
+          }}
         />
         {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </div>

@@ -24,6 +24,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 - 語音通話設定會顯示電腦的 OpenAI 引擎使用的「伺服器」；使用自有伺服器時，模式固定為語音識別。
 - 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好後點「回覆」。
+- Bot 設定的「技能」只列出名稱，點旁邊的資訊按鈕可以看完整說明。
 
 ### en-US
 - Bots do long work in the background, so the chat stays free and keeps answering. A capsule above the message box shows what it is doing; tap it for details, or stop it.
@@ -39,3 +40,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Optional Google Search in Gemini realtime calls, off by default.
 - Voice chat settings show the Server your computer's OpenAI engine uses; with your own, Mode stays on Speech.
 - Reply to one part of a message: hold it, choose Select Text, select, then Reply.
+- A bot's Skills settings list only each skill's name; the info button beside one shows its description.

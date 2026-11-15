@@ -275,7 +275,7 @@ struct BotSettingsForm: View {
             PluginToggles(
                 title: "Skills",
                 empty: "No skills yet. Get some from Extensions, or write your own.",
-                items: model.installedSkills.map { ($0.id, $0.name, $0.description) },
+                items: model.installedSkills.map { ($0.id, $0.name, "") },
                 selection: Binding(get: { draft.skills ?? [] }, set: { draft.skills = $0 }),
                 info: { id in viewingSkill = model.installedSkills.first { $0.id == id }.map(SkillRef.init) }
             )

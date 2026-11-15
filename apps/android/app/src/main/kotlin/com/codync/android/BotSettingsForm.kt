@@ -249,7 +249,7 @@ private fun CardRows.reachRows(state: AppState, draft: BotDraft, change: (BotDra
         plugins?.connectors.orEmpty().map { Triple(it.id, it.name, it.command ?: it.url.orEmpty()) },
         draft.connectors.orEmpty(), { change(draft.copy(connectors = it)) })
     PluginToggles("Skills", "No skills yet. Get some from Extensions, or write your own.",
-        plugins?.skills.orEmpty().map { Triple(it.id, it.name, it.description) }, draft.skills.orEmpty(), { change(draft.copy(skills = it)) }) { id ->
+        plugins?.skills.orEmpty().map { Triple(it.id, it.name, "") }, draft.skills.orEmpty(), { change(draft.copy(skills = it)) }) { id ->
         plugins?.skills?.firstOrNull { it.id == id }?.let { viewSkill(SkillRef(it.id, it.name, it.description)) }
     }
 }

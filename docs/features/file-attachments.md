@@ -102,8 +102,17 @@ voice note) up to 20 MB gets a play/pause button in place of its icon: the host 
 only read the flag, and a file without it, from an older host, stays a plain card). For either the
 client reads the whole file into memory through the same `readFile` chunks, checks size
 and SHA-256, and keeps it in the sent-attachment cache under its file id; a failed image
-read leaves the placeholder. While a sound loads its button shows a spinner; once loaded
-its caption reads elapsed / total time over a progress bar. Tapping or dragging the bar
+read leaves the placeholder. A sound is fetched into that cache as its card shows while the
+computer is online, so play starts at once: one fetch per card, shared by that preload and a
+tap (a tap during it shows the spinner and plays when the bytes arrive); a failed preload
+stays silent and the tap fetches again. On a phone on an expensive or metered network (iOS:
+also before the network's first report) only a sound under 2 MiB preloads; a bigger one is
+fetched on the tap. While a sound loads its button shows a spinner; once loaded
+its caption reads elapsed / total time over a progress bar, the elapsed half written in the
+length's shape (`00:05 / 12:00`, `0:00:05 / 1:02:00`) so the caption keeps one width and the
+bar's end stays put as it plays. The play glyph is the outline in every state: on desktop
+hover lays a soft round chip behind it (press deepens it), on the phones a press does, and
+the bar keeps the row's gap to the glyph and to the clock. Tapping or dragging the bar
 (clicking on desktop) moves the sound there, playing or paused; its touch area runs past the
 4 pt bar without taking layout (on desktop only to the thumb's 12 px height, so a click
 elsewhere on the card or player, including beside the bar, plays or pauses), and VoiceOver/TalkBack adjust or the arrow keys move it five

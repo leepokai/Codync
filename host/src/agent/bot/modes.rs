@@ -39,7 +39,7 @@ impl Actor {
     /// A fallback step lacking it runs in its stand-in, with a notice; without one, or refused, it's a `ModeMissing`
     /// failure, so the turn moves on to the next agent.
     pub(super) async fn sync_mode(&mut self, sid: &str) -> Result<()> {
-        if let Some(ceiling) = Ceiling::of(self.hub.team.access(&self.cfg.id)) {
+        if let Some(ceiling) = Ceiling::of(self.hub.ceilings.access(&self.cfg.id)) {
             return self.sync_mode_under(sid, ceiling).await;
         }
         let Some(conn) = self.conn.as_ref() else { return Ok(()) };

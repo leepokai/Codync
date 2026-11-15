@@ -1,19 +1,20 @@
 # Requests from other computers: what's left
 
 Status (2026-11-15): the levels are built. A network rule is `allow`, `auto`, `ask` or `deny`, and `auto` and `ask`
-are ceilings on how a bot works on that sender's text
+are ceilings on how a bot works on that sender's text (`auto` by default)
 ([codync-network: ceilings](../features/codync-network.md#ceilings-auto-and-ask)). This page lists what that doesn't
-cover yet. Nothing below is built.
+cover yet; what it means for the user: [risks](../reference/network-request-risks.md). Nothing below is built.
 
 ## Why more
 
-A turn under a ceiling can do nothing without the user's approval, and can't change what the bot does later (its
-routines, background work, instructions, skills, fallbacks and memory are refused to it), but it still runs in the bot's main
-session:
+A turn under a ceiling works no more freely than its level and can only read and answer the user with the host's
+tools, but it still starts from the bot's conversation: a request's task forks the main session where the agent can,
+and an answer (or a request to a bot that keeps them in its chat) runs in the main session itself:
 
 - It sees the conversation the user had with that bot, so a sender can ask for what was said there.
-- Its text stays in that session, where it can act in a later turn of the user's own.
-- A computer that joins a network is at `allow` until the user writes a rule for it.
+- An answer's text stays in the main session, where it can act in a later turn of the user's own.
+- It can read what the agent can read and send it back in its reply. A session of its own doesn't change that; only
+  a folder the bot can't read outside of would.
 
 That matters for a computer someone else can run code on: a cloud computer (its provider and anyone with its key),
 or a server shared with others.
@@ -22,14 +23,14 @@ or a server shared with others.
 
 1. **A session per sender.** A request under a ceiling runs in a session of its own, slot
    `peer-<network>-<computer>-<agent>` (`Actor::slot`, next to a routine run's `routine-<run>`), kept in kv so a
-   restart resumes it and closed when unused like any session. Fresh, never a fork of the main one: a fork would
-   carry the user's conversation along. It lasts across that sender's requests, so "now the second half" works. The
-   conversation sheet with that peer shows the turn's trace and gets "Forget this conversation". Answers to this
-   computer's own requests stay in the main session: the turn that works on the task has to read them.
-2. **A level when a computer is added.** The desktop app and the terminal ask "What may this computer's bots do
-   here?" when they make the invite, and save the answer as a rule `<level> *@<computer> → *`. Then decide whether a
-   sender with no rule should be `ask` instead of `allow`; networks that exist by then would get one `allow` rule
-   per current member, once.
+   restart resumes it and closed when unused like any session. Fresh, never a fork of the main one as a request's
+   task is now: a fork would carry the user's conversation along. It lasts across that sender's requests, so "now
+   the second half" works. The conversation sheet with that peer shows the turn's trace and gets "Forget this
+   conversation". Answers to this computer's own requests stay in the main session: the turn that works on the task
+   has to read them.
+2. **A level when a computer is added.** A computer no rule matches gets `auto` now, and the computers already in a
+   network kept `allow` with a rule each. The desktop app and the terminal could still ask "What may this computer's
+   bots do here?" when they make the invite, and save the answer as a rule `<level> *@<computer> → *`.
 3. **Cloud computers are never above `ask`.** The host can't take a sender's word for what it is, so this is a
    check on this side: a computer the account lists as a Codync Cloud machine can't be given `allow` or `auto`, in
    the apps or by `setNetworkRules`.

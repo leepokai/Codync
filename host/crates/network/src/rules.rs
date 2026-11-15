@@ -127,9 +127,9 @@ pub fn check_all(rules: &[Rule]) -> Result<()> {
 }
 
 /// How `agent` on `computer` may write to `to` here: the first rule that matches decides, and
-/// without one it may.
-pub fn access(rules: &[Rule], computer: &str, agent: &str, to: &str) -> Access {
-    rules.iter().find(|r| r.matches(computer, agent, to)).map_or(Access::Allow, |r| r.access)
+/// without one `default` does.
+pub fn access(rules: &[Rule], default: Access, computer: &str, agent: &str, to: &str) -> Access {
+    rules.iter().find(|r| r.matches(computer, agent, to)).map_or(default, |r| r.access)
 }
 
 #[cfg(test)]
@@ -142,22 +142,31 @@ mod tests {
 
     #[test]
     fn the_first_match_decides_and_no_rules_allow_everyone() {
-        assert_eq!(access(&[], "server", "lead", "reviewer"), Access::Allow);
+        assert_eq!(access(&[], Access::Allow, "server", "lead", "reviewer"), Access::Allow);
+        assert_eq!(access(&[], Access::Auto, "server", "lead", "reviewer"), Access::Auto, "the app's default");
         let rules = [rule(Access::Allow, "lead@server", "reviewer"), rule(Access::Deny, "*@server", "*")];
-        assert_eq!(access(&rules, "server", "lead", "reviewer"), Access::Allow);
-        assert_eq!(access(&rules, "server", "lead", "coder"), Access::Deny, "only the reviewer was allowed");
-        assert_eq!(access(&rules, "Server", "other", "reviewer"), Access::Deny, "computer names ignore case");
-        assert_eq!(access(&rules, "laptop", "lead", "coder"), Access::Allow, "no rule for the laptop");
-        assert_eq!(access(&[rule(Access::Deny, "*", "*")], "laptop", "a", "b"), Access::Deny);
+        assert_eq!(access(&rules, Access::Allow, "server", "lead", "reviewer"), Access::Allow);
+        assert_eq!(
+            access(&rules, Access::Allow, "server", "lead", "coder"),
+            Access::Deny,
+            "only the reviewer was allowed"
+        );
+        assert_eq!(
+            access(&rules, Access::Allow, "Server", "other", "reviewer"),
+            Access::Deny,
+            "computer names ignore case"
+        );
+        assert_eq!(access(&rules, Access::Allow, "laptop", "lead", "coder"), Access::Allow, "no rule for the laptop");
+        assert_eq!(access(&[rule(Access::Deny, "*", "*")], Access::Allow, "laptop", "a", "b"), Access::Deny);
     }
 
     #[test]
     fn a_rule_can_set_a_ceiling() {
         let rules =
             [rule(Access::Ask, "*@cloud", "*"), rule(Access::Auto, "*@mini", "*"), rule(Access::Allow, "*", "*")];
-        assert_eq!(access(&rules, "cloud", "lead", "reviewer"), Access::Ask);
-        assert_eq!(access(&rules, "mini", "lead", "reviewer"), Access::Auto);
-        assert_eq!(access(&rules, "desk", "lead", "reviewer"), Access::Allow);
+        assert_eq!(access(&rules, Access::Allow, "cloud", "lead", "reviewer"), Access::Ask);
+        assert_eq!(access(&rules, Access::Allow, "mini", "lead", "reviewer"), Access::Auto);
+        assert_eq!(access(&rules, Access::Allow, "desk", "lead", "reviewer"), Access::Allow);
         assert!(Access::Allow < Access::Auto && Access::Auto < Access::Ask && Access::Ask < Access::Deny);
         assert!(Access::Auto.is_ceiling() && Access::Ask.is_ceiling() && !Access::Allow.is_ceiling());
         assert_eq!("auto".parse::<Access>().expect("a level"), Access::Auto);

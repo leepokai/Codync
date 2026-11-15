@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { api, attach, openGeneralSettings } from './sandbox.ts'
 
 type Rule = { fromComputer: string; fromAgent: string; toAgent: string; access: string }
-type View = { networks: { id: string; name: string; rules: Rule[] }[] }
+type View = { networks: { id: string; name: string; rules: Rule[]; defaultAccess?: string }[] }
 
 // Each level with the line under it, the most trusted first (docs/features/codync-network.md, Ceilings).
 const LEVELS: [string, string][] = [
@@ -21,12 +21,16 @@ test('a network rule takes one of four levels, and an Ask rule reads as one', as
     // Direct only: the network stays on this computer, with no relay to reach.
     const name = `e2e-${Date.now()}`
     await api(page, 'networkCreate', { network: name, connector: 'private' })
-    made = (await api<View>(page, 'networkView', {})).networks.find((n) => n.name === name)?.id
+    const created = (await api<View>(page, 'networkView', {})).networks.find((n) => n.name === name)
+    made = created?.id
     expect(made).toBeTruthy()
+    // A computer no rule matches gets Auto, and the footer under the rules says so.
+    expect(created?.defaultAccess).toBe('auto')
 
     await openGeneralSettings(page)
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('button', { name: 'Network', exact: true }).click()
+    await expect(dialog.getByText('A computer no rule matches gets Auto.', { exact: false })).toBeVisible()
     await dialog.getByRole('button', { name: 'Add rule' }).click()
     const sheet = page.locator('.network-sheet')
     const rows = sheet.locator('.choice-row')

@@ -80,9 +80,12 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   outside the bot's own chat with the user (a room, another bot's request, a routine run: `add_work works only in
   your own chat with the user`), in a task, past 20 waiting items, when `after` names
   no item that is working or waiting, and for the ninth item added in a row with no message from the user (an item
-  added from a report's turn carries that report's hops). Stopping the turn that added an item drops it.
+  added from a report's turn carries that report's hops). Stopping the turn that added an item drops it. Refused
+  too in a turn a network rule holds to a ceiling, such as one that reads another computer's answer
+  ([ceilings](codync-network.md#ceilings-auto-and-ask)): its work would run without it.
 - `steer_work {item, how, brief?, insteadOf?}`: `first` (a waiting item moves to the front), `now` (it cuts in),
   `replace` (a new brief), `stop`. The user's own words of the running turn are added to the item's `notes`.
+  Refused under a ceiling, as `add_work` is.
 - `work_status {}`: every item that is working or waiting, and those ended in the last day: status, what its task
   does now, why it waits, seconds, result.
 
@@ -214,7 +217,9 @@ prompt or the request as it is, not an item's brief, and **their result takes no
 What such a turn could and couldn't do in the chat holds in its task (`Actor::task_source`): `request_decision`,
 `send_message`, `send_file` and artifact cards are refused with the same words; the `routines` tools work, as the
 bot (a run saves its progress and sets follow-ups, an asked bot runs its own routine); `message_bot` works from a
-run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task.
+run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task. A
+request from another computer under a network rule's `auto` or `ask` holds its task to that
+[ceiling](codync-network.md#ceilings-auto-and-ask) (`tasks::access_of`), as it held the turn in the chat.
 
 What differs from the bot's own items:
 

@@ -21,6 +21,15 @@ public struct NetworkView: Codable, Hashable, Sendable {
         public var computers: [Computer]?
         /// Who on its other computers may message this computer's bots, the first match deciding.
         public var rules: [Rule]?
+        /// What a computer no rule matches gets; hosts before 2.49.0 send none and let it in at allow.
+        public var defaultAccess: Rule.Access?
+
+        /// The rules' footer, untranslated: what decides, and what a computer no rule matches gets.
+        public var rulesFooter: String {
+            (defaultAccess ?? .allow) == .allow
+                ? "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
+                : "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in."
+        }
 
         /// "Deny: any bot on laptop → Reviewer", names from what each computer offers.
         public func text(of rule: Rule) -> String {

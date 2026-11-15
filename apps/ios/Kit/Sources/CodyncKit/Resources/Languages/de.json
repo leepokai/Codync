@@ -1407,6 +1407,7 @@
   "Bots message the bots on these computers as bot@computer.{network}.": "Bots schreiben den Bots auf diesen Computern als bot@computer.{network}.",
   "Who may message bots here": "Wer den Bots hier schreiben darf",
   "Who may message bots on {name}": "Wer den Bots auf {name} schreiben darf",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "Die erste passende Regel entscheidet. Ein Computer, auf den keine Regel passt, gilt als Auto. Antworten auf die eigenen Nachrichten dieses Computers kommen immer an.",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "Die erste passende Regel entscheidet. Ohne Regeln darf jeder Computer im Netzwerk jedem Bot hier schreiben. Antworten auf eigene Nachrichten dieses Computers kommen immer an.",
   "Add rule": "Regel hinzufügen",
   "Delete rule": "Regel löschen",

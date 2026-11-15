@@ -1236,6 +1236,7 @@
   "The bot in its mood, its current step in the state's color, the running time, a thinking orb and its progress. When the bot needs you, Review opens the request.": "Il bot nel suo umore, il passaggio attuale nel colore dello stato, il tempo di esecuzione, un orb di ragionamento e il progresso. Quando il bot ha bisogno di te, Rivedi apre la richiesta.",
   "The bot sees the name and when to use it, and reads the instructions only when a task fits.": "Il bot vede il nome e quando usarla, e legge le istruzioni solo quando un'attività è adatta.",
   "The first rule that matches decides.": "La prima regola che corrisponde decide.",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "Decide la prima regola che corrisponde. Un computer a cui non corrisponde nessuna regola è in Auto. Le risposte ai messaggi di questo computer passano sempre.",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "La prima regola che corrisponde decide. Senza regole, ogni computer della rete può inviare messaggi a ogni bot qui. Le risposte ai messaggi di questo computer entrano sempre.",
   "The host is missing": "Manca l'host",
   "The host is up to date.": "L'host è aggiornato.",

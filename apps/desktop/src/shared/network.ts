@@ -43,6 +43,8 @@ export interface Network {
   connector: string
   computers: NetworkComputer[]
   rules: NetworkRule[]
+  /** What a computer no rule matches gets; absent on hosts before 2.49.0, which let it in at allow. */
+  defaultAccess?: NetworkRule['access']
 }
 
 /** `networkView`, the `network` event and the stream's hello: this computer's networks, the default first, and cloud assistants. */

@@ -59,4 +59,6 @@ onFlowComplete:
 - assertVisible: "Ask: any bot on any computer → any bot here"
 - assertVisible: "Auto: any bot on any computer → any bot here"
 - assertNotVisible: "Deny: .*"
+# A computer no rule matches gets Auto: the rules' footer says so.
+- assertVisible: ".*A computer no rule matches gets Auto.*"
 - takeScreenshot: network-rules

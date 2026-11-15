@@ -44,7 +44,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     // is whoever's turn calls, a task included. The computer and connector servers are the agent's own tools, which
     // its mode holds.
     if BOT_TOOL_CALLS.contains(&method) {
-        hub.team.check_tool(str_arg(&b, "botId")?, str_arg(&b, "name")?)?;
+        hub.ceilings.check_tool(str_arg(&b, "botId")?, str_arg(&b, "name")?)?;
     }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,

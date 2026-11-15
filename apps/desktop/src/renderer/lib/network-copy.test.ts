@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Network, NetworkComputer, NetworkRule } from '@shared/network'
-import { beforeCeilings, botsTemplate, connectorFor, moved, presenceTitle, ruleLine } from './network-copy.ts'
+import { beforeCeilings, botsTemplate, connectorFor, moved, presenceTitle, ruleLine, rulesFooter } from './network-copy.ts'
 
 const computer = (c: Partial<NetworkComputer>): NetworkComputer => ({
   name: 'laptop', role: 'member', me: false, online: false, agents: [], canRemove: false, canPromote: false, ...c,
@@ -42,6 +42,8 @@ test('rules read with the bots by name, and move within the list', () => {
   assert.equal(ruleLine(rule({ fromComputer: 'server', fromAgent: 'ci', toAgent: 'gone' }), net, tr), 'Deny: ci on server → gone')
   assert.ok(beforeCeilings('rules are {fromComputer, fromAgent, toAgent, access}: unknown variant `ask`, expected `allow` or `deny`'))
   assert.ok(!beforeCeilings('This can only be done at the computer itself.'))
+  assert.match(rulesFooter({ ...net, defaultAccess: 'auto' }), /gets Auto/)
+  assert.match(rulesFooter(net), /every computer in the network may message/, 'a host before the default lets it in')
   const rules = [rule({ toAgent: 'a' }), rule({ toAgent: 'b' })]
   assert.deepEqual(moved(rules, 1, -1).map((r) => r.toAgent), ['b', 'a'])
   assert.equal(moved(rules, 0, -1), rules)

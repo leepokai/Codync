@@ -103,6 +103,8 @@ impl Actor {
     ) -> Result<()> {
         self.task_source = tasks::source_of(&self.hub.store, &self.cfg);
         if self.cfg.is_task() {
+            // Another computer's request holds the task's turn to its ceiling, as it holds a turn in the chat.
+            self.hub.ceilings.set(&self.cfg.id, tasks::access_of(&self.hub, &self.cfg));
             // A run worked as a task: its session's setup ends by the routine's time limit too, where the box's
             // timer (`tasks::sources::watch`) only reaches a turn that began. Any other item has none.
             self.routine_deadline = match &self.task_source {
@@ -176,7 +178,7 @@ impl Actor {
         // would work on the sender's text as the bot is set.
         self.set_inflight(
             self.active_request.is_none()
-                && !self.hub.team.under_ceiling(&self.cfg.id)
+                && !self.hub.ceilings.holds(&self.cfg.id)
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
                 && self.host_turn.is_none_or(HostTurn::resumed),

@@ -50,7 +50,7 @@ standalone crate, and it reaches Claude Code and Codex sessions too.
   UDP port across restarts (kept in its state folder). So a computer whose firewall lets in only what it started
   (Windows by default) is still written to, over its own connection, also after the other one restarts.
 - **The receiver decides who writes.** Each computer keeps ordered rules of who on the others may write to which of
-  its agents (`deny *@laptop → *`), the first match deciding; with none, every member may. A rule is `allow`, `deny`,
+  its agents (`deny *@laptop → *`), the first match deciding; a sender no rule matches gets the default, `allow` unless the app sets another. A rule is `allow`, `deny`,
   or a ceiling, `auto` or `ask`: the letter is taken and says so (`Message::access`), for an app that can hold its
   agent to asking its user. Only an agent the app runs can be held to one, so a letter under a ceiling to a session
   the network knocks on is refused. The answer to a request
@@ -200,6 +200,9 @@ name or presence changes, another computer offers different agents), for an app 
 - `node.set_rules(rules)` sets who may write to this computer's agents (`Rule::new(Access::Deny, "*@laptop", "*")`).
   A message says what its sender's rule is (`message.access`): under `Access::Auto` or `Access::Ask`, have the
   agent ask its user before it acts. `rules::access` is the same check for an app's own use.
+- `node.set_default_access(access)` sets what a sender no rule matches gets (`allow` by default). Set `auto` or `ask`
+  only if every agent the app offers is one it runs and holds to a ceiling: a letter under one to a session the
+  network knocks on is refused.
 - `node.set_senders(names)` lets the app send as agents it doesn't offer (a hosted assistant that asks agents
   elsewhere but can't be asked itself); the answers to its letters still come back.
 - `node.set_network_name(Some("home"))` names the network in the invites this computer makes, and

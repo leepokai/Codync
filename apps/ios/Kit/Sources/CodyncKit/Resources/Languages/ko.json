@@ -1407,6 +1407,7 @@
   "Bots message the bots on these computers as bot@computer.{network}.": "봇은 bot@컴퓨터.{network} 형식으로 이 컴퓨터들의 봇에게 메시지를 보냅니다.",
   "Who may message bots here": "여기 봇에게 메시지를 보낼 수 있는 대상",
   "Who may message bots on {name}": "{name} 봇에게 메시지를 보낼 수 있는 대상",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "처음 일치하는 규칙이 결정합니다. 어떤 규칙에도 해당하지 않는 컴퓨터는 '자동'으로 처리됩니다. 이 컴퓨터가 보낸 메시지에 대한 답장은 항상 들어옵니다.",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "처음 일치하는 규칙이 결정합니다. 규칙이 없으면 네트워크의 모든 컴퓨터가 여기 모든 봇에게 메시지를 보낼 수 있습니다. 이 컴퓨터가 보낸 메시지에 대한 답장은 항상 들어옵니다.",
   "Add rule": "규칙 추가",
   "Delete rule": "규칙 삭제",

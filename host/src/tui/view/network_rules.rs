@@ -9,7 +9,7 @@ use super::buffer::{put, restyle};
 use super::network::{line, wrapped};
 use super::style::theme;
 
-const FOOTER: &str = "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.";
+const FOOTER: &str = "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.";
 
 pub(super) fn rules(buf: &mut Buffer, body: Rect, n: &NetworkSheet, at: usize) -> &'static str {
     let t = theme();

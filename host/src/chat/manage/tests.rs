@@ -1,6 +1,6 @@
 use super::*;
 use crate::remote::identity::Identity;
-use crate::store::Store;
+use crate::store::{Permission, Store};
 
 fn hub(dir: &std::path::Path) -> Arc<Hub> {
     let store = Store::open(std::path::Path::new(":memory:")).unwrap();
@@ -105,11 +105,11 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     // which asks whatever the bot's Approvals, and under Ask.
     let long = json!({"name": "x", "agent": "claude", "instructions": "a".repeat(MAX_INSTRUCTIONS_CHARS)});
     let lead = hub.store.bot("lead").unwrap().unwrap().config;
-    assert!(approves_by_itself(&hub, &lead));
-    hub.team.set_access("lead", codync_network::Access::Auto);
-    assert!(!approves_by_itself(&hub, &lead));
+    assert!(hub.ceilings.approves_by_itself(&lead));
+    hub.ceilings.set("lead", codync_network::Access::Auto);
+    assert!(!hub.ceilings.approves_by_itself(&lead));
     assert!(refused("lead", "create_bot", long.clone()).await.contains("too long for its approval card"));
-    hub.team.set_access("lead", codync_network::Access::Allow);
+    hub.ceilings.set("lead", codync_network::Access::Allow);
     hub.update_bot(&json!({"id": "lead", "permission": "ask"})).unwrap();
     assert!(refused("lead", "create_bot", long).await.contains("too long for its approval card"));
     assert_eq!(hub.store.bots().unwrap().len(), 3, "a refused change creates nothing");

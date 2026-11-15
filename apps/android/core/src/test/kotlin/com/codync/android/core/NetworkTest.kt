@@ -52,6 +52,13 @@ class NetworkTest {
         assertEquals("Auto: any bot on any computer → any bot here", home.describe(NetworkRule(access = "auto")) { it })
     }
 
+    @Test fun `the rules footer says what a computer no rule matches gets`() {
+        val auto = WireJson.decodeFromJsonElement<NetworkInfo>(WireJson.parseToJsonElement("""{"id": "n", "name": "home", "defaultAccess": "auto"}"""))
+        assertTrue(auto.rulesFooter.contains("gets Auto"))
+        // A host before the default sends none, and lets such a computer in.
+        assertTrue(NetworkView.decode(view).networks[0].rulesFooter.contains("every computer in the network may message"))
+    }
+
     @Test fun `a computer in no network shows only when cloud assistants can reach it and are on`() {
         fun alone(on: Boolean, available: Boolean) =
             NetworkView.decode(buildJsonObject { put("joined", false); put("assistants", on); put("assistantsAvailable", available) })

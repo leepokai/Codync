@@ -1407,6 +1407,7 @@
   "Bots message the bots on these computers as bot@computer.{network}.": "Bot 用 bot@电脑.{network} 给这些电脑上的 Bot 发消息。",
   "Who may message bots here": "谁可以给这里的 Bot 发消息",
   "Who may message bots on {name}": "谁可以给 {name} 上的 Bot 发消息",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "由第一条符合的规则决定。没有符合任何规则的电脑按「自动」处理。回复这台电脑自己发出的消息一律可以进来。",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "由第一条匹配的规则决定。没有规则时，网络里的每台电脑都能给这里的每个 Bot 发消息。回复这台电脑自己发出的消息一律可以进来。",
   "Add rule": "添加规则",
   "Delete rule": "删除规则",

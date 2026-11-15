@@ -1407,6 +1407,7 @@
   "Bots message the bots on these computers as bot@computer.{network}.": "Bot 用 bot@電腦.{network} 傳訊息給這些電腦上的 Bot。",
   "Who may message bots here": "誰可以傳訊息給這裡的 Bot",
   "Who may message bots on {name}": "誰可以傳訊息給 {name} 上的 Bot",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "由第一條符合的規則決定。沒有符合任何規則的電腦以「自動」處理。回覆這臺電腦自己送出的訊息一律可以進來。",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "由第一條符合的規則決定。沒有規則時，網路裡的每臺電腦都能傳訊息給這裡的每個 Bot。回覆這臺電腦自己送出的訊息一律可以進來。",
   "Add rule": "新增規則",
   "Delete rule": "刪除規則",

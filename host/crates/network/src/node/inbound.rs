@@ -110,7 +110,8 @@ impl Inner {
         let access = if peer == self.me() {
             Access::Allow
         } else {
-            rules::access(&locked(&self.rules), &name(&peer), &envelope.from, &envelope.to)
+            let default = *locked(&self.default_access);
+            rules::access(&locked(&self.rules), default, &name(&peer), &envelope.from, &envelope.to)
         };
         let access = match access {
             Access::Deny if !answers => {

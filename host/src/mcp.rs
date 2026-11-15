@@ -70,19 +70,7 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         // Listed by the host: they depend on this computer's driver.
         Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
-        Server::Chat => {
-            let mut tools = crate::chat::outbox::tools();
-            if let Some(list) = tools.as_array_mut() {
-                list.extend(crate::chat::artifacts::tools());
-                list.extend(crate::chat::profile::tools());
-                list.extend(crate::chat::fallbacks::tools());
-                list.push(crate::chat::reactions::tool());
-                list.push(crate::chat::skills::tool());
-                list.extend(crate::dev_servers::tools());
-                list.extend(crate::chat::tasks::tools());
-            }
-            ("codync-chat", crate::chat::outbox::instructions(), tools)
-        }
+        Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
         Server::Memory => ("codync-memory", crate::chat::memory::INSTRUCTIONS.to_owned(), crate::chat::memory::tools()),
@@ -137,6 +125,21 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     }
     // The agent is gone: replies still pending have no one to read them.
     Ok(())
+}
+
+/// The `chat` server's tools, from each part of the host that answers them.
+pub(crate) fn chat_tools() -> Value {
+    let mut tools = crate::chat::outbox::tools();
+    if let Some(list) = tools.as_array_mut() {
+        list.extend(crate::chat::artifacts::tools());
+        list.extend(crate::chat::profile::tools());
+        list.extend(crate::chat::fallbacks::tools());
+        list.push(crate::chat::reactions::tool());
+        list.push(crate::chat::skills::tool());
+        list.extend(crate::dev_servers::tools());
+        list.extend(crate::chat::tasks::tools());
+    }
+    tools
 }
 
 /// The `computer` tools the host offers; none when it can't be reached.

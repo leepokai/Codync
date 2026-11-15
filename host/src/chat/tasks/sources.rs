@@ -13,6 +13,7 @@ use crate::hub::Hub;
 use crate::routines;
 use crate::store::{BotConfig, EntryKind, Lane, Store};
 use anyhow::{Result, anyhow};
+use codync_network::Access;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -29,6 +30,17 @@ pub fn source_of(store: &Store, cfg: &BotConfig) -> Source {
         return Source::Bot;
     }
     super::item_of(store, cfg).map(|item| item.source).unwrap_or_default()
+}
+
+/// The ceiling a network rule holds task `cfg`'s turns to: its request's, on another computer's request (`Allow`
+/// for anything else). A request the box no longer holds is held to Ask, so it never works more freely than it got in.
+pub fn access_of(hub: &Hub, cfg: &BotConfig) -> Access {
+    match super::item_of(&hub.store, cfg) {
+        Some(item) if matches!(item.source, Source::Request { .. }) => {
+            hub.tasks.requests.locked().get(&item.id).map_or(Access::Ask, BotRequest::access)
+        }
+        _ => Access::Allow,
+    }
 }
 
 /// Whether a task that takes an item from `source` starts from the chat (a fork of its session, else the chat so

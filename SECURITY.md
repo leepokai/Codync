@@ -6,6 +6,7 @@ Codync is a remote control for coding agents running on your computer. Read the 
 
 - **The computer owner is trusted.** Anything that already runs as the user on the host computer (local apps, shells, files in `~/.codync`) is outside Codync's boundary.
 - **A paired device is trusted like the owner.** A device is added only with the owner's consent on the computer: by scanning a one-time pairing code, or by approving an account access request. Once paired, it is meant to have full control of the computer. It can run coding agents (they execute shell commands, by default without asking), change any bot's configuration (agent, launch command, working folder, permission mode), and view and control the screen. A paired device can run code on the computer **by design**. That is the product.
+- **Other computers in your codync-network are trusted to their rule's level.** A computer you added to a network can have its bots message bots on yours. What that lets them do here is the level its rule gives it (Allow, Auto, Ask or Deny; Auto when no rule matches); what each level does and doesn't prevent is in [network request risks](docs/reference/network-request-risks.md).
 - **Everyone else is untrusted.** This includes the network, the Cloudflare relay (it forwards end-to-end encrypted traffic it cannot read), the push relay, unpaired devices, and anyone holding an expired or used pairing code.
 
 ## In scope
@@ -15,6 +16,7 @@ Something that crosses one of these boundaries:
 - An unpaired party pairing, connecting, or calling any host method.
 - The relay, push relay or network reading or forging end-to-end encrypted traffic or push content.
 - A device keeping access after it was revoked or its lease expired.
+- A request or answer from another computer in your network doing more than its rule's level allows, beyond what [network request risks](docs/reference/network-request-risks.md) lists as not prevented.
 - A paired device calling a method that is restricted to the computer itself (the loopback-only list in `host/src/api/devices.rs`).
 - A website or other remote content reaching the loopback API (`127.0.0.1:19222`) without the token.
 - Secrets (tokens, keys, voice API keys) leaking off the computer.

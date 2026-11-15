@@ -25,6 +25,7 @@ Source review, a passing build, local integration tests and production acceptanc
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
+| Change what bots on other computers may do here (codync-network rules) | [codync-network](features/codync-network.md#ceilings-auto-and-ask), [network request risks](reference/network-request-risks.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
 | Record or patch around an agent's bug, or check whether upstream fixed one | [Upstream agent bugs](upstream-agents/README.md) (one page per agent) |

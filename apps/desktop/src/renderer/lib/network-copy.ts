@@ -31,6 +31,12 @@ export const expiryTime = (expiresAt: number) => new Date(expiresAt).toLocaleTim
 
 export const ANY = '*'
 
+/** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
+export const rulesFooter = (net: Network) =>
+  (net.defaultAccess ?? 'allow') === 'allow'
+    ? "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
+    : "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in."
+
 const RULE_LINES: Record<NetworkRule['access'], string> = {
   allow: 'Allow: {from} → {to}',
   auto: 'Auto: {from} → {to}',

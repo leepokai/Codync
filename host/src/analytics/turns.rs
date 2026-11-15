@@ -61,7 +61,7 @@ pub fn turn_finished(
         TurnSource::FollowUp => "follow_up",
     };
     let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
-    let access = hub.team.access(&bot.id);
+    let access = hub.ceilings.access(&bot.id);
     if access.is_ceiling() {
         p["ceiling"] = access.word().into();
     }

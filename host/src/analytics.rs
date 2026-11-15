@@ -60,6 +60,8 @@ pub enum NetworkStage {
     Receive,
     /// A turn under a rule's ceiling (`auto`, `ask`) didn't start: the bot's agent has no mode careful enough.
     Ceiling,
+    /// A network saved before the `auto` default couldn't keep the computers already in it at `allow`.
+    Migrate,
 }
 
 /// Reports a network step that failed; never the error's text, a name or an address.
@@ -70,6 +72,7 @@ pub fn network_failed(hub: &Hub, stage: NetworkStage) {
         NetworkStage::Reply => "reply",
         NetworkStage::Receive => "receive",
         NetworkStage::Ceiling => "ceiling",
+        NetworkStage::Migrate => "migrate",
     };
     capture(hub, Event::NetworkFailed, Map::from_iter([("stage".into(), stage.into())]));
 }

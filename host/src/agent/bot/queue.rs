@@ -225,7 +225,7 @@ impl Actor {
         while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
             // What the rest of the queue works on is the user's, or this computer's own: only a bot request and
             // bot replies carry another computer's text.
-            self.hub.team.set_access(&self.cfg.id, Access::Allow);
+            self.hub.ceilings.set(&self.cfg.id, Access::Allow);
             match self.queue.front() {
                 Some(Queued::Routine(_)) => {
                     let Some(Queued::Routine(id)) = self.queue.pop_front() else { unreachable!("front is a routine") };
@@ -256,7 +256,7 @@ impl Actor {
                     };
                     let ids = [request.entry_id.clone()];
                     let prompt = request.prompt.clone();
-                    self.hub.team.set_access(&self.cfg.id, request.access());
+                    self.hub.ceilings.set(&self.cfg.id, request.access());
                     request.mark_started();
                     self.active_request = Some(request);
                     let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
@@ -278,7 +278,7 @@ impl Actor {
                         }
                     }
                     let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
-                    self.hub.team.set_access(&self.cfg.id, access);
+                    self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {

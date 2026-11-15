@@ -37,30 +37,32 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 裝置上聽寫與語音通話不會再弄丟停頓前說的話。
 - Bot 改用備援時，「智慧體」卡片會說明原本的智慧體為什麼停下（已登出、被限速等），只有用量上限才顯示重設時間。
 - 輸入 `/` 時，清單最後會列出 Bot 所用智慧體自己的指令（Claude Code、Codex、OpenCode 等），和 Codync 自己的指令、技能分開，標上智慧體的名稱、圖示和說明；選一個會填入 `/<指令>`，送出後由智慧體直接執行。
+- 電腦的「網路」頁會列出新的規則等級：「自動」只讓其他電腦的 Bot 做 agent 判斷為安全的事，其餘先問你；「詢問」讓每個變更和指令都等你批准。沒有符合任何規則的電腦預設為「自動」，原本就在網路裡的電腦維持「允許」。
 
 ### en-US
-- Bots do long work in the background, several things at once: the chat stays free, so you can keep writing and the bot keeps answering. When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
+- Bots do long work in the background, several things at once, and keep answering in the chat. When it's done, the bot tells you what it found, or why it couldn't finish.
 - One capsule above the message box says "In the background" with how many are working and waiting; with a single one it shows what it is doing and for how long, and you can stop it there. Tap it to open the bot's Details.
-- Details lists what the bot does. Threads: the work that runs now and the places still free; a row opens what it did. Event box: what waits, in order, where you can move one First, Cut in when every place is taken (you pick what gives way; it starts again later), or touch and hold to Drop it. Recent: what ended in the last day; a stopped or failed one says why and has Try again.
+- Details lists what the bot does. Threads: work running now and the places still free. Event box: what waits, in order; move one First, Cut in when every place is taken, or touch and hold to Drop it. Recent: what ended in the last day; a stopped or failed one says why and has Try again.
 - Agents at once, in the bot's Settings, sets how many work at the same time (1 to 6). Instructions and Agent (model, fast mode, fallbacks) moved there from Details.
-- Background work can ask for your approval or a choice in the chat and send you a file or a voice note there, marked "In the background" with the name of the work; answer a card like any other.
-- Routines and other bots' requests run in the background too: you can keep talking to the bot while a routine runs.
-- A Work button at the top of the bot list shows every bot's work that is running or waiting, with the same actions as in Details.
-- Worktree per agent, in the bot's Settings (shown when its folder is a Git repository): agents working at once in one repository each get their own branch, so they don't change the same files. Codync never merges or deletes a branch that has work on it.
+- Background work can ask for approval or a choice and send files or voice notes in the chat, marked "In the background".
+- Routines and other bots' requests run in the background too.
+- A Work button at the top of the bot list shows every bot's running or waiting work.
+- Worktree per agent, in the bot's Settings (for a Git repository): agents working at once in one repository each get their own branch. Codync never merges or deletes a branch with work on it.
 - The Live Activity stays while background work runs, and shows when it needs you.
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent.
 - Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
-- Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more), or an API key for any agent (its values stay on the computer). Name each one, then pick a bot's under Agent in its settings, so two bots can work at once on different logins.
+- Agents can have several login profiles: add an account or an API key under Login profiles in an agent's setup (keys stay on the computer), name each, and pick a bot's under Agent, so two bots can work at once on different logins.
 - A fallback can be the same agent on another of its login profiles: when one runs out of usage, the bot carries on with the next.
 - Usage limits lists each account of an agent with its own limits (Claude Code, Codex), and widgets show the one nearest its limit.
 - After your computer restarts or the app or Codync updates, the iPhone catches up on only what's new instead of reloading every chat.
 - Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
-- A bot that says it will check back later now sets a follow-up: "Follow-up in 20 minutes" shows in the chat, and when it's due the bot comes back to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
+- A bot that says it will check back later sets a follow-up ("Follow-up in 20 minutes"); when it's due, the bot tells you what it found. Waiting follow-ups are listed above its routines, where you can cancel one.
 - A routine remembers where its last run stopped, so work done in parts carries on from there.
 - Optional Google Search in Gemini realtime calls, off by default.
-- Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or a speech server of your own set on the computer. With your own server, Mode stays on Speech.
+- Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or your own speech server (Mode then stays on Speech).
 - Reply to one part of a message: touch and hold it, choose Select Text, select the words, then Reply. The bot is told which part you mean.
 - A bot's Skills settings list only each skill's name; the info button beside one shows its description.
 - On-device dictation and calls keep the words you said before a pause.
 - While a bot is on a fallback, the Agent card says why its own agent stopped (signed out, rate limited and so on) and gives a reset time only for a usage limit.
-- Typing `/` now also lists the bot's agent's own commands (Claude Code, Codex, OpenCode and more), listed apart from Codync's own commands and skills under the agent's name, with its logo and description; pick one to fill in `/<command>`, and the agent runs it when you send.
+- Typing `/` also lists the bot's agent's own commands (Claude Code, Codex, OpenCode and more) under the agent's name; pick one and the agent runs it when you send.
+- Network rules gain two levels: Auto (another computer's bots get only what the agent judges safe; the rest asks you) and Ask (every change and command waits for you). A computer no rule matches gets Auto; computers already in a network keep Allow.

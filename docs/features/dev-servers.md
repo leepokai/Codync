@@ -56,7 +56,8 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 
 - **Under Ask, a start waits on an approval card** with the command and folder (`chat::manage::approve`, as `update_bot`).
   Under Auto it runs, like the agent's own commands, unless a network rule holds the bot to a
-  [ceiling](codync-network.md#ceilings-auto-and-ask), which asks like Ask. A server first started under Auto had no card, so it gets one when
+  [ceiling](codync-network.md#ceilings-auto-and-ask): a turn under one can't start a server at all, and what the
+  agent goes on with after that turn asks like Ask. A server first started under Auto had no card, so it gets one when
   the bot, now under Ask, starts it again (`Saved::approved`).
 - **The command runs outside any sandbox the agent has** (Codex has one). A sandboxed agent under Auto therefore has a
   way out of it through this tool. The card under Ask is the control; decided 2026-11-05 to match the agent's own

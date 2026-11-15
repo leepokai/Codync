@@ -29,7 +29,7 @@ pub use dispatch::{Wait, dispatch};
 pub use items::put_working_for_test;
 pub use items::{Source, Status, doing, lines, outside, wire, working_tasks};
 pub use prompts::{BRIEF, reminder, report_notice, report_prompt};
-pub use sources::{add_request, add_routine, boxed, from_chat, routines_changed, source_of};
+pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_item, first, retry, stop};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_task, tools};
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};

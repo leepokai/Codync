@@ -1407,6 +1407,7 @@
   "Bots message the bots on these computers as bot@computer.{network}.": "Боты пишут ботам на этих компьютерах как bot@computer.{network}.",
   "Who may message bots here": "Кто может писать ботам здесь",
   "Who may message bots on {name}": "Кто может писать ботам на {name}",
+  "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.": "Решает первое подходящее правило. Компьютер, к которому не подходит ни одно правило, получает «Авто». Ответы на сообщения этого компьютера проходят всегда.",
   "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.": "Решает первое подходящее правило. Без правил любой компьютер сети может писать любому боту здесь. Ответы на сообщения этого компьютера всегда проходят.",
   "Add rule": "Добавить правило",
   "Delete rule": "Удалить правило",

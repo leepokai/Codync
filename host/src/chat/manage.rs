@@ -9,7 +9,7 @@ use crate::chat::naming::MAX_NAME_CHARS;
 use crate::chat::profile::{MAX_INSTRUCTIONS_CHARS, checked_instructions, checked_name};
 use crate::hub::Hub;
 use crate::routines::Trigger;
-use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane, Permission};
+use crate::store::{AVATAR_COLORS, AVATAR_SHAPES, BotConfig, EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -209,15 +209,10 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))
 }
 
-/// Whether what `bot` asks for is approved without a card: under Approve automatically, unless a network rule's
-/// ceiling holds its work (`Requests::set_access`), which asks whatever the bot's Approvals.
-pub(crate) fn approves_by_itself(hub: &Hub, bot: &BotConfig) -> bool {
-    bot.permission == Permission::Auto && !hub.team.under_ceiling(&bot.id)
-}
-
-/// Unless the bot [`approves_by_itself`], the change waits for the user's Allow on an approval card in its chat.
+/// Unless the bot approves by itself (`Ceilings::approves_by_itself`), the change waits for the user's Allow on an
+/// approval card in its chat.
 pub(crate) async fn approve(hub: &Hub, source: &BotConfig, title: String, detail: String) -> Result<()> {
-    if approves_by_itself(hub, source) {
+    if hub.ceilings.approves_by_itself(source) {
         return Ok(());
     }
     if detail.encode_utf16().count() > MAX_CARD_DETAIL {

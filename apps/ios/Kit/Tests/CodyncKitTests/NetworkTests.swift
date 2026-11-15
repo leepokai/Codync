@@ -49,6 +49,13 @@ private let work = #"{"id":"network-1a2b","name":"work","computer":"desk","role"
     #expect(ask.access == .ask)
 }
 
+@Test func theRulesFooterSaysWhatAComputerNoRuleMatchesGets() throws {
+    let network = { (json: String) in try JSONDecoder().decode(NetworkView.Network.self, from: Data(json.utf8)) }
+    #expect(try network(#"{"id":"n","name":"home","defaultAccess":"auto"}"#).rulesFooter.contains("gets Auto"))
+    // A host before the default sends none, and lets such a computer in.
+    #expect(try network(#"{"id":"n","name":"home"}"#).rulesFooter.contains("every computer in the network may message"))
+}
+
 @Test func botsSayWhetherTheNetworkAndCloudAssistantsReachThem() throws {
     let bot = { (extra: String) in
         try JSONDecoder().decode(Bot.self, from: Data(#"{"id":"b","name":"Reviewer","backend":"claude","cwd":"/tmp"\#(extra)}"#.utf8))

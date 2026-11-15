@@ -17,18 +17,19 @@ const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 
-/** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
+/** This worktree's sandbox: its name, data folder, host port, DevTools port (`npm run dev -- --cdp` opens port + 10000) and whether it runs headless. */
 export function sandbox() {
   const name = sandboxName(basename(root))
   const home = join(homedir(), SANDBOX_PREFIX + name)
   const record = join(home, 'sandbox.json')
   let port: number
+  let headless: boolean
   try {
-    port = (JSON.parse(readFileSync(record, 'utf8')) as { port: number }).port
+    ;({ port, headless = false } = JSON.parse(readFileSync(record, 'utf8')) as { port: number; headless?: boolean })
   } catch {
     throw new Error(`No sandbox for ${root}: run \`npm run dev -- --cdp\` in apps/desktop first.`)
   }
-  return { name, home, port, cdp: port + 10000 }
+  return { name, home, port, cdp: port + 10000, headless }
 }
 
 /** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */
@@ -36,6 +37,16 @@ export function freezeHost() {
   const pid = Number(execFileSync('lsof', ['-t', '-sTCP:LISTEN', `-iTCP:${sandbox().port}`], { encoding: 'utf8' }).trim())
   process.kill(pid, 'SIGSTOP')
   return () => process.kill(pid, 'SIGCONT')
+}
+
+/** The process ID of the app `browser` is attached to (its main process). */
+export async function appPid(browser: Browser) {
+  const session = await browser.newBrowserCDPSession()
+  const { processInfo } = await session.send('SystemInfo.getProcessInfo')
+  await session.detach()
+  const main = processInfo.find((p) => p.type === 'browser')
+  if (!main) throw new Error('The attached app reported no main process.')
+  return main.id
 }
 
 /** Attaches to the sandbox app's main window over the DevTools protocol. */

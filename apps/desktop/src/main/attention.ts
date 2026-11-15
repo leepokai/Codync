@@ -1,7 +1,8 @@
 import { powerMonitor, type BrowserWindow } from 'electron'
+import { headless } from './headless'
 
-// Whether someone is looking at the chat window: it's shown and not minimized, and the computer is in use
-// (unlocked, input in the last 10 minutes). The window keeps its cloud computers connected only then, as a phone
+// Whether someone is looking at the chat window: it's shown and not minimized (a headless run's hidden window
+// counts as shown: its test is the one looking), and the computer is in use (unlocked, input in the last 10 minutes). The window keeps its cloud computers connected only then, as a phone
 // does in the foreground, since a connected device keeps a cloud computer awake (and billed).
 
 const AWAY_SECONDS = 600
@@ -28,7 +29,7 @@ export function watchAttention(window: BrowserWindow) {
   let last: boolean | null = null
   const check = () => {
     if (window.isDestroyed()) return
-    const now = window.isVisible() && !window.isMinimized() && powerMonitor.getSystemIdleState(AWAY_SECONDS) === 'active'
+    const now = (headless || (window.isVisible() && !window.isMinimized())) && powerMonitor.getSystemIdleState(AWAY_SECONDS) === 'active'
     setAttended(now)
     if (now === last) return
     last = now

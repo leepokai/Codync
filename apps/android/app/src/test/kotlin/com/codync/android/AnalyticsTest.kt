@@ -31,6 +31,10 @@ class AnalyticsTest {
         assertEquals("""{"action":"copy"}""", json(AnalyticsEvent.DevServerAction(DevServerUse.Copy)))
         assertEquals("""{"outcome":"played"}""", json(AnalyticsEvent.VoiceNotePlayed(null)))
         assertEquals("""{"outcome":"failed","error":"load"}""", json(AnalyticsEvent.VoiceNotePlayed(VoiceNoteFailure.Load)))
+        assertEquals("share_sent", AnalyticsEvent.ShareSent(ShareOutcome.Sent, 0, true, false).name)
+        assertEquals("""{"outcome":"queued","files":0,"text":true,"recent":true}""", json(AnalyticsEvent.ShareSent(ShareOutcome.Queued, 0, true, true)))
+        assertEquals("""{"outcome":"failed","error":"read","files":2,"text":false,"recent":false}""",
+            json(AnalyticsEvent.ShareSent(ShareOutcome.Failed, 2, false, false, ShareError.Read)))
         assertEquals("""{"link":"install_link"}""", json(AnalyticsEvent.LinkOpened(OutboundLink.InstallLink)))
         assertEquals("""{"step":"choose"}""", json(AnalyticsEvent.OnboardingStepViewed(OnboardingStep.Choose)))
         assertEquals("""{"action":"copy_image","from":"menu","outcome":"done"}""",
@@ -49,6 +53,9 @@ class AnalyticsTest {
         // An engine that was never ready leaves `ready_ms` out.
         assertEquals("""{"engine":"on_device","reconnects":0,"stuck":"connecting","failure":"none"}""",
             json(AnalyticsEvent.VoiceCallQuality(VoiceEngineKind.OnDevice, CallQuality.Report(null, 0, VoiceStuck.Connecting, null))))
+        // Google Search adds whether it was on and how many answers used it, never the query.
+        assertEquals("""{"engine":"gemini","reconnects":0,"stuck":"none","failure":"none","ready_ms":900,"google_search":true,"searches":2}""",
+            json(AnalyticsEvent.VoiceCallQuality(VoiceEngineKind.Gemini, CallQuality.Report(900, 0, VoiceStuck.None, null, 2))))
     }
 
     @Test fun `pairing failures map to the catalog's reasons`() {

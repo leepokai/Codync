@@ -1,10 +1,11 @@
 //! Starting a turn and wrapping it up: final reply, notices, the reply to a requesting bot or room, alerts and memory.
 
-use super::{Actor, Conn, Done, Instructions, NoticeStyle, Queued, Reacted, Seg};
+use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
 use crate::chat::context::{self, Snapshot};
 use crate::chat::memory;
+use crate::chat::tasks::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
 use crate::store::{EntryKind, Lane, now_ms};
@@ -19,7 +20,7 @@ const PROFILE_AGAIN: &str = "Your context was summarized. This is your full, cur
 impl Actor {
     /// This session's frozen instructions (reads memory files when re-rendering).
     pub(super) async fn snapshot(&self, session: &str) -> Result<Snapshot> {
-        let (hub, cfg, session) = (self.hub.clone(), self.cfg.clone(), session.to_owned());
+        let (hub, cfg, session) = (self.hub.clone(), self.cfg.as_owner(), session.to_owned());
         tokio::task::spawn_blocking(move || context::resolve(&hub.store, &cfg, &session)).await?
     }
 
@@ -28,9 +29,11 @@ impl Actor {
     async fn compose(&mut self, sid: &str, text: &str) -> Result<String> {
         let instructions = self.conn.as_ref().map_or(Instructions::FirstMessage, Conn::instructions);
         let mut snapshot = self.snapshot(sid).await?;
-        // Sessions whose frozen instructions predate send_file or artifacts hear about them each turn.
+        // Sessions whose frozen instructions predate send_file, artifacts or follow-ups hear about them each turn.
         let remind_files = !snapshot.system.contains("send_file");
         let remind_artifacts = !snapshot.system.contains("publish_artifact");
+        let remind_follow_ups = !snapshot.system.contains("follow_up");
+        let briefed_on_tasks = snapshot.system.contains("start_task");
         let mut prompt = text.to_owned();
         // The user's handoff first, then what the fallback chain carries in.
         for first in [self.relay.carried.take(), self.handoff.take()].into_iter().flatten() {
@@ -40,9 +43,9 @@ impl Actor {
         let resend = instructions == Instructions::FirstMessage && self.profile_resend.remove(sid);
         if snapshot.unprompted || resend {
             // The instructions reaching the agent now hold memory as it was when they were rendered.
-            memory::opened(&self.hub.store, &self.cfg.id, sid, &snapshot.memory)?;
+            memory::opened(&self.hub.store, self.cfg.owner(), sid, &snapshot.memory)?;
         }
-        if let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg, sid) {
+        if let Some((notice, revision)) = memory::change_notice(&self.hub.store, &self.cfg.as_owner(), sid) {
             prompt = format!("{notice}\n\n{prompt}");
             self.turn_memory_revision = revision;
         }
@@ -54,11 +57,11 @@ impl Actor {
         if snapshot.unprompted && instructions == Instructions::FirstMessage {
             prompt = format!("<bot-profile>\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         } else if resend {
-            context::mark_announced(&self.hub.store, &self.cfg.id, &snapshot, snapshot.system_identity.clone())?;
+            context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, snapshot.system_identity.clone())?;
             snapshot.announced = snapshot.system_identity.clone();
             prompt = format!("<bot-profile>\n{PROFILE_AGAIN}\n\n{}\n</bot-profile>\n\n{prompt}", snapshot.system);
         }
-        if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg) {
+        if let Some((update, identity)) = context::profile_update(&self.hub.store, &snapshot, &self.cfg.as_owner()) {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
@@ -68,6 +71,13 @@ impl Actor {
         }
         if remind_artifacts && own_chat {
             prompt.push_str("\n\n[Codync: for a report, plan, tracker or dashboard the user will come back to, write one self-contained HTML file and publish_artifact(path, title) instead of a long message. To change it, edit a copy of its HTML (list_artifacts) and publish_artifact(path, artifact: its id).]");
+        }
+        if remind_follow_ups && own_chat {
+            prompt = format!("{prompt}\n\n[Codync: {}]", crate::routines::BRIEF);
+        }
+        let known = crate::agent::backends::harness(&self.cfg.backend).is_some();
+        if let Some(about) = tasks::reminder(briefed_on_tasks, known).filter(|_| own_chat && !self.cfg.is_task()) {
+            prompt = format!("{prompt}\n\n[Codync: {about}]");
         }
         Ok(prompt)
     }
@@ -91,7 +101,8 @@ impl Actor {
         let turn = entry_ids.last().and_then(|id| self.hub.store.entry(id)).map_or_else(
             || {
                 run_turn.unwrap_or_else(|| {
-                    self.hub.store.max_turn(&lane.chat) + i64::from(self.source() != TurnSource::User)
+                    // A resumed turn (hidden) carries on in the one that was cut off.
+                    self.hub.store.max_turn(&lane.chat) + i64::from(!hidden && self.source() != TurnSource::User)
                 })
             },
             |e| e.turn,
@@ -141,12 +152,12 @@ impl Actor {
         }
         // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
         // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
-        // call is over). A reply turn is resumed.
+        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now.
         self.set_inflight(
             self.active_request.is_none()
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
-                && !self.active_prompt,
+                && self.host_turn.is_none_or(HostTurn::resumed),
         );
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
@@ -165,7 +176,7 @@ impl Actor {
         });
 
         // Memory files changed since (in an editor, say) reach the opening or the next notice.
-        let (hub, cfg) = (self.hub.clone(), self.cfg.clone());
+        let (hub, cfg) = (self.hub.clone(), self.cfg.as_owner());
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
@@ -187,7 +198,9 @@ impl Actor {
                 Some("The agent could not reload this run's saved session".into()),
                 None,
             );
+            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
             self.turn = None;
+            self.end_host_turn(false);
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
@@ -227,11 +240,17 @@ impl Actor {
             self.set_inflight(true);
         }
         // From here what changes in its memory folders is the bot's, however it changed them.
-        memory::turns::begin_turn(&self.cfg.id, &sid, self.hub.runtime(&self.cfg.id).message);
+        // ponytail: a task's edits to the memory files aren't tracked as a turn's (the tracker keeps one turn per
+        // bot): they are taken at its bot's next scan and credited as changes outside a turn. Track turns per
+        // session if a task's writes need its own credit.
+        if !self.cfg.is_task() {
+            memory::turns::begin_turn(&self.cfg.id, &sid, self.hub.runtime(&self.cfg.id).message);
+        }
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
         if !self.turn_memory_revision.is_empty()
-            && let Err(error) = memory::mark_announced(&self.hub.store, &self.cfg.id, &sid, &self.turn_memory_revision)
+            && let Err(error) =
+                memory::mark_announced(&self.hub.store, self.cfg.owner(), &sid, &self.turn_memory_revision)
         {
             tracing::warn!(%error, "could not acknowledge memory update notice");
         }
@@ -248,7 +267,9 @@ impl Actor {
         }
         self.after_turn(done);
         // The bot's own edits to its memory files, checked and shown in the chat it made them from.
-        memory::turns::scan_after_turn(self.hub.clone(), self.cfg.clone());
+        if !self.cfg.is_task() {
+            memory::turns::scan_after_turn(self.hub.clone(), self.cfg.clone());
+        }
         if let (Some(conn), Some(sid)) = (self.conn.as_mut(), &self.turn_session)
             && let Some(used) = conn.loaded.get_mut(sid)
         {
@@ -307,7 +328,7 @@ impl Actor {
                 self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
             }
             (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
-            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg.backend),
+            (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg),
             _ => {}
         }
         let failure = done.as_ref().err().filter(|_| !self.stop_requested);
@@ -351,21 +372,30 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
+        // A task's last message is its report to its bot.
+        self.turn_over(if stopped {
+            Outcome::Stopped
+        } else if let Some(error) = done.as_ref().err() {
+            Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
+        } else if stop_reason != "end_turn" {
+            Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+        } else {
+            Outcome::Done(final_text.clone())
+        });
         self.turn = None;
         self.reply_hops = None;
-        // A call's opening is heard on the call: no alert.
-        let opening = std::mem::take(&mut self.active_prompt);
+        let host_turn = self.end_host_turn(done.is_ok() && !stopped && stop_reason == "end_turn");
         if self.routine_completion.is_none() {
             self.set_inflight(false);
         }
         // The message reached the agent: the profile update it carried is now known to it.
         if let (Ok(_), Some((snapshot, identity))) = (&done, self.announce.take())
-            && let Err(error) = context::mark_announced(&self.hub.store, &self.cfg.id, &snapshot, identity)
+            && let Err(error) = context::mark_announced(&self.hub.store, self.cfg.owner(), &snapshot, identity)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the profile update");
         }
         if let (Ok(_), Some(sent)) = (&done, self.first_prompt.take())
-            && let Err(error) = context::mark_prompted(&self.hub.store, &self.cfg.id, &sent)
+            && let Err(error) = context::mark_prompted(&self.hub.store, self.cfg.owner(), &sent)
         {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the delivered instructions");
         }
@@ -386,11 +416,13 @@ impl Actor {
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));
         // It held back its only answer, a reaction: it said nothing, so there is nothing to tell either.
         let held_back = final_text.is_none() && matches!(reacted, Reacted::Refused);
+        // A turn the host started that found nothing worth saying (a follow-up's `(pass)`): the same.
+        let passed = final_text.is_none() && host_turn.is_some();
         if !self.stop_requested
             && !delegated
             && !grouped
-            && !opening
-            && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back)
+            && host_turn.is_none_or(HostTurn::alerts)
+            && let Some(kind) = turn_alert(failed, &stop_reason, more || held_back || passed)
         {
             let body = final_text.unwrap_or_else(|| match (kind, reacted) {
                 (AlertKind::Done, Reacted::With(emoji)) => format!("Reacted {emoji} to your message"),
@@ -460,10 +492,8 @@ impl Actor {
             TurnSource::Group
         } else if self.active_request.is_some() || self.reply_hops.is_some() {
             TurnSource::Bot
-        } else if self.active_prompt {
-            TurnSource::Host
         } else {
-            TurnSource::User
+            self.host_turn.map_or(TurnSource::User, HostTurn::source)
         }
     }
 }

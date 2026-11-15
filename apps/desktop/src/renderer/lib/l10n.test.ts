@@ -219,6 +219,21 @@ test('bot, routine and message slots keep what the user wrote; other slots still
   assert.equal(translate('constructor', 'ru', false), 'constructor')
 })
 
+test('follow-up notices translate around the wait and keep the note as written', () => {
+  assert.equal(translate('Follow-up in 1 minute: Settings', 'zh-Hant', 'en'), '1 分鐘後跟進：Settings')
+  assert.equal(translate('Follow-up in 20 minutes: Settings', 'zh-Hant', 'en'), '20 分鐘後跟進：Settings')
+  // A note that reads like another wait stays a note: the wait ends at the first colon.
+  assert.equal(translate('Follow-up in about 3 hours: look again in 5 minutes: maybe', 'zh', false), '约 3 小时后跟进：look again in 5 minutes: maybe')
+  assert.equal(translate('Follow-up in 1 minute: wait 5 minutes: then check', 'zh-Hant', 'en'), '1 分鐘後跟進：wait 5 minutes: then check')
+  assert.equal(translate('Follow-up in about 2 days: rerun if 3 hours: passed', 'zh-Hant', 'en'), '約 2 天後跟進：rerun if 3 hours: passed')
+  assert.equal(translate('Follow-up in about 2 days: Plan', 'ru', false), 'Проверка через примерно 2 дн.: Plan')
+  assert.equal(translate('Follow-up · Plan', 'ja', false), 'フォローアップ · Plan')
+  assert.equal(translate('Follow-up cancelled: Plan', 'fr', false), 'Suivi annulé : Plan')
+  // A waiting follow-up's row in the routines list.
+  assert.equal(translate('Follow-up at 15:42', 'zh-Hant', 'en'), '15:42 跟進')
+  assert.equal(translate('Follow-up due now', 'zh-Hant', 'en'), '即將跟進')
+})
+
 test('filled interface templates preserve user-owned names', () => {
   for (const name of ['Plan', 'connected', 'Standby']) {
     assert.equal(translate(`Routine · ${name}`, 'zh', 'en'), `例行任务 · ${name}`)

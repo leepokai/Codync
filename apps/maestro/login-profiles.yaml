@@ -1,0 +1,130 @@
+# Login profiles on the phones (docs/features/login-profiles.md): a bot's details show the login profile it runs on
+# under Agent, by the name the user gave it, and move it back to the default one; the agent's setup lists both under
+# Login profiles, the added account as "Not signed in", renames the default one with its pencil, and removes the
+# account once no bot uses it (before that the host refuses). Then an API key one: Add API key opens its key form, a
+# made-up variable saves, its row shows the name, Edit keys shows it saved, and it is removed. Nothing here signs in
+# and no real key is typed: the account stays signed out, and the computer's own login is never touched (its name
+# goes back when the flow completes). The phone must already be signed in and paired with the host (a worktree's
+# sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that.
+# The computer needs an agent that can have accounts installed (Claude Code, Codex, OpenCode, Pi…; two, for the two
+# phones in one run: see login-profiles.js); without, the flow does nothing.
+# Not here: a fallback on a login profile, which needs a signed-in one (the desktop spec adds the default login as
+# one), and importing from the login shell (the desktop spec opens its list).
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags agents \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - agents
+onFlowComplete:
+  - runScript:
+      file: login-profiles.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: login-profiles.js
+- runFlow:
+    when:
+      true: ${output.profiles != null}
+    commands:
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: refused
+      - runFlow:
+          when:
+            platform: iOS
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.ios.dev
+                arguments:
+                  "-reviewInvitationOff": true
+      - runFlow:
+          when:
+            platform: Android
+          commands:
+            - launchApp:
+                appId: com.pokai.Codync.android.dev
+      - tapOn: ${output.profiles.name}
+      - tapOn: "${output.profiles.name}, view details"
+      - tapOn: "Details"
+      # The Login profile row under Agent: the bot's own stays listed while it's signed out.
+      - scrollUntilVisible:
+          element: ${output.profiles.work}
+          centerElement: true
+      - tapOn: ${output.profiles.work}
+      - tapOn: ${output.profiles.home}
+      - assertVisible: ${output.profiles.home}
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: moved
+      # Add login profile… opens the agent's setup, which lists the account and removes it now that no bot uses it.
+      - tapOn: ${output.profiles.home}
+      - tapOn: "Add login profile…"
+      - scrollUntilVisible:
+          element: "Not signed in"
+          centerElement: true
+      - assertVisible: "Login profiles"
+      - assertVisible: ${output.profiles.work}
+      - assertVisible: ${output.profiles.home}
+      - takeScreenshot: login-profiles
+      # The pencil names a login profile in a dialog: the default one's is the first.
+      - tapOn:
+          text: "Rename login profile"
+          index: 0
+      - eraseText
+      - inputText: ${output.profiles.renamed}
+      - tapOn: "Save"
+      - assertVisible: ${output.profiles.renamed}
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: renamed
+      - tapOn: "Remove login profile"
+      - extendedWaitUntil:
+          notVisible: ${output.profiles.work}
+          timeout: 20000
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: removed
+      # An API key login profile: its key form takes a made-up variable, and its row shows the name, never the value.
+      - scrollUntilVisible:
+          element: "Add API key"
+          centerElement: true
+      - tapOn: "Add API key"
+      - scrollUntilVisible:
+          element: "Add variable"
+          centerElement: true
+      - tapOn: "Add variable"
+      # The new row is the last one: an agent's usual variables come before it, and `above` would take the first.
+      - tapOn:
+          text: "Variable name"
+          index: ${output.profiles.nameIndex}
+      - inputText: ${output.profiles.keyName}
+      - tapOn:
+          text: "Value"
+          index: ${output.profiles.valueIndex}
+      - inputText: "made-up-maestro-value"
+      - tapOn: "Save"
+      - scrollUntilVisible:
+          element: ".*${output.profiles.keyName}.*"
+          centerElement: true
+      - assertNotVisible: ".*made-up-maestro-value.*"
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: keyed
+      # Edit keys opens the form on the saved variable, whose value stays on the computer.
+      - tapOn: "Edit keys"
+      - assertVisible: "Saved \\(type to replace\\)"
+      - assertVisible: "Import from login shell"
+      - tapOn: "Back"
+      - tapOn: "Remove login profile"
+      - extendedWaitUntil:
+          notVisible: ".*${output.profiles.keyName}.*"
+          timeout: 20000
+      - runScript:
+          file: login-profiles.js
+          env:
+            STEP: unkeyed

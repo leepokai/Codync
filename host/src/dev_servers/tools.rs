@@ -72,9 +72,12 @@ pub fn tools() -> Vec<Value> {
     ]
 }
 
-pub async fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+/// `caller`: the bot whose agent calls. A task's servers are its bot's: the user sees and stops them there, and
+/// they count toward its limit.
+pub async fn call(hub: &Arc<Hub>, caller: &str, name: &str, args: &Value) -> Result<Value> {
+    let bot = &crate::chat::tasks::owner(&hub.store, caller);
     match name {
-        START => start(hub, bot, args).await,
+        START => start(hub, caller, bot, args).await,
         "list_dev_servers" => Ok(json!({"servers": hub.dev_servers.wire(bot)})),
         "stop_dev_server" => {
             stop(hub, bot, arg(args, "id")?, "bot").await?;
@@ -94,9 +97,10 @@ fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args[key].as_str().map(str::trim).filter(|v| !v.is_empty()).ok_or_else(|| anyhow!("{key} is required"))
 }
 
-async fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+/// `caller` asks (its turn waits on the card, in its folder); the server is `bot`'s.
+async fn start(hub: &Arc<Hub>, caller: &str, bot: &str, args: &Value) -> Result<Value> {
     let command = arg(args, "command")?.to_owned();
-    let cfg = hub.store.bot(bot)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
+    let cfg = hub.store.bot(caller)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
     let folder = folder_for(&cfg, args["folder"].as_str()).await?;
     let on_a_card = cfg.permission != Permission::Auto;
     let servers = &hub.dev_servers;

@@ -62,6 +62,7 @@ impl App {
             Overlay::Computer(_) => Some(Screen::BotComputer),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
+            Overlay::Task(_) => Some(Screen::Task),
             Overlay::Form(_) => Some(Screen::BotDetails),
             Overlay::Group(g) if g.group_id.is_some() => Some(Screen::BotDetails),
             _ => None,
@@ -111,6 +112,9 @@ mod tests {
         app.report_screen();
         assert_eq!(app.seen.screen, Some(Screen::BotComputer));
         app.overlays.pop();
+        app.overlays.push(Overlay::Task(crate::tui::manage::TaskSheet::new("b".into(), "task-1".into())));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::Task), "a background task's details");
 
         app.overlays.clear();
         app.trace = TraceMode::Full;

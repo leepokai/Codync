@@ -73,6 +73,9 @@ All four clients show the same things; layout follows each platform.
   - Header: close (`xmark`, "Close artifact"), the title in the middle (tapping it renames the artifact: "Rename
     artifact", "Artifact title"), and a share action: desktop "Save as HTML" and "Open in browser"; iPhone and Android
     the system share sheet with `<title>.html`.
+  - Desktop: the viewer takes focus when it opens, so `Tab` reaches its close key and `Escape` closes it back to the
+    chat. A field (the title being renamed, the message box) and the share menu keep `Escape` for themselves: there it
+    only cancels that, and the artifact stays open.
   - Bottom: a message box, "Message about “<title>”", that sends a reply to the artifact's card (`entryId`) to its
     bot. It keeps a draft of its own (`<bot>/artifact/<id>`), apart from the chat's. The viewer stays open; when the bot publishes the artifact again, it reloads. An artifact without a card
     (published in a routine run) has no message box: there is nothing to reply to.

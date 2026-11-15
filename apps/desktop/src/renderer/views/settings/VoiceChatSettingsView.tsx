@@ -1,7 +1,7 @@
 import { onDeviceUnavailableReason, voiceSettingsClosed } from '../call/voice'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LoopbackTransport, type HostClient } from '../../client/host-client'
-import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, ValueRow } from '../../components/Controls'
+import { Button, CardForm, CardSection, ChoicePicker, IconButton, Reveal, Spinner, Switch, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
@@ -101,6 +101,8 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const tr = useTr()
   const store = useStore()
   const info = voice.voiceInfo[provider]
+  const [googleSearch, setGoogleSearch] = usePref(voice.googleSearch)
+  const [supportsSearch, setSupportsSearch] = useState(false)
   const [mode] = usePref(voice.mode(provider))
   const [dictationEngine] = usePref(voice.dictationEngine)
   /** null while the computer hasn't answered yet. */
@@ -148,7 +150,9 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
       }
       let configured: boolean
       try {
-        configured = voice.configured(await voice.voiceStatus(client), provider)
+        const status = await voice.voiceStatus(client)
+        configured = voice.configured(status, provider)
+        if (!cancelled) setSupportsSearch(status.googleSearch === true)
       } catch (e) {
         if (cancelled) return
         setSaved(false)
@@ -321,6 +325,11 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
                   />
                 </ValueRow>
               </div>,
+              ...(provider === 'gemini' && !speechMode && supportsSearch ? [
+                <ValueRow key="google-search" label="Google Search" detail="Let Gemini search the web during calls. Requires Google Search quota; charges may apply.">
+                  <Switch label="Google Search" on={googleSearch} onChange={setGoogleSearch} />
+                </ValueRow>,
+              ] : []),
               <div key="minutes" className={dimmed}>
                 <ValueRow label={tr('This month')}>{tr('≈ {minutes} min').replaceAll('{minutes}', () => String(voice.voiceMinutes(provider)))}</ValueRow>
               </div>,

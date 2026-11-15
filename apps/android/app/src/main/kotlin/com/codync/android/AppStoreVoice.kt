@@ -106,12 +106,13 @@ private fun AppStore.begin(call: VoiceBinding, provider: VoiceProvider?) {
                 choices.model(provider, VoiceChoices.Model.Transcribe), link, WebRtcPeer(application)) { secret, offer ->
                 OpenAIRealtimeEngine.answer(voiceHttp, secret, offer)
             }
-            else -> GeminiLiveEngine(contextScope, settings, model, voice, link, mic(), AndroidPcmPlayer(), voiceHttp)
+            else -> GeminiLiveEngine(contextScope, settings, model, voice, choices.googleSearch, link, mic(), AndroidPcmPlayer(), voiceHttp)
         }
     }
     call.engine = engine
     call.quality.begin(kind)
     (engine as? GeminiLiveEngine)?.onStall = { contextScope.launch { if (call.engine === engine) call.quality.stalled() } }
+    (engine as? GeminiLiveEngine)?.onSearch = { use -> contextScope.launch { if (call.engine === engine) call.quality.search(use) } }
     if (muted) engine.mute(true)
     call.cloudSince = if (provider != null) SystemClock.elapsedRealtime() else null
     contextScope.launch {
@@ -179,9 +180,8 @@ private fun AppStore.countCloudMinutes(call: VoiceBinding) {
 
 /** What you said goes out as the call's message, unless the call has moved on. */
 private fun AppStore.sendFromCall(call: VoiceBinding, text: String) {
-    if (state.value.generation != call.generation || state.value.voice?.id != call.id || state.value.loading) return
-    val send = PendingSend(UUID.randomUUID().toString(), call.botId, text, System.currentTimeMillis(), call = call.id)
-    action("save:" + send.nonce) { savePending(send); deliver(send) }
+    if (state.value.generation != call.generation || state.value.voice?.id != call.id) return
+    sendText(call.botId, text, call.id)
 }
 
 /** What the computer tells the call's voice (host chat/calls/announce), each cue once: the engine only says it. */

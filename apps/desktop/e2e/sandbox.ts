@@ -12,6 +12,8 @@ const root = resolve(__dirname, '../../..')
 const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
+// A scripted agent that starts background tasks and is the task itself (host/tests/fixtures/task_agent.py).
+const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 
 /** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
 export function sandbox() {
@@ -73,6 +75,15 @@ export async function echoBot(page: Page, name: string) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
     name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, connectors: [], skills: [], notify: false,
   })
+  return bot
+}
+
+/** A bot on the scripted agent that starts a background task for `START <title>|<brief>`; it asks before it acts. */
+export async function taskBot(page: Page, name: string) {
+  const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
+    name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+  })
+  await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot
 }
 

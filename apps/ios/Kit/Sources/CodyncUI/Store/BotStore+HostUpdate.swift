@@ -41,7 +41,7 @@ public struct HostVersionLine: Equatable, Sendable {
                             host: String, os: String?, cloud: Bool = false) -> HostVersionLine {
         let minimum: String? = if case let .updateHost(_, minimum) = mismatch { minimum } else { nil }
         let available = latest.flatMap { AppVersion.isBelow(version, $0) ? $0 : nil }
-        let due = minimum.map { "This app needs \($0) or newer." } ?? available.map { "Version \($0) is available." }
+        let due = minimum.map { "\(host) needs Codync \($0) or newer." } ?? available.map { "Version \($0) is available." }
         switch (offer, due) {
         case (.updating, _):
             return HostVersionLine(version: version, detail: [UpdateNeededText.updating(host: host)], accessory: .updating)

@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { folderName, isGroup, isWorking, needsInput, type Bot } from '@shared/models'
+import { rosterTaskLine } from '@shared/tasks'
 import { AvatarWithStatus } from '../components/Avatar'
 import { Icon } from '../components/Icon'
 import { HStack, VStack } from '../components/Stack'
@@ -55,6 +56,8 @@ function Preview({ bot, store }: { bot: Bot; store: BotStore }) {
       </HStack>
     )
   }
+  const inBackground = rosterTaskLine(bot, tr)
+  if (inBackground) return <Text size="callout" tone="secondary" truncate>{inBackground}</Text>
   if (bot.status === 'error') return <Text size="callout" tone="danger" truncate>{messagePreview(bot.lastMessage ?? tr(`Something went wrong`))}</Text>
   return <Text size="callout" tone="secondary" truncate>{messagePreview(bot.lastMessage ?? (isGroup(bot) ? `${bot.members.length} bots` : `${store.backendName(bot.backend)} · ${place}`))}</Text>
 }

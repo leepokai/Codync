@@ -7,8 +7,10 @@ struct RoutinesView: View {
     var initialId: String?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var routines: [Routine] = []
     @State private var runs: [RoutineRun] = []
+    @State private var followUps: [FollowUp] = []
     /// The open editor: on a routine, or (`routineId` nil) setting up a new one.
     @State private var editing: EditorTarget?
     @State private var loaded = false
@@ -62,7 +64,10 @@ struct RoutinesView: View {
     }
 
     private var listing: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(followUps) { followUp in
+                row(followUp).outlinedCard(vertical: 0, dashed: true)
+            }
             if routines.isEmpty {
                 Text(L10n.tr(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…"))
                     .font(.system(size: 12))
@@ -102,6 +107,27 @@ struct RoutinesView: View {
         }
     }
 
+    /// A follow-up is the bot's own one-off, not a standing routine: a clock, when it happens, and a way to drop it.
+    private func row(_ followUp: FollowUp) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "clock")
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.secondary)
+                .padding(.top, 12)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(followUp.note).foregroundStyle(Palette.text).lineLimit(2)
+                Text(followUp.line(locale: locale)).font(.caption).monospacedDigit().foregroundStyle(Palette.secondary)
+            }
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            IconButton("Cancel follow-up", systemImage: "xmark") { cancel(followUp) }
+                .disabled(busy || model.isOffline)
+                .padding(.top, 2)
+                .padding(.trailing, -6)
+        }
+    }
+
     /// The row's second line, translated: what's happening now, else when it runs.
     private func summary(_ routine: Routine) -> String {
         if let active = runs.first(where: { $0.routineId == routine.id && $0.isActive }) { return L10n.tr(runLabel(active)) }
@@ -134,23 +160,34 @@ struct RoutinesView: View {
     private func open(_ id: String?) { animate { editing = EditorTarget(id: UUID().uuidString, routineId: id) } }
 
     private func action(_ method: String, _ routine: Routine, enabled: Bool? = nil) {
+        perform { try await $0.routineAction(method, botId: botId, id: routine.id, enabled: enabled) }
+    }
+
+    private func cancel(_ followUp: FollowUp) {
+        perform { try await $0.cancelFollowUp(botId: botId, id: followUp.id) }
+    }
+
+    /// One change at a time, then the list as the host now has it.
+    private func perform(_ change: @escaping @MainActor (HostClient) async throws -> Void) {
         guard !busy, let client = model.client else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
-                try await client.routineAction(method, botId: botId, id: routine.id, enabled: enabled)
+                try await change(client)
                 error = nil
                 await load()
             } catch { self.error = error.localizedDescription }
         }
     }
+
     private func load() async {
         guard let client = model.client else { return }
         do {
             let result = try await client.routines(botId: botId)
             routines = result.routines
             runs = result.runs
+            followUps = result.followUps ?? []
             loaded = true
             loadError = nil
         } catch is CancellationError {} catch { self.loadError = error.localizedDescription }

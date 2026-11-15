@@ -81,7 +81,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
         }
         Field::Network => tr("Offered to the network: bots on your other computers can see and message this bot.").into_owned(),
         Field::Assistants => {
-            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync account can see and message this bot.")
+            tr("Reachable by cloud assistants: ChatGPT or Claude in your Codync login profile can see and message this bot.")
                 .into_owned()
         }
         _ => return None,
@@ -111,17 +111,22 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let agent_name = app.agent_name(&f.backend);
     // The form can outgrow the terminal: it starts as far down as keeps the focused field in sight.
     let room = inner.bottom().saturating_sub(FOOTER).saturating_sub(y);
+    // An agent that can't have login profiles has no Login profile field.
+    let login_profiles = app.login_profiles(&f.backend);
+    let shown = |field: &Field| *field != Field::LoginProfile || login_profiles.is_some();
+    let height = |fields: &[Field]| fields.iter().filter(|x| shown(x)).map(|x| field_rows(*x) + 1).sum::<u16>();
     let mut first = 0;
-    while first < f.field && FIELDS[first..f.field].iter().map(|field| field_rows(*field) + 1).sum::<u16>() >= room {
+    while first < f.field && height(&FIELDS[first..f.field]) >= room {
         first += 1;
     }
-    for (i, field) in FIELDS.iter().enumerate().skip(first) {
+    for (i, field) in FIELDS.iter().enumerate().skip(first).filter(|(_, field)| shown(field)) {
         let active = i == f.field;
         let base = if active { t.sel } else { t.panel };
         let lab = match field {
             Field::Name => "Name",
             Field::Instructions => "Instructions",
             Field::Agent => "Agent",
+            Field::LoginProfile => "Login profile",
             Field::Model => "Model",
             Field::ModelOptions => "Options",
             Field::Fast => "Fast mode",
@@ -236,8 +241,23 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
             }
             Field::Agent => {
                 put(buf, vx, y, vw, &format!("‹ {agent_name} ›"), t.text.patch(base));
-                if let Some(note) = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::rest_note(b, &f.backend)) {
+                let bot = app.bots.get(&f.bot_id);
+                if let Some(note) =
+                    bot.and_then(|b| super::fallbacks::rest_note(b, &f.backend, f.login_profile.as_deref()))
+                {
                     rput(buf, inner.right(), y, &note, t.amber.patch(base));
+                }
+            }
+            Field::LoginProfile => {
+                let own = login_profiles.into_iter().flatten().find(|a| a["id"].as_str() == f.login_profile.as_deref());
+                let name = match (&f.login_profile, own.and_then(|a| a["name"].as_str())) {
+                    (None, _) => app.default_login_profile_name(&f.backend),
+                    (Some(_), Some(name)) => name.to_owned(),
+                    (Some(_), None) => tr("New login profile").into_owned(),
+                };
+                put(buf, vx, y, vw, &format!("‹ {name} ›"), t.text.patch(base));
+                if f.login_profile.is_some() && own.is_none_or(|a| a["signedIn"] != true) {
+                    rput(buf, inner.right(), y, &tr("Not signed in"), t.amber.patch(base));
                 }
             }
             Field::Fallbacks => {
@@ -380,8 +400,9 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
         Field::Agent => "←→ change · ↵ install / sign in · tab next",
+        Field::LoginProfile => "←→ change · ↵ add login profile · tab next",
         Field::Model => "←→ pick a model · or type its id",
-        Field::Fallbacks => "←→ pick · space add / model · a agent · [ ] move · x remove",
+        Field::Fallbacks => "←→ pick · space add / model · a agent · c login profile · [ ] move · x remove",
         Field::Fast
         | Field::SelfFallbacks
         | Field::Color

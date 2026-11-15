@@ -47,17 +47,22 @@ pub fn context_window(store: &Store, bot: &str) -> Option<u64> {
     store.kv_get(&window_key(bot)).and_then(|v| v.parse().ok())
 }
 
+fn conversation_key(bot: &str, session: &str) -> String {
+    format!("compaction.{bot}.{session}")
+}
+
+/// What is known of `bot`'s conversation in `session`: how full its window is, and its compactions.
+pub(crate) fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
+    store.kv_get(&conversation_key(bot, session)).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
 impl Actor {
     fn conversation_key(&self, session: &str) -> String {
-        format!("compaction.{}.{session}", self.cfg.id)
+        conversation_key(&self.cfg.id, session)
     }
 
     fn conversation(&self, session: &str) -> Conversation {
-        self.hub
-            .store
-            .kv_get(&self.conversation_key(session))
-            .and_then(|v| serde_json::from_str(&v).ok())
-            .unwrap_or_default()
+        conversation(&self.hub.store, &self.cfg.id, session)
     }
 
     fn save_conversation(&self, session: &str, c: &Conversation) {
@@ -79,11 +84,12 @@ impl Actor {
         if let Some(life) = self.hub.store.kv_get(&self.cache_life_key()).and_then(|v| serde_json::from_str(&v).ok()) {
             return life;
         }
-        let api_key = crate::agent::auth::saved_env(&self.hub.store, &self.cfg.backend)
-            .unwrap_or_default()
-            .iter()
-            .any(|k| k == "ANTHROPIC_API_KEY")
-            || std::env::var_os("ANTHROPIC_API_KEY").is_some();
+        // The key its process starts with (saved for the agent, or its login profile's), or the host's own it
+        // inherits: on the default login only, a login profile's process starts without that one.
+        let (store, backend) = (&self.hub.store, self.cfg.backend.as_str());
+        let profile = crate::agent::login_profiles::of_bot(store, backend, &self.cfg);
+        let api_key = crate::agent::auth::launch_sets(store, backend, profile, "ANTHROPIC_API_KEY")
+            || (profile.is_none() && std::env::var_os("ANTHROPIC_API_KEY").is_some());
         if self.adapter() == Adapter::Claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
     }
 
@@ -156,7 +162,7 @@ impl Actor {
     /// `context`), a harness that got them in its first message gets them again, and the chat shows the summary.
     pub(super) fn compacted(&mut self, id: &str, summary: Option<String>) {
         let Some(sid) = self.turn_session.clone() else { return };
-        match context::bump_epoch(&self.hub.store, &self.cfg.id, &sid, id) {
+        match context::bump_epoch(&self.hub.store, self.cfg.owner(), &sid, id) {
             Ok(true) => {}
             // The same compaction reported again; Claude's adapter carries the summary on one of its reports.
             Ok(false) => {
@@ -170,7 +176,7 @@ impl Actor {
                 return;
             }
         }
-        if let Err(error) = memory::compacted(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = memory::compacted(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
         }
         if self.conn.as_ref().is_some_and(|c| c.instructions() == Instructions::FirstMessage) {
@@ -318,7 +324,7 @@ impl Actor {
         }
         crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
-        if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = context::refresh(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");
         }
         self.compacting = Some(idle);

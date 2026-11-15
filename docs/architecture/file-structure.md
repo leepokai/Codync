@@ -25,7 +25,7 @@ Codync/
 │   ├── project.yml            # XcodeGen source of truth for every Apple target
 │   ├── Codync.xcodeproj/      # Generated Xcode project
 │   ├── shared/Config/         # {dev,main}.plist: environment for the iPhone, Android and desktop apps
-│   ├── ios/                   # App/, Views/, Resources/, Widgets/, NotificationService/, WhatsNew.md (App Store notes)
+│   ├── ios/                   # App/, Views/, Resources/, Widgets/, NotificationService/, Share/ (share sheet), WhatsNew.md (App Store notes)
 │   │   └── Kit/               # The iPhone app's Swift package
 │   │       ├── Sources/
 │   │       │   ├── CodyncKit/  # Wire models, transports, design; widget-safe
@@ -103,7 +103,7 @@ Codync/
 | Identity, encryption and direct channel | `host/src/remote/identity.rs`, `crypto.rs`, `channel.rs` |
 | Host cloud state and relay connection | `host/src/remote/cloud.rs`, `cloud_url.rs`, `relay.rs` |
 | Codync Cloud computers (host side: self-claim, sleep, cloud updates, its name; the keeper that holds its secrets) | `host/src/remote/claim.rs`, `managed.rs`; `host/src/keeper/` (`store.rs` sealed secrets, `socket.rs` control socket, `proxy.rs` the local proxy that adds keys, `unlock.rs` its key from the cloud, `update.rs`, `client.rs` the host's side, `protocol.rs` what they say); Worker `cloud/src/routes/cloud-computers.ts`, `cloud-keeper.ts`, `cloud-host.ts`, `cloud-setup.ts`, providers in `cloud/machines/` |
-| Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs` (+ `backends/catalog.rs` the known harnesses, `backends/sign_in.rs`, `backends/search_path.rs`, `backends/workbuddy.rs` the CLI inside the WorkBuddy app), `registry.rs`, `auth.rs` (+ `auth/agent.rs` starting an agent and its own sign-in, `auth/models.rs`), `term.rs`, `node.rs` |
+| Agent discovery, sign-in, setup terminal, Node.js for npm agents | `host/src/agent/backends.rs` (+ `backends/catalog.rs` the known harnesses, `backends/sign_in.rs`, `backends/search_path.rs`, `backends/workbuddy.rs` the CLI inside the WorkBuddy app), `registry.rs`, `auth.rs` (+ `auth/agent.rs` starting an agent and its own sign-in, `auth/models.rs`), `login_profiles.rs` (an agent's other logins: `login_profiles/account.rs` the account kind's folder and sign-in, `login_profiles/keys.rs` the API key kind's variables; the agents' side of an account is the `codync-accounts` crate in `host/crates/accounts`: `agents.rs` how each agent keeps a login in a folder, `slot.rs` what the folder shares, `identity.rs` who it signs in), `term.rs`, `node.rs` |
 | Fast mode (session config option) | `host/src/agent/config.rs`, `agent/bot/fast_mode.rs` |
 | Agent modes (Permissions) | `host/src/agent/modes.rs` (the modes, Auto, `switch`), `agent/bot/modes.rs` (each session's mode), `agent/auth/models.rs` (`agentModels`, `InFlight`); terminal `host/src/tui/app/approvals.rs`; iPhone `CodyncKit/Models/AgentMode.swift`, `CodyncUI/Bots/ApprovalPicker.swift`; Android `core/Approvals.kt`, `ApprovalRow.kt`; desktop `src/shared/approvals.ts`, `views/bots/ApprovalRow.tsx` |
 | Marketplace, Composio, connector OAuth | `host/src/market/` |

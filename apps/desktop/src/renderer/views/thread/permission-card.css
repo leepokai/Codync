@@ -39,26 +39,67 @@
   flex: 1;
 }
 
-/* A choice card: the question, one button per option, and what was picked. */
+/* A choice card: the question, a numbered row per option and one for the user's own words, then what was picked. */
+.permission-card.decision-card {
+  width: 100%;
+}
 .decision-card-question {
   white-space: pre-wrap;
 }
 .decision-card-question-box {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   transition: max-height var(--layout);
 }
-.decision-option {
-  gap: 10px;
-  padding-block: 6px;
-  text-align: start;
+.decision-card-more {
+  flex: none;
 }
-/* An option can be 200 characters with no spaces: it wraps inside the card instead of widening it. */
-.decision-option .permission-option-label {
+/* The rows' fill reaches past the question's edge so their numbers line up under it. */
+.decision-options {
+  margin-inline: -8px;
+}
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  text-align: start;
+  transition: background var(--hover), opacity var(--fade);
+}
+button.decision-option:hover:not(:disabled),
+.decision-own:focus-within {
+  background: var(--field);
+}
+/* The other answers while one is on its way. */
+.decision-option.dimmed {
+  opacity: 0.4;
+}
+/* An option can be 200 characters with no spaces, and an own answer longer: they wrap inside the card instead of widening it. */
+.decision-option-label {
+  flex: 1;
+}
+.decision-option-label,
+.decision-outcome {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.decision-card-more {
-  align-self: flex-start;
+.decision-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  background: var(--field);
+}
+.decision-own input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-body);
 }
 
 .code-box {

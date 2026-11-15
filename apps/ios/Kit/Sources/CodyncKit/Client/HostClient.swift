@@ -8,6 +8,9 @@ public enum HostEvent: Sendable {
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
+    /// An entry of a background task's transcript (`task` is the task's id): never part of a chat, and never in the
+    /// catch-up (`taskEntries` reads a task back).
+    case taskEntry(task: String, Entry)
     case usage(Usage)
     case screen(ScreenState)
     /// An artifact published or renamed (the catch-up replays it too).
@@ -40,13 +43,14 @@ public struct Empty: Codable, Sendable {
 /// A full editor update must explicitly clear a previous model override.
 struct BotUpdate: Encodable {
     let draft: BotDraft
-    private enum CodingKeys: String, CodingKey { case model, mode }
+    private enum CodingKeys: String, CodingKey { case model, mode, loginProfile }
 
     func encode(to encoder: Encoder) throws {
         try draft.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         if draft.model == nil { try container.encodeNil(forKey: .model) }
         if draft.mode == nil { try container.encodeNil(forKey: .mode) }
+        if draft.loginProfile == nil { try container.encodeNil(forKey: .loginProfile) }
     }
 }
 
@@ -132,6 +136,10 @@ public struct HostClient: Sendable {
             return (try? d.decode(BotWrap.self, from: data)).map { .bot($0.bot) } ?? .undecodable(type: "bot")
         case "entry":
             return (try? d.decode(EntryWrap.self, from: data)).map { .entry($0.entry) } ?? .undecodable(type: "entry")
+        case "taskEntry":
+            // Not worth a rewind: the task's details read its transcript again.
+            struct TaskEntryWrap: Decodable { var task: String; var entry: Entry }
+            return (try? d.decode(TaskEntryWrap.self, from: data)).map { .taskEntry(task: $0.task, $0.entry) }
         case "usage":
             return (try? d.decode(UsageWrap.self, from: data)).map { .usage($0.usage) }
         case "screen":
@@ -191,6 +199,19 @@ public extension HostClient {
         struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await self.call("callEntries", ["botId": botId, "callId": call])
         return res.entries
+    }
+
+    /// A background task of the bot's and its transcript (the newest 500 entries, oldest first), ended or not.
+    func taskEntries(botId: String, taskId: String) async throws -> (task: BotTask, entries: [Entry]) {
+        struct Res: Decodable { var task: BotTask; var entries: [Entry] }
+        let res: Res = try await call("taskEntries", ["botId": botId, "taskId": taskId])
+        return (res.task, res.entries)
+    }
+
+    /// Stops one background task of the bot's, or all of them.
+    func stopTask(botId: String, taskId: String?) async throws {
+        struct Body: Encodable { var botId: String; var taskId: String? }
+        let _: Empty = try await call("stopTask", Body(botId: botId, taskId: taskId))
     }
 
     /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.
@@ -278,8 +299,23 @@ public extension HostClient {
     /// Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message.
     static let uploadChunk = 384 * 1024
 
-    /// Sends one file in chunks for a later `send`; `id` names the upload there.
-    func upload(botId: String, id: String, name: String, data: Data) async throws {
+    /// Uploads a message's `files` for its `send`: their upload ids, in order. Each attempt takes fresh ids, so a retry never
+    /// appends to a half-sent file. `sent` hears the bytes of all of them sent so far.
+    func upload(botId: String, files: [OutgoingFile], sent: @Sendable (Int) -> Void = { _ in }) async throws -> [String] {
+        var ids: [String] = []
+        var done = 0
+        for file in files {
+            let id = UUID().uuidString
+            let before = done
+            try await upload(botId: botId, id: id, name: file.name, data: file.data) { sent(before + $0) }
+            done += file.data.count
+            ids.append(id)
+        }
+        return ids
+    }
+
+    /// Sends one file in chunks for a later `send`; `id` names the upload there. `sent` hears the bytes sent so far.
+    private func upload(botId: String, id: String, name: String, data: Data, sent: @Sendable (Int) -> Void) async throws {
         struct Body: Encodable { var botId, uploadId, name, data: String; var offset: Int; var done: Bool }
         var offset = 0
         repeat {
@@ -287,6 +323,7 @@ public extension HostClient {
             let chunk = data.subdata(in: offset..<end).base64EncodedString()
             let _: Empty = try await call("upload", Body(botId: botId, uploadId: id, name: name, data: chunk, offset: offset, done: end == data.count), timeout: 60)
             offset = end
+            sent(offset)
         } while offset < data.count
     }
 
@@ -324,12 +361,13 @@ public extension HostClient {
     /// The call is on (again, for a provider session that was replaced): the voice's instructions and tools, and a
     /// realtime provider's credential. `mode`: `realtime`, `speech` or `device`.
     func startCall(botId: String, call: String, mode: String, provider: VoiceProvider? = nil, model: String? = nil,
-                   voice: String? = nil, language: String?) async throws -> CallSession {
+                   voice: String? = nil, language: String?, googleSearch: Bool = false) async throws -> CallSession {
         struct Body: Encodable {
             var botId, callId, mode: String; var provider, model, voice, language: String?
+            var googleSearch: Bool
         }
         let body = Body(botId: botId, callId: call, mode: mode, provider: provider?.rawValue, model: model, voice: voice,
-                        language: language)
+                        language: language, googleSearch: googleSearch)
         let data = try await transport.call("startCall", body: try Self.encoder.encode(body), timeout: 30)
         return try CallSession(json: data)
     }
@@ -441,12 +479,13 @@ public extension HostClient {
     }
 
     /// Starts (or rejoins) installing or signing in to `backend` in a terminal on the computer.
-    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command.
-    func agentSetup(backend: String, step: SetupStep, method: String?, cols: Int, rows: Int) async throws -> String {
-        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var cols: Int; var rows: Int }
+    /// `method`: a terminal sign-in method from `agentAuth`; nil runs Codync's own command. `loginProfile`: the
+    /// login profile a `login` signs in; nil for the computer's own.
+    func agentSetup(backend: String, step: SetupStep, method: String?, loginProfile: String? = nil, cols: Int, rows: Int) async throws -> String {
+        struct Body: Encodable { var backend: String; var step: SetupStep; var method: String?; var loginProfile: String?; var cols: Int; var rows: Int }
         struct Res: Decodable { var term: String }
         // The first sign-in through a registry build can download it.
-        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, cols: cols, rows: rows), timeout: 300)
+        let res: Res = try await call("agentSetup", Body(backend: backend, step: step, method: method, loginProfile: loginProfile, cols: cols, rows: rows), timeout: 300)
         return res.term
     }
 
@@ -457,6 +496,62 @@ public extension HostClient {
 
     func agentAuth(_ backend: String) async throws -> AgentAuth {
         try await call("agentAuth", ["backend": backend], timeout: 300)
+    }
+
+    /// A new login profile for `backend` (an account one is signed out, an API key one has no key yet), and the
+    /// agent list with it.
+    func addLoginProfile(_ backend: String, kind: LoginProfile.Kind) async throws -> (loginProfile: LoginProfile, backends: [Backend]) {
+        struct Res: Decodable { var loginProfile: LoginProfile; var backends: [Backend] }
+        let res: Res = try await call("addLoginProfile", ["backend": backend, "kind": kind.rawValue])
+        return (res.loginProfile, res.backends)
+    }
+
+    /// Asks the login profile's agent whether its sign-in went through, and as whom.
+    func loginProfileAuth(_ backend: String, loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuth", ["backend": backend, "loginProfile": loginProfile], timeout: 300)
+        return res.backends
+    }
+
+    /// Has the login profile's agent sign it in itself, in a browser on the computer; returns once that's done.
+    func signInLoginProfile(_ backend: String, loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("agentAuthenticate", ["backend": backend, "loginProfile": loginProfile], timeout: 660)
+        return res.backends
+    }
+
+    /// Names a login profile (`loginProfile` nil: the default one); an empty name clears it back to who it signs in.
+    func renameLoginProfile(_ backend: String, loginProfile: String?, name: String) async throws -> [Backend] {
+        struct Body: Encodable { var backend: String; var loginProfile: String?; var name: String }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("renameLoginProfile", Body(backend: backend, loginProfile: loginProfile, name: name))
+        return res.backends
+    }
+
+    /// Fails while something still uses the login profile.
+    func removeLoginProfile(_ loginProfile: String) async throws -> [Backend] {
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("removeLoginProfile", ["loginProfile": loginProfile])
+        return res.backends
+    }
+
+    /// An API key login profile's variables. `vars`: what the user typed (an empty value removes that variable);
+    /// `importing`: names whose values the computer reads from its login shell now.
+    func setLoginProfileKeys(_ loginProfile: String, vars: [String: String], importing: [String]) async throws -> [Backend] {
+        struct Body: Encodable {
+            var loginProfile: String; var vars: [String: String]; var importing: [String]
+            private enum CodingKeys: String, CodingKey { case loginProfile, vars, importing = "import" }
+        }
+        struct Res: Decodable { var backends: [Backend] }
+        let res: Res = try await call("setLoginProfileKeys", Body(loginProfile: loginProfile, vars: vars, importing: importing), timeout: 60)
+        return res.backends
+    }
+
+    /// The names (never the values) of the login shell's variables, to import into an API key login profile.
+    func loginShellVariables() async throws -> [String] {
+        struct Res: Decodable { var names: [String] }
+        let res: Res = try await call("loginShellVariables", timeout: 60)
+        return res.names
     }
 
     /// Lets the agent sign itself in; returns once it's done (or gave up).

@@ -10,6 +10,37 @@ import Testing
     #expect(listing.runs[0].isActive)
 }
 
+@Test func aListingCarriesTheFollowUpsStillWaitingAndAnOlderHostsHasNone() throws {
+    let data = Data(#"{"routines":[],"runs":[],"followUps":[{"id":"f","botId":"b","at":1794650400000,"note":"Check the build","createdAt":1794649200000,"chain":0}]}"#.utf8)
+    let listing = try JSONDecoder().decode(RoutineListing.self, from: data)
+    #expect(listing.followUps?.first?.note == "Check the build")
+    let older = try JSONDecoder().decode(RoutineListing.self, from: Data(#"{"routines":[],"runs":[]}"#.utf8))
+    #expect(older.followUps == nil)
+}
+
+@Test func aWaitingFollowUpSaysWhenItHappens() {
+    let now = Date(timeIntervalSince1970: 1_794_650_400)
+    func followUp(after seconds: TimeInterval) -> FollowUp {
+        let at = Int64((now.timeIntervalSince1970 + seconds) * 1000)
+        return FollowUp(id: "f", botId: "b", at: at, note: "Check the build", createdAt: 0)
+    }
+    let calendar = Calendar.current
+    // The app language's way of writing a time, whatever the phone's is.
+    let locale = Locale(identifier: "zh-Hant")
+    func written(_ date: Date, _ day: Date.FormatStyle.DateStyle) -> String {
+        let time = date.formatted(Date.FormatStyle(date: day, time: .shortened).locale(locale))
+        return L10n.tr("Follow-up at {time}").replacingOccurrences(of: "{time}", with: time)
+    }
+    let soon = now.addingTimeInterval(60)
+    // A minute on is today unless `now` is the day's last minute.
+    let sameDay = calendar.isDate(soon, inSameDayAs: now)
+    #expect(followUp(after: 60).line(locale: locale, now: now, calendar: calendar) == written(soon, sameDay ? .omitted : .abbreviated))
+    #expect(followUp(after: 86_400).line(locale: locale, now: now, calendar: calendar)
+        == written(now.addingTimeInterval(86_400), .abbreviated))
+    // Due, and waiting its turn behind what the bot is doing.
+    #expect(followUp(after: -1).line(locale: locale, now: now, calendar: calendar) == L10n.tr("Follow-up due now"))
+}
+
 @Test func routineTranscriptLinkSurvivesRoundTrip() throws {
     let data = Data(#"{"text":"Created routine","routineId":"r","runId":"run","style":"info"}"#.utf8)
     let entry = try JSONDecoder().decode(EntryData.self, from: data)

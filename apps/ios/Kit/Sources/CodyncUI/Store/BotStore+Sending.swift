@@ -91,7 +91,7 @@ extension BotStore {
         if let bot = bots[botId] { onSent?(bot, .sending) }
         // The relay mailbox holds text only: files, and the call a message was said in, wait for the computer.
         if canQueue, files.isEmpty, call == nil, let remote = transport as? any RemoteTransport {
-            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce)
+            return enqueue(remote, text: trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted)
         }
         return deliver(trimmed, botId: botId, replyTo: replyTo?.id, nonce: nonce, pasted: pasted, call: call)
     }
@@ -104,14 +104,9 @@ extension BotStore {
                 let e = try await withLink(replay: true) { client in
                     var ids: [String]?
                     if let files = self.outgoingFiles[nonce] {
-                        // A fresh upload per attempt: a retry never appends to a half-sent file.
-                        ids = []
-                        for file in files {
-                            let id = UUID().uuidString
-                            try await client.upload(botId: botId, id: id, name: file.name, data: file.data)
-                            Self.cacheAttachment(id, file.data)
-                            ids?.append(id)
-                        }
+                        let uploaded = try await client.upload(botId: botId, files: files)
+                        for (id, file) in zip(uploaded, files) { Self.cacheAttachment(id, file.data) }
+                        ids = uploaded
                     }
                     try Task.checkCancellation()
                     return try await client.send(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, attachments: ids,
@@ -134,14 +129,15 @@ extension BotStore {
     }
 
     /// The computer is offline: the message waits, sealed for it, in the relay mailbox.
-    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String) -> Task<SendProgress, Never> {
+    private func enqueue(_ remote: any RemoteTransport, text: String, botId: String, replyTo: String?, nonce: String,
+                         pasted: [String]) -> Task<SendProgress, Never> {
         markLocal(nonce: nonce, botId: botId, status: "waiting")
         saveCache()
         return Task {
             defer { saveCache() }
             do {
                 try Task.checkCancellation()
-                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo)
+                try await remote.enqueue(botId: botId, text: text, clientNonce: nonce, replyTo: replyTo, pasted: pasted)
                 onPromptSent()
                 if let bot = bots[botId] { onSent?(bot, .queued) }
                 return .queued
@@ -149,7 +145,7 @@ extension BotStore {
                 // Presence can race the stream state. Wait for the host's events channel
                 // before trying the normal API, instead of turning that race into a failure.
                 markLocal(nonce: nonce, botId: botId, status: "sending")
-                return await deliverWhenOnline(text, botId: botId, replyTo: replyTo, nonce: nonce)
+                return await deliverWhenOnline(text, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted)
             } catch is CancellationError {
                 // The shortcut that sent it was cancelled: the failed message says enough.
                 markLocal(nonce: nonce, botId: botId, status: "failed")
@@ -163,7 +159,7 @@ extension BotStore {
         }
     }
 
-    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String) async -> SendProgress {
+    private func deliverWhenOnline(_ text: String, botId: String, replyTo: String?, nonce: String, pasted: [String]) async -> SendProgress {
         let deadline = ContinuousClock.now + .seconds(30)
         while !retired, !Task.isCancelled, connection != .online, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(200))
@@ -178,7 +174,7 @@ extension BotStore {
             saveCache()
             return .failed
         }
-        let delivery = deliver(text, botId: botId, replyTo: replyTo, nonce: nonce)
+        let delivery = deliver(text, botId: botId, replyTo: replyTo, nonce: nonce, pasted: pasted)
         return await withTaskCancellationHandler {
             await delivery.value
         } onCancel: {

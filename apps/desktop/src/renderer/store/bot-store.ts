@@ -8,12 +8,14 @@ import {
   type Entry,
   type GroupDraft,
   type Hello,
+  type LoginProfile,
   type ReplyQuote,
   type ScreenState,
   type SharedFile,
   type Usage,
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
+import type { TaskRecord } from '@shared/tasks'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
@@ -436,6 +438,19 @@ export class BotStore extends BotSync {
     return (await (await this.ready()).call<{ entries: Entry[] }>('callEntries', { botId, callId: call })).entries
   }
 
+  /** A background task as the computer has it now; its transcript goes into the watched task's (`taskEntriesOf`). */
+  async loadTask(botId: string, taskId: string): Promise<TaskRecord> {
+    const res = await (await this.ready()).call<{ task: TaskRecord; entries: Entry[] }>('taskEntries', { botId, taskId })
+    this.mergeTask(taskId, res.entries.map((e) => ({ ...e, data: e.data ?? {} })))
+    this.changed()
+    return res.task
+  }
+
+  /** Stops one background task of the bot, or all of them without `taskId`. */
+  stopTask(botId: string, taskId?: string) {
+    this.perform((c) => c.call('stopTask', taskId ? { botId, taskId } : { botId }))
+  }
+
   /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */
   async botConversation(botId: string, peerId: string): Promise<Entry[]> {
     return (await this.ready()).botConversation(botId, peerId)
@@ -460,13 +475,54 @@ export class BotStore extends BotSync {
     return bot
   }
 
+  /** Shows the agent list a call answered with. */
+  private showBackends(backends: Hello['backends']) {
+    if (!this.hello) return
+    this.hello = { ...this.hello, backends }
+    this.changed()
+  }
+
   async refreshBackends() {
     if (!this.client || !this.hello) return
     try {
-      const res = await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)
-      this.hello = { ...this.hello, backends: res.backends }
-      this.changed()
+      this.showBackends((await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)).backends)
     } catch {}
+  }
+
+  /** A new login profile for agent `backend`. An `account` one is signed out (a `login` setup with it signs it in); an `apiKey` one has no key yet. */
+  async addLoginProfile(backend: string, kind: LoginProfile['kind']) {
+    const added = await (await this.ready()).call<{ loginProfile: LoginProfile; backends: Hello['backends'] }>('addLoginProfile', { backend, kind })
+    this.showBackends(added.backends)
+    return added.loginProfile.id
+  }
+
+  /** Asks the login profile's agent whether it's signed in, and as whom. */
+  async checkLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, loginProfile }, 60_000)).backends)
+  }
+
+  /** Has the login profile's agent sign it in itself, in a browser on the computer; answers once that's done. */
+  async signInLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuthenticate', { backend, loginProfile }, 660_000)).backends)
+  }
+
+  /** Names a login profile, or with `null` the default one; an empty name clears it. */
+  async renameLoginProfile(backend: string, loginProfile: string | null, name: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('renameLoginProfile', { backend, loginProfile: loginProfile ?? undefined, name })).backends)
+  }
+
+  async removeLoginProfile(loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeLoginProfile', { loginProfile }, 60_000)).backends)
+  }
+
+  /** An API key profile's variables: `vars` as typed (an empty value removes one), and `imported` names whose values the host reads from the login shell now. */
+  async setLoginProfileKeys(loginProfile: string, vars: Record<string, string>, imported: string[] = []) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('setLoginProfileKeys', { loginProfile, vars, import: imported }, 60_000)).backends)
+  }
+
+  /** The names (never the values) of the login shell's variables, which a login profile can import. */
+  async loginShellVariables() {
+    return (await (await this.ready()).call<{ names: string[] }>('loginShellVariables', {}, 60_000)).names
   }
 
   async selectWorkspace(path: string) {

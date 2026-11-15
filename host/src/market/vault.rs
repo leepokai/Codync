@@ -175,6 +175,14 @@ pub fn write(store: &Store, slot: &str, value: &str) -> Result<()> {
     store.kv_set(slot, &format!("{PREFIX}{}", seal(key, slot.as_bytes(), value.as_bytes())?))
 }
 
+/// Deletes `slot`'s record. Needs no open vault: nothing is read.
+pub fn delete(store: &Store, slot: &str) -> Result<()> {
+    if is_managed(store) {
+        return crate::keeper::client::delete(store, slot);
+    }
+    store.kv_delete(slot)
+}
+
 /// Seals `plain` with the 32-byte `key` (XChaCha20-Poly1305, a random nonce), bound to `aad`: base64 of the nonce
 /// and the ciphertext. The keeper seals its records the same way.
 pub(crate) fn seal(key: &[u8], aad: &[u8], plain: &[u8]) -> Result<String> {

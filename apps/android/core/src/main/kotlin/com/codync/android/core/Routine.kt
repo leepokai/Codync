@@ -6,6 +6,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.Locale
 
 /** Schedules execute on the host. Raw triggers retain fields the mobile editor does not edit. */
 @Serializable data class Routine(
@@ -43,7 +44,22 @@ import java.time.format.FormatStyle
     }
 }
 
-@Serializable data class RoutineListing(val routines: List<Routine>, val runs: List<RoutineRun>) {
+/** A deadline a bot set for itself: one later turn in its own chat, then it is gone (iOS `FollowUp`). */
+@Serializable data class FollowUp(val id: String, val botId: String, val at: Long, val note: String, val createdAt: Long = 0) {
+    /** When it happens, for its row: the time today, the date too on another day, as [locale] writes them. */
+    fun line(locale: Locale, now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): String {
+        // Due and waiting its turn behind what the bot is doing.
+        if (at <= now) return "Follow-up due now"
+        val due = Instant.ofEpochMilli(at).atZone(zone)
+        val today = due.toLocalDate() == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val format = if (today) DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+            else DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+        return "Follow-up at " + due.format(format.withLocale(locale))
+    }
+}
+
+/** `followUps`: the ones still waiting (a host from before them sends none). */
+@Serializable data class RoutineListing(val routines: List<Routine>, val runs: List<RoutineRun>, val followUps: List<FollowUp> = emptyList()) {
     /** The row's second line, in `tr`'s language: what's happening now, else when it runs. */
     fun summary(routine: Routine, tr: (String) -> String = { it }): String {
         runs.firstOrNull { it.routineId == routine.id && it.isActive }?.let { return tr(it.label) }

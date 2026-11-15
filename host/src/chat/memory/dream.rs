@@ -199,7 +199,7 @@ async fn run(hub: &Arc<Hub>, bot_id: &str) -> Result<Ran> {
         return Ok(Ran::Done { more: false });
     };
     // Dreaming never spends the user's last headroom.
-    if crate::usage::near_limit(hub, &cfg.backend) {
+    if crate::usage::near_limit(hub, &cfg) {
         return Ok(Ran::Later);
     }
     let shared = super::shared(&cfg);

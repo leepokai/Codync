@@ -78,6 +78,8 @@ public struct EntryData: Codable, Hashable, Sendable {
     public var transcript: [CallLine]?
     /// agent: an artifact card, the bot's artifact as published then (the newest version shows).
     public var artifact: ArtifactRef?
+    /// permission: the background task that asks (`BotTask.swift`); the card sits in its bot's chat.
+    public var task: TaskRef?
 
     public init(text: String? = nil, status: String? = nil, clientNonce: String? = nil) {
         self.text = text

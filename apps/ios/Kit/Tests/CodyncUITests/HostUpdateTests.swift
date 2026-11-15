@@ -62,13 +62,13 @@ import Testing
 @Test func aComputerTooOldOrAnUpdateThatDidntTakeIsAProblem() {
     let behind = VersionMismatch.updateHost(version: "2.20.0", minimum: "2.26.0")
     let old = HostVersionLine.make(version: "2.20.0", latest: nil, mismatch: behind, offer: .available(last: nil), host: "Mac", os: "linux")
-    #expect(old == HostVersionLine(version: "2.20.0", detail: ["This app needs 2.26.0 or newer."], warns: true, accessory: .button("Update")))
+    #expect(old == HostVersionLine(version: "2.20.0", detail: ["Mac needs Codync 2.26.0 or newer."], warns: true, accessory: .button("Update")))
     let manual = HostVersionLine.make(version: "2.20.0", latest: "2.29.0", mismatch: behind, offer: .unavailable, host: "Mac", os: "linux")
-    #expect(manual.detail == ["This app needs 2.26.0 or newer.", "Run codync-host update there."] && manual.warns)
+    #expect(manual.detail == ["Mac needs Codync 2.26.0 or newer.", "Run codync-host update there."] && manual.warns)
     // A Codync Cloud computer has no terminal: the cloud updates it.
     let cloud = HostVersionLine.make(version: "2.20.0", latest: "2.29.0", mismatch: behind, offer: .unavailable, host: "Cloud",
                                      os: "linux", cloud: true)
-    #expect(cloud.detail == ["This app needs 2.26.0 or newer.", "Codync Cloud updates it before it next sleeps."])
+    #expect(cloud.detail == ["Cloud needs Codync 2.26.0 or newer.", "Codync Cloud updates it before it next sleeps."])
     let failed = HostVersionLine.make(version: "2.28.0", latest: "2.29.0", mismatch: nil,
                                       offer: .available(last: .failed("A bot is working on this computer.")), host: "Mac", os: "macos")
     #expect(failed == HostVersionLine(version: "2.28.0", detail: ["A bot is working on this computer."], warns: true,
@@ -96,4 +96,18 @@ import Testing
     #expect(store.hostVersionLine()?.accessory == .updating)
     let ends = try #require(store.hostUpdateWaitEnds)
     #expect(store.hostVersionLine(now: ends)?.accessory == .button("Try again"))
+}
+
+@Test func updateNoticesNameTheSideThatNeedsUpdating() {
+    let app = UpdateNeededText.detail(.updateApp(minimum: "2.46.3"), host: "Mac", os: nil)
+    #expect(app == "This app needs to be 2.46.3 or newer (Mac requires it).")
+    let mismatch = VersionMismatch.updateHost(version: "2.20.0", minimum: "2.26.0")
+    let host = UpdateNeededText.detail(mismatch, host: "Mac", os: nil, instructions: false)
+    #expect(host == "Codync on Mac is 2.20.0; that computer needs Codync 2.26.0 or newer.")
+    let cloud = UpdateNeededText.detail(mismatch, host: "Cloud", os: nil, cloud: true)
+    #expect(cloud == "Your cloud computer is updating to Codync 2.26.0 or newer; this app reconnects when it is done.")
+    let translated = UpdateNeededText.detail(mismatch, host: "Mac", os: "linux", translate: {
+        L10n.tr($0, preference: .zhHant)
+    })
+    #expect(translated == "Mac 上的 Codync 是 2.20.0；需要把那台電腦上的 Codync 升級到 2.26.0 或更高版本。 請在那台電腦上執行 codync-host update。")
 }

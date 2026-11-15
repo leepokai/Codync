@@ -94,6 +94,32 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
 }
 
 #[test]
+fn follow_up_notices_translate_around_the_wait_and_keep_the_note() {
+    assert_eq!(translate_with("Follow-up in 1 minute: Settings", &HANS), "1 分钟后跟进：Settings");
+    assert_eq!(translate_with("Follow-up in 20 minutes: Settings", &HANS), "20 分钟后跟进：Settings");
+    // A note that reads like another wait stays a note: the wait ends at the first colon.
+    assert_eq!(
+        translate_with("Follow-up in about 3 hours: look again in 5 minutes: maybe", &HANS),
+        "约 3 小时后跟进：look again in 5 minutes: maybe"
+    );
+    assert_eq!(
+        translate_with("Follow-up in 1 minute: wait 5 minutes: then check", &HANS),
+        "1 分钟后跟进：wait 5 minutes: then check"
+    );
+    assert_eq!(
+        translate_with("Follow-up in about 2 days: rerun if 3 hours: passed", &HANS),
+        "约 2 天后跟进：rerun if 3 hours: passed"
+    );
+    assert_eq!(translate_with("Follow-up in about 2 days: Plan", &HANS), "约 2 天后跟进：Plan");
+    assert_eq!(translate_with("Follow-up · Plan", &HANS), "跟进 · Plan");
+    assert_eq!(translate_with("Follow-up cancelled: Plan", &HANS), "已取消跟进：Plan");
+    // A waiting follow-up's row in the routines list.
+    assert_eq!(translate_with("Follow-up at 15:42", &HANS), "15:42 跟进");
+    assert_eq!(translate_with("Follow-up due now", &HANS), "即将跟进");
+    assert_eq!(translate_with("A follow-up is the bot's own: x cancels it", &HANS), "跟进由 Bot 自己设定：按 x 取消");
+}
+
+#[test]
 fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
     assert_eq!(translate_with("Created bot connected", &HANS), "已创建机器人 connected");
     assert!(translate_with("Created bot Reviewer", &HANS).ends_with("Reviewer"));
@@ -217,4 +243,26 @@ fn host_schedule_sentences_match_their_catalog_templates() {
         "Ogni lunedì alle 09:00 · Europe/Rome"
     );
     assert_eq!(translate_with("When a webhook fires", &super::IT), "Quando arriva un webhook");
+}
+
+#[test]
+fn background_task_words_read_in_traditional_chinese() {
+    for (english, chinese) in [
+        ("In the background", "背景"),
+        ("Needs you", "需要你"),
+        ("{count} tasks running", "{count} 件事"),
+        ("Stop the background work?", "停止背景的工作？"),
+        ("What it already changed stays.", "已經改的內容會留著。"),
+        ("In the background: {what}", "背景：{what}"),
+        ("Done", "完成"),
+        ("Failed", "失敗"),
+        ("Stopped", "已停止"),
+        ("B opens", "B 開啟"),
+        ("X stops", "X 停止"),
+        ("Picking up from the chat…", "正在從聊天接著做…"),
+    ] {
+        assert_eq!(translate_with(english, &super::HANT), chinese);
+    }
+    // A step's own words stay as the task wrote them.
+    assert_eq!(translate_with("In the background: Reading files", &super::HANT), "背景：Reading files");
 }

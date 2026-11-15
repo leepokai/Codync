@@ -123,7 +123,11 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
 fn a_card_lists_the_routines_before_the_instructions() {
     let fields = setup_patch(&json!({"name": "Scout", "instructions": "Watches the repo."}), &[]).unwrap();
     assert_eq!(
-        describe(&fields, &["• Scan (Every 30 minutes): Scan it".into()]),
+        describe(
+            &Store::open(std::path::Path::new(":memory:")).unwrap(),
+            &fields,
+            &["• Scan (Every 30 minutes): Scan it".into()]
+        ),
         "Name: Scout\nRoutines:\n• Scan (Every 30 minutes): Scan it\nInstructions:\nWatches the repo."
     );
 }

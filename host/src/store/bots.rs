@@ -1,7 +1,7 @@
 //! The `bots` table: roster rows, sessions, read marks and unread counts.
 
 use super::entries::NOT_REMOVED;
-use super::model::{BotConfig, BotRow, EntryKind, LastMessage, message_text};
+use super::model::{BotConfig, BotRow, EntryKind, LastMessage, TASK_GLOB, message_text};
 use super::{Store, logged, next_rev};
 use crate::LockExt;
 use anyhow::Result;
@@ -31,9 +31,19 @@ const SAVE_BOT: &str = "INSERT INTO bots(id, rev, config) VALUES(?1, ?2, ?3)
      ON CONFLICT(id) DO UPDATE SET rev = ?2, config = ?3 WHERE deleted = 0";
 
 impl Store {
+    /// The roster's rows: bots and groups, deleted ones included. Task bots aren't among them (`task_bots`).
     pub fn bots(&self) -> Result<Vec<BotRow>> {
+        self.bots_where(&format!("id NOT GLOB '{TASK_GLOB}'"))
+    }
+
+    /// The task bots (`chat::tasks`), deleted ones left out.
+    pub fn task_bots(&self) -> Result<Vec<BotRow>> {
+        self.bots_where(&format!("id GLOB '{TASK_GLOB}' AND deleted = 0"))
+    }
+
+    fn bots_where(&self, condition: &str) -> Result<Vec<BotRow>> {
         let c = self.db.locked();
-        let mut st = c.prepare(&format!("SELECT {BOT_COLS} FROM bots"))?;
+        let mut st = c.prepare(&format!("SELECT {BOT_COLS} FROM bots WHERE {condition}"))?;
         let rows = st.query_map([], row_bot)?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows.into_iter().filter_map(parse_bot).collect())
     }
@@ -185,6 +195,7 @@ mod tests {
             avatar_shape: "blob".into(),
             backend: "claude".into(),
             command: None,
+            login_profile: None,
             cwd: "/tmp".into(),
             permission: Permission::Ask,
             mode: None,
@@ -210,6 +221,7 @@ mod tests {
             harness_memory: false,
             compaction: codync_mem::compaction::Threshold::Early,
             auto_name: false,
+            task_of: None,
             created_at: 0,
         };
         // Several at once: each with its own rev, in order.

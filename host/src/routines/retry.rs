@@ -128,7 +128,7 @@ mod tests {
         let mut run: Run = new_run(&r, json!({"source":"schedule"}), None);
         run.status = Status::Failed;
         run.attempt = attempt;
-        (State { routines: vec![r], runs: vec![run] }, 0)
+        (State { routines: vec![r], runs: vec![run], follow_ups: Vec::new() }, 0)
     }
 
     #[test]

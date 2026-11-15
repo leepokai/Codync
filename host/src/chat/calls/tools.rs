@@ -119,7 +119,7 @@ fn answer(hub: &Hub, cfg: &BotConfig, option: &str) -> Result<Value> {
         return Ok(json!({"error": "No such option.", "options": names}));
     };
     // A card in a group belongs to the bot that asked.
-    let owner = card.data["author"].as_str().unwrap_or(&card.bot_id).to_owned();
+    let owner = crate::chat::tasks::card_actor(card).to_owned();
     let option_id = pick["optionId"].as_str().map(str::to_owned);
     hub.send_cmd(&owner, Cmd::Permission { entry_id: card.id.clone(), option_id })?;
     Ok(json!({"answered": pick["name"]}))

@@ -15,6 +15,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var customIcon: CustomIcon?
     public var backend: String
     public var command: String?
+    /// The login profile it runs on; nil for the login the computer already has.
+    public var loginProfile: String?
     public var cwd: String
     /// Host-allocated personal workspace rather than a user-selected project.
     public var managedWorkspace: Bool = false
@@ -91,6 +93,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var resting: [AgentRest] = []
     /// What it keeps running on the computer. Empty from an older host, and for a group.
     public var devServers: [DevServer] = []
+    /// Its background tasks still going (`BotTask.swift`). Empty from an older host: the feature doesn't show.
+    public var tasks: [BotTask] = []
     public var unread: Int
     public var lastMessage: String?
     public var lastAt: Int64
@@ -121,6 +125,7 @@ extension Bot {
         customIcon = try c.decodeIfPresent(CustomIcon.self, forKey: .customIcon)
         backend = try c.decodeIfPresent(String.self, forKey: .backend) ?? "custom"
         command = try c.decodeIfPresent(String.self, forKey: .command)
+        loginProfile = try? c.decodeIfPresent(String.self, forKey: .loginProfile)
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""
         managedWorkspace = try c.decodeIfPresent(Bool.self, forKey: .managedWorkspace) ?? false
         permission = try c.decodeIfPresent(String.self, forKey: .permission) ?? "ask"
@@ -162,6 +167,7 @@ extension Bot {
         agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
         devServers = (try? c.decodeIfPresent([DevServer].self, forKey: .devServers)) ?? []
+        tasks = (try? c.decodeIfPresent([BotTask].self, forKey: .tasks)) ?? []
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, stepBanner } from '@shared/fallbacks'
+import { freeLogins, MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBanner, stepLogin, type Login } from '@shared/fallbacks'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, DropdownMenu, IconButton } from '../../components/Controls'
@@ -11,6 +11,7 @@ import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
+import { LoginProfileRow } from './LoginProfileRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import './bots.css'
 
@@ -23,10 +24,19 @@ export const agentChoice = (b: Backend) => ({ id: b.id, label: b.available ? b.n
 /** The Agent card's first row while the bot runs on a fallback, with the way back to its own agent. */
 export function AgentStepBanner({ bot }: { bot: Bot }) {
   const store = useStore()
+  const tr = useTr()
+  // "Claude Code (Work)": a login on a login profile, and the computer's own when it's asked for by name.
+  const name = (login: Login, own: boolean) => {
+    const backend = store.hello?.backends.find((b) => b.id === login.backend)
+    const profile = login.loginProfile
+      ? backend?.loginProfiles?.find((p) => p.id === login.loginProfile)?.name ?? tr('New login profile')
+      : own ? backend?.defaultLoginProfile?.name ?? tr('Default login profile') : null
+    return profile ? `${store.backendName(login.backend)} (${profile})` : store.backendName(login.backend)
+  }
   return (
     <HStack gap={8} className="fade-in">
       <AgentIcon registry={store.agentRegistry(runningAgent(bot))} size={14} />
-      <Text tone="text" grow>{stepBanner(bot, (a) => store.backendName(a), Date.now())}</Text>
+      <Text tone="text" grow>{stepBanner(bot, name, Date.now())}</Text>
       <Button kind="secondary" className="fallback-switch-back" onClick={() => store.switchBack(bot.id)}>Switch back</Button>
     </HStack>
   )
@@ -39,8 +49,9 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
   const [adding, setAdding] = useState(false)
   const [about, setAbout] = useState(false)
   const list = draft.fallbacks ?? []
-  // Each agent is in the chain once, the bot's own included.
-  const choices = (store.hello?.backends ?? []).filter((b) => b.id !== draft.backend && !list.some((f) => f.backend === b.id))
+  // Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
+  const taken: Login[] = [draft, ...list]
+  const choices = (store.hello?.backends ?? []).filter((b) => freeLogins(b, taken).length)
   const edit = (change: (list: Fallback[]) => Fallback[]) => onChange((d) => ({ ...d, fallbacks: change(d.fallbacks ?? []) }))
   const now = Date.now()
   return (
@@ -54,7 +65,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
       {list.length ? (
         list.map((f, i) => (
           <FallbackRow
-            key={f.backend}
+            key={`${f.backend}#${f.loginProfile ?? ''}`}
             fallback={f}
             index={i}
             count={list.length}
@@ -75,6 +86,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
         {adding ? (
           <AddFallback
             choices={choices}
+            taken={taken}
             onAdd={(f) => {
               edit((l) => [...l, f])
               setAdding(false)
@@ -100,7 +112,10 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
   const tr = useTr()
   const backend = store.hello?.backends.find((b) => b.id === fallback.backend)
   const name = backend ? agentChoice(backend).label : store.backendName(fallback.backend)
-  const rest = restOf(bot, fallback.backend, now)
+  const rest = restOf(bot, fallback, now)
+  const profile = fallback.loginProfile ? backend?.loginProfiles?.find((p) => p.id === fallback.loginProfile) : null
+  const stepName = profile ? `${name} (${profile.name ?? tr('New login profile')})` : name
+  const step = stepLogin(bot)
   return (
     <HStack gap={8} className="fade-in">
       <IconSlot width={12} tone="secondary">
@@ -108,10 +123,10 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
       </IconSlot>
       <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
       <VStack gap={2} grow>
-        <Text tone="text" truncate>{`${name} · ${fallback.model || tr(`Default`)}`}</Text>
+        <Text tone="text" truncate>{`${stepName} · ${fallback.model || tr(`Default`)}`}</Text>
         {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
       </VStack>
-      {bot.agentStep?.agent === fallback.backend ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
+      {step && sameLogin(step, fallback) ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
       <DropdownMenu
         className="icon-button fallback-menu"
         title={tr('More')}
@@ -127,10 +142,15 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
   )
 }
 
-/** The "Add fallback" sheet: another agent, and the model to use on it. */
-function AddFallback({ choices, onAdd }: { choices: Backend[]; onAdd: (f: Fallback) => void }) {
+/** The "Add fallback" sheet: another agent (or this one on another of its login profiles), and the model to use on it. */
+function AddFallback({ choices, taken, onAdd }: { choices: Backend[]; taken: Login[]; onAdd: (f: Fallback) => void }) {
   const tr = useTr()
   const [backend, setBackend] = useState((choices.find((b) => b.available) ?? choices[0])?.id ?? '')
+  const agent = choices.find((b) => b.id === backend)
+  const free = agent ? freeLogins(agent, taken) : []
+  // The first login the chain doesn't have yet, until the user picks one.
+  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  const loginProfile = picked !== undefined && free.includes(picked) ? picked : free[0] ?? null
   const [model, setModel] = useState<string | null>(null)
   const [modelOptions, setModelOptions] = useState<Record<string, string>>({})
   const models = useAgentModels(backend)
@@ -141,10 +161,11 @@ function AddFallback({ choices, onAdd }: { choices: Backend[]; onAdd: (f: Fallba
   }
   return (
     <SheetPage>
-      <ModalHeader title={tr(`Add fallback`)} trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, model, modelOptions })} />} />
+      <ModalHeader title={tr(`Add fallback`)} trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, loginProfile, model, modelOptions })} />} />
       <CardForm>
         <CardSection>
-          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setModel(null); setModelOptions({}) }} />
+          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setPicked(undefined); setModel(null); setModelOptions({}) }} collapsible={false} />
+          {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={free} onChange={setPicked} /> : null}
         </CardSection>
       </CardForm>
     </SheetPage>

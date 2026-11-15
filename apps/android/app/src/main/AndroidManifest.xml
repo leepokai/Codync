@@ -75,14 +75,19 @@
         <activity android:name=".WidgetConfigurationActivity" android:exported="true">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
         </activity>
-        <!-- Text shared from another app goes to a bot's message box (the iPhone's Send Text to Bot). The share sheet
-             starts this in the sender's task; it hands the text to MainActivity in Codync's own and closes. -->
+        <!-- Text, links and files shared from another app go to a bot (the iPhone's Share extension). The share sheet
+             starts this in the sender's task; it hands them to MainActivity in Codync's own and closes. -->
         <activity android:name=".ShareActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay"
             android:taskAffinity="" android:excludeFromRecents="true">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
         <!-- Direct ws:// channels already encrypt every inner request with Codync E2E.

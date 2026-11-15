@@ -14,6 +14,7 @@ mod fields;
 mod gear;
 mod icons;
 mod library;
+mod login_keys;
 mod market;
 mod memory;
 mod network;
@@ -24,6 +25,7 @@ mod replies;
 mod routines;
 mod scroll;
 mod skill;
+mod tasks;
 mod when;
 
 pub use analytics::AnalyticsSheet;
@@ -32,6 +34,7 @@ pub use fields::{handoff_fields, section_fields};
 pub use gear::{Gear, GearRow};
 pub use icons::icon_fields;
 pub use library::{ArtifactTitles, LibraryItem};
+pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
 pub use network_rules::{RuleField, RuleForm};
@@ -39,6 +42,7 @@ pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;
 pub use skill::SkillSheet;
+pub use tasks::{Fetched, TaskEntries, TaskList, TaskSheet};
 pub use when::complete_zone;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -61,6 +65,8 @@ pub enum Reply {
     /// A note the bot's memory sheet has open.
     MemoryFile(String),
     Routines(String),
+    /// `cancelFollowUp` for that bot: its row leaves the list once the host has dropped it.
+    FollowUpCancelled(String),
     RoutineSaved,
     /// A bot's Library (`library {botId}`).
     Library(String),
@@ -75,6 +81,8 @@ pub enum Reply {
     },
     /// A voice call's own messages, by call id.
     CallEntries(String),
+    /// A background task's transcript and how it stands (`taskEntries`), by task id.
+    TaskEntries(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
         search: String,
@@ -84,7 +92,16 @@ pub enum Reply {
     /// A skill's instructions, for the details sheet with that id.
     SkillDetails(String),
     Auth(String),
-    Setup,
+    /// The setup terminal opened; for a login profile's sign-in, that login profile.
+    Setup(Option<String>),
+    /// An agent's login profiles changed (`backends` comes with the answer), on its sheet.
+    LoginProfiles(String),
+    /// `addLoginProfile` for that agent: the new login profile signs in, or gets its keys, next.
+    LoginProfileAdded(String),
+    /// `setLoginProfileKeys` for a login profile of that agent: its key form closes and its sheet shows the answer.
+    LoginKeys(String),
+    /// `loginShellVariables`, for the import list of that login profile.
+    ShellVariables(String),
     FieldsSaved,
     /// `renameSection` from a Fields sheet: saved like `FieldsSaved`, and the fold follows the name.
     SectionRenamed {
@@ -118,12 +135,41 @@ pub struct Library {
     pub cursor: usize,
 }
 
+#[derive(Default)]
 pub struct RoutineList {
     pub bot: String,
     pub items: Option<Vec<Value>>,
     /// The bot's runs, newest first.
     pub runs: Vec<Value>,
+    /// The follow-ups the bot set for itself that still wait.
+    pub follow_ups: Vec<Value>,
+    /// Over `rows`.
     pub cursor: usize,
+}
+
+/// A row of the routines list.
+pub enum RoutineRow<'a> {
+    FollowUp(&'a Value),
+    Routine(&'a Value),
+}
+
+impl RoutineRow<'_> {
+    pub fn id(&self) -> &Value {
+        let (Self::FollowUp(item) | Self::Routine(item)) = self;
+        &item["id"]
+    }
+}
+
+impl RoutineList {
+    /// The list top to bottom: the follow-ups come first, then the routines.
+    pub fn rows(&self) -> impl Iterator<Item = RoutineRow<'_>> {
+        self.follow_ups.iter().map(RoutineRow::FollowUp).chain(self.items.iter().flatten().map(RoutineRow::Routine))
+    }
+
+    /// The row the cursor is on.
+    pub fn picked(&self) -> Option<RoutineRow<'_>> {
+        self.rows().nth(self.cursor)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -185,6 +231,8 @@ pub struct AgentSetup {
     pub auth: Option<Value>,
     /// A check or a browser sign-in is running.
     pub busy: bool,
+    /// The login profile its agent signs in itself, in a browser on the computer, until the host answers.
+    pub signing_in: Option<String>,
     pub cursor: usize,
     pub error: Option<String>,
 }
@@ -197,6 +245,16 @@ pub enum SetupRow {
     Check,
     /// Opens the read-only lists of what this agent already brings.
     Brings,
+    /// The default login profile, the login the computer already has (the agent's `defaultLoginProfile`): ↵ checks
+    /// it again, `r` names it.
+    DefaultLoginProfile,
+    /// One of the agent's other login profiles: ↵ signs an account in or edits an API key's keys, `r` names it, `x`
+    /// removes it.
+    LoginProfile(Value),
+    /// Adds an account login profile; its sign-in follows. Only for an agent with a `loginProfileSignIn`.
+    AddAccount,
+    /// Adds an API key login profile; its key form follows.
+    AddApiKey,
 }
 
 pub struct Input {
@@ -225,6 +283,17 @@ pub enum Submit {
         bot: String,
         artifact: String,
     },
+    /// A login profile's name, or empty for who it signs in; no `login_profile`: the agent's default one.
+    RenameLoginProfile {
+        backend: String,
+        login_profile: Option<String>,
+    },
+    /// An API key login profile's variables; `saved`: the names it already has, which ^x removes.
+    LoginProfileKeys {
+        backend: String,
+        login_profile: String,
+        saved: Vec<String>,
+    },
 }
 
 /// A few labeled text fields: an agent's keys, a connector's setup, a pasted MCP config.
@@ -250,6 +319,12 @@ impl Fields {
         let i = self.cursor.checked_sub(self.offset())?;
         self.inputs.get_mut(i)
     }
+
+    /// What is typed, by input name: a secret as it is, other text trimmed. Empty inputs are left out.
+    fn typed(&self) -> serde_json::Map<String, Value> {
+        let typed = self.inputs.iter().filter(|i| !i.ed.text.trim().is_empty());
+        typed.map(|i| (i.name.clone(), if i.secret { i.ed.text.as_str() } else { i.ed.text.trim() }.into())).collect()
+    }
 }
 
 /// The running setup terminal, which takes over the whole screen.
@@ -258,6 +333,8 @@ pub struct Shell {
     /// Keys in the order typed (one sender, one request at a time).
     pub input: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pub backend: String,
+    /// The login profile it signs in; `None`: the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub exited: Option<i64>,
     /// Output not yet written to the screen.
     pub out: Vec<u8>,

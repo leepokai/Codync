@@ -34,6 +34,21 @@ impl Scroll {
     }
 }
 
+/// The same keys on a conversation read from its end, `lines` up from the bottom: `max` and `page` are what the last
+/// draw found.
+pub(super) fn up_from_end(lines: &mut usize, max: usize, page: usize, k: KeyEvent) {
+    let half = (page / 2).max(1);
+    *lines = match k.code {
+        KeyCode::Up | KeyCode::Char('k') => (*lines + 1).min(max),
+        KeyCode::Down | KeyCode::Char('j') => lines.saturating_sub(1),
+        KeyCode::PageUp => (*lines + half).min(max),
+        KeyCode::PageDown => lines.saturating_sub(half),
+        KeyCode::Char('u') if ctrl(k) => (*lines + half).min(max),
+        KeyCode::Char('d') if ctrl(k) => lines.saturating_sub(half),
+        _ => *lines,
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

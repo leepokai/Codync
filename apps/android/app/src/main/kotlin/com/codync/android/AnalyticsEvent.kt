@@ -119,7 +119,9 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class VoiceCallQuality(val engine: VoiceEngineKind, val report: com.codync.android.core.CallQuality.Report) : AnalyticsEvent("voice_call_quality") {
         override val properties get() = mapOf("engine" to engine.json, "reconnects" to JsonPrimitive(report.reconnects),
             "stuck" to JsonPrimitive(report.stuck.wire), "failure" to JsonPrimitive(report.failure?.wire ?: "none")) +
-            listOfNotNull(report.readyMs?.let { "ready_ms" to JsonPrimitive(it) })
+            listOfNotNull(report.readyMs?.let { "ready_ms" to JsonPrimitive(it) }) +
+            // Google Search: whether it was on and how many answers used it, never the query.
+            (report.searches?.let { mapOf("google_search" to JsonPrimitive(true), "searches" to JsonPrimitive(it)) } ?: emptyMap())
     }
     data class ScreenViewed(val screen: AnalyticsScreen) : AnalyticsEvent("screen_viewed") {
         override val properties get() = mapOf("screen" to screen.json)
@@ -147,6 +149,15 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class VoiceNotePlayed(val failure: VoiceNoteFailure?) : AnalyticsEvent("voice_note_played") {
         override val properties get() =
             mapOf("outcome" to JsonPrimitive(if (failure == null) "played" else "failed")) + listOfNotNull(failure?.let { "error" to it.json })
+    }
+    /**
+     * Something another app shared went to a bot (`ShareToBot`), was held for its offline computer, or failed ([error]
+     * set only then): how many files, whether it had text, whether the bot came from Recent. Never names or content.
+     */
+    data class ShareSent(val outcome: ShareOutcome, val files: Int, val text: Boolean, val recent: Boolean, val error: ShareError? = null) :
+        AnalyticsEvent("share_sent") {
+        override val properties get() = mapOf("outcome" to outcome.json) + listOfNotNull(error?.let { "error" to it.json }) +
+            mapOf("files" to JsonPrimitive(files), "text" to JsonPrimitive(text), "recent" to JsonPrimitive(recent))
     }
     /** Find in a conversation opened (iOS `conversationFindOpened`). */
     data object ConversationFindOpened : AnalyticsEvent("conversation_find_opened")
@@ -304,6 +315,14 @@ internal enum class OutboundLink(override val wire: String) : CatalogValue {
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }
 internal enum class VoiceNoteFailure(override val wire: String) : CatalogValue { Load("load"), Playback("playback") }
 
+internal enum class ShareOutcome(override val wire: String) : CatalogValue { Sent("sent"), Queued("queued"), Failed("failed") }
+
+/**
+ * What stopped a share on Android: a file it couldn't copy in ([Read]), or the message it couldn't hand to the chat
+ * ([Send]). The chat's own send reports the rest; the iPhone, sending from its share sheet, also has the catalog's others.
+ */
+internal enum class ShareError(override val wire: String) : CatalogValue { Read("read"), Send("send") }
+
 internal enum class VoiceEngineKind(override val wire: String) : CatalogValue {
     OnDevice("on_device"), OpenAI("openai"), Gemini("gemini"),
     /** A provider's speech-to-text and text-to-speech (`CloudSpeechEngine`), not its realtime model. */
@@ -327,5 +346,5 @@ internal enum class AnalyticsScreen(override val wire: String) : CatalogValue {
     Bots("bots"), State("state"), Chat("chat"), Trace("trace"), BotDetails("bot_details"), Memory("memory"),
     Routines("routines"), Marketplace("marketplace"), Settings("settings"), Computers("computers"), Usage("usage"),
     Account("account"), Pairing("pairing"), VoiceSettings("voice_settings"), RemoteScreen("remote_screen"),
-    Library("library"), Artifact("artifact"), Network("network"), BotComputer("bot_computer"),
+    Library("library"), Artifact("artifact"), Network("network"), BotComputer("bot_computer"), Task("task"),
 }

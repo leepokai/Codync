@@ -5,22 +5,6 @@ import UniformTypeIdentifiers
 
 /// Files in messages: preparing picked, pasted and dropped files, and showing sent ones.
 
-extension OutgoingFile {
-    /// Images the agents can't all read (HEIC, TIFF, BMP…) become JPEG, upright.
-    static func prepared(name: String, data: Data) -> OutgoingFile {
-        let ext = (name as NSString).pathExtension.lowercased()
-        guard ["heic", "heif", "tif", "tiff", "bmp"].contains(ext) || (ext.isEmpty && ImageData.isImage(data)),
-              let jpeg = ImageData.jpeg(data) else { return OutgoingFile(name: name, data: data) }
-        let base = (name as NSString).deletingPathExtension
-        return OutgoingFile(name: (base.isEmpty ? "image" : base) + ".jpg", data: jpeg)
-    }
-
-    /// A name for a file that came without one (pasted or dragged image data).
-    static func unnamed(_ ext: String) -> String {
-        "pasted-\(Int(Date.now.timeIntervalSince1970)).\(ext)"
-    }
-}
-
 /// Anything dropped or pasted: a file, or bare image data.
 struct PickedFile: Transferable {
     let file: OutgoingFile
@@ -44,69 +28,6 @@ struct PickedFile: Transferable {
             if let file { files.append(file) }
         }
         return files
-    }
-}
-
-enum ImageData {
-    /// The long side, in pixels, of the largest picture the app decodes (the viewer, a converted upload, the clipboard's
-    /// PNG): a bigger one is scaled down to it, so a small compressed file can't take more memory than the phone has.
-    static let largestPixels = 4096
-
-    static func isImage(_ data: Data) -> Bool {
-        CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) > 0 } ?? false
-    }
-
-    static func isPNG(_ data: Data) -> Bool { data.starts(with: [0x89, 0x50, 0x4E, 0x47]) }
-
-    /// A downscaled, upright image (`maxPixels` on the long side).
-    static func thumbnail(_ data: Data, maxPixels: Int) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-    }
-
-    static func jpeg(_ data: Data) -> Data? {
-        guard let image = thumbnail(data, maxPixels: largestPixels) else { return nil }
-        return encode(image, as: .jpeg, [kCGImageDestinationLossyCompressionQuality: 0.85])
-    }
-
-    /// The picture's first frame, upright (its orientation applied), as PNG: full size up to `maxPixels` on the long
-    /// side, scaled down to it past that.
-    static func png(_ source: CGImageSource, maxPixels: Int) -> Data? {
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
-        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height, 1), maxPixels),
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).flatMap { encode($0, as: .png) }
-    }
-
-    private static func encode(_ image: CGImage, as type: UTType, _ options: [CFString: Any] = [:]) -> Data? {
-        let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, image, options as CFDictionary)
-        return CGImageDestinationFinalize(dest) ? out as Data : nil
-    }
-}
-
-/// The symbol for a file by its extension.
-enum AttachmentIcon {
-    static func symbol(_ name: String) -> String {
-        if Attachment.isImage(name) { return "photo" }
-        if Attachment.isAudio(name) { return "waveform" }
-        return switch (name as NSString).pathExtension.lowercased() {
-        case "pdf": "doc.richtext"
-        case "zip", "gz", "tar", "7z": "doc.zipper"
-        case "mov", "mp4", "m4v": "film"
-        default: "doc"
-        }
     }
 }
 

@@ -55,7 +55,7 @@ export interface IslandPermission {
 export interface IslandSummary {
   bots: IslandBot[]
   permissions: IslandPermission[]
-  /** This computer's plan limits (Claude, Codex), as the menu bar shows them. */
+  /** This computer's plan limits by agent (Claude, Codex); the island shows each agent's login nearest a limit. */
   usage: UsageProvider[]
 }
 

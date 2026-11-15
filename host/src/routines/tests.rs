@@ -14,6 +14,7 @@ pub(super) fn routine() -> Routine {
         deleted: false,
         timeout_seconds: default_timeout(),
         last_error: None,
+        progress: None,
     }
 }
 #[test]

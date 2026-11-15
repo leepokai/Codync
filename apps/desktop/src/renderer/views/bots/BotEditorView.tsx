@@ -12,6 +12,7 @@ import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { LoginProfileRow } from './LoginProfileRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
@@ -143,7 +144,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
     </Field>
   )
-  const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
       onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
@@ -156,6 +157,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>
   )
+  // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
+  const loginProfile = backend?.loginProfiles ? <LoginProfileRow key="login" backend={backend} loginProfile={draft.loginProfile ?? null} onChange={(id) => set('loginProfile', id)} /> : null
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
   // Only from a host that has them (its bots say).
@@ -180,6 +183,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           <CardSection title="Agent">
             {step}
             {agent}
+            {loginProfile}
             {fallbacks}
             {compaction}
           </CardSection>
@@ -219,6 +223,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
           {part === 'all' ? agent : null}
+          {part === 'all' ? loginProfile : null}
           {part === 'all' ? fallbacks : null}
           {part === 'all' ? compaction : null}
           <ValueRow

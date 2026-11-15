@@ -93,7 +93,11 @@ internal class SharedAudio(
                         SoundStop.Interrupted -> if (phase == AudioPhase.Playing) interrupted()
                         SoundStop.Broke -> broke()
                     }
-                }.also { sound = it; duration = it.duration }
+                }.also {
+                    if (released) { it.release(); return }
+                    sound = it
+                    duration = it.duration
+                }
             }
             failure = VoiceNoteFailure.Playback
             if (ready.start()) { elapsed = ready.position; phase = AudioPhase.Playing } else { drop(); phase = AudioPhase.Failed }

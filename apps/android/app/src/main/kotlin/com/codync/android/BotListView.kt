@@ -381,6 +381,9 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             ThinkingOrb(size = 13.dp, color = Palette.secondary)
             Text(tr(bot.activity.ifEmpty { "Working…" }), style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        // Idle in its chat while it works away from it.
+        bot.status == "idle" && bot.tasks.isNotEmpty() -> Text(rosterTaskLine(bot.tasks, translator()),
+            style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         bot.status == "error" -> Text(messagePreview(bot.lastMessage ?: "Something went wrong"), style = Type.subheadline, color = Palette.danger,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         else -> Text(messagePreview(bot.lastMessage ?: if (bot.kind == "group") "${bot.members.size} bots"

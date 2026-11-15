@@ -67,6 +67,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
+    public internal(set) var taskEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -316,19 +318,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

@@ -51,6 +51,8 @@ class ConversationTest {
         assertEquals(buildJsonObject { put("botId", "b"); put("text", "Ship it"); put("clientNonce", "n"); put("replyTo", "e")
             putJsonArray("attachments") { add("u1") } }, send.body(listOf("u1")))
         assertFalse("replyTo" in send.copy(replyTo = null).body())
+        assertFalse("pasted" in send.body())
+        assertEquals(buildJsonArray { add("Shared") }, send.copy(pasted = listOf("Shared")).body()["pasted"])
     }
 
     @Test fun `chat shows final replies permissions notices and users without narration`() {

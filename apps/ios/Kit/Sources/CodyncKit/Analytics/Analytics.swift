@@ -2,7 +2,8 @@ import CryptoKit
 import Foundation
 
 /// Product analytics: batches events to PostHog, on unless turned off in Settings.
-/// Only the app calls it; widgets and the notification extension never do.
+/// Only the app calls it; widgets and the notification extension never do, and the share extension leaves its
+/// events for the app (`queueShare`).
 @MainActor
 public final class Analytics {
     public static let shared = Analytics()
@@ -117,10 +118,30 @@ public final class Analytics {
         SHA256.hash(data: Data("codync-analytics:\(id)".utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Shares the share extension finished, waiting for the app (`queueShare`).
+    nonisolated static let sharesKey = "analyticsPendingShares"
+
+    /// From the share extension, which has neither this install's ID nor the Settings switch: kept in the App Group
+    /// (the latest 50) until the app's next trip to the foreground sends it as its own.
+    nonisolated public static func queueShare(_ share: AnalyticsEvent.ShareSent,
+                                              in shared: UserDefaults? = UserDefaults(suiteName: SharedStore.appGroup)) {
+        guard let shared else { return }
+        let queued = shared.data(forKey: sharesKey).flatMap { try? JSONDecoder().decode([AnalyticsEvent.ShareSent].self, from: $0) } ?? []
+        shared.set(try? JSONEncoder().encode(Array((queued + [share]).suffix(50))), forKey: sharesKey)
+    }
+
+    /// The extension's shares, captured now (or dropped with analytics off).
+    func takeQueuedShares(from shared: UserDefaults?) {
+        guard let shared, let data = shared.data(forKey: Self.sharesKey) else { return }
+        shared.removeObject(forKey: Self.sharesKey)
+        for share in (try? JSONDecoder().decode([AnalyticsEvent.ShareSent].self, from: data)) ?? [] { capture(.shareSent(share)) }
+    }
+
     /// `app_opened` once per trip to the foreground (`.inactive` blips don't count).
     public func becameActive() {
         guard !foreground else { return }
         foreground = true
+        takeQueuedShares(from: UserDefaults(suiteName: SharedStore.appGroup))
         Task {
             let state = await foregroundState()
             capture(.appOpened(notifications: state.notifications, widgets: state.widgets))

@@ -57,7 +57,7 @@ public extension HostTransport {
 /// in the relay mailbox while it is offline. `ChannelTransport` is the real one.
 public protocol RemoteTransport: HostTransport {
     func computerUpdates() -> AsyncStream<Computer>
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?) async throws
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws
     func cancelQueued(clientNonce: String) async -> MailboxCancel
     func listQueued() async throws -> [QueuedItem]
     func mailboxEvents() -> AsyncStream<MailboxEvent>

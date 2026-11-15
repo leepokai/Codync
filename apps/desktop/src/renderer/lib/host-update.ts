@@ -27,13 +27,18 @@ export const updateNeededText = {
     if (m.kind === 'updateApp') return trNow('Update this app')
     return cloud ? trNow('Your cloud computer is updating…') : trNow('Update Codync on {host}').replaceAll('{host}', () => host)
   },
-  detail(m: VersionMismatch, host: string, hostVersion: string | null | undefined, os: string | null | undefined, instructions = true, cloud = false) {
+  detail(m: VersionMismatch, host: string, os: string | null | undefined, instructions = true, cloud = false) {
     if (m.kind === 'updateApp') {
-      const runs = hostVersion ? `${host} runs Codync ${hostVersion} and` : host
-      return `${runs} needs this app to be ${m.minimum} or newer. Your chats are safe on the computer.`
+      return trNow('The app on this computer needs to be {minimum} or newer ({host} requires it).')
+        .replaceAll('{host}', () => host)
+        .replaceAll('{minimum}', () => m.minimum)
     }
-    if (cloud) return `It's moving from Codync ${m.version} to ${m.minimum} or newer. This app reconnects when it's done.`
-    const needs = `${host} runs Codync ${m.version}; this app needs ${m.minimum} or newer.`
+    if (cloud) return trNow('Your cloud computer is updating to Codync {minimum} or newer; this app reconnects when it is done.')
+      .replaceAll('{minimum}', () => m.minimum)
+    const needs = trNow('Codync on {host} is {version}; that computer needs Codync {minimum} or newer.')
+      .replaceAll('{host}', () => host)
+      .replaceAll('{version}', () => m.version)
+      .replaceAll('{minimum}', () => m.minimum)
     return instructions ? `${needs} ${updateNeededText.how(os)}` : needs
   },
   /** How to update Codync on a computer this app can't update; `cloud`: a Codync Cloud computer, which updates by itself. */
@@ -45,7 +50,7 @@ export const updateNeededText = {
   },
   /** A computer updating at this app's request. */
   updating(host: string) {
-    return `Updating Codync on ${host}. This takes a few minutes.`
+    return trNow('Updating Codync on {host}. This takes a few minutes.').replaceAll('{host}', () => host)
   },
   /** Why the last update asked of the computer didn't take. */
   notUpdated(last: HostUpdate, host: string) {
@@ -73,9 +78,9 @@ export function hostVersionLine(version: string, latest: string | null | undefin
   if (offer.kind === 'updating') return line([updateNeededText.updating(host)], false, { kind: 'updating' })
   const minimum = mismatch?.kind === 'updateHost' ? mismatch.minimum : null
   const available = latest && isBelow(version, latest) ? latest : null
-  const due = minimum ? `This app needs ${minimum} or newer.` : available ? `Version ${available} is available.` : null
-  if (!due) return line(latest ? ['Up to date'] : [])
+  const due = minimum ? trNow('{host} needs Codync {version} or newer.').replaceAll('{host}', () => host).replaceAll('{version}', () => minimum) : available ? trNow('Version {version} is available.').replaceAll('{version}', () => available) : null
+  if (!due) return line(latest ? [trNow('Up to date')] : [])
   if (offer.kind === 'unavailable') return line([due, updateNeededText.how(os, cloud)], minimum !== null)
-  if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: 'Try again' })
-  return line([due], minimum !== null, { kind: 'button', title: 'Update' })
+  if (offer.last) return line([updateNeededText.notUpdated(offer.last, host)], true, { kind: 'button', title: trNow('Try again') })
+  return line([due], minimum !== null, { kind: 'button', title: trNow('Update') })
 }

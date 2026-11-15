@@ -32,7 +32,7 @@ export function AgentsPanel({ agents, query, needsNode, onAddNode, onAgent }: {
   return (
     <>
       {needsNode ? <NodeNotice onAdd={onAddNode} /> : null}
-      <div className="market-panel-scroll fade-in">
+      <div className="market-panel-scroll scroll-edges fade-in">
         {agents.length === 0 ? (
           <Text tone="secondary">{query ? tr('No agents match “{query}”.').replaceAll('{query}', query) : tr('No agents yet.')}</Text>
         ) : (
@@ -64,7 +64,7 @@ export function ConnectorsPanel({ catalog, query, onAddConnector, onInstall, onV
         icon={<TileIcon name="point.3.connected.trianglepath.dotted" />}
         onAdd={onAddConnector}
       />
-      <div className="market-panel-scroll fade-in">
+      <div className="market-panel-scroll scroll-edges fade-in">
         {catalog.loading ? (
           <SkeletonGrid />
         ) : rows.length === 0 && !catalog.hasMore ? (
@@ -113,7 +113,7 @@ export function SkillsPanel({ skills, loading, query, installedSkillIds, busySki
         icon={<TileIcon name="square.and.pencil" />}
         onAdd={onWriteSkill}
       />
-      <div className="market-panel-scroll fade-in">
+      <div className="market-panel-scroll scroll-edges fade-in">
         {loading ? (
           <SkeletonGrid />
         ) : skills.length === 0 ? (

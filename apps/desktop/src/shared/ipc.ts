@@ -54,8 +54,7 @@ export interface TrayImage {
   x2: string
 }
 
-/** What the tray menu shows; the renderer owns the stores and sends this on every change. */
-/** The SF Symbols beside the tray menu's actions. */
+/** The SF Symbols beside the tray menu's actions and its computers. */
 export const TRAY_SYMBOLS = [
   'macwindow',
   'qrcode',
@@ -67,15 +66,50 @@ export const TRAY_SYMBOLS = [
   'display',
   'gearshape',
   'power',
+  'laptopcomputer',
+  'desktopcomputer',
+  'macmini',
+  'macstudio',
+  'macpro.gen3',
+  'cloud',
 ] as const
 export type TraySymbol = (typeof TRAY_SYMBOLS)[number]
 
+/** One usage limit in the tray menu: its line and bar, or a note with no bar. */
+export interface TrayUsageLine {
+  title: string
+  bar: TrayImage | null
+}
+
+/** One login of an agent with its limits. */
+export interface TrayUsageLogin {
+  name: string
+  lines: TrayUsageLine[]
+}
+
+/** An agent's logins, the default one first: one when it has no login profiles. */
+export interface TrayUsageAgent {
+  name: string
+  icon: TrayImage | null
+  logins: TrayUsageLogin[]
+}
+
+/** A computer's usage limits by agent. */
+export interface TrayUsageComputer {
+  /** Null while the app has one computer: its agents then list in the menu itself. */
+  name: string | null
+  symbol: TraySymbol
+  agents: TrayUsageAgent[]
+}
+
+/** What the tray menu shows; the renderer owns the stores and sends this on every change. */
 export interface TraySummary {
   status: string
   canPair: boolean
   bots: { ref: string; name: string; detail: string; working: boolean; avatar: TrayImage | null }[]
   approval: string | null
-  usage: { name: string; icon: TrayImage | null; lines: { title: string; bar: TrayImage | null }[] }[]
+  /** Every computer with usage limits to show. */
+  usage: TrayUsageComputer[]
   screen: {
     enabled: boolean
     subtitle: string

@@ -1,8 +1,12 @@
 //! Commands from clients and the queue of turns waiting for the bot.
 
-use super::{Actor, CANCEL_GRACE, Cmd, Done, Queued, RESUME_PROMPT, RoutineCompletion, inflight_key};
+use super::{
+    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+};
+use crate::agent::login_profiles::Login;
 use crate::agent::own_memory;
 use crate::chat::memory;
+use crate::chat::tasks::{self, Failure, Outcome};
 use crate::hub::BotStatus;
 use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
@@ -19,6 +23,8 @@ impl Actor {
             }
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
+            Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
+            Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
                 if !self.try_decision_message(&lane, &entry_id) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
@@ -83,7 +89,9 @@ impl Actor {
                 let old = std::mem::replace(&mut self.base, *base);
                 // On its own agent the bot takes the new one; on a fallback it keeps that agent (its step may have
                 // moved) until `settle_chain` moves it off one it no longer uses.
-                let cfg = if crate::agent::fallback::step_of(&old, &self.cfg.backend) == Some(0) {
+                let cfg = if crate::agent::fallback::step_of(&old, &crate::agent::fallback::login::of(&self.cfg))
+                    == Some(0)
+                {
                     crate::agent::fallback::effective(&self.base, 0)
                 } else {
                     super::fallback::running(&self.base, &self.cfg)
@@ -94,6 +102,7 @@ impl Actor {
                 let resumes = self.conn.as_ref().is_none_or(|c| c.sessions.reopen.is_some());
                 let restart = cfg.backend != self.cfg.backend
                     || cfg.command != self.cfg.command
+                    || cfg.login_profile != self.cfg.login_profile
                     || cfg.cwd != self.cfg.cwd
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
@@ -151,11 +160,16 @@ impl Actor {
         if self.active_routine.is_none() {
             self.hub.routines.release(&self.cfg.id);
         }
+        if let Err(error) = self.hub.routines.drop_queued_follow_ups(&self.hub, &self.cfg.id) {
+            tracing::error!(error = format!("{error:#}"), "couldn't drop queued follow-ups");
+        }
         // Queued messages are dropped too: Stop means "stop everything". A room's late turn stays: the room was
         // told this member answers there once free, and only the group's Stop drops it.
         for queued in std::mem::take(&mut self.queue) {
             match queued {
                 Queued::Group(turn) if turn.late => self.queue.push_back(Queued::Group(turn)),
+                // A task's report is news the user still wants.
+                Queued::TaskReport(report) => self.queue.push_back(Queued::TaskReport(report)),
                 Queued::User { entry_id, .. } => {
                     if let Some(mut e) = self.hub.store.entry(&entry_id) {
                         e.data["status"] = "cancelled".into();
@@ -260,14 +274,52 @@ impl Actor {
                     }
                     continue;
                 }
+                Some(Queued::TaskReport(_)) => {
+                    // Reports that came in while the bot worked are one turn, as replies are.
+                    let mut reports = Vec::new();
+                    while let Some(Queued::TaskReport(_)) = self.queue.front() {
+                        if let Some(Queued::TaskReport(report)) = self.queue.pop_front() {
+                            reports.push(report);
+                        }
+                    }
+                    self.host_turn = Some(HostTurn::TaskReport);
+                    let hops = reports.iter().map(|r| r.hops).max().unwrap_or(0);
+                    let prompt = tasks::report_prompt(&reports);
+                    self.reports = reports;
+                    match self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                        // A task this turn starts carries the chain on.
+                        Ok(()) => self.hub.tasks.answering(&self.cfg.id, hops),
+                        Err(e) => self.start_error(e, done_tx).await,
+                    }
+                    continue;
+                }
                 Some(Queued::Prompt { .. }) => {
                     let Some(Queued::Prompt { text, call }) = self.queue.pop_front() else {
                         unreachable!("front is a prompt")
                     };
-                    self.active_prompt = true;
+                    self.host_turn = Some(HostTurn::Opening);
                     self.prompt_call = call;
                     if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
                         self.start_error(e, done_tx).await;
+                    }
+                    continue;
+                }
+                Some(Queued::FollowUp(_)) => {
+                    let Some(Queued::FollowUp(id)) = self.queue.pop_front() else {
+                        unreachable!("front is a follow-up")
+                    };
+                    match self.hub.routines.begin_follow_up(&self.hub, &self.cfg.id, &id) {
+                        Ok(Some(prompt)) => {
+                            self.host_turn = Some(HostTurn::FollowUp);
+                            if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
+                                self.start_error(e, done_tx).await;
+                            }
+                        }
+                        // Cancelled while it waited for its turn.
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::error!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't begin a follow-up");
+                        }
                     }
                     continue;
                 }
@@ -333,6 +385,7 @@ impl Actor {
         self.finish_routine(crate::routines::Status::Failed, Some(format!("Could not start routine: {e:#}")), None);
         self.complete_request(Err(anyhow!("couldn't start recipient: {e:#}")), false);
         self.complete_group(Err(anyhow!("couldn't start: {e:#}")));
+        self.turn_over(Outcome::Failed(Failure::Start, format!("it could not start: {e:#}")));
         if !self.invite_sign_in(e) {
             // `{:#}` keeps the reason ("starting `npx …`: EACCES"), not just "agent process exited".
             self.failure_notice(e, &format!("Couldn't start the agent: {e:#}"), "start_failed");
@@ -341,7 +394,7 @@ impl Actor {
         self.relay.carried = None;
         self.turn = None;
         self.reply_hops = None;
-        self.active_prompt = false;
+        self.end_host_turn(false);
         memory::turns::drop_turn(&self.cfg.id);
         if self.routine_completion.is_none() {
             self.set_inflight(false);
@@ -374,10 +427,24 @@ impl Actor {
                 Err(error) => tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't retry"),
             }
         }
-        crate::agent::backends::set_signed_in(&backend, Some(false));
-        // An account check can still say signed in (`claude auth status` with a revoked token): this refusal wins.
-        crate::agent::backends::note_prompt_refused(&backend);
-        self.sign_in_card(&backend, &held)
+        let login = Login::of(&self.hub.store, &self.cfg);
+        self.note_signed_out(&login);
+        self.sign_in_card(&login, &held)
+    }
+
+    /// `login` refused the bot's prompt for auth: a login profile, or the computer's own login. Only that one
+    /// reads signed out, also over a check that still says signed in (`claude auth
+    /// status` with a revoked token).
+    pub(super) fn note_signed_out(&self, login: &Login) {
+        if let Some(profile) = &login.profile {
+            if crate::agent::login_profiles::note_signed_in(&self.hub.store, profile, false) {
+                // Signed out, it leaves the Usage screens.
+                crate::usage::login_profiles_changed(&self.hub);
+            }
+        } else {
+            crate::agent::backends::set_signed_in(&login.backend, Some(false));
+            crate::agent::backends::note_prompt_refused(&login.backend);
+        }
     }
 
     /// The agent's process was already running when this turn started.
@@ -389,15 +456,51 @@ impl Actor {
         conn.started.elapsed() > turn_age
     }
 
-    /// Agent `backend`'s sign-in card in the chat, holding `entries`. Whether it's there.
-    pub(super) fn sign_in_card(&self, backend: &str, entries: &[String]) -> bool {
-        let Some(h) = crate::agent::backends::harness(backend) else { return false };
-        let invited = agent_sign_in::invite(&self.hub, &self.cfg.id, &self.lane, backend, h.name, entries);
+    /// `login`'s sign-in card in the chat, holding `entries`. Whether it's there.
+    pub(super) fn sign_in_card(&self, login: &Login, entries: &[String]) -> bool {
+        let Some(h) = crate::agent::backends::harness(&login.backend) else { return false };
+        let invited = agent_sign_in::invite(&self.hub, &self.cfg.id, &self.lane, login, h.name, entries);
         invited
             .inspect_err(
                 |error| tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't ask to sign in"),
             )
             .is_ok()
+    }
+
+    /// The host-started turn is over; what it was, for the turn's end to act on. `answered`: the agent ended it
+    /// with a reply of its own.
+    pub(super) fn end_host_turn(&mut self, answered: bool) -> Option<HostTurn> {
+        let ended = self.host_turn.take();
+        match ended {
+            Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
+            Some(HostTurn::TaskReport) => self.reports_over(answered),
+            Some(HostTurn::Opening) | None => {}
+        }
+        ended
+    }
+
+    /// The turn for the tasks' reports is over. Unanswered (stopped, failed, never started), they show in the chat
+    /// as they came, so what a task found isn't lost with the turn.
+    fn reports_over(&mut self, answered: bool) {
+        let reports = std::mem::take(&mut self.reports);
+        if !answered {
+            for report in &reports {
+                self.notice(&tasks::report_notice(report), NoticeStyle::Info);
+            }
+        }
+        tasks::reported(&self.hub.store, &reports);
+    }
+
+    /// The turn is over, however it ended (or never began): a task's record says how and its bot gets the report;
+    /// a bot's tasks started in the turn launch.
+    pub(super) fn turn_over(&mut self, outcome: Outcome) {
+        if !self.cfg.is_task() {
+            self.hub.tasks.turn_ended(&self.cfg.id);
+            tasks::launch_pending(&self.hub, &self.cfg.id, matches!(outcome, Outcome::Stopped));
+        } else if !self.queue.iter().any(|q| matches!(q, Queued::User { .. })) {
+            // With more its bot told it still waiting (`tell_task`), it keeps working and reports when that ends.
+            tasks::finished(&self.hub, &self.cfg, outcome);
+        }
     }
 
     pub(super) fn complete_request(&mut self, result: Result<String>, cancelled: bool) {
@@ -462,6 +565,9 @@ impl Actor {
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
     pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
+        let follow_up = Inflight::load(&self.hub.store, &self.cfg.id)
+            .and_then(|turn| turn.follow_up)
+            .filter(|_| self.active_routine.is_none());
         self.set_inflight(false);
         let slot = self.slot();
         if self.session_for(slot.as_deref()).is_none() {
@@ -470,11 +576,20 @@ impl Actor {
                 Some("No saved agent session is available".into()),
                 None,
             );
+            self.turn_over(Outcome::Failed(Failure::Restart, tasks::CUT_OFF.into()));
             return;
         }
         let prompt = if self.active_routine.is_some() {
             format!(
                 "{RESUME_PROMPT} This is still a scheduled routine run. If its instruction permits silence and there is nothing to report, return exactly (pass)."
+            )
+        } else if let Some(chain) = follow_up {
+            // Still the follow-up's turn: a `(pass)` stays silent and alerts no one, and a follow-up it sets
+            // continues the chain it was in.
+            self.host_turn = Some(HostTurn::FollowUp);
+            self.hub.routines.resume_follow_up(&self.cfg.id, chain);
+            format!(
+                "{RESUME_PROMPT} This is still the follow-up you set for yourself. If there is nothing worth telling the user yet, return exactly (pass)."
             )
         } else {
             RESUME_PROMPT.to_owned()
@@ -484,10 +599,15 @@ impl Actor {
         }
     }
 
-    /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]).
+    /// Marks a turn in the bot's own chat as running across host restarts (see [`Self::resume_interrupted`]); a
+    /// follow-up's turn is marked as one, with its place in its chain.
     pub(super) fn set_inflight(&self, on: bool) {
-        let value = if on { now_ms().to_string() } else { String::new() };
-        if let Err(error) = self.hub.store.kv_set(&inflight_key(&self.cfg.id), &value) {
+        let turn = on.then(|| {
+            let follow_up = (self.host_turn == Some(HostTurn::FollowUp))
+                .then(|| self.hub.routines.follow_up_chain(&self.cfg.id).unwrap_or(0));
+            Inflight { started: now_ms(), follow_up }
+        });
+        if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
         }
     }

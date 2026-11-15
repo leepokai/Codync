@@ -18,8 +18,8 @@ badge; alerts tint the card from the bottom (amber, green, red). The other bots 
 on the right.
 
 The working badge is Codync's thinking orb. The usage meter and the Usage tab show the tightest
-local plan limit and every limit with its reset (amber from 70 %, red from 90 %, like the menu
-bar). A bot can be messaged from the island, and ⌥Y / ⌥N answer an approval from any app.
+local plan limit and the limits of the login nearest a limit, with their resets (amber from 70 %,
+red from 90 %, like the menu bar). A bot can be messaged from the island, and ⌥Y / ⌥N answer an approval from any app.
 
 | State | When | What it shows |
 |---|---|---|

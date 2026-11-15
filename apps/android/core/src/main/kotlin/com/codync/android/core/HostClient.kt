@@ -87,9 +87,12 @@ data class Bot(
     val resting: List<Resting> = emptyList(),
     /** What it keeps running on the computer. Empty from an older host, and for a group. */
     val devServers: List<DevServer> = emptyList(),
-    /** Its background tasks still going ([BotTask]). Empty from a host before tasks, and for a group. */
-    @Serializable(with = BotTasksSerializer::class)
-    val tasks: List<BotTask> = emptyList(),
+    /** Its box ([WorkItem]): every live or waiting item in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    @Serializable(with = WorkSerializer::class)
+    val work: List<WorkItem> = emptyList(),
+    /** The most agents it runs at once; null from a host before the box. */
+    @Serializable(with = MaxAgentsSerializer::class)
+    val maxAgents: Int? = null,
     val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */

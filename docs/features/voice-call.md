@@ -54,7 +54,15 @@ way open with a sentence or two, read aloud like any reply and part of the call 
 
 The composer's mic (beside send / call, as in Grok Bot) types what you say into the box with the
 same on-device recognizer and the call's language setting; nothing is sent until you send it.
-Words appear as they're recognized, after what's already typed. While it listens the mic becomes
+Words appear as they're recognized, after what's already typed. On-device `SFSpeechRecognizer`
+(iOS 18+, macOS 15+) starts its transcript over after a pause of a second or two without a final
+result; `SpeechSegments` (iOS `Call/OnDeviceSpeech.swift`, desktop `views/thread/speech-segments.ts`,
+used by dictation and the on-device call) keeps each segment and puts the next after it. A segment
+ends on a final result or on recognition metadata on a result that isn't final (the desktop speech
+helper sends it as `ends`); without either, a result a second or more after the last one starts a
+new segment unless it begins with at least half of the last one (ignoring case and punctuation),
+and quicker results are revisions. Android's `SpeechRecognizer` ends at the pause with `onResults`,
+so it needs none of this. While it listens the mic becomes
 a recording pill (stop, the time, dots that follow your voice), on the iPhone and the desktop, and
 a call takes the microphone from it. On the desktop, dictation ends only on the pill's stop (or the
 shortcut's tap), which waits for the last words, on an error (shown in the window), or when another
@@ -354,15 +362,16 @@ carries audio and talks to these methods:
   descriptions, when the bot uses it), this bot (name, description, harness and model, folder and project,
   permission mode, connectors, skills, computer use, routines; a group's members), what the bot remembers (its
   `MEMORY.md` and notes index), the project now (git branch, changed files, the last three commits; outside a
-  repository, or without the command line tools on macOS, nothing), current work (status, activity, a pending
+  repository, or without the command line tools on macOS, nothing), current work (status, activity, its [work in the background](background-tasks.md): what is working, waiting or needs
+  the user, a pending
   approval and its options, queued messages, the last failure), the conversation (the last 20 chat messages in
   spoken form and the titles and gist of the last three calls), the other bots on this computer, files and
   artifacts shared in the chat, and, when `startCall` comes again for the same call (a reconnect, or an engine
   switched mid-call), this call so far (its newest lines). **All of it goes to the voice provider, on the user's own
   key.**
 - **`callTool`** `{callId, name, arguments, lines}` → `{result}` runs the voice's tool calls on the host
-  (`calls::tools`): `send_to_bot(text)`, `bot_status()` (a group's: its busy member's), `recent_messages(count)`,
-  `answer_approval(option)` (only after the user said which; matched by option name or id), `stop_bot()`,
+  (`calls::tools`): `send_to_bot(text)`, `bot_status()` (a group's: its busy member's; a bot's includes its work in the background), `recent_messages(count)`,
+  `answer_approval(option)` (only after the user said which; matched by option name or id), `stop_bot()` (the bot's turn and every item of its box),
   `search_memory(query)`. A failure is the tool's answer. The engines hold replies while a tool runs, so the model
   gets each result first.
 - **The user's own words:** `send_to_bot` attaches what the user said since the bot last heard from the call, word

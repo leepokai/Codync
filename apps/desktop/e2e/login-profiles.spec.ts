@@ -62,6 +62,7 @@ test('an agent gets another login profile, a bot runs on it, and it goes once no
     await page.reload()
     await page.locator('.roster-row', { hasText: name }).click()
     await page.getByRole('button', { name: `${name}, view details` }).click()
+    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
     // Its own row under the picker, shown without opening it.
     const chosen = page.locator('.details-panel .value-row', { hasText: 'Login profile' }).locator('.choice-picker')
     await expect(chosen).toHaveText(WORK)

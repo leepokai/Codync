@@ -231,3 +231,24 @@ test('this computer transcribes through the local target and counts no usage', a
   assert.ok(!s.log.some((m) => m.startsWith('configure')))
   assert.equal(sent, true)
 })
+
+test('words after a pause go after the words before it (the recognizer starts over without a final)', (t) => {
+  t.mock.timers.enable({ apis: ['Date'] })
+  const s = setup()
+  s.dictation.start(s.box())
+  s.say({ type: 'partial', text: 'I fixed' })
+  s.say({ type: 'partial', text: 'I fixed the parser' })
+  // A pause: on-device recognition (macOS 15+, iOS 18+) restarts its transcript, still not final.
+  t.mock.timers.tick(3000)
+  s.say({ type: 'partial', text: 'now' })
+  s.say({ type: 'partial', text: 'now run the tests' })
+  assert.equal(s.box(), 'Fix the bug I fixed the parser now run the tests')
+})
+
+test('the end marker closes what was said, so the next words go after it even right away', () => {
+  const s = setup()
+  s.dictation.start(s.box())
+  s.say({ type: 'partial', text: 'I fixed the parser', ends: true })
+  s.say({ type: 'partial', text: 'now run all the tests' })
+  assert.equal(s.box(), 'Fix the bug I fixed the parser now run all the tests')
+})

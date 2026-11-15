@@ -355,6 +355,11 @@
 .value-row-value {
   color: var(--secondary);
 }
+/* A stepper's number, as wide as two digits so the buttons hold still. */
+.stepper-value {
+  min-width: 2ch;
+  text-align: center;
+}
 /* A row's note under its title (RowLabel). */
 .detail-note {
   font-size: var(--text-caption);

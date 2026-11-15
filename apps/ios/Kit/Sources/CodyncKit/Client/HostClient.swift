@@ -201,17 +201,28 @@ public extension HostClient {
         return res.entries
     }
 
-    /// A background task of the bot's and its transcript (the newest 500 entries, oldest first), ended or not.
-    func taskEntries(botId: String, taskId: String) async throws -> (task: BotTask, entries: [Entry]) {
-        struct Res: Decodable { var task: BotTask; var entries: [Entry] }
+    /// A task's transcript (the newest 500 entries, oldest first), ended or not: by an item's `task`.
+    func taskEntries(botId: String, taskId: String) async throws -> [Entry] {
+        struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await call("taskEntries", ["botId": botId, "taskId": taskId])
-        return (res.task, res.entries)
+        return res.entries
     }
 
-    /// Stops one background task of the bot's, or all of them.
-    func stopTask(botId: String, taskId: String?) async throws {
-        struct Body: Encodable { var botId: String; var taskId: String? }
-        let _: Empty = try await call("stopTask", Body(botId: botId, taskId: taskId))
+    /// One change to an item in a bot's box: `workFirst` (a waiting item moves to the front), `dropWork` (a waiting
+    /// or ended item goes), `retryWork` (a stopped or failed item waits again, last).
+    func work(_ method: String, botId: String, itemId: String) async throws {
+        let _: Empty = try await call(method, ["botId": botId, "itemId": itemId])
+    }
+
+    /// Starts a waiting item now: the working item `insteadOf` gives way, and starts again later.
+    func workCutIn(botId: String, itemId: String, insteadOf: String) async throws {
+        let _: Empty = try await call("workCutIn", ["botId": botId, "itemId": itemId, "insteadOf": insteadOf])
+    }
+
+    /// Stops one working item of the bot's, or all of them.
+    func stopWork(botId: String, itemId: String?) async throws {
+        struct Body: Encodable { var botId: String; var itemId: String? }
+        let _: Empty = try await call("stopWork", Body(botId: botId, itemId: itemId))
     }
 
     /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.

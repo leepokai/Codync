@@ -6,9 +6,14 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.1
+## 2.48.2
 ### zh-Hant
-- Bot 會把比較久的工作交給背景進行：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。輸入框上方會顯示「背景」和目前的進度與時間，點一下可以看它做了什麼，也可以停止（已經改的內容會留著）。
+- Bot 會把比較久的工作交給背景進行，而且可以同時做好幾件：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。
+- 輸入框上方會有一個「背景」膠囊，顯示幾件進行中、幾件等待中；只有一件在做時會顯示它的進度與時間，也可以直接停止（已經改的內容會留著）。點一下會打開 Bot 的「詳情」。
+- 「詳情」現在列出 Bot 在做的事：「Threads」是正在進行的工作和還空著的名額，點一列可以看它做了什麼；「Event Box」是依序等待的工作，可以「先做」、名額滿時「插隊」（選一件讓位，它之後會重新開始），或長按「丟掉」。
+- 「最近」列出一天內結束的工作：完成的可以點開看過程，停止或失敗的會說明原因，並且可以「再試一次」。
+- 「同時幾個 agent」在 Bot 的「設定」裡，可以設 1 到 6 個。
+- 「指令」和「智慧體」（模型、快速模式、備援等）從「詳情」移到 Bot 的「設定」最上方。
 - 背景工作需要你核准時，卡片會出現在聊天裡並標示「背景」，照平常的方式回答就好。
 - 背景工作完成後，Bot 會用一則訊息告訴你結果；沒有完成也會說明原因。
 - 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好。
@@ -23,9 +28,16 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
 - 語音通話設定的 OpenAI 區塊會顯示電腦目前使用的「伺服器」：OpenAI，或你在電腦上設定的自有語音伺服器。使用自有伺服器時，模式固定為語音識別。
 - 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好文字後在選單點「回覆」，Bot 會知道你問的是哪一段。
+- Bot 設定的「技能」只列出名稱，點旁邊的資訊按鈕可以看完整說明。
+- 裝置上聽寫與語音通話不會再弄丟停頓前說的話。
 
 ### en-US
-- Bots do long work in the background: the chat stays free, so you can keep writing and the bot keeps answering. A capsule above the message box shows "In the background", what it is doing and for how long; tap it to see what it did, or stop it (what it already changed stays).
+- Bots do long work in the background, several things at once: the chat stays free, so you can keep writing and the bot keeps answering.
+- One capsule above the message box says "In the background" with how many are working and waiting; with a single one it shows what it is doing and for how long, and you can stop it there (what it already changed stays). Tap it to open the bot's Details.
+- Details now lists what the bot does: Threads shows the work that runs now and the places still free, and a row opens what it did; Event box shows what waits, in order, where you can move one First, Cut in when every place is taken (you pick what gives way; it starts again later), or touch and hold to Drop it.
+- Recent lists the work that ended in the last day: open a finished one to see what it did; a stopped or failed one says why and has Try again.
+- Agents at once, in the bot's Settings, sets how many work at the same time (1 to 6).
+- Instructions and Agent (model, fast mode, fallbacks) moved from Details to the top of the bot's Settings.
 - When background work needs your approval, its card appears in the chat marked "In the background"; answer it like any other.
 - When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
 - Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
@@ -40,3 +52,5 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Optional Google Search in Gemini realtime calls, off by default.
 - Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or a speech server of your own set on the computer. With your own server, Mode stays on Speech.
 - Reply to one part of a message: touch and hold it, choose Select Text, select the words, then Reply. The bot is told which part you mean.
+- A bot's Skills settings list only each skill's name; the info button beside one shows its description.
+- On-device dictation and calls keep the words you said before a pause.

@@ -14,13 +14,21 @@ struct DetailsRequest: Identifiable {
     var routineId: String?
     /// Another bot's details than the chat's: a group member's, from its notice.
     var botId: String?
+
+    /// Where a bot's fallbacks are set (the chat's "Add a fallback"): the Agent card, on Settings.
+    static func fallbacks(of botId: String) -> DetailsRequest {
+        DetailsRequest(tab: .settings, botId: botId)
+    }
 }
 
-/// A bot's details (Grok Bot's): who it is, then its details, computer, library, memory and settings.
+/// A bot's details (Grok Bot's): who it is, then what it does (Details), its computer, library, memory and how it
+/// is set up (Settings).
 /// Settings save as you edit.
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
+    /// Shows a card of the bot's chat (an item that needs the user); nil where the details aren't over that chat.
+    let openCard: ((Entry) -> Void)?
     /// An artifact picked in the Library, for the chat's viewer.
     let openArtifact: (ArtifactTarget) -> Void
     @State var tab: DetailsTab
@@ -33,8 +41,9 @@ struct BotDetailsView: View {
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
 
-    init(botId: String, request: DetailsRequest, openArtifact: @escaping (ArtifactTarget) -> Void) {
+    init(botId: String, request: DetailsRequest, openCard: ((Entry) -> Void)? = nil, openArtifact: @escaping (ArtifactTarget) -> Void) {
         self.botId = botId
+        self.openCard = openCard
         self.openArtifact = openArtifact
         routineId = request.routineId
         _tab = State(initialValue: request.tab)
@@ -121,12 +130,11 @@ struct BotDetailsView: View {
     @ViewBuilder private var page: some View {
         switch tab {
         case .details:
-            VStack(alignment: .leading, spacing: 28) {
-                if let bot, !bot.devServers.isEmpty { DevServersSection(bot: bot) }
-                if let draft = Binding($draft) {
-                    BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .often)
+            if let bot {
+                WorkTimeline(bot: bot, openCard: openCard) {
+                    RoutinesView(botId: botId, initialId: routineId)
+                    if !bot.devServers.isEmpty { DevServersSection(bot: bot) }
                 }
-                RoutinesView(botId: botId, initialId: routineId)
             }
         case .computer:
             BotComputerPage(botId: botId)
@@ -136,7 +144,7 @@ struct BotDetailsView: View {
             MemoryCard(botId: botId)
         case .settings:
             if let draft = Binding($draft) {
-                BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .rarely)
+                BotSettingsForm(draft: draft, error: saveError, scrolls: false, inDetails: true)
             }
         }
     }

@@ -15,10 +15,10 @@ import Testing
 }
 
 @Test @MainActor func dictatedWordsGoAfterTheBox() {
-    #expect(Dictation.join("", "hello") == "hello")
-    #expect(Dictation.join("Fix the bug", "in the parser") == "Fix the bug in the parser")
-    #expect(Dictation.join("Fix the bug\n", "now") == "Fix the bug\nnow")
-    #expect(Dictation.join("Fix the bug", "") == "Fix the bug")
+    #expect(SpeechSegments.join("", "hello") == "hello")
+    #expect(SpeechSegments.join("Fix the bug", "in the parser") == "Fix the bug in the parser")
+    #expect(SpeechSegments.join("Fix the bug\n", "now") == "Fix the bug\nnow")
+    #expect(SpeechSegments.join("Fix the bug", "") == "Fix the bug")
 }
 
 /// A provider's network call that the test answers when it chooses.

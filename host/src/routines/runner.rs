@@ -52,6 +52,12 @@ impl Routines {
         self.active.locked().remove(bot);
     }
 
+    /// Whether `bot`'s running turn is a routine run.
+    pub fn running(&self, bot: &str) -> bool {
+        let live = |status| matches!(status, Status::Starting | Status::Running | Status::Recovering);
+        self.state.locked().runs.iter().any(|r| r.bot_id == bot && live(r.status))
+    }
+
     pub fn recovery(&self, bot: &str) -> Option<Run> {
         self.state.locked().runs.iter().find(|r| r.bot_id == bot && r.status == Status::Recovering).cloned()
     }

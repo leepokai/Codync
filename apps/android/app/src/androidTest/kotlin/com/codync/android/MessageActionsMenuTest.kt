@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -162,6 +163,19 @@ class MessageActionsMenuTest {
         back()
         compose.onNodeWithText("Copy").assertDoesNotExist()
         assertEquals(3, invoked.size)
+    }
+
+    @Test fun aTapReachesARowOnAClickableSurface() {
+        var taps = 0
+        compose.setContent { Hosted {
+            // A sheet's panel is clickable itself, so a tap on it doesn't close the sheet.
+            Box(Modifier.fillMaxSize().safeDrawingPadding().clickable {}) {
+                Text("Open the row", Modifier.contextActions(onClick = { taps++ }) { listOf(MenuItem("Copy")) })
+            }
+        } }
+        compose.onNodeWithText("Open the row").performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, taps) }
+        compose.onNodeWithText("Copy").assertDoesNotExist()
     }
 
     @Test fun linksKeepTheirTapAndHoldingOpensTheMenu() {

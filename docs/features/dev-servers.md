@@ -103,7 +103,7 @@ white, and color comes from the bots.
 - **Title:** the desktop's title pill shows `Builder :5173` in quiet text; the phones' subtitle shows `Connected · :5173`;
   the terminal's header shows it on the right. With more running it's `:5173 +2`; with no port, the server's name; none
   running, `Starting` or `Failed to start`; stopped, nothing. Opening the bot's details is what the title already does.
-- **Details:** a **Dev servers** section first on the Details tab, shown only when the bot has servers. A row is one line:
+- **Details:** a **Dev servers** section on the Details tab, after Routines, shown only when the bot has servers. A row is one line:
   name and port (or `Running`, `Starting`, `Stopped`, `Failed to start`). A click opens it in the browser, or with no port
   to open (a watch build, or one that ended) its logs; the rest (copy address, logs, restart, stop, remove) is behind
   `⋯`, which on the desktop shows only when the row is hovered.

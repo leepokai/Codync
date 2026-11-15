@@ -49,7 +49,7 @@ impl App {
             Action::NewGroup => self.new_group(),
             Action::Market => self.open_market(),
             Action::Memory => self.open_memory(),
-            Action::Details => self.open_routines(),
+            Action::Details => self.open_details(),
             Action::Library => self.open_library(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
@@ -109,7 +109,7 @@ impl App {
                         ),
                         ConfirmAct::RemoveConnector(id) => self.call("removeConnector", json!({"id": id}), changed),
                         ConfirmAct::RemoveSkill(id) => self.call("removeSkill", json!({"id": id}), changed),
-                        ConfirmAct::StopTasks { bot, task } => self.stop_tasks(bot, task.as_deref()),
+                        ConfirmAct::StopWork { bot, item } => self.stop_work(bot, item),
                     }
                     None
                 }
@@ -122,10 +122,10 @@ impl App {
             Overlay::Group(g) => self.group_key(g, k),
             Overlay::Memory(m) => self.memory_key(m, k),
             Overlay::BotChat(c) => Self::bot_chat_key(c, k),
-            Overlay::Tasks(l) => self.task_list_key(l, k),
             Overlay::Task(s) => self.task_key(s, k),
+            Overlay::CutIn(c) => self.cut_in_key(c, k),
             Overlay::DevServers(sheet) => self.dev_servers_key(sheet, k),
-            Overlay::Routines(l) => self.routines_key(l, k),
+            Overlay::Details(l) => self.details_key(l, k),
             Overlay::Routine(f) => self.routine_key(f, k),
             Overlay::Computer(bot) => self.computer_key(bot, k),
             Overlay::Library(l) => self.library_key(l, k),

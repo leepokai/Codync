@@ -1,18 +1,19 @@
-//! The `chat` server's task tools (`start_task`, `tell_task`, `task_status`, `stop_task`), and what a task itself
-//! may not call.
+//! The `chat` server's work tools (`add_work`, `steer_work`, `work_status`), and what a task itself may not call.
 
-use super::prompts::told;
-use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, PER_BOT, PER_COMPUTER, Status, Task, load, records, save, stop};
+use super::items::{self, Item, Shown, Status};
+use super::steer::{self, Steer};
+use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch};
 use crate::LockExt;
 use crate::analytics::{self, Event};
-use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, TASK_PREFIX, now_ms};
+use crate::hub::Hub;
+use crate::store::now_ms;
 use anyhow::{Result, anyhow, bail};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-/// The `chat` server's tools that are tasks'.
-pub const TOOLS: [&str; 4] = ["start_task", "tell_task", "task_status", "stop_task"];
+/// The `chat` server's tools that are the box's.
+pub const TOOLS: [&str; 3] = ["add_work", "steer_work", "work_status"];
 
 /// A task can't do what only makes sense from the chat. `what`: the tool, as the refusal names it.
 pub fn refuse_in_task(hub: &Hub, bot: &str, what: &str) -> Result<()> {
@@ -22,8 +23,8 @@ pub fn refuse_in_task(hub: &Hub, bot: &str, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// Refuses a task the `chat` server's tools that ask the user, share with them, change the bot or start a task
-/// (`prompts::first_prompt` tells it so).
+/// Refuses a task the `chat` server's tools that ask the user, share with them, change the bot or its box
+/// (`prompts::item_prompt` tells it so).
 pub fn refuse_chat_only(hub: &Hub, bot: &str, name: &str) -> Result<()> {
     use crate::chat::{artifacts, decision, fallbacks, outbox, profile};
     let chat_only = TOOLS.contains(&name)
@@ -38,149 +39,126 @@ pub fn refuse_chat_only(hub: &Hub, bot: &str, name: &str) -> Result<()> {
 pub fn tools() -> Vec<Value> {
     vec![
         json!({
-            "name": "start_task",
-            "description": "Hand long work to another session of you that works away from this chat; you stay free to answer the user. It starts when this turn ends. Its report comes back to you later as a message. One task at a time: add to a running one with tell_task.",
+            "name": "add_work",
+            "description": "Put long work in your box: another session of you does it away from this chat, and you stay free to answer the user. It starts when this turn ends and a place is free; until then it waits its turn. Its report comes back to you later as a message. One item per piece of work.",
             "inputSchema": {"type": "object", "properties": {
                 "title": {"type": "string", "description": "A few words the user sees while it works, e.g. \"Fix the login redirect\"."},
-                "brief": {"type": "string", "description": "Everything the task needs to do the work: the goal, what you already know, what done looks like."},
-                "parallel": {"type": "boolean", "description": "Start it beside a task already running. Only when the user wants two unrelated things at once."},
+                "brief": {"type": "string", "description": "Everything needed to do the work: the goal, what you already know, what done looks like."},
+                "after": {"type": "string", "description": "The id of an item that is working or waiting: this one is done after it, in the same session, knowing what that one did. For more of the same work."},
             }, "required": ["title", "brief"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
         json!({
-            "name": "tell_task",
-            "description": "Pass something on to your task: a correction, more work, an answer it needs. A finished task takes it as more work and reports again.",
+            "name": "steer_work",
+            "description": "Change an item in your box. first: a waiting item moves to the front. now: a waiting item starts now; with every place taken a working item gives way (insteadOf, else the one started last), its session closes and it starts again later. replace: the item gets a new brief; one that is working starts again from it. stop: the item stops; what it already changed stays.",
             "inputSchema": {"type": "object", "properties": {
-                "message": {"type": "string"},
-                "task": {"type": "string", "description": "The task's id; not needed when you have one task."},
-            }, "required": ["message"]},
+                "item": {"type": "string", "description": "The item's id."},
+                "how": {"type": "string", "enum": ["first", "now", "replace", "stop"]},
+                "brief": {"type": "string", "description": "The new brief, for replace."},
+                "insteadOf": {"type": "string", "description": "For now: the id of the working item that gives way."},
+            }, "required": ["item", "how"]},
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }),
         json!({
-            "name": "task_status",
-            "description": "What your tasks are doing now: status, current step, how long, their latest messages.",
+            "name": "work_status",
+            "description": "Your box: every item that is working or waiting, and those ended in the last day, with its status, what it does now, how long, and its result.",
             "inputSchema": {"type": "object", "properties": {}},
             "annotations": {"readOnlyHint": true},
-        }),
-        json!({
-            "name": "stop_task",
-            "description": "Stop a task of yours. What it already changed stays.",
-            "inputSchema": {"type": "object", "properties": {
-                "task": {"type": "string", "description": "The task's id; not needed when you have one task."},
-            }},
-            "annotations": {"readOnlyHint": false, "idempotentHint": true},
         }),
     ]
 }
 
 pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
-        "start_task" => start(hub, bot, args),
-        "tell_task" => tell(hub, bot, args),
-        "task_status" => Ok(status(hub, bot)),
-        "stop_task" => {
-            let id = target(hub, bot, args["task"].as_str(), |task| task.status.live())?;
-            stop(hub, bot, Some(&id))?;
-            Ok(json!({"stopped": true}))
-        }
-        _ => bail!("unknown task tool: {name}"),
+        "add_work" => add(hub, bot, args),
+        "steer_work" => steer_item(hub, bot, args),
+        "work_status" => status(hub, bot),
+        _ => bail!("unknown work tool: {name}"),
     }
 }
 
-fn start(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
-    let started = admit(hub, bot, args);
-    let outcome = started.as_ref().map_or_else(|(reason, _)| *reason, |_| "started");
-    let properties = json!({"outcome": outcome, "parallel": args["parallel"] == true});
-    analytics::capture(hub, Event::TaskStarted, properties.as_object().cloned().unwrap_or_default());
-    started.map_err(|(_, error)| error)
+/// How `add_work` ended: `work_added`'s `outcome`.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+enum Admission {
+    Added,
+    /// Not in the bot's own chat.
+    Elsewhere,
+    Invalid,
+    /// Too many items wait already.
+    Full,
+    /// Too many in a row without the user.
+    Hops,
+    Failed,
 }
 
-/// Records a task for `bot`, or says why not: the refusal's `task_started` outcome and its words for the bot.
-fn admit(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value, (&'static str, anyhow::Error)> {
-    let failed = |error: anyhow::Error| ("failed", error);
-    let row = hub.store.bot(bot).map_err(failed)?.filter(|r| !r.deleted);
-    let row = row.ok_or_else(|| failed(anyhow!("unknown bot")))?;
-    if hub.runtime(bot).lane.is_none_or(|lane| lane.chat != bot) || hub.team.answering(bot) {
-        let why = anyhow!("start_task works only in your own chat with the user: its report comes back there");
-        return Err(("elsewhere", why));
-    }
-    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
-    let (Some(title), Some(brief)) = (text("title"), text("brief")) else {
-        return Err(("invalid", anyhow!("title and brief are required")));
+fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+    let added = admit(hub, bot, args);
+    let outcome = added.as_ref().map_or_else(|(reason, _)| *reason, |_| Admission::Added);
+    let properties = json!({"outcome": outcome, "after": args["after"].is_string()});
+    analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
+    let id = added.map_err(|(_, error)| error)?;
+    dispatch(hub, bot);
+    Ok(json!({
+        "itemId": id, "status": Status::Waiting,
+        "note": "It starts when this turn ends and a place is free. Its report comes back to you later as a message.",
+    }))
+}
+
+type Refusal = (Admission, anyhow::Error);
+
+/// A title and a brief `add_work` takes: both there, neither too long.
+fn checked<'a>(title: Option<&'a str>, brief: Option<&'a str>) -> Result<(&'a str, &'a str), Refusal> {
+    let (Some(title), Some(brief)) = (title, brief) else {
+        return Err((Admission::Invalid, anyhow!("title and brief are required")));
     };
     if title.chars().count() > MAX_TITLE || brief.len() > MAX_BRIEF {
         let why = anyhow!("title is at most {MAX_TITLE} characters and brief at most {MAX_BRIEF} bytes");
-        return Err(("invalid", why));
+        return Err((Admission::Invalid, why));
     }
-    let live: Vec<_> = records(&hub.store, bot).into_iter().filter(|(_, t)| t.status.live()).collect();
-    if let Some((_, running)) = live.first()
-        && args["parallel"] != true
+    Ok((title, brief))
+}
+
+/// Puts `item` last in `items`, unless too many wait already or it follows nothing that is working or waiting.
+fn place(items: &mut Vec<Item>, mut item: Item) -> Result<String, Refusal> {
+    if items.iter().filter(|i| i.status == Status::Waiting).count() >= MAX_WAITING {
+        let why = anyhow!("{MAX_WAITING} items already wait: let some finish, or drop one, before adding more");
+        return Err((Admission::Full, why));
+    }
+    if let Some(after) = &item.after
+        && !items.iter().any(|i| i.id == *after && !i.status.ended())
     {
-        let why = anyhow!(
-            "a task is already running (\"{}\"): add to it with tell_task. Pass parallel: true only when the user \
-             wants two unrelated things at once",
-            running.title
-        );
-        return Err(("live", why));
+        return Err((Admission::Invalid, anyhow!("after names no item that is working or waiting: see work_status")));
     }
-    let everywhere = hub.store.task_bots().map_err(failed)?;
-    let everywhere = everywhere.iter().filter(|r| load(&hub.store, &r.config.id).is_some_and(|t| t.status.live()));
-    if live.len() >= PER_BOT || everywhere.count() >= PER_COMPUTER {
-        let why = anyhow!("too many tasks are running: wait for one to finish, or add to one with tell_task");
-        return Err(("limit", why));
+    item.order = items::last(items);
+    let id = item.id.clone();
+    items.push(item);
+    Ok(id)
+}
+
+/// Puts an item in `bot`'s box, or says why not: the refusal's `work_added` outcome and its words for the bot.
+fn admit(hub: &Hub, bot: &str, args: &Value) -> Result<String, Refusal> {
+    let failed = |error: anyhow::Error| (Admission::Failed, error);
+    let row = hub.store.bot(bot).map_err(failed)?.filter(|r| !r.deleted);
+    row.ok_or_else(|| failed(anyhow!("unknown bot")))?;
+    // A room's turn, another bot's request, a routine run: their reply goes elsewhere, and so would the report's.
+    let own_chat = hub.runtime(bot).lane.is_some_and(|lane| lane.chat == bot);
+    if !own_chat || hub.team.answering(bot) || hub.routines.running(bot) {
+        let why = anyhow!("add_work works only in your own chat with the user: its report comes back there");
+        return Err((Admission::Elsewhere, why));
     }
-    if crate::usage::near_limit(hub, &row.config) {
-        let why = anyhow!("your agent is near its usage limit: do the work here, or tell the user it has to wait");
-        return Err(("usage", why));
-    }
+    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
+    let (title, brief) = checked(text("title"), text("brief"))?;
     let hops = hub.tasks.hops(bot) + 1;
     if hops > MAX_HOPS {
         let why =
-            anyhow!("too many tasks were started in a row without the user: tell the user where things stand and wait");
-        return Err(("hops", why));
+            anyhow!("too much work was added in a row without the user: tell the user where things stand and wait");
+        return Err((Admission::Hops, why));
     }
-    let cfg = BotConfig {
-        id: format!("{TASK_PREFIX}{}", uuid::Uuid::new_v4()),
-        task_of: Some(bot.to_owned()),
-        created_at: now_ms(),
-        // Its alerts are its bot's: the cards it raises in the chat, and the turn its report starts there.
-        notify: Some(false),
-        lead: false,
-        pinned: false,
-        position: 0,
-        section: None,
-        auto_name: false,
-        created_by: None,
-        offered_to_network: false,
-        reachable_by_assistants: false,
-        // One screen and one team: those stay with the chat.
-        computer: false,
-        manage_team: false,
-        ..row.config
-    };
-    let task = Task {
-        title: title.to_owned(),
-        brief: brief.to_owned(),
-        words: users_words(hub, bot),
-        status: Status::Starting,
-        start: None,
-        fork_from: None,
-        fork_failed: false,
-        hops,
-        created_at: cfg.created_at,
-        ended_at: None,
-        report: None,
-    };
-    {
-        let _g = hub.emit_lock.locked();
-        hub.store.save_bot(&cfg).map_err(failed)?;
-        save(&hub.store, &cfg.id, &task).map_err(failed)?;
-    }
-    hub.emit_bot(bot);
-    Ok(json!({
-        "taskId": cfg.id, "status": "starting",
-        "note": "It starts when this turn ends. Its report comes back to you later as a message.",
-    }))
+    let item = Item::waiting(title, brief, users_words(hub, bot), text("after"), hops);
+    let id = items::change(hub, bot, |items| Ok(place(items, item))).map_err(failed)??;
+    hub.tasks.added.locked().entry(bot.to_owned()).or_default().push(id.clone());
+    Ok(id)
 }
 
 /// The user's own typed message the bot's running turn answers.
@@ -189,74 +167,96 @@ fn users_words(hub: &Hub, bot: &str) -> Option<String> {
     entry.data["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)
 }
 
-/// Picks one of `bot`'s tasks: the one named, or the newest that `wanted` when none is.
-fn target(hub: &Hub, bot: &str, named: Option<&str>, wanted: impl Fn(&Task) -> bool) -> Result<String> {
-    let all = records(&hub.store, bot);
-    if let Some(id) = named.map(str::trim).filter(|id| !id.is_empty()) {
-        return all
-            .iter()
-            .find(|(cfg, _)| cfg.id == id)
-            .map(|(cfg, _)| cfg.id.clone())
-            .ok_or_else(|| anyhow!("no such task"));
-    }
-    let found = all.iter().rev().find(|(_, task)| wanted(task)).or_else(|| all.last());
-    found.map(|(cfg, _)| cfg.id.clone()).ok_or_else(|| anyhow!("you have no task"))
-}
-
-fn tell(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
-    let message = args["message"].as_str().map(str::trim).filter(|m| !m.is_empty());
-    let message = message.ok_or_else(|| anyhow!("message is required"))?;
-    if message.len() > MAX_BRIEF {
-        bail!("message is at most {MAX_BRIEF} bytes");
-    }
-    let id = target(hub, bot, args["task"].as_str(), |task| task.status.live())?;
-    let cfg = hub.store.bot(&id)?.ok_or_else(|| anyhow!("no such task"))?.config;
-    let mut task = load(&hub.store, &id).ok_or_else(|| anyhow!("no such task"))?;
-    if task.status == Status::Starting {
-        // Not launched yet: it reads this with its brief.
-        task.brief = format!("{}\n\n{message}", task.brief);
-        save(&hub.store, &id, &task)?;
-        return Ok(json!({"told": true, "taskId": id}));
-    }
-    if !task.status.live() {
-        // Finished: this is more work, and it reports again.
-        task.status = Status::Working;
-        task.ended_at = None;
-        save(&hub.store, &id, &task)?;
-        if !hub.has_actor(&id) {
-            hub.spawn_bot(cfg.clone());
+fn steer_item(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
+    let text = |key: &str| args[key].as_str().map(str::trim).filter(|t| !t.is_empty());
+    let id = text("item").ok_or_else(|| anyhow!("item is required: its id, from work_status"))?;
+    let refused = || anyhow!("how is first, now, replace or stop");
+    let how = Steer::deserialize(&args["how"]).map_err(|_| refused())?;
+    match how {
+        Steer::First => steer::first(hub, bot, id)?,
+        Steer::Now => steer::cut_in(hub, bot, id, text("insteadOf"))?,
+        Steer::Replace => {
+            let brief = text("brief").ok_or_else(|| anyhow!("replace needs the new brief"))?;
+            if brief.len() > MAX_BRIEF {
+                bail!("brief is at most {MAX_BRIEF} bytes");
+            }
+            steer::replace(hub, bot, id, brief)?;
         }
+        Steer::Stop => steer::stop(hub, bot, Some(id))?,
+        Steer::Drop | Steer::Retry => return Err(refused()),
     }
-    let words = users_words(hub, bot);
-    crate::chat::messages::post(hub, &cfg, json!({"text": told(message, words.as_deref()), "from": "host"}))?;
-    analytics::capture(hub, Event::TaskTold, serde_json::Map::new());
-    hub.emit_bot(bot);
-    Ok(json!({"told": true, "taskId": id}))
+    // What the user said about it stays with it: a task that starts it again reads it.
+    if let Some(words) = users_words(hub, bot) {
+        items::change(hub, bot, |items| {
+            if let Some(item) = items.iter_mut().find(|i| i.id == id && i.notes.last() != Some(&words)) {
+                item.notes.push(words);
+            }
+            Ok(())
+        })?;
+    }
+    let properties = json!({"how": how, "by": "bot"});
+    analytics::capture(hub, Event::WorkSteered, properties.as_object().cloned().unwrap_or_default());
+    let status = items::load(&hub.store, bot).iter().find(|i| i.id == id).map(|i| i.status);
+    Ok(json!({"itemId": id, "status": status}))
 }
 
-fn status(hub: &Hub, bot: &str) -> Value {
-    let tasks: Vec<Value> = records(&hub.store, bot)
+fn status(hub: &Hub, bot: &str) -> Result<Value> {
+    let cfg = hub.store.bot(bot)?.ok_or_else(|| anyhow!("unknown bot"))?.config;
+    let now = now_ms();
+    let work: Vec<Value> = items::shown(hub, &cfg)
         .into_iter()
-        .map(|(cfg, task)| {
-            let rt = hub.runtime(&cfg.id);
-            let messages: Vec<String> = hub
-                .store
-                .history(&cfg.id, i64::MAX, 60)
-                .unwrap_or_default()
-                .iter()
-                .filter(|e| e.kind == "agent" && e.data["final"] == true)
-                .rev()
-                .take(3)
-                .filter_map(|e| e.data["text"].as_str().map(|t| crate::agent::acp::truncate(t, 600)))
-                .collect();
-            let until = task.ended_at.unwrap_or_else(now_ms);
+        .map(|Shown { item, status, activity, wait }| {
+            let seconds = item.started_at.map(|at| (item.ended_at.unwrap_or(now) - at) / 1000);
             json!({
-                "taskId": cfg.id, "title": task.title, "status": task.status,
-                "waitingOnApproval": rt.status == BotStatus::NeedsInput,
-                "doingNow": rt.activity, "seconds": (until - task.created_at) / 1000,
-                "latestMessages": messages.into_iter().rev().collect::<Vec<_>>(),
+                "itemId": item.id, "title": item.title, "status": status, "doingNow": activity, "wait": wait,
+                "seconds": seconds, "result": item.result,
             })
         })
         .collect();
-    json!({"tasks": tasks})
+    Ok(json!({"work": work}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn waiting(after: Option<&str>) -> Item {
+        Item::waiting("Fix login", "x", None, after, 1)
+    }
+
+    #[test]
+    fn a_box_takes_twenty_waiting_items_and_refuses_the_next() {
+        let mut items = Vec::new();
+        for n in 0..MAX_WAITING {
+            place(&mut items, waiting(None)).unwrap_or_else(|(_, why)| panic!("item {n}: {why}"));
+        }
+        assert_eq!(items.last().map(|i| i.order), i64::try_from(MAX_WAITING).ok(), "each one last");
+        let (outcome, why) = place(&mut items, waiting(None)).expect_err("the box is full");
+        assert_eq!(outcome, Admission::Full);
+        assert_eq!(why.to_string(), "20 items already wait: let some finish, or drop one, before adding more");
+
+        // Only the waiting count: one that started leaves room for another.
+        items[0].status = Status::Working;
+        let first = items[0].id.clone();
+        place(&mut items, waiting(Some(&first))).unwrap_or_else(|(_, why)| panic!("after a working item: {why}"));
+        items[1].status = Status::Done;
+        let ended = items[1].id.clone();
+        let (outcome, _) = place(&mut items, waiting(Some(&ended))).expect_err("it follows an ended item");
+        assert_eq!(outcome, Admission::Invalid);
+    }
+
+    #[test]
+    fn a_title_or_a_brief_too_long_is_refused() {
+        let (title, brief) = ("t".repeat(MAX_TITLE), "b".repeat(MAX_BRIEF));
+        assert!(checked(Some(&title), Some(&brief)).is_ok(), "at the limits");
+        let long_title = format!("{title}t");
+        let long_brief = format!("{brief}b");
+        for (title, brief) in [(long_title.as_str(), "b"), ("t", long_brief.as_str())] {
+            let (outcome, why) = checked(Some(title), Some(brief)).expect_err("too long");
+            assert_eq!(outcome, Admission::Invalid);
+            assert_eq!(why.to_string(), "title is at most 80 characters and brief at most 32000 bytes");
+        }
+        let (outcome, _) = checked(Some("t"), None).expect_err("no brief");
+        assert_eq!(outcome, Admission::Invalid);
+    }
 }

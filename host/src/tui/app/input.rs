@@ -328,7 +328,8 @@ impl App {
             KeyCode::Char('b') => self.compact = !self.compact,
             KeyCode::Char('U') => self.overlays.push(Overlay::Usage(0)),
             KeyCode::Char('M') => self.open_memory(),
-            KeyCode::Char('R') => self.open_routines(),
+            // `B` is the same page from the chat, where the line over the composer names it.
+            KeyCode::Char('R' | 'B') => self.open_details(),
             KeyCode::Char('O') => self.open_computer(),
             KeyCode::Char('L') => self.open_library(),
             KeyCode::Char('A') => self.open_market(),
@@ -352,8 +353,7 @@ impl App {
             }
             KeyCode::Char('S') => self.steer_next(),
             KeyCode::Char('D') => self.unqueue_last(),
-            KeyCode::Char('B') => self.open_tasks(),
-            KeyCode::Char('X') => self.ask_stop_tasks(),
+            KeyCode::Char('X') => self.ask_stop_work(),
             KeyCode::Char('*') => self.make_lead(),
             KeyCode::Char('x') => {
                 // An older host keeps its lead.

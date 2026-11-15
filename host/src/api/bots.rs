@@ -3,6 +3,7 @@
 use super::devices::Caller;
 use super::str_arg;
 use crate::agent::bot::Cmd;
+use crate::chat::tasks::{self, Steer};
 use crate::hub::Hub;
 use crate::store::{EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
@@ -10,7 +11,32 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+/// What the user does to an item of a bot's box.
+async fn steer_work(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
+    let (hub, bot) = (hub.clone(), str_arg(b, "botId")?.to_owned());
+    let item = b["itemId"].as_str().map(str::to_owned);
+    let instead_of = b["insteadOf"].as_str().map(str::to_owned);
+    tokio::task::spawn_blocking(move || {
+        let named = || item.as_deref().ok_or_else(|| anyhow!("itemId required"));
+        match steer {
+            Steer::First => tasks::first(&hub, &bot, named()?),
+            Steer::Now => tasks::cut_in(&hub, &bot, named()?, instead_of.as_deref()),
+            Steer::Drop => tasks::drop_item(&hub, &bot, named()?),
+            Steer::Retry => tasks::retry(&hub, &bot, named()?),
+            // One item, or every one that is working or waiting.
+            Steer::Stop => tasks::stop(&hub, &bot, item.as_deref()),
+            // No method asks for it.
+            Steer::Replace => bail!("only the bot replaces a brief"),
+        }
+    })
+    .await??;
+    Ok(json!({}))
+}
+
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+    if let Some(steer) = Steer::of_method(method) {
+        return Ok(ControlFlow::Break(steer_work(hub, steer, &b).await?));
+    }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
@@ -45,7 +71,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         )?,
         "routineCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            crate::chat::tasks::refuse_in_task(hub, bot, name)?;
+            tasks::refuse_in_task(hub, bot, name)?;
             crate::routines::call(hub, bot, name, &b["arguments"])?
         }
         "memoryCall" => {
@@ -53,10 +79,10 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "chatCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            crate::chat::tasks::refuse_chat_only(hub, bot, name)?;
-            if crate::chat::tasks::TOOLS.contains(&name) {
+            tasks::refuse_chat_only(hub, bot, name)?;
+            if tasks::TOOLS.contains(&name) {
                 let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), b["arguments"].clone());
-                tokio::task::spawn_blocking(move || crate::chat::tasks::call(&hub, &bot, &name, &args)).await??
+                tokio::task::spawn_blocking(move || tasks::call(&hub, &bot, &name, &args)).await??
             } else if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
             } else if name == crate::chat::decision::TOOL {
@@ -80,23 +106,16 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         }
         "teamCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            crate::chat::tasks::refuse_in_task(hub, bot, name)?;
+            tasks::refuse_in_task(hub, bot, name)?;
             crate::chat::team::call_async(hub, bot, name, &b["arguments"]).await?
         }
         "manageCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            crate::chat::tasks::refuse_in_task(hub, bot, name)?;
+            tasks::refuse_in_task(hub, bot, name)?;
             crate::chat::manage::call(hub, bot, name, &b["arguments"]).await?
         }
         // A task's transcript, for its details: no chat an app holds has it.
-        "taskEntries" => crate::chat::tasks::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "taskId")?, 500)?,
-        // Stop on the capsule: one task, or all of the bot's.
-        "stopTask" => {
-            let (hub, bot, task) =
-                (hub.clone(), str_arg(&b, "botId")?.to_owned(), b["taskId"].as_str().map(str::to_owned));
-            tokio::task::spawn_blocking(move || crate::chat::tasks::stop(&hub, &bot, task.as_deref())).await??;
-            json!({})
-        }
+        "taskEntries" => tasks::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "taskId")?, 500)?,
         "history" => {
             let bot = str_arg(&b, "botId")?;
             let before = b["beforeSeq"].as_i64().unwrap_or(i64::MAX);
@@ -121,7 +140,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
             let hub = hub.clone();
-            json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})
+            let updated = tokio::task::spawn_blocking(move || {
+                let bot = hub.update_bot(&b)?;
+                // Its `maxAgents` may have made room.
+                tasks::dispatch(&hub, b["id"].as_str().unwrap_or_default());
+                anyhow::Ok(bot)
+            });
+            json!({"bot": updated.await??})
         }
         // The roster as the user dragged it, top first.
         "reorderBots" => {
@@ -331,10 +356,7 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let entry_id = str_arg(&b, "entryId")?;
             let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
             let option_id = b["optionId"].as_str().map(str::to_owned);
-            hub.send_cmd(
-                crate::chat::tasks::card_actor(&e),
-                Cmd::Permission { entry_id: entry_id.to_owned(), option_id },
-            )?;
+            hub.send_cmd(tasks::card_actor(&e), Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;
             json!({})
         }
         _ => return Ok(ControlFlow::Continue(b)),

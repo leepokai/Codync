@@ -72,14 +72,12 @@ pub enum Event {
     FollowUpFired,
     /// A follow-up was dropped before it began (`by`).
     FollowUpCancelled,
-    /// A bot's `start_task` ended (`outcome`).
-    TaskStarted,
-    /// A task ended (`outcome`), and how its session had begun.
-    TaskFinished,
-    /// A bot passed something on to its task (`tell_task`).
-    TaskTold,
-    /// The user stopped a task from the capsule (`stopTask`).
-    TaskStopped,
+    /// A bot's `add_work` ended (`outcome`).
+    WorkAdded,
+    /// An item of a bot's box ended (`outcome`), and how its task's session had begun.
+    WorkFinished,
+    /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
+    WorkSteered,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -224,10 +222,9 @@ impl Event {
             Self::FollowUpSet => "follow_up_set",
             Self::FollowUpFired => "follow_up_fired",
             Self::FollowUpCancelled => "follow_up_cancelled",
-            Self::TaskStarted => "task_started",
-            Self::TaskFinished => "task_finished",
-            Self::TaskTold => "task_told",
-            Self::TaskStopped => "task_stopped",
+            Self::WorkAdded => "work_added",
+            Self::WorkFinished => "work_finished",
+            Self::WorkSteered => "work_steered",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",

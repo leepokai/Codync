@@ -1,4 +1,8 @@
-"""Deterministic ACP agent for task tests: a bot that starts, tells and stops tasks, and the task itself.
+"""Deterministic ACP agent for the tests of a bot's box: a bot that adds and steers work, and the task that does it.
+
+In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
+`STATUS`. In a task, the brief says what it does: `HOLD:<name>` works until a `release-<name>` file is in its folder,
+`PERMISSION` asks for an approval, `ASK` and `NEST` try what a task may not.
 
 Argument `no-fork`: the agent doesn't advertise `session/fork`. A `no-start` file in its folder: it doesn't start.
 """
@@ -53,7 +57,7 @@ def chat_tool(tool, arguments):
 
         rpc(1, "initialize", {"protocolVersion": "2025-06-18"})
         listed = {t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]}
-        assert {"start_task", "tell_task", "task_status", "stop_task"} <= listed, listed
+        assert {"add_work", "steer_work", "work_status"} <= listed, listed
         response = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         mcp.stdin.close()
         return response["result"]
@@ -63,50 +67,75 @@ def said(response, done):
     return ("Refused: " if response.get("isError") else done) + response["content"][0]["text"]
 
 
+def item_id(title):
+    """The id of the bot's item called `title`."""
+    work = json.loads(chat_tool("work_status", {})["content"][0]["text"])["work"]
+    return next(w["itemId"] for w in work if w["title"] == title)
+
+
+def relayed(text):
+    """What the chat says of the reports in `text`: each item's report, or why it didn't finish."""
+    reports = text.split("\n\n[Codync: these are reports", 1)[0].removeprefix("[Codync: your work ")
+    parts = [part.partition("]") for part in reports.split("\n\n[Codync: your work ")]
+    return "Relayed: " + " | ".join(body.strip() or head for head, _, body in parts)
+
+
+def work(text, session):
+    """A task's turn on its item."""
+    lead, rest = text.split("[Task]", 1)[1].split("\n\n", 1)
+    title = lead.split('"')[1]
+    brief = rest.split("\n\n[", 1)[0]
+    notes = ["next" if lead.startswith(" Next") else "forked" if session in forked else "briefed",
+             "saw the chat" if "[The chat you come from, so far]" in text else "no chat"]
+    if "set aside" in rest:
+        notes.append("again")
+    if "ASK" in brief:
+        notes.append(said(chat_tool("request_decision", {"question": "Which?", "options": ["A", "B"]}), "Asked: ")[:60])
+    if "NEST" in brief:
+        notes.append(said(chat_tool("add_work", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
+    if "PERMISSION" in brief:
+        send({"id": "permission", "method": "session/request_permission", "params": {
+            "sessionId": session, "toolCall": {"toolCallId": "edit", "title": "Run the tests"},
+            "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
+        }})
+        while not cancel.is_set() and not permission.wait(0.01):
+            pass
+        notes.append("approved")
+    hold = re.search(r"HOLD:(\w+)", brief)
+    while hold and not pathlib.Path("release-" + hold.group(1)).exists() and not cancel.wait(0.01):
+        pass
+    return f"Report {title}: " + "; ".join(notes)
+
+
 def answer(text, session):
     """What this turn replies."""
-    if "[Codync: your task" in text:
-        report = text.split("\n\n[Codync: these are your tasks' reports", 1)[0]
-        # A finished task's report follows the bracket; one that didn't finish is all in it.
-        return "Relayed: " + (report.split("]", 1)[1].strip() or report)
-    if "[From the chat" in text:
-        return "Told: " + text.split("[From the chat, passed on by you there] ", 1)[1].split("\n\n", 1)[0]
+    if "[Codync: your work" in text:
+        return relayed(text)
     if "[Task]" in text:
-        notes = ["forked" if session in forked else "briefed",
-                 "saw the chat" if "[The chat you come from, so far]" in text else "no chat"]
-        if "ASK" in text:
-            notes.append(said(chat_tool("request_decision", {"question": "Which?", "options": ["A", "B"]}), "Asked: ")[:60])
-        if "NEST" in text:
-            notes.append(said(chat_tool("start_task", {"title": "Inner", "brief": "x"}), "Nested: ")[:60])
-        if "PERMISSION" in text:
-            send({"id": "permission", "method": "session/request_permission", "params": {
-                "sessionId": session, "toolCall": {"toolCallId": "edit", "title": "Run the tests"},
-                "options": [{"optionId": "allow", "name": "Allow", "kind": "allow_once"}],
-            }})
-            while not cancel.is_set() and not permission.wait(0.01):
-                pass
-            notes.append("approved")
-        while "HOLD" in text and not pathlib.Path("release").exists() and not cancel.wait(0.01):
-            pass
-        return "Report: " + "; ".join(notes)
-    command = re.search(r"^(START|TELL|STATUS|STOPTASK)\b ?(.*)$", text, re.M)
+        return work(text, session)
+    command = re.search(r"^(ADD|STEER|STATUS)\b ?(.*)$", text, re.M)
     if not command:
         return "reply: " + text.strip().splitlines()[-1]
     name, rest = command.groups()
-    if name == "START":
+    if name == "ADD":
         title, brief, *flags = rest.split("|")
         arguments = {"title": title, "brief": brief}
-        if "parallel" in flags:
-            arguments["parallel"] = True
-        started = said(chat_tool("start_task", arguments), "Started: ")
+        for flag in flags:
+            if flag.startswith("after="):
+                arguments["after"] = item_id(flag.removeprefix("after="))
+        added = said(chat_tool("add_work", arguments), "Added: ")
         while "hold" in flags and not cancel.wait(0.01):
             pass
-        return started
-    if name == "TELL":
-        return said(chat_tool("tell_task", {"message": rest}), "Passed on: ")
-    if name == "STATUS":
-        return said(chat_tool("task_status", {}), "Status: ")
-    return said(chat_tool("stop_task", {}), "Stopped: ")
+        return added
+    if name == "STEER":
+        how, title, *more = rest.split("|")
+        arguments = {"item": item_id(title), "how": how}
+        if more and how == "replace":
+            arguments["brief"] = more[0]
+        elif more:
+            arguments["insteadOf"] = item_id(more[0])
+        return said(chat_tool("steer_work", arguments), "Steered: ")
+    return said(chat_tool("work_status", {}), "Status: ")
 
 
 def prompt(request):

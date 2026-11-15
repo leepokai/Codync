@@ -1,10 +1,5 @@
 package com.codync.android
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,88 +31,50 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
-import com.codync.android.core.BotTask
 import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
+import com.codync.android.core.WorkItem
 import com.codync.android.design.*
 import kotlinx.coroutines.CancellationException
 
 /**
- * What the bot is doing in the background, opened from the capsule (iOS `TasksSheet`), read only: one task opens
- * straight on its details, several on their list, where a row opens that task.
+ * The transcript of the task working [itemId], or the one that had it, oldest first: fetched as it opens and kept
+ * current from the computer's events (`AppStore.loadTask`). Opened from the item's row in the bot's details.
  */
-@Composable internal fun TasksSheet(bot: Bot, state: AppState, store: AppStore) {
-    val listed = remember { bot.tasks.size > 1 }
-    var open by remember { mutableStateOf(bot.tasks.singleOrNull()?.id) }
-    BackHandler(listed && open != null) { open = null }
-    AnimatedContent(open, Modifier.fillMaxSize().background(Palette.background),
-        transitionSpec = { fadeIn(Motion.fade()) togetherWith fadeOut(Motion.fade()) }, label = "Task") { id ->
-        if (id == null) TaskList(bot.tasks) { open = it }
-        else TaskDetails(bot, id, state, store, back = if (listed) { { open = null } } else null)
-    }
-}
-
-/** The bot's tasks still going: title, status and time. */
-@Composable private fun TaskList(tasks: List<BotTask>, open: (String) -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        ModalHeader("In the background")
-        Column(Modifier.padding(20.dp)) {
-            if (tasks.isEmpty()) Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary)
-            else CardSection {
-                for (task in tasks) row {
-                    Row(Modifier.fillMaxWidth().plainButton { open(task.id) }.semantics(mergeDescendants = true) {},
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(task.title, style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(tr(task.status.title), style = Type.footnote, color = Palette.secondary)
-                        }
-                        Elapsed(task.startedAt)
-                        Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * One task's own transcript, oldest first: fetched as it opens and kept current from the computer's events
- * (`AppStore.loadTask`). [back] returns to the list it was opened from.
- */
-@Composable private fun TaskDetails(bot: Bot, taskId: String, state: AppState, store: AppStore, back: (() -> Unit)?) {
+@Composable internal fun TaskDetailsView(bot: Bot, itemId: String, taskId: String, state: AppState, store: AppStore) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Task))
-    val live = bot.tasks.firstOrNull { it.id == taskId }
-    // The task as the computer answered: what is known of it once it has ended; null while it loads.
-    var fetched by remember(taskId) { mutableStateOf<BotTask?>(null) }
+    // The item as it is now, kept as last seen once it leaves the box.
+    var work by remember(itemId) { mutableStateOf<WorkItem?>(null) }
+    bot.work.firstOrNull { it.id == itemId }?.let { if (it != work) work = it }
+    val live = work?.status?.live == true && work?.task == taskId
+    var loaded by remember(taskId) { mutableStateOf(false) }
     var error by remember(taskId) { mutableStateOf<String?>(null) }
     var attempt by remember(taskId) { mutableIntStateOf(0) }
-    // Read again when the link comes back (its catch-up carries no task entries) and when the task ends (its last status).
-    LaunchedEffect(taskId, attempt, state.actualConnection is LinkState.Ready, live != null) {
-        try { fetched = store.loadTask(bot.id, taskId); error = null }
+    // Read again when the link comes back (its catch-up carries no task entries) and when the task's turn ends (its last rows).
+    LaunchedEffect(taskId, attempt, state.actualConnection is LinkState.Ready, live) {
+        try { store.loadTask(bot.id, taskId); loaded = true; error = null }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = failure.message ?: "Couldn't complete the action." }
     }
     DisposableEffect(taskId) { onDispose { store.closeTask(taskId) } }
-    val task = live ?: fetched
     val entries = state.taskEntries[taskId].orEmpty()
     val turns = entries.groupBy { it.turn }.toSortedMap().toList()
-    val running = runningTurn(entries, live != null)
+    val running = runningTurn(entries, live)
     val list = rememberLazyListState()
     rememberFollowing(list, turns.lastOrNull()?.first?.toString(), entries.maxOfOrNull { it.rev }, working = false, bottom = 0.dp)
     var confirming by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Palette.background)) {
         ModalHeader(title = {
-            if (back != null) IconButton("Back", "chevron.left", action = back)
-            Text(task?.title.orEmpty(), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(work?.title.orEmpty(), style = Type.body.semibold, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }, trailing = {
-            if (live != null) IconButton("Stop", "stop.fill", enabled = stopTaskKey(bot.id) !in state.busy) { confirming = true }
+            if (live) IconButton("Stop", "stop.fill", enabled = workKey(bot.id) !in state.busy) { confirming = true }
         })
-        if (task != null) TaskStatusLine(task)
+        work?.let { TaskStatusLine(it) }
         LazyColumn(state = list, contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             val failure = error
             when {
                 failure != null -> item("note") { LoadFailure(failure) { attempt++ } }
-                fetched == null -> item("note") { Loading() }
+                !loaded -> item("note") { Loading() }
                 entries.isEmpty() -> item("note") { Text(tr("Nothing yet."), style = Type.body, color = Palette.tertiary) }
             }
             items(turns, key = { it.first }) { (turn, rows) ->
@@ -125,17 +82,18 @@ import kotlinx.coroutines.CancellationException
             }
         }
     }
-    StopTasksDialog(confirming, { confirming = false }) { store.stopTask(bot.id, taskId) }
+    StopWorkDialog(confirming, { confirming = false }) { store.stopWork(bot.id, itemId) }
 }
 
-/** Under the title: the task's status in words and how long it has run, counting while it works and fixed once it ended. */
-@Composable private fun TaskStatusLine(task: BotTask) {
+/** Under the title: the item's status in words and how long its task has run, counting while it works and fixed once it ended. */
+@Composable private fun TaskStatusLine(item: WorkItem) {
+    val started = item.startedAt ?: return
     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 8.dp).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(tr(task.status.title), style = Type.footnote, color = Palette.secondary, maxLines = 1)
-        val ended = task.endedAt
-        if (ended != null) Text(timerText(ended - task.startedAt), style = Type.footnote.monospacedDigit, color = Palette.tertiary)
-        else if (task.status.live) Elapsed(task.startedAt)
+        Text(tr(item.status.title), style = Type.footnote, color = Palette.secondary, maxLines = 1)
+        val ended = item.endedAt
+        if (ended != null) Text(timerText(ended - started), style = Type.footnote.monospacedDigit, color = Palette.tertiary)
+        else if (item.status.live) Elapsed(started)
     }
 }
 

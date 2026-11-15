@@ -1,83 +1,57 @@
-//! Tasks: long work a bot does away from its chat, so the chat keeps answering
-//! ([design](../../../../docs/plans/background-tasks.md)).
+//! Work a bot does away from its chat, so the chat keeps answering
+//! ([the box](../../../../docs/plans/event-box.md), [tasks](../../../../docs/features/background-tasks.md)).
 //!
-//! A task is a **task bot**: a `bots` row of its own (`BotConfig::task_of`) copied from its bot, with its own actor,
-//! agent process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory
-//! and instructions are its bot's (`BotConfig::as_owner`). It starts by forking its bot's main session where the
-//! agent can (`agent::bot::session`), otherwise from a new session and a brief. Its bot tells it things with
-//! `tell_task`; its last message goes back as a turn in the bot's chat (`Cmd::TaskReport`). No client lists a task
-//! bot: they see `tasks` on the bot and fetch a task's transcript by id.
+//! What the bot should work on is an **item** in its box ([`items`]). A **task** works items, one at a time: a
+//! **task bot**, a `bots` row of its own (`BotConfig::task_of`) copied from its bot, with its own actor, agent
+//! process, session and transcript, because everything a running turn touches is keyed by bot id. Its memory and
+//! instructions are its bot's (`BotConfig::as_owner`). It starts by forking its bot's main session where the agent
+//! can (`agent::bot::session`), otherwise from a new session and a brief. [`dispatch`] gives waiting items to
+//! tasks, up to the bot's `maxAgents`; a task's last message of a turn is its item's result and goes back as a turn
+//! in the bot's chat (`Cmd::TaskReport`). No client lists a task bot: they see `work` on the bot and fetch a task's
+//! transcript by id.
 //!
-//! Here: a task's record and its life from launch to report. [`tools`] has the bot's tools, [`prompts`] the words.
+//! Here: a task's life from its turn's end to its report. [`steer`] has what the user and the bot do to an item,
+//! [`tools`] the bot's tools, [`prompts`] the words.
 
+mod dispatch;
+mod items;
 mod prompts;
+mod steer;
+mod sweep;
 mod tools;
 
+pub use dispatch::{Wait, dispatch};
+#[cfg(test)]
+pub use items::put_working_for_test;
+pub use items::{Status, forget, lines, wire, working_tasks};
 pub use prompts::{BRIEF, reminder, report_notice, report_prompt};
+pub use steer::{Steer, cut_in, drop_item, first, retry, stop};
 pub use tools::{TOOLS, call, refuse_chat_only, refuse_in_task, tools};
 
 use crate::LockExt;
 use crate::agent::bot::Cmd;
 use crate::analytics::{self, Event};
-use crate::hub::{BotStatus, Hub};
+use crate::hub::Hub;
 use crate::store::{BotConfig, Entry, Store, now_ms};
 use anyhow::{Result, anyhow};
+use items::Item;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// Live tasks one bot may have, and all bots of this computer together.
-const PER_BOT: usize = 3;
-const PER_COMPUTER: usize = 6;
-/// Tasks started in a row with no message of the user's in between (a report's turn starting the next).
+/// Items added in a row with no message of the user's in between (a report's turn adding the next).
 const MAX_HOPS: u8 = 8;
-/// A finished task and its transcript are kept this long.
+/// Items a box holds waiting at most.
+const MAX_WAITING: usize = 20;
+/// An ended item, and a task's transcript with its last item, are kept this long.
 const KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const MAX_TITLE: usize = 80;
 const MAX_BRIEF: usize = 32_000;
-/// How much of a task's last message its report carries.
+/// How much of a task's last message its item's report carries.
 const MAX_REPORT: usize = 8_000;
-/// Why a task that a host restart cut off, and that can't pick up, didn't finish.
+/// Why an item that a host restart cut off, and that can't pick up, didn't finish.
 pub const CUT_OFF: &str = "the computer's Codync restarted while it worked";
-
-/// Where a task is. While it works, the capsule shows its actor's status too ([`Live`]).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-pub enum Status {
-    /// Recorded; it launches when the turn that started it ends.
-    Starting,
-    Working,
-    Done,
-    Failed,
-    Stopped,
-}
-
-impl Status {
-    fn live(self) -> bool {
-        matches!(self, Self::Starting | Self::Working)
-    }
-}
-
-/// A task that is still going, as the capsule shows it (`bot.tasks[].status`).
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
-enum Live {
-    Starting,
-    Working,
-    /// It waits on an approval card in its bot's chat.
-    NeedsInput,
-}
-
-impl Live {
-    fn of(task: Status, actor: BotStatus) -> Self {
-        match (task, actor) {
-            (Status::Starting, _) => Self::Starting,
-            (_, BotStatus::NeedsInput) => Self::NeedsInput,
-            _ => Self::Working,
-        }
-    }
-}
 
 /// How a task's session began.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -87,41 +61,13 @@ pub enum Start {
     Brief,
 }
 
-/// A task's own record (kv `task.<id>`); its config is its `bots` row.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-struct Task {
-    title: String,
-    brief: String,
-    /// The user's own words that led to it, word for word.
-    #[serde(default)]
-    words: Option<String>,
-    status: Status,
-    #[serde(default)]
-    start: Option<Start>,
-    /// Its bot's main session, to fork when its own session opens; none when it starts from a brief.
-    #[serde(default)]
-    fork_from: Option<String>,
-    /// The agent refused or didn't answer the fork, so it started from a brief.
-    #[serde(default)]
-    fork_failed: bool,
-    #[serde(default)]
-    hops: u8,
-    created_at: i64,
-    #[serde(default)]
-    ended_at: Option<i64>,
-    /// Its report, until its bot's turn for it has ended: a host restart before that sends it again.
-    #[serde(default)]
-    report: Option<Report>,
-}
-
-/// What a task's turn came to, for its bot.
+/// What an item came to, for its bot.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
-    pub task: String,
+    pub item: String,
     pub title: String,
-    /// Its last message; `Err` holds why it didn't finish.
+    /// Its task's last message; `Err` holds why it didn't finish.
     pub outcome: Result<String, String>,
     pub hops: u8,
 }
@@ -134,27 +80,35 @@ pub enum Outcome {
     Stopped,
 }
 
-/// What kept a task from finishing: `task_finished`'s `error`.
+/// What kept an item from finishing: `work_finished`'s `error`.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum Failure {
-    /// Its turn never began (the agent didn't start, needs sign-in, opened no session).
+    /// Its task's turn never began (the agent didn't start, needs sign-in, opened no session).
     Start,
-    /// Its agent failed mid-turn.
+    /// Its task's agent failed mid-turn.
     Agent,
-    /// Its turn ended short of `end_turn` (output or step limit, a refusal).
+    /// Its task's turn ended short of `end_turn` (output or step limit, a refusal).
     EndedEarly,
     /// A host restart cut it off and it couldn't pick up.
     Restart,
+    /// Its task ran no turn any more and no end ever arrived, twice (`sweep`).
+    Lost,
     /// It finished with nothing to report.
     NoReport,
 }
 
-/// Per-bot state that lives only while the host runs.
+/// State of the boxes that lives only while the host runs.
 #[derive(Default)]
 pub struct Tasks {
-    /// Bot → the hops of the reports its running turn answers: a task started there carries them on.
+    /// Bot → the hops of the reports its running turn answers: an item added there carries them on.
     chain: Mutex<HashMap<String, u8>>,
+    /// Bot → the items its running turn added: a turn the user stops takes them with it.
+    added: Mutex<HashMap<String, Vec<String>>>,
+    /// Held across each change to a box (`items::change`).
+    boxes: Mutex<()>,
+    /// Bot → its box's next hourly look (`sweep`), while the box holds work.
+    sweeps: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
 }
 
 impl Tasks {
@@ -162,41 +116,8 @@ impl Tasks {
         self.chain.locked().insert(bot.to_owned(), hops);
     }
 
-    pub fn turn_ended(&self, bot: &str) {
-        self.chain.locked().remove(bot);
-    }
-
     fn hops(&self, bot: &str) -> u8 {
         self.chain.locked().get(bot).copied().unwrap_or(0)
-    }
-}
-
-fn key(id: &str) -> String {
-    format!("task.{id}")
-}
-
-fn load(store: &Store, id: &str) -> Option<Task> {
-    serde_json::from_str(&store.kv_get(&key(id))?).ok()
-}
-
-fn save(store: &Store, id: &str, task: &Task) -> Result<()> {
-    store.kv_set(&key(id), &serde_json::to_string(task)?)
-}
-
-/// Changes task `id`'s record, for a change whose loss only costs a detail (`what`, for the log). None: no such task.
-fn update(store: &Store, id: &str, what: &str, change: impl FnOnce(&mut Task)) -> Option<Task> {
-    let mut task = load(store, id)?;
-    change(&mut task);
-    if let Err(error) = save(store, id, &task) {
-        tracing::warn!(task = id, what, error = format!("{error:#}"), "couldn't save a task's record");
-    }
-    Some(task)
-}
-
-/// A deleted bot's task record goes with it (a no-op for a bot that isn't a task).
-pub fn forget(store: &Store, id: &str) {
-    if let Err(error) = store.kv_delete(&key(id)) {
-        tracing::warn!(task = id, error = format!("{error:#}"), "couldn't drop a task's record");
     }
 }
 
@@ -218,26 +139,6 @@ pub fn owner(store: &Store, id: &str) -> String {
     task_of.unwrap_or_else(|| id.to_owned())
 }
 
-/// `bot`'s tasks with their records, oldest first.
-fn records(store: &Store, bot: &str) -> Vec<(BotConfig, Task)> {
-    of(store, bot).into_iter().filter_map(|cfg| load(store, &cfg.id).map(|task| (cfg, task))).collect()
-}
-
-/// The bot's `tasks` on the wire: the ones still going, oldest first.
-pub fn wire(hub: &Hub, bot: &str) -> Value {
-    let live = records(&hub.store, bot).into_iter().filter(|(_, task)| task.status.live());
-    Value::Array(
-        live.map(|(cfg, task)| {
-            let rt = hub.runtime(&cfg.id);
-            json!({
-                "id": cfg.id, "title": task.title, "status": Live::of(task.status, rt.status),
-                "activity": rt.activity, "startedAt": task.created_at, "start": task.start,
-            })
-        })
-        .collect(),
-    )
-}
-
 /// The actor that waits on an approval card's answer: the task that raised it, else the bot that wrote it (in a
 /// group, the member that asked), else the chat's own.
 pub fn card_actor(card: &Entry) -> &str {
@@ -245,73 +146,49 @@ pub fn card_actor(card: &Entry) -> &str {
     task.or_else(|| card.data["author"].as_str()).unwrap_or(&card.bot_id)
 }
 
-/// `bot`'s turn ended: the tasks it started launch now (a fork taken mid-turn would carry an unanswered tool call).
-/// A turn the user stopped takes them with it.
-pub fn launch_pending(hub: &Arc<Hub>, bot: &str, stopped: bool) {
-    for (cfg, task) in records(&hub.store, bot) {
-        if task.status != Status::Starting {
-            continue;
-        }
-        let launched = if stopped { hub.delete_bot(&cfg.id) } else { launch(hub, bot, &cfg, task) };
-        if let Err(error) = launched {
-            tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't launch a task");
-            could_not_start(hub, &cfg);
-        }
-    }
-    hub.emit_bot(bot);
+/// The item task `cfg` works on.
+fn item_of(store: &Store, cfg: &BotConfig) -> Option<Item> {
+    items::of_task(&items::load(store, cfg.task_of.as_deref()?), &cfg.id).cloned()
 }
 
-fn launch(hub: &Arc<Hub>, bot: &str, cfg: &BotConfig, mut task: Task) -> Result<()> {
-    task.fork_from = fork_source(hub, bot);
-    task.status = Status::Working;
-    save(&hub.store, &cfg.id, &task)?;
-    hub.spawn_bot(cfg.clone());
-    crate::chat::messages::post(hub, cfg, json!({"text": prompts::first_prompt(&task), "from": "host"}))?;
-    Ok(())
+/// Changes the item task `cfg` works on, for a change whose loss only costs a detail (`what`, for the log).
+fn update(hub: &Hub, cfg: &BotConfig, what: &str, change: impl FnOnce(&mut Item)) -> bool {
+    let Some(bot) = cfg.task_of.as_deref() else { return false };
+    let changed = items::change(hub, bot, |items| {
+        let item = items.iter_mut().find(|i| i.status == Status::Working && i.task.as_deref() == Some(&cfg.id));
+        Ok(item.map(change).is_some())
+    });
+    changed.unwrap_or_else(|error| {
+        tracing::warn!(task = %cfg.id, what, error = format!("{error:#}"), "couldn't save an item's detail");
+        false
+    })
 }
 
-fn could_not_start(hub: &Arc<Hub>, cfg: &BotConfig) {
-    finished(hub, cfg, Outcome::Failed(Failure::Start, "it could not start".into()));
-}
-
-/// `bot`'s main session, when a task may start as a fork of it: the bot is on its own agent, and the session has
-/// used under half its window (a fork carries all of it). Whether the agent can fork is its actor's to find out.
-fn fork_source(hub: &Hub, bot: &str) -> Option<String> {
-    let session = hub.store.bot(bot).ok().flatten()?.session_id.filter(|s| !s.is_empty())?;
-    if hub.runtime(bot).agent_step.is_some() {
-        return None;
-    }
-    let chat = crate::agent::bot::conversation(&hub.store, bot, &session);
-    (chat.size == 0 || chat.used * 2 < chat.size).then_some(session)
+/// The item task `cfg` works on, as its approval card names it: its id and title.
+pub fn card_item(store: &Store, cfg: &BotConfig) -> Option<(String, String)> {
+    item_of(store, cfg).map(|item| (item.id, item.title))
 }
 
 /// The session a task's first session forks, if any; taken once.
-pub fn take_fork_source(store: &Store, id: &str) -> Option<String> {
+pub fn take_fork_source(hub: &Hub, cfg: &BotConfig) -> Option<String> {
     let mut source = None;
-    update(store, id, "its fork", |task| source = task.fork_from.take());
+    update(hub, cfg, "its fork", |item| source = item.fork_from.take());
     source
 }
 
 /// Whether `cfg` is a task whose session hasn't begun yet.
 pub fn first_session(store: &Store, cfg: &BotConfig) -> bool {
-    cfg.is_task() && load(store, &cfg.id).is_some_and(|task| task.start.is_none())
-}
-
-/// A task's title, for what it puts in its bot's chat.
-pub fn title(store: &Store, id: &str) -> String {
-    load(store, id).map(|task| task.title).unwrap_or_default()
+    cfg.is_task() && item_of(store, cfg).is_some_and(|item| item.start.is_none())
 }
 
 /// The agent couldn't fork the chat's session for this task.
-pub fn fork_failed(store: &Store, id: &str) {
-    update(store, id, "its failed fork", |task| task.fork_failed = true);
+pub fn fork_failed(hub: &Hub, cfg: &BotConfig) {
+    update(hub, cfg, "its failed fork", |item| item.fork_failed = true);
 }
 
 /// How the task's session began, once its actor knows.
-pub fn started(hub: &Hub, id: &str, start: Start) {
-    if update(&hub.store, id, "how it started", |task| task.start = Some(start)).is_some() {
-        hub.emit_bot(id);
-    }
+pub fn started(hub: &Hub, cfg: &BotConfig, start: Start) {
+    update(hub, cfg, "how it started", |item| item.start = Some(start));
 }
 
 /// What a task that starts from a new session is told of the chat it comes from.
@@ -321,31 +198,47 @@ pub fn chat_so_far(store: &Store, bot: &str) -> Option<String> {
     Some(format!("[The chat you come from, so far]\n{text}"))
 }
 
-/// Stops one of `bot`'s tasks, or all of them (`None`): the user's Stop on the capsule, or the bot's `stop_task`.
-pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
-    for (cfg, task) in records(&hub.store, bot) {
-        if id.is_some_and(|id| id != cfg.id) || !task.status.live() {
-            continue;
-        }
-        if task.status == Status::Starting {
-            hub.delete_bot(&cfg.id)?;
-            continue;
-        }
-        // With no turn running (it ended, or never started) there is no turn whose end would say it stopped.
-        let turn_runs = matches!(hub.runtime(&cfg.id).status, BotStatus::Working | BotStatus::NeedsInput);
-        if hub.send_cmd(&cfg.id, Cmd::Stop).is_err() || !turn_runs {
-            finished(hub, &cfg, Outcome::Stopped);
+/// `bot`'s own turn ended: the items it added may start now (a fork taken mid-turn would carry an unanswered tool
+/// call). A turn the user stopped takes the items it added with it.
+pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
+    hub.tasks.chain.locked().remove(bot);
+    let added = hub.tasks.added.locked().remove(bot).unwrap_or_default();
+    if stopped && !added.is_empty() {
+        let dropped = items::change(hub, bot, |items| {
+            items.retain(|i| !(i.status == Status::Waiting && added.contains(&i.id)));
+            Ok(())
+        });
+        if let Err(error) = dropped {
+            tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a stopped turn's work");
         }
     }
-    hub.emit_bot(bot);
-    Ok(())
+    dispatch::run(hub, bot, Some(bot));
 }
 
-/// A task's turn ended: its record says how, and its bot gets the report as a turn in the chat. A task the user
-/// stopped reports nothing: they know.
+/// Task `cfg`'s turn ended: its item says how, its bot gets the report as a turn in the chat, and the dispatcher
+/// decides what the task does next. An item the user stopped reports nothing: they know.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
-    let (Some(bot), Some(mut task)) = (cfg.task_of.as_deref(), load(&hub.store, &cfg.id)) else { return };
+    let Some(bot) = cfg.task_of.as_deref() else { return };
+    match items::change(hub, bot, |items| Ok(end(items, &cfg.id, outcome))) {
+        Ok(Some((item, failure))) => ended(hub, bot, &item, failure),
+        Ok(None) => {}
+        Err(error) => tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't save an item's end"),
+    }
+    dispatch::run(hub, bot, Some(&cfg.id));
+}
+
+/// Ends the item `task` works on, in `items`. None: it has none (stopped, or it gave way), or a host restart or a
+/// lost task cut it off for the first time and it waits again.
+fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<(Item, Option<Failure>)> {
+    let front = items::front(items);
+    let item = items.iter_mut().find(|i| i.status == Status::Working && i.task.as_deref() == Some(task))?;
     let (status, result, failure) = match outcome {
+        Outcome::Failed(Failure::Restart | Failure::Lost, _) if !item.restarted => {
+            item.set_aside(front);
+            item.restarted = true;
+            item.cut_in = true;
+            return None;
+        }
         Outcome::Done(text) => {
             let text = text.map(|t| crate::agent::acp::truncate(t.trim(), MAX_REPORT)).filter(|t| !t.is_empty());
             let failure = text.is_none().then_some(Failure::NoReport);
@@ -354,77 +247,124 @@ pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
         Outcome::Failed(failure, why) => (Status::Failed, Some(Err(why)), Some(failure)),
         Outcome::Stopped => (Status::Stopped, None, None),
     };
-    task.status = status;
-    task.ended_at = Some(now_ms());
+    item.status = status;
+    item.ended_at = Some(now_ms());
+    item.result = result.as_ref().map(|r| r.clone().unwrap_or_else(|why| why));
+    item.report =
+        result.map(|outcome| Report { item: item.id.clone(), title: item.title.clone(), outcome, hops: item.hops });
+    Some((item.clone(), failure))
+}
+
+/// `work_finished` for `item`, which just ended.
+fn finished_properties(item: &Item, failure: Option<Failure>) -> serde_json::Map<String, Value> {
     let mut properties = json!({
-        "outcome": status, "start": task.start, "forkFailed": task.fork_failed,
-        "minutes": (now_ms() - task.created_at) / 60_000,
+        "outcome": item.status, "start": item.start, "forkFailed": item.fork_failed,
+        "minutes": (now_ms() - item.started_at.unwrap_or(item.created_at)) / 60_000,
     });
     if let Some(failure) = failure {
         properties["error"] = json!(failure);
     }
-    analytics::capture(hub, Event::TaskFinished, properties.as_object().cloned().unwrap_or_default());
-    task.report =
-        result.map(|outcome| Report { task: cfg.id.clone(), title: task.title.clone(), outcome, hops: task.hops });
-    if let Err(error) = save(&hub.store, &cfg.id, &task) {
-        tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't save a task's end");
+    properties.as_object().cloned().unwrap_or_default()
+}
+
+/// Hands `report` to `bot`, as a turn in its chat. One that can't reach it stays on its item for the next host start.
+fn deliver(hub: &Hub, bot: &str, report: Report) {
+    let item = report.item.clone();
+    if let Err(error) = hub.send_cmd(bot, Cmd::TaskReport(report)) {
+        tracing::warn!(item, error = format!("{error:#}"), "couldn't hand an item's report to its bot");
     }
-    if let Some(report) = task.report
-        && let Err(error) = hub.send_cmd(bot, Cmd::TaskReport(report))
-    {
-        tracing::warn!(task = %cfg.id, error = format!("{error:#}"), "couldn't hand a task's report to its bot");
+}
+
+/// `item` of `bot` ended: says so (`work_finished`), and hands its report to its bot.
+fn ended(hub: &Hub, bot: &str, item: &Item, failure: Option<Failure>) {
+    analytics::capture(hub, Event::WorkFinished, finished_properties(item, failure));
+    if let Some(report) = item.report.clone() {
+        deliver(hub, bot, report);
     }
-    hub.emit_bot(bot);
 }
 
 /// The bot's turn for these reports is over: they reached the user, from the bot or as the chat's own notice.
-pub fn reported(store: &Store, reports: &[Report]) {
-    for report in reports {
-        update(store, &report.task, "its delivered report", |task| task.report = None);
+pub fn reported(hub: &Hub, bot: &str, reports: &[Report]) {
+    let cleared = items::change(hub, bot, |items| {
+        for item in items.iter_mut().filter(|i| reports.iter().any(|r| r.item == i.id)) {
+            item.report = None;
+        }
+        Ok(())
+    });
+    if let Err(error) = cleared {
+        tracing::warn!(bot, error = format!("{error:#}"), "couldn't save that reports were delivered");
     }
 }
 
-/// At host start: old finished tasks go, and the others pick up where the last process left them.
+/// At host start: old items go, and the others pick up where the last process left them.
 pub fn restore(hub: &Arc<Hub>) {
-    let rows = hub.store.task_bots().unwrap_or_default();
-    for cfg in rows.into_iter().map(|r| r.config) {
-        let Some(bot) = cfg.task_of.clone() else { continue };
-        let owner_lives = hub.store.bot(&bot).ok().flatten().is_some_and(|r| !r.deleted);
-        let task = load(&hub.store, &cfg.id).filter(|_| owner_lives);
-        let expired = |t: &Task| t.ended_at.is_some_and(|at| now_ms() - at > KEEP_MS);
-        let Some(task) = task.filter(|t| !expired(t)) else {
-            if let Err(error) = hub.delete_bot(&cfg.id) {
-                tracing::warn!(task = %cfg.id, error = format!("{error:#}"), "couldn't remove an old task");
-            }
-            continue;
-        };
-        match task.status {
-            Status::Starting => {
-                if let Err(error) = launch(hub, &bot, &cfg, task) {
-                    tracing::error!(task = %cfg.id, error = format!("{error:#}"), "couldn't launch a task");
-                    could_not_start(hub, &cfg);
-                }
-            }
-            // Its actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
-            Status::Working if crate::agent::bot::resumable(&hub.store, &cfg.id) => hub.spawn_bot(cfg),
-            Status::Working => finished(hub, &cfg, Outcome::Failed(Failure::Restart, CUT_OFF.into())),
-            Status::Done | Status::Failed | Status::Stopped => {
-                if let Some(report) = task.report {
-                    let _ = hub.send_cmd(&bot, Cmd::TaskReport(report));
-                }
-            }
+    let lives = |bot: &str| hub.store.bot(bot).ok().flatten().is_some_and(|r| !r.deleted);
+    let tasks = hub.store.task_bots().unwrap_or_default();
+    for task in tasks.iter().filter(|task| !task.config.task_of.as_deref().is_some_and(lives)) {
+        if let Err(error) = hub.delete_bot(&task.config.id) {
+            tracing::warn!(task = %task.config.id, error = format!("{error:#}"), "couldn't remove a task");
         }
     }
+    // Every bot with a box, or with a task bot left to clear away.
+    let mut bots: Vec<String> =
+        hub.store.kv_prefix(items::PREFIX).iter().map(|key| key.trim_start_matches(items::PREFIX).to_owned()).collect();
+    bots.extend(tasks.into_iter().filter_map(|task| task.config.task_of));
+    bots.sort();
+    bots.dedup();
+    for bot in &bots {
+        if !lives(bot) {
+            forget(&hub.store, bot);
+        } else if let Err(error) = pick_up(hub, bot) {
+            tracing::error!(bot, error = format!("{error:#}"), "couldn't pick up a bot's work");
+        }
+    }
+}
+
+/// `bot`'s box at host start: its tasks resume the turns the last process cut off, an item whose task can't ends,
+/// and the reports its bot never answered go to it again.
+fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
+    let (resumed, failed, reports) = items::change(hub, bot, |items| {
+        let now = now_ms();
+        items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
+        let (resumed, cut_off): (Vec<String>, Vec<String>) = items
+            .iter()
+            .filter(|i| i.status == Status::Working)
+            .filter_map(|i| i.task.clone())
+            .partition(|task| crate::agent::bot::resumable(&hub.store, task));
+        let failed: Vec<_> = cut_off
+            .iter()
+            .filter_map(|task| end(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
+            .collect();
+        Ok((resumed, failed, items.iter().filter_map(|i| i.report.clone()).collect::<Vec<_>>()))
+    })?;
+    for task in resumed {
+        if let Ok(Some(row)) = hub.store.bot(&task) {
+            hub.spawn_bot(row.config);
+        }
+    }
+    for (item, failure) in &failed {
+        analytics::capture(hub, Event::WorkFinished, finished_properties(item, *failure));
+    }
+    for report in reports {
+        deliver(hub, bot, report);
+    }
+    dispatch(hub, bot);
+    Ok(())
 }
 
 /// `taskEntries`: a task's transcript, newest `limit`, for its details. `bot` must be the task's own.
 pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
     let row = hub.store.bot(id)?.filter(|r| !r.deleted && r.config.task_of.as_deref() == Some(bot));
     let cfg = row.ok_or_else(|| anyhow!("unknown task"))?.config;
-    let task = load(&hub.store, &cfg.id).ok_or_else(|| anyhow!("unknown task"))?;
+    // What it works on, else what it worked on last.
+    let mut worked: Vec<Item> =
+        items::load(&hub.store, bot).into_iter().filter(|i| i.task.as_deref() == Some(id)).collect();
+    worked.sort_by_key(|i| (i.status.ended(), i.started_at));
+    let item = worked.iter().find(|i| !i.status.ended()).or(worked.last()).ok_or_else(|| anyhow!("unknown task"))?;
     Ok(json!({
-        "task": {"id": cfg.id, "title": task.title, "status": task.status, "startedAt": task.created_at,
-                 "endedAt": task.ended_at, "start": task.start},
+        "task": {"id": cfg.id, "title": item.title, "status": item.status, "startedAt": item.started_at,
+                 "endedAt": item.ended_at, "start": item.start},
         "entries": hub.store.history(id, i64::MAX, limit)?,
     }))
 }
@@ -433,12 +373,44 @@ pub fn entries(hub: &Hub, bot: &str, id: &str, limit: i64) -> Result<Value> {
 mod tests {
     use super::*;
 
+    fn working(id: &str, task: &str) -> Item {
+        serde_json::from_value(json!({
+            "id": id, "title": id, "brief": "x", "status": "working", "order": 5, "task": task, "createdAt": 0,
+            "startedAt": 1, "hops": 2,
+        }))
+        .expect("an item")
+    }
+
     #[test]
-    fn the_capsule_shows_a_card_over_the_work_and_a_start_over_both() {
-        assert_eq!(Live::of(Status::Starting, BotStatus::NeedsInput), Live::Starting);
-        assert_eq!(Live::of(Status::Working, BotStatus::NeedsInput), Live::NeedsInput);
-        assert_eq!(Live::of(Status::Working, BotStatus::Error), Live::Working);
-        assert_eq!(json!(Live::NeedsInput), "needsInput");
+    fn an_item_ends_as_its_tasks_turn_did() {
+        let mut items = [working("a", "t1"), working("b", "t2"), working("c", "t3")];
+        let (done, failure) = end(&mut items, "t1", Outcome::Done(Some(" All green. ".into()))).expect("ended");
+        assert_eq!((done.status, done.result.as_deref(), failure), (Status::Done, Some("All green."), None));
+        let report = done.report.expect("a report for its bot");
+        assert_eq!((report.item.as_str(), report.outcome, report.hops), ("a", Ok("All green.".into()), 2));
+
+        let (silent, failure) = end(&mut items, "t2", Outcome::Done(None)).expect("ended");
+        assert_eq!(failure, Some(Failure::NoReport));
+        assert_eq!(silent.report.expect("a report").outcome, Err("it ended without a report".into()));
+
+        let (stopped, _) = end(&mut items, "t3", Outcome::Stopped).expect("ended");
+        assert!(stopped.status == Status::Stopped && stopped.report.is_none(), "the user knows");
+        assert!(end(&mut items, "t3", Outcome::Stopped).is_none(), "its task has no item any more");
         assert_eq!(json!(Failure::EndedEarly), "ended_early");
+    }
+
+    #[test]
+    fn an_item_a_restart_cut_off_waits_again_once_then_fails() {
+        let mut items = [working("a", "t1")];
+        assert!(end(&mut items, "t1", Outcome::Failed(Failure::Restart, CUT_OFF.into())).is_none());
+        let item = &items[0];
+        assert!(item.status == Status::Waiting && item.cut_in && item.task.is_none(), "{item:?}");
+
+        items[0].status = Status::Working;
+        items[0].task = Some("t2".into());
+        let (failed, failure) =
+            end(&mut items, "t2", Outcome::Failed(Failure::Restart, CUT_OFF.into())).expect("ended");
+        assert_eq!((failed.status, failure), (Status::Failed, Some(Failure::Restart)));
+        assert_eq!(failed.result.as_deref(), Some(CUT_OFF));
     }
 }

@@ -1,5 +1,5 @@
 import {
-  FINISHED_MS, focusOf, isActive, islandFrame, islandMode, islandRect, othersOf, stopsDictation, transitions,
+  FINISHED_MS, focusOf, inTurn, isActive, islandFrame, islandMode, islandRect, othersOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
 } from '@shared/island'
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
@@ -243,7 +243,7 @@ export class IslandModel extends Observable {
       for (const id of this.deferred) if (!summary.permissions.some((p) => p.entryId === id)) this.deferred.delete(id)
       // A failed bot that works again no longer needs the notice.
       const shown = this.notice ? summary.bots.find((b) => b.ref === this.notice?.ref) : undefined
-      if (shown && isActive(shown)) this.notice = null
+      if (shown && inTurn(shown.status)) this.notice = null
       const next = changes.at(-1)
       if (next) this.showNotice(next)
     })

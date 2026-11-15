@@ -107,5 +107,8 @@ private let reachable = port(5173, remote: [lan])
     @Test func theEventNamesWhatWasDoneAndNothingElse() {
         #expect(AnalyticsEvent.devServerAction(.open).name == "dev_server_action")
         #expect(AnalyticsEvent.devServerAction(.copy).properties == ["action": .string("copy")])
+        #expect(AnalyticsEvent.voiceNotePlayed(.load).name == "voice_note_played")
+        #expect(AnalyticsEvent.voiceNotePlayed(nil).properties == ["outcome": .string("played")])
+        #expect(AnalyticsEvent.voiceNotePlayed(.playback).properties == ["outcome": .string("failed"), "error": .string("playback")])
     }
 }

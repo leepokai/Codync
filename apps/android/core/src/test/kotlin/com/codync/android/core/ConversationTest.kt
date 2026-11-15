@@ -46,11 +46,37 @@ class ConversationTest {
         assertEquals(500, long.replyQuote.text.length)
     }
 
+    @Test fun `a reply to a selected part quotes that part`() {
+        val answer = entry("agent", true)
+        assertEquals(ReplyQuote("e", "b", "sag", part = true), answer.replyQuote("  sag\n"))
+        assertEquals(4000, answer.replyQuote("x".repeat(4100)).text.length)
+        assertEquals(answer.replyQuote, answer.replyQuote("  \n"))
+        assertEquals(answer.replyQuote, answer.replyQuote(null))
+        val card = Entry("c", 1, "b", rev = 1, kind = "agent", data = buildJsonObject {
+            put("text", "Plan"); put("final", true); put("artifact", buildJsonObject { put("id", "a1"); put("title", "Plan") })
+        })
+        assertEquals(card.replyQuote, card.replyQuote("Pl"))
+        val sent = Entry("r", 2, "b", rev = 2, kind = "user", data = buildJsonObject {
+            put("text", "hi"); put("replyTo", buildJsonObject { put("id", "e"); put("author", "b"); put("text", "sag"); put("part", true) })
+        })
+        assertEquals(ReplyQuote("e", "b", "sag", part = true), sent.replyTo)
+    }
+
+    @Test fun `a send carries the selected part only when it quotes one`() {
+        val send = PendingSend("n", "b", "Why?", 1, replyTo = ReplyQuote("e", "b", "sag", part = true))
+        assertEquals(buildJsonObject { put("botId", "b"); put("text", "Why?"); put("clientNonce", "n"); put("replyTo", "e"); put("replyPart", "sag") },
+            send.body())
+        assertFalse("replyPart" in send.copy(replyTo = ReplyQuote("e", "b", "message")).body())
+        assertFalse("replyPart" in send.copy(replyTo = null).body())
+    }
+
     @Test fun `a send carries the message it quotes and its files`() {
         val send = PendingSend("n", "b", "Ship it", 1, replyTo = ReplyQuote("e", "user", "Ready?"))
         assertEquals(buildJsonObject { put("botId", "b"); put("text", "Ship it"); put("clientNonce", "n"); put("replyTo", "e")
             putJsonArray("attachments") { add("u1") } }, send.body(listOf("u1")))
         assertFalse("replyTo" in send.copy(replyTo = null).body())
+        assertFalse("pasted" in send.body())
+        assertEquals(buildJsonArray { add("Shared") }, send.copy(pasted = listOf("Shared")).body()["pasted"])
     }
 
     @Test fun `chat shows final replies permissions notices and users without narration`() {
@@ -75,6 +101,19 @@ class ConversationTest {
         assertTrue(user("queued").isChat)
         assertFalse(user("sent").isQueued)
         assertFalse(Entry("n", 1, "b", rev = 1, kind = "notice", data = buildJsonObject { put("status", "queued") }).isQueued)
+    }
+
+    @Test fun `a flagged sound plays in its reply's bubble, anything else keeps its card`() {
+        val note = SharedFile("f1", "note.m4a", 1000, "a".repeat(64), playsInChat = true)
+        fun carrying(flag: Boolean? = true, file: SharedFile = note) = Entry("v", 1, "b", rev = 1, kind = "agent", data = buildJsonObject {
+            put("text", "Here is the plan."); put("final", true); flag?.let { put("voiceNote", it) }
+            putJsonArray("files") { addJsonObject { put("id", file.id); put("name", file.name); put("size", file.size); put("sha256", file.sha256); if (file.playsInChat) put("playsInChat", true) } }
+        })
+        assertEquals(note, carrying().voiceNote)
+        assertNull(carrying(flag = null).voiceNote)
+        assertNull(carrying(file = SharedFile("f2", "plan.pdf", 1000, "a".repeat(64))).voiceNote)
+        // An older computer doesn't stamp it: the plain file card, whatever the name says.
+        assertNull(carrying(file = note.copy(playsInChat = false)).voiceNote)
     }
 
     @Test fun `malformed known events fail before a checkpoint while unknown events are ignored`() {

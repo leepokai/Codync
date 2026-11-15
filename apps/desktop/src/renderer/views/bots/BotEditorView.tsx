@@ -2,15 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fastModeRefusal, fastModeShown } from '@shared/fast-mode'
 import { restLine, restOf, withBackend } from '@shared/fallbacks'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { MAX_AGENTS } from '@shared/work'
 import { AgentIcon } from '../../components/AgentIcon'
 import { CharacterAvatar } from '../../components/Avatar'
-import { CardSection, DropdownMenu, IconButton, Pill, Spinner, ValueRow } from '../../components/Controls'
+import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
 import { HStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
 import { useAgentModels } from './agent-models'
+import { LoginProfileRow } from './LoginProfileRow'
 import { AgentModelPicker } from './AgentModelPicker'
 import { ApprovalRow } from './ApprovalRow'
 import { CompactionRow } from './CompactionRow'
@@ -62,14 +65,8 @@ export function BotEditorView({ draft: initial }: { draft: BotDraft }) {
   )
 }
 
-/**
- * Which settings a form shows: all of them (the editor sheet), what changes often
- * (instructions, model, fast mode: the inspector's Details tab) or the rest (its Settings tab).
- */
-export type FormPart = 'all' | 'often' | 'rarely'
-
-/** The desktop inspector next to a conversation: the same form, saved as you edit. */
-export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPart }) {
+/** The Settings tab of the desktop inspector next to a conversation: the same form, saved as you edit. */
+export function BotSettingsPanel({ botId }: { botId: string }) {
   const store = useStore()
   const plugins = usePlugins(store)
   const [draft, setDraft] = useState<BotDraft | null>(null)
@@ -96,7 +93,7 @@ export function BotSettingsPanel({ botId, part }: { botId: string; part: FormPar
     return () => clearTimeout(timer)
   }, [draft])
 
-  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} part={part} /> : null
+  return draft ? <BotSettingsForm draft={draft} onChange={change} error={error} plugins={plugins} inspector /> : null
 }
 
 /** The bot that created this one with its team tools, and when. */
@@ -111,13 +108,14 @@ function CreatedBy({ bot, creator }: { bot: Bot; creator: string }) {
   )
 }
 
-/** Bot settings, in sections in the Settings style (`CardSection`). */
-function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
+/** Bot settings, in sections in the Settings style (`CardSection`): how the bot is set up, what it is told and what
+ * runs it first. In the `inspector` the Computer tab holds the Use the computer switch. */
+function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }: {
   draft: BotDraft
   onChange: (update: (d: BotDraft) => BotDraft) => void
   error: string | null
   plugins: Plugins | null
-  part?: FormPart
+  inspector?: boolean
 }) {
   const tr = useTr()
   const store = useStore()
@@ -142,7 +140,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       <AutoTextArea className="field-box" value={draft.description} placeholder="e.g. Reviews PRs. Never pushes without asking." minRows={3} maxRows={8} onChange={(v) => set('description', v)} />
     </Field>
   )
-  const ownRest = saved ? restOf(saved, draft.backend, Date.now()) : null
+  const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
       onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
@@ -155,6 +153,8 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>
   )
+  // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
+  const loginProfile = backend?.loginProfiles ? <LoginProfileRow key="login" backend={backend} loginProfile={draft.loginProfile ?? null} onChange={(id) => set('loginProfile', id)} /> : null
   // While the bot runs on a fallback, the Agent card starts with it.
   const step = saved?.agentStep ? <AgentStepBanner key="step" bot={saved} /> : null
   // Only from a host that has them (its bots say).
@@ -171,26 +171,17 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
   // Only where Codync summarizes the chat (its bot says): CardSection gives every child a row.
   const compaction = saved && saved.compaction !== null ? <CompactionRow key="compaction" draft={draft} bot={saved} onChange={onChange} /> : null
 
-  if (part === 'often') {
-    return (
-      <div className="bot-form">
-        <div className="bot-form-content">
-          <CardSection title="Instructions">{instructions}</CardSection>
-          <CardSection title="Agent">
-            {step}
-            {agent}
-            {fallbacks}
-            {compaction}
-          </CardSection>
-          {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="bot-form">
       <div className="bot-form-content">
+        <CardSection title="Instructions">{instructions}</CardSection>
+        <CardSection title="Agent">
+          {step}
+          {agent}
+          {loginProfile}
+          {fallbacks}
+          {compaction}
+        </CardSection>
         <CardSection title="Profile">
           <ValueRow label="Avatar">
             <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
@@ -206,20 +197,14 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
           <Field label="Name">
             <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
           </Field>
-          {part === 'all' ? instructions : null}
           {/* Only a row when a bot made it: CardSection gives every child a row. */}
           {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}
         </CardSection>
 
-        {/* In the inspector the agent and its model are on the Details tab; what's left is where it works. */}
-        <CardSection title={part === 'all' ? 'Agent' : 'Workspace'}>
-          {part === 'all' ? step : null}
+        <CardSection title="Workspace">
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          {part === 'all' ? agent : null}
-          {part === 'all' ? fallbacks : null}
-          {part === 'all' ? compaction : null}
           <ValueRow
             label="Workspace"
             detail={
@@ -242,15 +227,21 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
             </DropdownMenu>
           </ValueRow>
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
+          {/* Only from a host that has the box (its bots say). */}
+          {saved && saved.maxAgents !== null ? (
+            <ValueRow label="Agents at once">
+              <Stepper label="Agents at once" value={draft.maxAgents ?? saved.maxAgents} min={1} max={MAX_AGENTS} onChange={(count) => set('maxAgents', count)} />
+            </ValueRow>
+          ) : null}
         </CardSection>
 
         <CardSection title="Activity">
           <SwitchRow title="Notifications" detail="Get notified when this bot finishes or needs you" on={draft.notify ?? true} onChange={(on) => set('notify', on)} />
-          {store.screen && part === 'all' ? (
+          {store.screen && !inspector ? (
             <SwitchRow
               title="Use the computer"
               detail={
-                store.screen.platform !== 'windows' && !(store.screen.enabled && store.screen.connected && store.screen.capture && store.screen.input)
+                !controlReady(store.screen)
                   ? 'Let this bot use apps. On that computer, open Codync → Settings → Computer access to set up permissions first.'
                   : store.screen.enabled
                   ? 'Let this bot see the screen and use the mouse and keyboard. You can watch and take over from your phone.'
@@ -284,10 +275,13 @@ function BotSettingsForm({ draft, onChange, error, plugins, part = 'all' }: {
         <PluginToggles
           title="Skills"
           empty="No skills yet. Get some from Extensions, or write your own."
-          items={skills.map((s) => ({ id: s.id, name: s.name, detail: s.description }))}
+          items={skills.map((s) => ({ id: s.id, name: s.name, detail: '' }))}
           selection={draft.skills ?? []}
           onChange={(ids) => set('skills', ids)}
-          onInfo={(s) => setViewingSkill({ id: s.id, name: s.name, description: s.detail })}
+          onInfo={(item) => {
+            const s = skills.find((x) => x.id === item.id)
+            if (s) setViewingSkill({ id: s.id, name: s.name, description: s.description })
+          }}
         />
         {error ? <Text size="footnote" tone="danger" className="fade-in">{error}</Text> : null}
       </div>

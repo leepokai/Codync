@@ -62,13 +62,13 @@ public extension Bot {
     var mood: CharacterAvatar.Mood { needsInput ? .needsInput : isWorking ? .working : .idle }
 }
 
-/// Keep the halftone at every size. Small icons use fewer, larger dots so the
+/// Keep the halftone at every size: 9 × 9 large dots from 18 pt up. Tiny icons use 7 × 7 so the
 /// gaps and hollow eyes survive rasterization in widgets and the Dynamic Island.
 struct DotGrid {
     let cells: Int
-    init(size: CGFloat) { cells = size < 18 ? 7 : size < 28 ? 9 : 13 }
-    var eyeColumns: [Int] { cells == 7 ? [2, 4] : cells == 9 ? [3, 6] : [4, 8] }
-    var eyeRows: [Int] { cells == 13 ? [4, 5, 6] : cells == 9 ? [3, 4] : [2, 3] }
+    init(size: CGFloat) { cells = size < 18 ? 7 : 9 }
+    var eyeColumns: [Int] { cells == 7 ? [2, 4] : [3, 6] }
+    var eyeRows: [Int] { cells == 7 ? [2, 3] : [3, 4] }
 }
 
 struct DottedBody: View {
@@ -178,8 +178,8 @@ struct DottedBody: View {
                 shade *= 0.6 + 0.4 * ripple
             }
             return Ink(dot: d,
-                       radius: step * 0.42 * (0.55 + 0.45 * shade),
-                       ink: grid.cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * min(1, shade / 0.7),
+                       radius: step * 0.4 * (0.7 + 0.3 * shade),
+                       ink: 0.4 + 0.4 * shade,
                        tint: shade > 0.6 ? (shade - 0.6) / 0.4 : 0,
                        eye: eyeCols.contains(d.col) && eyeRows.contains(d.row))
         }

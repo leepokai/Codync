@@ -132,7 +132,7 @@ function CreateLayout({ title, preview, name, placeholder, onName, canCreate, co
 
   return (
     <VStack className="create-sheet">
-      <ModalHeader title={title} />
+      <ModalHeader title={tr(title)} />
       <VStack align="center" gap={20} className="create-body">
         {preview}
         <input

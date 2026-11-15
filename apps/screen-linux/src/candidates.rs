@@ -128,17 +128,19 @@ mod tests {
         gst::init().unwrap();
         let (out, events) = mpsc::unbounded_channel();
         let helper = Arc::new(Helper {
-            portal: Arc::new(AsyncMutex::new(None)),
+            backend: Arc::new(AsyncMutex::new(None)),
+            portals: std::sync::atomic::AtomicBool::new(true),
+            held: std::sync::Mutex::default(),
             last_status: AsyncMutex::new(None),
             sessions: crate::sessions::Sessions::default(),
             out,
             rt: tokio::runtime::Handle::current(),
         });
-        let session = Session {
-            pipeline: gst::Pipeline::new(),
-            webrtc: gst::ElementFactory::make("webrtcbin").build().unwrap(),
-            incoming: Some(Mutex::default()),
-        };
+        let session = Session::bare(
+            gst::Pipeline::new(),
+            gst::ElementFactory::make("webrtcbin").build().unwrap(),
+            Some(Mutex::default()),
+        );
         (helper, events, session)
     }
 

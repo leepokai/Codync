@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The details sheet's pages, as on the desktop inspector.
 enum DetailsTab: Hashable {
-    case details, library, memory, settings
+    case details, computer, library, memory, settings
 }
 
 /// What to open the details sheet on.
@@ -14,13 +14,21 @@ struct DetailsRequest: Identifiable {
     var routineId: String?
     /// Another bot's details than the chat's: a group member's, from its notice.
     var botId: String?
+
+    /// Where a bot's fallbacks are set (the chat's "Add a fallback"): the Agent card, on Settings.
+    static func fallbacks(of botId: String) -> DetailsRequest {
+        DetailsRequest(tab: .settings, botId: botId)
+    }
 }
 
-/// A bot's details (Grok Bot's): who it is, then its details, library, memory and settings. Settings save
-/// as you edit.
+/// A bot's details (Grok Bot's): who it is, then what it does (Details), its computer, library, memory and how it
+/// is set up (Settings).
+/// Settings save as you edit.
 struct BotDetailsView: View {
     let botId: String
     let routineId: String?
+    /// Shows a card of the bot's chat (an item that needs the user); nil where the details aren't over that chat.
+    let openCard: ((Entry) -> Void)?
     /// An artifact picked in the Library, for the chat's viewer.
     let openArtifact: (ArtifactTarget) -> Void
     @State var tab: DetailsTab
@@ -33,8 +41,9 @@ struct BotDetailsView: View {
     @State private var saving: Task<Void, Never>?
     @State private var template: EditorRequest?
 
-    init(botId: String, request: DetailsRequest, openArtifact: @escaping (ArtifactTarget) -> Void) {
+    init(botId: String, request: DetailsRequest, openCard: ((Entry) -> Void)? = nil, openArtifact: @escaping (ArtifactTarget) -> Void) {
         self.botId = botId
+        self.openCard = openCard
         self.openArtifact = openArtifact
         routineId = request.routineId
         _tab = State(initialValue: request.tab)
@@ -46,8 +55,8 @@ struct BotDetailsView: View {
         ScrollView {
             VStack(spacing: 0) {
                 if let bot { identity(bot) }
-                TabChoice(selection: $tab, options: [(.details, "Details")] + (model.hasLibrary ? [(.library, "Library")] : [])
-                    + [(.memory, "Memory"), (.settings, "Settings")])
+                TabChoice(selection: $tab, options: [(.details, "Details"), (.computer, "Computer")]
+                    + (model.hasLibrary ? [(.library, "Library")] : []) + [(.memory, "Memory"), (.settings, "Settings")])
                     .padding(.top, 18)
                 page.padding(.top, 20)
                     .environment(\.cardStyle, .outlined)
@@ -121,33 +130,21 @@ struct BotDetailsView: View {
     @ViewBuilder private var page: some View {
         switch tab {
         case .details:
-            VStack(alignment: .leading, spacing: 28) {
-                if let bot, !bot.devServers.isEmpty { DevServersSection(bot: bot) }
-                if let draft = Binding($draft) {
-                    BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .often)
+            if let bot {
+                WorkTimeline(bot: bot, openCard: openCard) {
+                    RoutinesView(botId: botId, initialId: routineId)
+                    if !bot.devServers.isEmpty { DevServersSection(bot: bot) }
                 }
-                if let screen = model.screen, let bot {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(L10n.tr("Computer"))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Palette.text)
-                            .padding(.leading, 2)
-                        SwitchRow("Use the computer",
-                                  detail: screen.controlReady == true ? nil : "On that computer, open Codync → Settings → Computer access to set it up first.",
-                                  isOn: Binding(get: { bot.computer }, set: { model.setComputer(bot, $0) }))
-                            .disabled(model.isOffline)
-                            .outlinedCard()
-                    }
-                }
-                RoutinesView(botId: botId, initialId: routineId)
             }
+        case .computer:
+            BotComputerPage(botId: botId)
         case .library:
             LibraryView(botId: botId, openArtifact: openArtifact)
         case .memory:
             MemoryCard(botId: botId)
         case .settings:
             if let draft = Binding($draft) {
-                BotSettingsForm(draft: draft, error: saveError, scrolls: false, part: .rarely)
+                BotSettingsForm(draft: draft, error: saveError, scrolls: false, inDetails: true)
             }
         }
     }

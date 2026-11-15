@@ -6,7 +6,7 @@ use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Permission};
+use crate::store::{EntryKind, Lane, Permission};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -140,7 +140,8 @@ impl Actor {
             "usage_update" => {
                 let info = &u["_meta"]["_claude/rateLimit"];
                 if info.is_object() {
-                    crate::usage::ingest_claude_rate_limit(&self.hub, info);
+                    let profile = crate::agent::login_profiles::of_bot(&self.hub.store, &self.cfg.backend, &self.cfg);
+                    crate::usage::ingest_claude_rate_limit(&self.hub, profile, info);
                 }
                 if let Some(used) = u["used"].as_u64() {
                     self.track_usage(used, u["size"].as_u64().unwrap_or(0));
@@ -229,23 +230,37 @@ impl Actor {
         self.show_card(title, data, Answer::Codync(reply));
     }
 
-    /// Posts an approval card in the turn's lane and tells the user it needs them.
-    fn show_card(&mut self, title: &str, data: Value, answer: Answer) {
+    /// Posts an approval card in the turn's lane and tells the user it needs them. A task's card goes where the
+    /// user is, its bot's chat.
+    fn show_card(&mut self, title: &str, mut data: Value, answer: Answer) {
         let turn = self.turn.unwrap_or(0);
         self.close_seg();
-        if let Some(e) = self.add(EntryKind::Permission, turn, data) {
+        let card = match self.cfg.task_of.clone() {
+            Some(bot) => {
+                // To the user it is the bot asking; the answer finds this actor by the task (`tasks::card_actor`).
+                data["author"] = bot.clone().into();
+                // The item it works on: what the user knows the card by.
+                let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
+                data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
+                data["item"] = item.into();
+                self.hub.add_entry(&Lane::main(&bot), EntryKind::Permission, self.hub.store.max_turn(&bot), &data)
+            }
+            None => self.add(EntryKind::Permission, turn, data),
+        };
+        let chat = card.as_ref().map_or_else(|| self.lane.chat.clone(), |e| e.bot_id.clone());
+        if let Some(e) = card {
             self.perms.insert(e.id, answer);
         }
         self.hub.set_runtime(&self.cfg.id, |r| {
             r.status = BotStatus::NeedsInput;
             r.activity = format!("Needs approval: {title}");
         });
-        // Tapping it opens where the card is: the group, for a room turn.
-        let target = self.hub.store.bot(&self.lane.chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
+        // Tapping it opens where the card is: the group, for a room turn; its bot's chat, for a task.
+        let target = self.hub.store.bot(&chat).ok().flatten().map_or_else(|| self.cfg.clone(), |r| r.config);
         push::notify(
             &self.hub,
             &target,
-            Some(&self.cfg.id),
+            (!self.cfg.is_task()).then_some(self.cfg.id.as_str()),
             &format!("{} needs you", self.cfg.name),
             title,
             AlertKind::NeedsInput,
@@ -254,6 +269,7 @@ impl Actor {
 
     /// A Codync card whose tool stopped waiting (it timed out, or its call was dropped) expires, buttons and all.
     pub(super) async fn expire_abandoned(&mut self) {
+        self.expire_abandoned_decisions();
         let gone: Vec<String> = self
             .perms
             .iter()
@@ -286,7 +302,7 @@ impl Actor {
             e.data["selected"] = option_id.into();
             self.hub.set_entry(entry_id, &e.data);
         }
-        if self.perms.is_empty() && self.turn.is_some() {
+        if self.perms.is_empty() && self.asked.is_empty() && self.turn.is_some() {
             self.hub.set_runtime(&self.cfg.id, |r| {
                 r.status = BotStatus::Working;
                 r.activity = "Continuing…".into();
@@ -308,11 +324,17 @@ impl Actor {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
-        self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}))
-            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        self.record_sent(turn, json!({"text": text, "final": true}), text)?;
+        self.set_activity("Working…");
+        Ok(())
+    }
+
+    /// Saves a message the agent sent the user this turn (`send_message`, a voice note) and counts it as the turn's
+    /// reply, so what the agent writes as its reply stays in the trace.
+    pub(super) fn record_sent(&mut self, turn: i64, data: Value, text: String) -> anyhow::Result<()> {
+        self.add(EntryKind::Agent, turn, data).ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         self.sent.push(text);
         self.last_text = None;
-        self.set_activity("Working…");
         Ok(())
     }
 

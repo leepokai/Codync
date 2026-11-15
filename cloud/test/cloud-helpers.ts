@@ -1,10 +1,11 @@
-// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker with `userId` allowed a cloud computer, the
-// user's own Boat key, and a claimed cloud computer with its host connected.
+// Codync Cloud test helpers: Boat stubbed with a fetch spy, the Worker's cloud computer routes, the user's own Boat
+// key, and a claimed cloud computer with its host connected.
 
+import { runDurableObjectAlarm } from "cloudflare:test";
 import { expect, vi } from "vitest";
 import { saveCredential } from "../src/cloud-credentials";
-import worker from "../src/index";
-import { ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
+import worker, { type Env } from "../src/index";
+import { AUTHORITY, ORIGIN, call, clerkToken, env, hostSocket, newHost, type Json, type TestHost } from "./helpers";
 import * as ref from "./ref";
 
 export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
@@ -12,17 +13,22 @@ export const uid = () => `user_cc_${ref.b64url(ref.random(6))}`;
 /** The Boat key every test user brings. */
 export const KEY = "boat_live_test9abc";
 
-/** Calls `/v1/cloud-computers` (or `path`) with `userId` on the allowlist; `body` goes as JSON. */
-export async function cc(method: string, userId: string, allowed = userId, path = "/v1/cloud-computers", body?: unknown) {
-  const headers: Record<string, string> = { Authorization: `Bearer ${await clerkToken(userId)}` };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await worker.fetch(
-    new Request(`${ORIGIN}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
-    { ...env, CLOUD_COMPUTER_USERS: `someone_else, ${allowed}` },
-    {} as ExecutionContext,
-  );
+/** A signed or Clerk call through the Worker with some env overridden. */
+export async function callWith(over: Partial<Env>, method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown; app?: string } = {}) {
+  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
+  const headers: Record<string, string> = {};
+  if (o.token) headers.Authorization = `Bearer ${o.token}`;
+  if (o.app) headers["Codync-App"] = o.app;
+  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: AUTHORITY, pathAndQuery: path, body: bytes });
+  const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined }), { ...env, ...over }, {
+    waitUntil: () => {},
+  } as unknown as ExecutionContext);
   return { status: res.status, body: (await res.json()) as Json };
 }
+
+/** Calls `/v1/cloud-computers` (or `path`) as `userId`; `body` goes as JSON. */
+export const cc = async (method: string, userId: string, path = "/v1/cloud-computers", body?: unknown) =>
+  callWith({}, method, path, { token: await clerkToken(userId), body });
 
 /** Gives `userId` a Boat key, as saving one does once Boat took it (the account row comes with the first call). */
 export async function withKey(userId: string) {
@@ -100,6 +106,16 @@ export function stoppedBoat() {
 export const calls = (spy: ReturnType<typeof stoppedBoat>) => spy.mock.calls.map(([url, init]) => `${init?.method} ${url}`);
 export const relay = (host: TestHost) => env.RELAY.get(env.RELAY.idFromName(host.cid));
 
+/** Runs `host`'s relay alarm as if `ms` had passed (only `Date` moves). */
+export async function alarmAfter(host: TestHost, ms: number) {
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + ms });
+  try {
+    await runDurableObjectAlarm(relay(host));
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 /** The InstaBox key test users bring (`ibk_` and 52 of a–z, 2–7). */
 export const IBX_KEY = `ibk_${"a2".repeat(26)}`;
 
@@ -147,8 +163,8 @@ export async function onBothProviders() {
   await withKey(userId);
   await withInstaboxKey(userId);
   boat();
-  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "boat" });
+  await cc("POST", userId, "/v1/cloud-computers", { provider: "boat" });
   instaboxApi();
-  await cc("POST", userId, userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
+  await cc("POST", userId, "/v1/cloud-computers", { provider: "instabox", name: "Build box" });
   return userId;
 }

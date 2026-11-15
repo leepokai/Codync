@@ -6,7 +6,7 @@ import { drivers, type Outcome } from "../../machines/src";
 import { credentialFor, credentialView, forgetCredential, isProvider, type KeyProblem, problemText, type Provider, providerSend, saveCredential, sendWith } from "../cloud-credentials";
 import { type CloudMachineRow, machinesOf } from "../cloud-machines";
 import { ApiError, audit, body, type Ctx, user } from "./common";
-import { allowedUser, unreachable } from "./cloud-computers";
+import { cloudUser, unreachable } from "./cloud-computers";
 
 const provider = (raw: string | undefined): Provider => {
   if (!isProvider(raw)) throw new ApiError("notFound");
@@ -20,7 +20,7 @@ const provider = (raw: string | undefined): Provider => {
  */
 export async function saveCloudCredential(c: Ctx, [raw]: string[]) {
   const p = provider(raw);
-  const u = await allowedUser(c);
+  const u = await cloudUser(c);
   // Each save calls the provider: never a free way to test someone's keys.
   if (c.env.CLOUD_KEY_LIMITER && !(await c.env.CLOUD_KEY_LIMITER.limit({ key: u.userId })).success) throw new ApiError("rateLimited");
   const d = drivers[p];

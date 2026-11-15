@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { copyText } from '../../lib/image-clipboard'
 import { useStore } from '../../store/context'
 import { botConversation, buildBotConversation, groupSummary, peerNameIn, verbOf, type BotConversationRow, type BotExchange } from './bot-exchange'
 import { AuthorLabel, Bubble, TimeSeparator } from './ChatRows'
@@ -106,7 +107,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
           {row.showsAuthor ? <AuthorLabel botId={row.author} name={name(row.author)} /> : null}
           <div className="message agent">
             <div className="message-body">
-              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => window.codync.app.copy(row.text) }]}>
+              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => void copyText(row.text) }]}>
                 <MarkdownText text={row.text} />
               </Bubble>
             </div>

@@ -258,7 +258,8 @@ class CloudClientTest {
             server.enqueue(MockResponse().setBody("""{"cloudComputers":[],"available":true,"providers":[
                 {"provider":"boat","name":"Boat","region":"EU","keyPrompt":"boat_…",$setup,
                  "credential":{"hint":"boat_…9abc","problem":"This key has expired. Make a new one.","blocking":true,"updatedAt":5}},
-                {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null}]}"""))
+                {"provider":"nimbus","name":"Nimbus","region":"Asia","keyPrompt":"nim_…",$setup,"credential":null,
+                 "offer":{"label":"Get a free sandbox","detail":"A free plan.","url":"https://nimbus.example/pricing"}}]}"""))
             server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":{"code":"keyRefused","message":"That doesn't look like an API key from this provider."}}"""))
             server.enqueue(MockResponse().setBody("""{"credential":{"hint":"boat_…0001","problem":null,"updatedAt":6}}"""))
             server.enqueue(MockResponse().setBody("{}"))
@@ -267,6 +268,9 @@ class CloudClientTest {
             assertEquals(listOf("Boat", "Nimbus"), offer.providers.map { it.name })
             assertEquals(CloudCredential("boat_…9abc", "This key has expired. Make a new one.", blocking = true), offer.providers[0].credential)
             assertEquals(CloudKeySetup("https://boat.dev/dashboard", "boat env new codync"), offer.providers[0].setup)
+            // A free plan only where the cloud names one.
+            assertNull(offer.providers[0].offer)
+            assertEquals(CloudProviderOffer("Get a free sandbox", "A free plan.", "https://nimbus.example/pricing"), offer.providers[1].offer)
             assertTrue(offer.canRemoveKey("boat"))
             val refused = try { client.saveCloudKey("boat", "sk-1"); error("Expected a refusal") } catch (error: CloudError) { error }
             assertEquals("keyRefused", refused.code)

@@ -108,6 +108,18 @@ pub(super) fn push_step(out: &mut Vec<Line<'static>>, app: &App, e: &Entry, widt
         Kind::Thought | Kind::Agent => push_text(out, e, width, full),
         Kind::Tool => push_tool(out, app, e, width, full),
         Kind::Plan => push_plan(out, e, width),
+        Kind::Decision => {
+            let st = e.data["status"].as_str().unwrap_or_default();
+            out.push(Line::from(vec![
+                Span::styled(" ◆ ", t.amber),
+                label("asked"),
+                Span::styled(
+                    truncate(e.data["question"].as_str().unwrap_or_default(), text_rest(width).saturating_sub(12)),
+                    t.text,
+                ),
+                Span::styled(format!("  {st}"), t.dim),
+            ]));
+        }
         Kind::Permission => {
             let st = e.data["status"].as_str().unwrap_or_default();
             out.push(Line::from(vec![

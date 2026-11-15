@@ -3,6 +3,8 @@
 
 use serde_json::Value;
 
+use crate::chat::decision;
+
 use super::super::manage::Reply;
 
 pub enum Msg {
@@ -36,6 +38,7 @@ pub enum After {
     /// `track`: fire and forget; analytics never surfaces an error.
     Tracked,
     Analytics,
+    AutoOrder,
     History(String),
     Dirs(String),
     WorkspaceSelected(String),
@@ -97,6 +100,8 @@ pub enum Kind {
     Tool,
     Plan,
     Permission,
+    /// A `request_decision` card: the bot asks the user to pick one of its options.
+    Decision,
     Notice,
     Other,
 }
@@ -120,6 +125,7 @@ impl Entry {
             "tool" => Kind::Tool,
             "plan" => Kind::Plan,
             "permission" => Kind::Permission,
+            "notice" if v["data"]["decision"] == true => Kind::Decision,
             "notice" => Kind::Notice,
             _ => Kind::Other,
         };
@@ -223,7 +229,21 @@ impl Entry {
     }
 
     pub fn pending(&self) -> bool {
-        self.kind == Kind::Permission && self.data["status"] == "pending"
+        match self.kind {
+            Kind::Permission => self.data["status"] == "pending",
+            Kind::Decision => decision::Status::of(&self.data) == Some(decision::Status::Pending),
+            _ => false,
+        }
+    }
+
+    /// A choice card's options, in the order the bot offered them.
+    pub fn choices(&self) -> Vec<String> {
+        self.data["choices"].as_array().into_iter().flatten().filter_map(|o| o.as_str().map(str::to_owned)).collect()
+    }
+
+    /// Labels sent by numbered/function keys: decisions use their text; permissions keep their option ids.
+    pub fn answer_options(&self) -> Vec<String> {
+        if self.kind == Kind::Decision { self.choices() } else { self.options().into_iter().map(|o| o.0).collect() }
     }
 
     /// A message of the user's waiting for its turn: it shows above the composer, not in the chat.
@@ -275,5 +295,17 @@ mod tests {
         assert!(e.pending());
         let kinds: Vec<String> = e.options().into_iter().map(|o| o.2).collect();
         assert_eq!(kinds, ["allow_once", "reject_once"]);
+    }
+
+    #[test]
+    fn decision_notice_keys_keep_all_twelve_labels_in_order() {
+        let choices: Vec<_> = (1..=12).map(|i| format!("Choice {i}")).collect();
+        let (_, entry) = Entry::parse(&json!({"id":"c","botId":"b","seq":1,"kind":"notice",
+            "data":{"decision":true,"choices":choices,"status":"pending"}}))
+        .unwrap();
+        assert_eq!(entry.kind, Kind::Decision);
+        assert!(entry.pending());
+        assert_eq!(entry.answer_options(), choices);
+        assert!(entry.options().is_empty(), "choice labels never become permission option ids");
     }
 }

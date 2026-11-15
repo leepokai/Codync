@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet,
+    AgentSetup, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport, Library,
+    Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
 };
-use super::{Editor, Mark};
+use super::{Editor, Mark, WhatsNew};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
@@ -60,13 +60,14 @@ pub enum Action {
     CheckUpdate,
     Analytics,
     AboutAnalytics,
+    AutoOrder,
     Language,
     ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 19] = [
+pub const ACTIONS: [(&str, &str, Action); 20] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -74,6 +75,7 @@ pub const ACTIONS: [(&str, &str, Action); 19] = [
     ("Details of this bot…", "R", Action::Details),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
     ("Refresh agents", "", Action::RefreshAgents),
+    ("Move active bots to the top", "", Action::AutoOrder),
     ("Pair a phone…", "P", Action::Pair),
     ("Network: your other computers…", "N", Action::Network),
     ("Usage", "U", Action::Usage),
@@ -109,6 +111,11 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    /// Stops one item of a bot's box.
+    StopWork {
+        bot: String,
+        item: String,
+    },
 }
 
 pub struct Confirm {
@@ -172,12 +179,16 @@ pub enum Field {
     Name,
     Instructions,
     Agent,
+    /// Which of the agent's logins the bot runs on; only for an agent that can have login profiles.
+    LoginProfile,
     Model,
     ModelOptions,
     Fast,
     Fallbacks,
     SelfFallbacks,
     Folder,
+    /// The most agents it runs at once; only on a host that sends `maxAgents`.
+    MaxAgents,
     Approvals,
     Compaction,
     Notify,
@@ -191,10 +202,11 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 20] = [
+pub const FIELDS: [Field; 22] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
+    Field::LoginProfile,
     Field::Model,
     Field::ModelOptions,
     Field::Fast,
@@ -202,6 +214,7 @@ pub const FIELDS: [Field; 20] = [
     Field::SelfFallbacks,
     Field::Compaction,
     Field::Folder,
+    Field::MaxAgents,
     Field::Approvals,
     Field::Notify,
     Field::Computer,
@@ -226,6 +239,8 @@ pub struct Form {
     pub name: Editor,
     pub instructions: Editor,
     pub backend: String,
+    /// The login profile it runs on; `None`: the computer's own sign-in.
+    pub login_profile: Option<String>,
     pub model: Editor,
     /// Model settings (effort, fast…) and the model they were picked for.
     pub model_options: (String, BTreeMap<String, String>),
@@ -234,6 +249,8 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
+    /// The most agents it runs at once; `None`: the host has no event box.
+    pub max_agents: Option<u8>,
     /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
@@ -350,18 +367,27 @@ pub enum Overlay {
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
+    /// The transcript of the task working an item, read-only.
+    Task(TaskSheet),
+    /// Which working item gives way to the one that cuts in.
+    CutIn(CutIn),
     /// A bot's dev servers.
     DevServers(DevServersSheet),
-    Routines(RoutineList),
+    Details(DetailsPage),
     Routine(Box<RoutineForm>),
+    /// A bot's Computer page, by the bot's id.
+    Computer(String),
     Library(Library),
     Gear(Gear),
     Market(Box<Market>),
     Agent(AgentSetup),
     Fields(Box<Fields>),
+    /// The login shell's variables an API key login profile can import, over its key form.
+    KeyImport(KeyImport),
     Skill(SkillSheet),
     Analytics(AnalyticsSheet),
     Network(Box<NetworkSheet>),
+    WhatsNew(WhatsNew),
 }
 
 pub struct Toast {

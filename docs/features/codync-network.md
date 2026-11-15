@@ -56,7 +56,9 @@ event. The first ask after the host starts is left to bot listings (`list_bots`)
 
 `create` prints the **recovery code** once: the network's root key, kept on no computer. The connector picks the
 fallback when two computers can't connect directly: iroh's public relays (`public`, the default), the user's own
-`iroh-relay` (a URL), or none (`private`: same network, Tailscale or a VPN). A computer that moves to another network signs
+`iroh-relay` (a URL), or none (`private`: same network, Tailscale or a VPN). Two computers keep one connection open
+and use it both ways, so a computer whose firewall lets in only what it started (Windows by default) still gets
+letters, with any connector ([design](../design/codync-network.md#how-two-computers-reach-each-other)). A computer that moves to another network signs
 where it is again and tells the others, so it stays reachable without a restart. A computer's name defaults to its host
 name; a taken name gets a number (`laptop-2`), also when two admins admit the same name before their copies meet
 (the later admission gets the number, on every copy). No computer's name changes when another is removed; one

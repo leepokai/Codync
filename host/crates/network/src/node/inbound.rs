@@ -12,8 +12,8 @@ use iroh::EndpointId;
 use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 /// Letters remembered as taken, for spotting a sender's retry.
@@ -30,16 +30,24 @@ impl fmt::Debug for Inner {
 
 impl ProtocolHandler for Handler {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        let peer = conn.remote_id();
-        while let Ok((send, recv)) = conn.accept_bi().await {
-            let inner = self.0.clone();
-            tokio::spawn(async move {
-                if let Err(e) = serve(&inner, peer, send, recv).await {
-                    tracing::debug!(peer = %peer.fmt_short(), error = format!("{e:#}"), "request failed");
-                }
-            });
-        }
+        self.0.accepted(&conn);
+        take_requests(Arc::downgrade(&self.0), conn).await;
         Ok(())
+    }
+}
+
+/// Answers every request that comes on `conn`, whichever side opened it, until it closes.
+pub(super) async fn take_requests(inner: Weak<Inner>, conn: Connection) {
+    let peer = conn.remote_id();
+    while let Ok((send, recv)) = conn.accept_bi().await {
+        // A node dropped without a shutdown answers nothing more.
+        let Some(inner) = inner.upgrade() else { return };
+        inner.adopt(&conn);
+        tokio::spawn(async move {
+            if let Err(e) = serve(&inner, peer, send, recv).await {
+                tracing::debug!(peer = %peer.fmt_short(), error = format!("{e:#}"), "request failed");
+            }
+        });
     }
 }
 
@@ -191,10 +199,10 @@ impl Inner {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testing::agent;
     use super::*;
     use crate::node::Node;
     use crate::types::{Connector, Letter, Sent};
-    use crate::wire::{Agent, AgentKind};
     use std::sync::Mutex;
     use std::task::{Context, Wake, Waker};
 
@@ -215,9 +223,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("codync-network-hops-{}", wire::random_hex(8)));
         let started = Node::start(&dir, &Connector::Private).await;
         let (node, mut inbox) = started.expect("start an isolated node");
-        node.set_agents(["sender", "recipient"].map(|id| {
-            (Agent { id: id.into(), name: id.into(), about: String::new(), kind: AgentKind::Codync }, Reach::App)
-        }));
+        node.set_agents(["sender", "recipient"].map(agent));
         let recipient = node.resolve("recipient").expect("local recipient");
         let letter = Letter::new("sender", recipient, "reply immediately").hops(3);
         let observer =

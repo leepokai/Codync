@@ -156,6 +156,13 @@ extension BotStore {
         }
     }
 
+    public func decide(_ entry: Entry, option: String) {
+        answer(entry, option) {
+            try await $0.respondDecision(entryId: entry.id, option: option)
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
     /// Views register only while visible in an active scene. Multiple windows may
     /// read the same conversation without unregistering each other.
     func setReading(_ token: UUID, botId: String, active: Bool) {
@@ -293,6 +300,14 @@ extension BotStore {
         perform(replay: true) { try await $0.reorderBots(ids) }
     }
 
+    /// Whether a bot with a new message moves to the top of this computer's roster.
+    public var autoOrder: Bool { hello?.autoOrder ?? false }
+
+    public func setAutoOrder(_ on: Bool) {
+        hello?.autoOrder = on
+        Task { await attempt(replay: true, undo: { self.hello?.autoOrder = !on }) { try await $0.setAutoOrder(on) } }
+    }
+
     /// One place up (-1) or down (+1) among the bots it moves with (`isRosterPeer`: its band and, below the top, its section; VoiceOver).
     public func move(_ botId: String, by offset: Int) {
         guard let bot = bots[botId] else { return }
@@ -375,6 +390,36 @@ extension BotStore {
         try await ready().callEntries(botId: botId, call: call)
     }
 
+    /// A task's transcript, for its item's details. Never `upsert`ed: a task's entries stay out of chats.
+    public func fetchTaskEntries(_ botId: String, task: String) async throws -> [Entry] {
+        try await withLink(replay: true) { try await $0.taskEntries(botId: botId, taskId: task) }
+    }
+
+    /// Stops one working item of the bot's, or all of them (nil).
+    public func stopWork(_ botId: String, item: String?) {
+        perform(replay: true) { try await $0.stopWork(botId: botId, itemId: item) }
+    }
+
+    /// A waiting item moves to the front of the box.
+    public func workFirst(_ botId: String, item: String) {
+        perform(replay: true) { try await $0.work("workFirst", botId: botId, itemId: item) }
+    }
+
+    /// A waiting item, or one that ended, leaves the box.
+    public func dropWork(_ botId: String, item: String) {
+        perform(replay: true) { try await $0.work("dropWork", botId: botId, itemId: item) }
+    }
+
+    /// A stopped or failed item waits again, last.
+    public func retryWork(_ botId: String, item: String) {
+        perform { try await $0.work("retryWork", botId: botId, itemId: item) }
+    }
+
+    /// Starts a waiting item now in the place of the working item `insteadOf`.
+    public func workCutIn(_ botId: String, item: String, insteadOf: String) {
+        perform { try await $0.workCutIn(botId: botId, itemId: item, insteadOf: insteadOf) }
+    }
+
     /// The bot-to-bot notices between a chat and a peer. Never `upsert`ed: old notices in the
     /// mirror would break `loadOlder`, which pages from the oldest loaded `seq`.
     public func botConversation(_ botId: String, peer: String) async throws -> [Entry] {
@@ -440,7 +485,8 @@ extension BotStore {
     }
 
     public func loadOlder(_ botId: String) async {
-        guard let client, !historyComplete.contains(botId) else { return }
+        // Held while everything is fetched again, like `canLoadOlder`.
+        guard let client, refetched == nil, !historyComplete.contains(botId) else { return }
         let first = chat(botId).first { $0.seq > 0 && $0.seq != Int64.max }?.seq ?? Int64.max
         guard let older = try? await client.history(botId: botId, beforeSeq: first, limit: 100) else { return }
         if older.count < 100 { historyComplete.insert(botId) }

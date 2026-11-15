@@ -24,6 +24,7 @@ impl App {
 
     pub(super) fn start_typing(&mut self) {
         if self.selected.is_some() {
+            self.close_find();
             self.typing = true;
             self.chat_page = true;
             self.focus = Focus::Chat;
@@ -98,15 +99,27 @@ impl App {
             return;
         }
         self.answering.insert(entry.to_owned(), option.to_owned());
-        self.call(
-            "respondPermission",
-            json!({"entryId": entry, "optionId": option}),
-            After::Answered(entry.to_owned()),
-        );
+        // A choice card answers with the option's text, an approval with its id.
+        let choice = self.is_decision(entry);
+        let (method, args) = if choice {
+            ("respondDecision", json!({"entryId": entry, "option": option}))
+        } else {
+            ("respondPermission", json!({"entryId": entry, "optionId": option}))
+        };
+        self.call(method, args, After::Answered(entry.to_owned()));
+    }
+
+    /// Whether `entry` is a choice card (`request_decision`): it answers with an option's text, not its id.
+    fn is_decision(&self, entry: &str) -> bool {
+        self.entries
+            .values()
+            .flat_map(|entries| entries.values())
+            .find(|e| e.id == entry)
+            .is_some_and(|e| e.kind == super::model::Kind::Decision)
     }
 
     pub(super) fn answer_kind(&mut self, key: char) {
-        let Some(e) = self.pending() else { return };
+        let Some(e) = self.pending_of(super::model::Kind::Permission) else { return };
         let (entry, opts) = (e.id.clone(), e.options());
         let want: &[&str] = match key {
             'y' => &["allow_once", "allow_always"],

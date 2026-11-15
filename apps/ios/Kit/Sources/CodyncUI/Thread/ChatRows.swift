@@ -12,6 +12,9 @@ struct ChatRow: View {
     let openTrace: () -> Void
     /// Quotes this message in the composer; nil where it can't be.
     var reply: (() -> Void)?
+    /// Opens the message's text for selecting a part to reply to; offered with `reply`, on a message that has text.
+    /// Nil where the computer's host takes no part.
+    var selectText: (() -> Void)?
     /// A failure notice's "Add a fallback": the bot's details.
     var addFallback: (() -> Void)?
     /// An artifact card's artifact, full size.
@@ -25,7 +28,7 @@ struct ChatRow: View {
         switch entry.kind {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
-                UserBubble(entry: entry, reply: reply)
+                UserBubble(entry: entry, reply: reply, selectText: selectText)
                 ReactionsRow(entry: entry)
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
@@ -34,7 +37,7 @@ struct ChatRow: View {
         case "agent":
             VStack(alignment: .leading, spacing: 4) {
                 if chat?.isGroup == true, groupStart { AuthorLabel(botId: entry.data.author) }
-                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, openArtifact: openArtifact)
+                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, selectText: selectText, openArtifact: openArtifact)
                 ReactionsRow(entry: entry)
                     .padding(.leading, chat?.isGroup == true ? 34 : 0)
             }
@@ -50,7 +53,14 @@ struct ChatRow: View {
             }
             .padding(.top, 12)
         default:
-            if let request = entry.data.connectionRequest {
+            if entry.kind == "notice", entry.data.decision == true {
+                DecisionCard(entry: entry, answering: model.answering[entry.id]) { option in
+                    model.decide(entry, option: option)
+                } reply: { text in
+                    model.send(text, to: entry.botId)
+                }
+                .padding(.top, 12)
+            } else if let request = entry.data.connectionRequest {
                 ConnectionRequestCard(entry: entry, request: request).padding(.top, 12)
             } else if let card = entry.data.handoff {
                 HandoffCardRow(entry: entry, card: card).padding(.top, 10)
@@ -117,12 +127,13 @@ struct QuoteLine: View {
 struct UserBubble: View {
     let entry: Entry
     var reply: (() -> Void)?
+    var selectText: (() -> Void)?
     @Environment(BotStore.self) private var model
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
             if let attachments = entry.data.attachments, !attachments.isEmpty {
-                AttachmentList(attachments: attachments, botId: entry.botId)
+                AttachmentList(attachments: attachments, botId: entry.botId, menu: menu)
             }
             if !(entry.data.text ?? "").isEmpty || entry.data.replyTo != nil { text }
                 status
@@ -144,11 +155,11 @@ struct UserBubble: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .contextActions(reactions: model.reactionPick(entry)) {
-                    var items = [MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) }]
-                    if let reply { items.append(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply)) }
-                    return items
-                }
+                .contextActions(reactions: menu.reactions) { menu.textItems() }
+    }
+
+    private var menu: MessageMenu {
+        MessageMenu.of(entry, reactions: model.reactionPick(entry), reply: reply, selectText: selectText)
     }
 
     @ViewBuilder private var status: some View {
@@ -187,34 +198,49 @@ struct AgentBubble: View {
     let entry: Entry
     let openTrace: () -> Void
     var reply: (() -> Void)?
+    var selectText: (() -> Void)?
     var openArtifact: ((ArtifactRef) -> Void)?
     @Environment(BotStore.self) private var model
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Group {
-                if let artifact = entry.data.artifact {
-                    ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
-                } else if let files = entry.data.files, !files.isEmpty {
-                    ForEach(files) { file in FileDownloadCard(entry: entry, file: file) }
-                } else {
-                    MarkdownText(entry.data.text ?? "").equatable()
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            if entry.data.artifact == nil, entry.data.voiceNoteFile == nil, let files = entry.data.files, !files.isEmpty {
+                // Each card has the menu, its picture's copy items in Copy's place.
+                ForEach(files) { file in FileDownloadCard(entry: entry, file: file, menu: menu) }
+            } else {
+                Group {
+                    if let artifact = entry.data.artifact {
+                        ArtifactCard(botId: entry.botId, ref: artifact) { openArtifact?(artifact) }
+                    } else if let voiceNote = entry.data.voiceNoteFile {
+                        VoiceNoteBubble(entry: entry, file: voiceNote)
+                    } else {
+                        MarkdownText(entry.data.text ?? "").equatable()
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
+                .contextActions(reactions: menu.reactions) {
+                    // A voice note's Download follows Copy and Select Text, as on Android.
+                    menu.textItems(more: entry.data.voiceNoteFile.map { [downloadItem($0)] } ?? [])
                 }
             }
-                .contextActions(reactions: model.reactionPick(entry)) {
-                    var items = [
-                        MenuItem("Copy", icon: "square.on.square") { Pasteboard.copy(entry.data.text) },
-                        MenuItem("Show what it did", icon: "list.bullet", action: openTrace),
-                    ]
-                    if let reply { items.insert(MenuItem("Reply", icon: "arrowshape.turn.up.left", action: reply), at: 1) }
-                    return items
-                }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
+    }
+
+    /// A voice-note bubble's Download row: the player's own action, on the menu.
+    private func downloadItem(_ file: SharedFile) -> MenuItem {
+        let downloading = model.fileDownloads.isDownloading(file.id)
+        return MenuItem(downloading ? "Cancel download" : "Download", icon: "arrow.down.to.line") {
+            Motion.animate { model.fileDownloads.toggle(client: model.client, entryId: entry.id, botId: entry.botId, file: file) }
+        }
+    }
+
+    private var menu: MessageMenu {
+        MessageMenu.of(entry, reactions: model.reactionPick(entry), reply: reply, selectText: selectText,
+                       more: [MenuItem("Show what it did", icon: "list.bullet", action: openTrace)])
     }
 }
 

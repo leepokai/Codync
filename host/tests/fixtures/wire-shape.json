@@ -1,5 +1,5 @@
 {
-  "minApp": "2.36.0",
+  "minApp": "2.45.1",
   "shapes": {
     "event:bot": "object",
     "event:bot.bot": "object",
@@ -48,6 +48,7 @@
     "event:bot.bot.lead": "bool",
     "event:bot.bot.manageTeam": "bool",
     "event:bot.bot.managedWorkspace": "bool",
+    "event:bot.bot.maxAgents": "number",
     "event:bot.bot.members": "array",
     "event:bot.bot.memoryRev": "number",
     "event:bot.bot.mode": "string",
@@ -69,6 +70,7 @@
     "event:bot.bot.startedAt": "null",
     "event:bot.bot.status": "string",
     "event:bot.bot.unread": "number",
+    "event:bot.bot.work": "array",
     "event:bot.bot.workingChat": "null",
     "event:bot.rev": "number",
     "event:bot.type": "string",
@@ -214,6 +216,7 @@
     "event:icons.type": "string",
     "hello": "object",
     "hello.analytics": "bool",
+    "hello.autoOrder": "bool",
     "hello.boxKey": "string",
     "hello.canJoinAccount": "bool",
     "hello.canUpdate": "bool",
@@ -230,6 +233,7 @@
     "hello.name": "string",
     "hello.os": "string",
     "hello.rev": "number",
+    "hello.schema": "number",
     "hello.signKey": "string",
     "hello.version": "string"
   }

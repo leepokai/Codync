@@ -3,7 +3,8 @@
 
 use serde_json::Value;
 
-use super::Window;
+use super::{Reading, Window};
+use crate::hub::Hub;
 
 /// Flags for `claude -p /usage`. Stream JSON carries the structured
 /// `usage_report`. The empty strict MCP config keeps the check from starting
@@ -21,11 +22,13 @@ const USAGE_ARGS: [&str; 9] = [
 ];
 
 /// `claude -p /usage`: Claude Code's own local usage report, no model call.
-pub(super) async fn collect() -> Option<Vec<Window>> {
-    let bin = super::command::program("claude")?;
+/// `env` points it at a login profile's folder; empty for the default login.
+pub(super) async fn collect(env: Vec<(String, String)>) -> Option<Vec<Window>> {
+    let mut command = tokio::process::Command::new(super::command::program("claude")?);
+    crate::shell::apply_env(command.as_std_mut(), &env);
     let out = tokio::time::timeout(
         std::time::Duration::from_mins(1),
-        tokio::process::Command::new(bin)
+        command
             .args(USAGE_ARGS)
             .current_dir(dirs::home_dir()?)
             .stdin(std::process::Stdio::null())
@@ -86,8 +89,9 @@ pub fn parse_claude_usage(text: &str) -> Vec<Window> {
         .collect()
 }
 
-/// `POST /ingest/statusline` body: Claude Code's statusline JSON.
-pub fn ingest_statusline(hub: &crate::hub::Hub, body: &Value) {
+/// `POST /ingest/statusline` body: Claude Code's statusline JSON, from a session on `profile` (the default login
+/// without one).
+pub fn ingest_statusline(hub: &Hub, profile: Option<&str>, body: &Value) {
     let rl = &body["rate_limits"];
     let windows: Vec<Window> = [("five_hour", "5-hour"), ("seven_day", "Weekly")]
         .into_iter()
@@ -97,15 +101,21 @@ pub fn ingest_statusline(hub: &crate::hub::Hub, body: &Value) {
         })
         .collect();
     if !windows.is_empty() {
-        super::merge(hub, "claude", "Claude", "statusline", windows);
+        land(hub, "statusline", profile, windows);
     }
 }
 
 /// Claude ACP adapter: `usage_update._meta["_claude/rateLimit"]` (the SDK's `SDKRateLimitInfo`).
-pub fn ingest_claude_rate_limit(hub: &crate::hub::Hub, info: &Value) {
+pub fn ingest_claude_rate_limit(hub: &Hub, profile: Option<&str>, info: &Value) {
     if let Some(w) = claude_window(info) {
-        super::merge(hub, "claude", "Claude", "agent", vec![w]);
+        land(hub, "agent", profile, vec![w]);
     }
+}
+
+/// Some of the windows, from the status line or a rate-limit event, land on the login they came from.
+fn land(hub: &Hub, source: &'static str, profile: Option<&str>, windows: Vec<Window>) {
+    let Ok(reader) = super::services::reader("claude") else { return };
+    hub.update_usage(|usage| usage.land(reader, source, profile, Reading::Some(windows)));
 }
 
 fn claude_window(info: &Value) -> Option<Window> {

@@ -25,11 +25,15 @@ its own context and compacts it itself.
   cache stays warm.
 - How the snapshot reaches the agent (`Instructions` in `agent/bot`):
   - **Claude** (`agentCapabilities._meta.claudeCode` present) receives it as a real system prompt:
-    `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
+    `_meta.systemPrompt.append` on `session/new`, `session/load` and `session/fork`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
     (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
+- A [background task](background-tasks.md)'s session is a fork of the bot's main one where the agent can
+  (`session/fork`): it is sent the main session's snapshot as it is, adopts it under its own session id
+  (`context.<bot>` is the bot's, a task has none of its own) and counts as already prompted, so nothing is sent
+  twice. A task that starts from a new session gets a fresh snapshot like any session.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k. The
@@ -41,7 +45,8 @@ its own context and compacts it itself.
 
 ## Memory (`host/src/chat/memory/`, crate `host/crates/memory`)
 
-Memory records the person, not the work; what a bot learns about a project goes in a note of its own. The
+Memory records the person, not the work; what a bot learns about a project goes in a note of its own, and where
+a routine's runs stand is that routine's [progress note](routines.md#progress-note), not memory. The
 [design](../design/bot-memory.md#memory-is-files) explains why. Memory is Markdown files the bot keeps itself, like
 Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/memory` runs them in the host.
 

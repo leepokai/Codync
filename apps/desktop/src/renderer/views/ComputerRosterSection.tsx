@@ -22,10 +22,12 @@ interface Props {
   move: (id: string, target: string) => void
   /** This computer's own Extensions; absent while it can't be reached. */
   openExtensions?: () => void
+  /** Its screen, for another computer that has one; absent otherwise. */
+  openScreen?: () => void
   children: ReactNode
 }
 
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, children }: Props) {
+export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openScreen, children }: Props) {
   const tr = useTr()
   const section = useRef<HTMLElement>(null)
   const id = store.computer.id
@@ -46,7 +48,8 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
           }}>
           <ComputerHeadingLabel store={store} compact={compact} collapsed={collapsed} />
         </button>
-        {openExtensions && !compact ? <IconButton className="computer-roster-extensions" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
+        {openScreen && !compact ? <IconButton className="computer-roster-action" title="Screen" icon="display" size={24} onClick={openScreen} /> : null}
+        {openExtensions && !compact ? <IconButton className="computer-roster-action" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
       </div>
       <div className={`computer-roster-content ${collapsed ? 'collapsed' : ''}`} inert={collapsed} aria-hidden={collapsed}>
         <div>{children}</div>

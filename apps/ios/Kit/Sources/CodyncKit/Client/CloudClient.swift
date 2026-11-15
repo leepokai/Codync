@@ -223,8 +223,8 @@ public struct CloudClient: Sendable {
         try await send("DELETE", "v1/cloud-credentials/\(provider)")
     }
 
-    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` off the allowlist, `409` at the
-    /// account's limit or without that provider's key).
+    /// Creates another cloud computer named `name` on `provider` (`403 forbidden` when the cloud has Codync Cloud off,
+    /// `409` at the account's limit or without that provider's key).
     public func createCloudMachine(provider: String, name: String) async throws -> CloudMachine {
         struct Res: Decodable { var cloudComputer: CloudMachine }
         let res: Res = try await request("POST", "v1/cloud-computers", body: ["provider": provider, "name": name])

@@ -119,15 +119,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::tui::app::{Overlay, test_app};
+    use crate::tui::app::{Overlay, screen, test_app};
     use crate::tui::manage::Reply;
-
-    /// What `draw` leaves in `area`, line by line.
-    fn screen(area: Rect, draw: impl FnOnce(&mut Buffer)) -> Vec<String> {
-        let mut buf = Buffer::empty(area);
-        draw(&mut buf);
-        (0..area.height).map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect()).collect()
-    }
 
     #[tokio::test]
     async fn elsewhere_the_sheet_lists_every_address_of_the_selected_server_whole() {

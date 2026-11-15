@@ -29,8 +29,7 @@ there.
   with it; its keys (device certificate key, Codync Cloud sealing keys) are throwaway values the runner makes. A
   worktree sandbox's own cloud is the exception: its D1 and device certificate key stay in the sandbox folder's
   `cloud/` across runs, until `npm run dev -- --prune` deletes the sandbox. Either way it takes test tokens or dev
-  Clerk sessions (`cloud:stack` and the commands below read the dev issuer's public key);
-  `CLOUD_COMPUTER_USERS=*` is fine there and nowhere else.
+  Clerk sessions (`cloud:stack` and the commands below read the dev issuer's public key).
 - **Point what should use it at it** as in [real phones against a local cloud](#real-phones-against-a-local-cloud)
   (a host also needs `CODYNC_DEVICE_CERT_KEY`, the public half of the Worker's device certificate key, to accept its phones) or
   [real apps against a local cloud](cloud-computer-testing.md#real-apps-against-a-local-cloud). A machine elsewhere

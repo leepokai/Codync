@@ -171,13 +171,18 @@ impl Actor {
             e.data["status"] = json!(RequestStatus::Sent);
             self.hub.set_entry_turn(entry_id, self.turn, &e.data);
         }
+        self.record_joined_input(entry_id, &text);
+    }
+
+    /// A user input delivered inside this turn belongs in its reply, memory and fallback context.
+    pub(super) fn record_joined_input(&mut self, entry_id: &str, text: &str) {
         self.joined = true;
         self.turn_entries.push(entry_id.to_owned());
         if let Some(turn_text) = &mut self.turn_text {
             turn_text.push_str("\n\n");
-            turn_text.push_str(&text);
+            turn_text.push_str(text);
         }
-        self.relay_joined(entry_id, &text);
+        self.relay_joined(entry_id, text);
         // `send --wait` learns a started message's turn from the bot's next event, and a status and activity that stay
         // the same send none.
         self.hub.emit_bot(&self.cfg.id);

@@ -22,10 +22,10 @@ The host on your computer runs every bot. A bot's agent starts when you send it 
 
 ## Where to change a bot's settings
 
-- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Library**, **Memory** and **Settings**. **Details** shows its [dev servers](/docs/dev-servers), instructions, agent, model and routines; **Settings** shows the rest, including the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
+- **iPhone:** open the bot's chat and tap its name at the top. The tabs are **Details**, **Computer**, **Library**, **Memory** and **Settings**. **Details** shows what the bot does: its [background work](/docs/conversations#background-tasks), follow-ups, routines and [dev servers](/docs/dev-servers); **Computer** shows the computer it runs on, a picture of that computer's screen once you tap **Tap to see the screen**, and [Use the computer](/docs/computer-use#let-a-bot-use-the-computer); **Settings** shows how it is set up: its instructions, agent and model first, then its profile, workspace, activity, and the Codync skills and connectors it passes on. Changes save as you edit. You can also touch and hold the bot in the list and choose **Edit profile**.
 - **Desktop:** click the bot's name at the top of the chat to open the details panel, with the same tabs. Changes save as you edit. You can also right-click the bot in the sidebar and choose **Edit Profile…**
 - **Android:** the same sheet and tabs as the iPhone.
-- **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
+- **Terminal UI:** select the bot and press `e` for settings. Shift+Left and Shift+Right move between **Details**, **Computer**, **Library**, **Memory** and **Settings**. Press Ctrl+S to save, or Esc to drop your changes.
 
 ## Profile
 
@@ -38,6 +38,7 @@ You can also ask a bot in its chat to rename itself or change its own instructio
 ## Agent and model
 
 - **Agent:** the coding agent this bot runs, picked from the agents Codync finds on the computer. Choose **Custom command** to run any agent that speaks the Agent Client Protocol (ACP) by its command line. See [Agents](/docs/agents).
+- **Login profile:** which of the agent's logins the bot runs on: the default one (the login the computer already has), or another account or API key you added in the agent's setup. See [Login profiles](/docs/agents#login-profiles).
 - **Model:** **Default** or one of the models the agent lists. Some models have their own options, such as reasoning effort, each with its own row.
 - **Fast mode:** shown when the agent offers it for the model (Claude Code and Codex do). Faster replies for more usage.
 - **Fallbacks:** other agents that carry on when this one runs out of usage or can't answer. See [Agent fallbacks](/docs/agent-fallbacks).
@@ -73,7 +74,7 @@ The **Permissions** setting decides how much the agent does on its own before it
 - **An agent without an Auto mode:** a new bot asks you about every request (**Ask me**).
 - **A model without Claude Code's Auto mode:** Claude Code works in **Accept edits** instead and says so in the chat.
 - **Another agent:** when you change the bot's agent, a mode you picked becomes the new agent's Auto mode.
-- **A mode the agent won't switch to, or doesn't have:** the bot doesn't start the turn, and the chat says why. A fallback agent without the bot's mode doesn't take over either; with **Auto**, each agent carries on in its own Auto mode.
+- **A mode the agent won't switch to, or doesn't have:** the bot doesn't start the turn, and the chat says why. A fallback agent without the bot's mode works in its own closest mode that is no less careful, and the chat says which; with none, or when it won't switch, the next fallback takes over. With **Auto**, each agent carries on in its own Auto mode.
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 
@@ -83,7 +84,7 @@ How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
 ## Summarize long chats
 
-For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes the bot's chat so the conversation can go on with room to spare, and when. It sits in the Agent section, under the agent and its fallbacks (on the Details page of a chat's details).
+For a Claude Code or Codex bot, **Summarize long chats** decides who summarizes the bot's chat so the conversation can go on with room to spare, and when. It sits in the Agent section, under the agent and its fallbacks (on the Settings page of a chat's details).
 
 | Setting | When Codync summarizes |
 | --- | --- |
@@ -104,18 +105,19 @@ With Near the limit or a size, nothing summarizes the chat or starts it over bef
 
 ## Connectors and skills
 
-**Settings** lists the Codync skills and connectors this bot passes on. Each has a switch. A new bot starts with all of them on; turn off what a bot shouldn't use. A skill a bot writes for itself is on only for that bot until you turn it on for others. The full editor (Edit profile) has the same switches.
+**Settings** lists the Codync skills and connectors this bot passes on. Each has a switch. Skills show only their names; the info button beside one opens its description. A new bot starts with all of them on; turn off what a bot shouldn't use. A skill a bot writes for itself is on only for that bot until you turn it on for others. The full editor (Edit profile) has the same switches.
 
 What the agent already has — its own skills, connectors, rules and plugins — is on that agent's page: **Extensions → Agents**, under **Sign in**. Each list opens to show its name and a short description. Those lists are read only, and they come from the agent's files in your home folder, not from a project. Codync does not add rules or plugins of its own. See [Connectors and skills](/docs/connectors-and-skills).
 
 ## Memory and routines
 
-Each bot keeps a long-term memory across sessions, which you can read on its **Memory** tab. See [Memory](/docs/memory). Routines, which run a bot on a schedule or from a webhook, are on its **Details** tab. See [Routines](/docs/routines).
+Each bot keeps a long-term memory across sessions, which you can read on its **Memory** tab. See [Memory](/docs/memory). Routines, which run a bot on a schedule or from a webhook, are on its **Details** tab, with its background work. See [Routines](/docs/routines).
 
 ## Organizing your bots
 
 - **Pin:** pinned bots stay at the top of the list. iPhone: touch and hold the bot. Desktop: right-click it. Terminal UI: `p`.
 - **Order:** drag bots into the order you want. The computer keeps the order, so it's the same on every device. iPhone: touch and hold a bot, then drag it. Desktop: drag it, or select it and press Alt+Up or Alt+Down. Terminal UI: `J` and `K`.
+- **Move active bots to the top:** turn this on for a computer and a bot moves to the top of its list whenever it has a new message, from you, its reply, or a routine run. You can still drag; the bot's next message moves it again. iPhone and Android: tap the connection status at the top of the Bots tab, choose **Manage computers**, then the switch on the computer's card. Desktop: the computer in Settings › Computers. Terminal UI: the command palette.
 - **Computers:** with more than one computer, each has a heading above its bots. Drag a heading (iPhone and Android: touch and hold it first) to move that computer and its bots up or down; this order stays on the device. Click or tap a heading to fold its bots away.
 - **Hide:** iPhone: touch and hold the bot, then **Hide from list**. Desktop: right-click it, then **Hide from sidebar**. A hidden bot sends no notifications. To bring it back:
   - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.

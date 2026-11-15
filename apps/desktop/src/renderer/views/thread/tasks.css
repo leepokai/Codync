@@ -1,0 +1,11 @@
+/* A task's transcript (TaskDetails.tsx). */
+.task-note {
+  text-align: center;
+  padding: 16px 0;
+}
+/* What the task was told: a quote, as in a message. */
+.task-told {
+  white-space: pre-wrap;
+  padding-left: 10px;
+  box-shadow: inset 3px 0 0 var(--border);
+}

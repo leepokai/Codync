@@ -85,6 +85,12 @@ public final class CloudMachineStore {
     /// `error` where `place` shows it: only an action that belongs there.
     public func error(at place: Place) -> String? { failed?.place == place ? error : nil }
 
+    /// A key removal's failure, whichever provider's: New cloud computer shows one asked from a row's `⋯` there.
+    public var keyRemovalError: String? {
+        if case .removingKey = failed { return error }
+        return nil
+    }
+
     /// Forgets an earlier failure shown at `place` (a sheet opened afresh).
     public func clearError(at place: Place) {
         guard failed?.place == place else { return }
@@ -150,20 +156,18 @@ public final class CloudMachineStore {
     @discardableResult
     public func saveKey(_ key: String, provider: String) async -> Bool {
         await run(.savingKey(provider)) {
-            do {
-                let saved = try await cloud.saveCloudKey(key.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider)
-                Analytics.shared.capture(.cloudKeySaved(.saved, provider: provider))
-                setCredential(saved, provider: provider)
-            } catch {
-                Analytics.shared.capture(.cloudKeySaved(.init(error), provider: provider))
-                throw error
+            let saved = try await tracked(.cloudKeySaved(.saved, provider: provider), failed: { .cloudKeySaved(.init($0), provider: provider) }) {
+                try await cloud.saveCloudKey(key.trimmingCharacters(in: .whitespacesAndNewlines), provider: provider)
             }
+            setCredential(saved, provider: provider)
         }
     }
 
     public func removeKey(provider: String) async {
         await run(.removingKey(provider)) {
-            try await cloud.deleteCloudKey(provider: provider)
+            try await tracked(.cloudKeyRemoved(.removed, provider: provider), failed: { .cloudKeyRemoved(.init($0), provider: provider) }) {
+                try await cloud.deleteCloudKey(provider: provider)
+            }
             setCredential(nil, provider: provider)
         }
     }
@@ -180,15 +184,11 @@ public final class CloudMachineStore {
         let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let named = typed.isEmpty ? suggestedName : typed
         return await run(.creating) {
-            do {
-                let made = try await cloud.createCloudMachine(provider: provider, name: named)
-                Analytics.shared.capture(.cloudComputerCreated(.created, provider: provider))
-                generation += 1
-                show(machines + [made])
-            } catch {
-                Analytics.shared.capture(.cloudComputerCreated(.init(error), provider: provider))
-                throw error
+            let made = try await tracked(.cloudComputerCreated(.created, provider: provider), failed: { .cloudComputerCreated(.init($0), provider: provider) }) {
+                try await cloud.createCloudMachine(provider: provider, name: named)
             }
+            generation += 1
+            show(machines + [made])
         }
     }
 
@@ -196,13 +196,8 @@ public final class CloudMachineStore {
         let typed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !typed.isEmpty, typed != machines.first(where: { $0.id == id })?.name else { return }
         await run(.renaming(id)) {
-            let renamed: CloudMachine
-            do {
-                renamed = try await cloud.renameCloudMachine(id, name: typed)
-                Analytics.shared.capture(.cloudComputerRenamed(.renamed))
-            } catch {
-                Analytics.shared.capture(.cloudComputerRenamed(.failed))
-                throw error
+            let renamed = try await tracked(.cloudComputerRenamed(.renamed), failed: { _ in .cloudComputerRenamed(.failed) }) {
+                try await cloud.renameCloudMachine(id, name: typed)
             }
             generation += 1
             show(machines.map { $0.id == id ? renamed : $0 })
@@ -210,24 +205,48 @@ public final class CloudMachineStore {
         }
     }
 
+    /// `id` is a listed machine (its row asked); one gone from the list meanwhile has nothing left to act on.
     public func deleteSnapshots(_ id: String) async {
-        await run(.deletingSnapshots(id)) { try await cloud.deleteCloudSnapshots(id) }
+        guard let provider = machines.first(where: { $0.id == id })?.hosting.provider else { return }
+        await run(.deletingSnapshots(id)) {
+            try await tracked(.cloudSnapshotsDeleted(.deleted, provider: provider), failed: { .cloudSnapshotsDeleted(.init($0), provider: provider) }) {
+                try await cloud.deleteCloudSnapshots(id)
+            }
+        }
     }
 
+    /// `id` is a listed machine, as for `deleteSnapshots`.
     public func delete(_ id: String) async {
-        let computer = machines.first { $0.id == id }?.computerId
+        guard let machine = machines.first(where: { $0.id == id }) else { return }
+        let provider = machine.hosting.provider
         let deleted = await run(.deleting(id)) {
-            try await cloud.deleteCloudMachine(id)
+            try await tracked(.cloudComputerDeleted(.deleted, provider: provider), failed: { .cloudComputerDeleted(.init($0), provider: provider) }) {
+                try await cloud.deleteCloudMachine(id)
+            }
             generation += 1
             show(machines.filter { $0.id != id })
         }
-        if deleted { await onAccountChanged?(computer) }
+        if deleted { await onAccountChanged?(machine.computerId) }
     }
 
     func retire() {
         poll?.cancel()
         onAccountChanged = nil
         onRenamed = nil
+    }
+
+    /// `call`, reporting what came of it: `ok` once the cloud answered, `failed` for its error. A cancelled call came to
+    /// nothing and reports nothing (Android too).
+    @discardableResult
+    private func tracked<T>(_ ok: AnalyticsEvent, failed: (any Error) -> AnalyticsEvent, _ call: () async throws -> T) async throws -> T {
+        do {
+            let result = try await call()
+            Analytics.shared.capture(ok)
+            return result
+        } catch {
+            if !(error is CancellationError || (error as? URLError)?.code == .cancelled) { Analytics.shared.capture(failed(error)) }
+            throw error
+        }
     }
 
     /// One action at a time; true when it ran and worked.

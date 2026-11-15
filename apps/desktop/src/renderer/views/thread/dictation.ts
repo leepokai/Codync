@@ -151,8 +151,10 @@ export class Dictation extends Observable {
     if (e.type === 'error') {
       // Nothing to send, and the helper (which may still hold the microphone) goes too.
       this.byShortcut = false
-      this.error = e.message
-      this.platform.report(e.message)
+      // The helper's known failures are app phrases; the system's own words pass through.
+      const message = trNow(e.message)
+      this.error = message
+      this.platform.report(message)
       this.platform.speech?.stop()
     }
     if (e.type === 'stopped' || e.type === 'error') this.end()?.()

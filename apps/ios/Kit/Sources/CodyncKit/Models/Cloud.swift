@@ -106,6 +106,8 @@ public struct CloudProvider: Decodable, Hashable, Sendable, Identifiable {
     public var keyPrompt: String
     public var setup: CloudKeySetup
     public var credential: CloudCredential?
+    /// Its own free plan, if it has one (older clouds don't say).
+    public var offer: CloudProviderOffer?
 
     public var id: String { provider }
     /// The account gave it a key that isn't turned down for its own sake: a computer can be made there (or tried again,
@@ -121,6 +123,13 @@ public struct CloudCredential: Decodable, Hashable, Sendable {
     public var problem: String?
     /// The key itself was turned down (revoked, expired): nothing can be made with it until it's replaced.
     public var blocking: Bool?
+}
+
+/// A provider's own free plan, in the cloud's words (the app translates `label` and `detail`), and its page.
+public struct CloudProviderOffer: Decodable, Hashable, Sendable {
+    public var label: String
+    public var detail: String
+    public var url: URL
 }
 
 /// How the user makes a provider's key: commands to run, and the provider's page for doing it there instead.

@@ -19,7 +19,11 @@ fn observed_events_carry_no_content() {
     let b = json!({"botId": "b1", "text": "secret plan", "replyTo": "e1", "attachments": ["u1", "u2"]});
     let (event, p) = props("send", &b).expect("send is tracked");
     assert_eq!(event, Event::MessageSent);
-    assert_eq!(p, json!({"reply": true, "attachments": 2, "client": "local"}));
+    assert_eq!(p, json!({"reply": true, "replyPart": false, "attachments": 2, "client": "local"}));
+    assert!(!p.to_string().contains("secret"));
+    let part = json!({"botId": "b1", "text": "why?", "replyTo": "e1", "replyPart": "the secret step"});
+    let (_, p) = props("send", &part).expect("send is tracked");
+    assert_eq!(p["replyPart"], true);
     assert!(!p.to_string().contains("secret"));
 
     let custom = json!({"name": "mine", "command": "/Users/me/bin/server"});
@@ -59,6 +63,15 @@ fn handoff_and_credentials_name_a_fixed_action() {
 fn settings_routines_screen_and_devices() {
     let setting = |m: &str, b: Value| props(m, &b).map(|(e, p)| (e, p["setting"].clone(), p["on"].clone()));
     assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": "http://127.0.0.1:8890"})),
+        Some((Event::SettingChanged, json!("voice_server"), json!(true))),
+        "never the address"
+    );
+    assert_eq!(
+        setting("setVoiceServer", json!({"provider": "openai", "url": " "})).map(|(_, _, on)| on),
+        Some(json!(false))
+    );
+    assert_eq!(
         setting("setCloud", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("remote_access"), json!(true)))
     );
@@ -72,6 +85,10 @@ fn settings_routines_screen_and_devices() {
     assert_eq!(
         setting("setAssistants", json!({"enabled": true})),
         Some((Event::SettingChanged, json!("cloud_assistants"), json!(true)))
+    );
+    assert_eq!(
+        setting("setAutoOrder", json!({"enabled": true})),
+        Some((Event::SettingChanged, json!("auto_order"), json!(true)))
     );
     assert_eq!(
         props("networkJoin", &json!({"invite": "codync-network:…", "name": "laptop"})),
@@ -93,6 +110,11 @@ fn settings_routines_screen_and_devices() {
         props("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})),
         Some((Event::RoutineToggled, json!({"enabled": false, "client": "local"})))
     );
+    let (event, p) = props("cancelFollowUp", &json!({"botId": "b", "id": "f"})).expect("tracked");
+    assert_eq!((event, &p), (Event::FollowUpCancelled, &json!({"by": "user", "client": "local"})));
+    let Value::Object(p) = p else { unreachable!() };
+    assert!(answered(event, p.clone(), &json!({"ok": true})).is_some());
+    assert!(answered(event, p, &json!({"ok": true, "gone": true})).is_none(), "it had already begun");
     assert_eq!(
         props("devServerRestart", &json!({"botId": "b", "id": "s"})),
         Some((Event::DevServerAction, json!({"action": "restart", "client": "local"})))
@@ -140,6 +162,10 @@ fn a_connector_edit_reports_how_it_ended_and_nothing_it_changed() {
     }
     let locked = refused(anyhow::anyhow!("the vault is locked"));
     assert_eq!(locked, json!({"client": "local", "outcome": "failed", "error": "other"}));
+
+    let (event, p) = observe(&Caller::Local, "removeLoginProfile", &json!({"loginProfile": "a1"})).unwrap();
+    let (_, other) = failed(event, p, &anyhow::anyhow!("removing /Users/me/slot")).expect("reported");
+    assert_eq!(other["error"], "other", "never the error's own words");
 }
 
 #[test]
@@ -157,6 +183,13 @@ fn connectors_skills_and_agents() {
     );
     assert_eq!(written(json!({"id": "deploy"})).map(|(_, p)| p["change"].clone()), Some(json!("update")));
     assert_eq!(props("chatCall", &json!({"name": "send_message"})), None, "other chat tools aren't events");
+    let sent =
+        |arguments: Value| props("chatCall", &json!({"botId": "b", "name": "send_file", "arguments": arguments}));
+    assert_eq!(
+        sent(json!({"path": "/secret/note.m4a", "text": "never sent"})),
+        Some((Event::VoiceNoteSent, json!({"client": "local"})))
+    );
+    assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -176,6 +209,31 @@ fn connectors_skills_and_agents() {
     assert_eq!(props("agentSetup", &json!({"step": "node"})).map(|(_, p)| p), Some(json!({"client": "local"})));
     let signed = props("agentAuthenticate", &json!({"backend": "codex", "method": "chatgpt"}));
     assert_eq!(signed, Some((Event::AgentSignedIn, json!({"agent": "codex", "client": "local"}))));
+    assert_eq!(props("agentAuth", &json!({"backend": "codex"})), None, "a check of the computer's own login");
+    let (event, p) = observe(&Caller::Local, "agentAuth", &json!({"backend": "codex", "loginProfile": "a1"})).unwrap();
+    assert_eq!(event, Event::AgentSignedIn);
+    assert!(answered(event, p.clone(), &json!({"signedIn": false})).is_none(), "still signed out");
+    let p = answered(event, p, &json!({"signedIn": true})).expect("signed in");
+    assert_eq!(Value::Object(p), json!({"agent": "codex", "loginProfile": true, "client": "local"}));
+    let added = props("addLoginProfile", &json!({"backend": "claude"}));
+    assert_eq!(
+        added,
+        Some((
+            Event::LoginProfileChanged,
+            json!({"action": "add", "agent": "claude", "kind": "account", "client": "local"})
+        ))
+    );
+    let keys = props(
+        "setLoginProfileKeys",
+        &json!({"loginProfile": "a1", "vars": {"MY_KEY": "secret"}, "import": ["A", "B"]}),
+    );
+    let counted = json!({"action": "keys", "typed": 1, "imported": 2, "client": "local"});
+    assert_eq!(keys, Some((Event::LoginProfileChanged, counted)), "counts, never a name or a value");
+    let renamed = props("renameLoginProfile", &json!({"backend": "claude", "loginProfile": "a1", "name": "Work"}));
+    let named = json!({"action": "rename", "agent": "claude", "client": "local"});
+    assert_eq!(renamed, Some((Event::LoginProfileChanged, named)), "never the name");
+    let removed = props("removeLoginProfile", &json!({"loginProfile": "a1"})).map(|(_, p)| p);
+    assert_eq!(removed, Some(json!({"action": "remove", "client": "local"})), "never the login profile");
 
     let (event, p) = observe(&Caller::Local, "importConnectors", &json!({"config": "{\"secret\": 1}"})).unwrap();
     let p = answered(event, p, &json!({"items": [{"id": "a"}, {"id": "b"}]})).expect("an import");
@@ -188,6 +246,21 @@ fn connectors_skills_and_agents() {
         (event, Value::Object(p)),
         (Event::ConnectorInstalled, json!({"connector": "composio", "client": "local"}))
     );
+}
+
+#[test]
+fn decision_events_are_reported_only_by_the_actor_after_delivery() {
+    assert_eq!(
+        props(
+            "chatCall",
+            &json!({"botId": "b", "name": "request_decision", "arguments": {
+            "question": "Ship now or wait?", "options": ["Ship", "Wait"], "recommended": "Wait" }})
+        ),
+        None,
+        "API entry is not card publication"
+    );
+    assert_eq!(props("chatCall", &json!({"name": "request_decision"})).map(|(_, p)| p["options"].clone()), None);
+    assert_eq!(props("respondDecision", &json!({"entryId": "e", "option": "Ship"})), None);
 }
 
 #[test]
@@ -318,4 +391,20 @@ fn a_failed_network_call_reports_what_it_was_and_others_nothing() {
         Some((Event::NetworkFailed, json!({"action": "remove", "client": "local", "stage": "action"})))
     );
     assert_eq!(failed_call("setRoutineEnabled", &json!({"botId": "b", "id": "r", "enabled": false})), None);
+    assert_eq!(failed_call("setCloudUrl", &json!({"url": "https://relay.example.com"})), None);
+}
+
+#[test]
+fn a_voice_server_that_wasnt_saved_reports_why_never_what_it_said() {
+    let (event, p) =
+        observe(&Caller::Local, "setVoiceServer", &json!({"provider": "openai", "url": "http://x"})).unwrap();
+    let refused = crate::voice::ServerRefused::error("unreachable", "Can't reach your server.");
+    let reported = |error: &anyhow::Error| failed(event, p.clone(), error).map(|(e, p)| (e, Value::Object(p)));
+    let with = |category: &str| {
+        let props =
+            json!({"setting": "voice_server", "on": true, "client": "local", "outcome": "failed", "error": category});
+        Some((Event::SettingChanged, props))
+    };
+    assert_eq!(reported(&refused), with("unreachable"));
+    assert_eq!(reported(&anyhow::anyhow!("the vault is locked")), with("other"));
 }

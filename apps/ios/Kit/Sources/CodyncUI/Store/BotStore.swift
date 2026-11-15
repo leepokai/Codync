@@ -67,6 +67,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
+    public internal(set) var taskEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -139,6 +141,8 @@ public final class BotStore {
     @ObservationIgnored var callEnds = 0
     var saveTask: Task<Void, Never>?
     var rewound = false
+    /// While everything is fetched again (`refetchAll`): the entries the computer has sent since it began.
+    var refetched: Set<String>?
     /// Events stayed undecodable after the rewind.
     var unreadable = false
     /// This app's marketing version, compared with the host's `minApp`.
@@ -153,6 +157,7 @@ public final class BotStore {
     /// The chats on screen, by the view showing each.
     @ObservationIgnored var readingViews: [UUID: String] = [:]
 
+    /// What the mirror was synced under (`syncStamp`): from the cache, then from each hello. Nil: nothing held yet.
     var cacheStamp: String?
 
     /// Loads this context's `DeviceIdentity` itself.
@@ -269,6 +274,14 @@ public final class BotStore {
 
     static let queueActionsHost = "2.39.0"
 
+    /// From host 2.48.1 a reply can quote a part of a message (`send`'s `replyPart`); an older host drops the part
+    /// and quotes the whole message, so its messages offer no Select Text.
+    public var supportsReplyPart: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.replyPartHost) } ?? false
+    }
+
+    static let replyPartHost = "2.48.1"
+
     static let sectionsHost = "2.32.0"
 
     /// Display name for a harness id, as the host reports it (falls back to the built-in list).
@@ -293,8 +306,9 @@ public final class BotStore {
     /// against a late response.
     public func chat(_ botId: String) -> [Entry] { (entries[botId] ?? []).filter { $0.data.removed != true } }
 
+    /// Not while everything is fetched again (`refetchAll`): a page would sit below entries about to go.
     public func canLoadOlder(_ botId: String) -> Bool {
-        !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
+        refetched == nil && !historyComplete.contains(botId) && chat(botId).contains { $0.seq > 0 && $0.seq != Int64.max }
     }
 
     /// A group's bots that still exist.
@@ -312,19 +326,4 @@ public final class BotStore {
         computer = c
         onComputerChanged?(c)
     }
-}
-
-/// A file picked in the composer, sent with the next message.
-public struct OutgoingFile: Identifiable, Sendable {
-    public let id = UUID()
-    public let name: String
-    public let data: Data
-
-    public init(name: String, data: Data) {
-        self.name = name
-        self.data = data
-    }
-
-    /// Anything larger is refused by the computer.
-    public static let maxSize = 100 * 1024 * 1024
 }

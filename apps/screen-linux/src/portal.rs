@@ -2,29 +2,19 @@
 //! PipeWire streams for every monitor. Persisted with a restore token so the user
 //! approves once.
 
+use crate::backend::{self, Display};
 use anyhow::{Context, Result, anyhow};
 use ashpd::desktop::PersistMode;
 use ashpd::desktop::Session;
 use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop, SelectDevicesOptions};
 use ashpd::desktop::screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType};
 use futures_util::StreamExt;
-use serde_json::{Value, json};
-use std::os::fd::OwnedFd;
+use gst::prelude::*;
+use serde_json::Value;
+use std::os::fd::{IntoRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-/// A monitor as the portal streams it. `width`/`height` are logical pixels: the
-/// coordinate space of input events and of the host's `Display` points.
-#[derive(Clone, Debug)]
-pub struct Display {
-    pub id: u32,
-    pub node: u32,
-    pub x: i32,
-    pub y: i32,
-    pub width: f64,
-    pub height: f64,
-}
 
 #[derive(Clone)]
 pub struct Portal(Arc<Inner>);
@@ -33,7 +23,8 @@ struct Inner {
     remote: RemoteDesktop,
     screencast: Screencast,
     session: Session<RemoteDesktop>,
-    displays: Vec<Display>,
+    /// Each monitor with its PipeWire node.
+    displays: Vec<(Display, u32)>,
     input: bool,
     active: AtomicBool,
 }
@@ -86,14 +77,14 @@ impl Portal {
             .map(|(i, s)| {
                 let (x, y) = s.position().unwrap_or((0, 0));
                 let (w, h) = s.size().unwrap_or((1920, 1080));
-                Display {
+                let display = Display {
                     id: u32::try_from(i).unwrap_or(0),
-                    node: s.pipe_wire_node_id(),
                     x,
                     y,
                     width: f64::from(w),
                     height: f64::from(h),
-                }
+                };
+                (display, s.pipe_wire_node_id())
             })
             .collect::<Vec<_>>();
         if displays.is_empty() {
@@ -133,40 +124,36 @@ impl Portal {
     }
 
     pub fn status(&self) -> Value {
-        json!({
-            "platform": "linux",
-            "permissionApp": "Codync Screen",
-            "version": env!("CARGO_PKG_VERSION"),
-            "capture": self.is_active(),
-            "trickle": true,
-            "input": self.has_input(),
-            "displays": self.0.displays.iter().map(|d| json!({
-                "id": d.id,
-                "name": format!("Display {}", d.id + 1),
-                "width": d.width,
-                "height": d.height,
-                "main": d.id == 0,
-            })).collect::<Vec<_>>(),
-        })
+        let displays: Vec<Display> = self.0.displays.iter().map(|(d, _)| d.clone()).collect();
+        backend::status(&displays, self.is_active(), self.has_input())
     }
 
     pub fn display(&self, id: Option<u64>) -> Result<Display> {
         let id = id.map_or(0, |i| u32::try_from(i).unwrap_or(u32::MAX));
+        self.stream(id).map(|(d, _)| d.clone())
+    }
+
+    /// The PipeWire node that streams `d`.
+    pub fn node(&self, d: &Display) -> Result<u32> {
+        self.stream(d.id).map(|(_, node)| *node)
+    }
+
+    fn stream(&self, id: u32) -> Result<&(Display, u32)> {
         self.0
             .displays
             .iter()
-            .find(|d| d.id == id)
-            .cloned()
+            .find(|(d, _)| d.id == id)
             .ok_or_else(|| anyhow!("no such display"))
     }
 
-    /// A fresh PipeWire remote for one consumer (each pipeline owns its fd).
-    pub async fn pipewire_fd(&self) -> Result<OwnedFd> {
-        Ok(self
+    /// The display's stream on a fresh PipeWire remote (each pipeline owns its fd).
+    pub async fn source(&self, d: &Display) -> Result<gst::Element> {
+        let fd = self
             .0
             .screencast
             .open_pipe_wire_remote(&self.0.session, Default::default())
-            .await?)
+            .await?;
+        capture_source(fd, self.node(d)?)
     }
 
     pub fn remote(&self) -> &RemoteDesktop {
@@ -176,6 +163,59 @@ impl Portal {
     pub fn session(&self) -> &Session<RemoteDesktop> {
         &self.0.session
     }
+}
+
+/// The PipeWire source for one portal stream. Only properties every supported PipeWire has
+/// (Ubuntu 24.04's 1.0 onward) go in the builder: an unknown one panics there.
+pub fn capture_source(fd: OwnedFd, node: u32) -> Result<gst::Element> {
+    let src = gst::ElementFactory::make("pipewiresrc")
+        .property("fd", fd.into_raw_fd())
+        .property("path", node.to_string())
+        .property("do-timestamp", true)
+        .build()
+        .context("GStreamer's PipeWire plugin (gstreamer1.0-pipewire) is missing")?;
+    if src.has_property("keepalive-time") {
+        // A still screen keeps sending frames now and then, so keyframe requests get answered.
+        src.set_property("keepalive-time", 1000i32);
+    }
+    Ok(src)
+}
+
+/// Whether this session offers the `RemoteDesktop` and `ScreenCast` portals (D-Bus may start
+/// xdg-desktop-portal to answer). Without them the helper shares the X display directly.
+pub async fn available() -> bool {
+    match probe().await {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::debug!(
+                error = format!("{error:#}"),
+                "no screen sharing portal on this session"
+            );
+            false
+        }
+    }
+}
+
+async fn probe() -> Result<()> {
+    let conn = zbus::Connection::session().await?;
+    let properties = zbus::fdo::PropertiesProxy::builder(&conn)
+        .destination("org.freedesktop.portal.Desktop")?
+        .path("/org/freedesktop/portal/desktop")?
+        .build()
+        .await?;
+    for interface in [
+        "org.freedesktop.portal.RemoteDesktop",
+        "org.freedesktop.portal.ScreenCast",
+    ] {
+        properties
+            .get(
+                zbus::names::InterfaceName::from_static_str(interface)?,
+                "version",
+            )
+            .await
+            .with_context(|| format!("{interface} isn't offered"))?;
+    }
+    Ok(())
 }
 
 fn save_token(path: &PathBuf, token: &str) {

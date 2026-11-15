@@ -226,6 +226,7 @@ export function BotRoster({ roster, compact, onContext, onSectionContext, openEx
     return (
       <ComputerRosterSection key={computer.id} store={store} compact={compact}
         openExtensions={store.shownConnection.kind === 'online' && !store.mismatch ? () => openExtensions(computer.id) : undefined}
+        openScreen={app.canOpenScreen(store) ? () => app.openScreen(computer.id) : undefined}
         collapsed={sectionDrag !== null || roster.collapsed.includes(computer.id)} toggle={() => roster.toggle(computer.id)}
         previous={roster.sections[index - 1]?.computer.id} next={roster.sections[index + 1]?.computer.id}
         lifted={sectionDrag?.id === computer.id && lift !== null}

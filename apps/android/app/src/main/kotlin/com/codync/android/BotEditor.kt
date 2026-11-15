@@ -38,7 +38,7 @@ import kotlinx.serialization.json.jsonPrimitive
                 store.saveBot(draft) { dismiss() }
             }
         }
-        BotSettingsForm(state, store, draft, { draft = it }, FormPart.All, Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp))
+        BotSettingsForm(state, store, draft, { draft = it }, modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp))
     }
 }
 

@@ -8,12 +8,14 @@ import {
   type Entry,
   type Hello,
   type PairingRequest,
+  type ReplyQuote,
   type ScreenState,
   type Usage,
 } from '@shared/models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
+import { parseTaskEntry } from '@shared/tasks'
 import { trNow } from '../lib/l10n.ts'
 
 /** How a client reaches a host API: loopback (the computer's own host or an SSH tunnel) or the relay (a cloud computer). */
@@ -97,11 +99,13 @@ const channelError = (e: CallError) => new HostError(e.status ?? 0, e.message, e
 
 export type HostEvent =
   | { type: 'icons'; iconsRevision: number; icons: import('@shared/custom-icons').CustomIcons }
-  /** `network` is null from hosts before the network view. */
-  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons }
+  /** `network` is null from hosts before the network view. `catchUp` events follow before the live ones (null from hosts before 2.32.0). */
+  | { type: 'hello'; hostId: string; rev: number; usage: Usage; screen: ScreenState | null; network: NetworkView | null; icons?: import('@shared/custom-icons').CustomIcons; catchUp: number | null }
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
+  /** One entry of a background task's transcript (never a chat's); the catch-up has none. */
+  | { type: 'taskEntry'; task: string; entry: Entry }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -111,11 +115,15 @@ export type HostEvent =
   | { type: 'cloud'; cloud: CloudStatus }
   /** The computer took a new name (a cloud computer renamed from any device): its `hello` says it from now on. */
   | { type: 'name'; name: string }
+  /** The computer's automatic bot order was switched (from any device): its `hello` says it from now on. */
+  | { type: 'autoOrder'; enabled: boolean }
   /** This computer's network changed (members, roles, presence, offered bots) or cloud assistants were switched. */
   | { type: 'network'; network: NetworkView }
   /** For the voice of a call in this app (only the computer's own apps receive this computer's calls' cues). */
   | { type: 'call'; cue: CallCue }
   | { type: 'resync' }
+  /** One this app has no use for. */
+  | { type: 'skipped' }
   /** An event this app version couldn't read (host newer/older than the app). */
   | { type: 'undecodable'; kind: string }
 
@@ -139,6 +147,7 @@ export function parseEvent(line: string): HostEvent | null {
         screen: normalizeScreen(raw.screen as ScreenState | undefined),
         network: (raw.network as NetworkView | undefined) ?? null,
         icons: raw.icons as import('@shared/custom-icons').CustomIcons | undefined,
+        catchUp: typeof raw.catchUp === 'number' ? raw.catchUp : null,
       }
     case 'bot': {
       const bot = raw.bot as (Bot & { deleted?: boolean }) | undefined
@@ -150,6 +159,10 @@ export function parseEvent(line: string): HostEvent | null {
       const entry = raw.entry as Entry | undefined
       if (!entry || typeof entry.id !== 'string' || typeof entry.botId !== 'string') return { type: 'undecodable', kind: 'entry' }
       return { type, entry: { ...entry, data: entry.data ?? {} } }
+    }
+    case 'taskEntry': {
+      const parsed = parseTaskEntry(raw)
+      return parsed ? { type, ...parsed } : null
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
@@ -169,6 +182,8 @@ export function parseEvent(line: string): HostEvent | null {
       return raw.cloud ? { type, cloud: raw.cloud as CloudStatus } : null
     case 'name':
       return typeof raw.name === 'string' ? { type, name: raw.name } : null
+    case 'autoOrder':
+      return typeof raw.enabled === 'boolean' ? { type, enabled: raw.enabled } : null
     case 'network':
       return raw.network ? { type, network: raw.network as NetworkView } : null
     case 'call': {
@@ -210,8 +225,8 @@ export class HostClient {
   events(since: number, client: string, onEvent: (e: HostEvent) => void, onEnd: (error: HostError | null) => void) {
     const query = new URLSearchParams({ since: String(since), client })
     return this.transport.stream(`/events?${query}`, (line) => {
-      const event = parseEvent(line)
-      if (event) onEvent(event)
+      // One this app has no use for still counts toward the catch-up `hello` announced.
+      onEvent(parseEvent(line) ?? { type: 'skipped' })
     }, onEnd)
   }
 
@@ -228,10 +243,11 @@ export class HostClient {
   }
 
   /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
-   * chat message this one replies to. */
+   * chat message this one replies to, or the part of it the user selected (`replyPart`). */
   /** `call`: the voice call it was said in (on-device or speech to text). */
-  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, call: string | null = null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: ReplyQuote | null = null, call: string | null = null) {
+    const reply = replyTo ? { replyTo: replyTo.id, ...(replyTo.part ? { replyPart: replyTo.text } : {}) } : {}
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...reply, ...(call ? { call } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

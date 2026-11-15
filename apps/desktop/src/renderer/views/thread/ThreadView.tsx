@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry } from '@shared/models'
+import { draftOf, isGroup, isWorking, isWorkingIn, type Bot, type BotDraft, type Entry, type ReplyQuote } from '@shared/models'
 import { BotAvatar, GroupAvatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
@@ -23,6 +23,7 @@ import { WorkingTransition } from './WorkingTransition'
 import { RoutineNotice } from './RoutineNotice'
 import { Composer } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
+import { WorkCapsule } from './WorkCapsule'
 import { fill } from '../../lib/fill.ts'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
@@ -37,6 +38,8 @@ import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
+import { KofiInviteCard } from './KofiInvite'
+import { useKofiInviteAt } from '../../lib/use-kofi-invite'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
@@ -52,7 +55,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
   const [showTrace, setShowTrace] = useState(false)
-  const [replyTo, setReplyTo] = useState<Entry | null>(null)
+  const [replyTo, setReplyTo] = useState<ReplyQuote | null>(null)
   const cancelReply = useCallback(() => setReplyTo(null), [])
   const [botChat, setBotChat] = useState<string | null>(null)
   /** The voice call whose conversation is open (its line's entry id). */
@@ -136,16 +139,29 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
     setCompactDetails(false)
   }, [])
 
-  const presentRoutine = useCallback((id: string | null) => {
-    setRoutineId(id)
-    setRoutineRequest((r) => r + 1)
-    setDetailsTab('details')
+  const showDetails = useCallback((tab: DetailsTab) => {
+    setDetailsTab(tab)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
   }, [wide])
 
-  // This bot's Agent card is on the Details tab; a group member's is in its settings.
-  const presentAgent = useCallback((id: string) => (id === botId ? presentRoutine(null) : setEditingMember(id)), [botId, presentRoutine])
+  const presentRoutine = useCallback((id: string | null) => {
+    setRoutineId(id)
+    setRoutineRequest((r) => r + 1)
+    showDetails('details')
+  }, [showDetails])
+
+  // This bot's Agent card is on the Settings tab; a group member's is in its settings.
+  const presentAgent = useCallback((id: string) => (id === botId ? showDetails('settings') : setEditingMember(id)), [botId, showDetails])
+  // The capsule opens what the bot does.
+  const openWork = useCallback(() => showDetails('details'), [showDetails])
+  // The chat at the approval card of an item that needs the user.
+  const openCard = useCallback((itemId: string) => {
+    setCompactDetails(false)
+    // ponytail: looks among the loaded messages only; a card still waiting is among the newest. Load older pages
+    // until it is found if cards ever wait that long.
+    requestAnimationFrame(() => root.current?.querySelector(`[data-work-item="${CSS.escape(itemId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+  }, [])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
   const details = (
@@ -157,6 +173,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
       setTab={setDetailsTab}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
+      openCard={openCard}
       share={() => {
         setCompactDetails(false)
         if (bot) setTemplateDraft(draftOf(bot))
@@ -204,6 +221,7 @@ export const ThreadView = memo(function ThreadView({ botId }: { botId: string })
           ) : artifactId ? null : (
             // The artifact over the chat has its own box (two would both take the voice shortcut).
             <>
+              <WorkCapsule botId={botId} open={openWork} />
               <QueuedMessages botId={botId} />
               <Composer
                 botId={botId}
@@ -288,7 +306,7 @@ function ConnectionSubtitle() {
   return (
     <HStack as="span" gap={6} className="title-pill-subtitle" title={`${store.hostName} · ${spoken}`} aria-label={`${store.hostName}, ${spoken}`}>
       <IconSlot width={12}>{connecting ? <Spinner size={8} /> : <Icon name={symbol} size={8} weight="medium" />}</IconSlot>
-      <Text size="caption" weight="medium" truncate>{store.isAsleep ? description : store.connectionLabel}</Text>
+      <Text size="caption" weight="medium" truncate>{store.isAsleep ? spoken : store.connectionLabel}</Text>
     </HStack>
   )
 }
@@ -296,7 +314,7 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -308,6 +326,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
   const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
+  const kofiAt = useKofiInviteAt(botId, all)
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -387,6 +406,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
         className="transcript"
         ref={scroller}
         role="log"
+        data-find-root
         aria-label={tr('Messages')}
         onScroll={(e) => {
           const el = e.currentTarget
@@ -407,6 +427,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           {items.map((item) => (
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
+              {item.id === kofiAt ? <KofiInviteCard /> : null}
             </div>
           ))}
           {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}
@@ -430,7 +451,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   )
 })
 
-function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (e: Entry) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+function Row({ item, chat, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { item: ChatItem; chat: Bot | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   if (item.kind === 'separator') {
     return <TimeSeparator date={item.date} />
   }

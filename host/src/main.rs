@@ -86,9 +86,10 @@ enum Sub {
     Serve {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
-        /// Address to bind. Defaults to all interfaces so the phone can reach it over Tailscale/LAN.
-        #[arg(long, default_value = "0.0.0.0")]
-        bind: String,
+        /// Address to bind for this run. Defaults to the one `install --bind` saved, else all
+        /// interfaces so the phone can reach it over Tailscale/LAN.
+        #[arg(long)]
+        bind: Option<std::net::IpAddr>,
     },
     /// Show a one-time pairing QR code for the Codync iOS app (the host must be running).
     Pair {
@@ -132,6 +133,10 @@ enum Sub {
     Install {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
+        /// Address the service listens on, kept through updates: `127.0.0.1` (this computer
+        /// and the relay only) or `0.0.0.0` (every interface, the default). Omitted: unchanged.
+        #[arg(long)]
+        bind: Option<std::net::IpAddr>,
     },
     /// Stop and remove the background service.
     Uninstall,
@@ -170,11 +175,15 @@ enum Sub {
         port: u16,
     },
     /// Claude Code statusLine command: forwards usage limits to the host, then prints
-    /// the wrapped command's status line (`statusline -- <command>`) or a short default.
+    /// the wrapped command's status line or a short default.
     Statusline {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
-        #[arg(last = true)]
+        /// The status line command to wrap, as one shell-quoted word (`--command='<command>'`).
+        #[arg(long)]
+        command: Option<String>,
+        /// An older wrap's words (`-- <command>`), until the next install or host start rewrites it.
+        #[arg(last = true, hide = true)]
         wrapped: Vec<String>,
     },
     /// Rotate the local API token used by this computer's own apps and helpers.
@@ -354,8 +363,8 @@ async fn main() -> Result<()> {
     // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let cli = Cli::parse();
-    match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
-        Sub::Serve { port, bind } => serve(&bind, port).await,
+    match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: None }) {
+        Sub::Serve { port, bind } => serve(bind, port).await,
         Sub::Pair { port, json } => pair_cli::pair(port, json).await,
         Sub::Info { port, json } => info(port, json).await,
         Sub::Send(args) => send_cli::run(args).await,
@@ -385,15 +394,13 @@ async fn main() -> Result<()> {
         Sub::Cloud(args) => cloud_cli::run(args).await,
         Sub::Analytics(args) => analytics_cli::run(args).await,
         Sub::Network(args) => network_cli::run(args).await,
-        Sub::Install { port } => {
+        Sub::Install { port, bind } => {
             open_store()?;
-            // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so
-            // the line stays the user's; usage still comes from `claude -p /usage` and ACP.
-            if cfg!(unix)
-                && environment::Environment::current() == environment::Environment::Main
-                && let Some(home) = dirs::home_dir()
-            {
-                match service::ensure_statusline(&home.join(".claude/settings.json")) {
+            if let Some(addr) = bind {
+                service::bind::save(addr)?;
+            }
+            if let Some(settings) = statusline_settings() {
+                match service::ensure_statusline(&settings) {
                     Ok(true) => println!(
                         "Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."
                     ),
@@ -466,8 +473,9 @@ async fn main() -> Result<()> {
                 .send()
                 .await
                 .is_ok_and(|r| r.status().is_success());
+            let bind = service::bind::load().map_or_else(|e| format!("{e:#}"), |addr| addr.to_string());
             println!(
-                "installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}",
+                "installed: {}\nrunning:   {running}\nport:      {port}\nbind:      {bind}\ndata:      {}",
                 service::installed(),
                 service::data_dir().display()
             );
@@ -476,8 +484,8 @@ async fn main() -> Result<()> {
         Sub::Node => agent::node::add().await,
         Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
-        Sub::Statusline { port, wrapped } => {
-            statusline(port, wrapped.join(" ")).await;
+        Sub::Statusline { port, command, wrapped } => {
+            statusline(port, command.unwrap_or_else(|| wrapped.join(" "))).await;
             Ok(())
         }
         Sub::ResetToken => {
@@ -514,9 +522,13 @@ fn cap_log() {
     }
 }
 
-async fn serve(bind: &str, port: u16) -> Result<()> {
+async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     let _instance_lock = tokio::task::spawn_blocking(service::lock_host).await??;
     tokio::task::spawn_blocking(service::capture_binary_identity).await??;
+    let bind = match bind {
+        Some(addr) => addr,
+        None => tokio::task::spawn_blocking(service::bind::load).await??,
+    };
     let listener =
         tokio::net::TcpListener::bind((bind, port)).await.with_context(|| format!("binding {bind}:{port}"))?;
     cap_log();
@@ -528,6 +540,12 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
         // too (a closed terminal, a full disk): a log line must never take a task down.
         .log_internal_errors(false)
         .init();
+    // An update swaps the binary without `install`: bring a status line we wrap to the current form.
+    if let Some(settings) = statusline_settings()
+        && let Err(e) = tokio::task::spawn_blocking(move || service::refresh_statusline(&settings)).await?
+    {
+        tracing::warn!(error = format!("{e:#}"), "couldn't refresh Claude Code's status line");
+    }
     let (store, host_id, token) = open_store()?;
     write_token_file(&token)?;
     let identity = identity::Identity::load_or_create(&service::data_dir())?;
@@ -535,9 +553,9 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
     network::start(&hub).await;
-    analytics::host_started(&hub, service::started_by_service());
+    analytics::host_started(&hub, service::started_by_service(), bind.is_loopback());
     let agent_checks = background::start(&hub);
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), %bind, port, "codync-host listening");
     // Peer addresses: some settings may only be changed from this computer.
     let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     // SSE/WebSocket clients can stay connected forever. Stop agents immediately
@@ -551,7 +569,7 @@ async fn serve(bind: &str, port: u16) -> Result<()> {
     hub.shutdown().await;
     background::stop_agent_checks(agent_checks).await;
     agent::acp::stop_all().await;
-    analytics::flush_before_exit(&hub).await;
+    analytics::flush_now(&hub).await;
     tracing::info!("codync-host stopped");
     // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
     std::process::exit(0)
@@ -621,14 +639,28 @@ async fn info(port: u16, as_json: bool) -> Result<()> {
     Ok(())
 }
 
+/// Claude Code's settings, when its status line reports usage to this host: production on Unix.
+/// Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so the
+/// line stays the user's; usage still comes from `claude -p /usage` and ACP.
+fn statusline_settings() -> Option<std::path::PathBuf> {
+    (cfg!(unix) && environment::Environment::current() == environment::Environment::Main)
+        .then(dirs::home_dir)
+        .flatten()
+        .map(|home| home.join(".claude/settings.json"))
+}
+
 /// Never blocks Claude Code: 1 s budget, all errors ignored.
 async fn statusline(port: u16, wrapped: String) {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
     let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
+    // A session on a login profile says which, so its limits land on that profile's row.
+    let profile = std::env::var(agent::login_profiles::PROFILE_VAR).ok();
+    // Its id is a UUID: anything else isn't one of ours.
+    let from = profile.filter(|id| uuid::Uuid::parse_str(id).is_ok()).map(|id| format!("?loginProfile={id}"));
     if let Ok(token) = std::fs::read_to_string(service::data_dir().join("token")) {
         let _ = http()
-            .post(format!("http://127.0.0.1:{port}/ingest/statusline"))
+            .post(format!("http://127.0.0.1:{port}/ingest/statusline{}", from.unwrap_or_default()))
             .bearer_auth(token.trim())
             .json(&v)
             .timeout(Duration::from_secs(1))

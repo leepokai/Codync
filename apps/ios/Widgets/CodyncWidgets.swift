@@ -328,7 +328,7 @@ struct UsageTimeline: AppIntentTimelineProvider {
             return Timeline(entries: [UsageEntry(date: .now, usage: Usage())], policy: .after(.now + 5))
         }
         let usage = fetched ?? cached ?? Usage()
-        let nextReset = usage.providers.flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
+        let nextReset = usage.providers.flatMap(\.logins).flatMap(\.windows).compactMap(\.resetDate).filter { $0 > .now }.min()
         var next = Date.now + (fetched == nil ? 5 * 60 : 30 * 60)
         if let nextReset, nextReset + 1 < next { next = max(nextReset + 1, .now + 5 * 60) }
         return Timeline(entries: [UsageEntry(date: .now, usage: usage)], policy: .after(next))

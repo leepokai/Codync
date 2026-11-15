@@ -143,17 +143,22 @@ pub(super) fn overlay(buf: &mut Buffer, area: Rect, app: &mut App, top: &Overlay
         Overlay::Pair(code) => pair(buf, area, app, code),
         Overlay::Memory(m) => super::super::sheets::memory(buf, area, app, m),
         Overlay::BotChat(c) => super::bot_chat::bot_chat(buf, area, app, c),
+        Overlay::Task(s) => super::work::task_details(buf, area, app, s),
+        Overlay::CutIn(c) => super::work::cut_in(buf, area, app, c),
         Overlay::DevServers(sheet) => super::dev_servers::dev_servers(buf, area, app, sheet),
-        Overlay::Routines(l) => super::super::sheets::routines(buf, area, app, l),
+        Overlay::Details(l) => super::super::sheets::details(buf, area, app, l),
         Overlay::Routine(f) => super::super::sheets::routine(buf, area, f),
+        Overlay::Computer(bot) => super::super::sheets::computer(buf, area, app, bot),
         Overlay::Library(l) => super::super::sheets::library(buf, area, app, l),
         Overlay::Gear(g) => super::super::sheets::gear(buf, area, app, g),
         Overlay::Market(m) => super::super::sheets::market(buf, area, app, m),
         Overlay::Agent(a) => super::super::sheets::agent(buf, area, app, a),
         Overlay::Fields(f) => super::super::sheets::fields(buf, area, f),
+        Overlay::KeyImport(i) => super::super::sheets::key_import(buf, area, app, i),
         Overlay::Skill(s) => super::skill::skill(buf, area, app, s),
         Overlay::Analytics(s) => super::analytics::analytics(buf, area, s),
         Overlay::Network(n) => super::network::network(buf, area, n),
+        Overlay::WhatsNew(s) => super::whats_new::whats_new(buf, area, s),
     }
 }
 

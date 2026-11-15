@@ -14,6 +14,8 @@ class CloudErrorTest {
         assertNull(refused.cloudErrorAt(CloudErrorPlace.Key("instabox")))
         assertNull(refused.cloudErrorAt(CloudErrorPlace.Card))
         assertNull(refused.cloudErrorAt(CloudErrorPlace.Create))
+        // Whichever provider's, New cloud computer shows it too (a removal asked from a row's ⋯).
+        assertEquals(refused.error, refused.cloudKeyError())
     }
 
     @Test fun aCloudComputersErrorShowsOnTheCardAndCreatingsInItsSheet() {
@@ -21,6 +23,7 @@ class CloudErrorTest {
         assertEquals("Your cloud computer is asleep.", asleep.cloudErrorAt(CloudErrorPlace.Card))
         assertNull(asleep.cloudErrorAt(CloudErrorPlace.Create))
         assertNull(asleep.cloudErrorAt(CloudErrorPlace.Key("boat")))
+        assertNull(asleep.cloudKeyError())
         val limit = AccountContext(error = "You can have up to 3 cloud computers. Delete one to make another.", failedAction = CLOUD_CREATE)
         assertEquals(limit.error, limit.cloudErrorAt(CloudErrorPlace.Create))
         assertNull(limit.cloudErrorAt(CloudErrorPlace.Card))

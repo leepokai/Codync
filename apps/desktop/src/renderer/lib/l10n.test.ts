@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { appLanguages, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
+import { appLanguages, intlLocale, resolvedLanguage, resetLine, languageTitle, systemIsChinese, systemScript, translate, usesChinese } from './l10n.ts'
 
 test('chinese follows the choice, and a system preference follows the computer', () => {
   assert.equal(usesChinese('zh', false), true)
@@ -40,6 +40,8 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Voice input shortcut', 'zh', false), '语音输入快捷键')
   assert.equal(translate('Right ⌘ twice', 'zh', false), '右 ⌘ 两次')
   assert.equal(translate('Left ⌘ twice', 'zh', false), '左 ⌘ 两次')
+  // The speech helper's message for Siri and Dictation off reaches the user translated.
+  assert.match(translate('Siri and Dictation are off on this Mac. Turn on Dictation in System Settings → Keyboard, or pick OpenAI or Gemini for voice.', 'zh', false), /打开听写/)
   assert.equal(translate('Claude Code (not installed)', 'zh', false), 'Claude Code（未安装）')
   assert.equal(translate('Copy template', 'zh', false), '复制模板')
   assert.equal(translate('Siri and Dictation are disabled', 'zh', false), 'Siri 和听写已关闭')
@@ -217,6 +219,21 @@ test('bot, routine and message slots keep what the user wrote; other slots still
   assert.equal(translate('constructor', 'ru', false), 'constructor')
 })
 
+test('follow-up notices translate around the wait and keep the note as written', () => {
+  assert.equal(translate('Follow-up in 1 minute: Settings', 'zh-Hant', 'en'), '1 分鐘後跟進：Settings')
+  assert.equal(translate('Follow-up in 20 minutes: Settings', 'zh-Hant', 'en'), '20 分鐘後跟進：Settings')
+  // A note that reads like another wait stays a note: the wait ends at the first colon.
+  assert.equal(translate('Follow-up in about 3 hours: look again in 5 minutes: maybe', 'zh', false), '约 3 小时后跟进：look again in 5 minutes: maybe')
+  assert.equal(translate('Follow-up in 1 minute: wait 5 minutes: then check', 'zh-Hant', 'en'), '1 分鐘後跟進：wait 5 minutes: then check')
+  assert.equal(translate('Follow-up in about 2 days: rerun if 3 hours: passed', 'zh-Hant', 'en'), '約 2 天後跟進：rerun if 3 hours: passed')
+  assert.equal(translate('Follow-up in about 2 days: Plan', 'ru', false), 'Проверка через примерно 2 дн.: Plan')
+  assert.equal(translate('Follow-up · Plan', 'ja', false), 'フォローアップ · Plan')
+  assert.equal(translate('Follow-up cancelled: Plan', 'fr', false), 'Suivi annulé : Plan')
+  // A waiting follow-up's row in the routines list.
+  assert.equal(translate('Follow-up at 15:42', 'zh-Hant', 'en'), '15:42 跟進')
+  assert.equal(translate('Follow-up due now', 'zh-Hant', 'en'), '即將跟進')
+})
+
 test('filled interface templates preserve user-owned names', () => {
   for (const name of ['Plan', 'connected', 'Standby']) {
     assert.equal(translate(`Routine · ${name}`, 'zh', 'en'), `例行任务 · ${name}`)
@@ -238,4 +255,19 @@ test('all catalogs preserve names and substitute captured values only once', () 
       .replaceAll('{hint}', translate(hint, language)).replaceAll('{name}', '{hint}')
     assert.equal(translate(`{hint} isn't set up on this computer. ${hint}`, language), expected)
   }
+})
+
+test('host schedule sentences match their catalog templates', () => {
+  assert.equal(translate('Every day at 09:00, 18:00 · Europe/Rome', 'it'), 'Ogni giorno alle 09:00, 18:00 · Europe/Rome')
+  assert.equal(translate('Every Monday at 09:00 · Europe/Rome', 'it'), 'Ogni lunedì alle 09:00 · Europe/Rome')
+  assert.equal(translate('Every 30 minutes', 'it'), 'Ogni 30 minuti')
+})
+
+test('dates keep the system region when the app shows the system language', () => {
+  assert.equal(intlLocale('system', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('en', 'en-GB'), 'en-GB')
+  assert.equal(intlLocale('it', 'en-GB'), 'it')
+  assert.equal(intlLocale('zh', 'en-US'), 'zh-Hans')
+  assert.equal(intlLocale('en', 'nl-NL'), 'en')
+  assert.equal(intlLocale('system', 'pl-PL'), 'en')
 })

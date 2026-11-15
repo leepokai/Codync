@@ -147,6 +147,11 @@ fun AppStore.routineAction(botId: String, id: String, method: String, enabled: B
     receiveRoutines(botId)
     done()
 }
+/** Drops a follow-up of the bot's that hasn't happened yet. */
+fun AppStore.cancelFollowUp(botId: String, id: String) = action("routines:$botId") {
+    ready().call("cancelFollowUp", body("botId" to botId, "id" to id))
+    receiveRoutines(botId)
+}
 /** Runs a failed routine run's work again, from its notice; the notice's update drops the button. */
 fun AppStore.retryRoutineRun(entry: Entry) = action("retry:" + entry.id) {
     val runId = requireNotNull(entry.data.text("runId")) { "This run can't be retried." }
@@ -224,6 +229,19 @@ suspend fun AppStore.routineWebhook(botId: String, id: String, rotate: Boolean =
 /** Saves a dragged roster order (the host syncs it to every device). */
 internal fun AppStore.reorder(ids: List<String>) =
     command("reorderBots", buildJsonObject { putJsonArray("ids") { ids.forEach { add(JsonPrimitive(it)) } } }, "reorder")
+
+/** Whether a bot with a new message moves to the top of this computer's roster (iOS `autoOrder`); missing from older hosts. */
+internal fun autoOrder(hello: JsonObject?): Boolean? = hello?.get("autoOrder")?.jsonPrimitive?.booleanOrNull
+
+/** Turns automatic roster order on or off, shown at once and put back if the computer refuses (iOS `setAutoOrder`). */
+internal fun AppStore.setAutoOrder(on: Boolean) {
+    showAutoOrder(on)
+    command("setAutoOrder", buildJsonObject { put("enabled", on) }, "autoOrder", onFailure = { showAutoOrder(!on) })
+}
+
+/** The automatic order switch as the computer has it: switched here, or its `autoOrder` event (switched from another device). */
+internal fun AppStore.showAutoOrder(on: Boolean) =
+    mutableState.update { state -> state.hello?.let { state.copy(hello = JsonObject(it + ("autoOrder" to JsonPrimitive(on)))) } ?: state }
 
 /** Whether the bot's harness keeps its own memory on beside Codync's (iOS `setHarnessMemory`). */
 internal fun AppStore.setHarnessMemory(bot: Bot, on: Boolean) =

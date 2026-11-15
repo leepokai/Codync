@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 struct Composer: View {
     let botId: String
     /// The message the next send quotes, shown above the field until sent or cancelled.
-    @Binding var replyingTo: Entry?
+    @Binding var replyingTo: ReplyQuote?
     /// The user's messages waiting behind the bot's work, shown above the box (`QueuedMessages`).
     var queued: [Entry] = []
     /// Starts a voice call; while the box is empty it takes the send button's place.
@@ -281,9 +281,9 @@ struct Composer: View {
     }
 
     /// The quoted message, one line, with a way to drop the reply.
-    private func quoteBar(_ target: Entry) -> some View {
+    private func quoteBar(_ target: ReplyQuote) -> some View {
         HStack(spacing: 4) {
-            QuoteLine(text: target.replyQuote.text)
+            QuoteLine(text: target.text)
             Spacer(minLength: 0)
             IconButton("Cancel reply", systemImage: "xmark") { replyingTo = nil }
         }
@@ -398,7 +398,7 @@ struct Composer: View {
         if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
-            guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo?.replyQuote,
+            guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo,
                                           files: files) else { return }
             draft = ""
             files = []

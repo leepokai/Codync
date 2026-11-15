@@ -49,18 +49,27 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.platform.LocalDensity
@@ -148,6 +157,15 @@ import com.kyant.shapes.RoundedRectangle
         Box(Modifier.size(34.dp, 20.dp).clip(Capsule()).background(track).padding(2.dp)) {
             Box(Modifier.offset(x = knob).size(16.dp).clip(Capsule()).background(knobInk))
         }
+    }
+}
+
+/** A whole number with − and + beside it, kept within [range]: the replacement for `Stepper`. */
+@Composable fun Stepper(value: Int, range: IntRange, change: (Int) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton("Decrease", "minus", enabled = enabled && value > range.first) { change(value - 1) }
+        Text("$value", Modifier.widthIn(min = 24.dp), style = Type.body.monospacedDigit, color = Palette.text, textAlign = TextAlign.Center)
+        IconButton("Increase", "plus", enabled = enabled && value < range.last) { change(value + 1) }
     }
 }
 
@@ -279,11 +297,28 @@ val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
 @Composable fun Modifier.cardGroup(): Modifier =
     if (LocalCardStyle.current == CardStyle.Outlined) cardOutline() else clip(RoundedRectangle(16.dp)).background(Palette.surface)
 
-/** Grok Bot's list cards (routines): an outline on the page, no fill. */
-@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp): Modifier =
-    fillMaxWidth().cardOutline().padding(horizontal = 14.dp, vertical = vertical)
+/**
+ * Grok Bot's list cards (routines): an outline on the page, no fill. `dashed` for what is there only until it
+ * happens (a bot's follow-up).
+ */
+@Composable fun Modifier.outlinedCard(vertical: Dp = 12.dp, dashed: Boolean = false): Modifier =
+    fillMaxWidth().then(if (dashed) Modifier.dashedCardOutline() else Modifier.cardOutline())
+        .padding(horizontal = 14.dp, vertical = vertical)
 
 @Composable private fun Modifier.cardOutline(): Modifier = border(1.dp, Palette.border, RoundedRectangle(14.dp))
+
+/** `cardOutline` in dashes: `border` draws only solid lines. */
+@Composable private fun Modifier.dashedCardOutline(): Modifier {
+    val color = Palette.border
+    val shape = RoundedRectangle(14.dp)
+    return drawWithCache {
+        val stroke = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
+        // The line is centered on the outline, so the outline sits half a line inside the card's edge.
+        val inside = Size(size.width - stroke.width, size.height - stroke.width)
+        val outline = shape.createOutline(inside, layoutDirection, this)
+        onDrawBehind { translate(stroke.width / 2, stroke.width / 2) { drawOutline(outline, color, style = stroke) } }
+    }
+}
 
 /** A 1-pixel separator line in the border color. */
 @Composable fun Hairline(modifier: Modifier = Modifier) {
@@ -317,13 +352,18 @@ val LocalCardStyle = staticCompositionLocalOf { CardStyle.Filled }
 @Composable fun ValueRow(label: String, value: String, modifier: Modifier = Modifier, detail: String? = null) =
     ValueRow(label, modifier, detail) { Text(tr(value), style = Type.body, color = Palette.secondary) }
 
-/** A search box: the replacement for `.searchable`. */
-@Composable fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, prompt: String = "Search") {
+/** A search box: the replacement for `.searchable`. [onSearch] runs on the keyboard's search key; [autoFocus] puts the
+ *  cursor in it as it appears. */
+@Composable fun SearchField(text: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, prompt: String = "Search",
+    autoFocus: Boolean = false, onSearch: (() -> Unit)? = null) {
     val clear = tr("Clear search")
+    val focus = remember { FocusRequester() }
+    if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(modifier.fillMaxWidth().clip(Capsule()).background(Palette.bubbleAgent).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Symbol("magnifyingglass", size = 19.dp, tint = Palette.secondary)
-        PlainTextField(text, onChange, Modifier.weight(1f), prompt, singleLine = true, imeAction = ImeAction.Search)
+        PlainTextField(text, onChange, Modifier.weight(1f).focusRequester(focus), prompt, singleLine = true, imeAction = ImeAction.Search,
+            actions = if (onSearch != null) KeyboardActions(onSearch = { onSearch() }) else KeyboardActions.Default)
         if (text.isNotEmpty()) Box(Modifier.clickable(role = Role.Button) { onChange("") }.semantics { contentDescription = clear }) {
             Symbol("xmark.circle.fill", size = 18.dp, tint = Palette.tertiary)
         }

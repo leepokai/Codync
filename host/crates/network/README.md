@@ -38,13 +38,17 @@ standalone crate, and it reaches Claude Code and Codex sessions too.
   bots) through the app, a Claude Code session through the inbox socket Claude Code gives every session (read
   between tool calls while it works, a new turn when it is idle), a Codex thread through `codex queue`. A notice
   wakes no one: it goes in with the next message that does.
-- **Quiet by design.** A message costs the receiving agent a turn, so nothing is sent unless an agent sends one or
-  someone asks who is around: no presence heartbeats, no status pushes. The receiving computer enforces budgets
+- **Quiet by design.** A message costs the receiving agent a turn, so nothing reaches an agent unless an agent sends
+  it or someone asks who is around: no presence heartbeats, no status pushes. The receiving computer enforces budgets
   whatever the sender's agents were told: a chain of handoffs (A asks B, B's answer makes A ask C, …) stops after 8,
   each pair of agents gets a burst of 5 messages and then one every 2 minutes, and the same words twice within 10
   minutes are refused. A sender's retry of a letter already taken is acknowledged, not delivered again.
 - **Letters wait.** A letter for a computer that is asleep waits in the sender's outbox for up to a day and goes
   out when that computer answers again.
+- **One connection per pair, used both ways.** Two computers keep the connection either one opened and ask each
+  other over it; a computer with none open to another tries again every 30 seconds, and each listens on the same
+  UDP port across restarts (kept in its state folder). So a computer whose firewall lets in only what it started
+  (Windows by default) is still written to, over its own connection, also after the other one restarts.
 - **The receiver decides who writes.** Each computer keeps ordered rules of who on the others may write to which of
   its agents (`deny *@laptop → *`), the first match deciding; with none, every member may. The answer to a request
   this computer sent still gets in, from the computer it asked and to the agent that asked, so a rule added
@@ -95,6 +99,13 @@ Requests and replies, rooms or shared task boards are patterns of letters, built
 here read-only. The API changes with Codync. Report issues here; send pull requests to
 [Codync's `dev` branch](https://github.com/leepokai/Codync) (`host/crates/network`). Messages into Claude Code
 sessions and the daemon's control socket work on macOS and Linux; on Windows the crate builds, and those come later.
+
+On a Mac reachable on two IPv4 addresses (Wi-Fi and Ethernet on one network, a VM's gateway), connections *into* the
+Mac stall in the handshake: noq-udp 1.4, under iroh, sends the Mac's answer from the wrong address. Codync's host
+builds a patched noq-udp (`host/vendor/noq-udp` in Codync's repository); a build of this crate from crates.io has
+the bug until a noq-udp release carries quinn-udp's fix (quinn-rs/quinn@a2c55b3681). To get it now, copy that
+folder and patch noq-udp with the copy: in an app, `noq-udp = { path = "<copy>" }` under `[patch.crates-io]` in
+its `Cargo.toml`; for the daemon, `cargo install codync-network --config 'patch.crates-io.noq-udp.path="<copy>"'`.
 
 ## Install
 
@@ -154,7 +165,7 @@ is `accept`.
 
 `--connector public|private|https://your-relay` picks the connector (default `public`), `--dir` the state folder
 (default `~/.codync-network`: the key in `secret.key`, the roster in `network.json`, the agents in `agents.json`,
-the rules in `rules.json`). A Codync host keeps a node per network in `~/.codync` (`network`, `network-…`); never
+the rules in `rules.json`, the UDP port in `port`). A Codync host keeps a node per network in `~/.codync` (`network`, `network-…`); never
 point two nodes at one folder.
 
 ## Use

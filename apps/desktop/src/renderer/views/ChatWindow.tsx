@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
+import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
+import { isLive } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
@@ -27,9 +29,12 @@ import { NewBotView, NewGroupView } from './bots/NewBotView'
 import { ImportBotsSheet } from './bots/ImportBotsView'
 import { BotEditorView } from './bots/BotEditorView'
 import { MarketplaceView } from './marketplace/MarketplaceView'
+import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
+import { FindBar } from './FindBar'
+import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
 import { AccountWelcomeView, useWelcomeGate } from './AccountWelcomeView'
 import { ComputerAccessView } from './computer-access/ComputerAccessView'
@@ -38,11 +43,8 @@ import { HostStateView } from './HostStateView'
 import { StartupRecovery } from './StartupRecovery'
 export { EmptyState } from './HostStateView'
 import { RefreshIndicator } from './RefreshIndicator'
-import { StarPrompt } from './StarPrompt'
-import { JoinAccountPrompt } from './JoinAccountPrompt'
-import { MoveComputerPrompt } from './MoveComputerPrompt'
+import { MainPrompts } from './MainPrompts'
 import { PairingRequestPrompt } from './PairingRequestPrompt'
-import { DeleteAccountPrompt } from './DeleteAccountPrompt'
 import { OpenVoiceSettings } from './call/CallView'
 import { AccountPanelLayer, ProfileAvatar } from './PanelMenus'
 import { DesktopActionMenu } from './DesktopActionMenu'
@@ -101,7 +103,11 @@ export function ChatWindow() {
           }
           case 'stopBot': {
             const ref = parseRef(c.ref)
-            if (ref) app.store(ref.computerId)?.stop(ref.botId)
+            const store = ref && app.store(ref.computerId)
+            if (!ref || !store) return
+            // The tray's one Stop is for all the bot does: its chat's turn and its work in the background.
+            store.stop(ref.botId)
+            if (store.bots.get(ref.botId)?.work.some(isLive)) store.stopWork(ref.botId)
             return
           }
           case 'refresh':
@@ -143,7 +149,7 @@ export function ChatWindow() {
         <AccountWelcomeView onContinue={welcome.finish} />
       )}
       {!welcome.shown && accessSetup !== null && showsChat ? null : <div className="window-drag drag" />}
-      {!welcome.shown && accessSetup !== null ? <><StarPrompt /><MoveComputerPrompt /><JoinAccountPrompt /><DeleteAccountPrompt /></> : null}
+      <MainPrompts ready={!welcome.shown && accessSetup !== null} />
       <Sheet open={showAccess} onClose={() => setShowAccess(false)} width={660} height={Math.min(820, window.innerHeight - 80)}>
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
@@ -206,6 +212,8 @@ function ChatSplitView() {
   const [sidebarWidth, setSidebarWidth] = usePref(prefs.sidebarWidth)
   const [hidden, setHidden] = usePref(prefs.hiddenComputers)
   const [searching, setSearching] = useState(false)
+  // Find in the open conversation (⌘F).
+  const find = useFindBar(app.selection ? refKey(app.selection) : null)
   const [creating, setCreating] = useState<CreateTarget | null>(null)
   const [importing, setImporting] = useState(false)
   const [newMenu, setNewMenu] = useState(false)
@@ -227,7 +235,7 @@ function ChatSplitView() {
   useEffect(() => {
     const onResize = () => {
       setWindowSize({ width: window.innerWidth, height: window.innerHeight })
-      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(260, window.innerWidth - 420)))
+      setSidebarWidth(Math.min(prefs.sidebarWidth.get(), Math.max(sidebarMinWidth, window.innerWidth - detailMinWidth)))
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
@@ -238,6 +246,7 @@ function ChatSplitView() {
   const shown = new Set(computerSelection(app.computers.map((c) => c.id), hidden).shown)
   const onlineStores = stores.filter((s) => shown.has(s.computer.id) && s.connection.kind === 'online' && !s.mismatch)
   const selectedStore = app.selectedStore
+  const screenStore = app.screenComputer ? (app.store(app.screenComputer) ?? null) : null
   const createStore = creating ? app.store(creating.computerId) : null
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
@@ -257,6 +266,8 @@ function ChatSplitView() {
       window.codync.app.onCommand((c) => {
         if (c.kind === 'newBot' && onlineStores.length) create('bot')
         if (c.kind === 'search') setSearching(true)
+        // Without a conversation open there is nothing to find in: ⌘F searches the bots instead.
+        if (c.kind === 'find') app.selection ? find.open() : setSearching(true)
         if (c.kind === 'networkSettings') setSettings('network')
         if (c.kind === 'toggleSidebar') setCompact(!prefs.sidebarCompact.get())
         if (c.kind === 'voiceKey') {
@@ -333,11 +344,11 @@ function ChatSplitView() {
 
   // The sidebar's edge drags its width; narrower than 180 collapses it to the rail.
   const [resizing, setResizing] = useState(false)
-  const sidebarMax = Math.min(420, window.innerWidth - 420)
+  const sidebarMax = Math.min(420, window.innerWidth - detailMinWidth)
   const resizeSidebar = (proposed: number) => {
     const nextCompact = proposed < 180
     if (nextCompact !== compact) setCompact(nextCompact)
-    if (!nextCompact) setSidebarWidth(Math.min(Math.max(260, proposed), sidebarMax))
+    if (!nextCompact) setSidebarWidth(Math.min(Math.max(sidebarMinWidth, proposed), sidebarMax))
   }
 
   const errorMessage = app.errorMessage
@@ -358,7 +369,7 @@ function ChatSplitView() {
     detail = (
       <div className="empty-detail">
         <div className="detail-drag drag" />
-        <HStack align="stretch" className="empty-detail-crew">
+        <HStack align="stretch" gap={12}>
           <CharacterAvatar shape="blob" color="blue" size={60} mood="working" />
           <CharacterAvatar shape="squircle" color="orange" size={60} />
           <CharacterAvatar shape="teardrop" color="violet" size={60} mood="working" />
@@ -433,6 +444,7 @@ function ChatSplitView() {
       <main className="detail">
         {/* The call bar's settings open this window's Settings at Voice chat. */}
         <OpenVoiceSettings.Provider value={openVoiceSettings}>{detail}</OpenVoiceSettings.Provider>
+        {find.focus !== null && selectedBot ? <FindBar focusKey={find.focus} onClose={find.close} /> : null}
       </main>
 
       {showAccount ? (
@@ -487,6 +499,9 @@ function ChatSplitView() {
       </Sheet>
       <Sheet open={settings !== null} onClose={() => setSettings(null)} width={Math.min(800, windowSize.width - 80)} height={Math.min(620, sheetHeight)}>
         {settings ? <SettingsView page={settings} setPage={setSettings} /> : null}
+      </Sheet>
+      <Sheet open={screenStore !== null} onClose={() => app.openScreen(null)} width={windowSize.width - 48} height={sheetHeight}>
+        {screenStore ? <ScreenViewer key={screenStore.computer.id} store={screenStore} watching={app.screenWatching} /> : null}
       </Sheet>
       <Dialog
         open={confirmDelete !== null}

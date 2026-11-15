@@ -1,5 +1,6 @@
 //! What reaches a bot's actor ([`Cmd`]) and the turns that wait in its queue ([`Queued`]).
 
+use crate::analytics::TurnSource;
 use crate::chat::group::GroupTurn;
 use crate::store::{BotConfig, Lane};
 use anyhow::Result;
@@ -11,6 +12,10 @@ pub enum Cmd {
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
     Routine(String),
+    /// A follow-up the bot set for itself is due (`routines::follow_up`): a turn in its own chat.
+    FollowUp(String),
+    /// One of the bot's tasks ended (`chat::tasks`): its report, for a turn in the bot's chat.
+    TaskReport(crate::chat::tasks::Report),
     /// The user wrote in the bot's chat.
     Send {
         lane: Lane,
@@ -54,6 +59,8 @@ pub enum Cmd {
     SendFile {
         path: String,
         name: Option<String>,
+        /// A voice note's message: the file plays at the top of this text's bubble.
+        text: Option<String>,
         cancelled: Arc<std::sync::atomic::AtomicBool>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },
@@ -70,6 +77,20 @@ pub enum Cmd {
         chat: String,
     },
     Stop,
+    /// A `request_decision` call (`chat::decision`): its card in the turn's chat, the call waiting.
+    Ask {
+        data: Value,
+        started_at: i64,
+        /// When the call's own timeout gives up (`chat::decision::WAIT` from its start).
+        deadline: std::time::Instant,
+        reply: tokio::sync::oneshot::Sender<Result<Value>>,
+    },
+    /// The user pressed one of a card's options (`respondDecision`).
+    Decision {
+        entry_id: String,
+        choice: String,
+        reply: tokio::sync::oneshot::Sender<Result<Value>>,
+    },
     Permission {
         entry_id: String,
         option_id: Option<String>,
@@ -93,6 +114,8 @@ pub enum Cmd {
 
 pub(super) enum Queued {
     Routine(String),
+    FollowUp(String),
+    TaskReport(crate::chat::tasks::Report),
     User {
         lane: Lane,
         entry_id: String,
@@ -109,4 +132,44 @@ pub(super) enum Queued {
         idle: bool,
     },
     Group(GroupTurn),
+}
+
+/// A turn the host starts in the bot's own chat, with no message of the user's.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum HostTurn {
+    /// The lead opening a call (`Cmd::Prompt`): heard on the call, so it alerts no one and isn't resumed after a
+    /// restart (the call is over).
+    Opening,
+    /// A follow-up the bot set for itself (`Cmd::FollowUp`): alerts like a reply, unless it had nothing to say,
+    /// and is resumed after a restart as the follow-up it is.
+    FollowUp,
+    /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
+    /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`tasks::restore`).
+    TaskReport,
+}
+
+impl HostTurn {
+    /// Whether a host restart in the middle of it resumes it.
+    pub(super) fn resumed(self) -> bool {
+        match self {
+            Self::Opening | Self::TaskReport => false,
+            Self::FollowUp => true,
+        }
+    }
+
+    /// Whether its end alerts the user, as a reply's does.
+    pub(super) fn alerts(self) -> bool {
+        match self {
+            Self::Opening => false,
+            Self::FollowUp | Self::TaskReport => true,
+        }
+    }
+
+    /// What `turn_finished` reports as its source.
+    pub(super) fn source(self) -> TurnSource {
+        match self {
+            Self::Opening | Self::TaskReport => TurnSource::Host,
+            Self::FollowUp => TurnSource::FollowUp,
+        }
+    }
 }

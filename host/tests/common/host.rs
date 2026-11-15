@@ -5,6 +5,7 @@
 
 use serde_json::{Value, json};
 use std::{
+    ffi::{OsStr, OsString},
     path::PathBuf,
     process::Child,
     time::{Duration, Instant},
@@ -17,6 +18,8 @@ pub struct Host {
     /// `http://127.0.0.1:<port>`.
     pub base: String,
     pub token: String,
+    /// What [`Self::start_with`] set on top of the test host's own, kept by [`Self::restart`].
+    env: Vec<(String, OsString)>,
 }
 
 impl Drop for Host {
@@ -31,12 +34,13 @@ impl Host {
         Self::start_with(&[]).await
     }
 
-    /// [`Self::start`] with `env` on top of the test host's own. [`Self::restart`] doesn't keep it.
-    pub async fn start_with(env: &[(&str, &std::ffi::OsStr)]) -> Self {
+    /// [`Self::start`] with `env` on top of the test host's own.
+    pub async fn start_with(env: &[(&str, &OsStr)]) -> Self {
         let home = std::env::temp_dir().join(format!("codync-memory-e2e-{}", uuid::Uuid::new_v4()));
         let (child, base) = super::serve_with(&home, env).await;
         let token = std::fs::read_to_string(home.join("token")).unwrap().trim().to_owned();
-        Self { child, home, base, token }
+        let env = env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+        Self { child, home, base, token, env }
     }
 
     /// Kills the host outright, as a crash would. `restart` starts it again.
@@ -45,11 +49,12 @@ impl Host {
         let _ = self.child.wait();
     }
 
-    /// Stops the host, lets `between` change its files, and starts it again on the same data.
+    /// Stops the host, lets `between` change its files, and starts it again on the same data and env.
     pub async fn restart(&mut self, between: impl FnOnce(&std::path::Path)) {
         super::stop(&mut self.child);
         between(&self.home);
-        let (child, base) = super::serve(&self.home).await;
+        let env: Vec<(&str, &OsStr)> = self.env.iter().map(|(k, v)| (k.as_str(), v.as_os_str())).collect();
+        let (child, base) = super::serve_with(&self.home, &env).await;
         self.child = child;
         self.base = base;
     }

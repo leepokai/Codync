@@ -15,9 +15,10 @@ mod workspaces;
 
 pub use devices::{Device, DeviceAccount, DeviceSource, Scope};
 pub use model::{
-    AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, Entry, EntryKind, Fallback, Lane, Permission,
-    message_text, run_session_key,
+    AVATAR_COLORS, AVATAR_SHAPES, BotConfig, BotKind, BotRow, DEFAULT_AGENTS, Entry, EntryKind, Fallback, Lane,
+    MAX_AGENTS, Permission, TASK_PREFIX, is_task_id, message_text, run_session_key,
 };
+pub use schema::SCHEMA;
 
 use crate::LockExt;
 use anyhow::Result;

@@ -4,7 +4,8 @@ import { CharacterAvatar, drawCharacter } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { HStack } from '../../components/Stack'
 import { palette } from '../../lib/theme'
-import { mascotShape, providerRegistry, providerTint, providerTintCSS, tightest } from './usage-model'
+import { tightest } from './usage-logins'
+import { mascotShape, providerRegistry, providerTint, providerTintCSS } from './usage-model'
 import './usage.css'
 
 /** Whether any of the provider's limits is nearly used up (its mascot shows a red alert). */

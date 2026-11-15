@@ -3,6 +3,7 @@
 
 use super::{Event, platform_of};
 use crate::api::devices::Caller;
+use crate::chat::tasks::Steer;
 use crate::hub::Hub;
 use crate::store::BotConfig;
 use codync_mem::compaction::Threshold;
@@ -29,13 +30,17 @@ const FIXED: [(&str, Event, &str, &str); 14] = [
 ];
 
 /// Switches the host owns (`setting_changed`): the method and the setting it names.
-const SETTINGS: [(&str, &str); 5] = [
+const SETTINGS: [(&str, &str); 6] = [
     ("setCloud", "remote_access"),
     ("setApproval", "approval"),
     ("setHostAutomaticUpdates", "automatic_updates"),
     ("setScreenEnabled", "remote_screen"),
     ("setAssistants", "cloud_assistants"),
+    ("setAutoOrder", "auto_order"),
 ];
+
+/// `setVoiceServer`'s setting, the one switch whose failure is reported (`failed`).
+const VOICE_SERVER: &str = "voice_server";
 
 /// The event an API call stands for, with its properties, read before the call runs.
 pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<String, Value>)> {
@@ -54,6 +59,10 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
         p.insert("setting".into(), setting.into());
         p.insert("on".into(), on.into());
         Event::SettingChanged
+    } else if let Some(steer) = Steer::of_method(method) {
+        p.insert("how".into(), serde_json::json!(steer));
+        p.insert("by".into(), "user".into());
+        Event::WorkSteered
     } else {
         call_event(method, b, &mut p)?
     };
@@ -65,10 +74,11 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
 /// The rest of `observe`: one arm per method.
 fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Event> {
     Some(match method {
-        "setCloudUrl" => {
-            // The address itself stays off the event. `on` is only whether a custom URL was saved.
+        "setCloudUrl" | "setVoiceServer" => {
+            // The address itself stays off the event. `on` is only whether one of the user's own was saved.
             let on = b["url"].as_str().is_some_and(|url| !url.trim().is_empty());
-            p.insert("setting".into(), "remote_access_url".into());
+            let setting = if method == "setCloudUrl" { "remote_access_url" } else { VOICE_SERVER };
+            p.insert("setting".into(), setting.into());
             p.insert("on".into(), on.into());
             Event::SettingChanged
         }
@@ -106,6 +116,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "send" => {
             let reply = b["replyTo"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("reply".into(), reply.into());
+            // A reply to a part of the message the user selected.
+            p.insert(
+                "replyPart".into(),
+                (reply && b["replyPart"].as_str().is_some_and(|t| !t.trim().is_empty())).into(),
+            );
             p.insert("attachments".into(), b["attachments"].as_array().map_or(0, Vec::len).into());
             Event::MessageSent
         }
@@ -122,6 +137,11 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         "deleteRoutine" => Event::RoutineDeleted,
         "runRoutine" => Event::RoutineRun,
         "retryRoutineRun" => Event::RoutineRetried,
+        // ✕ on a waiting follow-up; the bot's own cancel and its Stop report from `routines::follow_up`.
+        "cancelFollowUp" => {
+            p.insert("by".into(), serde_json::json!(crate::routines::Cancelled::User));
+            Event::FollowUpCancelled
+        }
         "devServerStop" | "devServerRestart" | "devServerRemove" | "devServerLogs" => {
             let action = method.trim_start_matches("devServer").to_ascii_lowercase();
             p.insert("action".into(), action.into());
@@ -167,13 +187,47 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             p.insert("change".into(), (if update { "update" } else { "new" }).into());
             Event::ArtifactPublished
         }
-        "agentSetup" | "agentAuthenticate" => {
+        // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
+        "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
+        "agentSetup" | "agentAuthenticate" | "agentAuth" => {
+            // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
+            let on_profile = b["loginProfile"].is_string();
+            if method == "agentAuth" && !on_profile {
+                return None;
+            }
             // An agent's catalog id; Node.js setup names none.
             if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
                 p.insert("agent".into(), agent.into());
             }
+            if on_profile {
+                p.insert("loginProfile".into(), true.into());
+            }
             if method == "agentSetup" { Event::AgentSetupStarted } else { Event::AgentSignedIn }
         }
+        // Never the profile's name or id.
+        "addLoginProfile" | "renameLoginProfile" | "removeLoginProfile" => {
+            let action = method.strip_suffix("LoginProfile").unwrap_or(method);
+            p.insert("action".into(), action.into());
+            if let Some(agent) = b["backend"].as_str().filter(|a| !a.is_empty()) {
+                p.insert("agent".into(), agent.into());
+            }
+            // A kind the host doesn't know fails the call, and isn't reported.
+            if method == "addLoginProfile"
+                && let Ok(kind) = crate::agent::login_profiles::Kind::parse(&b["kind"])
+            {
+                p.insert("kind".into(), serde_json::json!(kind));
+            }
+            Event::LoginProfileChanged
+        }
+        // An API key profile's keys: how many were typed and how many came from the login shell, never their
+        // names or values.
+        "setLoginProfileKeys" => {
+            p.insert("action".into(), "keys".into());
+            p.insert("typed".into(), b["vars"].as_object().map_or(0, Map::len).into());
+            p.insert("imported".into(), b["import"].as_array().map_or(0, Vec::len).into());
+            Event::LoginProfileChanged
+        }
+        // Choices are counted by the actor after publication/delivery, including legacy text replies.
         "installHostUpdate" => Event::HostUpdateInstalled,
         // Never the computer's name, the connector's address or the invite.
         "networkCreate" | "networkJoin" => {
@@ -232,7 +286,8 @@ pub fn observe_call(hub: &Hub, caller: &Caller, method: &str, b: &Value) -> Opti
 
 /// What only the answer tells: how many connectors or bots an import added, whether a Composio app is
 /// connected yet (its sign-in is polled until the connection is active), whether a published
-/// artifact's card went into its bot's chat, and whether a connector edit needed a check. `None`: not an event.
+/// artifact's card went into its bot's chat, whether a connector edit needed a check, and whether a follow-up was
+/// still there to cancel. `None`: not an event.
 pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Option<Map<String, Value>> {
     match event {
         Event::ConnectorsImported => {
@@ -253,6 +308,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
         }
+        // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
+        Event::FollowUpCancelled if answer["gone"] == true => return None,
+        // A login profile's check that still finds it signed out is no sign-in.
+        Event::AgentSignedIn if p.contains_key("loginProfile") && answer["signedIn"] != true => return None,
         Event::ConnectorInstalled
             if p.get("connector").and_then(Value::as_str) == Some("composio") && answer["status"] != "active" =>
         {
@@ -264,17 +323,32 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit reports its category,
-/// never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, and a connector edit, a login profile and a voice
+/// server report their category, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
         }
+        // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
+        // one sign-in.
+        Event::LoginProfileChanged => {
+            let category =
+                error.downcast_ref::<crate::agent::login_profiles::Refused>().map_or("other", |e| e.category);
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
         Event::ConnectorUpdated => {
             let category =
                 error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        Event::SettingChanged if p.get("setting").and_then(Value::as_str) == Some(VOICE_SERVER) => {
+            let category = error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

@@ -18,7 +18,7 @@ export type Rival = {
 
 const us = {
   price: "$0, every feature included. Apache 2.0 licensed.",
-  runs: "On your own computer: a Mac, a Windows PC, a Linux desktop or a headless server.",
+  runs: "On your own computer: a Mac, a Windows PC, a Linux desktop or a headless server. Or a Codync Cloud computer (beta) on your own Boat or InstaBox account.",
   agents:
     "Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode and about 40 more over ACP, on the plans and logins you already have.",
   apps: "iPhone, Mac, Windows and Linux apps, plus a terminal UI over SSH.",
@@ -59,7 +59,7 @@ export const rivals: Rival[] = [
     pickUs:
       "you want Grok Bot's way of working without a subscription, with the bots on your own machine next to your files and tools, and the freedom to run Claude Code, Codex or any other agent you already pay for.",
     pickThem:
-      "you'd rather have bots on a managed cloud computer that stays on when your machine is off, and you already pay for Cursor or SuperGrok.",
+      "you'd rather have SpaceXAI run the cloud computer for you, with no provider account of your own, and you already pay for Cursor or SuperGrok.",
     checked: CHECKED,
     sources: [
       ["Grok Bot page and FAQ", "https://x.ai/bot"],

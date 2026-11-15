@@ -1,7 +1,5 @@
 package com.codync.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -34,6 +32,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -43,9 +42,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +58,7 @@ import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -111,27 +114,32 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
     return out
 }
 
+/** The text find searches (iOS `ThreadView.findable`): each message's own words, not separators, notices or exchanges. */
+internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
+    items.mapNotNull { item -> (item as? ChatItem.Message)?.takeIf { it.entry.kind == "user" || it.entry.kind == "agent" }?.let { it.id to it.entry.text } }
+
 /** A chat's time separator: Today 3:27 AM. */
 @Composable internal fun TimeSeparator(at: Long) {
     Text(RelativeTime.separator(at, tr("Today"), tr("Yesterday")), Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 6.dp), style = Type.footnote,
         color = Palette.tertiary, textAlign = TextAlign.Center)
 }
 
-/** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer; `addFallback` opens a bot's fallbacks;
- *  `openArtifact` opens an artifact card's artifact. */
+/** One chat-visible entry, with what can be done to it. `reply` quotes it in the composer, and `selectText` opens its text
+ *  to reply to a part of it (null where the computer's host takes no part); `addFallback` opens a bot's fallbacks; `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
-    openTrace: () -> Unit, reply: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit) {
+    openTrace: () -> Unit, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: (Bot) -> Unit,
+    openArtifact: (OpenArtifact) -> Unit) {
     val group = chat?.kind == "group"
     when (entry.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply)
+            UserBubble(entry, state, store, reply, selectText)
             ReactionsRow(entry, state, store)
         }
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, openArtifact)
+            AgentBubble(entry, state, store, openTrace, reply, selectText, openArtifact)
             Box(Modifier.padding(start = if (group) 34.dp else 0.dp)) { ReactionsRow(entry, state, store) }
         }
         "permission" -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -140,7 +148,10 @@ internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: B
                 store.respond(entry, it)
             }
         }
-        else -> if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
+        else -> if (entry.isDecision) Box(Modifier.padding(top = 12.dp)) {
+            DecisionCard(entry, answering = "decision:" + entry.id in state.busy, respond = { store.decide(entry, it) },
+                reply = { store.sendText(entry.botId, it) })
+        } else if (entry.data["connectionRequest"] is JsonObject) Box(Modifier.padding(top = 12.dp)) {
             ConnectionRequestCard(entry, state, store, connect.openApp, connect.install)
         } else if (entry.data["handoff"] is JsonObject) Box(Modifier.padding(top = 10.dp)) {
             // A fresh conversation starts at the left, as on the iPhone.
@@ -165,33 +176,19 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
     }
 }
 
-/** The menu a message opens on long press: copy, reply quoting it, what the agent did. */
-private fun messageMenu(context: android.content.Context, entry: Entry, reply: (() -> Unit)?, trace: (() -> Unit)?) = buildList {
-    add(MenuItem("Copy", icon = "square.on.square") {
-        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Message", entry.text))
-    })
-    if (reply != null) add(MenuItem("Reply", icon = "arrowshape.turn.up.left", action = reply))
-    if (trace != null) add(MenuItem("Show what it did", icon = "list.bullet", action = trace))
-}
-
-internal val quickReactions = listOf("👍", "❤️", "😂", "🎉", "👀", "✅")
-
-private fun reactionPick(entry: Entry, store: AppStore) = ReactionPick(quickReactions, entry.reactions) { emoji ->
-    store.command("react", body("entryId" to entry.id, "emoji" to emoji), "react:" + entry.id)
-}
-
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
-@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?) {
+@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, selectText: (() -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
+    val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
     Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, state, store)
+        if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
         if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
-                messageMenu(context, entry, reply, null)
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
+                menu.textItems(textCopyItem(context, entry.text))
             }) { UserText(entry.text, quote) }
         SendStatusLine(entry.status)
     }
@@ -253,22 +250,72 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 @Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?,
-    openArtifact: (OpenArtifact) -> Unit) {
+    selectText: (() -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val files = entry.files
     val artifact = entry.artifact
+    val voiceNote = entry.voiceNote
+    val menu = MessageMenu.of(entry, store, reply, openTrace, selectText)
+    val textMenu = { menu.textItems(textCopyItem(context, entry.text)) }
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // An artifact card or a message with files is that: the text is only the computer's fallback.
-        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = reactionPick(entry, store),
-            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }) { messageMenu(context, entry, reply, openTrace) })
-        else if (files.isNotEmpty()) Column(Modifier.contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }) { messageMenu(context, entry, reply, openTrace) },
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (file in files) FileDownloadCard(entry, file, state, store)
+        // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note
+        // instead plays inside its bubble, over the message it captions.
+        if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,
+            onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }, items = textMenu))
+        else if (voiceNote != null) {
+            val player = rememberSharedAudio(entry, voiceNote, store)
+            val download = state.fileDownloads[voiceNote.id]
+            val busy = download is FileDownloadState.Downloading
+            val save = { store.toggleFile(entry.id, entry.botId, voiceNote) }
+            // Its Download follows Copy, as on desktop and iPhone.
+            val downloadItem = MenuItem(if (busy) "Cancel download" else "Download", icon = if (busy) "xmark" else "arrow.down.to.line", action = save)
+            Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+                .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() },
+                    preview = { VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = true) },
+                    items = { menu.textItems(textCopyItem(context, entry.text), listOf(downloadItem)) })) {
+                VoiceNoteMessage(entry.text, voiceNote, player, download, save, selectable = false)
+            }
+        }
+        // Each card holds its own menu: a picture's copies the picture.
+        else if (files.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (file in files) FileDownloadCard(entry, file, menu, state, store)
         } else if (entry.text.isNotEmpty()) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
-            .contextActions(reactions = reactionPick(entry, store), onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }) {
-                messageMenu(context, entry, reply, openTrace)
-            }) { AgentText(entry.text, selectable = false) }
+            .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
+            AgentText(entry.text, selectable = false)
+        }
+    }
+}
+
+/**
+ * A reply carrying a voice note, as a messaging app shows one with a caption: the player at the top of its bubble,
+ * the message under it. The player row is one element — "Voice note, <caption>" — with the card's play and download
+ * actions; download has no button here, the bubble's menu and those actions carry it.
+ */
+@Composable private fun VoiceNoteMessage(text: String, file: SharedFile, audio: SharedAudio, download: FileDownloadState?,
+    save: () -> Unit, selectable: Boolean) {
+    val scope = rememberCoroutineScope()
+    val translate = translator()
+    val busy = download is FileDownloadState.Downloading
+    val caption = detail(file, download, audio, translate)
+    val play = { scope.launch { audio.toggle() }; Unit }
+    Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics {
+            contentDescription = "${translate("Voice note")}, $caption"
+            audioSeek(audio)
+            customActions = listOf(
+                CustomAccessibilityAction(translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true },
+                CustomAccessibilityAction(translate(if (busy) "Cancel download" else "Download")) { save(); true })
+            onClick(label = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true }
+        }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SharedAudioButton(audio, play)
+            if (audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
+            // Steady digits, so the bar's end doesn't move as the clock runs.
+            Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
+                color = if (audio.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
+        }
+        if (text.isNotEmpty()) MarkdownText(text, selectable)
     }
 }
 
@@ -317,7 +364,8 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 /** A routine's line in the main chat: tapping it opens Routines on that routine; a failed run the user can run again
  *  has a retry button. */
 @Composable internal fun RoutineNotice(entry: Entry, retrying: Boolean, retry: () -> Unit, open: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
         Row(Modifier.plainButton(action = open).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Symbol("clock.arrow.circlepath", size = 15.dp, tint = Palette.secondary)
@@ -417,12 +465,16 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
 }
 
 /** `Text(date, style: .timer)`: the time since `startedAt`, every second. */
-@Composable private fun Elapsed(startedAt: Long) {
+@Composable internal fun Elapsed(startedAt: Long) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(startedAt) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
-    val seconds = maxOf(0, (now - startedAt) / 1000)
-    Text(if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60),
-        style = Type.footnote.monospacedDigit, color = Palette.tertiary)
+    Text(timerText(now - startedAt), style = Type.footnote.monospacedDigit, color = Palette.tertiary)
+}
+
+/** A length of time as the working line's timer writes it: "0:07", "12:30", "1:02:03". */
+internal fun timerText(millis: Long): String {
+    val seconds = maxOf(0, millis / 1000)
+    return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 /** The start of an empty chat: who the bot is and how it works. */

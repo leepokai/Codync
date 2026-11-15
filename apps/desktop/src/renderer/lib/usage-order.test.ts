@@ -13,8 +13,14 @@ test('a move on its way holds the order and agents it does not name follow', () 
 })
 
 test('only an agent that is on can lack a reading', () => {
-  const usage = { providers: [{ id: 'claude', name: 'Claude', windows: [], source: 'claude', updatedAt: 1 }] }
+  const weekly = { id: 'w', label: 'Weekly', percent: 10, resetsAt: null }
+  const claude = { id: 'claude', name: 'Claude', windows: [weekly], source: 'claude', updatedAt: 1 }
+  // Listed only for a login profile that hasn't been read.
+  const unread = { id: 'work', name: 'Work', windows: [], updatedAt: 0 }
+  const codex = { id: 'codex', name: 'Codex', windows: [], source: 'codex', updatedAt: 0, loginProfiles: [unread] }
+  const usage = { providers: [claude, codex] }
   assert.equal(hasNoReading(usage, service('claude')), false)
+  assert.equal(hasNoReading(usage, service('codex')), true)
   assert.equal(hasNoReading(usage, service('cursor')), true)
   assert.equal(hasNoReading(usage, service('cursor', false)), false)
 })

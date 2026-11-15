@@ -18,6 +18,8 @@ data class Bot(
     val avatarColor: String = "blue",
     val avatarShape: String = "blob",
     val command: String? = null,
+    /** The login profile it runs on ([LoginProfile]); null for the login the computer already has. */
+    val loginProfile: String? = null,
     val cwd: String = "",
     val managedWorkspace: Boolean = false,
     val permission: String = "ask",
@@ -85,13 +87,16 @@ data class Bot(
     val resting: List<Resting> = emptyList(),
     /** What it keeps running on the computer. Empty from an older host, and for a group. */
     val devServers: List<DevServer> = emptyList(),
+    /** Its box ([WorkItem]): every live or waiting item in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    @Serializable(with = WorkSerializer::class)
+    val work: List<WorkItem> = emptyList(),
+    /** The most agents it runs at once; null from a host before the box. */
+    @Serializable(with = MaxAgentsSerializer::class)
+    val maxAgents: Int? = null,
     val customIcon: CustomIcon? = null,
 ) {
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1
-
-    /** [agent]'s rest, unless it's over. */
-    fun restOf(agent: String, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { it.agent == agent && it.until > now }
 
     /** An agent bot unless its agent said it has no Fast mode, or one that has it on (so it can be turned off). */
     val fastModeShown: Boolean get() = kind != "group" && (fastMode || fastModeSupport != "unsupported")

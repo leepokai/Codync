@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+@preconcurrency import WebRTC
 import os
 
 private let log = Logger(subsystem: "com.pokai.Codync", category: "Call")
@@ -30,7 +31,8 @@ enum AudioInterruption {
 }
 
 /// The call's audio session, set up the same way for every engine; each activates it as its audio starts and
-/// releases it as it stops (OpenAI's WebRTC manages its own, with the same options).
+/// releases it as it stops (OpenAI's WebRTC manages its own, with the same options). A voice note in the chat takes it
+/// only while nothing records.
 @MainActor
 enum CallAudioSession {
     /// The category options of every engine's audio, WebRTC's too.
@@ -39,6 +41,11 @@ enum CallAudioSession {
     /// The session was activated and not released since: releasing an untouched one would start the audio system
     /// for nothing (in tests that start CoreAudio, which can deadlock on a simulator).
     private static var active = false
+    /// Dictation is listening (it runs the session itself).
+    static var dictating = false
+    /// Something records on the session (a call's engine, OpenAI's WebRTC, dictation): a voice note neither takes it
+    /// nor releases it then.
+    static var recording: Bool { active || dictating || RTCAudioSession.sharedInstance().isActive }
 
     /// Before an engine's audio starts or resumes.
     static func activate() throws {
@@ -53,6 +60,26 @@ enum CallAudioSession {
         guard active else { return }
         active = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// Before a voice note plays, heard with the ringer off too. False, with the session left as it is, while
+    /// something records.
+    static func activatePlayback() throws -> Bool {
+        guard !recording else { return false }
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .default, options: [])
+        try session.setActive(true)
+        return true
+    }
+
+    /// After a voice note that took the session stops.
+    static func releasePlayback() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            // The note is already stopped; other apps' audio just stays ducked until the next session change.
+            log.error("voice note session release: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 

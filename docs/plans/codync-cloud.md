@@ -1,8 +1,7 @@
 # Codync Cloud
 
-Status (2026-10-31): steps 1–3 of the [build order](#build-order-on-boat) and both update paths are built on
-`feat/cloud-boat`, synced with `dev`, and passed end to end on Boat and the iPhone app.
-What's left before each release: [Delivery](#delivery). Owner decisions:
+Status (2026-11-09): released in 2.43.1 and open on `main` to every signed-in account; what's still open is under
+[Delivery](#delivery). Owner decisions:
 
 - **Free, and users bring their own cloud** (owner, 2026-11-06; how, 2026-11-08): Codync charges nothing; each user
   connects their own Boat account with an API key they paste once, which Codync keeps sealed:
@@ -69,8 +68,8 @@ workspace admin's.
 
 ### Saving it (`PUT /v1/cloud-credentials/:provider {key}`)
 
-1. Only for accounts allowed Codync Cloud; at most 5 saves a minute per account (`CLOUD_KEY_LIMITER`), so the
-   endpoint can't be used to test other people's keys.
+1. Only on a cloud that can seal keys (`CLOUD_SECRET_KEYS`, every signed-in account there); at most 5 saves a minute
+   per account (`CLOUD_KEY_LIMITER`), so the endpoint can't be used to test other people's keys.
 2. Shape (the driver's `keyPattern`): Boat `boat_…` (or `box_…`), letters, digits, `_`, `-`; InstaBox `ibk_` and 52
    of a–z, 2–7.
 3. A read must succeed (`checkKey`): Boat `GET /sandboxes?limit=1` (the key works and reads sandboxes), InstaBox
@@ -115,8 +114,16 @@ Then it is sealed and replaces the earlier key. Each refusal says what to fix, i
   missing action, the plan or the account's limits are cleared only by a write that works (a read says nothing about
   them). *Create* stays offered (it tries again, for an owner who fixed their plan there) unless the key itself was
   refused (`blocking`: rejected or expired), which only another key fixes.
-- A host whose stop is refused (the key) is put back online at once (`/internal/awake` on its relay): it never
-  stopped, and no wake would find it running.
+- A host asking to sleep is recorded `stopping` before its relay takes it offline (and put back as it was if the relay
+  keeps it, a device being connected, or can't be reached); a wake that read the machine before that and finds it
+  running retries instead of taking the host back, when the relay took the host offline meanwhile. One whose stop is
+  turned down (the key, busy, any refusal) is recorded `running` again, so the first wake takes the host back; a
+  refused key leaves no wake able to read the machine, so that host is put back online at once (`/internal/awake` on
+  its relay). A provider failing (5xx) may have stopped it all the same, so it stays `stopping`.
+- For two minutes after a host asked to sleep, a machine the provider still reports running stays recorded
+  `stopping` (`refresh`): its stop hasn't taken effect yet, so its host keeps waiting (`GET /v1/host/sleep`) and a
+  wake keeps trying. After that, running means the stop failed: it is recorded running, and the host is taken back
+  online.
 - Write-only API: `GET /v1/cloud-computers` adds `providers`, each with its `credential` (`{hint, problem,
   blocking, updatedAt}` or `null`), never the key. `DELETE /v1/cloud-credentials/:provider` is refused while any cloud computer
   runs on that provider: without the key Codync couldn't put it to sleep or delete it, and it would keep billing its
@@ -132,7 +139,8 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
 "幫我支援一下這個 cloud 服務"). Nothing in the apps names a provider:
 
 - `GET /v1/cloud-computers` lists `providers`, each `{provider, name, region, keyPrompt, setup: {page, commands},
-  credential}`, from `PROVIDERS` in `cloud-credentials.ts`. A new provider shows up in every app with no release.
+  credential, offer?: {label, detail, url}}`, from `PROVIDERS` in `cloud-credentials.ts`. `offer` is the provider's own
+  free plan (InstaBox only; older clouds leave it out). A new provider shows up in every app with no release.
 - Keys are per provider (`PUT/DELETE /v1/cloud-credentials/:provider`, one `cloud_credentials` row each).
   `POST /v1/cloud-computers {provider, name}` creates a computer on one the user gave a key; `provider` may be left
   out when there is only one.
@@ -146,9 +154,10 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
   *Delete snapshots*, *Delete cloud computer*). The card's **+** opens *New cloud computer*: a name (suggested "Cloud
   computer", "Cloud computer 2", …) and every provider with its logo, where it runs and its key (or *Add a key first*).
   A provider is reached only where it is picked (owner, 2026-11-09: no separate Cloud providers row; picking a provider
-  shows only that provider's options): a row without a working key, the key button on a row with one, or a computer's
-  `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
-  paste one, and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
+  shows only that provider's options): a row without a working key, the `⋯` inside a row with one (*{provider} API key*,
+  and *Remove key* while no cloud computer runs there), or a computer's `⋯` opens *{provider} API key*, a sheet with just that provider: its key (last four, replace, remove) or a field to
+  paste one, the provider's free plan when it has one (InstaBox: *Get a free sandbox*, its pricing page; its row in
+  New cloud computer says *Free sandbox available* until it has a key), and *How to make a key* folded under it; saving one goes back to New cloud computer with it picked. A key
   the provider turned down for its own sake (revoked, expired) leaves its row unpicked; one turned down for the plan or
   the account still creates, which tries again. At the limit **+** still opens, with *Create* off and why, so every
   provider's key stays in reach.
@@ -161,14 +170,17 @@ Boat came first; InstaBox (InsForge) is the second (owner, 2026-11-08: "不要�
     new ticket (the host has its whole 30 minutes to install and claim) and starts the script detached. One InstaBox
     paused before it got them is started again for it.
   - `backup`: Boat drops a stopped sandbox's own snapshot after 14 days, so it gets a never-expiring backup on day 10
-    and comes back from it; InstaBox keeps a stopped or paused machine's disks until it is deleted, so it has none.
+    (counted from its sleep request, however late the stop is seen) and comes back from it; InstaBox keeps a stopped
+    or paused machine's disks until it is deleted, so it has none. Deleting a computer deletes its backup first: one
+    that can't be deleted yet keeps the computer listed, so the delete can be tried again.
   - `deleteHistory`: Boat keeps automatic snapshots of earlier states (*Delete snapshots* erases them); InstaBox keeps
     none, so there is only the backup (if any) to erase.
   - Sleep: Boat stops (the disk is kept, memory isn't); InstaBox pauses (memory and processes kept, back in seconds).
     InstaBox also pauses a machine idle for 30 minutes on its own (a free machine can't turn that off): the next wake
     starts it, as after Codync's own sleep.
 - Adding a provider: a driver beside `boat.ts` and `instabox.ts`, registered in `drivers`, a `PROVIDERS` entry (name,
-  region, key prompt, how to make the key) and its base URL override for tests in `sendWith`. No migration: no CHECK
+  region, key prompt, how to make the key, its free plan (`offer`) if any, with `label` and `detail` added to every
+  language catalog) and its base URL override for tests in `sendWith`. No migration: no CHECK
   names providers. `cloud/machines/test/` holds each driver's request and answer tests.
 
 ### What Codync can still do
@@ -228,8 +240,8 @@ What changes against the generic design below:
 
 ### Build order on Boat
 
-1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk, an
-   allowlist of user IDs), D1 `cloud_machines`, the Boat calls in `cloud/machines/`
+1. **Provision for a signed-in user** (no app UI yet): Worker `POST/GET/DELETE /v1/cloud-computers` (Clerk),
+   D1 `cloud_machines`, the Boat calls in `cloud/machines/`
    (sans-I/O), and in the host a first-boot claim from `~/.codync/managed.json` (written by Boat's `files` before
    the sandbox is ready, deleted once used) plus `Approval::Auto`. The computer then appears in the account's
    Computers list on every app, as *Codync Cloud* with a cloud icon (`device: "cloud"`; the machine's own hostname
@@ -242,7 +254,7 @@ What changes against the generic design below:
    backup and the update before sleep (`POST /v1/host/sleep` answers `{update}`); backups, a cold wake and a
    restore from a backup passed on Boat's paid plan on 2026-10-31 ([trial log
    §15](codync-cloud-boat-trial.md#15-updates-backups-and-a-cold-wake-on-the-paid-plan-2026-10-31)). Still open:
-   a start-limit budget beyond retrying (decided once the internal beta shows real use, owner 2026-10-31).
+   a start-limit budget beyond retrying (decided once real use shows the need, owner 2026-10-31).
 3. **App UI** on iOS, Android and desktop (provisioning entry, "preparing your cloud computer" for the ~10 s until
    it is claimed, Cloud badge with provider and region, an automatic access request for the account's cloud
    computer instead of the "Ask for access" tap, a sleeping computer shown as ready ("wakes when you message")
@@ -699,19 +711,18 @@ public.
 
 ## Delivery
 
-Three releases, each gated by the Worker (`CLOUD_SECRET_KEYS` unset or the user not in `CLOUD_COMPUTER_USERS`: the
-apps show no Codync Cloud section, so shipping the code changes nothing for anyone else).
+The Worker gates it: with `CLOUD_SECRET_KEYS` unset the apps show no Codync Cloud section, so shipping the code
+changes nothing; with it set, every signed-in account has Codync Cloud (no allowlist, the owner's call on 2026-11-09).
 
 1. **Dark merge into `dev`**: the branch split into reviewable commits that pass the pre-commit checks, the
    `after-change` workflow with full e2e (it touches the host, every client and the Worker), `npm run deploy:dev`
    with migrations `0007`–`0009` on the dev D1 and dev's own `CLOUD_SECRET_KEYS`, then `npm run e2e:cloud` and the iPhone and
    Android apps against dev.
-2. **Internal beta on `main`**: a minor version bump; `deploy:main` right after the merge (migrations up to `0009`,
-   production's own `CLOUD_SECRET_KEYS`, `CLOUD_COMPUTER_USERS` = internal accounts, each bringing its own Boat
-   key); MFA on the internal accounts.
-3. **Public launch**: terms, acceptable use and privacy policy, encryption at rest,
-   memory admission, MFA required for accounts with a cloud computer, Codex device-code sign-in, the welcome
-   screen's "Start a cloud computer", the user manual page.
+2. **Launch on `main`**: done on 2026-11-09 with 2.43.1, the owner's call: migrations `0007`–`0009`, production's own
+   `CLOUD_SECRET_KEYS` (every signed-in account has Codync Cloud at once), then `deploy:main`. A new cloud computer
+   installs GitHub's latest release, so 2.43.1 once the release gate marks it latest; only 2.43.1 apps show Codync
+   Cloud. Planned before launch and still open: MFA required for accounts with a cloud computer, memory admission, the
+   welcome screen's "Start a cloud computer", and encryption at rest (Boat documents none for sandbox disks).
 
 The cloud picks a cloud computer's version on its own (the soft and hard updates), and its owner can also update
 it to the latest release from any device, like any computer (owner, 2026-10-31): *Update* on its Codync row
@@ -726,8 +737,18 @@ first reply. A routine fires while it sleeps. The same computer reaches Android 
 
 ## Follow-ups found while testing
 
-1. Host restarts `codync-screen` every 30 s forever on a machine with an X display but no GStreamer
-   libraries (`supervise_linux_helper`, `host/src/screen/helper.rs`): stop after a few immediate exits
-   and say why once.
-2. Remote screen can't work on InstaBox's Xvnc desktop (no portal); InstaBox has its own desktop stream.
+1. ~~Host restarts `codync-screen` every 30 s forever on a machine with an X display but no GStreamer
+   libraries~~: done 2026-11-12, `supervise_linux_helper` backs off to two minutes and says why once per failing
+   streak, so the helper comes up by itself once the setup has installed GStreamer.
+2. ~~Remote screen can't work on InstaBox's Xvnc desktop (no portal)~~: done 2026-11-12. `codync-screen` drives a
+   plain X server (`ximagesrc` + XTest), and every cloud computer gets a desktop of its own, Xvfb `:20` with Xfce run
+   as `codync-agent` ([remote screen](../features/remote-screen.md#cloud-computers)), never the provider's.
 3. Check each agent's sign-in on a headless machine (Codex: device-code login).
+4. **The provider's desktop is open to every local user** (checked on InstaBox 2026-11-12): once something starts
+   InstaBox's desktop (its dashboard's **Computer** tab, `desktop.start`), it is Xvnc `:1` with no X authorization
+   and VNC on `127.0.0.1:5901` with `-SecurityTypes None`, running as `user`, which has passwordless sudo. Any local
+   process, `codync-agent`'s included, can drive it and so reach root. Codync never starts it or picks it (the screen
+   helper uses only `$DISPLAY`, the computer-use driver `$DISPLAY` or a display its own user runs), and agents can't start it
+   (it needs the InstaBox key). Boat's Xorg `:0` is unchecked. To close it: have the setup deny `codync-agent` that
+   display and port (an `xhost` list kept by the provider user at each start, an nftables owner rule for the port),
+   or stop the provider's desktop where nothing of the provider needs it.

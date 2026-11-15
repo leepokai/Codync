@@ -1,0 +1,114 @@
+# The computer card's "Move active bots to the top" switch follows a change made on another device (the desktop, the
+# terminal UI) while the phone stays connected: the host's `autoOrder` event. The phone must already be signed in and
+# connected to the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags computer-order \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+# Android reports the switch's state on its row and matches only `checked: true` there, hence the per-platform checks.
+appId: com.pokai.Codync.ios.dev
+tags:
+  - computer-order
+onFlowComplete:
+  - runScript:
+      file: auto-order.js
+      env:
+        RESTORE: "true"
+---
+- runScript:
+    file: auto-order.js
+    env:
+      ENABLED: "false"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "(Settings|Skip)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header (Computers, or how many are connected) opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "(Computers|\\d+ connected)"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- extendedWaitUntil:
+    visible: "Move active bots to the top"
+    timeout: 20000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - assertVisible:
+          text: "Move active bots to the top.*"
+          checked: false
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - assertNotVisible:
+          containsChild: "Move active bots to the top"
+          checked: true
+- runScript:
+    file: auto-order.js
+    env:
+      ENABLED: "true"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: "Move active bots to the top.*"
+            checked: true
+          timeout: 10000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible:
+            containsChild: "Move active bots to the top"
+            checked: true
+          timeout: 10000
+- takeScreenshot: auto-order-followed
+- runScript:
+    file: auto-order.js
+    env:
+      ENABLED: "false"
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: "Move active bots to the top.*"
+            checked: false
+          timeout: 10000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          notVisible:
+            containsChild: "Move active bots to the top"
+            checked: true
+          timeout: 10000

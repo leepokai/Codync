@@ -41,7 +41,7 @@ export function optionLabel(o: PermissionOption) {
     case 'allow_always':
       return trNow('Always allow')
     case 'reject_once':
-      return 'Deny'
+      return trNow('Deny')
     case 'reject_always':
       return trNow('Never')
     default:
@@ -59,7 +59,8 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
-    <div className="agent-inset">
+    // The item's row on the bot's Details finds its card by this.
+    <div className="agent-inset" data-work-item={d.item}>
       <VStack gap={10} className="permission-card">
         <HStack gap={8}>
           <Text size="headline" tone="text">{permissionHeadline(d.toolKind)}</Text>
@@ -72,6 +73,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
           <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
         </HStack>
+        {d.task ? <Text as="div" size="caption" tone="tertiary" truncate>{tr('In the background')} · {d.task.title}</Text> : null}
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
             <VStack gap={8} className="permission-card-details">
@@ -124,7 +126,7 @@ function outcome(entry: Entry) {
       }
     }
     case 'cancelled':
-      return 'Cancelled'
+      return trNow('Cancelled')
     default:
       return trNow('Expired — the agent moved on')
   }

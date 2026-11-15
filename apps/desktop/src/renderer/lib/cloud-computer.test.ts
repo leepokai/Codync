@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  actionMachine, canCreate, canRemoveKey, chosenProvider, cloudCreateOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed, machineActions,
+  actionMachine, canCreate, canRemoveKey, chosenProvider, cloudCreateOutcome, cloudDeleteOutcome, cloudKeyOutcome, errorPlace, isPreparing, justClaimed, machineActions,
   limitCloudName, limitNote, machineStatus, offlineCloudStatus, placementLine, providerOption, suggestedName, type CloudMachine, type CloudProvider,
 } from './cloud-computer.ts'
 
@@ -115,6 +115,12 @@ test('a create the cloud answered with what to fix is refused, anything else fai
   assert.equal(cloudCreateOutcome(new TypeError('fetch failed')), 'failed')
 })
 
+test('a deletion or key removal the cloud turned down is refused, anything else failed', () => {
+  assert.equal(cloudDeleteOutcome(Object.assign(new Error("It's asleep."), { status: 409, code: 'conflict' })), 'refused')
+  assert.equal(cloudDeleteOutcome(Object.assign(new Error("Couldn't reach the cloud provider."), { status: 503, code: 'providerUnavailable' })), 'failed')
+  assert.equal(cloudDeleteOutcome(new TypeError('fetch failed')), 'failed')
+})
+
 test('New cloud computer lists every provider and starts on the first with a usable key', () => {
   const boat: CloudProvider = {
     provider: 'boat', name: 'Boat', region: 'EU', keyPrompt: 'boat_…',
@@ -126,6 +132,8 @@ test('New cloud computer lists every provider and starts on the first with a usa
   const unpaid = { ...instabox, credential: { hint: 'ibk_…0001', problem: 'This account needs an active plan.', blocking: false } }
   const tr = (t: string) => t
   assert.deepEqual(providerOption(boat, tr), { usable: false, detail: { text: 'EU · Add a key first', error: false } })
+  const offered = { ...boat, offer: { label: 'Get a free sandbox', detail: 'A free plan.', url: 'https://example.com' } }
+  assert.deepEqual(providerOption(offered, tr), { usable: false, detail: { text: 'EU · Free sandbox available', error: false } })
   assert.deepEqual(providerOption(instabox, tr), { usable: true, detail: { text: 'US · ibk_…0001', error: false } })
   assert.deepEqual(providerOption(refused, tr), { usable: false, detail: { text: 'This key has expired. Make a new one.', error: true } })
   assert.deepEqual(providerOption(unpaid, tr), { usable: true, detail: { text: 'This account needs an active plan.', error: true } })

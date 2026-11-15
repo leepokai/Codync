@@ -47,6 +47,15 @@ export interface CloudProvider {
   keyPrompt: string
   setup: { page: string; commands: string }
   credential: CloudCredential | null
+  /** Its own free plan, if it has one (older clouds don't say). */
+  offer?: CloudProviderOffer
+}
+
+/** A provider's own free plan, in the cloud's words (the app translates `label` and `detail`), and its page. */
+export interface CloudProviderOffer {
+  label: string
+  detail: string
+  url: string
 }
 
 /** A provider's key stays while a cloud computer runs there: without it the cloud couldn't put that computer to sleep. */
@@ -140,6 +149,11 @@ export function suggestedName(machines: CloudMachine[], tr: (text: string) => st
 export const cloudCreateOutcome = (error: unknown): 'refused' | 'failed' =>
   error instanceof Error && (('status' in error && error.status === 409) || ('code' in error && error.code === 'keyRefused')) ? 'refused' : 'failed'
 
+/** The outcome of deleting a cloud computer or its snapshots, or removing a key, that threw: `refused` when the cloud
+ * said no (409: its snapshots while it sleeps, a key a computer still runs on), `failed` for anything else. */
+export const cloudDeleteOutcome = (error: unknown): 'refused' | 'failed' =>
+  error instanceof Error && 'status' in error && error.status === 409 ? 'refused' : 'failed'
+
 /** A key whose own fault it isn't when the provider says no: a computer can be made there (or tried again). */
 const usable = (p: CloudProvider) => p.credential !== null && !p.credential.blocking
 
@@ -151,10 +165,11 @@ export const limitNote = (count: number, limit: number) =>
   count >= limit ? `You can have up to ${limit} cloud computers. Delete one to make another.` : null
 
 /** A provider's row in New cloud computer: whether a computer can be made there and the line under its name (what to
- * fix, in the danger tone). */
+ * fix, in the danger tone; without a key, that it has a free plan when it does). */
 export function providerOption(p: CloudProvider, tr: (text: string) => string): { usable: boolean; detail: StatusLine } {
   if (p.credential?.problem) return { usable: usable(p), detail: { text: tr(p.credential.problem), error: true } }
-  return { usable: usable(p), detail: { text: `${p.region} · ${p.credential?.hint ?? tr('Add a key first')}`, error: false } }
+  const missing = tr(p.offer ? 'Free sandbox available' : 'Add a key first')
+  return { usable: usable(p), detail: { text: `${p.region} · ${p.credential?.hint ?? missing}`, error: false } }
 }
 
 /** The provider New cloud computer creates on: the one picked while its key is usable, else the first usable one. One

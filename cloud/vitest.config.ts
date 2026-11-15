@@ -19,6 +19,8 @@ export default defineConfig(async () => ({
         bindings: {
           // The switch's two sides are tested directly (test/relay-account.test.ts).
           RELAY_NEEDS_ACCOUNT: "",
+          // Never the real PostHog: the tests' fetch spies catch what goes here (test/cloud-analytics.test.ts).
+          POSTHOG_HOST: "https://posthog.test",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
           CLERK_JWT_KEY: publicKey.export({ type: "spki", format: "pem" }).toString(),
           TEST_CLERK_PRIVATE_JWK: JSON.stringify(privateKey.export({ format: "jwk" })),

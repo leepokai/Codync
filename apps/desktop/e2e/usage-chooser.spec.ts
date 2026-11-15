@@ -34,6 +34,7 @@ test('Settings > Usage chooses which agents show, and the host keeps the choice'
     expect(after.providers.some((p) => p.id === service.id)).toBe(false)
   } finally {
     await api(page, 'setUsageShown', { id: service.id, shown: shownAtStart }).catch(() => {})
+    await page.reload().catch(() => {}) // Closes Settings, which would cover the next spec's window.
     await browser.close()
   }
 })
@@ -65,6 +66,7 @@ test('dragging an agent in Settings > Usage changes its order, and the host keep
     await expect.poll(order).toEqual(before)
   } finally {
     await api(page, 'setUsageOrder', { ids: before }).catch(() => {})
+    await page.reload().catch(() => {}) // Closes Settings, which would cover the next spec's window.
     await browser.close()
   }
 })
@@ -90,6 +92,7 @@ test('two quick moves in Settings > Usage end on the second, and the row stays t
     await expect(rows.nth(2)).toHaveAttribute('data-usage-service', before[0])
   } finally {
     await api(page, 'setUsageOrder', { ids: before }).catch(() => {})
+    await page.reload().catch(() => {}) // Closes Settings, which would cover the next spec's window.
     await browser.close()
   }
 })

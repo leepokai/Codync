@@ -11,8 +11,8 @@ code is in `host/src/dev_servers/`.
 ## Why the host runs them
 
 A program started through an agent's shell tool is a descendant of the agent. On Windows the agent's job ends
-everything in it. On macOS and Linux the host kills the agent's process group, so a program in that group goes too, and
-one that detached into its own session survives with nobody tracking it. Taking the tree down with the agent is
+everything in it. On macOS and Linux the agent leads a session of its own and the host kills every process group in it, so a program
+in that session goes too, and one that detached into a session of its own survives with nobody tracking it. Taking the tree down with the agent is
 deliberate, and stays right for what an agent starts itself. So that such a server isn't lost, `background_work` keeps
 the agent running while it sees one, with its helpers and memory.
 
@@ -22,7 +22,7 @@ owner agents use), so the agent can be stopped when idle while it runs.
 | Event | The server |
 |---|---|
 | Agent stopped when idle, crashed or changed; new session; routine run ended | Keeps running |
-| User or bot stops it | Its whole tree stops: SIGTERM, then SIGKILL after 3 s on Unix; the job ends at once on Windows |
+| User or bot stops it | Its whole tree stops: SIGTERM, then what is left after 3 s on Unix; all of it at once on Windows. It ends from its leaves up: a process whose children have ended gets 3 s to finish by itself, and what is left after 15 s is killed (`agent/process.rs`) |
 | It ends by itself | Stopped (exit 0) or failed; it doesn't start again |
 | Bot deleted | Stopped and removed |
 | Host updated or restarted | Stopped, then started again |
@@ -44,6 +44,7 @@ On the existing `chat` helper (`dev_servers/tools.rs`): a new MCP server would a
 | `dev_server_logs {id, lines?}` | The end of its log (200 lines by default, at most 1000) |
 
 - At most 5 run per bot, however they start (a bot or a person); past that the error lists them.
+- A [background task](background-tasks.md)'s servers are its bot's (`tools::call` keys them to the task's owner): they show on the bot, count toward its 5, and outlive the task. Its approval card is the task's own, in the bot's chat.
 - A start finishes in a task of its own, so a request that goes away (a closed connection, a cancelled tool call) can't leave it half started. A stop that comes meanwhile ends it as soon as it's up.
 - The command ends when its first process ends, so bots give it as they'd run it in the foreground.
 - Bots hear about them in the tool's description and one line of their instructions (`BRIEF`). Nothing forces it: see
@@ -71,7 +72,7 @@ No guessing what counts as a dev server: **one that listens gets its port shown*
 only its status.
 
 - `dev_servers/ports.rs` reads TCP listeners with the [`listeners`](https://crates.io/crates/listeners) crate and keeps
-  those in the server's tree (`Process::members`: its process group on Unix, its job on Windows).
+  those in the server's tree (`Process::members`: its session on Unix, its job on Windows).
 - `dev_servers/scan.rs` reads them every second for a server's first 30 s, then every 10 s, and tells clients only of
   changes. A server with no port after 5 s counts as running.
 - The host works out the addresses, so clients don't: `local` works on the computer, `remote` from other devices. A
@@ -102,7 +103,7 @@ white, and color comes from the bots.
 - **Title:** the desktop's title pill shows `Builder :5173` in quiet text; the phones' subtitle shows `Connected · :5173`;
   the terminal's header shows it on the right. With more running it's `:5173 +2`; with no port, the server's name; none
   running, `Starting` or `Failed to start`; stopped, nothing. Opening the bot's details is what the title already does.
-- **Details:** a **Dev servers** section first on the Details tab, shown only when the bot has servers. A row is one line:
+- **Details:** a **Dev servers** section on the Details tab, after Routines, shown only when the bot has servers. A row is one line:
   name and port (or `Running`, `Starting`, `Stopped`, `Failed to start`). A click opens it in the browser, or with no port
   to open (a watch build, or one that ended) its logs; the rest (copy address, logs, restart, stop, remove) is behind
   `⋯`, which on the desktop shows only when the row is hovered.

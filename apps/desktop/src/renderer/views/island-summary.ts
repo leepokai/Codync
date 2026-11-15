@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { IslandBot, IslandPermission, IslandSummary } from '@shared/island'
 import { folderName, isGroup, isWorking, type Bot, type Entry } from '@shared/models'
+import { isBusy } from '@shared/work'
 import { useModels } from '../lib/observable'
 import { refKey, type AppModel, type RosterItem } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
@@ -53,6 +54,7 @@ function islandBot(store: BotStore, bot: Bot, ref: string, name: string): Island
     customIcon: bot.customIcon,
     color: bot.avatarColor,
     status: bot.status,
+    busy: isBusy(bot),
     backend: store.backendName(bot.backend),
     folder: folderName(bot),
     detail: botDetail(bot),

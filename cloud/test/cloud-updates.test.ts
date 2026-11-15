@@ -4,25 +4,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncReleases } from "../src/host-releases";
 import { saveBackups, wake } from "../src/cloud-machines";
-import worker, { type Env } from "../src/index";
-import { boat, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
-import { AUTHORITY, ORIGIN, call, clerkToken, devicePath, env, socket, type Json } from "./helpers";
+import { boat, callWith, calls, cc, cloudComputer, spyFetch } from "./cloud-helpers";
+import { call, clerkToken, devicePath, env, socket } from "./helpers";
 import * as ref from "./ref";
 
 afterEach(() => vi.restoreAllMocks());
-
-/** A signed or Clerk call through the Worker with some env overridden. */
-async function callWith(over: Partial<Env>, method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown; app?: string } = {}) {
-  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
-  const headers: Record<string, string> = {};
-  if (o.token) headers.Authorization = `Bearer ${o.token}`;
-  if (o.app) headers["Codync-App"] = o.app;
-  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: AUTHORITY, pathAndQuery: path, body: bytes });
-  const res = await worker.fetch(new Request(ORIGIN + path, { method, headers, body: bytes.length ? bytes : undefined }), { ...env, ...over }, {
-    waitUntil: () => {},
-  } as unknown as ExecutionContext);
-  return { status: res.status, body: (await res.json()) as Json };
-}
 
 /** A cloud computer whose owner has a registered phone that reported `app`. */
 async function withPhone(app: string) {
@@ -140,10 +126,10 @@ describe("snapshots", () => {
   it("deletes an awake computer's saved history, but not while it sleeps", async () => {
     const { userId, id } = await cloudComputer();
     const fetch = boat("ready");
-    expect((await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`)).status).toBe(200);
     expect(calls(fetch)).toContain("DELETE https://boat.dev/api/v1/sandboxes/bx_test/snapshots");
     boat("archived");
-    const asleep = await cc("DELETE", userId, userId, `/v1/cloud-computers/${id}/snapshots`);
+    const asleep = await cc("DELETE", userId, `/v1/cloud-computers/${id}/snapshots`);
     expect(asleep.status).toBe(409);
   });
 
@@ -163,9 +149,35 @@ describe("snapshots", () => {
       if (u.endsWith("/resume")) return Response.json({ code: "snapshot_data_expired", message: "gone" }, { status: 409 });
       return Response.json({ sandbox: { id: "bx_restored", state: "provisioning" } }, { status: 201 });
     });
-    expect(await wake(env, host.cid, Date.now())).toBe("started");
+    expect((await wake(env, host.cid, Date.now())).result).toBe("started");
     const after = await env.DB.prepare("SELECT provider_id FROM cloud_machines WHERE id = ?").bind(id).first();
     expect(after).toEqual({ provider_id: "bx_restored" });
+  });
+
+  it("times the backup from when it asked to sleep, though it was seen stopped only later", async () => {
+    const { userId, id } = await cloudComputer();
+    const old = Date.now() - 11 * 86_400_000;
+    await env.DB.prepare("UPDATE cloud_machines SET state = 'stopping', updated_at = ? WHERE id = ?").bind(old, id).run();
+    boat("archived");
+    expect((await cc("GET", userId)).body.cloudComputers[0].state).toBe("stopped");
+    const saving = boat("archived");
+    await saveBackups(env, Date.now());
+    expect(calls(saving)).toEqual(["POST https://boat.dev/api/v1/saved-snapshots"]);
+  });
+
+  it("keeps a computer whose backup couldn't be deleted yet, so deleting it can be tried again", async () => {
+    const { userId, id } = await cloudComputer();
+    await env.DB.prepare("UPDATE cloud_machines SET backup = 'codync-kept', backup_at = ? WHERE id = ?").bind(Date.now(), id).run();
+    const busy = boat("archived", { "/saved-snapshots/codync-kept": [429, { code: "rate_limited" }] });
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).body.error.code).toBe("providerUnavailable");
+    expect(calls(busy)).toEqual(["DELETE https://boat.dev/api/v1/saved-snapshots/codync-kept"]);
+    boat("archived", { "/saved-snapshots/codync-kept": [401, { code: "unauthorized" }] });
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).body.error.code).toBe("keyRefused");
+    expect((await cc("GET", userId)).body.cloudComputers).toHaveLength(1);
+    const gone = boat("cancelled");
+    expect((await cc("DELETE", userId, `/v1/cloud-computers/${id}`)).status).toBe(200);
+    expect(calls(gone)).toContain("DELETE https://boat.dev/api/v1/saved-snapshots/codync-kept");
+    expect((await cc("GET", userId)).body.cloudComputers).toEqual([]);
   });
 
   it("times the backup from when it went to sleep, whatever it was renamed since", async () => {
@@ -173,7 +185,7 @@ describe("snapshots", () => {
     const old = Date.now() - 11 * 86_400_000;
     await env.DB.prepare("UPDATE cloud_machines SET state = 'stopped', updated_at = ? WHERE id = ?").bind(old, id).run();
     boat("archived");
-    expect((await cc("PATCH", userId, userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
+    expect((await cc("PATCH", userId, `/v1/cloud-computers/${id}`, { name: "Research" })).status).toBe(200);
     const saving = boat("archived");
     await saveBackups(env, Date.now());
     expect(calls(saving)).toEqual(["POST https://boat.dev/api/v1/saved-snapshots"]);

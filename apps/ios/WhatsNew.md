@@ -6,42 +6,49 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.42.1
+## 2.48.2
 ### zh-Hant
-- bot 詳情「智慧體」區塊的「壓縮對話」預設改為「自動」：交給 Claude Code 或 Codex 在對話快滿時自己壓縮。想讓 Codync 提早壓縮，可以改選提早、接近上限或指定數量（從 100K、200K… 裡挑，或自己輸入）。已經是「提早」的 bot 會保留原設定，想交給智慧體自己壓縮可以改選「自動」。
+- Bot 會把比較久的工作交給背景進行，而且可以同時做好幾件：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。
+- 輸入框上方會有一個「背景」膠囊，顯示幾件進行中、幾件等待中；只有一件在做時會顯示它的進度與時間，也可以直接停止（已經改的內容會留著）。點一下會打開 Bot 的「詳情」。
+- 「詳情」現在列出 Bot 在做的事：「Threads」是正在進行的工作和還空著的名額，點一列可以看它做了什麼；「Event Box」是依序等待的工作，可以「先做」、名額滿時「插隊」（選一件讓位，它之後會重新開始），或長按「丟掉」。
+- 「最近」列出一天內結束的工作：完成的可以點開看過程，停止或失敗的會說明原因，並且可以「再試一次」。
+- 「同時幾個 agent」在 Bot 的「設定」裡，可以設 1 到 6 個。
+- 「指令」和「智慧體」（模型、快速模式、備援等）從「詳情」移到 Bot 的「設定」最上方。
+- 背景工作需要你核准時，卡片會出現在聊天裡並標示「背景」，照平常的方式回答就好。
+- 背景工作完成後，Bot 會用一則訊息告訴你結果；沒有完成也會說明原因。
+- 從任何 App 的分享選單選「Codync」，就能把文字、連結、照片或檔案傳給 Bot，還能附上一段訊息。上次分享的對象會排在「最近」並預先選好。
+- 更新提示會清楚指出需要更新這個 App，還是電腦上的 Codync；雲端電腦更新時也會顯示進度說明。
+- 智慧體可以有多個「登入設定」：在智慧體設定頁的「登入設定」新增賬戶（Claude Code、Codex、OpenCode、Pi、Google Antigravity 等可在同一台電腦登入多個賬戶），或為任何智慧體新增 API 金鑰（自行輸入環境變數，或從電腦的登入 shell 匯入；值只留在電腦上）。每個登入設定（包含預設的）都能自己取名，再到 bot 設定的「智慧體」選擇它要用的登入設定，兩個 bot 就能同時用不同的登入工作。
+- 備援可以選同一個智慧體的另一個登入設定：一個的額度用完，bot 會換到下一個繼續。
+- 「用量上限」會在智慧體底下分別列出每個賬戶的額度（Claude Code、Codex），小工具顯示最接近上限的那一個。
+- 電腦重新啟動或 App、Codync 更新後，iPhone 只接收新的訊息，不再重新載入每個聊天。
+- 選擇卡片改用編號選項；最後一列「其他答案」可以直接打字回答，bot 會帶著你的話繼續。
+- Bot 說「晚點回來看」時會真的設定跟進：聊天裡會出現「20 分鐘後跟進」的提示，時間到了它會自己回到聊天告訴你結果，還沒有進展就不打擾你。等待中的跟進會列在例行任務上方，可以直接取消。
+- 例行任務會記住上次做到哪裡，分批進行的工作下次會接著做。
+- Gemini 即時語音新增 Google 搜尋開關，可在通話中查詢網頁資訊，預設關閉。
+- 語音通話設定的 OpenAI 區塊會顯示電腦目前使用的「伺服器」：OpenAI，或你在電腦上設定的自有語音伺服器。使用自有伺服器時，模式固定為語音識別。
+- 可以只回覆訊息的其中一段：長按訊息選「選取文字」，選好文字後在選單點「回覆」，Bot 會知道你問的是哪一段。
+- Bot 設定的「技能」只列出名稱，點旁邊的資訊按鈕可以看完整說明。
 
 ### en-US
-- Summarize long chats, in a bot's Agent section, now defaults to Auto: Claude Code or Codex summarizes a chat on its own once it fills up. Pick Early, Near the limit or a size (100K, 200K and so on, or one you type) to have Codync summarize sooner. Bots already on Early keep it; pick Auto to leave it to the agent.
-
-## 2.42.0
-### zh-Hant
-- bot 詳情的「智慧體」區塊新增「壓縮對話」：選擇 Codync 什麼時候把長對話壓縮成摘要。可以選提早（預設）、接近上限、不主動壓縮，或指定數量：從 100K、200K… 裡挑，或自己輸入，最多到模型裝得下的上限。適用於 Claude Code 和 Codex 的 bot。
-
-### en-US
-- New Summarize long chats setting in a bot's Agent section: choose when Codync summarizes a long chat. Pick Early (default), Near the limit, Only when full, or a size: 100K, 200K and so on, or one you type, up to what the model holds. For Claude Code and Codex bots.
-
-## 2.41.0
-### zh-Hant
-- 不登入也能用了：在歡迎畫面選擇「不登入繼續」，手機掃電腦的 QR 碼就能配對，透過 Wi-Fi 或 Tailscale 連線。之後登入，配對會留在手機上；到「管理電腦」按「加入帳號」，電腦確認後就能從任何地方連線。
-- 電腦可以不加入帳號。配對時電腦會詢問；不加入的話，手機只能用 Wi-Fi 或 Tailscale 連線，之後也能在「管理電腦」加入帳號。
-- 遠端畫面會照連線設定換路：自動是先直連再走 Cloudflare，Cloudflare 優先則相反。
-- 群組裡輸入 @ 會列出成員，一排一個，和 / 指令選單一樣。
-
-### en-US
-- Use Codync without an account: choose Continue without an account on the welcome screen, then scan your computer's QR code. It connects over Wi-Fi or Tailscale. Sign in later and your computers stay paired; Add to account in Manage computers brings each into your account once the computer confirms.
-- A computer can stay out of your account. It asks when you pair; without it, your phone connects only over Wi-Fi or Tailscale, and you can add it later in Manage computers.
-- Remote screen now follows the Connection setting: Auto tries direct first, then Cloudflare, and Cloudflare first does the reverse.
-- Typing @ in a group lists its members one per row, like the / command list.
-
-## 2.40.3
-### zh-Hant
-- bot 現在可以讓 dev server 持續在電腦上執行，不會因為 bot 閒置或重新啟動而中斷。port 會顯示在聊天標題下方；點 bot 的名稱，就能看記錄、重新啟動或停止；手機連得到電腦時，也能直接開啟。
-- 用量頁面可以自己選要看哪些服務並調整順序：預設只顯示 bot 正在用的，也可以打開或隱藏其他服務，或拖曳排列。另外支援顯示 Google Antigravity 和 GitHub Copilot 的額度。
-- 修正 bot 更新時，選單偶爾點了沒反應的問題。
-- 修正 iOS 27.2 之後的部分測試版上，登入後 app 當掉，之後每次開啟都立刻關閉（重新安裝也一樣）的問題。
-
-### en-US
-- Bots can now keep a dev server running on your computer, even when the bot goes idle or restarts. Its port shows under the chat title; tap the bot's name to read its logs, restart or stop it, and to open it when your phone can reach it.
-- Choose and arrange which agents show in Usage: by default it lists the ones your bots run, and you can turn others on, hide them or drag them into order. Usage now also reads Google Antigravity's and GitHub Copilot's limits.
-- Fixed menus sometimes ignoring a tap while a bot was updating.
-- Fixed a crash on some betas of iOS 27.2 and later that closed the app after sign-in and at every launch afterwards, even after reinstalling.
+- Bots do long work in the background, several things at once: the chat stays free, so you can keep writing and the bot keeps answering.
+- One capsule above the message box says "In the background" with how many are working and waiting; with a single one it shows what it is doing and for how long, and you can stop it there (what it already changed stays). Tap it to open the bot's Details.
+- Details now lists what the bot does: Threads shows the work that runs now and the places still free, and a row opens what it did; Event box shows what waits, in order, where you can move one First, Cut in when every place is taken (you pick what gives way; it starts again later), or touch and hold to Drop it.
+- Recent lists the work that ended in the last day: open a finished one to see what it did; a stopped or failed one says why and has Try again.
+- Agents at once, in the bot's Settings, sets how many work at the same time (1 to 6).
+- Instructions and Agent (model, fast mode, fallbacks) moved from Details to the top of the bot's Settings.
+- When background work needs your approval, its card appears in the chat marked "In the background"; answer it like any other.
+- When the work is done, the bot tells you what it found in a message, or why it couldn't finish.
+- Share text, links, photos or files to a bot from any app: choose Codync in the share sheet and add a message if you like. The bots you shared to last are under Recent, with the latest one already picked.
+- Update notices clearly identify whether this app or Codync on your computer needs updating, and explain when a cloud computer is updating itself.
+- Agents can have more than one login profile: under Login profiles in an agent's setup, add an account (Claude Code, Codex, OpenCode, Pi, Google Antigravity and more can be signed in to several on one computer), or add an API key for any agent (environment variables you type or import from the computer's login shell; their values stay on the computer). Name any login profile (the default one too), then pick a bot's under Agent in its settings, so two bots can work at once on different logins.
+- A fallback can be the same agent on another of its login profiles: when one runs out of usage, the bot carries on with the next.
+- Usage limits lists each account of an agent with its own limits (Claude Code, Codex), and widgets show the one nearest its limit.
+- After your computer restarts or the app or Codync updates, the iPhone catches up on only what's new instead of reloading every chat.
+- Choice cards show numbered options, and the last row, Something else, takes your own answer; the bot continues with your words.
+- A bot that says it will check back later now sets a follow-up: a line such as "Follow-up in 20 minutes" shows in the chat, and when it's due the bot returns on its own to tell you what it found, or stays quiet if there's nothing yet. Waiting follow-ups are listed above the bot's routines, where you can cancel one.
+- A routine remembers where its last run stopped, so work done in parts carries on from there.
+- Optional Google Search in Gemini realtime calls, off by default.
+- Voice chat settings show which Server the computer's OpenAI engine uses: OpenAI, or a speech server of your own set on the computer. With your own server, Mode stays on Speech.
+- Reply to one part of a message: touch and hold it, choose Select Text, select the words, then Reply. The bot is told which part you mean.
+- A bot's Skills settings list only each skill's name; the info button beside one shows its description.

@@ -9,7 +9,7 @@ quotes itself.
 - **Chat**: a bot's (or group's) one endless conversation.
 - **Reply**: a user message that answers an earlier message of the same chat (the user's own
   or a bot's final reply). It stays in the chat, in time order, and carries a quote of the
-  message it answers.
+  message it answers, or of the part of it the user selected.
 - **Group**: a roster row (`kind: "group"`) holding several bots and the user. It has a
   transcript but no agent, folder or harness of its own.
 - **Lane**: where a turn talks: a bot's own chat or a group's. `host/src/store/model.rs` `Lane`.
@@ -43,7 +43,7 @@ quotes itself.
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
 | `markRead` | `botId` | Reads the chat. A no-op when nothing there is unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
 
-## How a group answers (`host/src/chat/group.rs`, Grok Bot's design)
+## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 
 - The user's message starts a *room turn* in the group: up to 3 rounds, 10 replies in all.
 - Who answers the first round: the members the user @-mentioned (full name, name without
@@ -63,6 +63,8 @@ quotes itself.
   `(pass)` costs no extra rounds. Members speak one at a time; each round starts one member later.
 - `message_bot` is refused in a room turn (its reply would go to the member's own chat); members
   @-mention each other instead ([bot collaboration](bot-collaboration.md)).
+- `follow_up` is refused in a room turn for the same reason (its line and its later turn would go to
+  the member's own chat): the member says it can't check back there ([follow-ups](follow-ups.md)).
 - A group's `description` ("About") tells its members what the room is for.
 - A member runs the turn in its **own main session** (its history is unified across chats),
   told who's in the room and what was said since it last spoke there, framed as
@@ -78,6 +80,12 @@ quotes itself.
   Newer messages in the group, and Stop in the member's own chat, don't drop that late answer;
   the group's Stop or removing the member from the group does, and a newer room turn that asks
   the member again replaces it.
+- A late answer (a busy member's, or one from a member the room stopped waiting for after 10
+  minutes) that @-mentions teammates gets a *late room turn*: it asks the members named from that
+  answer on who haven't spoken or been asked since, then goes on like any room turn. It starts
+  right away when no room turn runs, or as the running one ends (a newer message of the user's
+  drops it). Up to 3 late room turns follow one user message, and none after the group's Stop
+  until the user writes again.
 - A new message in the group, or Stop, ends a running room turn before its next speaker.
 - Tool calls, thoughts and permission cards of a member's group turn are written to the
   group (with `author`), not to the member's own chat. One "done" push per room turn, plus
@@ -96,6 +104,14 @@ earlier message: "…"]` or `… to Ann's message: "…"]`. It speaks as Codync,
 quote even when the quoted message is no longer in its session. Memory never takes the
 quote as the user's words: it stays in `data.replyTo`, apart from `data.text`.
 
+A reply can answer one part of a message: `send` takes `replyPart`, the text the user selected in
+the message `replyTo` names. The quote's `text` is then that part (up to 4,000 bytes, with
+`part: true`) and the note reads `[Codync: this replies to this part of your message: "…"]`.
+The host takes the part as the client sent it: what is selected in a rendered message isn't a
+substring of its Markdown source, and it comes from the user's own app. An artifact card is
+always quoted whole. A host before 2.48.1 ignores `replyPart` and would quote the whole
+message, so with one the phones offer no Select Text and the desktop's Reply quotes the whole message.
+
 ## Client checklist
 
 Roster row for groups (member avatars), a trace per turn, author label on group replies,
@@ -104,7 +120,13 @@ quick reactions and copy, never on the bubble, and the context menu; iPhone and 
 long-press, reactions on top of the menu; terminal: `r` picks a message, ↵ or `r` replies, esc
 cancels). While replying, the composer shows a quote
 bar on top (`text.bubble`, “text” on one line, an X to cancel; the terminal: `↳ “…”`), its
-placeholder reads "Reply…", and sending includes `replyTo`; leaving the chat cancels it. A
+placeholder reads "Reply…", and sending includes `replyTo`; leaving the chat cancels it.
+Replying to a part: on the desktop, Reply (hover footer or context menu) quotes what is
+selected inside that message, and the whole message when nothing is; on iPhone and Android the
+long-press menu has **Select Text** before Reply (messages with text that take replies), which
+opens the message's text as written in a sheet, where the selection menu gains Reply; the
+terminal has no selection inside a message, so it replies to whole messages and shows a part
+quote like any other. The quote bar and the bubble show the part, and sending adds `replyPart`. A
 user message with `data.replyTo` shows the quote at the top of its bubble. Every client shows a
 quote as its first non-empty line without Markdown markers (the roster's message preview rule). Reactions under
 a message (the user's: tap to take back; the bots': emoji plus the avatars of who chose it),

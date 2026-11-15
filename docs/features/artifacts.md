@@ -73,6 +73,9 @@ All four clients show the same things; layout follows each platform.
   - Header: close (`xmark`, "Close artifact"), the title in the middle (tapping it renames the artifact: "Rename
     artifact", "Artifact title"), and a share action: desktop "Save as HTML" and "Open in browser"; iPhone and Android
     the system share sheet with `<title>.html`.
+  - Desktop: the viewer takes focus when it opens, so `Tab` reaches its close key and `Escape` closes it back to the
+    chat. A field (the title being renamed, the message box) and the share menu keep `Escape` for themselves: there it
+    only cancels that, and the artifact stays open.
   - Bottom: a message box, "Message about “<title>”", that sends a reply to the artifact's card (`entryId`) to its
     bot. It keeps a draft of its own (`<bot>/artifact/<id>`), apart from the chat's. The viewer stays open; when the bot publishes the artifact again, it reloads. An artifact without a card
     (published in a routine run) has no message box: there is nothing to reply to.
@@ -82,7 +85,7 @@ All four clients show the same things; layout follows each platform.
   Open, Rename artifact and the share action. A file the bot shared is its file symbol, name and size, and saves like
   its card in the chat. An image the user sent shows a thumbnail and opens full size; other files they sent show their
   name and size. Empty: "Library is empty" / "Artifacts {name} makes and files shared in this chat show here."
-  - Desktop: a Library tab in the conversation details panel (Details · Library · Memory · Settings).
+  - Desktop: a Library tab in the conversation details panel (Details · Computer · Library · Memory · Settings).
   - iPhone and Android: the same tab in the bot's details sheet, which tapping the chat's title opens.
 - **Terminal UI**: a card is a `▤ Artifact: <title>` line. On the selected message, `o` opens the artifact in the
   computer's browser (its HTML written to a temporary file) and `f` saves `<title>.html` to Downloads, like files.

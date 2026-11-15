@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, type CSSProperties } from 'react'
 import { isGroup, isWorking, needsInput, type Bot } from '@shared/models'
-import { DOT_RADIUS, dotGrid } from '../lib/dot-grid'
+import { dotGrid, dotRadius } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 import { Icon } from './Icon'
 import './avatar.css'
@@ -178,8 +178,8 @@ export function drawCharacter(
 ) {
   // The grid fits the context's device pixels (its scale).
   const { cells, pitch, first } = dotGrid(size, ctx.getTransform().a || 1)
-  const eyeColumns = cells === 7 ? [2, 4] : cells === 9 ? [3, 6] : [4, 8]
-  const eyeRowsAll = cells === 13 ? [4, 5, 6] : cells === 9 ? [3, 4] : [2, 3]
+  const eyeColumns = cells === 7 ? [2, 4] : [3, 6]
+  const eyeRowsAll = cells === 7 ? [2, 3] : [3, 4]
   const dots = grid(shape, size, cells)
   const [tr, tg, tb] = palette(dark).text
   const n = parseInt(fill.slice(1), 16)
@@ -216,10 +216,11 @@ export function drawCharacter(
       const ripple = 0.5 + 0.5 * Math.sin(Math.hypot(u, v) * 9 - t * 5)
       shade *= 0.6 + 0.4 * ripple
     }
-    const r = pitch * DOT_RADIUS * (0.55 + 0.45 * shade)
-    const ink = cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * Math.min(1, shade / 0.7)
+    const x = first + d.col * pitch
+    const y = first + d.row * pitch
+    const ink = 0.4 + 0.4 * shade
     ctx.beginPath()
-    ctx.arc(first + d.col * pitch, first + d.row * pitch, r, 0, Math.PI * 2)
+    ctx.arc(x, y, dotRadius(pitch, shade, x, y, size), 0, Math.PI * 2)
     ctx.fillStyle = `rgba(${tr},${tg},${tb},${ink})`
     ctx.fill()
     if (shade > 0.6) {

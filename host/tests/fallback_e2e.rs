@@ -72,7 +72,9 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     assert_eq!(on["resting"][0]["reason"], "usageLimit");
 
     // Still resting: the next message goes straight to the fallback, which resumes its own session.
+    std::fs::write(folder.join("standin.work"), "").unwrap();
     host.reply(&bot, "And the signup tests").await;
+    std::fs::remove_file(folder.join("standin.work")).unwrap();
     let standin = host.log(&bot, "standin.jsonl");
     assert_eq!(standin.iter().filter(|r| r["method"] == "session/new").count(), 1);
 
@@ -85,6 +87,9 @@ async fn the_next_agent_carries_the_turn_on_and_the_bot_goes_back() {
     assert!(last.contains("<catch_up>") && last.contains("\"standin answered\""), "{last}");
     assert!(last.contains("And the signup tests"), "{last}");
     assert!(last.find("</catch_up>") < last.find("Thanks"), "the catch-up comes before the message: {last}");
+    // What the fallback changed meanwhile is named; what this agent did itself before it left is not news to it.
+    assert!(last.contains("Files changed, newest first:\n- standin.txt (modified)\n</ledger>"), "{last}");
+    assert!(!last.contains("a.txt (created)") && !last.contains("npm test"), "{last}");
     let primary = host.log(&bot, "primary.jsonl");
     assert!(primary.iter().any(|r| r["method"] == "session/load"), "it resumes the session it had");
 
@@ -120,6 +125,86 @@ async fn a_fallback_without_the_bots_mode_doesnt_take_the_turn() {
     assert!(!standin.iter().any(|r| r["method"] == "session/prompt"), "the fallback never works in its own mode");
 }
 
+fn moded(args: &str) -> String {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/named_mode_agent.py");
+    format!("{} {args}", common::python_agent(&script))
+}
+
+/// A bot in `mode` on agent `primary` (`named_mode_agent.py` args) with `fallbacks`, the files in `blocked` made in
+/// its folder, after its first message.
+async fn moded_bot(host: &Host, mode: &str, primary: &str, fallbacks: Value, blocked: &[&str]) -> String {
+    let bot = json!({"name": "Moded", "backend": "custom", "command": moded(primary), "connectors": [],
+        "notify": false, "permission": "ask", "mode": mode});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    for file in blocked {
+        std::fs::write(folder.join(file), "").unwrap();
+    }
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests"})).await;
+    bot
+}
+
+fn prompted(host: &Host, bot: &str, agent: &str) -> bool {
+    host.log(bot, &format!("{agent}.jsonl")).iter().any(|r| r["method"] == "session/prompt")
+}
+
+#[tokio::test]
+async fn a_step_without_the_bots_mode_lets_the_next_one_answer() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")},
+        {"backend": "gemini", "command": moded("third read-only agent")}]);
+    let bot = moded_bot(&host, "read-only", "primary read-only agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode read-only").await;
+    assert!(!prompted(&host, &bot, "standin"));
+}
+
+#[tokio::test]
+async fn a_step_without_the_bots_mode_runs_in_its_freest_one_no_freer() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin agent read-only agent-full-access")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the stand-in's answer", |e| e["data"]["text"] == "standin mode read-only").await;
+    let notice = wait_for(&host, &bot, "a notice", |e| {
+        e["data"]["text"].as_str().is_some_and(|t| t.contains("doesn't have plan") && t.contains("as read-only"))
+    })
+    .await;
+    assert_eq!(notice["data"]["style"], "info", "{notice}");
+}
+
+#[tokio::test]
+async fn a_step_with_only_freer_modes_moves_on_to_the_next() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin build agent")},
+        {"backend": "gemini", "command": moded("third agent plan")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode plan").await;
+    assert!(!prompted(&host, &bot, "standin"), "the fallback never works more freely than the bot");
+}
+
+#[tokio::test]
+async fn a_step_that_refuses_the_switch_moves_on_to_the_next() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin agent read-only")},
+        {"backend": "gemini", "command": moded("third agent plan")}]);
+    let bot = moded_bot(&host, "plan", "primary plan agent", fallbacks, &["primary.limit", "standin.stuck"]).await;
+    wait_for(&host, &bot, "the third agent's answer", |e| e["data"]["text"] == "third mode plan").await;
+    assert!(!prompted(&host, &bot, "standin"));
+    let history = host.call("history", json!({"botId": bot})).await;
+    assert!(!history.to_string().contains("runs this bot as"), "no stand-in notice for a refused switch: {history}");
+}
+
+#[tokio::test]
+async fn the_bots_own_agent_without_its_mode_fails_the_turn() {
+    let host = Host::start().await;
+    let fallbacks = json!([{"backend": "codex", "command": moded("standin plan")}]);
+    let bot = moded_bot(&host, "plan", "primary read-only agent", fallbacks, &[]).await;
+    let failed = wait_for(&host, &bot, "failure", |e| e["data"]["style"] == "error").await;
+    let text = failed["data"]["text"].as_str().unwrap();
+    assert!(text.contains("doesn't have plan, the mode this bot works in"), "{text}");
+    assert!(!prompted(&host, &bot, "primary") && !prompted(&host, &bot, "standin"), "the chain doesn't move on");
+}
+
 #[tokio::test]
 async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;
@@ -140,6 +225,11 @@ async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_s
     let last = last_prompt(&host, &bot, "primary");
     assert!(last.contains("<handoff>") && !last.contains("<catch_up>"), "{last}");
     assert!(last.contains("Fix the login tests") && last.contains("\"standin answered\""), "{last}");
+    // The handoff carries the ledger of the turns before: an index of what changed and ran, never the contents.
+    let ledger = &last[last.find("<ledger>").unwrap()..last.find("</ledger>").unwrap()];
+    assert!(ledger.contains("Files changed, newest first:\n- a.txt (created)"), "{ledger}");
+    assert!(ledger.contains("Commands run, failed ones first:\n- npm test (failed)"), "{ledger}");
+    assert!(!last.contains("the edit's own text"), "paths only: {last}");
 
     // After New session, no agent is told what came before it.
     std::fs::write(folder.join("primary.limit"), "").unwrap();
@@ -151,6 +241,56 @@ async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_s
     let last = last_prompt(&host, &bot, "primary");
     assert!(last.contains("Fresh start"), "{last}");
     assert!(!last.contains("<handoff>") && !last.contains("Fix the login tests"), "{last}");
+}
+
+#[tokio::test]
+async fn a_recap_for_an_agent_whose_window_is_known_reaches_back_to_the_users_earlier_words() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": [{"backend": "codex", "command": agent("standin")}]})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    // The bot's agent reports its window while it works through a chat longer than a recap repeats in full, in
+    // messages longer than a chat line carries.
+    std::fs::write(folder.join("primary.window"), "").unwrap();
+    std::fs::write(folder.join("primary.work"), "").unwrap();
+    for n in 0..8 {
+        host.reply(&bot, &format!("Step {n} of the migration{}", ", then the next table".repeat(70))).await;
+    }
+    std::fs::remove_file(folder.join("primary.work")).unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Fix the login tests").await;
+
+    // The fallback never said how wide its window is: it gets the latest messages, as ever.
+    let standin = last_prompt(&host, &bot, "standin");
+    assert!(standin.contains("<handoff>") && standin.contains("Step 7 of the migration"), "{standin}");
+    assert!(
+        !standin.contains("Step 0 of the migration") && !standin.contains("What the user said before"),
+        "{standin}"
+    );
+    assert!(standin.contains("Not every earlier message is repeated here"), "{standin}");
+    // The ledger is of the turns before; what the agent did in this one before it stopped is in the takeover alone.
+    let ledger = &standin[standin.find("<ledger>").unwrap()..standin.find("</ledger>").unwrap()];
+    assert!(ledger.contains("Files changed, newest first:\n- primary.txt (modified)\n"), "{ledger}");
+    assert!(!ledger.contains("a.txt") && !ledger.contains("npm test"), "{ledger}");
+    assert_eq!(standin.matches("- Edit a.txt (completed)").count(), 1, "{standin}");
+    // The chat line unfolds to the start and the end of a handoff too long for it: what only it says stays.
+    let line = wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+    let carried = line["data"]["agentSwitch"]["carried"].as_str().unwrap();
+    assert!(carried.len() < 8_100 && carried.starts_with("<handoff>") && carried.contains("\n…\n"), "{carried}");
+    assert!(carried.contains("<ledger>") && carried.contains("partway through this turn"), "{carried}");
+
+    // The bot's own agent did: in a new session it also hears what the user said before those, shortened.
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    std::fs::write(folder.join("primary.noload"), "").unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    host.reply(&bot, "Thanks").await;
+    let last = last_prompt(&host, &bot, "primary");
+    let earlier = last.find("What the user said before the latest messages").expect(&last);
+    let step = last.find("\"Step 0 of the migration").expect(&last);
+    assert!(earlier < step && step < last.find("The latest messages").unwrap(), "{last}");
+    assert!(last.contains("- Bot: \"standin answered\""), "{last}");
 }
 
 #[tokio::test]

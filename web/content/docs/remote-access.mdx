@@ -6,6 +6,8 @@ The desktop app and the terminal UI work differently: they talk to the host on t
 
 Each time it connects, the phone first tries the computer's direct addresses. If none answers, it connects through the relay, if it has one. When your network changes or you return to the app, it tries again, so it moves back to a direct connection when one becomes available.
 
+Over the relay, a phone catching up on many chats stays connected while the computer sends them. If the link does drop, or after an update of the app or of Codync on the computer, the phone picks up from the last change it received instead of loading every chat again. Only an update that changes how the computer stores chats loads them all again, behind the chats already on screen.
+
 | Route | When it works | What you set up |
 | --- | --- | --- |
 | Wi-Fi or local network | Phone and computer are on the same network | Nothing |
@@ -146,7 +148,7 @@ systemctl --user edit codync-host
 systemctl --user restart codync-host
 ```
 
-If you run the host under your own supervisor instead of the installed service, start it with `CODYNC_EXTERNAL_URL=https://codync.example.com codync-host serve --bind 127.0.0.1`. Binding to `127.0.0.1` keeps the host reachable only through the proxy (and the relay).
+To keep the installed service on this computer only, run `codync-host install --bind 127.0.0.1` once: the host then answers only through the proxy (and the relay), and updates keep that setting. `codync-host install --bind 0.0.0.0` opens it to every interface again, and `codync-host status` shows which one is set. If you run the host under your own supervisor instead, start it with `CODYNC_EXTERNAL_URL=https://codync.example.com codync-host serve --bind 127.0.0.1`.
 
 The host puts these URLs first in the pairing code and sends its current addresses on every connection, by any route. Paired phones save them on their own the next time they connect, so you don't need to pair again. Pair again only if the phone can't reach the computer at all: none of its saved addresses answers and the relay is off.
 

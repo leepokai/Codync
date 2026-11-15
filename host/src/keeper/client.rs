@@ -192,6 +192,15 @@ impl Grants {
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
+
+    /// Takes over `other`'s grants: they are revoked with these.
+    pub fn absorb(&mut self, mut other: Self) {
+        #[cfg(unix)]
+        if self.socket.is_none() {
+            self.socket = other.socket.take();
+        }
+        self.tokens.append(&mut other.tokens);
+    }
 }
 
 impl Drop for Grants {

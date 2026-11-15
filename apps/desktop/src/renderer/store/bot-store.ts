@@ -8,6 +8,7 @@ import {
   type Entry,
   type GroupDraft,
   type Hello,
+  type LoginProfile,
   type ReplyQuote,
   type ScreenState,
   type SharedFile,
@@ -19,6 +20,7 @@ import { readSharedFile } from '../../shared/files.ts'
 import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
+import { noteFirstPrompt } from '../lib/use-kofi-invite'
 import { updatePayload } from './bot-draft'
 import { FileDownloads } from './file-downloads'
 import { BotSections } from './bot-sections'
@@ -87,13 +89,16 @@ export class BotStore extends BotSync {
               ids.push(id)
             }
           }
-          return client.send(botId, trimmed, nonce, ids, pasted, replyTo?.id ?? null, call)
+          return client.send(botId, trimmed, nonce, ids, pasted, replyTo, call)
         }, true)
         this.outgoingFiles.delete(nonce)
         this.upsert(e)
         this.changed()
         // Only once it arrived, so a resend counts once.
-        if (!call) prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        if (!call) {
+          noteFirstPrompt(botId, e.createdAt)
+          prefs.promptsSent.set(prefs.promptsSent.get() + 1)
+        }
       } catch (error) {
         if (this.outgoingFiles.has(nonce)) this.lastError = `Couldn't send the files: ${error instanceof Error ? error.message : error}`
         this.markLocal(nonce, botId, 'failed')
@@ -218,6 +223,22 @@ export class BotStore extends BotSync {
     this.changed()
   }
 
+  /** Whether a bot with a new message moves to the top of this computer's roster; undefined before hello or on older hosts. */
+  get autoOrder() {
+    return this.hello?.autoOrder
+  }
+
+  /** Shown at once, put back if the computer refuses. */
+  async setAutoOrder(enabled: boolean) {
+    this.showAutoOrder(enabled)
+    try {
+      await (await this.ready()).call('setAutoOrder', { enabled })
+    } catch (e) {
+      this.showAutoOrder(!enabled)
+      throw e
+    }
+  }
+
   /** Toggles the user's reaction; shown at once, then replaced by the host's copy. */
   react(entry: Entry, emoji: string) {
     const list = this.entries.get(entry.botId)
@@ -257,6 +278,16 @@ export class BotStore extends BotSync {
   respond(entry: Entry, option: string | null) {
     this.answer(entry, option ?? '', async (c) => {
       await c.call('respondPermission', { entryId: entry.id, optionId: option })
+      // The card's own update follows on the events stream; hold the spinner until then.
+      await sleep(2000)
+    })
+  }
+
+  /** Presses one of a choice card's options (`request_decision`): the choice is the bot's answer and the user's
+   *  next message, both from the computer. */
+  decide(entry: Entry, option: string) {
+    this.answer(entry, option, async (c) => {
+      await c.call('respondDecision', { entryId: entry.id, option })
       // The card's own update follows on the events stream; hold the spinner until then.
       await sleep(2000)
     })
@@ -406,6 +437,40 @@ export class BotStore extends BotSync {
     return (await (await this.ready()).call<{ entries: Entry[] }>('callEntries', { botId, callId: call })).entries
   }
 
+  /** A task's transcript, from the computer; it also goes into the watched task's (`taskEntriesOf`). */
+  async loadTask(botId: string, taskId: string): Promise<Entry[]> {
+    const res = await (await this.ready()).call<{ entries: Entry[] }>('taskEntries', { botId, taskId })
+    const entries = res.entries.map((e) => ({ ...e, data: e.data ?? {} }))
+    this.mergeTask(taskId, entries)
+    this.changed()
+    return entries
+  }
+
+  /** Stops one working item of the bot's box, or all of them without `itemId`. */
+  stopWork(botId: string, itemId?: string) {
+    this.perform((c) => c.call('stopWork', itemId ? { botId, itemId } : { botId }))
+  }
+
+  /** Moves a waiting item to the front of the box. */
+  workFirst(botId: string, itemId: string) {
+    this.perform((c) => c.call('workFirst', { botId, itemId }))
+  }
+
+  /** Starts a waiting item now: the working item `insteadOf` gives way and starts again later. */
+  workCutIn(botId: string, itemId: string, insteadOf: string) {
+    this.perform((c) => c.call('workCutIn', { botId, itemId, insteadOf }))
+  }
+
+  /** Takes a waiting item, or one that ended, out of the box. */
+  dropWork(botId: string, itemId: string) {
+    this.perform((c) => c.call('dropWork', { botId, itemId }))
+  }
+
+  /** Puts a stopped or failed item back in the box, last. */
+  retryWork(botId: string, itemId: string) {
+    this.perform((c) => c.call('retryWork', { botId, itemId }))
+  }
+
   /** The history between a bot and one peer. Never upserted: old notices would break `loadOlder`'s paging. */
   async botConversation(botId: string, peerId: string): Promise<Entry[]> {
     return (await this.ready()).botConversation(botId, peerId)
@@ -430,13 +495,54 @@ export class BotStore extends BotSync {
     return bot
   }
 
+  /** Shows the agent list a call answered with. */
+  private showBackends(backends: Hello['backends']) {
+    if (!this.hello) return
+    this.hello = { ...this.hello, backends }
+    this.changed()
+  }
+
   async refreshBackends() {
     if (!this.client || !this.hello) return
     try {
-      const res = await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)
-      this.hello = { ...this.hello, backends: res.backends }
-      this.changed()
+      this.showBackends((await this.client.call<{ backends: Hello['backends'] }>('refreshBackends', {}, 60_000)).backends)
     } catch {}
+  }
+
+  /** A new login profile for agent `backend`. An `account` one is signed out (a `login` setup with it signs it in); an `apiKey` one has no key yet. */
+  async addLoginProfile(backend: string, kind: LoginProfile['kind']) {
+    const added = await (await this.ready()).call<{ loginProfile: LoginProfile; backends: Hello['backends'] }>('addLoginProfile', { backend, kind })
+    this.showBackends(added.backends)
+    return added.loginProfile.id
+  }
+
+  /** Asks the login profile's agent whether it's signed in, and as whom. */
+  async checkLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuth', { backend, loginProfile }, 60_000)).backends)
+  }
+
+  /** Has the login profile's agent sign it in itself, in a browser on the computer; answers once that's done. */
+  async signInLoginProfile(backend: string, loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('agentAuthenticate', { backend, loginProfile }, 660_000)).backends)
+  }
+
+  /** Names a login profile, or with `null` the default one; an empty name clears it. */
+  async renameLoginProfile(backend: string, loginProfile: string | null, name: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('renameLoginProfile', { backend, loginProfile: loginProfile ?? undefined, name })).backends)
+  }
+
+  async removeLoginProfile(loginProfile: string) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('removeLoginProfile', { loginProfile }, 60_000)).backends)
+  }
+
+  /** An API key profile's variables: `vars` as typed (an empty value removes one), and `imported` names whose values the host reads from the login shell now. */
+  async setLoginProfileKeys(loginProfile: string, vars: Record<string, string>, imported: string[] = []) {
+    this.showBackends((await (await this.ready()).call<{ backends: Hello['backends'] }>('setLoginProfileKeys', { loginProfile, vars, import: imported }, 60_000)).backends)
+  }
+
+  /** The names (never the values) of the login shell's variables, which a login profile can import. */
+  async loginShellVariables() {
+    return (await (await this.ready()).call<{ names: string[] }>('loginShellVariables', {}, 60_000)).names
   }
 
   async selectWorkspace(path: string) {
@@ -468,7 +574,8 @@ export class BotStore extends BotSync {
   }
 
   async loadOlder(botId: string) {
-    if (!this.client || this.historyComplete.has(botId)) return
+    // Held while everything is fetched again, like `canLoadOlder`.
+    if (!this.client || this.refetched || this.historyComplete.has(botId)) return
     const first = this.allEntries(botId).find((e) => e.seq > 0 && e.seq !== Number.MAX_SAFE_INTEGER)?.seq ?? Number.MAX_SAFE_INTEGER
     try {
       const older = await this.client.history(botId, first, 100)

@@ -94,6 +94,32 @@ fn non_portuguese_system_locale_resolution_is_unchanged() {
 }
 
 #[test]
+fn follow_up_notices_translate_around_the_wait_and_keep_the_note() {
+    assert_eq!(translate_with("Follow-up in 1 minute: Settings", &HANS), "1 分钟后跟进：Settings");
+    assert_eq!(translate_with("Follow-up in 20 minutes: Settings", &HANS), "20 分钟后跟进：Settings");
+    // A note that reads like another wait stays a note: the wait ends at the first colon.
+    assert_eq!(
+        translate_with("Follow-up in about 3 hours: look again in 5 minutes: maybe", &HANS),
+        "约 3 小时后跟进：look again in 5 minutes: maybe"
+    );
+    assert_eq!(
+        translate_with("Follow-up in 1 minute: wait 5 minutes: then check", &HANS),
+        "1 分钟后跟进：wait 5 minutes: then check"
+    );
+    assert_eq!(
+        translate_with("Follow-up in about 2 days: rerun if 3 hours: passed", &HANS),
+        "约 2 天后跟进：rerun if 3 hours: passed"
+    );
+    assert_eq!(translate_with("Follow-up in about 2 days: Plan", &HANS), "约 2 天后跟进：Plan");
+    assert_eq!(translate_with("Follow-up · Plan", &HANS), "跟进 · Plan");
+    assert_eq!(translate_with("Follow-up cancelled: Plan", &HANS), "已取消跟进：Plan");
+    // A waiting follow-up's row in the routines list.
+    assert_eq!(translate_with("Follow-up at 15:42", &HANS), "15:42 跟进");
+    assert_eq!(translate_with("Follow-up due now", &HANS), "即将跟进");
+    assert_eq!(translate_with("A follow-up is the bot's own: x cancels it", &HANS), "跟进由 Bot 自己设定：按 x 取消");
+}
+
+#[test]
 fn bot_routine_and_message_slots_keep_what_the_user_wrote() {
     assert_eq!(translate_with("Created bot connected", &HANS), "已创建机器人 connected");
     assert!(translate_with("Created bot Reviewer", &HANS).ends_with("Reviewer"));
@@ -204,4 +230,64 @@ fn catalogs_preserve_names_and_substitute_captured_values_once() {
             .replace("{name}", "{hint}");
         assert_eq!(translate_with(&format!("{{hint}} isn't set up on this computer. {hint}"), table), expected);
     }
+}
+
+#[test]
+fn host_schedule_sentences_match_their_catalog_templates() {
+    assert_eq!(
+        translate_with("Every day at 09:00, 18:00 · Europe/Rome", &super::IT),
+        "Ogni giorno alle 09:00, 18:00 · Europe/Rome"
+    );
+    assert_eq!(
+        translate_with("Every Monday at 09:00 · Europe/Rome", &super::IT),
+        "Ogni lunedì alle 09:00 · Europe/Rome"
+    );
+    assert_eq!(translate_with("When a webhook fires", &super::IT), "Quando arriva un webhook");
+}
+
+#[test]
+fn event_box_words_read_in_traditional_chinese() {
+    for (english, chinese) in [
+        ("In the background", "背景"),
+        ("Needs you", "需要你"),
+        ("Threads", "Threads"),
+        ("Event box", "Event Box"),
+        ("Free", "空位"),
+        ("Later", "之後"),
+        ("Recent", "最近"),
+        ("{count} working", "{count} 進行中"),
+        ("{count} waiting", "{count} 等待中"),
+        ("Waiting", "等待中"),
+        ("Next up", "下一個"),
+        ("{count} ahead", "前面還有 {count} 件"),
+        ("Follows what it works on", "接在進行中的事後面"),
+        ("Waiting for usage", "等用量恢復"),
+        ("Was cut in on; starts again", "被插隊，會重新開始"),
+        ("First", "先做"),
+        ("Cut in", "插隊"),
+        ("Drop", "丟掉"),
+        ("Agents at once", "同時幾個 agent"),
+        ("Let \"{title}\" cut in", "讓「{title}」插隊"),
+        (
+            "Every place is taken. Pick what gives way: its session closes and it starts again later.",
+            "名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。",
+        ),
+        ("Stop the background work?", "停止背景的工作？"),
+        ("What it already changed stays.", "已經改的內容會留著。"),
+        ("Nothing in the background", "背景沒有在進行的事"),
+        ("Done", "完成"),
+        ("Failed", "失敗"),
+        ("Stopped", "已停止"),
+        ("B opens", "B 開啟"),
+        ("X stops", "X 停止"),
+        ("↵ opens", "↵ 開啟"),
+        ("Picking up from the chat…", "正在從聊天接著做…"),
+    ] {
+        assert_eq!(translate_with(english, &super::HANT), chinese);
+    }
+    // Counts fill in, and a title stays as the bot wrote it.
+    assert_eq!(translate_with("2 working", &super::HANT), "2 進行中");
+    assert_eq!(translate_with("3 ahead", &super::HANT), "前面還有 3 件");
+    let title = fill(&translate_with("Let \"{title}\" cut in", &super::HANT), &[("title", "Fix login")]);
+    assert_eq!(title, "讓「Fix login」插隊");
 }

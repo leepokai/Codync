@@ -80,7 +80,7 @@ Once your computers are in the network, nothing else changes for your bots. A bo
 
 - **Away computers:** a request to a computer that's asleep waits up to a day and goes out when it's back.
 - **Limits:** besides the limits below, each computer accepts a burst of 5 messages between the same two bots, then one every 2 minutes, and refuses the same words twice within 10 minutes.
-- **Connector:** each network has its own. When you create or join, **When there's no direct path** picks how computers reach each other: **Public relays** (iroh's, meant for trying things out; the default), **Your own relay** (an `iroh-relay` you run) or **Private: direct only** (computers on the same network, Tailscale or a VPN). On the command line: `--connector public|private|https://your-relay`.
+- **Connector:** each network has its own. When you create or join, **When there's no direct path** picks how computers reach each other: **Public relays** (iroh's, meant for trying things out; the default), **Your own relay** (an `iroh-relay` you run) or **Private: direct only** (computers on the same network, Tailscale or a VPN). On the command line: `--connector public|private|https://your-relay`. A Windows computer needs no firewall change: it keeps its own connection to the others open, and they write to it over that.
 
 ### Choose who reaches your bots
 

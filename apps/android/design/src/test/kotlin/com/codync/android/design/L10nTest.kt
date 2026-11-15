@@ -26,4 +26,10 @@ class L10nTest {
     @Test fun `app-owned slots still translate`() {
         assertEquals("Последний запуск: на связи", ru("Last run connected"))
     }
+
+    @Test fun `host schedule sentences match their template`() {
+        val italian = mapOf("Every day at {times} · {zone}" to "Ogni giorno alle {times} · {zone}")
+        assertEquals("Ogni giorno alle 09:00, 18:00 · Europe/Rome",
+            translate("Every day at 09:00, 18:00 · Europe/Rome", AppLanguage.It, false, italian))
+    }
 }

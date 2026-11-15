@@ -49,8 +49,10 @@ data class AccountContext(
     val computers: List<Computer> = emptyList(),
     /** The computer whose lead "Talk to Codync" calls; null is Automatic (iOS `shortcutLeadComputer`). */
     val shortcutLeadComputer: String? = null,
-    /** Text another app shared, waiting for a bot to go to. */
-    val sharing: String? = null,
+    /** What another app shared, waiting for a bot to go to. */
+    val sharing: SharedContent? = null,
+    /** The chats shares went to, most recent first: the share sheet's Recent (iOS `shareRecipients`). */
+    val shareRecipients: List<ShareRecipient> = emptyList(),
     /** The open chat's computer was removed: the chat's place shows that until Back (iOS `ChatScreen`). */
     val removedChat: Boolean = false,
     /** The computer the Usage sheet and widget show: the last one a chat was opened or sent on. */
@@ -95,12 +97,15 @@ data class AppState(
     val callRequest: String? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
-    val historyComplete: Set<String> = emptySet(),
+    /** Chats that page back no further, and why: their earlier row is dropped. */
+    val historyEnd: Map<String, HistoryEnd> = emptyMap(),
     val routines: Map<String, RoutineListing> = emptyMap(),
     /** The computer's artifacts this phone has seen, with the HTML of the ones shown. */
     val artifacts: ArtifactCache = ArtifactCache(),
     /** Each chat's Library as last fetched, by chat ID (its artifacts as `artifacts` has them). */
     val library: Map<String, List<LibraryItem>> = emptyMap(),
+    /** The transcripts of the background tasks whose details are open, by task id; never part of [entries]. */
+    val taskEntries: Map<String, List<Entry>> = emptyMap(),
     val plugins: PluginListing? = null,
     val voice: VoiceCallViewState? = null,
     /** The computer's remote screen (`null`: the host predates it). */
@@ -127,3 +132,6 @@ data class AppState(
         return !loading && rosterLoaded && actualConnection is LinkState.Ready && mirrorRevision >= head
     }
 }
+
+/** Why a chat pages back no further: the computer has no older rows, or paging back no longer grows what the phone shows (its memory budget is spent). */
+enum class HistoryEnd { Complete, MemoryFull }

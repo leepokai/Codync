@@ -726,8 +726,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "codync-accounts"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codync-host"
-version = "2.43.0"
+version = "2.48.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -736,6 +745,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "codync-accounts",
  "codync-mem",
  "codync-network",
  "croner",
@@ -798,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "codync-network"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3216,8 +3226,6 @@ dependencies = [
 [[package]]
 name = "noq-udp"
 version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954"
 dependencies = [
  "cfg_aliases 0.2.2",
  "libc",

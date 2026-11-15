@@ -12,6 +12,28 @@ class RoutineTest {
         assertEquals("Retrying", run.copy(notBefore = 1).label)
     }
 
+    @Test fun `a listing carries the follow-ups still waiting, and an older host's has none`() {
+        val listing = WireJson.decodeFromString<RoutineListing>("""{"routines":[],"runs":[],"followUps":[{"id":"f","botId":"b","at":1794650400000,"note":"Check the build","createdAt":1794649200000,"chain":0}]}""")
+        assertEquals("Check the build", listing.followUps.single().note)
+        assertTrue(WireJson.decodeFromString<RoutineListing>("""{"routines":[],"runs":[]}""").followUps.isEmpty())
+    }
+
+    @Test fun `a waiting follow-up says when it happens`() {
+        val zone = java.time.ZoneId.of("Asia/Taipei")
+        val now = java.time.ZonedDateTime.of(2026, 11, 14, 15, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val followUp = FollowUp("f", "b", now + 20 * 60_000, "Check the build")
+        // The app language's way of writing a time, whatever the phone's is.
+        val locale = java.util.Locale.forLanguageTag("zh-Hant")
+        val time = { at: Long, format: java.time.format.DateTimeFormatter -> java.time.Instant.ofEpochMilli(at).atZone(zone).format(format.withLocale(locale)) }
+        val short = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT)
+        assertEquals("Follow-up at " + time(followUp.at, short), followUp.line(locale, now, zone))
+        val tomorrow = followUp.copy(at = now + 24 * 3_600_000)
+        val dated = java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT)
+        assertEquals("Follow-up at " + time(tomorrow.at, dated), tomorrow.line(locale, now, zone))
+        // Due, and waiting its turn behind what the bot is doing.
+        assertEquals("Follow-up due now", followUp.copy(at = now - 1).line(locale, now, zone))
+    }
+
     @Test fun `editing unsupported schedules preserves every trigger field`() {
         val original = WireJson.parseToJsonElement("""[{"type":"event","source":"github","event":"*","filters":{"repo":"org/project"},"future":true},{"type":"interval","seconds":5400}]""").jsonArray.map { it.jsonObject }
         val schedule = RoutineScheduleDraft(kind = "interval", original = original).forMobileEditor()
@@ -56,10 +78,11 @@ class RoutineTest {
         assertTrue(null.canEdit(""))
     }
 
-    @Test fun `timeout reads as a human duration`() {
-        for ((seconds, text) in listOf("3600" to "1 hour", "7200" to "2 hours", "1800" to "30 minutes", "60" to "1 minute",
-            "90" to "90 seconds", "1" to "1 second", "0" to "0 seconds", "abc" to "abcs")) {
-            assertEquals(text, RoutineDraft(timeoutSeconds = seconds).timeoutText)
+    @Test fun `timeout reads in the largest whole unit`() {
+        for ((seconds, parts) in listOf("3600" to (1L to TimeoutUnit.Hour), "7200" to (2L to TimeoutUnit.Hour), "1800" to (30L to TimeoutUnit.Minute),
+            "60" to (1L to TimeoutUnit.Minute), "90" to (90L to TimeoutUnit.Second), "1" to (1L to TimeoutUnit.Second),
+            "0" to (0L to TimeoutUnit.Second), "abc" to null)) {
+            assertEquals(parts, RoutineDraft(timeoutSeconds = seconds).timeoutParts)
         }
     }
 
@@ -71,5 +94,7 @@ class RoutineTest {
         assertEquals("Last run failed", RoutineListing(listOf(routine), listOf(failed)).summary(routine))
         assertEquals("Schedule needs attention", RoutineListing(emptyList(), emptyList()).summary(routine.copy(lastError = "invalid schedule")))
         assertEquals("Every day", RoutineListing(emptyList(), emptyList()).summary(routine))
+        assertEquals("<Every day>", RoutineListing(emptyList(), emptyList()).summary(routine) { "<$it>" })
+        assertEquals("<Last run <failed>>", RoutineListing(listOf(routine), listOf(failed)).summary(routine) { "<$it>" })
     }
 }

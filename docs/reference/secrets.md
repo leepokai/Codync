@@ -33,8 +33,7 @@ Bindings and plain vars: [cloud/README.md](../../cloud/README.md#deploy).
 | `CLERK_SECRET_KEY` | dev, main | Verifies session tokens (Clerk's JWKS) | Roll it in Clerk, put the new one |
 | `CLERK_WEBHOOK_SECRET` | dev, main | Verifies Clerk's `user.deleted` webhook | Roll it on the Clerk webhook endpoint |
 | `DEVICE_CERT_KEY` | dev, main | Signs device certificates; hosts compile in its public half (`host/src/environment.rs`) | *No reissue*: a new key needs a host release with the new public half. Copy: `CODYNC_DEVICE_CERT_KEY` |
-| `CLOUD_SECRET_KEYS` | dev, main (once Codync Cloud is on there) | Seals the provider keys (Boat, InstaBox) users give Codync Cloud and each cloud computer's keeper vault key (`src/secrets.ts`, `src/cloud-machines.ts`); the first entry seals, any entry opens | *No reissue*: without it every saved provider key is unreadable (users paste theirs again) and every existing cloud computer's vault is locked (delete and recreate those machines, then enter their secrets again). Rotate by putting a new entry first; keep an old one until every machine created under it is deleted and every provider key sealed with it has been saved again. Copy: `CODYNC_CLOUD_SECRET_KEYS` |
-| `CLOUD_COMPUTER_USERS` | dev, main (once Codync Cloud is on there) | Which accounts may have a cloud computer; a secret only because the repository is public | Set it again |
+| `CLOUD_SECRET_KEYS` | dev, main (since 2026-11-09) | Seals the provider keys (Boat, InstaBox) users give Codync Cloud and each cloud computer's keeper vault key (`src/secrets.ts`, `src/cloud-machines.ts`); the first entry seals, any entry opens | *No reissue*: without it every saved provider key is unreadable (users paste theirs again) and every existing cloud computer's vault is locked (delete and recreate those machines, then enter their secrets again). Rotate by putting a new entry first; keep an old one until every machine created under it is deleted and every provider key sealed with it has been saved again. Copy: `CODYNC_CLOUD_SECRET_KEYS` |
 | `RELEASE_GATE_TOKEN` | main | GitHub token (*Actions: write*) that dispatches the release gate | Make a new fine-grained token |
 | `TURN_KEY_ID`, `TURN_KEY_API_TOKEN` | dev, main | Issue Cloudflare Realtime TURN credentials for remote screen | Make a new TURN key in Cloudflare |
 
@@ -78,7 +77,7 @@ Set with `gh secret set <name>`. The workflow that reads each one is in `.github
 | `POSTHOG_CLI_API_KEY` | `ios-dsyms` | Uploads iPhone dSYMs to PostHog | Make a new personal API key |
 | `DISCORD_RELEASES_WEBHOOK` | `auto-tag` | Posts release notes to Discord | Delete the webhook, make a new one |
 | `DISCORD_MENTIONS_SECRET` | `auto-tag` | Signs the release notes it sends to the Discord Worker's `/mentions`; the same key as its `MENTIONS_SECRET` | Change it on both ends |
-| `CODYNC_MEM_DEPLOY_KEY`, `CODYNC_NETWORK_DEPLOY_KEY` | `memory-crate`, `network-crate` | Deploy keys that mirror the crates to their own repositories | Make a new deploy key on that repository |
+| `CODYNC_MEM_DEPLOY_KEY`, `CODYNC_NETWORK_DEPLOY_KEY`, `CODYNC_ACCOUNTS_DEPLOY_KEY` | `memory-crate`, `network-crate`, `accounts-crate` | Deploy keys that mirror the crates to their own repositories | Make a new deploy key on that repository |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `issue-triage` | Labels new issues and pull requests | `claude setup-token`, then set it again |
 
 ## Sign-in providers (in Clerk)

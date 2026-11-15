@@ -30,7 +30,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "conversations",
         title: "Conversations",
         description:
-          "Chatting with a bot: messages and files, approval cards, stopping, replies, reactions, commands, fresh conversations and notifications.",
+          "Chatting with a bot: messages and files, approval cards, background tasks, stopping, replies, reactions, commands, fresh conversations and notifications.",
       },
       {
         slug: "groups",
@@ -110,6 +110,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         title: "Remote access",
         description:
           "How your phone reaches your computer: directly over Wi-Fi, Tailscale or your own URL, or through the Codync relay, always end-to-end encrypted.",
+      },
+      {
+        slug: "codync-cloud",
+        title: "Codync Cloud",
+        description:
+          "Run your bots on a cloud computer on your own Boat or InstaBox account: free from Codync, asleep while idle, woken by a message.",
       },
       {
         slug: "linux-servers",

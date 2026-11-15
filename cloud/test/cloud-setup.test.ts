@@ -19,7 +19,7 @@ describe("cloud computer setup", () => {
     );
     expect(script).toContain("curl -fsSL --retry 60 --retry-delay 2 --retry-connrefused 'http://127.0.0.1:5000/codync-host' -o ~/.local/bin/codync-host.next");
     expect(script).toContain(
-      "printf '%s\\n' '[Service]' 'Environment=CODYNC_RELEASES_URL=https://github.com/leepokai/Codync/releases' 'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000' 'Environment=CODYNC_ANALYTICS_ENV=dev' | sudo -n -u codync-agent tee \"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf\" >/dev/null",
+      "printf '%s\\n' '[Service]' 'Environment=CODYNC_RELEASES_URL=https://github.com/leepokai/Codync/releases' 'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000' 'Environment=CODYNC_ANALYTICS_ENV=dev' 'Environment=DISPLAY=:20' | sudo -n -u codync-agent tee \"$AH/.config/systemd/user/codync-host.service.d/codync-cloud.conf\" >/dev/null",
     );
     // The keeper starts with the same environment (it fetches its vault key from that cloud).
     expect(script).toContain("'Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000'");
@@ -54,11 +54,34 @@ describe("cloud computer setup", () => {
     expect(lines[at("codync-cloud.conf")]).toContain("Environment=CODYNC_CLOUD_URL=http://127.0.0.1:4000");
     expect(lines[at("codync-cloud.conf")]).toContain("sudo -n -u codync-agent tee");
     expect(at("enable-linger codync-agent")).toBeGreaterThan(at("enable --now codync-keeper"));
-    expect(lines.at(-2)).toMatch(/^sudo -n -u codync-agent env HOME="\$AH" .* "\$AH\/\.local\/bin\/codync-host" install$/);
-    // Agents the image installs on first run as root are installed now, last.
-    expect(lines.at(-1)).toContain('"$L" --install "$h"');
+    const install = lines.findIndex((l) => /^sudo -n -u codync-agent env HOME="\$AH" .* "\$AH\/\.local\/bin\/codync-host" install$/.test(l));
+    expect(install).toBeGreaterThan(at("enable-linger codync-agent"));
+    // Agents the image installs on first run as root are installed after the host.
+    expect(at('"$L" --install "$h"')).toBeGreaterThan(install);
     // The provider's own user keeps its sudo (its machine agent may need it): nothing here takes it away.
     expect(script).not.toMatch(/sudoers|restart "user@/);
+  });
+
+  it("gives the agents a desktop of their own for the screen, never the provider's", () => {
+    const lines = setupScript(env({})).trimEnd().split("\n");
+    const at = (needle: string) => lines.findIndex((l) => l.includes(needle));
+    // The screen helper and the computer-use driver go beside the agents' host, which looks there.
+    expect(lines[at("for b in codync-screen cua-driver")]).toContain('"$AH/.local/bin/$b"');
+    // GStreamer with x264 and libnice, and the Xfce session, after the host is up.
+    const packages = at("--no-install-recommends");
+    expect(lines[packages]).toMatch(/xvfb .*xfce4-session .*gstreamer1\.0-plugins-ugly gstreamer1\.0-nice xclip/);
+    expect(packages).toBeGreaterThan(at('"$AH/.local/bin/codync-host" install'));
+    // A first-boot update holding apt's lock is waited for, and a failure is said, not swallowed.
+    expect(lines[packages]).toContain("-o DPkg::Lock::Timeout=300");
+    expect(lines[packages]).not.toContain("|| true");
+    // The display and session are the agents' own user units; the host's environment names that display.
+    expect(lines[at("codync-display.service\"")]).toMatch(/'ExecStart=\/usr\/bin\/Xvfb :20 -screen 0 1920x1080x24 -nolisten tcp -noreset' .*\| sudo -n -u codync-agent tee/);
+    // The session uses the agents' user bus, whose accessibility bus the screen helper reads, and gives it the display.
+    expect(lines[at("codync-desktop.service\"")]).toContain("'ExecStartPre=/usr/bin/systemctl --user set-environment DISPLAY=:20' 'ExecStart=/usr/bin/startxfce4'");
+    expect(lines[at("codync-cloud.conf")]).toContain("'Environment=DISPLAY=:20'");
+    expect(lines.at(-1)).toMatch(/^sudo -n -u codync-agent env .* systemctl --user enable --now codync-display\.service codync-desktop\.service$/);
+    // Nothing opens the provider's own display (its user has sudo) to the agents.
+    expect(lines.join("\n")).not.toMatch(/xhost|XAUTHORITY|DISPLAY=:[01]\b/);
   });
 
   it("refuses anything but plain CODYNC_ settings and URLs", () => {

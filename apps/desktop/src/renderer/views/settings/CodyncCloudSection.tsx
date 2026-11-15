@@ -51,10 +51,16 @@ export function CodyncCloudSection() {
     if (action !== 'rename') return setAsking({ action, machine })
     setNaming({ title: 'Rename cloud computer', name: machine.name, save: (name) => void model.rename(machine.cloudComputerId, name) })
   }
-  // A failure from an earlier opening is over.
+  // A failure from an earlier opening is over, a row's key removal too.
   const openNew = () => {
     model.clearError('create')
+    for (const p of model.providers) model.clearError(`key:${p.provider}`)
     setCreating(true)
+  }
+  // Closed, its failure was seen: New cloud computer under it shows only a removal asked from its own row.
+  const closeKey = () => {
+    if (keyFor) model.clearError(`key:${keyFor}`)
+    setKeyFor(null)
   }
   return (
     <>
@@ -86,7 +92,7 @@ export function CodyncCloudSection() {
       <Sheet open={creating} onClose={() => setCreating(false)}>
         <NewCloudComputerSheet model={model} openKey={setKeyFor} />
       </Sheet>
-      <Sheet open={keyFor !== null} onClose={() => setKeyFor(null)}>
+      <Sheet open={keyFor !== null} onClose={closeKey}>
         {keyFor ? <CloudKeySheet model={model} provider={keyFor} done={() => setKeyFor(null)} /> : null}
       </Sheet>
       <Dialog

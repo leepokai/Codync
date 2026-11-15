@@ -7,6 +7,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { copyText } from '../../lib/image-clipboard'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
@@ -90,7 +91,7 @@ function CallHeader({ botId, line }: { botId: string; line: Entry }) {
 const opensExchange = (message: CallMessage, previous?: CallMessage) => message.speaker === 'user' && previous?.speaker !== 'user'
 
 function CallMessageRow({ message }: { message: CallMessage }) {
-  const copy = () => [{ title: 'Copy', icon: 'square.on.square', action: () => window.codync.app.copy(message.text) }]
+  const copy = () => [{ title: 'Copy', icon: 'square.on.square', action: () => void copyText(message.text) }]
   switch (message.speaker) {
     case 'user':
       return (

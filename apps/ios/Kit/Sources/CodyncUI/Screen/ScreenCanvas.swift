@@ -24,9 +24,8 @@ final class ScreenCanvas: UIView, UIGestureRecognizerDelegate {
     /// One-shot modifiers from the on-screen bar, applied to the next key.
     var armed: [String] = []
 
-    private let video = RTCMTLVideoView()
+    private let video = ScreenVideoView()
     private let keys = KeyProxyField()
-    private weak var track: RTCVideoTrack?
     private var viewport = ScreenViewport(display: CGSize(width: 1, height: 1), view: CGSize(width: 1, height: 1))
     private var streamRegion: CGRect?
     private var cursor = CGPoint.zero
@@ -55,10 +54,7 @@ final class ScreenCanvas: UIView, UIGestureRecognizerDelegate {
     // MARK: state from SwiftUI
 
     func attach(_ newTrack: RTCVideoTrack?) {
-        guard newTrack !== track else { return }
-        track?.remove(video)
-        track = newTrack
-        newTrack?.add(video)
+        video.attach(newTrack)
     }
 
     func setDisplay(_ d: ScreenDisplay) {
@@ -431,7 +427,11 @@ struct ScreenCanvasView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ScreenCanvas {
         let canvas = ScreenCanvas()
-        canvas.send = { [weak session] in session?.send($0) }
+        // Typing counts as touching the app: keys never reach the window as touches.
+        canvas.send = { [weak session] in
+            Touches.touched()
+            session?.send($0)
+        }
         canvas.requestView = { [weak session] crop, pixels in session?.view(crop: crop, pixels: pixels) }
         return canvas
     }

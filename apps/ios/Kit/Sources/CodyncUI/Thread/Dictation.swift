@@ -40,7 +40,9 @@ struct DictationService {
 /// transcript goes after what's in the box by then.
 @MainActor @Observable
 final class Dictation {
-    private(set) var listening = false
+    private(set) var listening = false {
+        didSet { if listening != oldValue { CallAudioSession.dictating = listening } }
+    }
     /// Recorded for a provider, waiting for its transcript.
     private(set) var transcribing = false
     /// When it started listening, for the recording pill's time.

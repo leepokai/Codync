@@ -17,6 +17,8 @@ use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot};
 
 pub mod codebuddy;
+mod exit;
+pub use exit::{exit_tail, stderr_reason};
 
 /// stderr lines kept to explain a crash.
 const STDERR_TAIL_LINES: usize = 12;
@@ -92,6 +94,8 @@ pub enum FailureKind {
     Exited,
     /// The agent wouldn't take the bot's model.
     NoModel,
+    /// The agent doesn't have the mode the bot works in.
+    ModeMissing,
 }
 
 #[derive(Debug)]
@@ -193,13 +197,8 @@ impl Acp {
         env: &[(String, String)],
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Incoming>)> {
         let mut process = crate::shell::exec(command).tokio();
-        process
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+        crate::shell::apply_env(process.as_std_mut(), env);
+        process.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         // So `kill` can stop everything it started.
         super::process::own_tree(&mut process);
         let mut child = process.spawn().with_context(|| format!("starting `{command}`"))?;
@@ -217,7 +216,7 @@ impl Acp {
         let pending = Pending::default();
 
         let tail = Arc::new(std::sync::Mutex::new(VecDeque::<String>::with_capacity(STDERR_TAIL_LINES)));
-        {
+        let stderr_read = {
             let tail = tail.clone();
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
@@ -229,8 +228,8 @@ impl Acp {
                     }
                     t.push_back(line);
                 }
-            });
-        }
+            })
+        };
         {
             let pending = pending.clone();
             tokio::spawn(async move {
@@ -262,6 +261,9 @@ impl Acp {
                         _ => {}
                     }
                 }
+                // What it printed on its way out is still being read; a child that keeps stderr open isn't waited for.
+                // Read before the waiters fail, so `Closed` follows their failure at once.
+                let _ = tokio::time::timeout(exit::STDERR_FLUSH, stderr_read).await;
                 // Process gone: dropping the waiters fails them as `FailureKind::Exited`.
                 pending.locked().clear();
                 let stderr_tail = tail.locked().iter().cloned().collect::<Vec<_>>().join("\n");
@@ -300,8 +302,7 @@ impl Acp {
     /// Everything still running in the agent's job.
     #[cfg(windows)]
     pub(crate) async fn job_processes(&self) -> Result<Vec<super::process::JobProcess>> {
-        let members = self.child.lock().await.job_members()?;
-        tokio::task::spawn_blocking(move || super::process_windows::named(&members)).await?
+        self.child.lock().await.processes().await
     }
 
     async fn write(&self, msg: Value) -> Result<()> {
@@ -309,9 +310,17 @@ impl Acp {
         line.push(b'\n');
         let mut stdin = self.stdin.lock().await;
         let stdin = stdin.as_mut().ok_or_else(|| Failure::error(FailureKind::Exited, "agent stopped"))?;
-        stdin.write_all(&line).await?;
-        stdin.flush().await?;
-        Ok(())
+        let written = async {
+            stdin.write_all(&line).await?;
+            stdin.flush().await
+        };
+        match written.await {
+            // The agent exited before reading it.
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                Err(Failure::error(FailureKind::Exited, "agent process exited"))
+            }
+            r => Ok(r?),
+        }
     }
 
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
@@ -360,7 +369,8 @@ impl Acp {
     }
 }
 
-/// Waits until every agent being stopped has exited or been killed (at most [`EXIT_GRACE`]).
+/// Waits until every agent being stopped has exited or been killed: at most [`EXIT_GRACE`], then
+/// [`UNWIND`](super::process::UNWIND) for its tree to end from its leaves up.
 pub async fn stopped() {
     let tasks = std::mem::take(&mut *STOPPING.locked());
     futures::future::join_all(tasks).await;

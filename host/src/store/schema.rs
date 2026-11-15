@@ -6,8 +6,9 @@ use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Current schema version (kv `schema`).
-const SCHEMA: i64 = 8;
+/// Current schema version (kv `schema`). `hello` carries it: a migration may rewrite or delete rows in place, so
+/// a client whose copy was synced under another schema fetches the conversation again.
+pub const SCHEMA: i64 = 8;
 
 /// 3: authorized devices (keys, not push tickets) with their push and Live Activity
 /// tickets. The old ticket-only `devices` table is dropped; phones re-register on connect.

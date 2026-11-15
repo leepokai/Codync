@@ -58,9 +58,11 @@ impl App {
             Overlay::Network(_) => Some(Screen::Network),
             Overlay::Memory(_) => Some(Screen::Memory),
             Overlay::Library(_) => Some(Screen::Library),
-            Overlay::Routines(_) => Some(Screen::Routines),
+            Overlay::Details(_) => Some(Screen::Routines),
+            Overlay::Computer(_) => Some(Screen::BotComputer),
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
+            Overlay::Task(_) => Some(Screen::Task),
             Overlay::Form(_) => Some(Screen::BotDetails),
             Overlay::Group(g) if g.group_id.is_some() => Some(Screen::BotDetails),
             _ => None,
@@ -106,6 +108,13 @@ mod tests {
         app.overlays.push(Overlay::Analytics(crate::tui::manage::AnalyticsSheet::default()));
         app.report_screen();
         assert_eq!(app.seen.screen, Some(Screen::Usage), "a sheet over it isn't a screen");
+        app.overlays.push(Overlay::Computer("b".into()));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::BotComputer));
+        app.overlays.pop();
+        app.overlays.push(Overlay::Task(crate::tui::manage::TaskSheet::new("b".into(), "i".into(), "task-1".into())));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::Task), "a task's transcript");
 
         app.overlays.clear();
         app.trace = TraceMode::Full;

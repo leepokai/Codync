@@ -10,7 +10,7 @@ use super::{
     opencode, vibe,
 };
 use crate::LockExt;
-use crate::agent::backends;
+use crate::agent::{backends, login_profiles};
 use crate::hub::Hub;
 use crate::store::Store;
 use anyhow::{Context, Result};
@@ -29,6 +29,8 @@ pub struct Service {
     pub shown: bool,
 }
 
+type ReadProfile = fn(Vec<(String, String)>) -> BoxFuture<'static, Option<Vec<Window>>>;
+
 pub(super) struct Reader {
     pub(super) id: &'static str,
     pub(super) name: &'static str,
@@ -36,6 +38,9 @@ pub(super) struct Reader {
     /// Something to read without the agent's CLI: an app's saved login or quota file.
     pub(super) found_without_cli: Option<fn() -> bool>,
     pub(super) read: for<'a> fn(&'a Hub) -> BoxFuture<'a, Option<Vec<Window>>>,
+    /// The same reading for a login profile, given the variables that point the agent's CLI at the profile's
+    /// folder. Without one, the agent's login profiles list with no reading.
+    pub(super) read_profile: Option<ReadProfile>,
 }
 
 fn blocking(read: fn() -> Option<Vec<Window>>) -> BoxFuture<'static, Option<Vec<Window>>> {
@@ -49,14 +54,16 @@ pub(super) const READERS: &[Reader] = &[
         name: "Claude",
         source: "claude",
         found_without_cli: None,
-        read: |_| Box::pin(claude::collect()),
+        read: |_| Box::pin(claude::collect(Vec::new())),
+        read_profile: Some(|env| Box::pin(claude::collect(env))),
     },
     Reader {
         id: "codex",
         name: "Codex",
         source: "Codex CLI",
         found_without_cli: None,
-        read: |_| Box::pin(codex::collect()),
+        read: |_| Box::pin(codex::collect(Vec::new())),
+        read_profile: Some(|env| Box::pin(codex::collect(env))),
     },
     Reader {
         id: "antigravity",
@@ -64,6 +71,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "antigravity",
         found_without_cli: None,
         read: |hub| Box::pin(antigravity::collect(hub)),
+        read_profile: None,
     },
     Reader {
         id: "cursor",
@@ -71,6 +79,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "Cursor",
         found_without_cli: Some(cursor::login_saved),
         read: |_| Box::pin(cursor::collect()),
+        read_profile: None,
     },
     Reader {
         id: "copilot",
@@ -78,6 +87,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "Copilot CLI",
         found_without_cli: None,
         read: |hub| Box::pin(copilot::collect(hub)),
+        read_profile: None,
     },
     Reader {
         id: "grok",
@@ -85,14 +95,23 @@ pub(super) const READERS: &[Reader] = &[
         source: "Grok CLI",
         found_without_cli: None,
         read: |hub| Box::pin(grok::collect(hub)),
+        read_profile: None,
     },
-    Reader { id: "amp", name: "Amp", source: "amp usage", found_without_cli: None, read: |_| Box::pin(amp::collect()) },
+    Reader {
+        id: "amp",
+        name: "Amp",
+        source: "amp usage",
+        found_without_cli: None,
+        read: |_| Box::pin(amp::collect()),
+        read_profile: None,
+    },
     Reader {
         id: "auggie",
         name: "Auggie",
         source: "auggie account status",
         found_without_cli: None,
         read: |hub| Box::pin(auggie::collect(hub)),
+        read_profile: None,
     },
     Reader {
         id: "hermes",
@@ -100,6 +119,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "hermes usage",
         found_without_cli: None,
         read: |hub| Box::pin(hermes::collect(hub)),
+        read_profile: None,
     },
     Reader {
         id: "junie",
@@ -107,6 +127,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "JetBrains IDE",
         found_without_cli: Some(junie::quota_saved),
         read: |_| blocking(junie::collect),
+        read_profile: None,
     },
     Reader {
         id: "kilo",
@@ -114,6 +135,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "kilo profile",
         found_without_cli: None,
         read: |hub| Box::pin(kilo::collect(hub)),
+        read_profile: None,
     },
     Reader {
         id: "kimi",
@@ -121,6 +143,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "kimi",
         found_without_cli: None,
         read: |_| blocking(kimi::collect),
+        read_profile: None,
     },
     Reader {
         id: "kiro",
@@ -128,6 +151,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "kiro-cli",
         found_without_cli: None,
         read: |_| Box::pin(kiro::collect()),
+        read_profile: None,
     },
     Reader {
         id: "vibe",
@@ -135,6 +159,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "vibe logs",
         found_without_cli: None,
         read: |_| blocking(vibe::collect),
+        read_profile: None,
     },
     Reader {
         id: "omp",
@@ -142,6 +167,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "omp usage",
         found_without_cli: None,
         read: |_| Box::pin(omp::collect()),
+        read_profile: None,
     },
     Reader {
         id: "opencode",
@@ -149,6 +175,7 @@ pub(super) const READERS: &[Reader] = &[
         source: "opencode database",
         found_without_cli: None,
         read: |_| blocking(opencode::collect),
+        read_profile: None,
     },
 ];
 
@@ -163,7 +190,7 @@ fn arranged(store: &Store) -> Vec<String> {
     })
 }
 
-fn reader(id: &str) -> Result<&'static Reader> {
+pub(super) fn reader(id: &str) -> Result<&'static Reader> {
     READERS.iter().find(|reader| reader.id == id).context("unknown usage service")
 }
 
@@ -221,10 +248,18 @@ pub(super) fn wanted_readers(store: &Store) -> Vec<&'static Reader> {
     READERS.iter().filter(|reader| wanted(reader.id, &used, store)).collect()
 }
 
-/// The wanted readers with no reading yet.
+/// The wanted readers with no reading yet, of the default login or of a login profile they can read. An agent
+/// listed only for its login profiles hasn't had its default login read.
 pub(super) fn unread_readers(hub: &Hub) -> Vec<&'static Reader> {
-    let held = held_readings(hub);
-    wanted_readers(&hub.store).into_iter().filter(|reader| !held.contains(reader.id)).collect()
+    let wanted = wanted_readers(&hub.store);
+    let usage = hub.usage.locked();
+    let read = |reader: &Reader| {
+        usage.providers.iter().find(|provider| provider.id == reader.id).is_some_and(|provider| {
+            provider.updated_at != 0
+                && (reader.read_profile.is_none() || provider.login_profiles.iter().all(|row| row.updated_at != 0))
+        })
+    };
+    wanted.into_iter().filter(|reader| !read(reader)).collect()
 }
 
 fn held_readings(hub: &Hub) -> HashSet<&'static str> {
@@ -253,10 +288,14 @@ pub(super) fn sync(hub: &Hub) {
     // Stable: an agent the order doesn't name follows the others, in the readers' order.
     let order = arranged(store);
     services.sort_by_key(|service| order.iter().position(|id| id == service.id).unwrap_or(usize::MAX));
-    let keep: HashSet<&str> = READERS.iter().map(|reader| reader.id).filter(|id| wanted(id, &used, store)).collect();
+    let keep: Vec<&Reader> = READERS.iter().filter(|reader| wanted(reader.id, &used, store)).collect();
+    let logins: Vec<_> = keep.iter().map(|reader| (*reader, login_profiles::usage_rows(store, reader.id))).collect();
     hub.update_usage(|usage| {
         usage.services = services;
-        usage.providers.retain(|provider| keep.contains(provider.id));
+        usage.providers.retain(|provider| keep.iter().any(|reader| reader.id == provider.id));
+        for (reader, (default, rows)) in logins {
+            usage.list_login_profiles(reader, default, rows);
+        }
     });
 }
 
@@ -269,6 +308,12 @@ fn changed(hub: &Hub) {
 
 /// A bot was added, removed or moved to other agents.
 pub fn bots_changed(hub: &Hub) {
+    changed(hub);
+}
+
+/// A login profile was removed, renamed, signed in or out, or the default logins' names were looked up again: the
+/// rows under its agent follow, and a new one is read right away.
+pub fn login_profiles_changed(hub: &Hub) {
     changed(hub);
 }
 
@@ -366,7 +411,7 @@ mod tests {
         set_shown(&hub, "codex", false).unwrap();
         assert_eq!(shown(&hub, "codex"), Some(false));
         assert_eq!(hub.usage.locked().visible().providers, []);
-        assert!(near_limit(&hub, "codex"), "background work still goes by its limits");
+        assert!(near_limit(&hub, &bot("b1", "codex", None)), "background work still goes by its limits");
         assert_eq!(wanted_readers(&hub.store).len(), 1);
     }
 
@@ -390,6 +435,65 @@ mod tests {
         assert!(runs(&hub.store, "grok"));
         assert!(runs(&hub.store, "antigravity-acp"), "a fallback counts");
         assert!(!runs(&hub.store, "cursor"));
+    }
+
+    #[test]
+    fn a_signed_in_account_login_profile_is_listed_under_its_agent_and_read_right_away() {
+        use super::super::Reading;
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "claude", None)).unwrap();
+        login_profiles::tests::insert(&hub.store, &[("a1", "claude"), ("c1", "codex")]);
+        sync(&hub);
+        assert_eq!(hub.usage.locked().providers, [], "a signed-out one has nothing to ask");
+        login_profiles::note_signed_in(&hub.store, "a1", true);
+        login_profiles::note_signed_in(&hub.store, "c1", true);
+        sync(&hub);
+        let rows = |hub: &Hub| {
+            let usage = hub.usage.locked().visible();
+            usage.providers.iter().flat_map(|p| p.login_profiles.iter().map(|row| row.id.clone())).collect::<Vec<_>>()
+        };
+        assert_eq!(rows(&hub), ["a1"], "Codex isn't wanted here, so its profile isn't read");
+        let claude = reader("claude").unwrap();
+        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
+        assert_eq!(unread_readers(&hub).len(), 1, "listed for its profile, the default login is still unread");
+        hub.update_usage(|usage| usage.providers[0].login_profiles[0].updated_at = 0);
+        hub.update_usage(|usage| {
+            usage.land(claude, "claude", None, Reading::All(vec![Window::new("w", "W", 1.0, None)]));
+        });
+        assert_eq!(unread_readers(&hub).len(), 1, "the profile is still unread");
+        hub.update_usage(|usage| usage.land(claude, "claude", Some("a1"), Reading::Unknown));
+        assert!(unread_readers(&hub).is_empty());
+        login_profiles::note_signed_in(&hub.store, "a1", false);
+        sync(&hub);
+        assert_eq!(rows(&hub), Vec::<String>::new());
+    }
+
+    #[test]
+    fn background_work_and_rests_go_by_the_login_the_bot_runs_on() {
+        use crate::agent::fallback::rest::reset_time;
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "claude", None)).unwrap();
+        login_profiles::tests::insert(&hub.store, &[("a1", "claude")]);
+        login_profiles::note_signed_in(&hub.store, "a1", true);
+        sync(&hub);
+        let now = crate::store::now_ms();
+        let resets = now / 1000 + 3600;
+        let statusline = |profile, percent| {
+            let five_hour = serde_json::json!({"used_percentage": percent, "resets_at": resets});
+            claude::ingest_statusline(&hub, profile, &serde_json::json!({"rate_limits": {"five_hour": five_hour}}));
+        };
+        statusline(None, 10);
+        statusline(Some("a1"), 91);
+        let on_profile = BotConfig { login_profile: Some("a1".into()), ..bot("b2", "claude", None) };
+        assert!(near_limit(&hub, &on_profile));
+        assert!(!near_limit(&hub, &bot("b1", "claude", None)), "the default login has room");
+        let reset = |profile| reset_time(&hub.usage.locked(), "claude", profile, now);
+        assert_eq!(reset(Some("a1")), None, "not used up yet");
+        statusline(Some("a1"), 100);
+        assert_eq!(reset(Some("a1")), Some(resets * 1000));
+        assert_eq!(reset(None), None);
+        let own = hub.usage.locked().windows("claude", None).map(|windows| windows[0].percent);
+        assert_eq!(own, Some(10.0), "the default login's own numbers stay");
     }
 
     /// A reader whose id is no harness's is unreachable: no bot's `backend` finds it, and its CLI is never seen.

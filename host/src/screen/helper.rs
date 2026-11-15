@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+#[cfg(target_os = "linux")]
+use std::time::Instant;
 #[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(unix)]
@@ -112,28 +114,82 @@ pub(super) fn graphical_session() -> bool {
 pub async fn supervise_linux_helper(screen: Arc<Screen>) {
     let exe = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("codync-screen")));
     let program = exe.filter(|p| p.is_file()).unwrap_or_else(|| "codync-screen".into());
-    let mut child: Option<tokio::process::Child> = None;
-    let mut backoff = Duration::from_secs(1);
+    let mut child: Option<(tokio::process::Child, Instant)> = None;
+    let mut restarts = Restarts::default();
+    let mut next_start = Instant::now();
     loop {
-        let running = child.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
-        if screen.enabled() && !running {
-            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
-                Ok(c) => child = Some(c),
-                Err(error) => tracing::warn!(%error, program = %program.display(), "can't start codync-screen"),
-            }
-            tokio::time::sleep(backoff).await;
-            backoff = (backoff * 2).min(Duration::from_secs(30));
-            continue;
-        }
-        if !screen.enabled()
-            && let Some(mut c) = child.take()
+        if let Some((c, started)) = child.as_mut()
+            && let Ok(Some(status)) = c.try_wait()
         {
-            let _ = c.kill().await;
+            if restarts.exited(started.elapsed()) {
+                tracing::warn!(
+                    program = %program.display(), %status, exits = QUICK_EXITS,
+                    "codync-screen keeps exiting right after it starts (its own error is logged just before, \
+                     e.g. missing GStreamer libraries); retrying less often, up to every 2 minutes"
+                );
+            }
+            child = None;
         }
-        if running && screen.link.locked().is_some() {
-            backoff = Duration::from_secs(1);
+        if !screen.enabled() {
+            if let Some((mut c, _)) = child.take() {
+                let _ = c.kill().await;
+            }
+            restarts = Restarts::default();
+            next_start = Instant::now();
+        } else if child.is_none() && Instant::now() >= next_start {
+            match tokio::process::Command::new(&program).kill_on_drop(true).spawn() {
+                Ok(c) => child = Some((c, Instant::now())),
+                Err(error) => {
+                    if restarts.exited(Duration::ZERO) {
+                        tracing::warn!(
+                            %error, program = %program.display(),
+                            "can't start codync-screen; retrying less often, up to every 2 minutes"
+                        );
+                    }
+                }
+            }
+            next_start = Instant::now() + restarts.next_wait();
+        } else if child.is_some() && screen.link.locked().is_some() {
+            restarts = Restarts::default();
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// A helper that exits this soon after starting can't run here yet: missing `GStreamer` libraries,
+/// which a cloud computer's setup installs a minute or two after the host starts.
+#[cfg(target_os = "linux")]
+const QUICK_EXIT: Duration = Duration::from_secs(10);
+/// Quick exits in a row that make a failing streak.
+#[cfg(target_os = "linux")]
+const QUICK_EXITS: u32 = 3;
+
+/// When to start the helper again: doubling waits up to 30 s, up to 2 minutes during a failing
+/// streak, so a helper that can't run yet comes up by itself soon after it can, without flooding the log.
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct Restarts {
+    quick_exits: u32,
+    wait: Duration,
+}
+
+#[cfg(target_os = "linux")]
+impl Restarts {
+    /// Counts an exit after running for `ran`; true when it starts a failing streak (say why once).
+    fn exited(&mut self, ran: Duration) -> bool {
+        if ran >= QUICK_EXIT {
+            self.quick_exits = 0;
+            return false;
+        }
+        self.quick_exits += 1;
+        self.quick_exits == QUICK_EXITS
+    }
+
+    /// The wait after this start before the next one.
+    fn next_wait(&mut self) -> Duration {
+        let cap = if self.quick_exits >= QUICK_EXITS { Duration::from_mins(2) } else { Duration::from_secs(30) };
+        self.wait = (self.wait * 2).clamp(Duration::from_secs(1), cap);
+        self.wait
     }
 }
 
@@ -257,9 +313,9 @@ fn handle_message(screen: &Screen, link: &Link, msg: &Value) -> bool {
 impl Screen {
     /// Nothing from a previous helper carries over to the next one.
     fn reset_helper_state(&self) {
-        self.sessions.locked().clear();
+        self.end_viewers(&mut self.sessions.locked(), |_, _| true);
         *self.status.locked() = HelperStatus::default();
-        self.control.locked().user = false;
+        self.control.locked().user = None;
     }
 }
 

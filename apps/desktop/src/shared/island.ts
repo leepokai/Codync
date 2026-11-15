@@ -21,6 +21,8 @@ export interface IslandBot {
   color: string
   /** A `BotStatus`, or a newer one this app doesn't know. */
   status: BotStatus | string
+  /** It is at work: its chat is in a turn, or a task has an item of its box (`isBusy`). */
+  busy: boolean
   /** The agent it runs, as the app names it ("Claude Code"). */
   backend: string
   /** Its working folder's name. */
@@ -55,7 +57,7 @@ export interface IslandPermission {
 export interface IslandSummary {
   bots: IslandBot[]
   permissions: IslandPermission[]
-  /** This computer's plan limits (Claude, Codex), as the menu bar shows them. */
+  /** This computer's plan limits by agent (Claude, Codex); the island shows each agent's login nearest a limit. */
   usage: UsageProvider[]
 }
 
@@ -108,7 +110,11 @@ const OPEN_HEIGHT = 196
 /** The resting bar at a plain top edge (no notch). */
 const BAR = 26
 
-export const isActive = (b: Pick<IslandBot, 'status'>) => b.status === 'working' || b.status === 'needsInput'
+/** The bot is at work, in its chat or in the background: what the island shows and counts, as the tray does. */
+export const isActive = (b: Pick<IslandBot, 'busy'>) => b.busy
+/** The bot's chat is in a turn. Done and failed follow the chat's own turns, never an item's end: an item's report
+ * arrives as the bot's message, in a turn of its own. */
+export const inTurn = (status: string) => status === 'working' || status === 'needsInput'
 export const isOpenMode = (mode: IslandMode) => mode !== 'hidden' && mode !== 'peek' && mode !== 'compact'
 /** Leaving the message tab hides its recording pill, so dictation still going there stops (keeping the words). */
 export const stopsDictation = (from: IslandTab, to: IslandTab, dictating: boolean) => dictating && from === 'message' && to !== 'message'
@@ -135,8 +141,7 @@ export function islandMode(
 /** Bots that just stopped working since `before` (their last statuses by ref): done or failed. */
 export function transitions(before: ReadonlyMap<string, string>, bots: IslandBot[]): IslandNotice[] {
   return bots.flatMap((b): IslandNotice[] => {
-    const was = before.get(b.ref)
-    if (was !== 'working' && was !== 'needsInput') return []
+    if (!inTurn(before.get(b.ref) ?? '')) return []
     if (b.status === 'idle') return [{ kind: 'finished', ref: b.ref }]
     if (b.status === 'error') return [{ kind: 'failed', ref: b.ref }]
     return []

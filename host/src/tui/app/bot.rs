@@ -81,6 +81,8 @@ pub struct Bot {
     pub dev_servers: Vec<super::super::manage::DevServer>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
+    /// The `/` commands of the agent it runs on now, as `(name, description)`.
+    pub agent_commands: Vec<(String, String)>,
     pub status: Status,
     pub activity: String,
     pub started_at: Option<i64>,
@@ -232,6 +234,14 @@ impl Bot {
             dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
+            agent_commands: v["agentCommands"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| {
+                    Some((c["name"].as_str()?.to_owned(), c["description"].as_str().unwrap_or_default().to_owned()))
+                })
+                .collect(),
             status: match v["status"].as_str() {
                 Some("working") => Status::Working,
                 Some("needsInput") => Status::NeedsInput,

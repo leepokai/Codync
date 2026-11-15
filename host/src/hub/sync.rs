@@ -45,6 +45,9 @@ impl Hub {
         v["workingChat"] = rt.lane.as_ref().map(|l| l.chat.clone()).into();
         v["fastModeSupport"] = rt.fast_mode.as_str().into();
         if !cfg.is_group() {
+            // The commands of the agent the bot runs on now: a fallback's while it answers.
+            let agent = rt.agent_step.as_ref().map_or(cfg.backend.as_str(), |s| s.agent.as_str());
+            v["agentCommands"] = json!(crate::agent::bot::agent_commands(&self.store, cfg, agent));
             v["agentStep"] = json!(rt.agent_step);
             v["resting"] = json!(crate::agent::fallback::resting(&self.store, cfg, crate::store::now_ms()));
         }

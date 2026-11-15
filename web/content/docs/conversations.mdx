@@ -180,8 +180,9 @@ Type `/` at the start of a message to see the bot's commands:
 - `/fast`: turns [Fast mode](/docs/agents#models-and-options) on or off, when the bot's agent offers it.
 - `/servers` (terminal UI): opens the bot's [dev servers](/docs/dev-servers), while it has some.
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
+- The agent's own commands (Claude Code's, Codex's, OpenCode's and so on), marked with the agent's logo, come last, with the agent's description of each. Picking one fills in `/<command>`; add anything it needs and send it. The list follows the agent the bot runs on now, and shows up once that agent has started for the bot. A group chat doesn't list them.
 
-Any other `/command` goes to the agent unchanged, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
+A message that starts with one of the agent's commands goes to the agent exactly as you typed it, so the agent runs it. Any other `/command` goes to the agent unchanged too, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
 
 ## Follow-ups
 

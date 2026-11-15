@@ -54,9 +54,11 @@ private struct ComposerListRow<Icon: View>: View {
     }
 }
 
-/// The `/` list: each command's icon, name and what it does; a tap runs it.
+/// The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does; a tap runs it.
 struct CommandList: View {
     let commands: [SlashCommand]
+    /// The logo an agent's commands are drawn with (`BotStore.agentRegistry`).
+    let agentRegistry: (String) -> String
     let pick: (SlashCommand) -> Void
 
     var body: some View {
@@ -65,9 +67,13 @@ struct CommandList: View {
                 ComposerListRow(title: command.title, detail: command.detail, warning: command.warning) {
                     pick(command)
                 } icon: {
-                    Image(systemName: command.icon)
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.secondary)
+                    if case .agent(_, let agent) = command.action {
+                        AgentIcon(registry: agentRegistry(agent), size: 15)
+                    } else {
+                        Image(systemName: command.icon)
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.secondary)
+                    }
                 }
             }
         }

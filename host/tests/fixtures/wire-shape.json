@@ -4,6 +4,7 @@
     "event:bot": "object",
     "event:bot.bot": "object",
     "event:bot.bot.activity": "string",
+    "event:bot.bot.agentCommands": "array",
     "event:bot.bot.agentStep": "null",
     "event:bot.bot.autoName": "bool",
     "event:bot.bot.avatarColor": "string",

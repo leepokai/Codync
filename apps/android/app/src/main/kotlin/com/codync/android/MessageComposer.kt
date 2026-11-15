@@ -161,11 +161,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     fun clear() = text.edit { replace(0, length, "") }
     fun mention(member: Bot) = text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ")
     fun run(command: SlashCommand) {
-        val skill = command.skill
-        when {
-            skill != null -> text.setTextAndPlaceCursorAtEnd("/$skill ")
-            else -> { store.toggleFastMode(bot); clear() }
-        }
+        if (command.fills) text.setTextAndPlaceCursorAtEnd("/${command.name} ") else { store.toggleFastMode(bot); clear() }
     }
     fun send() {
         // Words still on their way would land in the emptied box.
@@ -178,7 +174,7 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
-        CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))
+        CommandList(commands, { agentRegistry(state, it) }, ::run, Modifier.padding(horizontal = 16.dp))
     }
     AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {

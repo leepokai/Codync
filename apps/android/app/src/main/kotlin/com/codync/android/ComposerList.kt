@@ -41,10 +41,12 @@ import com.kyant.shapes.RoundedRectangle
 }
 
 /** The `/` list: each command's icon, name and what it does; tapping one runs it (iOS `CommandList`). */
-@Composable internal fun CommandList(commands: List<SlashCommand>, pick: (SlashCommand) -> Unit, modifier: Modifier = Modifier) {
+@Composable internal fun CommandList(commands: List<SlashCommand>, agentRegistry: (String) -> String, pick: (SlashCommand) -> Unit,
+    modifier: Modifier = Modifier) {
     ComposerList(modifier) {
         for (command in commands) ComposerListRow(command.title, command.detail, { pick(command) }, command.warning) {
-            Symbol(command.icon, size = 17.dp, tint = Palette.secondary)
+            val agent = command.agent
+            if (agent != null) AgentIcon(agentRegistry(agent), 15.dp) else Symbol(command.icon, size = 17.dp, tint = Palette.secondary)
         }
     }
 }

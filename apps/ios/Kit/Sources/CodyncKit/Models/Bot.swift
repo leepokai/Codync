@@ -91,6 +91,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var agentStep: AgentStep?
     /// Agents of its chain resting now.
     public var resting: [AgentRest] = []
+    /// The `/` commands of the agent it runs on now. Empty from an older host, and for a group.
+    public var agentCommands: [AgentCommand] = []
     /// What it keeps running on the computer. Empty from an older host, and for a group.
     public var devServers: [DevServer] = []
     /// Its box (`WorkItem.swift`): live and waiting items, then the ones ended in the last day. Empty from an
@@ -169,6 +171,7 @@ extension Bot {
         workingChat = try c.decodeIfPresent(String.self, forKey: .workingChat)
         agentStep = try? c.decodeIfPresent(AgentStep.self, forKey: .agentStep)
         resting = (try? c.decodeIfPresent([AgentRest].self, forKey: .resting)) ?? []
+        agentCommands = (try? c.decodeIfPresent([AgentCommand].self, forKey: .agentCommands)) ?? []
         devServers = (try? c.decodeIfPresent([DevServer].self, forKey: .devServers)) ?? []
         work = (try? c.decodeIfPresent(WorkList.self, forKey: .work))?.items ?? []
         maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }

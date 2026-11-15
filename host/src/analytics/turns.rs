@@ -164,6 +164,13 @@ pub fn message_steered(hub: &Hub, agent: &str, how: Steer) {
     capture(hub, Event::MessageSteered, p.as_object().cloned().unwrap_or_default());
 }
 
+/// `agent_command_sent`: the user sent one of the agent's own `/` commands, which went to it as typed. Only which
+/// agent: a command's name can be the user's own.
+pub fn agent_command_sent(hub: &Hub, agent: &str) {
+    let p = json!({"agent": agent});
+    capture(hub, Event::AgentCommandSent, p.as_object().cloned().unwrap_or_default());
+}
+
 /// Why a turn failed, as a category (plus the agent's JSON-RPC error, for its code and own
 /// category): never the error's text, which can hold paths and agent output.
 fn failure_kind(e: &anyhow::Error) -> (&'static str, Option<&crate::agent::acp::RpcError>) {

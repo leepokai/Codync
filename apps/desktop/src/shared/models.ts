@@ -60,6 +60,8 @@ export interface Bot {
   notify?: boolean | null
   connectors: string[]
   skills: string[]
+  /** The `/` commands of the agent it runs on now, as the agent lists them; none for a group. */
+  agentCommands: AgentCommand[]
   /** The bot can see and operate the computer's desktop. */
   computer: boolean
   /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
@@ -125,6 +127,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
+    agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
     devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
@@ -177,6 +180,15 @@ export interface Fallback {
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
+/** One of an agent's own `/` commands (ACP `available_commands_update`). */
+export interface AgentCommand {
+  /** What follows the `/`. */
+  name: string
+  description: string
+  /** What to type after the name, for a command that takes input. */
+  hint?: string
+}
+
 export interface AgentStep {
   step: number
   agent: string

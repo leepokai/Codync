@@ -86,7 +86,7 @@ struct Composer: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if !commands.isEmpty {
-                CommandList(commands: commands, pick: run)
+                CommandList(commands: commands, agentRegistry: model.agentRegistry, pick: run)
                     .padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -379,7 +379,7 @@ struct Composer: View {
         case .fast:
             model.toggleFastMode(bot)
             draft = ""
-        case .skill(let id):
+        case .skill(let id), .agent(let id, _):
             draft = "/\(id) "
         }
         focused = true

@@ -19,6 +19,7 @@
 mod background_work;
 mod cmd;
 mod codex_names;
+mod commands;
 mod compaction;
 mod decisions;
 mod fallback;
@@ -38,6 +39,7 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
+pub use commands::listed as agent_commands;
 pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
 use inflight::Inflight;

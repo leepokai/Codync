@@ -19,6 +19,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 開始 OpenAI 即時語音通話或遠端螢幕時，App 不會再關閉。
 - 選擇卡片可以直接打字回答。
 - 改用備援時，智慧體卡片會說明原因，只有用量上限才顯示重設時間。
+- 輸入 `/` 時，清單最後會列出 Bot 所用智慧體自己的指令（Claude Code、Codex、OpenCode 等），標上智慧體的圖示和說明；選一個會填入 `/<指令>`，送出後由智慧體直接執行。
 
 ### en-US
 - Bots do long work in the background and keep answering.
@@ -31,3 +32,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - OpenAI calls and remote screen no longer close the app.
 - Choice cards take your own answer.
 - On a fallback, the Agent card says why.
+- Typing `/` now also lists the bot's agent's own commands (Claude Code, Codex, OpenCode and more), marked with the agent's logo and its description; pick one to fill in `/<command>`, and the agent runs it when you send.

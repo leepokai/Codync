@@ -136,6 +136,9 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
       case 'skill':
         setDraft(`/${command.action.id} `)
         break
+      case 'agent':
+        setDraft(`/${command.name} `)
+        break
     }
     field.current?.focus()
   }
@@ -192,7 +195,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
         }}
       >
         <div className="composer-surface">
-          <CommandMenu menu={commandMenu} />
+          <CommandMenu menu={commandMenu} agentRegistry={(id) => store.agentRegistry(id)} />
           <MentionMenu menu={mentionMenu} />
           <ComposerReveal open={!!reply}>
             {reply ? (

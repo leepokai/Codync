@@ -31,25 +31,15 @@ impl Actor {
                 // The in-flight prompt request resolves with an error; finish_turn reports it with this output.
                 self.exit_tail = Some(tail);
             }
-            Some(Incoming::Notification { method, params }) => {
-                // Any session's, turn or not: the agent changed an option itself.
-                if method == "session/update"
-                    && params["update"]["sessionUpdate"] == "config_option_update"
-                    && let Some(sid) = params["sessionId"].as_str()
-                {
-                    self.note_options(sid, &params["update"], Listing::Update);
-                } else if method == "session/update"
-                    && params["update"]["sessionUpdate"] == "current_mode_update"
-                    && let Some(sid) = params["sessionId"].as_str()
-                {
-                    self.note_current_mode(sid, params["update"]["currentModeId"].as_str());
-                } else if method == "session/update"
+            Some(Incoming::Notification { method, params }) if method == "session/update" => {
+                if !self.on_session_wide(&params)
                     && params["sessionId"].as_str() == self.turn_session.as_deref()
                     && self.turn.is_some()
                 {
                     self.on_update(&params["update"]);
                 }
             }
+            Some(Incoming::Notification { .. }) => {}
             Some(Incoming::Request { id, method, params }) => {
                 if method == "session/request_permission" && self.turn.is_some() {
                     self.on_permission(id, params).await;
@@ -58,6 +48,20 @@ impl Actor {
                 }
             }
         }
+    }
+
+    /// Any session's update, turn or not, about the agent rather than a reply: an option or mode the agent changed
+    /// itself, or its commands. Returns whether it was one.
+    pub(super) fn on_session_wide(&mut self, params: &Value) -> bool {
+        let update = &params["update"];
+        let sid = params["sessionId"].as_str();
+        match (update["sessionUpdate"].as_str(), sid) {
+            (Some("config_option_update"), Some(sid)) => self.note_options(sid, update, Listing::Update),
+            (Some("current_mode_update"), Some(sid)) => self.note_current_mode(sid, update["currentModeId"].as_str()),
+            (Some("available_commands_update"), _) => self.note_commands(update),
+            _ => return false,
+        }
+        true
     }
 
     /// A request no turn handles: a permission gets `answer_background`, anything else isn't supported.

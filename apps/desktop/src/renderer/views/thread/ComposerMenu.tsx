@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Bot } from '@shared/models'
+import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { usePresence } from '../../components/Overlay'
@@ -93,16 +94,21 @@ function ComposerMenu<T>({ menu, label, row }: {
   )
 }
 
-/** The `/` list: each command's icon, name and what it does. */
-export function CommandMenu({ menu }: { menu: ComposerMenuState<SlashCommand> }) {
+/** The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does. */
+export function CommandMenu({ menu, agentRegistry }: { menu: ComposerMenuState<SlashCommand>; agentRegistry: (agent: string) => string }) {
   const tr = useTr()
-  return <ComposerMenu menu={menu} label={tr('Commands')} row={(c) => ({
+  return <ComposerMenu menu={menu} label={tr('Commands')} row={(c) => c.action.kind === 'agent' ? {
+    key: `agent:${c.name}`,
+    icon: <AgentIcon registry={agentRegistry(c.action.agent)} size={12} color="var(--secondary)" />,
+    title: c.title,
+    detail: c.detail,
+  } : {
     key: `${c.action.kind}:${c.name}`,
     icon: <Icon name={c.icon} size={12} color="var(--secondary)" />,
     title: tr(c.title),
     detail: tr(c.detail),
     warning: c.warning,
-  })} />
+  }} />
 }
 
 /** The `@` list in a group: each member's face, name and description. */

@@ -229,15 +229,31 @@ impl Actor {
         if self.session_fresh {
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
-        // Requests that came in before this turn: a permission gets the answer it would have had a moment ago.
+        // Requests that came in before this turn: a permission gets the answer it would have had a moment ago. Of the
+        // chatter, what is about the agent (its commands, options) counts.
         while let Some(inc) = self.conn.as_mut().and_then(|c| c.rx.try_recv().ok()) {
-            if let Incoming::Request { id, method, params } = inc {
-                self.answer_outside_turn(id, &method, &params).await;
+            match inc {
+                Incoming::Request { id, method, params } => self.answer_outside_turn(id, &method, &params).await,
+                Incoming::Notification { method, params } if method == "session/update" => {
+                    self.on_session_wide(&params);
+                }
+                _ => {}
             }
         }
         let sid = self.turn_session.clone().ok_or_else(|| anyhow!("no session"))?;
-        let prompt =
-            if std::mem::take(&mut self.raw_prompt) { text.to_owned() } else { self.compose(&sid, text).await? };
+        // The user's own `/command` for the agent goes as typed, so the agent runs it; what Codync would add waits
+        // for the next message.
+        let agent_command = from_user && self.active_group.is_none() && self.is_agent_command(text);
+        if agent_command {
+            // The profile stays owed: the first message the agent hears that isn't a command carries it.
+            self.session_fresh = false;
+            analytics::agent_command_sent(&self.hub, &self.cfg.backend);
+        }
+        let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
+            text.to_owned()
+        } else {
+            self.compose(&sid, text).await?
+        };
         self.hub.set_runtime(&self.id(), |r| r.activity = "Thinking…".into());
         let acp = self.conn.as_ref().ok_or_else(|| anyhow!("agent not running"))?.acp.clone();
         let params = json!({

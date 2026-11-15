@@ -293,7 +293,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,
             onClick = { focus.clearFocus(); openArtifact(OpenArtifact(entry.botId, artifact.id, artifact.title, entry.id)) }, items = textMenu))
         else if (voiceNote != null) {
-            val player = rememberSharedAudio(entry, voiceNote, store)
+            val player = rememberSharedAudio(entry, voiceNote, store, state.actualConnection is LinkState.Ready)
             val download = state.fileDownloads[voiceNote.id]
             val busy = download is FileDownloadState.Downloading
             val save = { store.toggleFile(entry.id, entry.botId, voiceNote) }

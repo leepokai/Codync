@@ -4,18 +4,27 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.net.ConnectivityManager
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Entry
 import com.codync.android.core.SharedFile
@@ -25,6 +34,9 @@ import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** The state of a voice note's player, shown by the card's play button and caption. */
@@ -55,6 +67,8 @@ internal interface Sound {
 internal class SharedAudio(
     private val load: suspend () -> File,
     private val open: suspend (File, stopped: (SoundStop) -> Unit) -> Sound,
+    /** Where the one fetch runs: the card's, so a preload or tap that stops waiting leaves it to the others. */
+    private val scope: CoroutineScope,
 ) {
     var phase by mutableStateOf(AudioPhase.Idle)
         private set
@@ -70,6 +84,8 @@ internal class SharedAudio(
         private set
     /** The card went: a load still running then starts nothing. */
     private var released = false
+    /** The one fetch of the sound's bytes preload and a play tap share; a failed one is forgotten. */
+    private var fetching: Deferred<Result<File>>? = null
 
     suspend fun toggle() {
         val current = sound
@@ -85,7 +101,7 @@ internal class SharedAudio(
         phase = AudioPhase.Loading
         failure = VoiceNoteFailure.Load
         try {
-            val ready = current ?: load().let { file ->
+            val ready = current ?: bytes().let { file ->
                 if (released) return
                 open(file) { stop ->
                     when (stop) {
@@ -108,6 +124,21 @@ internal class SharedAudio(
         }
         catch (_: Exception) { drop(); phase = AudioPhase.Failed }
         if (fromStart) Analytics.capture(AnalyticsEvent.VoiceNotePlayed(failure.takeIf { phase == AudioPhase.Failed }))
+    }
+
+    /** Ready the sound before a tap asks for it: fetches its bytes (the same fetch [toggle] would share). A fetch
+     *  that fails stays quiet: it is forgotten and the tap retries and reports it. */
+    suspend fun preload() {
+        try { bytes() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return }
+    }
+
+    /** The sound's bytes from the computer, one fetch for everyone asking: it runs in the card's [scope], so a caller
+     *  cancelled while waiting (a preload restarting) doesn't fail it for the others, and it holds a [Result] so a
+     *  failed fetch doesn't cancel the card's scope; one after it landed reuses it, and a failed one is dropped so the
+     *  next ask fetches again. */
+    private suspend fun bytes(): File {
+        val running = fetching ?: scope.async { runCatching { load() } }.also { fetching = it }
+        return running.await().onFailure { if (fetching === running) fetching = null }.getOrThrow()
     }
 
     /** Moves a loaded sound's playhead, held to its length; playing or paused, it stays so. */
@@ -144,6 +175,7 @@ internal class SharedAudio(
     private fun drop() {
         sound?.release()
         sound = null
+        fetching = null
         duration = 0.0
         elapsed = 0.0
     }
@@ -154,9 +186,11 @@ internal class SharedAudio(
     }
 }
 
-/** A voice note is speech played as media (the media volume, not the ringer's). */
-private val voiceNoteAudio = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+/** A voice note is speech played as media (the media volume, not the ringer's). Lazy, so the file's top-level
+ *  functions (`voiceNotePreloads`) load in unit tests without the platform. */
+private val voiceNoteAudio by lazy {
+    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+}
 
 /** A voice note through `MediaPlayer`, holding the audio focus while it plays as iOS holds its audio session. */
 private class MediaSound(private val manager: AudioManager, private val player: MediaPlayer,
@@ -212,22 +246,45 @@ private class MediaSound(private val manager: AudioManager, private val player: 
     }
 }
 
-/** One card's player, remembered by the file and released with it. */
-@Composable internal fun rememberSharedAudio(entry: Entry, file: SharedFile, store: AppStore): SharedAudio {
-    val manager = LocalContext.current.getSystemService(AudioManager::class.java)
+/** One card's player, remembered by the file and released with it.
+ *  [online]: the computer is connected, so the note's sound can be fetched ahead of a tap. */
+@Composable internal fun rememberSharedAudio(entry: Entry, file: SharedFile, store: AppStore, online: Boolean): SharedAudio {
+    val context = LocalContext.current
+    val manager = context.getSystemService(AudioManager::class.java)
+    val scope = rememberCoroutineScope()
     val audio = remember(file.id) {
         SharedAudio(load = { store.sharedFile(entry.id, file) },
-            open = { path, stopped -> MediaSound.open(manager, path, stopped) })
+            open = { path, stopped -> MediaSound.open(manager, path, stopped) },
+            scope = scope)
     }
     DisposableEffect(audio) { onDispose { audio.release() } }
+    // The sound preloads so a tap plays at once — unless this network is metered and the note is a big one, and
+    // never while the computer is away (a chat shown before it connects fetches nothing).
+    LaunchedEffect(audio, online) {
+        val metered = context.getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered ?: true
+        if (voiceNotePreloads(online, metered, file.size)) audio.preload()
+    }
     return audio
 }
 
+/** The sound's bytes big enough to skip on a network that charges for them (2 MiB; iOS `preloadLimit`). */
+private const val PRELOAD_LIMIT = 2 * 1024 * 1024L
+
+/** Whether the card preloads a sound as it shows: the computer online, and the fetch never costly — under
+ *  [PRELOAD_LIMIT] even on a metered network (cellular, a hotspot; iOS `preloads`). */
+internal fun voiceNotePreloads(online: Boolean, metered: Boolean, bytes: Long): Boolean =
+    online && (!metered || bytes < PRELOAD_LIMIT)
+
 /** A voice note's play/pause/loading, in place of its file icon: a 48 dp target over the icon's 24 dp slot, so the
- *  name lines up with the other file cards. */
+ *  name lines up with the other file cards, with a soft round chip that fades in behind the glyph while pressed
+ *  (a phone has no hover). */
 @Composable internal fun SharedAudioButton(audio: SharedAudio, tapped: () -> Unit) {
+    val (source, pressed) = rememberPress()
+    val chip by animateFloatAsState(if (pressed) 0.14f else 0f, Motion.press(), label = "Play pressed")
     Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.requiredSize(48.dp).plainButton(action = tapped), contentAlignment = Alignment.Center) {
+        Box(Modifier.requiredSize(48.dp).clickable(source, null, role = Role.Button, onClick = tapped),
+            contentAlignment = Alignment.Center) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Palette.text.copy(alpha = chip)))
             when (audio.phase) {
                 AudioPhase.Loading -> Spinner(24.dp, color = Palette.text)
                 AudioPhase.Playing -> Symbol("pause.circle", size = 24.dp, tint = Palette.text)

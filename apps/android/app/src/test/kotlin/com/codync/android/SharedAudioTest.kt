@@ -2,6 +2,8 @@ package com.codync.android
 
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -31,8 +33,10 @@ class SharedAudioTest {
     private val speaker = Speaker()
     private var fetch = CompletableDeferred<File>()
     private var loads = 0
+    /** The card's scope: unconfined, so a fetch starts the moment it's asked for. */
+    private val card = CoroutineScope(Dispatchers.Unconfined)
     private val audio = SharedAudio(load = { loads++; fetch.await() },
-        open = { _, stopped -> speaker.stopped = stopped; speaker.log += "open"; speaker })
+        open = { _, stopped -> speaker.stopped = stopped; speaker.log += "open"; speaker }, scope = card)
 
     @Test fun `a second tap while the sound loads plays it once`() = runBlocking {
         val first = launch { audio.toggle() }
@@ -65,7 +69,7 @@ class SharedAudioTest {
         val audio = SharedAudio(load = { File("note.m4a") }, open = { _, _ ->
             opening.complete(Unit)
             prepared.await()
-        })
+        }, scope = card)
         val tap = launch { audio.toggle() }
         opening.await()
         audio.release()
@@ -98,7 +102,7 @@ class SharedAudioTest {
         assertEquals(AudioPhase.Playing, audio.phase)
     }
 
-    @Test fun `a tap whose scope goes while the sound loads leaves the next tap free to play`() = runBlocking {
+    @Test fun `a tap whose scope goes while the sound loads leaves the next tap to play the same fetch`() = runBlocking {
         val tap = launch { audio.toggle() }
         yield()
         tap.cancelAndJoin()
@@ -106,7 +110,7 @@ class SharedAudioTest {
 
         val retry = launch { audio.toggle() }
         yield()
-        assertEquals(2, loads)
+        assertEquals("the fetch runs on in the card's scope", 1, loads)
         fetch.complete(File("note.m4a"))
         retry.join()
         assertEquals(AudioPhase.Playing, audio.phase)
@@ -188,5 +192,73 @@ class SharedAudioTest {
         // Playing again picks up where it was moved to.
         audio.toggle()
         assertEquals(12.0, audio.elapsed, 0.0)
+    }
+
+    @Test fun `a preload has the next tap play the bytes it already fetched`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        fetch.complete(File("note.m4a"))
+        preloading.join()
+        audio.toggle()
+        assertEquals(AudioPhase.Playing, audio.phase)
+        assertEquals(listOf("open", "start"), speaker.log)
+        assertEquals(1, loads)
+    }
+
+    @Test fun `a tap during a preload plays the same fetch when it lands`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        val tap = launch { audio.toggle() }
+        yield()
+        assertEquals(AudioPhase.Loading, audio.phase)
+        fetch.complete(File("note.m4a"))
+        preloading.join()
+        tap.join()
+        assertEquals(AudioPhase.Playing, audio.phase)
+        assertEquals(listOf("open", "start"), speaker.log)
+        assertEquals(1, loads)
+    }
+
+    @Test fun `a tap waiting on a preload that restarts still plays the one fetch`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        val tap = launch { audio.toggle() }
+        yield()
+        // The card's connection changed: its preload effect is cancelled and starts again.
+        preloading.cancelAndJoin()
+        val restarted = launch { audio.preload() }
+        fetch.complete(File("note.m4a"))
+        tap.join()
+        restarted.join()
+        assertEquals(AudioPhase.Playing, audio.phase)
+        assertEquals(listOf("open", "start"), speaker.log)
+        assertEquals(1, loads)
+    }
+
+    @Test fun `a failed preload leaves the tap to fetch and report`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        fetch.completeExceptionally(java.io.IOException("gone"))
+        preloading.join()
+        assertEquals(AudioPhase.Idle, audio.phase)
+        assertEquals(1, loads)
+
+        fetch = CompletableDeferred()
+        val tap = launch { audio.toggle() }
+        yield()
+        assertEquals(2, loads)
+        fetch.complete(File("note.m4a"))
+        tap.join()
+        assertEquals(AudioPhase.Playing, audio.phase)
+    }
+
+    @Test fun `a card released while its sound preloads plays nothing`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        audio.release()
+        fetch.complete(File("note.m4a"))
+        preloading.join()
+        assertEquals(emptyList<String>(), speaker.log)
+        assertEquals(AudioPhase.Idle, audio.phase)
     }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Entry
+import com.codync.android.core.LinkState
 import com.codync.android.core.SharedFile
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
@@ -56,7 +57,7 @@ import kotlinx.coroutines.launch
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     var viewing by remember { mutableStateOf(false) }
-    val player = if (file.playsInChat) rememberSharedAudio(entry, file, store) else null
+    val player = if (file.playsInChat) rememberSharedAudio(entry, file, store, state.actualConnection is LinkState.Ready) else null
     val scope = rememberCoroutineScope()
     val translate = translator()
     val download = state.fileDownloads[file.id]
@@ -166,7 +167,14 @@ private fun reportViewerDownload(error: ImageError?) = Analytics.capture(Analyti
 internal fun detail(file: SharedFile, download: FileDownloadState?, audio: SharedAudio? = null, tr: (String) -> String = { it }): String {
     if (audio?.phase == AudioPhase.Failed) return tr("Couldn't play. Tap to retry.")
     val size = formatBytes(file.size)
-    val progress = audio?.takeIf { it.duration > 0.0 }?.let { "${clock(it.elapsed)} / ${clock(it.duration)}" }
+    // The elapsed is written in the duration's shape (digits zeroed, colons kept), so the caption is always as wide
+    // while it plays: `0:03 / 0:10`, `00:05 / 12:00`.
+    val progress = audio?.takeIf { it.duration > 0.0 }?.let {
+        val length = clock(it.duration)
+        val elapsed = clock(it.elapsed)
+        val pad = length.take((length.length - elapsed.length).coerceAtLeast(0)).map { c -> if (c.isDigit()) '0' else c }
+        pad.joinToString("") + elapsed + " / " + length
+    }
     return when (download) {
         is FileDownloadState.Downloading -> tr("{received} of {size}").replace("{received}", formatBytes(download.received)).replace("{size}", size)
         is FileDownloadState.Failed -> "${download.message} ${tr("Tap to retry.")}"

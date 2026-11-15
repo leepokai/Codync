@@ -24,7 +24,7 @@ export type Screen =
   | 'task'
 
 /** Outbound links, by what they lead to. */
-export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command'
+export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command' | 'whats_new_film'
 
 /** What was done in the full-size picture viewer. */
 export type ImageAction = 'zoom' | 'copy_image' | 'copy_name' | 'download'

@@ -2079,8 +2079,8 @@
   "Cancel follow-up": "Отменить проверку",
   "Follow-up cancelled": "Проверка отменена",
   "A follow-up is the bot's own: x cancels it": "Проверку назначил сам бот: x её отменяет",
-  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Новое: Codync Cloud (бета). Запустите облачный компьютер в собственном аккаунте Boat или InstaBox, чтобы боты работали, пока ваш компьютер выключен.",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Новое: профили входа. Войдите агентом в несколько аккаунтов или добавьте API-ключи в разделе «Профили входа» в его настройках, а затем выберите профиль для каждого бота.",
+  "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Запустите облачный компьютер в собственном аккаунте Boat или InstaBox, чтобы боты работали, пока ваш компьютер выключен.",
+  "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Войдите агентом в несколько аккаунтов или добавьте API-ключи в разделе «Профили входа» в его настройках, а затем выберите профиль для каждого бота.",
   "Picking up from the chat…": "Продолжаем из чата…",
   "In the background": "В фоне",
   "Stop the background work?": "Остановить фоновую работу?",
@@ -2115,5 +2115,8 @@
   "Increase": "Увеличить",
   "Threads": "Threads",
   "Event box": "Event Box",
-  "Free": "Свободно"
+  "Free": "Свободно",
+  "Codync Cloud": "Codync Cloud",
+  "Also in this release": "Также в этом выпуске",
+  "Watch the full video": "Смотреть видео целиком"
 }

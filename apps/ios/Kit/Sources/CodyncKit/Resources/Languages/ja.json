@@ -2079,8 +2079,8 @@
   "Cancel follow-up": "フォローアップを取り消す",
   "Follow-up cancelled": "フォローアップを取り消しました",
   "A follow-up is the bot's own: x cancels it": "フォローアップはボット自身が設定したものです：x で取り消せます",
-  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "新機能：Codync Cloud（ベータ）。自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "新機能：ログインプロファイル。エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。",
+  "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "自分の Boat または InstaBox アカウントでクラウドコンピュータを起動すれば、コンピュータの電源が切れていてもボットが作業を続けます。",
+  "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "エージェントの設定の「ログインプロファイル」で複数のアカウントにサインインしたり API キーを追加したりして、各ボットが使うものを選べます。",
   "Picking up from the chat…": "チャットの内容を引き継いでいます…",
   "In the background": "バックグラウンド",
   "Stop the background work?": "バックグラウンドの作業を停止しますか？",
@@ -2115,5 +2115,8 @@
   "Increase": "増やす",
   "Threads": "Threads",
   "Event box": "Event Box",
-  "Free": "空き"
+  "Free": "空き",
+  "Codync Cloud": "Codync Cloud",
+  "Also in this release": "このリリースのその他の変更",
+  "Watch the full video": "動画を全編見る"
 }

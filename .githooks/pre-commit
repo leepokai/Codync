@@ -76,7 +76,7 @@ host_tests() {
 }
 
 # The catalogs and What's new announcements the iPhone app shares with the desktop app and the terminal UI.
-shared_text='apps/ios/Kit/Sources/CodyncKit/Resources/(Announcements|Languages)/'
+shared_text='apps/ios/Kit/Sources/(CodyncKit/Resources/Languages|CodyncUI/Resources/Announcements)/'
 
 if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vectors\\.json|$shared_text)"; then
     if ! cargo nextest --version >/dev/null 2>&1; then

@@ -2079,8 +2079,8 @@
   "Cancel follow-up": "取消跟进",
   "Follow-up cancelled": "已取消跟进",
   "A follow-up is the bot's own: x cancels it": "跟进由 Bot 自己设定：按 x 取消",
-  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "新功能：Codync Cloud（测试版）。用你自己的 Boat 或 InstaBox 账户启动一台云端电脑，电脑关机时 Bot 也能继续工作。",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "新功能：登录配置。在智能体设置页的「登录配置」让同一个智能体登录多个账户或添加 API 密钥，再选择每个 Bot 要用哪一个。",
+  "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "用你自己的 Boat 或 InstaBox 账户启动一台云端电脑，电脑关机时 Bot 也能继续工作。",
+  "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "在智能体设置页的「登录配置」让同一个智能体登录多个账户或添加 API 密钥，再选择每个 Bot 要用哪一个。",
   "Picking up from the chat…": "正在从聊天接着做…",
   "In the background": "后台",
   "Stop the background work?": "停止后台的工作？",
@@ -2115,5 +2115,8 @@
   "Increase": "增加",
   "Threads": "Threads",
   "Event box": "Event Box",
-  "Free": "空位"
+  "Free": "空位",
+  "Codync Cloud": "Codync Cloud",
+  "Also in this release": "此版本的其他更新",
+  "Watch the full video": "观看完整视频"
 }

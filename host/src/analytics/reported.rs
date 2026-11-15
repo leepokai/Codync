@@ -223,6 +223,7 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    WhatsNewFilm,
     #[serde(other)]
     Other,
 }

@@ -2079,8 +2079,8 @@
   "Cancel follow-up": "다시 확인 취소",
   "Follow-up cancelled": "다시 확인 취소됨",
   "A follow-up is the bot's own: x cancels it": "다시 확인은 봇이 직접 정한 것입니다: x로 취소합니다",
-  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "새 기능: Codync Cloud(베타). 내 Boat 또는 InstaBox 계정에서 클라우드 컴퓨터를 시작하면 컴퓨터가 꺼져 있어도 봇이 계속 작업합니다.",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "새 기능: 로그인 프로필. 에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요.",
+  "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "내 Boat 또는 InstaBox 계정에서 클라우드 컴퓨터를 시작하면 컴퓨터가 꺼져 있어도 봇이 계속 작업합니다.",
+  "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "에이전트 설정의 '로그인 프로필'에서 여러 계정에 로그인하거나 API 키를 추가한 다음, 봇마다 사용할 프로필을 선택하세요.",
   "Picking up from the chat…": "채팅 내용을 이어받는 중…",
   "In the background": "백그라운드",
   "Stop the background work?": "백그라운드 작업을 중지할까요?",
@@ -2115,5 +2115,8 @@
   "Increase": "늘리기",
   "Threads": "Threads",
   "Event box": "Event Box",
-  "Free": "빈자리"
+  "Free": "빈자리",
+  "Codync Cloud": "Codync Cloud",
+  "Also in this release": "이번 릴리스의 다른 변경 사항",
+  "Watch the full video": "전체 영상 보기"
 }

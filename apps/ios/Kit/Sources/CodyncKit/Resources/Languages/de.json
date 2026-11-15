@@ -2079,8 +2079,8 @@
   "Cancel follow-up": "Nachfassen abbrechen",
   "Follow-up cancelled": "Nachfassen abgebrochen",
   "A follow-up is the bot's own: x cancels it": "Ein Nachfassen gehört dem Bot: x bricht es ab",
-  "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Neu: Codync Cloud (Beta). Starte einen Cloud-Computer in deinem eigenen Boat- oder InstaBox-Konto, damit deine Bots arbeiten, während dein Computer aus ist.",
-  "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Neu: Anmeldeprofile. Melde einen Agenten unter „Anmeldeprofile“ in seiner Einrichtung bei mehreren Konten an oder füge API-Schlüssel hinzu und wähle dann, welches Profil jeder Bot verwendet.",
+  "Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.": "Starte einen Cloud-Computer in deinem eigenen Boat- oder InstaBox-Konto, damit deine Bots arbeiten, während dein Computer aus ist.",
+  "Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses.": "Melde einen Agenten unter „Anmeldeprofile“ in seiner Einrichtung bei mehreren Konten an oder füge API-Schlüssel hinzu und wähle dann, welches Profil jeder Bot verwendet.",
   "Picking up from the chat…": "Der Chat wird übernommen…",
   "In the background": "Im Hintergrund",
   "Stop the background work?": "Arbeit im Hintergrund stoppen?",
@@ -2115,5 +2115,8 @@
   "Increase": "Erhöhen",
   "Threads": "Threads",
   "Event box": "Event Box",
-  "Free": "Frei"
+  "Free": "Frei",
+  "Codync Cloud": "Codync Cloud",
+  "Also in this release": "Außerdem in dieser Version",
+  "Watch the full video": "Ganzes Video ansehen"
 }

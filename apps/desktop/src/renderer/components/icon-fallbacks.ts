@@ -151,6 +151,7 @@ const map: Record<string, IconNode> = {
   'pin.fill': L.Pin,
   'pin.slash': L.PinOff,
   'play.circle': L.CirclePlay,
+  'play.fill': L.Play,
   plus: L.Plus,
   'plus.circle': L.CirclePlus,
   'point.3.connected.trianglepath.dotted': L.Waypoints,

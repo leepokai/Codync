@@ -6,7 +6,8 @@ import { SharedAudio, type AudioSnapshot, type Sound, type SoundEvents } from '.
 
 const IDLE: AudioSnapshot = { phase: 'idle', elapsed: 0, duration: 0 }
 
-/** A voice note's player for its card: fetched once from the computer, stopped when the card goes. */
+/** A voice note's player for its card: fetched once from the computer as the card shows (a tap then plays at
+ *  once), stopped when the card goes. */
 export function useSharedAudio(file: SharedFile, entryId: string) {
   const store = useStore()
   const [snapshot, setSnapshot] = useState<AudioSnapshot>(IDLE)
@@ -15,6 +16,11 @@ export function useSharedAudio(file: SharedFile, entryId: string) {
     open: (data, events) => audioElement(data, events),
   }, setSnapshot))
   useEffect(() => () => audio.dispose(), [audio])
+  // The sound is fetched once the computer is online: a chat shown before it connects reads nothing.
+  const online = store.connection.kind === 'online'
+  useEffect(() => {
+    if (online) void audio.preload()
+  }, [audio, online])
   return { snapshot, toggle: () => void play(audio), seek: (seconds: number) => audio.seek(seconds) }
 }
 

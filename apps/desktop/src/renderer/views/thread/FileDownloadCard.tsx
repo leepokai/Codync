@@ -149,12 +149,13 @@ function ViewerDownloadButton({ entry, file }: { entry: Entry; file: SharedFile 
   return <IconButtonBase title={downloadAction(state)} icon={busy ? 'xmark' : 'arrow.down.to.line'} size={28} onClick={() => void start()} />
 }
 
-/** The play/pause button, or the spinner while the sound comes over, in the file icon's 24 px slot. */
+/** The outline play/pause glyph on a soft round chip while the pointer is on it, or the spinner while the sound
+ *  comes over, in the file icon's 24 px slot. */
 function AudioIcon({ snapshot, toggle }: { snapshot: AudioSnapshot; toggle: () => void }) {
   return <div className="file-card-play">
     {snapshot.phase === 'loading'
       ? <Spinner size={18} />
-      : <IconButtonBase title={snapshot.phase === 'playing' ? 'Pause' : 'Play'} icon={snapshot.phase === 'playing' ? 'pause.circle' : 'play.circle'} size={36} tabIndex={-1} onClick={toggle} />}
+      : <IconButtonBase title={snapshot.phase === 'playing' ? 'Pause' : 'Play'} icon={snapshot.phase === 'playing' ? 'pause.circle' : 'play.circle'} size={36} tabIndex={-1} className="voice-note-glyph" onClick={toggle} />}
   </div>
 }
 

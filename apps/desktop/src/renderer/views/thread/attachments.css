@@ -93,12 +93,39 @@
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
+/* The voice note's play slot is the glyph's own width (18 px), so the bar sits the row's 10 px gap from it and
+   from the clock. */
 .voice-note .file-card-play {
-  width: 21px;
+  width: 18px;
   height: 24px;
 }
 .voice-note .file-card-play > button {
-  margin: -6px -7.5px;
+  margin: -6px -9px;
+}
+/* Hover lays a soft round chip behind the outline glyph, as on other icon buttons, and press deepens it; a 28 px
+   circle, clear of the bar beside it. */
+.voice-note-glyph.icon-button,
+.voice-note-glyph.icon-button:hover:not(:disabled),
+.voice-note-glyph.icon-button:active:not(:disabled) {
+  background: none;
+  transform: none;
+}
+.voice-note-glyph::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  transition: background-color var(--hover);
+}
+.voice-note-glyph > * {
+  grid-area: 1 / 1;
+}
+.voice-note-glyph:hover::before {
+  background: rgba(var(--text-rgb), 0.08);
+}
+.voice-note-glyph:active::before {
+  background: rgba(var(--text-rgb), 0.14);
 }
 .voice-note .file-card-progress {
   flex: 1;

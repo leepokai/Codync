@@ -137,3 +137,52 @@ test('seeking holds the playhead to the sound and keeps it playing or paused', a
   audio.seek(12)
   assert.deepEqual(audio.snapshot, { phase: 'paused', elapsed: 12, duration: 48 })
 })
+
+test('a preloaded sound plays on the tap, fetching once', async () => {
+  const { audio, log, loads } = setup()
+  const preloaded = audio.preload()
+  loads[0](new Uint8Array([1]))
+  await preloaded
+  assert.deepEqual(log, [], 'the preload fetches only: no player opens')
+  assert.equal(audio.snapshot.phase, 'idle')
+  await audio.toggle()
+  assert.equal(loads.length, 1, 'the tap plays the bytes the preload fetched')
+  assert.deepEqual(log, ['open', 'play'])
+  assert.equal(audio.snapshot.phase, 'playing')
+})
+
+test('a tap while the preload runs shows loading and plays once the bytes arrive', async () => {
+  const { audio, log, loads } = setup()
+  void audio.preload()
+  const tap = audio.toggle()
+  assert.equal(audio.snapshot.phase, 'loading')
+  loads[0](new Uint8Array([1]))
+  await tap
+  assert.equal(loads.length, 1, 'the tap waits on the preload, no second fetch')
+  assert.deepEqual(log, ['open', 'play'])
+  assert.equal(audio.snapshot.phase, 'playing')
+})
+
+test('a failed preload stays quiet, and the tap fetches again', async () => {
+  const { audio, log, loads } = setup()
+  const preloaded = audio.preload()
+  loads[0](null)
+  await preloaded
+  assert.equal(audio.snapshot.phase, 'idle')
+  const tap = audio.toggle()
+  assert.equal(loads.length, 2, 'a failed fetch is forgotten: the tap fetches again')
+  loads[1](new Uint8Array([1]))
+  await tap
+  assert.deepEqual(log, ['open', 'play'])
+  assert.equal(audio.snapshot.phase, 'playing')
+})
+
+test('a card gone while its sound preloads plays nothing', async () => {
+  const { audio, log, loads } = setup()
+  const preloaded = audio.preload()
+  audio.dispose()
+  loads[0](new Uint8Array([1]))
+  await preloaded
+  assert.deepEqual(log, [])
+  assert.equal(audio.snapshot.phase, 'idle')
+})

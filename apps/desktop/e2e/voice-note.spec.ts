@@ -57,9 +57,27 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     const play = player.getByTitle('Play')
     const pause = player.getByTitle('Pause')
     await expect(player).toBeVisible()
+    // Hovering lays a soft round chip behind the outline glyph over the app's hover time, never a sudden switch.
+    const chip = async () => play.evaluate((el) => {
+      const style = getComputedStyle(el, '::before')
+      return { background: style.backgroundColor, radius: style.borderRadius, transition: style.transitionDuration }
+    })
+    expect((await chip()).background).toBe('rgba(0, 0, 0, 0)')
+    await play.hover()
+    await expect.poll(async () => (await chip()).background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(await chip()).toMatchObject({ radius: '50%', transition: '0.12s' })
+    await page.mouse.move(0, 0)
+    await expect.poll(async () => (await chip()).background).toBe('rgba(0, 0, 0, 0)')
     // The play button plays; a click on the player's clock pauses.
     await play.click()
     await expect(pause).toBeVisible()
+    // The bar sits 10 px from the play glyph's slot and 10 px from the clock.
+    const gaps = await player.evaluate((note) => {
+      const box = (selector: string) => note.querySelector(selector)!.getBoundingClientRect()
+      const track = box('input.file-card-progress')
+      return [track.left - box('.file-card-play').right, box('.file-card-detail').left - track.right].map(Math.round)
+    })
+    expect(gaps).toEqual([10, 10])
     await player.locator('.file-card-detail').click()
     await expect(play).toBeVisible()
     // Beside the bar, above its 12 px box, the click still plays rather than seeking.

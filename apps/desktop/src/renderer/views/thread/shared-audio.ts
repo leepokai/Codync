@@ -50,6 +50,9 @@ export class SharedAudio {
   failure: AudioFailure = 'load'
   private readonly platform: SharedAudioPlatform
   private readonly changed: (snapshot: AudioSnapshot) => void
+  /** The sound's bytes, one fetch shared by the preload and a tap; a failed one is forgotten, so the next call
+   *  fetches again. */
+  private bytes: Promise<Uint8Array | null> | null = null
 
   constructor(platform: SharedAudioPlatform, changed: (snapshot: AudioSnapshot) => void) {
     this.platform = platform
@@ -60,7 +63,8 @@ export class SharedAudio {
     return { phase: this.phase, elapsed: this.elapsed, duration: this.duration }
   }
 
-  /** Settles once this tap's pause, play or failure is done. */
+  /** Settles once this tap's pause, play or failure is done. A tap while the preload runs shows loading and plays
+   *  once those bytes arrive. */
   async toggle() {
     if (this.phase === 'playing') return this.sound?.pause()
     // A tap while the sound loads is dropped, so it never starts a second player.
@@ -92,9 +96,24 @@ export class SharedAudio {
     this.changed(this.snapshot)
   }
 
+  /** Fetches the sound as the card shows, so a tap plays at once. A fetch that fails stays quiet: it is forgotten
+   *  and the tap retries and reports it. */
+  async preload() {
+    if (this.disposed) return
+    await this.data()
+  }
+
+  private data() {
+    this.bytes ??= this.platform.load().then((data) => {
+      if (!data) this.bytes = null
+      return data
+    })
+    return this.bytes
+  }
+
   private async play() {
     if (!this.sound) {
-      const data = await this.platform.load()
+      const data = await this.data()
       // The card went while the sound loaded: nothing could pause it any more.
       if (this.disposed) return
       if (!data) throw new Error('unreadable')
@@ -129,6 +148,7 @@ export class SharedAudio {
   /** Drops the player and its clock, so a failure shows no stale progress and the next tap fetches and decodes again. */
   private drop() {
     const sound = this.sound
+    this.bytes = null
     this.sound = null
     this.elapsed = 0
     this.duration = 0

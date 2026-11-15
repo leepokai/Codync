@@ -27,6 +27,16 @@ struct FileDownloadCard: View {
             menu.items(copy: file.showsAsImage ? ImageCopy.menuItems(source, model: model) : menu.textCopy)
         }
         .onDisappear { audio.stop() }
+        // A sound the card plays is fetched as it shows, so the first tap plays at once — unless the fetch would
+        // cost (an expensive network and a big one), where a tap still fetches. A chat shown before the computer
+        // connects fetches nothing.
+        .task(id: [model.connection == .online, NetworkCost.shared.expensive]) {
+            if file.playsInChat,
+               SharedAudio.preloads(online: model.connection == .online,
+                                    expensive: NetworkCost.shared.expensive, bytes: file.size) {
+                await audio.preload(file, entryId: entry.id, model: model)
+            }
+        }
         // One element reads the whole card; its buttons become named actions.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(file.name), \(caption)")
@@ -117,7 +127,8 @@ struct FileDownloadCard: View {
         return "arrow.down.to.line"
     }
 
-    /// What the card says under the name: a failed play, then the download, then the sound's position, then its size.
+    /// What the card says under the name: a failed play, then the download, then the sound's position, then its
+    /// size. The elapsed count fills its duration's shape — `00:05 / 12:00` — so the clock keeps one width as it runs.
     static func detail(_ download: FileDownloads.State?, play: SharedAudio.State = .idle,
                        elapsed: TimeInterval = 0, duration: TimeInterval? = nil, size bytes: Int64) -> String {
         if play == .failed { return L10n.tr("Couldn't play. Tap to retry.") }
@@ -131,7 +142,12 @@ struct FileDownloadCard: View {
         case .failed(let message): return "\(L10n.tr(message)) \(L10n.tr("Tap to retry."))"
         case .saved, nil: break
         }
-        if let duration { return "\(SharedAudio.timeText(elapsed)) / \(SharedAudio.timeText(duration))" }
+        if let duration {
+            let length = SharedAudio.timeText(duration)
+            let elapsed = SharedAudio.timeText(elapsed)
+            let pad = length.prefix(max(0, length.count - elapsed.count)).map { $0.isNumber ? "0" : String($0) }
+            return "\(pad.joined())\(elapsed) / \(length)"
+        }
         if case .saved = download { return "\(size) · \(L10n.tr("Downloaded"))" }
         return size
     }

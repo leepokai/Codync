@@ -18,6 +18,15 @@ struct VoiceNoteBubble: View {
         .padding(.vertical, 10)
         .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onDisappear { audio.stop() }
+        // The sound is fetched as the bubble shows, so the first tap plays at once — unless the fetch would cost
+        // (an expensive network and a big note), where a tap still fetches. A chat shown before the computer
+        // connects fetches nothing.
+        .task(id: [model.connection == .online, NetworkCost.shared.expensive]) {
+            if SharedAudio.preloads(online: model.connection == .online,
+                                    expensive: NetworkCost.shared.expensive, bytes: file.size) {
+                await audio.preload(file, entryId: entry.id, model: model)
+            }
+        }
     }
 
     /// The play/pause button, the progress bar and its clock on one row.

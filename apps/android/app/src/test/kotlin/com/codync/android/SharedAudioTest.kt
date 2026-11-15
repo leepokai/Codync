@@ -36,7 +36,8 @@ class SharedAudioTest {
     /** The card's scope: unconfined, so a fetch starts the moment it's asked for. */
     private val card = CoroutineScope(Dispatchers.Unconfined)
     private val audio = SharedAudio(load = { loads++; fetch.await() },
-        open = { _, stopped -> speaker.stopped = stopped; speaker.log += "open"; speaker }, scope = card)
+        open = { _, stopped -> speaker.stopped = stopped; speaker.log += "open"; speaker }, scope = card,
+        length = { 9.4 })
 
     @Test fun `a second tap while the sound loads plays it once`() = runBlocking {
         val first = launch { audio.toggle() }
@@ -199,6 +200,10 @@ class SharedAudioTest {
         yield()
         fetch.complete(File("note.m4a"))
         preloading.join()
+        assertEquals(AudioPhase.Idle, audio.phase)
+        assertEquals(9.4, audio.duration, 0.0)
+        assertEquals(emptyList<String>(), speaker.log)
+
         audio.toggle()
         assertEquals(AudioPhase.Playing, audio.phase)
         assertEquals(listOf("open", "start"), speaker.log)
@@ -241,7 +246,7 @@ class SharedAudioTest {
         fetch.completeExceptionally(java.io.IOException("gone"))
         preloading.join()
         assertEquals(AudioPhase.Idle, audio.phase)
-        assertEquals(1, loads)
+        assertEquals(0.0, audio.duration, 0.0)
 
         fetch = CompletableDeferred()
         val tap = launch { audio.toggle() }
@@ -259,6 +264,20 @@ class SharedAudioTest {
         fetch.complete(File("note.m4a"))
         preloading.join()
         assertEquals(emptyList<String>(), speaker.log)
+        assertEquals(0.0, audio.duration, 0.0)
         assertEquals(AudioPhase.Idle, audio.phase)
+    }
+
+    @Test fun `a sound that fails to play after a preload keeps the length the preload read`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        fetch.complete(File("note.m4a"))
+        preloading.join()
+        assertEquals(9.4, audio.duration, 0.0)
+
+        speaker.startable = false
+        audio.toggle()
+        assertEquals(AudioPhase.Failed, audio.phase)
+        assertEquals(9.4, audio.duration, 0.0)
     }
 }

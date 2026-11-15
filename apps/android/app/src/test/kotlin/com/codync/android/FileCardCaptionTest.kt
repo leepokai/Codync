@@ -32,6 +32,14 @@ class FileCardCaptionTest {
         return audio
     }
 
+    /** A card whose sound preloaded: still idle, but its length is known. */
+    private fun preloaded(): SharedAudio {
+        val audio = SharedAudio(load = { File("note.m4a") }, open = { _, _ -> Speaker() }, scope = card,
+            length = { 9.4 })
+        runBlocking { audio.preload() }
+        return audio
+    }
+
     private fun failed(): SharedAudio {
         val audio = SharedAudio(load = { throw java.io.IOException("gone") }, open = { _, _ -> Speaker() }, scope = card)
         runBlocking { audio.toggle() }
@@ -54,6 +62,7 @@ class FileCardCaptionTest {
     }
 
     @Test fun `a loaded sound shows elapsed over duration`() {
+        assertEquals("0:00 / 0:09", detail(file, null, preloaded()))
         assertEquals("0:07 / 0:48", detail(file, null, loaded(7.0)))
         assertEquals("0:07 / 0:48 · Downloaded", detail(file, FileDownloadState.Saved, loaded(7.0)))
         assertEquals("380 KB", detail(file, null))

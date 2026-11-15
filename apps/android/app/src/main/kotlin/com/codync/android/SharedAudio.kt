@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
 import android.net.ConnectivityManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -36,8 +37,10 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 /** The state of a voice note's player, shown by the card's play button and caption. */
 enum class AudioPhase { Idle, Loading, Playing, Paused, Failed }
@@ -69,6 +72,8 @@ internal class SharedAudio(
     private val open: suspend (File, stopped: (SoundStop) -> Unit) -> Sound,
     /** Where the one fetch runs: the card's, so a preload or tap that stops waiting leaves it to the others. */
     private val scope: CoroutineScope,
+    /** How a preload reads the sound's length off its bytes without playing them ([headerLength]; tests stub it). */
+    private val length: suspend (File) -> Double = ::headerLength,
 ) {
     var phase by mutableStateOf(AudioPhase.Idle)
         private set
@@ -84,6 +89,8 @@ internal class SharedAudio(
         private set
     /** The card went: a load still running then starts nothing. */
     private var released = false
+    /** The length the preload read off the bytes (0 until then): shown before the first play and after a failure. */
+    private var known = 0.0
     /** The one fetch of the sound's bytes preload and a play tap share; a failed one is forgotten. */
     private var fetching: Deferred<Result<File>>? = null
 
@@ -126,10 +133,17 @@ internal class SharedAudio(
         if (fromStart) Analytics.capture(AnalyticsEvent.VoiceNotePlayed(failure.takeIf { phase == AudioPhase.Failed }))
     }
 
-    /** Ready the sound before a tap asks for it: fetches its bytes (the same fetch [toggle] would share). A fetch
-     *  that fails stays quiet: it is forgotten and the tap retries and reports it. */
+    /** Ready the sound before a tap asks for it: fetches its bytes (the same fetch [toggle] would share) and reads
+     *  the sound's length off them, so the bar and clock show before the first play. A fetch that fails stays quiet:
+     *  it is forgotten and the tap retries and reports it. */
     suspend fun preload() {
-        try { bytes() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return }
+        val seconds = try {
+            val file = bytes()
+            // A tap already on these bytes, or a sound once played, says its length itself.
+            if (released || phase != AudioPhase.Idle || duration > 0.0) return
+            length(file)
+        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return }
+        if (!released && duration <= 0.0) { known = seconds; duration = seconds }
     }
 
     /** The sound's bytes from the computer, one fetch for everyone asking: it runs in the card's [scope], so a caller
@@ -176,13 +190,22 @@ internal class SharedAudio(
         sound?.release()
         sound = null
         fetching = null
-        duration = 0.0
+        duration = known
         elapsed = 0.0
     }
 
     /** The card's progress ticker keeps [elapsed] honest. */
     fun syncElapsed() {
         sound?.let { if (it.playing || phase == AudioPhase.Paused) elapsed = it.position }
+    }
+}
+
+/** A sound's length off its bytes' headers, in seconds (0 when they don't say); it parses, never plays. Off the
+ *  caller's thread: the retriever scans the file. */
+private suspend fun headerLength(file: File): Double = withContext(Dispatchers.IO) {
+    MediaMetadataRetriever().use { retriever ->
+        retriever.setDataSource(file.path)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toDoubleOrNull()?.let { it / 1000.0 } ?: 0.0
     }
 }
 

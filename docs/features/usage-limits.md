@@ -2,6 +2,10 @@
 
 What the apps show about plan limits, read on the host (`host/src/usage/`) from the agents on the computer. A reading never starts a model turn, and the host calls no provider API with an agent's login (Cursor's dashboard is the one exception, see [Cursor usage](marketplace.md#cursor-usage)).
 
+## In a bot's chat
+
+The desktop thread shows the limits of the login its bot runs on above the message box (`PlanLimits`, `views/thread/plan-limits.ts`), from the same `usage` the Usage screen has: the agent's provider row for the bot's `backend`, then the login profile's windows when the bot has one (`loginProfile`), else the default login's. It lists the plan windows (not notes such as today's tokens), at most three. The 5-hour window is *Session*. On *Weekly* the day of the week is read from `resetsAt` (the week ends 7 days after it starts) and the share a steady pace allows by then is day × 100/7; the bar turns amber from 70% and red from 90%, and the week amber within a quarter of the pace and red past it. A bot whose login has no reading shows nothing.
+
 ## Which agents show
 
 Every Usage screen can list the agents that can report on this computer, each with a switch, behind the button beside the computer's name: desktop **Settings > Usage**, the phones' **State > Usage limits**, and the terminal UI's `U` then `s`. The choice is per computer and lives on its host, so every app, widget, the menu bar and the notch island follow it.

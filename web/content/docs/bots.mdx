@@ -78,7 +78,7 @@ The **Permissions** setting decides how much the agent does on its own before it
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 
-The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow.
+The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow. A message from another computer that your network rules hold to **Auto** or **Ask** is the exception: while the bot works on it, every request, team change and dev server start waits for your Allow whatever this setting ([choose who reaches your bots](/docs/teamwork#choose-who-reaches-your-bots)).
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
 

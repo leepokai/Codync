@@ -40,7 +40,7 @@ pub use library::{ArtifactTitles, LibraryItem};
 pub use login_keys::KeyImport;
 pub use memory::{MemoryMode, MemorySheet, Section};
 pub use network::{NetReply, NetworkSheet, Recovery, Step};
-pub use network_rules::{RuleField, RuleForm};
+pub use network_rules::{LEVELS, RuleField, RuleForm, level_detail, level_name};
 pub use network_setup::{CONNECTORS, Setup, SetupField};
 pub use pages::Page;
 pub use scroll::Scroll;

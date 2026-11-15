@@ -209,9 +209,15 @@ async fn update(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Valu
     Ok(json!({"bot": setup(hub, &agent_bot(hub, &id)?), "routines": saved}))
 }
 
-/// Under Ask the change waits for the user's Allow on an approval card in the bot's chat.
+/// Whether what `bot` asks for is approved without a card: under Approve automatically, unless a network rule's
+/// ceiling holds its work (`Requests::set_access`), which asks whatever the bot's Approvals.
+pub(crate) fn approves_by_itself(hub: &Hub, bot: &BotConfig) -> bool {
+    bot.permission == Permission::Auto && !hub.team.under_ceiling(&bot.id)
+}
+
+/// Unless the bot [`approves_by_itself`], the change waits for the user's Allow on an approval card in its chat.
 pub(crate) async fn approve(hub: &Hub, source: &BotConfig, title: String, detail: String) -> Result<()> {
-    if source.permission == Permission::Auto {
+    if approves_by_itself(hub, source) {
         return Ok(());
     }
     if detail.encode_utf16().count() > MAX_CARD_DETAIL {

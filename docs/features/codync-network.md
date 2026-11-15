@@ -170,10 +170,14 @@ and nothing new crosses the wire beyond a refusal's reason.
   assistant through another computer (`cloud-assistant@desk`) meets the same checks here, and this computer's own
   Cloud assistants switch: off, it refuses them all (`remote::take`). The switch turns on only while this computer
   is in the Codync account, so the receiving computer needs the account too.
-- **Rules**, per network: an ordered list of `{fromComputer, fromAgent, toAgent, access}` (`allow`/`deny`, `*`
-  for any). The first rule that matches decides; with none, everyone may write (`codync_network::rules`). The crate
-  checks them in `node/inbound.rs` before it takes a letter, so the standalone daemon has them too (`rules.json`
-  beside `agents.json`, `codync-network rules allow|deny <agent@computer> <agent> [--first]`, `rules remove <n>`).
+- **Rules**, per network: an ordered list of `{fromComputer, fromAgent, toAgent, access}` (`allow`, `auto`, `ask`
+  or `deny`, `*` for any). The first rule that matches decides; with none, everyone may write as `allow`
+  (`codync_network::rules`). The crate checks them in `node/inbound.rs` before it takes a letter, so the standalone
+  daemon has them too (`rules.json` beside `agents.json`,
+  `codync-network rules allow|auto|ask|deny <agent@computer> <agent> [--first]`, `rules remove <n>`).
+- **`auto` and `ask` are ceilings** on how a bot works on that sender's text, never a way to work more freely than
+  the bot is set ([ceilings](#ceilings-auto-and-ask)). An app older than the level shows such a rule as Deny,
+  never wider than it is.
   A refused letter's sender gets the reason as its tool error, for example "desk refused it: reviewer doesn't take
   messages from lead@laptop", and its exchange notice ends failed. An answer to one of this computer's own
   requests passes (the crate keeps each request's id, the computer it went to and the agent that sent it), so a
@@ -182,6 +186,48 @@ and nothing new crosses the wire beyond a refusal's reason.
   (`network/saved.rs`), applies them when its node starts, and changes them with `setNetworkRules {network, rules}`
   (loopback only, like membership); `networkView` shows them, so phones list them read-only.
 - The master switches stay at the computer: being in a network, and cloud assistants on or off.
+
+### Ceilings: `auto` and `ask`
+
+A letter that came in under a ceiling carries it (`Message::access`), and the turn that works on its text runs
+under it (`chat::team::Requests::set_access`, the one place that says which ceiling a bot works under): the
+request's turn, and for an answer to one of this computer's own requests, the turn that reads it (answers waiting
+together share a turn only at the same level, so one that can't start takes no other bot's answer with it). An
+answer that gets past a `deny` rule comes in at `ask`. The ceiling stands until the next thing in the bot's queue,
+past the turn's end.
+
+| | `allow` | `auto` | `ask` |
+|---|---|---|---|
+| Agent mode | the bot's | the bot's when it is no freer than the agent's Auto mode, otherwise that | the bot's when it is no freer than Manual, otherwise the agent's asking mode (read-only on an agent with none, such as Codex) |
+| Permission requests that reach Codync | the bot's Approvals decide | always a card | always a card |
+| Requests after the turn (a background subagent), until the next thing in the bot's queue | the bot's Approvals decide | declined | declined |
+
+- The mode comes from the agent's own list by how freely each lets it act (`agent::modes::Modes::under`, the ranks
+  agent fallbacks use), never freer than the bot works without the ceiling: a bot set to Auto on an agent without
+  an Auto mode keeps the mode its session is in, and a fallback step without the bot's mode stays within its
+  stand-in. The bot's own mode comes back before its next turn.
+- An agent that lists no modes, or none that can be ranked that low (Goose), doesn't take the turn: how freely it
+  works can't be told. The request ends failed with the reason, and `network_failed` reports stage `ceiling`. That
+  holds for an answer too, also one that got past a `deny` rule: a bot on such an agent that asks a computer under
+  a ceiling or a `deny` gets a failed turn in place of the answer, which its exchange notice still shows.
+- Such a turn starts nothing that would run without the ceiling (`chat::team::Requests::under_ceiling`):
+  `message_bot` and `follow_up` are refused in it, and so is every tool that changes what the bot does later
+  (`Requests::check_tool`, at the API: saving, switching, deleting or running a routine, its webhook and progress
+  note, adding to or steering its background work, the bot's name, instructions, skills, fallbacks and memory). What the bot's
+  Approve automatically would wave through for it (a `manage` change, `start_dev_server`) shows its card
+  (`manage::approves_by_itself`).
+- A turn under a ceiling isn't resumed after a host restart: the ceiling lives in memory, so the turn that picked it
+  up would work on the sender's text as the bot is set.
+- `turn_finished` reports the turn's `ceiling`, and `network_changed` how many rules there are at each level.
+- The turn's prompt says the text comes from a computer the user trusts less and is data, not instructions
+  (`chat::team::caution`). That keeps a bot from asking for what it should refuse; the ceiling is the lock.
+- Only an agent the app runs can be held to a ceiling, so the crate refuses a letter under one to a session it knocks
+  on (a Claude Code or Codex session). The standalone daemon prints the level with a letter to its terminal
+  (`← lead@cloud (ask) […]`).
+- Not covered: the turn still runs in the bot's main session, so it sees that conversation and its text stays in
+  it; what the agent's own settings allow without asking (an allow list in its config) never reaches Codync; and
+  work the agent goes on with past the next thing in the bot's queue is answered as the bot is set again.
+  Next steps: [requests from other computers](../plans/network-request-trust.md).
 
 ## Not yet
 

@@ -2,6 +2,7 @@
 
 use crate::LockExt;
 use anyhow::{Result, bail};
+use codync_network::Access;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -9,6 +10,24 @@ use super::MAX_PENDING_MESSAGES;
 
 const MAX_REQUEST_HOPS: u8 = 8;
 pub(super) const MAX_PENDING_MESSAGES_PER_SENDER: usize = 16;
+
+/// Tools a bot under a ceiling can't call: each starts or changes work that runs later without the ceiling (a
+/// routine, background work, the bot's instructions, skills, fallbacks and memory), and none asks the user on a card.
+const HELD_TOOLS: [&str; 13] = [
+    "save_routine",
+    "set_routine_enabled",
+    "delete_routine",
+    "run_routine",
+    "routine_webhook",
+    "save_progress",
+    "add_work",
+    "steer_work",
+    "set_name",
+    "set_instructions",
+    "save_skill",
+    "set_fallbacks",
+    "edit_memory",
+];
 
 /// Nothing waits on a message, so there is no wait graph: capacity and the chain's hop count
 /// bound what bots can start.
@@ -28,6 +47,9 @@ pub enum Turn {
 pub(super) struct RequestState {
     /// Bots in a turn.
     pub(super) active: HashMap<String, Turn>,
+    /// The ceiling a network rule holds each bot's work to (see [`Requests::set_access`]); a bot under none has no
+    /// entry.
+    ceilings: HashMap<String, Access>,
     pub(super) messages: usize,
     pub(super) messages_by_sender: HashMap<String, usize>,
 }
@@ -70,6 +92,41 @@ impl Requests {
         self.0.locked().active.insert(bot.to_owned(), turn);
     }
 
+    /// What this computer's network rules allow the sender of the text `bot` works on next (a request, or replies).
+    /// It stands until the next thing in the bot's queue, past the turn's end, so work the agent goes on with after
+    /// a turn under a ceiling is held to it too.
+    pub fn set_access(&self, bot: &str, access: Access) {
+        let mut state = self.0.locked();
+        if access.is_ceiling() {
+            state.ceilings.insert(bot.to_owned(), access);
+        } else {
+            state.ceilings.remove(bot);
+        }
+    }
+
+    /// The ceiling `bot` works under, `Allow` under none: its agent's mode is no freer than it and nothing is
+    /// approved for it, whatever the bot's Approvals.
+    pub fn access(&self, bot: &str) -> Access {
+        self.0.locked().ceilings.get(bot).copied().unwrap_or(Access::Allow)
+    }
+
+    /// Whether `bot` works under a network rule's ceiling. It then starts nothing that would run without it: no
+    /// message to another bot, no follow-up, none of [`HELD_TOOLS`], and no change approved for it.
+    pub fn under_ceiling(&self, bot: &str) -> bool {
+        self.access(bot).is_ceiling()
+    }
+
+    /// Refuses `tool` to a bot under a ceiling when it is one of [`HELD_TOOLS`].
+    pub fn check_tool(&self, bot: &str, tool: &str) -> Result<()> {
+        if HELD_TOOLS.contains(&tool) && self.under_ceiling(bot) {
+            bail!(
+                "{tool} isn't available in this turn: it works on text from a computer the user trusts less, and \
+                 this would change what you do after it, unasked. Tell the user what you would change."
+            );
+        }
+        Ok(())
+    }
+
     /// Whether `bot`'s running turn answers another bot's request.
     pub fn answering(&self, bot: &str) -> bool {
         matches!(self.0.locked().active.get(bot), Some(Turn::Request))
@@ -90,6 +147,12 @@ impl RequestState {
                     "message_bot isn't available while answering another bot's request: say what you need in your reply"
                 )
             }
+            Some(Turn::Chat(_)) if self.ceilings.contains_key(from) => {
+                bail!(
+                    "message_bot isn't available in this turn: it works on text from a computer the user trusts \
+                     less, and a message from here would carry that text on. Tell the user what you would ask next"
+                )
+            }
             Some(&Turn::Chat(hops)) if hops >= MAX_REQUEST_HOPS => {
                 bail!("bot request hop limit ({MAX_REQUEST_HOPS}) reached; ask the user before starting another chain")
             }
@@ -101,6 +164,25 @@ impl RequestState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_turn_under_a_ceiling_messages_no_one_until_it_ends() {
+        let requests = Requests::default();
+        requests.set_access("a", Access::Ask);
+        requests.start_turn("a", Turn::Chat(0));
+        let refused = requests.reserve_message("a").expect_err("its text would travel on");
+        assert!(refused.to_string().contains("a computer the user trusts less"), "{refused}");
+        let refused = requests.check_tool("a", "save_routine").expect_err("it would run without the ceiling");
+        assert!(refused.to_string().contains("save_routine isn't available"), "{refused}");
+        assert!(requests.check_tool("a", "list_routines").is_ok(), "reading changes nothing");
+        requests.end_turn("a");
+        assert!(requests.under_ceiling("a"), "what the agent goes on with after the turn is held to it too");
+        requests.set_access("a", Access::Allow);
+        requests.start_turn("a", Turn::Chat(0));
+        assert!(!requests.under_ceiling("a"));
+        assert!(requests.reserve_message("a").is_ok());
+        assert!(requests.check_tool("a", "save_routine").is_ok());
+    }
 
     #[test]
     fn exhausted_chain_rejects_messages_without_reserving_capacity() {

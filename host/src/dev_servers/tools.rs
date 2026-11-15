@@ -4,7 +4,7 @@ use super::run::{create, launch, stop};
 use super::{View, check_room, logs, report};
 use crate::analytics::Event;
 use crate::hub::Hub;
-use crate::store::{BotConfig, Permission};
+use crate::store::BotConfig;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -102,7 +102,7 @@ async fn start(hub: &Arc<Hub>, caller: &str, bot: &str, args: &Value) -> Result<
     let command = arg(args, "command")?.to_owned();
     let cfg = hub.store.bot(caller)?.filter(|row| !row.deleted).map(|row| row.config).context("unknown bot")?;
     let folder = folder_for(&cfg, args["folder"].as_str()).await?;
-    let on_a_card = cfg.permission != Permission::Auto;
+    let on_a_card = !crate::chat::manage::approves_by_itself(hub, &cfg);
     let servers = &hub.dev_servers;
     if let Some(id) = servers.same(bot, &folder, &command) {
         // A stopped one comes back, with no second card if someone allowed it; under Auto nobody did.

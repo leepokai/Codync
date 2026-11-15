@@ -34,7 +34,8 @@ impl Host {
         Self { child, home, base, token }
     }
 
-    async fn call(&self, method: &str, body: Value) -> Value {
+    /// Whether the host took the call, and its answer.
+    async fn post(&self, method: &str, body: Value) -> (bool, Value) {
         let response = reqwest::Client::new()
             .post(format!("{}/api/{method}", self.base))
             .bearer_auth(&self.token)
@@ -43,10 +44,20 @@ impl Host {
             .send()
             .await
             .unwrap();
-        let status = response.status();
-        let value: Value = response.json().await.unwrap();
-        assert!(status.is_success(), "{method}: {value}");
+        (response.status().is_success(), response.json().await.unwrap())
+    }
+
+    async fn call(&self, method: &str, body: Value) -> Value {
+        let (ok, value) = self.post(method, body).await;
+        assert!(ok, "{method}: {value}");
         value
+    }
+
+    /// A call that must be refused: its error text.
+    async fn refused(&self, method: &str, body: Value) -> String {
+        let (ok, value) = self.post(method, body).await;
+        assert!(!ok, "{method} should have been refused: {value}");
+        value["error"].as_str().unwrap_or_default().to_owned()
     }
 
     async fn bot(&self, name: &str) -> String {
@@ -287,6 +298,95 @@ async fn a_bot_kept_off_the_network_and_a_deny_rule_keep_letters_out() {
     desk.call("send", json!({"botId": secret, "text": "TRY lead@laptop status?"})).await;
     let answered = desk.wait_for(&secret, exchange("completed")).await;
     assert_eq!(answered["data"]["botMessage"]["reply"], "reply: status?", "{answered}");
+}
+
+/// The session modes a bot's agent lists from its next session on, the first the one it opens in.
+fn list_modes(host: &Host, bot: &str, ids: &[&str]) {
+    let modes: Vec<Value> = ids.iter().map(|id| json!({"id": id, "name": id})).collect();
+    let listed = json!({"modes": {"currentModeId": ids[0], "availableModes": modes}});
+    std::fs::write(host.home.join(bot).join("modes.json"), listed.to_string()).unwrap();
+}
+
+/// The modes the host switched a bot's agent to, in order.
+fn switched(host: &Host, bot: &str) -> Vec<String> {
+    let log = std::fs::read_to_string(host.home.join(bot).join("modes.jsonl")).unwrap_or_default();
+    log.lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+}
+
+#[tokio::test]
+async fn a_rule_at_ask_holds_a_bot_that_approves_by_itself_to_asking() {
+    let (desk, laptop, reviewer, lead) = two_computers().await;
+    list_modes(&desk, "Reviewer", &["bypassPermissions", "default"]);
+    list_modes(&laptop, "Lead", &["bypassPermissions", "default"]);
+    desk.call("updateBot", json!({"id": reviewer, "permission": "auto"})).await;
+    let pending = |e: &Value| e["kind"] == "permission" && e["data"]["status"] == "pending";
+    let relayed = |text: &'static str| move |e: &Value| is_final(e) && e["data"]["text"] == text;
+
+    // No rule: the laptop's request runs as the reviewer is set, so its tool call is approved for it.
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION first"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION first")).await;
+    assert!(switched(&desk, "Reviewer").is_empty(), "it stayed in its own mode");
+
+    // At ask the same request waits for the desk's user, in the agent's asking mode.
+    let rules = json!([{"fromComputer": "laptop", "fromAgent": "*", "toAgent": "*", "access": "ask"}]);
+    let view = desk.call("setNetworkRules", json!({"rules": rules})).await;
+    assert_eq!(view["networks"][0]["rules"][0]["access"], "ask");
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk PERMISSION second"})).await;
+    let card = desk.wait_for(&reviewer, pending).await;
+    assert_eq!(switched(&desk, "Reviewer"), ["default"]);
+    let prompts = std::fs::read_to_string(desk.home.join("Reviewer/prompts.jsonl")).unwrap();
+    let told = prompts.lines().last().unwrap();
+    assert!(told.contains("a computer the user trusts less than this one"), "{told}");
+    desk.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: PERMISSION second")).await;
+
+    // The ceiling stands past the turn's end: nothing is approved for the bot, and it can't change what it does later.
+    let tool = |name: &str, arguments: Value| json!({"botId": reviewer, "name": name, "arguments": arguments});
+    let command = format!("{} -c \"import time; time.sleep(300)\"", common::python());
+    let server = desk.refused("chatCall", tool("start_dev_server", json!({"command": command}))).await;
+    assert!(server.contains("didn't allow"), "{server}");
+    let routine = desk.refused("routineCall", tool("save_routine", json!({}))).await;
+    assert!(routine.contains("save_routine isn't available in this turn"), "{routine}");
+
+    // The user's own message runs as the bot is set again.
+    desk.call("send", json!({"botId": reviewer, "text": "PERMISSION mine"})).await;
+    desk.wait_for(&reviewer, relayed("reply: PERMISSION mine")).await;
+    assert_eq!(switched(&desk, "Reviewer"), ["default", "bypassPermissions"]);
+
+    // An answer from a computer under a ceiling holds the turn that reads it to the ceiling too.
+    let rules = json!([{"fromComputer": "desk", "fromAgent": "*", "toAgent": "*", "access": "ask"}]);
+    laptop.call("setNetworkRules", json!({"rules": rules})).await;
+    desk.call("setNetworkRules", json!({"rules": []})).await;
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk third"})).await;
+    laptop.wait_for(&lead, relayed("Relayed: reply: third")).await;
+    assert_eq!(switched(&laptop, "Lead"), ["default"]);
+    let prompts = std::fs::read_to_string(laptop.home.join("Lead/prompts.jsonl")).unwrap();
+    let told = prompts.lines().last().unwrap();
+    assert!(told.contains("these are bot replies") && told.contains("a computer the user trusts less"), "{told}");
+
+    // That turn messages no one: the answer's text can't travel on to a bot that isn't held to the ceiling.
+    std::fs::write(desk.home.join("Reviewer/handoff.json"), r#"{"target":"lead@laptop"}"#).unwrap();
+    std::fs::write(laptop.home.join("Lead/handoff.json"), r#"{"target":"reviewer@desk"}"#).unwrap();
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk CHAIN"})).await;
+    let stopped = laptop
+        .wait_for(&lead, |e| is_final(e) && e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Chain stopped")))
+        .await;
+    let text = stopped["data"]["text"].as_str().unwrap();
+    assert!(text.contains("a computer the user trusts less"), "{text}");
+}
+
+#[tokio::test]
+async fn an_agent_that_cant_be_held_to_a_ceiling_doesnt_work_on_the_request() {
+    let (desk, laptop, reviewer, lead) = two_computers().await;
+    // The reviewer's agent lists no modes, so how freely it works can't be told.
+    let rules = json!([{"fromComputer": "laptop", "fromAgent": "*", "toAgent": "*", "access": "auto"}]);
+    desk.call("setNetworkRules", json!({"rules": rules})).await;
+    laptop.call("send", json!({"botId": lead, "text": "DELEGATE reviewer@desk review this"})).await;
+    let failed = laptop.wait_for(&lead, exchange("failed")).await;
+    let detail = failed["data"]["botMessage"]["detail"].as_str().unwrap();
+    assert!(detail.contains("no mode careful enough"), "{detail}");
+    let history = desk.call("history", json!({"botId": reviewer})).await;
+    assert!(!history["entries"].as_array().unwrap().iter().any(is_final), "the reviewer never answered");
 }
 
 #[tokio::test]

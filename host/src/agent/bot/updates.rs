@@ -6,7 +6,7 @@ use super::{Actor, Reacted, Seg, SegKind};
 use crate::agent::acp::{self, Incoming};
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{BotConfig, Entry, EntryKind, Lane, Permission};
+use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
@@ -171,7 +171,7 @@ impl Actor {
     pub(super) async fn on_permission(&mut self, rpc_id: Value, params: Value) {
         let options = params["options"].as_array().cloned().unwrap_or_default();
         let tool = &params["toolCall"];
-        if self.cfg.permission == Permission::Auto
+        if crate::chat::manage::approves_by_itself(&self.hub, &self.cfg)
             && let (Some(option), Some(conn)) = (auto_pick(&options), &self.conn)
         {
             let _ = conn.acp.respond(rpc_id, acp::permission_answer(Some(option))).await;
@@ -207,13 +207,14 @@ impl Actor {
     }
 
     /// A permission request from work the agent goes on with after its turn ended (a background subagent): no turn
-    /// shows a card for it, so it gets what a turn would answer without asking, under the bot's Approve automatically,
-    /// for one of this bot's own sessions, unless the user stopped its last turn. Anything else is declined.
+    /// shows a card for it, so it gets what a turn would answer without asking, where the bot approves by itself
+    /// (`manage::approves_by_itself`), for one of this bot's own sessions, unless the user stopped its last turn.
+    /// Anything else is declined.
     pub(super) async fn answer_background(&self, rpc_id: Value, params: &Value) {
         let Some(conn) = &self.conn else { return };
         let own = params["sessionId"].as_str().is_some_and(|sid| conn.loaded.contains_key(sid));
         let options = params["options"].as_array().cloned().unwrap_or_default();
-        let pick = (self.cfg.permission == Permission::Auto && own && !self.stop_requested)
+        let pick = (crate::chat::manage::approves_by_itself(&self.hub, &self.cfg) && own && !self.stop_requested)
             .then(|| auto_pick(&options))
             .flatten();
         tracing::info!(bot = %self.id(), approved = pick.is_some(), title = params["toolCall"]["title"].as_str(), "permission asked outside a turn");

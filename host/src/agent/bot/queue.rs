@@ -11,6 +11,7 @@ use crate::hub::BotStatus;
 use crate::market::agent_sign_in;
 use crate::store::{Lane, now_ms};
 use anyhow::{Result, anyhow};
+use codync_network::Access;
 use serde_json::json;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -222,6 +223,9 @@ impl Actor {
         }
         let main = Lane::main(&self.cfg.id);
         while self.turn.is_none() && self.routine_completion.is_none() && !self.queue.is_empty() {
+            // What the rest of the queue works on is the user's, or this computer's own: only a bot request and
+            // bot replies carry another computer's text.
+            self.hub.team.set_access(&self.cfg.id, Access::Allow);
             match self.queue.front() {
                 Some(Queued::Routine(_)) => {
                     let Some(Queued::Routine(id)) = self.queue.pop_front() else { unreachable!("front is a routine") };
@@ -252,6 +256,7 @@ impl Actor {
                     };
                     let ids = [request.entry_id.clone()];
                     let prompt = request.prompt.clone();
+                    self.hub.team.set_access(&self.cfg.id, request.access());
                     request.mark_started();
                     self.active_request = Some(request);
                     let result = self.start_turn(main.clone(), &ids, &prompt, false, done_tx).await;
@@ -261,15 +266,21 @@ impl Actor {
                     continue;
                 }
                 Some(Queued::BotReply(_)) => {
-                    // Replies that came in while the bot worked are one turn, as the user's messages are.
-                    let mut replies = Vec::new();
-                    while let Some(Queued::BotReply(_)) = self.queue.front() {
+                    // Replies that came in while the bot worked are one turn, as the user's messages are, those a
+                    // network rule holds to the same level: a turn that can't start under a ceiling takes no other
+                    // bot's reply down with it.
+                    let mut replies: Vec<crate::chat::team::BotReply> = Vec::new();
+                    while let Some(Queued::BotReply(next)) = self.queue.front()
+                        && replies.first().is_none_or(|first| first.access() == next.access())
+                    {
                         if let Some(Queued::BotReply(reply)) = self.queue.pop_front() {
                             replies.push(reply);
                         }
                     }
+                    let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
+                    self.hub.team.set_access(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
-                    let prompt = crate::chat::team::reply_prompt(&replies);
+                    let prompt = crate::chat::team::reply_prompt(&replies, access);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
                     }

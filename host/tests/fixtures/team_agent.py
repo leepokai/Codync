@@ -246,13 +246,20 @@ for line in sys.stdin:
         with open("sessions.jsonl", "a") as log:
             log.write(json.dumps(request) + "\n")
         pathlib.Path("servers.json").write_text(json.dumps(request["params"]["mcpServers"]))
-        send({"id": request["id"], "result": {"sessionId": "session"}})
+        # modes.json in the bot's folder: the session modes this agent lists (none without it).
+        listed = pathlib.Path("modes.json")
+        modes = json.loads(listed.read_text()) if listed.exists() else {}
+        send({"id": request["id"], "result": {"sessionId": "session", **modes}})
     elif method == "session/prompt":
         cancel = threading.Event()
         permission = threading.Event()
         threading.Thread(target=prompt, args=(request,), daemon=True).start()
     elif method == "session/cancel":
         cancel.set()
+    elif method == "session/set_mode":
+        with open("modes.jsonl", "a") as log:
+            log.write(json.dumps(request["params"]["modeId"]) + "\n")
+        send({"id": request["id"], "result": {}})
     elif request.get("id") == "permission":
         permission_reply = request.get("result")
         permission.set()

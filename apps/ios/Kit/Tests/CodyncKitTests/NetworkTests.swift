@@ -39,6 +39,14 @@ private let work = #"{"id":"network-1a2b","name":"work","computer":"desk","role"
     ])
     let only = NetworkView.Rule(fromComputer: "*", fromAgent: "lead", toAgent: "*", access: .deny)
     #expect(network.text(of: only) == "Deny: lead on any computer → any bot here", "never wider than it is")
+    // The ceilings read as what they are.
+    let level = { (access: NetworkView.Rule.Access) in
+        network.text(of: NetworkView.Rule(fromComputer: "*", fromAgent: "*", toAgent: "*", access: access))
+    }
+    #expect(level(.auto) == "Auto: any bot on any computer → any bot here")
+    #expect(level(.ask) == "Ask: any bot on any computer → any bot here")
+    let ask = try JSONDecoder().decode(NetworkView.Rule.self, from: Data(#"{"fromComputer":"*","fromAgent":"*","toAgent":"*","access":"ask"}"#.utf8))
+    #expect(ask.access == .ask)
 }
 
 @Test func botsSayWhetherTheNetworkAndCloudAssistantsReachThem() throws {

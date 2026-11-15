@@ -21,7 +21,8 @@ export interface NetworkRule {
   fromComputer: string
   fromAgent: string
   toAgent: string
-  access: 'allow' | 'deny'
+  /** What the sender may have a bot here do, the most trusted first; `auto` and `ask` are ceilings on how the bot works for it. */
+  access: 'allow' | 'auto' | 'ask' | 'deny'
 }
 
 /** One network this computer is in. */

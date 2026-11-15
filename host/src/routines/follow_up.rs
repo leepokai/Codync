@@ -227,6 +227,13 @@ impl Routines {
 /// A follow-up's lines and its turn go to the bot's own chat, so it is set only from a turn there: a room, or the
 /// bot whose request the turn answers, would never see it come back.
 fn own_chat(hub: &Hub, bot: &str) -> Result<()> {
+    if hub.team.under_ceiling(bot) {
+        bail!(Refused::Elsewhere(
+            "follow_up isn't available in this turn: it works on text from a computer the user trusts less, and a \
+             later turn of yours would act on it unasked. Tell the user what you would check back on."
+                .into()
+        ));
+    }
     if hub.runtime(bot).lane.is_some_and(|lane| lane.chat != bot) || hub.team.answering(bot) {
         bail!(Refused::Elsewhere(
             "follow_up works only in your own chat with the user: its turn would run there, unseen by this room or \
@@ -394,6 +401,9 @@ mod tests {
         hub.team.start_turn("bot", Turn::Request);
         assert!(elsewhere(), "answering another bot's request");
         hub.team.start_turn("bot", Turn::Chat(0));
+        hub.team.set_access("bot", codync_network::Access::Ask);
+        assert!(elsewhere(), "a turn under a network rule's ceiling");
+        hub.team.set_access("bot", codync_network::Access::Allow);
         hub.set_runtime("bot", |r| r.lane = Some(Lane::main("room")));
         assert!(elsewhere(), "a room turn");
     }

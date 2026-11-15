@@ -171,9 +171,12 @@ impl Actor {
         }
         // A bot request or room turn isn't resumed after a host restart (the room that waited is gone): a request's
         // persisted notices are marked interrupted instead of silently repeating work. Nor is a call's opening (the
-        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now.
+        // call is over). A reply turn is resumed, and so is a follow-up, which is gone from the list by now. A turn
+        // under a network rule's ceiling isn't: the ceiling doesn't outlive the host, and the turn that resumed it
+        // would work on the sender's text as the bot is set.
         self.set_inflight(
             self.active_request.is_none()
+                && !self.hub.team.under_ceiling(&self.cfg.id)
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
                 && self.host_turn.is_none_or(HostTurn::resumed),
@@ -524,7 +527,7 @@ impl Actor {
         };
         let started = self.hub.runtime(&self.id()).started_at.unwrap_or_else(now_ms);
         let ms = now_ms() - started;
-        analytics::turn_finished(&self.hub, &self.cfg.backend, outcome, stop_reason, failure, self.source(), ms);
+        analytics::turn_finished(&self.hub, &self.cfg, outcome, stop_reason, failure, self.source(), ms);
     }
 
     /// The turn is a routine's run: in the chat, or a task's whose item is one.

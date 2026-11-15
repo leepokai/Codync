@@ -101,9 +101,16 @@ async fn a_manager_creates_and_changes_bots_that_record_who_made_them() {
     hub.update_bot(&json!({"id": "lead", "selfFallbacks": false})).unwrap();
     let own = json!({"botId": "lead", "fallbacks": [{"agent": "codex"}]});
     assert!(refused("lead", "update_bot", own).await.contains("turned off setting your own fallbacks"));
-    // Under Ask, a change too long for its card to show in full never reaches the card.
-    hub.update_bot(&json!({"id": "lead", "permission": "ask"})).unwrap();
+    // A change too long for its card to show in full never reaches the card: under a network rule's ceiling,
+    // which asks whatever the bot's Approvals, and under Ask.
     let long = json!({"name": "x", "agent": "claude", "instructions": "a".repeat(MAX_INSTRUCTIONS_CHARS)});
+    let lead = hub.store.bot("lead").unwrap().unwrap().config;
+    assert!(approves_by_itself(&hub, &lead));
+    hub.team.set_access("lead", codync_network::Access::Auto);
+    assert!(!approves_by_itself(&hub, &lead));
+    assert!(refused("lead", "create_bot", long.clone()).await.contains("too long for its approval card"));
+    hub.team.set_access("lead", codync_network::Access::Allow);
+    hub.update_bot(&json!({"id": "lead", "permission": "ask"})).unwrap();
     assert!(refused("lead", "create_bot", long).await.contains("too long for its approval card"));
     assert_eq!(hub.store.bots().unwrap().len(), 3, "a refused change creates nothing");
     assert_eq!(hub.routines.list("dev")["routines"], json!([]));

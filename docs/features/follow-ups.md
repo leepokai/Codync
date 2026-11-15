@@ -29,7 +29,9 @@ On the built-in `routines` MCP server every agent has:
 `follow_up` works only from a turn in the bot's own chat. In a group room, or while the bot answers another bot's
 `message_bot` request, it is refused (`own_chat`: the running turn's lane is another chat, or the team's turn is
 a request): the line and the later turn go to the bot's own chat, where the room or the asking bot would never
-see them. The refusal tells the bot to say in its reply that it can't check back from there.
+see them. The refusal tells the bot to say in its reply that it can't check back from there. It is refused too
+while a network rule holds the bot to a [ceiling](codync-network.md#ceilings-auto-and-ask): its later turn would act on the sender's text
+without the ceiling.
 
 The server's instructions tell the bot to set one whenever something in its own chat needs another look later,
 never to say it will check back without setting one, and to use a routine for anything recurring.

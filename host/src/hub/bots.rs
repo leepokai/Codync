@@ -88,6 +88,7 @@ impl Hub {
         }
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
+        self.team.set_access(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);

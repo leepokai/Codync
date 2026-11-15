@@ -53,6 +53,13 @@ pub fn observe(caller: &Caller, method: &str, b: &Value) -> Option<(Event, Map<S
             return None;
         }
         p.insert(key.into(), value.into());
+        // How many rules there are at each level, never whom they name.
+        if method == "setNetworkRules" {
+            for level in ["allow", "auto", "ask", "deny"] {
+                let rules = b["rules"].as_array().map_or(0, |r| r.iter().filter(|r| r["access"] == level).count());
+                p.insert(level.into(), rules.into());
+            }
+        }
         event
     } else if let Some(&(_, setting)) = SETTINGS.iter().find(|s| s.0 == method) {
         let on = if method == "setApproval" { b["approval"] == "auto" } else { b["enabled"] == true };

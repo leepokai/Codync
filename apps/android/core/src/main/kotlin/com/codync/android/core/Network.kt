@@ -54,7 +54,12 @@ data class NetworkInfo(
             me.agents.firstOrNull { it.id == rule.toAgent }?.name
         } ?: rule.toAgent
         // An access this app doesn't know reads as deny, never wider than it is.
-        val access = if (rule.access == "allow") "Allow: {from} → {to}" else "Deny: {from} → {to}"
+        val access = when (rule.access) {
+            "allow" -> "Allow: {from} → {to}"
+            "auto" -> "Auto: {from} → {to}"
+            "ask" -> "Ask: {from} → {to}"
+            else -> "Deny: {from} → {to}"
+        }
         return fill(tr(access), "from" to from, "to" to to)
     }
 

@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+/// The methods a bot's MCP servers call the host's tools through.
+const BOT_TOOL_CALLS: [&str; 5] = ["routineCall", "memoryCall", "chatCall", "teamCall", "manageCall"];
+
 /// What the user does to an item of a bot's box.
 async fn steer_work(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
     let (hub, bot) = (hub.clone(), str_arg(b, "botId")?.to_owned());
@@ -36,6 +39,12 @@ async fn steer_work(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
     if let Some(steer) = Steer::of_method(method) {
         return Ok(ControlFlow::Break(steer_work(hub, steer, &b).await?));
+    }
+    // A turn a network rule holds to a ceiling calls only the host's tools that read or answer the user. `botId`
+    // is whoever's turn calls, a task included. The computer and connector servers are the agent's own tools, which
+    // its mode holds.
+    if BOT_TOOL_CALLS.contains(&method) {
+        hub.team.check_tool(str_arg(&b, "botId")?, str_arg(&b, "name")?)?;
     }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,

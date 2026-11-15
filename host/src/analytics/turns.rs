@@ -2,6 +2,7 @@
 
 use super::{Event, capture};
 use crate::hub::Hub;
+use crate::store::BotConfig;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -31,11 +32,11 @@ pub enum TurnSource {
     FollowUp,
 }
 
-/// `turn_finished`: the agent, how the turn ended, why it failed and how long it ran;
-/// never its text or the error's.
+/// `turn_finished`: the bot's agent, how the turn ended, why it failed, how long it ran and the ceiling a network
+/// rule held it to; never its text or the error's.
 pub fn turn_finished(
     hub: &Hub,
-    agent: &str,
+    bot: &BotConfig,
     outcome: TurnOutcome,
     stop_reason: &str,
     failure: Option<&anyhow::Error>,
@@ -59,7 +60,11 @@ pub fn turn_finished(
         TurnSource::Host => "host",
         TurnSource::FollowUp => "follow_up",
     };
-    let mut p = json!({"agent": agent, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    let mut p = json!({"agent": bot.backend, "outcome": outcome, "stop_reason": stop_reason, "source": source, "seconds": ms.max(0) / 1000});
+    let access = hub.team.access(&bot.id);
+    if access.is_ceiling() {
+        p["ceiling"] = access.word().into();
+    }
     if let Some((kind, rpc)) = failure {
         p["error"] = kind.into();
         if let Some(rpc) = rpc {

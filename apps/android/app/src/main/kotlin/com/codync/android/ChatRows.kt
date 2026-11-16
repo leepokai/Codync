@@ -135,16 +135,20 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
     openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)? = null) {
     val group = chat?.kind == "group"
     when (entry.kind) {
-        "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
-            horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply, selectText, openQuote)
-            ReactionsRow(entry, state, store)
+        "user" -> SwipeToReply(ReplyDirection.Left, 56.dp, reply) {
+            Column(Modifier.padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
+                horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                UserBubble(entry, state, store, reply, selectText, openQuote)
+                ReactionsRow(entry, state, store)
+            }
         }
-        "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, selectText, openArtifact, openQuote)
-            Box(Modifier.padding(start = if (group) 34.dp else 0.dp)) { ReactionsRow(entry, state, store) }
+        "agent" -> SwipeToReply(ReplyDirection.Right, 40.dp, reply) {
+            Column(Modifier.padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
+                AgentBubble(entry, state, store, openTrace, reply, selectText, openArtifact, openQuote)
+                Box(Modifier.padding(start = if (group) 34.dp else 0.dp)) { ReactionsRow(entry, state, store) }
+            }
         }
         "permission" -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group) AuthorLabel(entry.data.text("author"), state)
@@ -188,7 +192,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val focus = LocalFocusManager.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
     val menu = MessageMenu.of(entry, store, reply, trace = null, selectText)
-    Column(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.padding(start = 56.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (attachments.isNotEmpty()) AttachmentList(attachments, entry.botId, menu, state, store)
         val quote = entry.replyTo
         if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
@@ -265,7 +269,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val voiceNote = entry.voiceNote
     val menu = MessageMenu.of(entry, store, reply, openTrace, selectText)
     val textMenu = { menu.textItems(textCopyItem(context, entry.text)) }
-    Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // The message the bot answers (`reply_to`), above its bubble.
         entry.replyTo?.let { quote -> QuoteLine(quote.text, Modifier.padding(horizontal = 16.dp), open = openQuote?.let { open -> { open(quote.id) } }) }
         // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note

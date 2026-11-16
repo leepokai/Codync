@@ -27,7 +27,6 @@ public struct ThreadView: View {
     @State var interruptCall: (() -> Void)?
     /// The chat stays on the newest message until the reader scrolls away.
     @State var following = true
-    @State private var openToMessages = OpenToMessages()
     @State var loadingEarlier = false
     /// Find in the conversation; nil while its bar is closed.
     @State var find: ConversationFind?
@@ -449,7 +448,6 @@ extension ThreadView {
     public var body: some View {
         conversation
             .tracked(.screenViewed(.chat))
-            .onAppear { openToMessages.begin() }
     }
 
     private var working: Bool { bot?.isWorking(in: botId) == true && !model.isOffline }
@@ -505,7 +503,7 @@ extension ThreadView {
             model.restartStream()
             _ = try? await model.ready()
         }, report: { model.recordPerformance(.scroll($0)) }, onOpened: {
-            if let duration = openToMessages.finish() { model.recordPerformance(.chatOpen(durationMs: duration)) }
+            if let duration = model.chatOpening.finish(botId) { model.recordPerformance(.chatOpen(durationMs: duration)) }
         })
     }
 

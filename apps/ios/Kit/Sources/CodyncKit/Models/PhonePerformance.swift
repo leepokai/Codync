@@ -58,20 +58,25 @@ public enum PhonePerformance: Encodable, Sendable {
     }
 }
 
-/// One opening's wait for its messages to reach their first laid-out frame. A second finish reports nothing.
+/// One chat's wait from its opening action to its messages' first laid-out frame. Reports only its own first frame.
 public struct OpenToMessages {
-    private var opened: ContinuousClock.Instant?
+    private var opening: (botId: String, startedAt: ContinuousClock.Instant)?
 
     public init() {}
 
-    public mutating func begin(at now: ContinuousClock.Instant = .now) {
-        opened = now
+    public mutating func open(_ botId: String, at now: ContinuousClock.Instant = .now) {
+        guard opening?.botId != botId else { return }
+        opening = (botId, now)
     }
 
-    public mutating func finish(at now: ContinuousClock.Instant = .now) -> Int? {
-        guard let opened else { return nil }
-        self.opened = nil
-        let elapsed = (now - opened).components
+    public mutating func cancel() {
+        opening = nil
+    }
+
+    public mutating func finish(_ botId: String, at now: ContinuousClock.Instant = .now) -> Int? {
+        guard let opening, opening.botId == botId else { return nil }
+        self.opening = nil
+        let elapsed = (now - opening.startedAt).components
         return Int(elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000)
     }
 }

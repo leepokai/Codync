@@ -1,6 +1,5 @@
 package com.codync.android
 
-import android.os.Build
 import android.view.Choreographer
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyListState
@@ -48,8 +47,6 @@ internal class ScrollHitchAccumulator {
 
 /** Measures only reader drags; another drag during the settling tail continues the same event. */
 @Composable internal fun TrackScrollHitches(list: LazyListState, kind: ScrollList, report: (PhonePerformance.Scroll) -> Unit) {
-    // Emulator vsync says nothing about a physical phone's scrolling.
-    if (Build.HARDWARE in listOf("ranchu", "goldfish")) return
     val view = LocalView.current
     val density = LocalDensity.current
     LaunchedEffect(list, kind) {

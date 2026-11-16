@@ -23,6 +23,7 @@ extension BotStore {
         onComputerChanged = nil
         client = nil
         selection = nil
+        chatOpening.cancel()
         screenRequest = nil
         cancelVoiceCallRequest()
     }

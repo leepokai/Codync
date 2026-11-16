@@ -78,6 +78,7 @@ class AppStore internal constructor(
     internal var rewoundFor: String? = null
     /** The open chat and the few opened last load deeply; the rest keep a short preview. Not saved. */
     internal val residents = ResidentBots()
+    internal val chatOpening = OpenToMessages()
     /** Rows each resident chat loads, grown while its reader pages back through history already on the phone. */
     internal val windows = ConcurrentHashMap<String, Int>()
     /** The oldest row each chat's last snapshot held, counted before queued removals hide any. */

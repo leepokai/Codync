@@ -87,6 +87,7 @@ async fn record_at(path: &Path, body: Value) -> Result<()> {
         .await
         .with_context(|| format!("opening {}", path.display()))?;
     file.write_all(&line).await.with_context(|| format!("writing {}", path.display()))?;
+    file.flush().await.with_context(|| format!("flushing {}", path.display()))?;
     Ok(())
 }
 

@@ -12,8 +12,9 @@ import kotlinx.serialization.json.*
 /** Opens a chat on this computer (the account closes any other computer's) or, with null, closes it. */
 fun AppStore.openBot(id: String?) {
     if (id == null && state.value.selectedBot == null) return
-    // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
     val leaving = id != state.value.selectedBot
+    if (leaving) chatOpening.open(id)
+    // Leaving a chat drops the call "Talk to Codync" asked for there, waiting or not (iOS `cancelVoiceCallRequest`).
     if (leaving) callWait?.cancel()
     if (id != null) residents.touch(id)
     // The chat left gives its extra rows back, so it pages its earlier ones again if opened later.

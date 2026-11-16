@@ -221,12 +221,14 @@ emulators report nothing.
 
 Each line has the host's RFC 3339 `at` timestamp, `platform` (`ios`/`android`) and `type`:
 
-- `chat_open`: `durationMs`, from opening a chat until its messages reach their first laid-out frame.
+- `chat_open`: `durationMs`, from the chat-opening action until its messages reach their first laid-out frame. With
+  cached messages this measures opening and drawing them, not waiting for newer messages to arrive.
 - `scroll`: one reader drag until 300 ms after the list rests. `list` is `bots`/`chat`; `rows`, `frames`, `hitches`,
   `longestMs`, `hitchMsPerS` (late frame time per second) and `fps` describe the scroll. A chat also has `stop`
   (`top`/`end`/`middle`) and `jump` (post-stop movement in points/dp). A window with no drawn frames writes nothing.
 
-The log holds no message text, names or ids. A bot can read recent measurements with:
+The log holds no message text, names or ids. It is an unbounded diagnostic log, so read or prune it as needed; a bot
+can read recent measurements with:
 
 ```sh
 tail -n 100 ~/.codync/phone-performance.jsonl | jq -c .

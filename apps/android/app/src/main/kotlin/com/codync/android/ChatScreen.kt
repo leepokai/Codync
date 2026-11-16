@@ -313,7 +313,6 @@ private fun AppState.chatItems(bot: Bot) =
     val more = Residency.needsEarlier(shown, bot.id in state.historyEnd)
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
-    val openToMessages = remember { OpenToMessages().also { it.begin() } }
     var settled by remember { mutableStateOf(false) }
     val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
@@ -323,7 +322,7 @@ private fun AppState.chatItems(bot: Bot) =
     ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
         reveal = reveal, report = store::recordPerformance, onOpened = {
             settled = true
-            openToMessages.finish()?.let { store.recordPerformance(PhonePerformance.ChatOpen(it)) }
+            store.chatOpening.finish(bot.id)?.let { store.recordPerformance(PhonePerformance.ChatOpen(it)) }
         }) {
         if (more) item("earlier") {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },

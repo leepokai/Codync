@@ -220,6 +220,9 @@ emulators report nothing.
 
 Each line has the host's RFC 3339 `at` timestamp, `platform` (`ios`/`android`) and `type`:
 
+- `open_timing`: `phase` (`link_ready`, `hello`, `catch_up`, `chat_list` or `open_chat`), `open` (`cold` or
+  `foreground`) and `ms` since the app opened, once per computer and open. `catch_up` also has `chats` and `messages`,
+  the counts caught up and fetched in this open.
 - `chat_open`: `durationMs`, from the chat-opening action until its messages reach their first laid-out frame. With
   cached messages this measures opening and drawing them, not waiting for newer messages to arrive.
 - `scroll`: one reader drag until 300 ms after the list rests. `list` is `bots`/`chat`; `rows`, `frames`, `hitches`,

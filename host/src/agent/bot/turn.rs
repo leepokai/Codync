@@ -368,7 +368,9 @@ impl Actor {
             *used = Instant::now();
         }
         let stopped = self.stop_requested || matches!(&done, Ok(v) if v["stopReason"] == "cancelled");
-        self.close_attempt(stopped || done.is_err());
+        // `stopReason: "error"` has no JSON-RPC error behind it, but the attempt failed all the same.
+        let errored = done.is_err() || matches!(&done, Ok(v) if v["stopReason"] == "error");
+        self.close_attempt(stopped || errored);
         let mut final_text = None;
         let routine = self.active_routine.is_some();
         let grouped = self.active_group.is_some() || routine;
@@ -421,16 +423,19 @@ impl Actor {
             // A stopped turn says so even when its agent still ended it normally: its reply is withheld above.
             (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
             (Ok(_), _) if self.stop_requested => self.stop_notice("Stopped.", "cancelled"),
-            (_, "max_tokens") => self.stop_notice("The agent hit its output limit.", "max_tokens"),
-            (_, "max_turn_requests") => {
-                self.stop_notice("The agent hit its step limit for this turn.", "max_turn_requests");
-            }
-            (_, "refusal") => self.stop_notice("The agent declined to continue.", "refusal"),
             (Ok(_), "end_turn") if !stopped => crate::market::agent_sign_in::answered(&self.hub, &self.cfg),
+            (Ok(_), reason) if !stopped => match early_end_notice(reason) {
+                Some(EarlyEnd::Failure(text)) => {
+                    self.failure_notice(&anyhow!("the agent's turn ended with an error"), text, reason);
+                }
+                Some(EarlyEnd::Notice(text)) => self.stop_notice(text, reason),
+                None => {}
+            },
             _ => {}
         }
         let failure = done.as_ref().err().filter(|_| !self.stop_requested);
-        let failed = failure.is_some();
+        // `error` carries no error object, but it is still a failed turn for the routine, the group and the task.
+        let failed = failure.is_some() || (!self.stop_requested && done.is_ok() && stop_reason == "error");
         self.report_turn(stopped, failure, &stop_reason);
         if done.is_ok() && stop_reason == "end_turn" {
             self.agent_answered();
@@ -466,6 +471,9 @@ impl Actor {
                 Outcome::Stopped
             } else if let Some(error) = done.as_ref().err() {
                 Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
+            } else if stop_reason == "error" {
+                // The same failure without an error object: an agent that ended its turn with `error`.
+                Outcome::Failed(Failure::Agent, "its agent failed: its turn ended with an error".to_owned())
             } else if stop_reason != "end_turn" {
                 Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
             } else {
@@ -576,7 +584,8 @@ impl Actor {
     pub(super) fn report_turn(&self, stopped: bool, failure: Option<&anyhow::Error>, stop_reason: &str) {
         let outcome = if stopped {
             TurnOutcome::Stopped
-        } else if failure.is_some() {
+        } else if failure.is_some() || stop_reason == "error" {
+            // `error` carries no error object, but it is still a failed turn in the metrics.
             TurnOutcome::Failed
         } else if stop_reason == "end_turn" {
             TurnOutcome::Done
@@ -618,6 +627,29 @@ impl Actor {
     }
 }
 
+/// What a stop reason that is not `end_turn` means: an explanation, or a failed turn. The two are
+/// different states, not a string with a boolean beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EarlyEnd {
+    /// The turn ended early for a reason the user only needs explained.
+    Notice(&'static str),
+    /// The turn failed; the runtime, the alert and the session all treat it as a failure.
+    Failure(&'static str),
+}
+
+/// `None` for a normal end, a stop, or a reason the match in `finish_turn` already answered.
+fn early_end_notice(stop_reason: &str) -> Option<EarlyEnd> {
+    Some(match stop_reason {
+        "max_tokens" => EarlyEnd::Notice("The agent hit its output limit."),
+        "max_turn_requests" => EarlyEnd::Notice("The agent hit its step limit for this turn."),
+        "refusal" => EarlyEnd::Notice("The agent declined to continue."),
+        // pi-acp ends a turn whose provider call failed with `stopReason: "error"` and no JSON-RPC error, so
+        // this notice is the only sign of that failure the user gets (#470).
+        "error" => EarlyEnd::Failure("The agent failed: its turn ended with an error."),
+        _ => return None,
+    })
+}
+
 /// A finished turn alerts once the user's work is done: not when it's `quiet` (their next message
 /// is already queued, or it said nothing on purpose). A turn that ended short of `end_turn` always
 /// reports the failure.
@@ -639,5 +671,23 @@ mod tests {
         assert_eq!(turn_alert(false, "cancelled", false), None);
         assert_eq!(turn_alert(false, "max_turn_requests", false), Some(AlertKind::Failed));
         assert_eq!(turn_alert(true, "error", true), Some(AlertKind::Failed));
+    }
+
+    #[test]
+    fn an_unfinished_turn_says_why_it_ended() {
+        assert_eq!(early_end_notice("max_tokens"), Some(EarlyEnd::Notice("The agent hit its output limit.")));
+        assert_eq!(
+            early_end_notice("max_turn_requests"),
+            Some(EarlyEnd::Notice("The agent hit its step limit for this turn."))
+        );
+        assert_eq!(early_end_notice("refusal"), Some(EarlyEnd::Notice("The agent declined to continue.")));
+        assert_eq!(
+            early_end_notice("error"),
+            Some(EarlyEnd::Failure("The agent failed: its turn ended with an error.")),
+            "pi-acp's own failure ends the turn with `error` and no JSON-RPC error to show"
+        );
+        assert_eq!(early_end_notice("end_turn"), None);
+        assert_eq!(early_end_notice("cancelled"), None, "a stopped turn already says so");
+        assert_eq!(early_end_notice("a future reason"), None, "an unknown reason keeps its old silence");
     }
 }

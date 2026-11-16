@@ -790,6 +790,7 @@ dependencies = [
  "unicode-width",
  "url",
  "uuid",
+ "windows-registry",
  "windows-sys 0.61.2",
  "x25519-dalek",
  "zeroize",

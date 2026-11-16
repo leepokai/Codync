@@ -132,8 +132,11 @@ answer carries a `warning`. Group room turns have no `send_message`, so they don
 Roster row for groups (member avatars), a trace per turn, author label on group replies,
 **Reply** on user messages and final replies (desktop: the hover footer beside the time, with
 quick reactions and copy, never on the bubble, and the context menu; iPhone and Android:
-long-press, reactions on top of the menu; terminal: `r` picks a message, ↵ or `r` replies, esc
-cancels). While replying, the composer shows a quote
+long-press, reactions on top of the menu, or a sideways swipe as in Messages: the message
+follows the finger (the user's left, a bot's right; only a mostly sideways drag starts it, so
+the list still scrolls), a reply arrow grows in the gap, past 64 pt/dp a light haptic, and
+letting go there replies; it always springs back (`SwipeToReply`); terminal: `r` picks a
+message, ↵ or `r` replies, esc cancels). While replying, the composer shows a quote
 bar on top (`text.bubble`, “text” on one line, an X to cancel; the terminal: `↳ “…”`), its
 placeholder reads "Reply…", and sending includes `replyTo`; leaving the chat cancels it.
 Replying to a part: on the desktop, Reply (hover footer or context menu) quotes what is

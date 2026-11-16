@@ -11,6 +11,8 @@ interface MenuRow {
   title: string
   /** Secondary context below the main label. */
   detail?: string
+  /** Put the secondary context beside the title instead of below it. */
+  detailBeside?: boolean
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
@@ -128,7 +130,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}${item.detailBeside ? ' beside' : ''}`}>
               <span>{item.verbatim ? item.title : tr(item.title)}</span>
               {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
             </span>

@@ -450,7 +450,6 @@ function ChatSplitView() {
         onAccount={() => setShowAccount((s) => !s)}
         onWorkflows={workflowTarget && canOpenWorkflows(workflowTarget) ? toggleWorkflows : undefined}
         onExtensions={openMarketplace}
-        onComputers={() => setSettings('computers')}
       />
       <aside className={`sidebar ${compact ? 'compact' : ''} ${resizing ? 'resizing' : ''}`} style={{ width }} inert={!agentsOpen} aria-hidden={!agentsOpen}>
         <div className="sidebar-header drag" inert={compact}>

@@ -31,9 +31,9 @@ struct ChatRow: View {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
                 UserBubble(entry: entry, reply: reply, selectText: selectText, openQuote: openQuote)
+                    .swipeToReply(.left, margin: 56, reply: reply)
                 ReactionsRow(entry: entry)
             }
-            .swipeToReply(.left, margin: 56, reply: reply)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
             .padding(.top, groupStart ? 12 : 4)
@@ -41,10 +41,10 @@ struct ChatRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 if chat?.isGroup == true, groupStart { AuthorLabel(botId: entry.data.author) }
                 AgentBubble(entry: entry, openTrace: openTrace, reply: reply, selectText: selectText, openArtifact: openArtifact, openQuote: openQuote)
+                    .swipeToReply(.right, margin: 40, reply: reply)
                 ReactionsRow(entry: entry)
                     .padding(.leading, chat?.isGroup == true ? 34 : 0)
             }
-            .swipeToReply(.right, margin: 40, reply: reply)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
             .padding(.top, groupStart ? 12 : 4)

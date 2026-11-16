@@ -51,18 +51,19 @@ onFlowComplete:
     direction: DOWN
     duration: 600
 - assertNotVisible: "Cancel reply"
-# Released before the threshold: it springs back and nothing is quoted. A quick drag on the voice note (the last
-# message, just above the composer), as a slow one is a press that opens the message's menu.
+# Released before the threshold: it springs back and nothing is quoted. The voice note is the last message; start below
+# its seek bar, on the caption, as a slow press opens the message's menu instead.
 - swipe:
-    start: 20%, 79%
-    end: 33%, 79%
+    start: 20%, 84%
+    end: 33%, 84%
     duration: 300
 - assertNotVisible: "Cancel reply"
-# The bot's voice note, swiped right past the threshold. Explicit travel is needed on Android: a directional swipe
-# from the caption is too short to reach the reply threshold.
+# The bot's voice note, swiped right past the threshold from its caption, below the seek bar.
 - swipe:
-    start: 20%, 79%
-    end: 80%, 79%
+    from:
+      text: "Here is the plan."
+      point: "20%, 80%"
+    direction: RIGHT
     duration: 600
 - assertVisible: "Cancel reply"
 - assertVisible: "“Here is the plan.”"

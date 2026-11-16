@@ -98,15 +98,15 @@ internal enum class ReplyDirection(val sign: Float) {
                 gap = coordinates.parentLayoutCoordinates?.let { (it.size.width - coordinates.size.width).toFloat() + marginPx } ?: 0f
             }.pointerInput(direction, density, marginPx, haptics) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Main)
                     try {
                         var dx = 0f
                         var dy = 0f
                         // The swipe takes the pointer only once horizontal travel beats the slop in the allowed direction
                         // before a mostly-vertical drag would: the list's scroll and taps hold still keep working. Listen on
-                        // the Initial pass so a voice note's seek bar cannot consume a drag after this row has accepted it.
+                        // the Main pass so a voice note's seek bar can consume its own drag before this row accepts it.
                         while (true) {
-                            val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                            val change = awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
                             if (change.isConsumed || !change.pressed) return@awaitEachGesture
                             dx += change.positionChange().x
                             dy += change.positionChange().y
@@ -131,7 +131,7 @@ internal enum class ReplyDirection(val sign: Float) {
                         pull(dx)
                         var lifted = false
                         while (true) {
-                            val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                            val change = awaitPointerEvent(PointerEventPass.Main).changes.firstOrNull { it.id == down.id } ?: break
                             if (change.changedToUp()) { change.consume(); lifted = true; break }
                             if (change.isConsumed || !change.pressed) break
                             pull(change.positionChange().x)

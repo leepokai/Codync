@@ -28,5 +28,5 @@ for line in sys.stdin:
         text = {"type": "text", "text": "Working on it"}
         update = {"sessionUpdate": "agent_message_chunk", "content": text}
         send({"method": "session/update", "params": {"sessionId": "stuck", "update": update}})
-        if message["params"]["prompt"][-1]["text"].endswith("\n\nleave"):
+        if message["params"]["prompt"][-1]["text"].endswith("\nleave"):
             os._exit(1)

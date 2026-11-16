@@ -2137,5 +2137,8 @@
   "Watch the full video": "Guarda il video completo",
   "Work": "Lavoro",
   "Worktree per agent": "Un worktree per agente",
-  "Agents that work at once in this repository each get their own branch.": "Gli agenti che lavorano contemporaneamente in questo repository hanno ciascuno il proprio branch."
+  "Agents that work at once in this repository each get their own branch.": "Gli agenti che lavorano contemporaneamente in questo repository hanno ciascuno il proprio branch.",
+  "Show the quoted message": "Mostra il messaggio citato",
+  "That message isn't loaded": "Quel messaggio non è caricato",
+  "This message quotes nothing": "Questo messaggio non cita nulla"
 }

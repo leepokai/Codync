@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
 use super::{After, App, Focus, Item, Msg, TraceMode, Width, copy, group};
+use crate::analytics::reported::Reported;
 
 impl App {
     /// `codync-host install` with this same binary, for when nothing is listening yet.
@@ -233,6 +234,21 @@ impl App {
                     self.call("keepConversation", json!({"entryId": e.id}), After::Answered(e.id.clone()));
                 }
             }
+            // `q`: picks the message the picked one quotes, which brings it on screen (the apps' tap on a quote).
+            // Never the quit it is outside picking: one press too many on a chain of quotes would close the app.
+            KeyCode::Char('q') => match picked.as_ref().and_then(super::Entry::quotes) {
+                Some(quoted) => {
+                    // ponytail: only among the loaded messages, as in the apps.
+                    let found = self.lane(&id).iter().any(|e| e.id == quoted);
+                    self.track(Reported::QuoteOpened { found });
+                    if found {
+                        self.pick = Some(quoted.to_owned());
+                    } else {
+                        self.flash("That message isn't loaded");
+                    }
+                }
+                None => self.flash("This message quotes nothing"),
+            },
             KeyCode::Enter | KeyCode::Char('r') => match picked {
                 Some(e) if !e.takes_reply() => self.flash("Only messages take replies"),
                 Some(e) => {

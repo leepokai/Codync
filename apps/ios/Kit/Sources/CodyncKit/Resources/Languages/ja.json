@@ -2137,5 +2137,8 @@
   "Watch the full video": "動画を全編見る",
   "Work": "作業",
   "Worktree per agent": "エージェントごとに worktree",
-  "Agents that work at once in this repository each get their own branch.": "このリポジトリで同時に作業するエージェントは、それぞれ自分のブランチを使います。"
+  "Agents that work at once in this repository each get their own branch.": "このリポジトリで同時に作業するエージェントは、それぞれ自分のブランチを使います。",
+  "Show the quoted message": "引用元のメッセージを表示",
+  "That message isn't loaded": "そのメッセージは読み込まれていません",
+  "This message quotes nothing": "このメッセージは何も引用していません"
 }

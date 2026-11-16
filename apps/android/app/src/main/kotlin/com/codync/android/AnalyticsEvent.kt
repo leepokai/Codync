@@ -165,6 +165,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ConversationFindSearched(val found: Boolean) : AnalyticsEvent("conversation_find_searched") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
+    /** A quote at the top of a message was tapped: whether the quoted message was loaded and came into view (iOS `quoteOpened`). */
+    data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
+        override val properties get() = mapOf("found" to JsonPrimitive(found))
+    }
 }
 
 /** One of a property's catalog values, as sent. */

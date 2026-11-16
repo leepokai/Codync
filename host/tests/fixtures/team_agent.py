@@ -1,6 +1,7 @@
 """Deterministic ACP agent for delegation tests; no provider or network access."""
 
 import json
+import re
 import pathlib
 import subprocess
 import sys
@@ -64,7 +65,8 @@ REPLIES_END = "\n\n[Codync: these are bot replies"
 
 
 def prompt(request):
-    text = request["params"]["prompt"][0]["text"]
+    # Commands and the prompts the tests check are read without the id note that leads each user message.
+    text = re.sub(r"\[Codync: message [^\]]*\]\n", "", request["params"]["prompt"][0]["text"])
     with open("prompts.jsonl", "a") as log:
         log.write(json.dumps(text) + "\n")
     if "ROOM_DECISION" in text and "[Group chat" in text:

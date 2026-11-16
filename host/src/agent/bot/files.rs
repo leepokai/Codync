@@ -1,6 +1,7 @@
 //! File copies run outside the actor; publication still belongs to its original turn. Artifact cards post the same way.
 use super::Actor;
 use crate::chat::files::{self, Snapshot};
+use crate::chat::replies::with_quote;
 use crate::store::EntryKind;
 use anyhow::{Result, anyhow, ensure};
 use serde_json::{Value, json};
@@ -15,6 +16,7 @@ type Reply = oneshot::Sender<Result<()>>;
 pub(super) struct Completed {
     epoch: u64,
     text: Option<String>,
+    quote: Option<Value>,
     cancelled: Arc<AtomicBool>,
     reply: Reply,
     result: Result<Snapshot>,
@@ -53,6 +55,7 @@ impl Actor {
         source: String,
         name: Option<String>,
         text: Option<String>,
+        quote: Option<Value>,
         cancelled: Arc<AtomicBool>,
         reply: Reply,
     ) {
@@ -77,7 +80,7 @@ impl Actor {
                 tokio::task::spawn_blocking(move || files::snapshot(&root, &cwd, &source, name.as_deref(), &flag))
                     .await;
             let result = result.map_err(anyhow::Error::from).and_then(std::convert::identity);
-            let _ = tx.send(Completed { epoch, text, cancelled, reply, result });
+            let _ = tx.send(Completed { epoch, text, quote, cancelled, reply, result });
         });
     }
 
@@ -118,8 +121,8 @@ impl Actor {
             );
             self.close_seg();
             let text = match completed.text {
-                Some(text) => self.post_voice_note(text, &snapshot)?,
-                None => self.post_file(&snapshot)?,
+                Some(text) => self.post_voice_note(text, &snapshot, completed.quote)?,
+                None => self.post_file(&snapshot, completed.quote)?,
             };
             snapshot.commit();
             self.files.summary = Some(text);
@@ -130,16 +133,16 @@ impl Actor {
     }
 
     /// A file message: the card, with its name and size for a reader without one.
-    fn post_file(&mut self, snapshot: &Snapshot) -> Result<String> {
+    fn post_file(&mut self, snapshot: &Snapshot, quote: Option<Value>) -> Result<String> {
         let text = format!("{} ({} bytes)", snapshot.meta.name, snapshot.meta.size);
-        self.add_for_user(EntryKind::Agent, json!({"text": text, "final": true, "files": [snapshot.meta]}))
-            .ok_or_else(|| anyhow!("couldn't save the file message"))?;
+        let data = with_quote(json!({"text": text, "final": true, "files": [snapshot.meta]}), quote);
+        self.add_for_user(EntryKind::Agent, data).ok_or_else(|| anyhow!("couldn't save the file message"))?;
         Ok(text)
     }
 
     /// A message carrying a voice note: one bubble, the player over the text, sent like `send_message`.
-    fn post_voice_note(&mut self, text: String, snapshot: &Snapshot) -> Result<String> {
-        let data = json!({"text": text, "final": true, "files": [snapshot.meta], "voiceNote": true});
+    fn post_voice_note(&mut self, text: String, snapshot: &Snapshot, quote: Option<Value>) -> Result<String> {
+        let data = with_quote(json!({"text": text, "final": true, "files": [snapshot.meta], "voiceNote": true}), quote);
         let saved = self.add_for_user(EntryKind::Agent, data);
         self.record_sent(saved, text.clone())?;
         Ok(text)

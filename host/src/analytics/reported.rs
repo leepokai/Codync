@@ -95,6 +95,11 @@ pub enum Reported {
         /// Whether the search found anything; never the text searched for.
         found: bool,
     },
+    /// A quote in a bubble was opened (desktop click, terminal `q`).
+    QuoteOpened {
+        /// Whether the quoted message was among the loaded ones and came into view.
+        found: bool,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -594,6 +599,7 @@ mod tests {
                 json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
                 Event::ConversationFindSearched,
             ),
+            (json!({"event": "quote_opened", "app": "desktop", "found": false}), Event::QuoteOpened),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,

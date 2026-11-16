@@ -32,8 +32,8 @@ public struct ThreadView: View {
     @State var find: ConversationFind?
     /// Bumped to bring the shown match's message into view (a new text, a step).
     @State var findReveal = 0
-    /// The card last brought into view from the bot's details.
-    @State var cardReveal: ConversationReveal?
+    /// The card last brought into view from the bot's details, or the message a tapped quote quotes.
+    @State var revealed: ConversationReveal?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var bot: Bot? { model.bots[botId] }
@@ -111,7 +111,7 @@ public struct ThreadView: View {
 
     func openFind() {
         guard find == nil else { return }
-        cardReveal = nil
+        revealed = nil
         Analytics.shared.capture(.conversationFindOpened)
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = ConversationFind() }
     }
@@ -177,9 +177,23 @@ public struct ThreadView: View {
         details = nil
         Task {
             guard let card = await model.card(for: item, in: botId) else { return }
-            findReveal += 1
-            cardReveal = ConversationReveal(id: card.id, step: findReveal)
+            reveal(card.id)
         }
+    }
+
+    /// Brings the row `id` into view, once.
+    private func reveal(_ id: String) {
+        findReveal += 1
+        revealed = ConversationReveal(id: id, step: findReveal)
+    }
+
+    /// A quote's tap: brings the quoted message into view (a user row is keyed by its nonce, not the entry id).
+    /// ponytail: only among the loaded messages, like a card; page back until it is found if `quote_opened`
+    /// shows `found: false` often.
+    private func showQuoted(_ id: String) {
+        let item = chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }
+        Analytics.shared.capture(.quoteOpened(found: item != nil))
+        if let item { reveal(item.id) }
     }
 
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.
@@ -213,7 +227,8 @@ public struct ThreadView: View {
                         // In a group, the bot whose agent failed.
                         addFallback: { details = .fallbacks(of: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
-                        openCall: { openCall = e })
+                        openCall: { openCall = e },
+                        openQuote: { showQuoted($0) })
                     .equatable()
             }
         }
@@ -483,7 +498,7 @@ extension ThreadView {
             })
         }
         // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
-        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? cardReveal
+        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? revealed
         return ConversationList(rows: rows, following: $following, reveal: reveal, nearTop: { showEarlier() }, refresh: {
             model.restartStream()
             _ = try? await model.ready()

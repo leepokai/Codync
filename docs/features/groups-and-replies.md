@@ -23,7 +23,8 @@ quotes itself.
 - Entry: `data.author` (the bot that wrote it; every agent-made entry has one); on a reply,
   `data.replyTo = {id, author, text}`: the answered message, who wrote it (`"user"` or a bot
   id) and its text (or its files' names when it has none), at most 500 bytes. The host builds
-  it from `send`'s `replyTo` (`host/src/chat/replies.rs`).
+  it from `send`'s `replyTo` (`host/src/chat/replies.rs`), and for a bot's message from
+  `send_message` / `send_file`'s `reply_to` ([bots quote too](#bots-quote-too)).
 - Read state: one per chat (`read_rev`). A bot's `unread` badge counts final replies newer than
   it, plus every permission card still pending, read or not; `waiting` says how many of those are
   cards (the badge turns amber). A reacted-to message doesn't count again.
@@ -113,6 +114,19 @@ substring of its Markdown source, and it comes from the user's own app. An artif
 always quoted whole. A host before 2.48.1 ignores `replyPart` and would quote the whole
 message, so with one the phones offer no Select Text and the desktop's Reply quotes the whole message.
 
+## Bots quote too
+
+`send_message` and `send_file` take an optional `reply_to`: the id of a message in the bot's own
+chat (the user's, its own, an artifact card), built into `data.replyTo` by the same
+`replies::quote`, so a late answer shows what it answers (issue #402). The bot learns ids from
+the note that leads every user message in its own chat, `[Codync: message <id>]`
+(`prompt::of_entry`; left out of a message that is the agent's own `/command`, which only runs
+while it starts the prompt, and of what the host wrote, a task's brief), and from `search_history`.
+A [background task](background-tasks.md)'s file shows in its bot's chat, so its `send_file` quotes
+a message of that chat. An id it can't quote (unknown, deleted, another
+chat's, not a message) doesn't fail the send: the message goes out unquoted and the tool's
+answer carries a `warning`. Group room turns have no `send_message`, so they don't quote.
+
 ## Client checklist
 
 Roster row for groups (member avatars), a trace per turn, author label on group replies,
@@ -128,7 +142,10 @@ long-press menu has **Select Text** before Reply (messages with text that take r
 opens the message's text as written in a sheet, where the selection menu gains Reply; the
 terminal has no selection inside a message, so it replies to whole messages and shows a part
 quote like any other. The quote bar and the bubble show the part, and sending adds `replyPart`. A
-user message with `data.replyTo` shows the quote at the top of its bubble. Every client shows a
+user message with `data.replyTo` shows the quote at the top of its bubble; a bot's message, on
+the line above its bubble (or file card). Tapping or clicking a quote in a bubble brings the quoted
+message to the middle of the chat (terminal: `q` on a picked message picks the one it quotes); only a
+message already loaded is found (`quote_opened` reports `found`), and the composer's quote bar doesn't jump. Every client shows a
 quote as its first non-empty line without Markdown markers (the roster's message preview rule). Reactions under
 a message (the user's: tap to take back; the bots': emoji plus the avatars of who chose it),
 group create/edit (name, members), Stop in a group calls `stop` with the group id.

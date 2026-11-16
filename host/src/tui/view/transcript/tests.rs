@@ -232,6 +232,21 @@ fn a_reply_shows_the_message_it_answers() {
     let text: Vec<String> = out.lines.iter().map(ToString::to_string).collect();
     assert_eq!(text[1], " ↳ “Plan”", "{text:?}");
     assert!(text[2].contains("why?"));
+
+    // A bot's message quotes the same way (`send_message`'s `reply_to`).
+    let answer = Entry {
+        id: "r".into(),
+        seq: 3,
+        turn: 2,
+        kind: Kind::Agent,
+        created_at: 0,
+        data: serde_json::json!({"text": "Because.", "final": true, "replyTo": {"id": "u", "author": "user", "text": "why?"}}),
+    };
+    let mut out = Built::default();
+    entry_lines(&mut out, &app, &app.bots["a"], &answer, &HashMap::new(), 80);
+    let text: Vec<String> = out.lines.iter().map(ToString::to_string).collect();
+    assert_eq!(text[1], " ↳ “why?”", "{text:?}");
+    assert!(text[2].contains("Because."));
 }
 
 #[tokio::test]

@@ -432,7 +432,8 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
           ) : null}
           {items.length === 0 && bot ? <div className="transcript-intro">{isGroup(bot) ? <GroupIntroCard group={bot} /> : <IntroCard bot={bot} />}</div> : null}
           {items.map((item) => (
-            <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined}>
+            // `data-entry-id`: what a quote's click looks for (a user row's `item.id` is its nonce).
+            <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined} data-entry-id={item.kind === 'separator' ? undefined : item.entry.id}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
               {item.id === kofiAt ? <KofiInviteCard /> : null}
             </div>

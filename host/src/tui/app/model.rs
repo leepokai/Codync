@@ -196,6 +196,11 @@ impl Entry {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
     }
 
+    /// The id of the message this one quotes (`replyTo`): `q` shows it.
+    pub fn quotes(&self) -> Option<&str> {
+        self.data["replyTo"]["id"].as_str()
+    }
+
     /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
     pub fn artifact(&self) -> Option<&str> {
         if self.is_final() { self.data["artifact"]["id"].as_str() } else { None }

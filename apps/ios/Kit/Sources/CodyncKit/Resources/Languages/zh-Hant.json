@@ -2137,5 +2137,8 @@
   "Watch the full video": "觀看完整影片",
   "Work": "工作",
   "Worktree per agent": "每個 agent 一個 worktree",
-  "Agents that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 agent 各有自己的分支。"
+  "Agents that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 agent 各有自己的分支。",
+  "Show the quoted message": "顯示引用的訊息",
+  "That message isn't loaded": "那則訊息尚未載入",
+  "This message quotes nothing": "這則訊息沒有引用任何內容"
 }

@@ -77,6 +77,10 @@ internal sealed interface ChatItem {
     data class Exchanges(override val id: String, val group: BotExchangeGroup) : ChatItem
 }
 
+/** The row to bring into view for [target], a row's id or its message's entry id (a user row is keyed by its nonce); null for none. */
+internal fun List<ChatItem>.rowOf(target: String?): Int? =
+    if (target == null) null else indexOfFirst { it.id == target || (it is ChatItem.Message && it.entry.id == target) }.takeIf { it >= 0 }
+
 /** Chat-visible entries plus time separators (gaps over an hour) and author grouping. While the bot is [busy], queued
  *  messages wait above the composer instead ([queuedMessages]); the send each came from doesn't show again either. */
 internal fun chatItems(entries: List<Entry>, pending: List<PendingSend>, busy: Boolean = false): List<ChatItem> {
@@ -128,18 +132,18 @@ internal fun findable(items: List<ChatItem>): List<Pair<String, String>> =
  *  to reply to a part of it (null where the computer's host takes no part); `addFallback` opens a bot's fallbacks; `openArtifact` opens an artifact card's artifact. */
 @Composable internal fun ChatRow(entry: Entry, groupStart: Boolean, chat: Bot?, state: AppState, store: AppStore,
     openTrace: () -> Unit, reply: (() -> Unit)?, selectText: (() -> Unit)?, connect: ConnectionRequestActions, addFallback: (Bot) -> Unit,
-    openArtifact: (OpenArtifact) -> Unit) {
+    openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)? = null) {
     val group = chat?.kind == "group"
     when (entry.kind) {
         "user" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            UserBubble(entry, state, store, reply, selectText)
+            UserBubble(entry, state, store, reply, selectText, openQuote)
             ReactionsRow(entry, state, store)
         }
         "agent" -> Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).animateContentSize(Motion.layoutSize),
             verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (group && groupStart) AuthorLabel(entry.data.text("author"), state)
-            AgentBubble(entry, state, store, openTrace, reply, selectText, openArtifact)
+            AgentBubble(entry, state, store, openTrace, reply, selectText, openArtifact, openQuote)
             Box(Modifier.padding(start = if (group) 34.dp else 0.dp)) { ReactionsRow(entry, state, store) }
         }
         "permission" -> Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -178,7 +182,8 @@ internal class ConnectionRequestActions(val openApp: (String, ComposioApp) -> Un
 
 internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonArray)?.map { it.jsonPrimitive.content }.orEmpty()
 
-@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, selectText: (() -> Unit)?) {
+@Composable private fun UserBubble(entry: Entry, state: AppState, store: AppStore, reply: (() -> Unit)?, selectText: (() -> Unit)?,
+    openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val attachments = entry.data["attachments"]?.jsonArray?.map { WireJson.decodeFromJsonElement<Attachment>(it) }.orEmpty()
@@ -189,21 +194,23 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
         if (entry.text.isNotEmpty() || quote != null) Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleUser)
             .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { SelectionContainer { UserText(entry.text, quote) } }) {
                 menu.textItems(textCopyItem(context, entry.text))
-            }) { UserText(entry.text, quote) }
+            }) { UserText(entry.text, quote, openQuote) }
         SendStatusLine(entry.status)
     }
 }
 
-@Composable private fun UserText(text: String, quote: ReplyQuote? = null) {
+@Composable private fun UserText(text: String, quote: ReplyQuote? = null, openQuote: ((String) -> Unit)? = null) {
     Column(Modifier.background(Palette.bubbleUser).padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (quote != null) QuoteLine(quote.text)
+        if (quote != null) QuoteLine(quote.text, open = openQuote?.let { open -> { open(quote.id) } })
         if (text.isNotEmpty()) Text(text, style = Type.body, color = Palette.text)
     }
 }
 
-/** The message a reply quotes, as its first line without Markdown markers: in its bubble, and in the composer while replying. */
-@Composable internal fun QuoteLine(text: String, modifier: Modifier = Modifier) {
-    Row(modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+/** The message a reply quotes, as its first line without Markdown markers: in its bubble, and in the composer while replying.
+ *  With [open] (in a bubble), a tap brings the quoted message into view. */
+@Composable internal fun QuoteLine(text: String, modifier: Modifier = Modifier, open: (() -> Unit)? = null) {
+    val tap = if (open == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = tr("Show the quoted message"), onClick = open)
+    Row(modifier.then(tap).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Symbol("text.bubble", size = 14.dp, tint = Palette.secondary)
         Text("“${messagePreview(text)}”", style = Type.subheadline, color = Palette.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -250,7 +257,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
 }
 
 @Composable private fun AgentBubble(entry: Entry, state: AppState, store: AppStore, openTrace: () -> Unit, reply: (() -> Unit)?,
-    selectText: (() -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
+    selectText: (() -> Unit)?, openArtifact: (OpenArtifact) -> Unit, openQuote: ((String) -> Unit)?) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val files = entry.files
@@ -259,6 +266,8 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val menu = MessageMenu.of(entry, store, reply, openTrace, selectText)
     val textMenu = { menu.textItems(textCopyItem(context, entry.text)) }
     Column(Modifier.fillMaxWidth().padding(end = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // The message the bot answers (`reply_to`), above its bubble.
+        entry.replyTo?.let { quote -> QuoteLine(quote.text, Modifier.padding(horizontal = 16.dp), open = openQuote?.let { open -> { open(quote.id) } }) }
         // An artifact card or a message with files is that: the text is only the computer's fallback. A voice note
         // instead plays inside its bubble, over the message it captions.
         if (artifact != null) ArtifactCardView(artifact, entry.botId, state, store, Modifier.contextActions(reactions = menu.reactions,

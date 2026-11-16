@@ -22,9 +22,10 @@ private struct ScrollHitchTracking: ViewModifier {
         content
             .onScrollPhaseChange { _, phase in
                 switch phase {
-                case .tracking, .interacting: meter.begin()
+                // `.tracking` is a touch that may never move: only a drag opens a window.
+                case .interacting: meter.begin()
                 case .idle: meter.rest(rows: rows)
-                case .decelerating, .animating: break
+                case .tracking, .decelerating, .animating: break
                 }
             }
             .onDisappear { meter.cancel() }
@@ -39,6 +40,7 @@ final class ScrollHitchMeter {
     static let tail: Duration = .milliseconds(300)
 
     private let list: AnalyticsEvent.ScrollHitches.List
+    private let report: @MainActor (AnalyticsEvent.ScrollHitches) -> Void
     private var link: CADisplayLink?
     private var frames = ScrollFrames()
     private var started: CFTimeInterval = 0
@@ -48,14 +50,21 @@ final class ScrollHitchMeter {
     private var restingAt: CGFloat?
     private var jump: CGFloat = 0
 
-    init(_ list: AnalyticsEvent.ScrollHitches.List) {
+    init(_ list: AnalyticsEvent.ScrollHitches.List,
+         report: @escaping @MainActor (AnalyticsEvent.ScrollHitches) -> Void = ScrollHitchMeter.send) {
         self.list = list
+        self.report = report
     }
 
-    /// The reader started dragging: a new window, or the same one when it came during the last one's tail. The simulator
-    /// draws with the Mac's GPU, so its frames say nothing about a phone's: there it measures nothing.
-    func begin() {
+    /// The simulator draws with the Mac's GPU, so its frames say nothing about a phone's: it sends nothing.
+    static func send(_ scroll: AnalyticsEvent.ScrollHitches) {
         #if !targetEnvironment(simulator)
+        Analytics.shared.capture(.scrollHitches(scroll))
+        #endif
+    }
+
+    /// The reader started dragging: a new window, or the same one when it came during the last one's tail.
+    func begin() {
         resting?.cancel()
         resting = nil
         guard link == nil else { return }
@@ -65,7 +74,6 @@ final class ScrollHitchMeter {
         let link = CADisplayLink(target: self, selector: #selector(frame))
         link.add(to: .main, forMode: .common)
         self.link = link
-        #endif
     }
 
     /// The list came to rest: the window closes and is reported after the tail.
@@ -77,7 +85,7 @@ final class ScrollHitchMeter {
         resting = Task { [weak self] in
             try? await Task.sleep(for: Self.tail)
             guard !Task.isCancelled else { return }
-            self?.report(rows: rows, stop: stop)
+            self?.finish(rows: rows, stop: stop)
         }
     }
 
@@ -95,12 +103,11 @@ final class ScrollHitchMeter {
         if let restingAt, let now = track?() { jump = max(jump, abs(now - restingAt)) }
     }
 
-    private func report(rows: Int, stop: AnalyticsEvent.ScrollHitches.Stop?) {
+    private func finish(rows: Int, stop: AnalyticsEvent.ScrollHitches.Stop?) {
         let seconds = CACurrentMediaTime() - started
         cancel()
         guard frames.count > 0 else { return }
-        Analytics.shared.capture(.scrollHitches(frames.event(list, rows: rows, seconds: seconds, stop: stop,
-                                                             jump: restingAt.map { _ in Int(jump.rounded()) })))
+        report(frames.event(list, rows: rows, seconds: seconds, stop: stop, jump: restingAt.map { _ in Int(jump.rounded()) }))
     }
 }
 

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import CodyncKit
 
@@ -19,4 +20,13 @@ import Testing
     timer.open("b1", at: opened)
     timer.cancel()
     #expect(timer.finish("b1", at: opened + .seconds(2)) == nil)
+}
+
+@Test func openTimingUsesHostDiagnosticWireShape() throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let step = PhonePerformance.OpenStep(phase: .catchUp, open: .foreground, ms: 1250, chats: 8, messages: 31)
+    let data = try encoder.encode(PhonePerformance.openTiming(step))
+    #expect(String(decoding: data, as: UTF8.self)
+        == #"{"chats":8,"messages":31,"ms":1250,"open":"foreground","phase":"catch_up","platform":"ios","type":"open_timing"}"#)
 }

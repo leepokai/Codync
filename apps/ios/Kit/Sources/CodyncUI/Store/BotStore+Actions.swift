@@ -87,6 +87,11 @@ extension BotStore {
         #endif
     }
 
+    public func recordOpenTiming(_ phase: OpenPhase, chats: Int? = nil, messages: Int? = nil) {
+        guard let step = openTiming.record(phase, computer: computer.id, chats: chats, messages: messages) else { return }
+        recordPerformance(.openTiming(step))
+    }
+
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }
     public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
     /// A call's audio is on: the lead speaks first, on the call (an older host, which has no lead, never gets this).

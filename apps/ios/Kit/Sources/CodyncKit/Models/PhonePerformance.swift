@@ -3,7 +3,25 @@ import Foundation
 /// Measurements sent to this phone's connected host for its local performance log. No row, bot or message identity.
 public enum PhonePerformance: Encodable, Sendable {
     case chatOpen(durationMs: Int)
+    case openTiming(OpenStep)
     case scroll(Scroll)
+
+    /// One step of an app open for one computer. Dedupe keys stay on the phone: the computer isn't sent.
+    public struct OpenStep: Equatable, Sendable {
+        public let phase: OpenPhase
+        public let open: OpenKind
+        public let ms: Int
+        public let chats: Int?
+        public let messages: Int?
+
+        public init(phase: OpenPhase, open: OpenKind, ms: Int, chats: Int? = nil, messages: Int? = nil) {
+            self.phase = phase
+            self.open = open
+            self.ms = ms
+            self.chats = chats
+            self.messages = messages
+        }
+    }
 
     public struct Scroll: Equatable, Sendable {
         public enum List: String, Sendable { case bots, chat }
@@ -33,7 +51,8 @@ public enum PhonePerformance: Encodable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, platform, durationMs, list, rows, frames, hitches, longestMs, hitchMsPerS, fps, stop, jump
+        case type, platform, durationMs, phase, open, ms, chats, messages
+        case list, rows, frames, hitches, longestMs, hitchMsPerS, fps, stop, jump
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -43,6 +62,13 @@ public enum PhonePerformance: Encodable, Sendable {
         case let .chatOpen(durationMs):
             try container.encode("chat_open", forKey: .type)
             try container.encode(durationMs, forKey: .durationMs)
+        case let .openTiming(step):
+            try container.encode("open_timing", forKey: .type)
+            try container.encode(step.phase.rawValue, forKey: .phase)
+            try container.encode(step.open.rawValue, forKey: .open)
+            try container.encode(step.ms, forKey: .ms)
+            try container.encodeIfPresent(step.chats, forKey: .chats)
+            try container.encodeIfPresent(step.messages, forKey: .messages)
         case let .scroll(scroll):
             try container.encode("scroll", forKey: .type)
             try container.encode(scroll.list.rawValue, forKey: .list)

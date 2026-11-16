@@ -263,6 +263,10 @@ impl App {
             }
             After::Analytics => self.analytics_set(&v),
             After::AutoOrder => self.auto_order_set(&v),
+            After::CredentialsReset => {
+                self.backends = v["backends"].as_array().cloned().unwrap_or_default();
+                self.flash("Saved credentials reset. Enter them again where you use them.");
+            }
             After::Backends => {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.flash("Agents refreshed");

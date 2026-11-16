@@ -13,7 +13,7 @@ export const IconButton = IconButtonBase
 
 /** The filled call-to-action (`.primary`) or the quieter filled one (`.secondary`). */
 export function Button({ kind = 'primary', children, onClick, disabled, className, title }: {
-  kind?: 'primary' | 'secondary'
+  kind?: 'primary' | 'secondary' | 'destructive'
   children: ReactNode
   onClick?: () => void
   disabled?: boolean

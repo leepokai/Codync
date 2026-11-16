@@ -39,6 +39,7 @@ pub enum After {
     Tracked,
     Analytics,
     AutoOrder,
+    CredentialsReset,
     History(String),
     Dirs(String),
     WorkspaceSelected(String),

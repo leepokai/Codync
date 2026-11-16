@@ -34,6 +34,7 @@ import { ScreenViewer } from './screen/ScreenViewer'
 import { SignInCodeDialog } from './marketplace/ConnectorSheets'
 import { SettingsView, type SettingsPage } from './settings/SettingsView'
 import { ApprovalSheet } from './settings/ApprovalSheet'
+import { ResetAllDataDialogs } from './settings/ResetSection'
 import { FindBar } from './FindBar'
 import { useFindBar } from './use-conversation-find'
 import { SearchPalette } from './SearchPalette'
@@ -155,13 +156,7 @@ export function ChatWindow() {
         <ModalHeader icon="hand.raised" title={tr(`Computer access`)} />
         <ComputerAccessView onContinue={(ready) => { finishAccess(ready, false); setShowAccess(false) }} />
       </Sheet>
-      <Dialog
-        open={confirmReset}
-        title={tr('Reset all data?')}
-        message={tr("Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.")}
-        actions={[{ title: 'Reset everything', destructive: true, action: () => void window.codync.app.resetAllData() }]}
-        onClose={() => setConfirmReset(false)}
-      />
+      <ResetAllDataDialogs open={confirmReset} onClose={() => setConfirmReset(false)} />
       <Dialog
         open={upToDate}
         title={tr("You're up to date")}

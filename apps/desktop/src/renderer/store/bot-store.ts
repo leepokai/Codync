@@ -18,6 +18,7 @@ import {
 import type { CallLine } from '@shared/calls'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
+import { errorText } from '../lib/error-text'
 import { latestOnly } from '../lib/latest-only'
 import { trNow } from '../lib/l10n.ts'
 import { prefs } from '../lib/prefs'
@@ -242,6 +243,16 @@ export class BotStore extends BotSync {
     } catch (e) {
       this.showAutoOrder(!enabled)
       throw e
+    }
+  }
+
+  /** Deletes the credentials saved on this computer, for one whose key is gone; agents' own sign-ins stay. */
+  async resetCredentials() {
+    try {
+      const res = await (await this.ready()).call<{ backends: Hello['backends'] }>('resetCredentials', {}, 60_000)
+      this.showBackends(res.backends)
+    } catch (e) {
+      this.setError(errorText(e))
     }
   }
 

@@ -125,7 +125,7 @@ offers **Computers** to pair later. Skipping while adding a computer from settin
 only closes that pairing sheet. It does not grant access to a computer or change
 the account approval flow. **Start over** resets the onboarding choice.
 
-The desktop app's menu bar **Settings → Reset all data…** (confirmed in the window) is
+The desktop app's menu bar **Settings → Reset all data…**, or **Reset everything** in Settings → Computers → Reset (both asked twice in the window), is
 the computer's start over: it removes this computer from the account, revokes every
 paired device, signs out, uninstalls the host, deletes its data folder and the app's
 settings, and relaunches into the welcome screen. The host comes back with a new

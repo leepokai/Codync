@@ -121,6 +121,8 @@ pub enum Event {
     /// A bot's `send_message` or `send_file` with `reply_to` (`tool`), quoted or sent without it (`outcome`).
     BotQuoted,
     CredentialSaved,
+    /// Every saved credential deleted, for a computer whose key is gone (`outcome`).
+    CredentialsReset,
     AgentSetupStarted,
     AgentSignedIn,
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
@@ -259,6 +261,7 @@ impl Event {
             Self::LocalDictationTranscribed => "local_dictation_transcribed",
             Self::BotQuoted => "bot_quoted",
             Self::CredentialSaved => "credential_saved",
+            Self::CredentialsReset => "credentials_reset",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",

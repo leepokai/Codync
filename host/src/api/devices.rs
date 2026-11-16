@@ -43,6 +43,8 @@ const LOCAL_ONLY: &[&str] = &[
     "setVoiceKey",
     "setVoiceServer",
     "setSpeechServer",
+    // Deletes every saved credential: the computer's owner does it on the computer.
+    "resetCredentials",
     // An export file is a path on this computer.
     "previewImport",
     "importBots",

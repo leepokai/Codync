@@ -5,6 +5,8 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -49,6 +51,7 @@ internal class ScrollHitchAccumulator {
 @Composable internal fun TrackScrollHitches(list: LazyListState, kind: ScrollList, report: (PhonePerformance.Scroll) -> Unit) {
     val view = LocalView.current
     val density = LocalDensity.current
+    val currentReport by rememberUpdatedState(report)
     LaunchedEffect(list, kind) {
         val tailRestarts = Channel<Unit>(Channel.CONFLATED)
         var window: Job? = null
@@ -111,7 +114,7 @@ internal class ScrollHitchAccumulator {
                     choreographer.removeFrameCallback(callback)
                 }
                 val jumpDp = if (kind == ScrollList.Chat) with(density) { jump.toDp().value.roundToInt() } else null
-                accumulator.event(System.nanoTime() - startedAt, kind, list.layoutInfo.totalItemsCount, stop, jumpDp)?.let(report)
+                accumulator.event(System.nanoTime() - startedAt, kind, list.layoutInfo.totalItemsCount, stop, jumpDp)?.let { currentReport(it) }
             }
         }
     }

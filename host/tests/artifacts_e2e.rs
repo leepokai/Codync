@@ -145,7 +145,17 @@ async fn bots_publish_update_and_the_apps_read_and_rename_artifacts() {
         json!({"botId": bot, "name": "Report", "instruction": "make-artifact", "triggers": [{"type": "webhook"}]});
     let routine = host.call("saveRoutine", routine).await;
     host.call("runRoutine", json!({"botId": bot, "id": routine["routine"]["id"]})).await;
-    let items = library_until(&host, bot, |items| items.iter().filter(|i| i["kind"] == "artifact").count() == 2).await;
+    // Publishing saves the artifact before it posts the card and records `entryId`, so a Library read in between lists
+    // the routine's artifact without a card to reply to: wait for the card, not just for the artifact.
+    let first_card = card["id"].as_str().unwrap_or_default();
+    let items = library_until(&host, bot, |items| {
+        items.iter().filter(|i| i["kind"] == "artifact").count() == 2
+            && items.iter().any(|i| {
+                i["artifact"]["title"] == "Weekly report"
+                    && i["artifact"]["entryId"].as_str().is_some_and(|entry| entry != first_card)
+            })
+    })
+    .await;
     let made = items
         .iter()
         .find(|i| i["artifact"]["title"] == "Weekly report" && i["artifact"]["entryId"] != card["id"])

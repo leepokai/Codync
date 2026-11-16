@@ -28,7 +28,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - The Work button lists background work.
 - Approval cards stay in the badge, amber, until answered.
 - Background work can ask or send files.
-- Details: Threads (running), Event box (waiting: First, Cut in, Drop).
+- Details: Threads, Event box (First, Cut in, Drop).
 - Settings: Agents at once, Worktree per agent.
 - On a fallback, the Agent card says why.
 - Fallbacks: ⋯ has Edit.

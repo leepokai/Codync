@@ -34,7 +34,7 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let on_color = n.field == NewBotField::Color;
     let x0 = mid(LOOKS_W);
     let y = inner.y + 11;
-    let mut x = put(buf, x0, y, 6, tr("Color ").as_ref(), label(NewBotField::Color));
+    let mut x = put(buf, x0, y, 6, tr("Color").as_ref(), label(NewBotField::Color));
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {
         let s = if t.color { Style::default().bg(bot_color(c)) } else { t.text };

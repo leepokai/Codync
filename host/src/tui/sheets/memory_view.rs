@@ -111,12 +111,8 @@ fn entries(buf: &mut Buffer, body: Rect, app: &App, memory: &MemorySheet) {
         let text = format!("{}{}", if e["pinned"] == true { "● " } else { "" }, s(e, "text"));
         let style = if archived { palette.dim } else { palette.text };
         put(buf, body.x, y, body.width, &text, style.patch(base));
-        let detail = format!(
-            "{} · {}{}",
-            author(app, e),
-            when(e["updatedAt"].as_i64().unwrap_or(0)),
-            if archived { " · archived" } else { "" }
-        );
+        let archived_note = if archived { tr(" · archived") } else { std::borrow::Cow::Borrowed("") };
+        let detail = format!("{} · {}{}", author(app, e), when(e["updatedAt"].as_i64().unwrap_or(0)), archived_note);
         put(buf, body.x, y + 1, body.width, &detail, palette.dim.patch(palette.panel));
     }
 }
@@ -154,7 +150,7 @@ fn dreams(buf: &mut Buffer, body: Rect, memory: &MemorySheet) {
             when(d["at"].as_i64().unwrap_or(0)),
             count("added"),
             count("archived"),
-            if d["undone"] == true { " · undone" } else { "" }
+            if d["undone"] == true { tr(" · undone") } else { std::borrow::Cow::Borrowed("") }
         );
         put(buf, body.x, y, body.width, &head, palette.text.patch(base));
         let mut x = body.x;

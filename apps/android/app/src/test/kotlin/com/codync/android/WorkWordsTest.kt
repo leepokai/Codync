@@ -84,7 +84,7 @@ class WorkWordsTest {
         val box = listOf(working, working, waiting, waiting, waiting)
         // Needs you: the chat's own card says what it asks; an item's only that it needs the user, as on every client.
         assertEquals(BotLine(BotLineKind.NeedsYou, "Wants to run a command"), botLine(bot("needsInput", "Wants to run a command", box + needsYou), english))
-        assertEquals(BotLine(BotLineKind.NeedsYou, "Needs your approval"), botLine(bot("needsInput"), english))
+        assertEquals(BotLine(BotLineKind.NeedsYou, "Needs approval"), botLine(bot("needsInput"), english))
         assertEquals(BotLine(BotLineKind.NeedsYou, "Needs you"), botLine(bot("working", "Thinking…", box + needsYou), english))
         // Then the chat's own activity.
         assertEquals(BotLine(BotLineKind.Working, "Thinking…"), botLine(bot("working", "Thinking…", box), english))

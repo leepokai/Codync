@@ -127,7 +127,7 @@ struct MemoryCard: View {
                     if entry.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(Palette.secondary) }
                     Text(entry.text).foregroundStyle(entry.archived ? Palette.tertiary : Palette.text).lineLimit(lines(.entry(entry.id)))
                 }
-                Text("\(author(entry)) · \(Date(milliseconds: entry.updatedAt).formatted(.relative(presentation: .named)))\(entry.archived ? " · archived" : "")")
+                Text("\(author(entry)) · \(Date(milliseconds: entry.updatedAt).formatted(.relative(presentation: .named)))\(entry.archived ? L10n.tr(" · archived") : "")")
                     .font(.caption).foregroundStyle(Palette.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,7 +151,7 @@ struct MemoryCard: View {
         if runs.isEmpty { empty("moon", "No dreams yet.") }
         ForEach(runs) { run in
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(Date(milliseconds: run.at).formatted(.relative(presentation: .named)))\(run.undone ? " · undone" : "")")
+                Text("\(Date(milliseconds: run.at).formatted(.relative(presentation: .named)))\(run.undone ? L10n.tr(" · undone") : "")")
                     .fontWeight(.semibold)
                 let limit = lines(.dream(run.id))
                 ForEach(run.added, id: \.id) { Text(L10n.tr("+ \($0.text)")).foregroundStyle(Palette.added).lineLimit(limit) }

@@ -60,7 +60,7 @@ internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
     val working = bot.work.count { it.status == WorkStatus.Working }
     val waiting = bot.work.count { it.status == WorkStatus.Waiting }
     return when {
-        needsInput -> BotLine(BotLineKind.NeedsYou, tr(bot.activity.ifEmpty { "Needs your approval" }))
+        needsInput -> BotLine(BotLineKind.NeedsYou, tr(bot.activity.ifEmpty { "Needs approval" }))
         bot.work.any { it.status == WorkStatus.NeedsYou } -> BotLine(BotLineKind.NeedsYou, tr(WorkStatus.NeedsYou.title))
         bot.status == "working" -> BotLine(BotLineKind.Working, tr(bot.activity.ifEmpty { "Working…" }))
         working > 0 -> BotLine(BotLineKind.Working, workCounts(bot.work, tr))

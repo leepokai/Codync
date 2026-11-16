@@ -20,6 +20,8 @@ class HeldRosterHost : AutoCloseable {
         private set
     @Volatile var eventSubscriptions = 0
         private set
+    /** Each `recordPhonePerformance` body this host received, in order. */
+    val performances = java.util.concurrent.CopyOnWriteArrayList<JsonObject>()
 
     val computer = Computer(computerId, "Computer", hostKey.base64Url(), urls = listOf(server.url("/").toString()))
 
@@ -57,13 +59,16 @@ class HeldRosterHost : AutoCloseable {
                         } else sendSnapshot(webSocket, id)
                     }
                     request.text("sub") != null -> Unit
-                    else -> send(webSocket, buildJsonObject {
-                        put("id", id)
-                        put("ok", buildJsonObject {
-                            put("computerId", computerId); put("signKey", hostKey.base64Url()); put("name", "Computer"); put("version", "99.0.0")
-                            put("hostId", computerId)
+                    else -> {
+                        if (request.text("m") == "recordPhonePerformance") performances += request.getValue("b").jsonObject
+                        send(webSocket, buildJsonObject {
+                            put("id", id)
+                            put("ok", buildJsonObject {
+                                put("computerId", computerId); put("signKey", hostKey.base64Url()); put("name", "Computer"); put("version", "99.0.0")
+                                put("hostId", computerId)
+                            })
                         })
-                    })
+                    }
                 }
             }
         }))

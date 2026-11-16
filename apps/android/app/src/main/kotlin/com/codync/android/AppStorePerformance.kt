@@ -4,9 +4,17 @@ import com.codync.android.core.LinkState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+/**
+ * Emulators skip the host by default, so a UI test's scrolling never writes into a computer's log.
+ * An instrumentation test sets this to check that delivery reaches the host (`PhonePerformanceDeliveryTest`).
+ */
+internal var deliverFromEmulator = false
+
+private val onEmulator = android.os.Build.HARDWARE in listOf("ranchu", "goldfish")
+
 /** Best-effort diagnostics never wait for a reconnect or surface a host error to the reader. */
 internal fun AppStore.recordPerformance(measurement: PhonePerformance) {
-    if (android.os.Build.HARDWARE in listOf("ranchu", "goldfish")) return
+    if (onEmulator && !deliverFromEmulator) return
     val active = channel?.takeIf { it.state.value is LinkState.Ready } ?: return
     contextScope.launch {
         try { active.call("recordPhonePerformance", measurement.body()) }

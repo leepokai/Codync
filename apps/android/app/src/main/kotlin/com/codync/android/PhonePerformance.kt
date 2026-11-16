@@ -16,6 +16,20 @@ internal sealed interface PhonePerformance {
         }
     }
 
+    /** One step of an app open for one computer. Dedupe keys stay on the phone: the computer isn't sent. */
+    data class OpenStep(val phase: OpenPhase, val open: OpenKind, val ms: Long,
+        val chats: Int? = null, val messages: Int? = null) : PhonePerformance {
+        override fun body() = buildJsonObject {
+            put("type", "open_timing")
+            put("platform", "android")
+            put("phase", phase.wire)
+            put("open", open.wire)
+            put("ms", ms)
+            chats?.let { put("chats", it) }
+            messages?.let { put("messages", it) }
+        }
+    }
+
     data class Scroll(val list: ScrollList, val rows: Int, val frames: Int, val hitches: Int, val longestMs: Int,
         val hitchMsPerS: Int, val fps: Int, val stop: ScrollStop? = null, val jump: Int? = null) : PhonePerformance {
         override fun body() = buildJsonObject {
@@ -34,6 +48,11 @@ internal sealed interface PhonePerformance {
     }
 }
 
+internal enum class OpenPhase(val wire: String) {
+    LinkReady("link_ready"), Hello("hello"), CatchUp("catch_up"), ChatList("chat_list"), OpenChat("open_chat"),
+}
+
+internal enum class OpenKind(val wire: String) { Cold("cold"), Foreground("foreground") }
 internal enum class ScrollList(val wire: String) { Bots("bots"), Chat("chat") }
 internal enum class ScrollStop(val wire: String) { Top("top"), End("end"), Middle("middle") }
 

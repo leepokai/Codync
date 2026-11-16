@@ -69,12 +69,12 @@ import kotlinx.coroutines.delay
  * One endless conversation with a bot or a group, as iOS `ThreadView`: only deliberate messages
  * show; tool calls and thinking live in "Full conversation". `editGroup` opens a group's editor (its details).
  */
-@Composable fun ChatScreen(state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
+@Composable fun ChatScreen(state: AppState, store: AppStore, editGroup: (Bot) -> Unit, launching: Boolean = false) {
     val bot = state.bots.firstOrNull { it.id == state.selectedBot } ?: return
-    key(state.contextId, state.generation, bot.id) { ThreadView(bot, state, store, editGroup) }
+    key(state.contextId, state.generation, bot.id) { ThreadView(bot, state, store, launching, editGroup) }
 }
 
-@Composable private fun ThreadView(bot: Bot, state: AppState, store: AppStore, editGroup: (Bot) -> Unit) {
+@Composable private fun ThreadView(bot: Bot, state: AppState, store: AppStore, launching: Boolean, editGroup: (Bot) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Chat))
     val context = LocalContext.current
     // The bot's details sheet and the page it opens on.
@@ -173,7 +173,7 @@ import kotlinx.coroutines.delay
                 queued = queuedMessages(state.chatEntries(bot), bot.isWorking))
         }
     }) {
-        Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
+        Transcript(bot, chatState, store, launching, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
             bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = { reply(it, null) }, selectText = { selecting = it },
             addFallback = { details = DetailsRequest.fallbacks(it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
             found = shown?.id, revealed = revealed, findStep = findStep, openQuote = { reveal(it) }) { peer = it }
@@ -305,12 +305,13 @@ internal const val CHAT_INTRO_ROW = "intro"
 internal const val CHAT_WORKING_ROW = "working"
 
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
-@Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
+@Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, launching: Boolean, connect: ConnectionRequestActions, padding: PaddingValues,
     indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, selectText: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
     openCall: (String) -> Unit, found: String?, revealed: String?, findStep: Int, openQuote: (String) -> Unit, openPeer: (String) -> Unit) {
     val entries = state.chatEntries(bot)
     val items = state.chatItems(bot)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
+    val lastItem = items.lastOrNull()?.id
     // The ceiling counts rows the chat shows. Tool and thought rows stay in memory for Trace, but they do not fill it.
     val shown = entries.size
     val floor = state.entries.filter { it.botId == bot.id }.minOfOrNull { it.seq } ?: Long.MAX_VALUE
@@ -318,6 +319,8 @@ internal const val CHAT_WORKING_ROW = "working"
     val details by ThinkingDetails.enabled.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
     var settled by remember { mutableStateOf(false) }
+    // The open this chat first showed in, 0 under the launch splash (iOS ThreadView's `shownInOpen`).
+    val shownInOpen = remember { if (launching) 0 else store.openTiming.opens }
     val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
     // Find's shown match, else the card or quoted message brought into view: its row, after the earlier-messages row when
@@ -343,6 +346,15 @@ internal const val CHAT_WORKING_ROW = "working"
         // Shown while earlier messages may still load, as on the iPhone.
         if (items.isEmpty()) item(CHAT_INTRO_ROW) { IntroCard(bot, state) }
         items(items, key = { it.id }) { item ->
+            // `open_chat` once this open's catch-up is in and the newest row shows (iOS ThreadView's last row), for a chat
+            // already on screen when the open began: a later tap is not part of the open. Scrolling away leaves it unrecorded.
+            if (item.id == lastItem) {
+                LaunchedEffect(lastItem, state.opensSeen, state.catchUpsCompleted, bot.id, launching) {
+                    if (!launching && shownInOpen < store.openTiming.opens &&
+                        store.openTiming.hasRecorded(OpenPhase.CatchUp, state.computer.id))
+                        store.recordOpenTiming(OpenPhase.OpenChat)
+                }
+            }
             // The message holding find's shown match is highlighted.
             Box(Modifier.background(if (item.id == found) Palette.attention.copy(alpha = 0.18f) else Color.Transparent)) {
             when (item) {

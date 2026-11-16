@@ -31,7 +31,7 @@ class ComputerRosterTest {
         RosterComputers.setHidden(context, ""); RosterComputers.setFolded(context, emptySet())
         try {
             compose.setContent {
-                Hosted { BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp) }
+                Hosted { BotListView(app, listOf(state(mac, "Mac bot"), state(linux, "Linux bot")), accounts, false, {}, {}, {}, {}, { _, _ -> }, {}, 0.dp) }
             }
             compose.onNode(heading("Mac fixture")).assertIsDisplayed()
             compose.onNode(heading("Linux fixture")).assertIsDisplayed()
@@ -71,7 +71,7 @@ class ComputerRosterTest {
         // The account's own state, as the app shows it: Back clears it there.
         compose.setContent {
             val live by accounts.state.collectAsState()
-            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, {}, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true) {} }
+            Hosted { MainTabs(live, listOf(state(mac, "Mac bot")), accounts, false, {}, {}, {}, {}, {}, { _, _ -> }, {}, AppTab.Bots, {}, covered = true) {} }
         }
         compose.onNodeWithText("This computer was removed").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()

@@ -14,3 +14,7 @@ internal fun AppStore.recordPerformance(measurement: PhonePerformance) {
         catch (error: Exception) { android.util.Log.i("Codync", "Phone performance was not recorded: ${error.message}") }
     }
 }
+
+internal fun AppStore.recordOpenTiming(phase: OpenPhase, chats: Int? = null, messages: Int? = null) {
+    openTiming.record(phase, id, chats, messages)?.let(::recordPerformance)
+}

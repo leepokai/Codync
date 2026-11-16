@@ -296,6 +296,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::analytics::errors::report(hub, &b)?;
             json!({})
         }
+        // A phone's own performance measurements, kept in a local log (`phone_diagnostics`):
+        // numbers only, and unlike `track` and `reportError` authorized phones may call it.
+        "recordPhonePerformance" => crate::phone_diagnostics::record(b).await?,
         "setAutoOrder" => {
             hub.set_auto_order(b["enabled"].as_bool().context("enabled must be a boolean")?)?;
             json!({"enabled": hub.auto_order()})

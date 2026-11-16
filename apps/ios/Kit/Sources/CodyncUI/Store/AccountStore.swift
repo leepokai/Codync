@@ -46,7 +46,11 @@ public final class AccountStore {
         didSet {
             guard !retired else { return }
             if selection != oldValue {
-                for store in stores.values { store.cancelVoiceCallRequest() }
+                for store in stores.values {
+                    store.cancelVoiceCallRequest()
+                    store.chatOpening.cancel()
+                }
+                if let ref = selection { stores[ref.computerId]?.chatOpening.open(ref.botId) }
             }
             if let id = selection?.computerId { storage.lastComputerId = id }
         }

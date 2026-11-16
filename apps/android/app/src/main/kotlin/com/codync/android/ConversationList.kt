@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -42,10 +43,12 @@ import kotlinx.coroutines.launch
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
 @Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
-    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null, onOpened: () -> Unit = {},
+    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null,
+    report: (PhonePerformance.Scroll) -> Unit = {}, onSettled: () -> Unit = {}, onOpened: () -> Unit = {},
     content: LazyListScope.() -> Unit) {
+    TrackScrollHitches(list, ScrollList.Chat, report)
     val bottom = padding.calculateBottomPadding()
-    val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
+    val following = rememberFollowing(list, last, rev, working, bottom, onSettled, onOpened)
     // Find's shown match: its row a third of the way down, leaving the newest message. Keyed on the row, not its index,
     // so earlier messages loading above don't scroll back to it.
     LaunchedEffect(reveal?.id, reveal?.step) {
@@ -79,7 +82,7 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
 
 /** Stays on the newest message until the reader scrolls away; scrolling back down follows again. */
 @Composable internal fun rememberFollowing(list: LazyListState, last: String?, rev: Long?, working: Boolean, bottom: Dp,
-    onOpened: () -> Unit = {}): MutableState<Boolean> {
+    onSettled: () -> Unit = {}, onOpened: () -> Unit = {}): MutableState<Boolean> {
     val following = remember { mutableStateOf(true) }
     // The reader's drag and its fling, until it settles: a new step never pulls it back down meanwhile.
     val touched = remember { mutableStateOf(false) }
@@ -93,6 +96,11 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
     LaunchedEffect(Unit) {
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
+        withFrameNanos { }
+        onSettled()
+        snapshotFlow {
+            list.layoutInfo.visibleItemsInfo.any { it.key != CHAT_EARLIER_ROW && it.key != CHAT_INTRO_ROW && it.key != CHAT_WORKING_ROW }
+        }.first { it }
         onOpened()
     }
     // The working steps can grow without a new chat entry. Follow their measured size,

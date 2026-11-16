@@ -300,6 +300,10 @@ private fun AppState.chatEntries(bot: Bot) = entries.filter { it.botId == bot.id
 private fun AppState.chatItems(bot: Bot) =
     chatItems(chatEntries(bot), pending.filter { it.botId == bot.id && (it.call == null || it.status == SendStatus.Failed) }, busy = bot.isWorking)
 
+internal const val CHAT_EARLIER_ROW = "earlier"
+internal const val CHAT_INTRO_ROW = "intro"
+internal const val CHAT_WORKING_ROW = "working"
+
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
     indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, selectText: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
@@ -320,14 +324,16 @@ private fun AppState.chatItems(bot: Bot) =
     // there is one. `revealed` is an entry id, and a user row is keyed by its nonce.
     val reveal = items.rowOf(found ?: revealed)?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
     ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
-        reveal = reveal, onOpened = { settled = true }) {
-        if (more) item("earlier") {
+        reveal = reveal, report = store::recordPerformance, onSettled = { settled = true }, onOpened = {
+            store.chatOpening.finish(bot.id)?.let { store.recordPerformance(PhonePerformance.ChatOpen(it)) }
+        }) {
+        if (more) item(CHAT_EARLIER_ROW) {
             Box(Modifier.fillMaxWidth().padding(vertical = 14.dp).clearAndSetSemantics { contentDescription = "Loading earlier messages" },
                 contentAlignment = Alignment.Center) { Spinner(14.dp) }
             // The list opens on the newest message, and this row is composed on that first frame. Page only after that
             // scroll has finished and the row is still showing: a short chat never scrolls, so the row staying up is the trigger.
             val loading = historyKey(bot.id) in state.busy
-            val visible by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.any { it.key == "earlier" } } }
+            val visible by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.any { it.key == CHAT_EARLIER_ROW } } }
             LaunchedEffect(shown, floor, loading, settled, visible) {
                 if (paging.ask(settled, visible, loading, shown, floor)) store.loadHistory(paging::failed)
             }
@@ -335,7 +341,7 @@ private fun AppState.chatItems(bot: Bot) =
             DisposableEffect(paging) { onDispose(paging::left) }
         }
         // Shown while earlier messages may still load, as on the iPhone.
-        if (items.isEmpty()) item("intro") { IntroCard(bot, state) }
+        if (items.isEmpty()) item(CHAT_INTRO_ROW) { IntroCard(bot, state) }
         items(items, key = { it.id }) { item ->
             // The message holding find's shown match is highlighted.
             Box(Modifier.background(if (item.id == found) Palette.attention.copy(alpha = 0.18f) else Color.Transparent)) {
@@ -364,6 +370,6 @@ private fun AppState.chatItems(bot: Bot) =
             }
             }
         }
-        if (working) item("working") { WorkingIndicator(bot, workingSteps(state.entries.filter { it.botId == bot.id }), details) }
+        if (working) item(CHAT_WORKING_ROW) { WorkingIndicator(bot, workingSteps(state.entries.filter { it.botId == bot.id }), details) }
     }
 }

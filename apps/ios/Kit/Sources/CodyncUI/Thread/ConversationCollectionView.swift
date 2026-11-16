@@ -1,3 +1,4 @@
+import CodyncKit
 import UIKit
 
 /// Only one owner moves the list: the reader, a jump animation, or passive end-following.
@@ -12,6 +13,9 @@ class ConversationCollectionView: UICollectionView {
     private(set) var scrollingToEnd = false
     private var displayLink: CADisplayLink?
     private var lastFrame: TimeInterval?
+    private var opened = false
+    var hasLaidOutMessage: () -> Bool = { false }
+    var onOpened: (() -> Void)?
     private var motion = ConversationScrollMotion()
 
     @objc func dismissComposerKeyboard() {
@@ -21,6 +25,13 @@ class ConversationCollectionView: UICollectionView {
 
     var endOffset: CGFloat {
         max(contentSize.height + adjustedContentInset.bottom - bounds.height, -adjustedContentInset.top)
+    }
+
+    /// Where the list rests: at either end, or between.
+    var stop: PhonePerformance.Scroll.Stop {
+        if endOffset - contentOffset.y < 1 { return .end }
+        if contentOffset.y + adjustedContentInset.top < 1 { return .top }
+        return .middle
     }
 
     /// Where the list rests with a row at `frame` in the middle, as far as its ends allow.
@@ -51,6 +62,10 @@ class ConversationCollectionView: UICollectionView {
     override func layoutSubviews() {
         super.layoutSubviews()
         if following { pinToEnd() }
+        if !opened, bounds.height > 0, hasLaidOutMessage() {
+            opened = true
+            onOpened?()
+        }
     }
 
     override func didMoveToWindow() {

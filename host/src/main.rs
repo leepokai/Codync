@@ -22,6 +22,7 @@ mod mcp;
 mod network;
 mod network_cli;
 mod pair_cli;
+mod phone_diagnostics;
 mod prompt;
 mod remote;
 mod routines;

@@ -7,11 +7,13 @@ struct ConversationRow {
     let id: String
     /// The reader's own new message: the list goes back down to it.
     var isUserMessage = false
+    var isPlaceholder = false
     let content: AnyView
 
-    init(_ id: String, isUserMessage: Bool = false, @ViewBuilder content: () -> some View) {
+    init(_ id: String, isUserMessage: Bool = false, isPlaceholder: Bool = false, @ViewBuilder content: () -> some View) {
         self.id = id
         self.isUserMessage = isUserMessage
+        self.isPlaceholder = isPlaceholder
         self.content = AnyView(content())
     }
 }
@@ -20,6 +22,10 @@ struct ConversationRow {
 struct ConversationReveal: Equatable {
     let id: String
     let step: Int
+}
+
+func hasLaidOutMessage(_ rows: [ConversationRow], visibleIDs: Set<String>) -> Bool {
+    rows.contains { !$0.isPlaceholder && visibleIDs.contains($0.id) }
 }
 
 /// A conversation's scrolling list, in UIKit (a collection view of hosted SwiftUI rows): only
@@ -37,6 +43,8 @@ struct ConversationList: View {
     var nearTop: (() -> Void)?
     /// Letting go of a full pull past the top: the force refresh, its indicator held until it returns.
     var refresh: (() async -> Void)?
+    let report: (PhonePerformance.Scroll) -> Void
+    var onOpened: () -> Void = {}
     @State private var pull = PullToRefresh()
     /// The safe area (under the bars, above the composer and the keyboard) and the whole screen.
     @State private var safeFrame = CGRect.zero
@@ -50,7 +58,8 @@ struct ConversationList: View {
             .ignoresSafeArea()
             // The list itself stays inside the safe area (so its rows never see one) and
             // reaches out past it.
-            ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh, pull: pull,
+            ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh,
+                                   report: report, onOpened: onOpened, pull: pull,
                                    outsets: UIEdgeInsets(top: max(0, safeFrame.minY - fullFrame.minY), left: 0,
                                                          bottom: max(0, fullFrame.maxY - safeFrame.maxY), right: 0))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { safeFrame = $0 }
@@ -70,11 +79,13 @@ private struct ConversationCollection: UIViewRepresentable {
     let reveal: ConversationReveal?
     let nearTop: (() -> Void)?
     let refresh: (() async -> Void)?
+    let report: @MainActor (PhonePerformance.Scroll) -> Void
+    let onOpened: @MainActor () -> Void
     let pull: PullToRefresh
     /// How far past its frame the list reaches: under the bars, the composer and the keyboard.
     let outsets: UIEdgeInsets
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(report: report) }
 
     func makeUIView(context: Context) -> ConversationContainer {
         let view = ConversationContainer(list: context.coordinator.makeView())
@@ -84,6 +95,10 @@ private struct ConversationCollection: UIViewRepresentable {
 
     func updateUIView(_ view: ConversationContainer, context: Context) {
         context.coordinator.update(self, context: context)
+    }
+
+    static func dismantleUIView(_ view: ConversationContainer, coordinator: Coordinator) {
+        coordinator.meter.cancel()
     }
 
     @MainActor final class Coordinator: NSObject, UICollectionViewDelegate {
@@ -98,6 +113,11 @@ private struct ConversationCollection: UIViewRepresentable {
         private var lastReveal: ConversationReveal?
         private var lastOffset: CGFloat = 0
         private var reduceMotion = false
+        let meter: ScrollHitchMeter
+
+        init(report: @escaping @MainActor (PhonePerformance.Scroll) -> Void) {
+            meter = ScrollHitchMeter(.chat, report: report)
+        }
 
         func makeView() -> ConversationCollectionView {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(80))
@@ -113,6 +133,12 @@ private struct ConversationCollection: UIViewRepresentable {
             view.keyboardDismissMode = .interactive
             view.allowsSelection = false
             view.delegate = self
+            view.onOpened = { [weak self] in self?.parent?.onOpened() }
+            view.hasLaidOutMessage = { [weak self, weak view] in
+                guard let self, let view else { return false }
+                let ids = Set(view.indexPathsForVisibleItems.compactMap(self.dataSource.itemIdentifier(for:)))
+                return hasLaidOutMessage(self.parent?.rows ?? [], visibleIDs: ids)
+            }
             if #available(iOS 26, *) { view.topEdgeEffect.style = .soft }
             // Only the empty collection background; hosted rows arbitrate their own taps.
             let tap = UITapGestureRecognizer(target: view, action: #selector(ConversationCollectionView.dismissComposerKeyboard))
@@ -246,6 +272,7 @@ private struct ConversationCollection: UIViewRepresentable {
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             view.cancelScrollingToEnd()
             lastOffset = scrollView.contentOffset.y
+            meter.begin()
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -336,8 +363,19 @@ private struct ConversationCollection: UIViewRepresentable {
         /// The list stopped moving (the reader's scrolling, a row brought into view): resting at the end follows again;
         /// anywhere else stays put.
         private func settle() {
+            meter.rest(rows: dataSource.snapshot().numberOfItems, stop: view.stop, track: restingRow())
             setFollowing(view.followingAfterInteraction())
             if view.following { view.pinToEnd() }
+        }
+
+        /// Where the first row on screen now sits on screen, followed by its id: rows going in above don't move it.
+        private func restingRow() -> () -> CGFloat? {
+            let id = view.indexPathsForVisibleItems.min().flatMap(dataSource.itemIdentifier(for:))
+            return { [weak self] in
+                guard let self, let id, let path = dataSource.indexPath(for: id),
+                      let frame = view.layoutAttributesForItem(at: path)?.frame else { return nil }
+                return frame.minY - view.contentOffset.y
+            }
         }
     }
 }

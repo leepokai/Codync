@@ -188,6 +188,7 @@ struct BotListView: View {
             .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        .scrollHitches(.bots, rows: lines.count) { app.currentStore?.recordPerformance(.scroll($0)) }
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
         .background(Palette.background)

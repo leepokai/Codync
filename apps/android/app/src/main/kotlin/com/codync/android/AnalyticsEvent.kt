@@ -168,6 +168,7 @@ internal sealed class AnalyticsEvent(val name: String) {
     /** A quote at the top of a message was tapped: whether the quoted message was loaded and came into view (iOS `quoteOpened`). */
     data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
+    }
     /** A message dragged sideways far enough to start a reply (iOS `replySwiped`). */
     data object ReplySwiped : AnalyticsEvent("reply_swiped")
 }

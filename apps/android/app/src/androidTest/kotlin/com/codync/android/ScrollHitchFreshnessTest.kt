@@ -27,7 +27,7 @@ import org.junit.Test
 /** The bot list's scroll diagnostic follows the computer paired after the list first composed. */
 class ScrollHitchFreshnessTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
-    private val computer = Computer("scroll-fixture-computer-01", "Fixture computer", "fixture")
+    private val computer = Computer("scroll-fixture-0000001", "Fixture computer", "fixture")
 
     @Test fun aScrollAfterPairingIsReportedOnTheNewComputer() = compose.withPreviewAccounts { accounts ->
         // Setup skipped: the roster first composes without a current computer.

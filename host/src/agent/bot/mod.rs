@@ -139,6 +139,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         stop_requested: false,
         cancel_deadline: None,
         exit_tail: None,
+        agent_error: None,
         tools_changed: false,
         restart_after_turn: false,
         fast_support,
@@ -347,6 +348,8 @@ struct Actor {
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
+    /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
+    agent_error: Option<String>,
     /// Connectors changed: restart the agent before the next turn so the
     /// session is resumed with the new MCP servers.
     tools_changed: bool,
@@ -382,6 +385,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        let done = pi_tools::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {

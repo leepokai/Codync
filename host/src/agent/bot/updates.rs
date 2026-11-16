@@ -78,6 +78,10 @@ impl Actor {
         match u["sessionUpdate"].as_str().unwrap_or_default() {
             "agent_message_chunk" => {
                 let t = acp::content_text(&u["content"]);
+                if let Some(error) = super::pi_tools::turn_error_text(&t) {
+                    self.agent_error = Some(error.to_owned());
+                    return;
+                }
                 self.append(SegKind::Text, &t);
                 self.set_activity("Writing a reply…");
             }

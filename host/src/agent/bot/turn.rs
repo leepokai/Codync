@@ -157,6 +157,7 @@ impl Actor {
         };
         self.hub.team.start_turn(&self.cfg.id, team_turn);
         self.exit_tail = None;
+        self.agent_error = None;
         self.seg = Seg::None;
         self.tools.clear();
         self.plan_entry = None;

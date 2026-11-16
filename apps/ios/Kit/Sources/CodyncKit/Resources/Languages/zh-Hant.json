@@ -583,7 +583,6 @@
   "Fallbacks": "備用",
   "About fallbacks": "關於備用",
   "Add fallback": "新增備用",
-  "Edit fallback": "編輯備用",
   "In use": "使用中",
   "Add": "新增",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "這個 Bot 的 agent 用量用完、被限速、退出登入或無法啟動時，下一個 agent 會在同一個對話裡接著做，記憶和工作區都不變。原來的 agent 恢復後，Bot 會回到它。用 API 金鑰的備用會花錢。如果只是同一個 agent 的不同模型互相備用，請在 agent 自己裡面設定（Claude Code 的 fallbackModel）。",

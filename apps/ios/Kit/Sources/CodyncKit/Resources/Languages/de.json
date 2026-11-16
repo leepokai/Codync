@@ -583,7 +583,6 @@
   "Fallbacks": "Ersatzagenten",
   "About fallbacks": "Über Ersatzagenten",
   "Add fallback": "Ersatzagent hinzufügen",
-  "Edit fallback": "Ersatzagent bearbeiten",
   "In use": "In Verwendung",
   "Add": "Hinzufügen",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "Wenn der Agent dieses Bots sein Kontingent aufbraucht, gedrosselt wird, abgemeldet ist oder nicht startet, macht der nächste Agent hier im selben Chat mit demselben Gedächtnis und Arbeitsbereich weiter. Sobald sich der ursprüngliche Agent erholt, kehrt der Bot zu ihm zurück. Ein Ersatzagent mit API-Schlüssel kostet Geld. Den Wechsel zwischen Modellen eines Agenten stellst du im Agenten selbst ein (fallbackModel bei Claude Code).",

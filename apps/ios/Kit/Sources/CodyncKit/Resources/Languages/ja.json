@@ -583,7 +583,6 @@
   "Fallbacks": "フォールバック",
   "About fallbacks": "フォールバックについて",
   "Add fallback": "フォールバックの追加",
-  "Edit fallback": "フォールバックの編集",
   "In use": "使用中",
   "Add": "追加",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "このボットのエージェントが使用量を使い果たすか、レートが制限されるか、サインアウトするか、起動しない場合、次のエージェントが同じメモリとワークスペースで同じチャットを続行します。ボットは回復すると、自身のエージェントに戻ります。 API キーを使用するフォールバックには費用がかかります。 1 つのエージェントのモデル間でフォールバックするには、それをエージェント自体 (Claude Code の fallbackModel) に設定します。",

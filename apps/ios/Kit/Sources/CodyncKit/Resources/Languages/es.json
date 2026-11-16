@@ -583,7 +583,6 @@
   "Fallbacks": "Agentes de respaldo",
   "About fallbacks": "Acerca de los agentes de respaldo",
   "Add fallback": "Añadir agente de respaldo",
-  "Edit fallback": "Editar agente de respaldo",
   "In use": "En uso",
   "Add": "Añadir",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "Cuando el agente de este bot agota su uso, alcanza un límite de solicitudes, cierra sesión o no arranca, el siguiente agente continúa en el mismo chat, con la misma memoria y espacio de trabajo. El bot vuelve a su agente cuando se recupera. Un agente de respaldo con clave API tiene coste. Para alternar entre modelos de un mismo agente, configúralo en el propio agente (fallbackModel de Claude Code).",

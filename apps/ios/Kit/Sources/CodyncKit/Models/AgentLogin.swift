@@ -14,6 +14,13 @@ public struct AgentLogin: Hashable, Sendable {
 
 public extension BotFallback {
     var login: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
+
+    /// A step on `agent`: `own` (the step before it changed agent) when it's on that agent and its login isn't elsewhere in
+    /// the chain (`taken`), else the agent's first free login with its default model.
+    static func on(_ agent: Backend, taken: [AgentLogin], own: BotFallback? = nil) -> BotFallback {
+        if let own, own.backend == agent.id, !taken.contains(own.login) { return own }
+        return BotFallback(backend: agent.id, loginProfile: agent.freeLogins(taken: taken).first ?? nil)
+    }
 }
 
 public extension BotDraft {
@@ -76,5 +83,19 @@ public extension Backend {
     func freeLogins(taken: [AgentLogin]) -> [String?] {
         let all: [String?] = [nil] + (loginProfiles ?? []).filter(\.signedIn).map(\.id)
         return all.filter { !taken.contains(AgentLogin(backend: id, loginProfile: $0)) }
+    }
+
+    /// The logins `step` can pick on this agent: the free ones, and its own, even one that has signed out since.
+    func logins(for step: AgentLogin, taken: [AgentLogin]) -> [String?] {
+        let free = freeLogins(taken: taken)
+        return free.contains(step.loginProfile) ? free : free + [step.loginProfile]
+    }
+}
+
+public extension [Backend] {
+    /// The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on
+    /// (a step keeps its own login, even one that has signed out since).
+    func usable(taken: [AgentLogin], keeping keep: [AgentLogin] = []) -> [Backend] {
+        filter { backend in keep.contains { $0.backend == backend.id } || !backend.freeLogins(taken: taken).isEmpty }
     }
 }

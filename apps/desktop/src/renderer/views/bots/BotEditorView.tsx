@@ -124,9 +124,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
-  // Options belong to one model.
-  const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
-  const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
+  const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
   const models = useAgentModels(draft.backend)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
@@ -143,7 +141,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
+      onChange={setModel} options={draft.modelOptions ?? {}}
       agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
       onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?

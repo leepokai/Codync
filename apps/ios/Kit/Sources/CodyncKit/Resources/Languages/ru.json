@@ -583,7 +583,6 @@
   "Fallbacks": "Резервные агенты",
   "About fallbacks": "О резервных агентах",
   "Add fallback": "Добавить резервного агента",
-  "Edit fallback": "Изменить резервного агента",
   "In use": "Используется",
   "Add": "Добавить",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "Когда у агента этого бота заканчивается лимит использования, его ограничивают по частоте запросов, он выходит из аккаунта или не запускается, следующий агент из списка продолжает в том же чате, с той же памятью и рабочей папкой. Когда исходный агент восстанавливается, бот возвращается к нему. Резервный агент с ключом API стоит денег. Чтобы переключаться между моделями одного агента, настройте это в самом агенте (fallbackModel в Claude Code).",

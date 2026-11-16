@@ -583,7 +583,6 @@
   "Fallbacks": "Agentes de reserva",
   "About fallbacks": "Sobre os agentes de reserva",
   "Add fallback": "Adicionar agente de reserva",
-  "Edit fallback": "Editar agente de reserva",
   "In use": "Em uso",
   "Add": "Adicionar",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "Quando o agente deste bot atinge o limite de uso, sofre limitação de requisições, tem a sessão encerrada ou não inicia, o próximo agente aqui continua na mesma conversa, com a mesma memória e o mesmo espaço de trabalho. O bot volta ao seu próprio agente quando ele se recupera. Um agente de reserva que usa chave de API gera custos. Para alternar entre os modelos de um mesmo agente como reserva, configure isso no próprio agente (fallbackModel do Claude Code).",

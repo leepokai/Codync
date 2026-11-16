@@ -17,7 +17,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 「同時幾個 agent」在 Bot 的「設定」。
 - 「每個 agent 一個 worktree」：agent 各有自己的分支。
 - 改用備援時，智慧體卡片會說明原因。
-- 備援的 ⋯ 選單新增「編輯」，順序不變。
+- 備援直接在智慧體卡片裡設定，順序不變。
 - 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
 - 網路規則新增「自動」與「詢問」等級。
 - 聽寫中按「傳送」會等說的話轉成文字再一起送出。
@@ -33,7 +33,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Details: Threads, Event box.
 - Settings: Agents at once, Worktrees.
 - On a fallback, the Agent card says why.
-- Fallbacks have Edit.
+- Fallbacks are set in place.
 - `/` lists the agent's commands.
 - Network rules gain Auto and Ask.
 - Send while dictating keeps your words.

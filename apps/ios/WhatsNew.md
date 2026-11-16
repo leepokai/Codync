@@ -39,7 +39,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Bot 改用備援時，「智慧體」卡片會說明原本的智慧體為什麼停下（已登出、被限速等），只有用量上限才顯示重設時間；這一行和備援底下的休息時間都會跟著 App 的語言。
 - 輸入 `/` 時，清單最後會列出 Bot 所用智慧體自己的指令（Claude Code、Codex、OpenCode 等），和 Codync 自己的指令、技能分開，標上智慧體的名稱、圖示和說明；選一個會填入 `/<指令>`，送出後由智慧體直接執行。
 - 電腦的「網路」頁會列出新的規則等級：「自動」只讓其他電腦的 Bot 做 agent 判斷為安全的事，其餘先問你；「詢問」讓每個變更和指令都等你批准。沒有符合任何規則的電腦預設為「自動」，原本就在網路裡的電腦維持「允許」。
-- 備援的 ⋯ 選單新增「編輯」：可以直接換它的智慧體、模型或登入設定，順序不變。
+- 備援直接在「智慧體」卡片裡設定，和 Bot 自己的智慧體一樣：點一列就能換它的智慧體、模型或登入設定，順序不變；按「+」新增的備援會直接展開。
 - 聽寫中直接按「傳送」，會等說的話轉成文字，再和打好的字一起送出，不會再丟掉。
 - 等待核准的卡片會一直算在 Bot 的未讀數字裡（顯示為琥珀色），打開聊天或「標示為已讀」都不會讓它消失，直到你回覆為止；收起的分組裡有 Bot 在等你時，分組的數字也會變成琥珀色。
 - 長按 Bot 選「新會話」，就能讓智慧體從新的上下文開始，聊天記錄會保留。
@@ -72,7 +72,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - On a fallback, the Agent card says in the app's language why the bot's agent stopped (signed out, rate limited, etc.); only a usage limit shows a reset time.
 - Typing `/` also lists the agent's own commands (Claude Code, Codex, OpenCode and more) under its name; pick one and the agent runs it when you send.
 - Network rules gain two levels: Auto (another computer's bots get only what the agent judges safe; the rest asks you) and Ask (everything waits for you). A computer no rule matches gets Auto.
-- A fallback's ⋯ menu has Edit: change its agent, model or login profile in place.
+- Fallbacks are set right in the Agent card, like the bot's own agent: tap one to change its agent, model or login profile in place; + adds one already open.
 - Send while dictating waits for what you said and sends it with what you typed.
 - A waiting approval card stays in the bot's badge, in amber, until you answer it, even after you open the chat or mark it read; a folded section turns amber too.
 - Touch and hold a bot for New session: a fresh context for its agent; the chat stays.

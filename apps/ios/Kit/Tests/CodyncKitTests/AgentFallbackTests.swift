@@ -187,6 +187,21 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(plain.freeLogins(taken: []) == [nil] && plain.freeLogins(taken: [AgentLogin(backend: "codex")]).isEmpty)
 }
 
+@Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {
+    let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
+    let taken = [AgentLogin(backend: "claude"), AgentLogin(backend: "codex")]
+    #expect(BotFallback.on(claude, taken: taken) == BotFallback(backend: "claude", loginProfile: "a1"))
+    let own = BotFallback(backend: "claude", loginProfile: "a2", model: "opus", modelOptions: ["effort": "high"])
+    #expect(BotFallback.on(claude, taken: taken, own: own) == own, "back on its own agent, its model and login come back")
+    #expect(BotFallback.on(claude, taken: taken + [own.login], own: own).loginProfile == "a1", "unless another step has its login now")
+    // Its signed-out login stays a choice, and so does its agent.
+    #expect(claude.logins(for: own.login, taken: taken) == ["a1", "a3", "a2"])
+    let full = taken + [AgentLogin(backend: "claude", loginProfile: "a1"), AgentLogin(backend: "claude", loginProfile: "a3")]
+    #expect([claude, codex].usable(taken: full).isEmpty)
+    #expect([claude, codex].usable(taken: full, keeping: [own.login]).map(\.id) == ["claude"])
+}
+
 @Test func switchingAgentKeepsItsStepsOnOtherLoginProfiles() {
     var draft = BotDraft(name: "Lead")
     draft.fallbacks = [BotFallback(backend: "codex"), BotFallback(backend: "codex", loginProfile: "a1"), BotFallback(backend: "gemini")]

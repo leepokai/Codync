@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
-import type { CallResult, WindowCommand } from '../shared/ipc'
+import { CONNECT_PATIENCE_MS, type CallResult, type WindowCommand } from '../shared/ipc'
 import type { VoiceKey } from '../shared/voice-shortcut'
 import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
 import { present, webPreferences } from './headless'
@@ -44,7 +44,7 @@ function readScreens(): Promise<NotchScreen[]> {
 
 /** Answers the approval on screen from any app while it shows. */
 const KEYS = { 'Alt+Y': 'allow', 'Alt+N': 'deny' } as const
-/** A call the chat window never answers (it reloaded meanwhile) fails this long after its own timeout. */
+/** A call the chat window never answers (it reloaded meanwhile) fails after the reconnect it may wait out, the call's own timeout, and this grace. */
 const ANSWER_GRACE_MS = 5000
 const noChatWindow: CallResult = { ok: false, error: { status: 0, message: 'Open the Codync window to dictate here.' } }
 
@@ -125,7 +125,7 @@ export class Island {
   private call(ref: string, method: string, body: unknown, timeoutMs: number) {
     const id = String(++this.callId)
     return new Promise<CallResult>((resolve) => {
-      const timer = setTimeout(() => settle(noChatWindow), timeoutMs + ANSWER_GRACE_MS)
+      const timer = setTimeout(() => settle(noChatWindow), CONNECT_PATIENCE_MS + timeoutMs + ANSWER_GRACE_MS)
       const settle = (result: CallResult) => {
         clearTimeout(timer)
         this.calls.delete(id)

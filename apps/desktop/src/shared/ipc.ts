@@ -10,6 +10,9 @@ import type { Appearance } from './appearance'
 // The bridge between the main process (host lifecycle, loopback HTTP, tray, windows)
 // and the renderer (stores and UI). Exposed as `window.codync` by the preload script.
 
+/** How long a window waits out a reconnect before its host call fails. */
+export const CONNECT_PATIENCE_MS = 20_000
+
 export type HostState =
   | { kind: 'missingBinary' }
   | { kind: 'notInstalled' }

@@ -5,12 +5,12 @@ import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
 import type { CallCue } from '@shared/calls'
+import { CONNECT_PATIENCE_MS } from '@shared/ipc'
 import { trNow } from '../lib/l10n.ts'
 
 const REFRESH_TIMEOUT = 20_000
 const DROP_GRACE = 5000
 const INITIAL_GRACE = 1000
-const ACTION_PATIENCE = 20_000
 const MISMATCH_RECHECK = 30_000
 /** The mismatch recheck while an update asked from here runs, so the notice leaves soon after. */
 const UPDATE_RECHECK = 5_000
@@ -414,7 +414,7 @@ export class BotSync extends BotMirror {
   }
 
   /** The client once the link is up. A reconnect in progress is waited out (headers show it). */
-  async ready(deadline = Date.now() + ACTION_PATIENCE): Promise<HostClient> {
+  async ready(deadline = Date.now() + CONNECT_PATIENCE_MS): Promise<HostClient> {
     let counted = false
     let retried = false
     this.resume()
@@ -464,7 +464,7 @@ export class BotSync extends BotMirror {
 
   /** Runs `op` once the link is up; with `replay`, a call the link dropped under is tried again. */
   protected async withLink<T>(op: (c: HostClient) => Promise<T>, replay = false): Promise<T> {
-    const deadline = Date.now() + ACTION_PATIENCE
+    const deadline = Date.now() + CONNECT_PATIENCE_MS
     for (;;) {
       const client = await this.ready(deadline)
       try {

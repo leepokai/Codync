@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -42,9 +43,9 @@ import kotlinx.coroutines.launch
  * leads back down. With `refresh`, a pull past the top runs it, its indicator at `indicatorTop`.
  */
 @Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
-    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null, onOpened: () -> Unit = {},
-    content: LazyListScope.() -> Unit) {
-    TrackScrollHitches(list, ScrollList.Chat)
+    refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null,
+    report: (PhonePerformance.Scroll) -> Unit = {}, onOpened: () -> Unit = {}, content: LazyListScope.() -> Unit) {
+    TrackScrollHitches(list, ScrollList.Chat, report)
     val bottom = padding.calculateBottomPadding()
     val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
     // Find's shown match: its row a third of the way down, leaving the newest message. Keyed on the row, not its index,
@@ -94,6 +95,7 @@ internal data class ConversationReveal(val id: String, val index: Int, val step:
     LaunchedEffect(Unit) {
         snapshotFlow { list.layoutInfo.totalItemsCount }.first { it > 0 }
         list.scrollToEnd(animated = false)
+        withFrameNanos { }
         onOpened()
     }
     // The working steps can grow without a new chat entry. Follow their measured size,

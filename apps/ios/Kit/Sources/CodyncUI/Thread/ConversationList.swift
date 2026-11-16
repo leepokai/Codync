@@ -37,6 +37,8 @@ struct ConversationList: View {
     var nearTop: (() -> Void)?
     /// Letting go of a full pull past the top: the force refresh, its indicator held until it returns.
     var refresh: (() async -> Void)?
+    let report: (PhonePerformance.Scroll) -> Void
+    var onOpened: () -> Void = {}
     @State private var pull = PullToRefresh()
     /// The safe area (under the bars, above the composer and the keyboard) and the whole screen.
     @State private var safeFrame = CGRect.zero
@@ -50,7 +52,8 @@ struct ConversationList: View {
             .ignoresSafeArea()
             // The list itself stays inside the safe area (so its rows never see one) and
             // reaches out past it.
-            ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh, pull: pull,
+            ConversationCollection(rows: rows, following: $following, reveal: reveal, nearTop: nearTop, refresh: refresh,
+                                   report: report, onOpened: onOpened, pull: pull,
                                    outsets: UIEdgeInsets(top: max(0, safeFrame.minY - fullFrame.minY), left: 0,
                                                          bottom: max(0, fullFrame.maxY - safeFrame.maxY), right: 0))
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { safeFrame = $0 }
@@ -70,11 +73,13 @@ private struct ConversationCollection: UIViewRepresentable {
     let reveal: ConversationReveal?
     let nearTop: (() -> Void)?
     let refresh: (() async -> Void)?
+    let report: @MainActor (PhonePerformance.Scroll) -> Void
+    let onOpened: @MainActor () -> Void
     let pull: PullToRefresh
     /// How far past its frame the list reaches: under the bars, the composer and the keyboard.
     let outsets: UIEdgeInsets
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(report: report) }
 
     func makeUIView(context: Context) -> ConversationContainer {
         let view = ConversationContainer(list: context.coordinator.makeView())
@@ -102,7 +107,11 @@ private struct ConversationCollection: UIViewRepresentable {
         private var lastReveal: ConversationReveal?
         private var lastOffset: CGFloat = 0
         private var reduceMotion = false
-        let meter = ScrollHitchMeter(.chat)
+        let meter: ScrollHitchMeter
+
+        init(report: @escaping @MainActor (PhonePerformance.Scroll) -> Void) {
+            meter = ScrollHitchMeter(.chat, report: report)
+        }
 
         func makeView() -> ConversationCollectionView {
             let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(80))
@@ -118,6 +127,7 @@ private struct ConversationCollection: UIViewRepresentable {
             view.keyboardDismissMode = .interactive
             view.allowsSelection = false
             view.delegate = self
+            view.onOpened = { [weak self] in self?.parent?.onOpened() }
             if #available(iOS 26, *) { view.topEdgeEffect.style = .soft }
             // Only the empty collection background; hosted rows arbitrate their own taps.
             let tap = UITapGestureRecognizer(target: view, action: #selector(ConversationCollectionView.dismissComposerKeyboard))

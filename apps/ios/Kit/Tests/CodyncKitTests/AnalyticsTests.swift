@@ -62,13 +62,6 @@ import Testing
     // Booleans and counts go out as JSON booleans and numbers, not strings.
     #expect(try json(.appOpened(notifications: .notAsked, widgets: 2)) == #"{"notifications":"not_asked","widgets":2}"#)
     #expect(try json(.appOpened()) == "{}")
-    // A chat's scroll says where it stopped and how far it moved after; the bot list's doesn't.
-    #expect(try json(.scrollHitches(.init(list: .chat, rows: 320, frames: 240, hitches: 3, longestMs: 58,
-                                          hitchMsPerSecond: 21, fps: 120, stop: .end, jump: 14)))
-        == #"{"fps":120,"frames":240,"hitch_ms_per_s":21,"hitches":3,"jump":14,"list":"chat","longest_ms":58,"rows":320,"stop":"end"}"#)
-    #expect(try json(.scrollHitches(.init(list: .bots, rows: 60, frames: 90, hitches: 0, longestMs: 9,
-                                          hitchMsPerSecond: 0, fps: 120)))
-        == #"{"fps":120,"frames":90,"hitch_ms_per_s":0,"hitches":0,"list":"bots","longest_ms":9,"rows":60}"#)
     #expect(try json(.notificationsAnswered(granted: false, source: .widgets)) == #"{"granted":false,"source":"widgets"}"#)
     #expect(try json(.settingChanged(.liveActivities, on: true)) == #"{"on":true,"setting":"live_activities"}"#)
     // Multi-word values are snake_case, as in the catalog.

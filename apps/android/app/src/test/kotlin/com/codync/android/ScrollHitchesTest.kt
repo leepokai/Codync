@@ -1,6 +1,5 @@
 package com.codync.android
 
-import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -49,16 +48,15 @@ class ScrollHitchesTest {
         assertNull(ScrollHitchAccumulator().event(300_000_000, ScrollList.Bots, 20))
     }
 
-    @Test fun `scroll event properties include chat stop and jump`() {
-        val event = AnalyticsEvent.ScrollHitches(ScrollList.Chat, 42, 120, 2, 50, 33, 60, ScrollStop.End, 18)
-        assertEquals("scroll_hitches", event.name)
-        assertEquals("""{"list":"chat","rows":42,"frames":120,"hitches":2,"longest_ms":50,"hitch_ms_per_s":33,"fps":60,"stop":"end","jump":18}""",
-            JsonObject(event.properties).toString())
+    @Test fun `scroll diagnostic includes chat stop and jump`() {
+        val scroll = PhonePerformance.Scroll(ScrollList.Chat, 42, 120, 2, 50, 33, 60, ScrollStop.End, 18)
+        assertEquals("""{"type":"scroll","platform":"android","list":"chat","rows":42,"frames":120,"hitches":2,"longestMs":50,"hitchMsPerS":33,"fps":60,"stop":"end","jump":18}""",
+            scroll.body().toString())
     }
 
-    @Test fun `bot scroll event omits chat only properties`() {
-        val event = AnalyticsEvent.ScrollHitches(ScrollList.Bots, 8, 90, 0, 17, 0, 90)
-        assertEquals("""{"list":"bots","rows":8,"frames":90,"hitches":0,"longest_ms":17,"hitch_ms_per_s":0,"fps":90}""",
-            JsonObject(event.properties).toString())
+    @Test fun `bot scroll diagnostic omits chat only properties`() {
+        val scroll = PhonePerformance.Scroll(ScrollList.Bots, 8, 90, 0, 17, 0, 90)
+        assertEquals("""{"type":"scroll","platform":"android","list":"bots","rows":8,"frames":90,"hitches":0,"longestMs":17,"hitchMsPerS":0,"fps":90}""",
+            scroll.body().toString())
     }
 }

@@ -3,9 +3,10 @@ import QuartzCore
 import SwiftUI
 
 extension View {
-    /// Reports how smoothly each of the reader's scrolls of this scroll view drew (`scroll_hitches`); `rows`: how many it holds.
-    public func scrollHitches(_ list: AnalyticsEvent.ScrollHitches.List, rows: Int) -> some View {
-        modifier(ScrollHitchTracking(list: list, rows: rows))
+    /// Reports how smoothly each of the reader's scrolls of this scroll view drew; `rows`: how many it holds.
+    public func scrollHitches(_ list: PhonePerformance.Scroll.List, rows: Int,
+                              report: @escaping @MainActor (PhonePerformance.Scroll) -> Void) -> some View {
+        modifier(ScrollHitchTracking(list: list, rows: rows, report: report))
     }
 }
 
@@ -13,8 +14,8 @@ private struct ScrollHitchTracking: ViewModifier {
     @State private var meter: ScrollHitchMeter
     let rows: Int
 
-    init(list: AnalyticsEvent.ScrollHitches.List, rows: Int) {
-        _meter = State(initialValue: ScrollHitchMeter(list))
+    init(list: PhonePerformance.Scroll.List, rows: Int, report: @escaping @MainActor (PhonePerformance.Scroll) -> Void) {
+        _meter = State(initialValue: ScrollHitchMeter(list, report: report))
         self.rows = rows
     }
 
@@ -32,15 +33,15 @@ private struct ScrollHitchTracking: ViewModifier {
     }
 }
 
-/// Times the frames of one of the reader's scrolls (`scroll_hitches`): from the drag until `tail` after the list comes
+/// Times the frames of one of the reader's scrolls: from the drag until `tail` after the list comes
 /// to rest, so a jump or second bounce at the stop counts too. A chat's `track` gives where the row on screen at rest
 /// now sits: how far it moves during the tail is the scroll's `jump`.
 @MainActor
 final class ScrollHitchMeter {
     static let tail: Duration = .milliseconds(300)
 
-    private let list: AnalyticsEvent.ScrollHitches.List
-    private let report: @MainActor (AnalyticsEvent.ScrollHitches) -> Void
+    private let list: PhonePerformance.Scroll.List
+    private let report: @MainActor (PhonePerformance.Scroll) -> Void
     private var link: CADisplayLink?
     private var frames = ScrollFrames()
     private var started: CFTimeInterval = 0
@@ -50,17 +51,9 @@ final class ScrollHitchMeter {
     private var restingAt: CGFloat?
     private var jump: CGFloat = 0
 
-    init(_ list: AnalyticsEvent.ScrollHitches.List,
-         report: @escaping @MainActor (AnalyticsEvent.ScrollHitches) -> Void = ScrollHitchMeter.send) {
+    init(_ list: PhonePerformance.Scroll.List, report: @escaping @MainActor (PhonePerformance.Scroll) -> Void) {
         self.list = list
         self.report = report
-    }
-
-    /// The simulator draws with the Mac's GPU, so its frames say nothing about a phone's: it sends nothing.
-    static func send(_ scroll: AnalyticsEvent.ScrollHitches) {
-        #if !targetEnvironment(simulator)
-        Analytics.shared.capture(.scrollHitches(scroll))
-        #endif
     }
 
     /// The reader started dragging: a new window, or the same one when it came during the last one's tail.
@@ -77,7 +70,7 @@ final class ScrollHitchMeter {
     }
 
     /// The list came to rest: the window closes and is reported after the tail.
-    func rest(rows: Int, stop: AnalyticsEvent.ScrollHitches.Stop? = nil, track: (() -> CGFloat?)? = nil) {
+    func rest(rows: Int, stop: PhonePerformance.Scroll.Stop? = nil, track: (() -> CGFloat?)? = nil) {
         guard link != nil, resting == nil else { return }
         self.track = track
         restingAt = track?()
@@ -103,7 +96,7 @@ final class ScrollHitchMeter {
         if let restingAt, let now = track?() { jump = max(jump, abs(now - restingAt)) }
     }
 
-    private func finish(rows: Int, stop: AnalyticsEvent.ScrollHitches.Stop?) {
+    private func finish(rows: Int, stop: PhonePerformance.Scroll.Stop?) {
         let seconds = CACurrentMediaTime() - started
         cancel()
         guard frames.count > 0 else { return }
@@ -130,11 +123,11 @@ struct ScrollFrames {
         }
     }
 
-    func event(_ list: AnalyticsEvent.ScrollHitches.List, rows: Int, seconds: TimeInterval,
-               stop: AnalyticsEvent.ScrollHitches.Stop?, jump: Int?) -> AnalyticsEvent.ScrollHitches {
-        AnalyticsEvent.ScrollHitches(list: list, rows: rows, frames: count, hitches: hitches,
+    func event(_ list: PhonePerformance.Scroll.List, rows: Int, seconds: TimeInterval,
+               stop: PhonePerformance.Scroll.Stop?, jump: Int?) -> PhonePerformance.Scroll {
+        PhonePerformance.Scroll(list: list, rows: rows, frames: count, hitches: hitches,
                                      longestMs: Int((longest * 1000).rounded()),
-                                     hitchMsPerSecond: seconds > 0 ? Int((late * 1000 / seconds).rounded()) : 0,
+                                     hitchMsPerS: seconds > 0 ? Int((late * 1000 / seconds).rounded()) : 0,
                                      fps: count > 0 ? Int((1 / shortestExpected).rounded()) : 0, stop: stop, jump: jump)
     }
 }

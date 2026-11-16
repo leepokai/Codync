@@ -76,6 +76,17 @@ extension BotStore {
         }
     }
 
+    /// Best-effort diagnostics never wait for a reconnect or surface a host error to the reader.
+    public func recordPerformance(_ measurement: PhonePerformance) {
+        #if !targetEnvironment(simulator)
+        guard let client = live else { return }
+        Task {
+            do { try await client.recordPerformance(measurement) }
+            catch { log.info("phone performance was not recorded: \(error.localizedDescription)") }
+        }
+        #endif
+    }
+
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }
     public func newSession(_ botId: String) { perform { try await $0.newSession(botId) } }
     /// A call's audio is on: the lead speaks first, on the call (an older host, which has no lead, never gets this).

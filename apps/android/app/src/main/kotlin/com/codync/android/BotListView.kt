@@ -99,7 +99,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
     var hidden by remember { mutableStateOf(RosterComputers.hidden(context)) }
     var collapsed by remember { mutableStateOf(RosterComputers.folded(context)) }
     val listState = rememberLazyListState()
-    TrackScrollHitches(listState, ScrollList.Bots)
+    TrackScrollHitches(listState, ScrollList.Bots) { scroll ->
+        accounts.stores.value.firstOrNull { it.id == app.currentComputerId }?.recordPerformance(scroll)
+    }
     val rosters = remember(app.contextId) { mutableMapOf<String, ComputerRoster>() }
     val shownIds = ComputerSelection(states.map { it.computer.id }, hidden).shown
     val shown = states.filter { it.computer.id in shownIds }

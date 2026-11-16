@@ -38,16 +38,16 @@ internal class ScrollHitchAccumulator {
         }
     }
 
-    fun event(durationNanos: Long, list: ScrollList, rows: Int, stop: ScrollStop? = null, jump: Int? = null): AnalyticsEvent.ScrollHitches? {
+    fun event(durationNanos: Long, list: ScrollList, rows: Int, stop: ScrollStop? = null, jump: Int? = null): PhonePerformance.Scroll? {
         if (frames == 0) return null
         val hitchMsPerS = (hitchExcessNanos / 1_000_000.0 / (durationNanos / 1_000_000_000.0)).roundToInt()
-        return AnalyticsEvent.ScrollHitches(list, rows, frames, hitches, (longestNanos / 1_000_000.0).roundToInt(), hitchMsPerS,
+        return PhonePerformance.Scroll(list, rows, frames, hitches, (longestNanos / 1_000_000.0).roundToInt(), hitchMsPerS,
             (1_000_000_000.0 / shortestExpectedNanos).roundToInt(), stop, jump)
     }
 }
 
 /** Measures only reader drags; another drag during the settling tail continues the same event. */
-@Composable internal fun TrackScrollHitches(list: LazyListState, kind: ScrollList) {
+@Composable internal fun TrackScrollHitches(list: LazyListState, kind: ScrollList, report: (PhonePerformance.Scroll) -> Unit) {
     // Emulator vsync says nothing about a physical phone's scrolling.
     if (Build.HARDWARE in listOf("ranchu", "goldfish")) return
     val view = LocalView.current
@@ -76,7 +76,8 @@ internal class ScrollHitchAccumulator {
                     override fun doFrame(frameTimeNanos: Long) {
                         if (!running) return
                         // The rate this frame was asked to run at: adaptive refresh changes it mid-scroll.
-                        val expectedNanos = 1_000_000_000.0 / view.display.refreshRate
+                        val refreshRate = view.display?.refreshRate ?: return
+                        val expectedNanos = 1_000_000_000.0 / refreshRate
                         previousFrame?.let { accumulator.add(frameTimeNanos - it, expectedNanos) }
                         previousFrame = frameTimeNanos
                         anchorKey?.let { key ->
@@ -114,8 +115,7 @@ internal class ScrollHitchAccumulator {
                     choreographer.removeFrameCallback(callback)
                 }
                 val jumpDp = if (kind == ScrollList.Chat) with(density) { jump.toDp().value.roundToInt() } else null
-                accumulator.event(System.nanoTime() - startedAt, kind, list.layoutInfo.totalItemsCount, stop, jumpDp)
-                    ?.let(Analytics::capture)
+                accumulator.event(System.nanoTime() - startedAt, kind, list.layoutInfo.totalItemsCount, stop, jumpDp)?.let(report)
             }
         }
     }

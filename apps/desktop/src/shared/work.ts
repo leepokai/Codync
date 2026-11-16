@@ -286,14 +286,35 @@ function isPendingCard(e: Entry): boolean {
   return (e.kind === 'permission' || !!e.data.decision) && e.data.status === 'pending'
 }
 
-/** What each item that needs the user is asked, by item id: what its task's card waiting in the chat says (an
- * approval's title, a choice's question, which agent to sign in to). */
+/** A sign-in card that holds messages: signing in there is what sends them again. */
+function holdsMessages(e: Entry): boolean {
+  const held = e.data.connectionRequest?.entryIds
+  return Array.isArray(held) && held.length > 0
+}
+
+/** The card each item that needs the user waits on in the chat, by item id: its task's newest pending one, or, when
+ * that is a sign-in and another (the agent the turn left signed out, while its fallback was too) holds the item's
+ * message, that one, whose sign-in sends it again. */
+export function pendingCards(entries: Entry[]): Map<string, Entry> {
+  const newest = new Map<string, Entry>()
+  const holding = new Map<string, Entry>()
+  for (const e of entries) {
+    const item = e.data.item
+    if (!item || !isPendingCard(e)) continue
+    newest.set(item, e)
+    if (holdsMessages(e)) holding.set(item, e)
+  }
+  return new Map([...newest].map(([item, e]) => [item, (e.data.connectionRequest && holding.get(item)) || e]))
+}
+
+/** What each item that needs the user is asked, by item id: what its card waiting in the chat (`pendingCards`) says
+ * (an approval's title, a choice's question, which agent to sign in to). */
 export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string> {
   const ask = (e: Entry) => {
     const request = e.data.connectionRequest
     return request ? fill(tr('Needs {agent} sign-in'), { agent: String(request.title ?? '') }) : (e.data.title ?? e.data.question ?? '')
   }
-  return new Map(entries.flatMap((e) => (isPendingCard(e) && e.data.item ? [[e.data.item, ask(e)] as const] : [])))
+  return new Map([...pendingCards(entries)].map(([item, e]) => [item, ask(e)]))
 }
 
 /** A task's entry its thread shows as the chat's message bubble: a final reply (text, a file, an artifact card), as

@@ -7,7 +7,8 @@ replaced). While `<name>.refusal` exists, every prompt answers `refusal` with th
 `_meta["codebuddy.ai/errorMessage"]`, the way CodeBuddy's CLI reports an error (an empty file: a plain refusal).
 While `<name>.errored` exists, every prompt ends the way pi-acp (0.0.33, 0.0.34) ends a turn whose model request
 failed: `end_turn` with no reply, with pi's error only in the notification Codync's pi extension sends.
-Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; every request goes to `<name>.jsonl` in its folder."""
+Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; every request goes to `<name>.jsonl` in its folder.
+While `<name>.nostart` exists, it quits as it starts, saying it needs signing in."""
 
 import json
 import os
@@ -16,6 +17,8 @@ import time
 
 STARTED = time.time()
 NAME = sys.argv[1]
+if os.path.exists(f"{NAME}.nostart"):
+    sys.exit("Error: Authentication required")
 LIMIT = {
     "code": -32603,
     "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",

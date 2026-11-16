@@ -163,8 +163,9 @@ impl Actor {
         {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
-        // An agent that can't resume keeps its session; its next new session gets the new tools.
-        if std::mem::take(&mut self.tools_changed)
+        // A stale process starts again and resumes its session. One that can't resume keeps its process and session:
+        // its next new session gets the new tools.
+        if std::mem::take(&mut self.restart_before_turn)
             && self.conn.as_ref().is_some_and(|c| c.sessions.reopen.is_some())
             && let Some(c) = self.conn.take()
         {

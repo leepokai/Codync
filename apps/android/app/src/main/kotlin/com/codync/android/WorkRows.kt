@@ -38,6 +38,7 @@ import com.codync.android.core.fill
 import com.codync.android.core.givesWay
 import com.codync.android.core.workActions
 import com.codync.android.design.*
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -47,12 +48,22 @@ import kotlinx.serialization.json.contentOrNull
 
 /**
  * The card a needs-you [item] waits on, among its bot's chat [entries]: the newest pending approval, choice or agent
- * sign-in card that names it (`data.item`) or its task (`data.task.id`).
+ * sign-in card that names it (`data.item`) or its task (`data.task.id`), or, when that is a sign-in and another (the
+ * agent the turn left signed out, while its fallback was too) holds the item's message, that one, whose sign-in sends
+ * it again.
  */
-internal fun pendingCard(entries: List<Entry>, item: WorkItem): Entry? = entries.lastOrNull { entry ->
-    entry.waitsForUser &&
-        (entry.data.string("item") == item.id || item.task != null && (entry.data["task"] as? JsonObject)?.string("id") == item.task)
+internal fun pendingCard(entries: List<Entry>, item: WorkItem): Entry? {
+    val cards = entries.filter { entry ->
+        entry.waitsForUser &&
+            (entry.data.string("item") == item.id || item.task != null && (entry.data["task"] as? JsonObject)?.string("id") == item.task)
+    }
+    val newest = cards.lastOrNull() ?: return null
+    return if (newest.data["connectionRequest"] !is JsonObject) newest else cards.lastOrNull { it.holdsMessages } ?: newest
 }
+
+/** A sign-in card that holds messages: signing in there is what sends them again. */
+private val Entry.holdsMessages: Boolean
+    get() = ((data["connectionRequest"] as? JsonObject)?.get("entryIds") as? JsonArray)?.isNotEmpty() == true
 
 /** A card waiting in the chat for the user: an approval, a choice, or a sign-in an agent needs. */
 private val Entry.waitsForUser: Boolean get() = when (val request = data["connectionRequest"] as? JsonObject) {

@@ -12,8 +12,10 @@ import com.codync.android.core.WorkItem
 import com.codync.android.core.WorkSource
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.WorkWait
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -180,6 +182,17 @@ class WorkWordsTest {
         assertEquals("signIn", pendingCard(entries + signIn("signIn"), asking)?.id)
         assertEquals("old", pendingCard(entries + signIn("signedIn", "ready"), asking)?.id)
         assertEquals("Needs Kimi Code sign-in", cardLine(signIn("s"), english))
+        // The turn left Kimi Code signed out, and its fallback was too: Kimi Code's card holds the item's message.
+        fun holding(id: String, agent: String, held: List<String>) = Entry(id, 1, "b", 1, "notice", data = buildJsonObject {
+            put("item", asking.id)
+            putJsonObject("connectionRequest") {
+                put("kind", "agent"); put("status", "pending"); put("title", agent)
+                putJsonArray("entryIds") { held.forEach { add(it) } }
+            }
+        })
+        assertEquals("kimi", pendingCard(entries + holding("kimi", "Kimi Code", listOf("m9")) + holding("codex", "Codex", emptyList()), asking)?.id)
+        // An approval newer than the holding sign-in is what the running turn waits on.
+        assertEquals("approval", pendingCard(entries + holding("kimi", "Kimi Code", listOf("m9")) + card("approval", item = asking.id), asking)?.id)
         assertTrue(choice("c").data.let { !Entry("x", 1, "b", 1, "agent", data = it).fromTask })
         assertTrue(card("t", task = "task-1").fromTask)
     }

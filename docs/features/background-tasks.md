@@ -254,11 +254,20 @@ computer's, so the chat and every task skip a resting login together.
   message to the chat it was written in; only the chat's own expire after a day), and the item goes on in its
   session. A message that went out again at once (a process older than the turn) keeps the item going too. A task
   whose item was stopped or went back to the box gets nothing sent; its Stop ends the wait, and the task.
+- **A sign-in keeps the session.** A refused sign-in starts a new agent process before the next turn (the old one
+  holds the old credentials), as it does for the chat: an agent that can reopen its session goes on in it
+  (`restart_before_turn`), so a task keeps its fork or brief and what it did; one that can't starts a new session,
+  told the conversation so far as after a move to another agent (`owe_recap`; a task's, the chat it comes from too).
+  With no process left (it quit, or the new one couldn't start), the next turn starts one and reopens the session,
+  as after any exit.
 - **The usage gate looks past a resting agent.** The dispatcher's "near its usage limit" reads the agent a new task
   would start on (`fallback::starting`: the first step that isn't resting), not only the bot's own.
 
 The apps show the item line on the sign-in card and on the failure, and a needs-you row reads the card's ask
-(`Needs <agent> sign-in`) and opens the chat at the card, as for an approval. In the item's
+(`Needs <agent> sign-in`) and opens the chat at the card, as for an approval. When the turn left its agent signed
+out and a fallback was signed out too, there are two cards: the row names, and opens, the one that holds the item's
+message (`connectionRequest.entryIds`), whose sign-in is what sends the work again; an approval or choice newer than
+it comes first, as what the running turn waits on. In the item's
 [thread](#talking-to-a-thread) the sign-in card is one quiet line beside that transcript line, as the card stands
 (`Needs <agent> sign-in`, then `Signed in` or `Cancelled`), which opens the chat at the card; the failure that offers
 **Add a fallback** has no line there, since the transcript holds the failure itself.

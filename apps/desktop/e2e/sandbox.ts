@@ -13,7 +13,7 @@ const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
 // A scripted agent that puts items in its box and is the task that works them (host/tests/fixtures/task_agent.py).
-const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
+export const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 

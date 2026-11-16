@@ -361,11 +361,19 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
             try card("e4", #"{"status":"pending","title":"not a card","item":"i4"}"#, kind: "notice"),
             try card("e7", #"{"item":"i7","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b"}}"#, kind: "notice"),
             try card("e8", #"{"item":"i8","connectionRequest":{"kind":"agent","status":"ready","title":"Codex","botId":"b"}}"#, kind: "notice"),
+            // The turn left Kimi Code signed out, and its fallback was too: Kimi Code's card holds the item's message.
+            try card("e9", #"{"item":"i9","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b","entryIds":["m9"]}}"#, kind: "notice"),
+            try card("e10", #"{"item":"i9","connectionRequest":{"kind":"agent","status":"pending","title":"Codex","botId":"b","entryIds":[]}}"#, kind: "notice"),
+            // A sign-in that holds the item's message, then an approval its running turn now waits on.
+            try card("e11", #"{"item":"i11","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b","entryIds":["m11"]}}"#, kind: "notice"),
+            try card("e12", #"{"status":"pending","title":"npm run build","item":"i11"}"#),
         ]
         // An approval's title, a choice's question, the agent a sign-in waits on.
         #expect(chat.card(for: item("i1", .needsYou))?.ask == "npm test")
         #expect(chat.card(for: item("i5", .needsYou))?.ask == "Which branch?")
         #expect(chat.card(for: item("i7", .needsYou))?.ask == "Needs Kimi Code sign-in")
+        #expect(chat.card(for: item("i9", .needsYou))?.id == "e9", "the card whose sign-in sends the work again")
+        #expect(chat.card(for: item("i11", .needsYou))?.id == "e12", "the approval the running turn waits on")
         for id in ["i2", "i4", "i6", "i8"] { #expect(chat.card(for: item(id, .needsYou)) == nil) }
     }
 

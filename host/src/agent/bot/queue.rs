@@ -19,7 +19,7 @@ impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
             Cmd::RefreshTools => {
-                self.tools_changed = true;
+                self.restart_before_turn = true;
             }
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
@@ -120,7 +120,7 @@ impl Actor {
                     || cfg.model != self.cfg.model
                     || cfg.model_options != self.cfg.model_options
                     || (memory_changed && !resumes);
-                self.tools_changed |= cfg.connectors != self.cfg.connectors
+                self.restart_before_turn |= cfg.connectors != self.cfg.connectors
                     || cfg.computer != self.cfg.computer
                     || cfg.manage_team != self.cfg.manage_team
                     || memory_changed;

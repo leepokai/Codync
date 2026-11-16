@@ -95,6 +95,8 @@ host answers and sends it once the host is up.
 | `conversation_find_opened` | host `track` (desktop, TUI), iOS, Android | The find bar opens in a conversation (desktop ⌘F, the phones' magnifying glass, the terminal's `/` or ^f) | — |
 | `conversation_find_searched` | host `track` (desktop, TUI), iOS, Android | A search in the find bar settles, at most once per searched text: typing paused (desktop and phones), a step to another match, or the bar closing (phones and terminal) | `found` (whether anything matched; never the text searched for) |
 | `quote_opened` | host `track` (desktop, TUI), iOS, Android | A quote at the top of a message (a reply's, or a bot's `reply_to`) is tapped, clicked or (terminal) opened with `q` to bring the quoted message into view | `found` (whether that message was among the loaded ones; never its id or text) |
+| `reply_swiped` | iOS, Android | A message dragged sideways past the threshold and let go, which starts a reply to it (Reply from the message's menu sends nothing) | — |
+| `scroll_hitches` | iOS, Android | One of the reader's scrolls of the bot list or a chat, measured from the drag until 300 ms after it comes to rest (so a jump or second bounce at the stop counts); not sent when no frame was drawn. Read per `list` and `$os` on real devices: `avg(hitch_ms_per_s)`, `sum(hitches)` and the longest `longest_ms` per `app_version` compare releases | `list` (`bots`/`chat`), `rows` (rows loaded), `frames`, `hitches` (frames that took over one and a half frame intervals), `longest_ms` (the longest frame), `hitch_ms_per_s` (time those frames ran late, per second of the scroll: under 5 feels smooth, over 10 is visible), `fps` (the display's top rate: 60, 90 or 120); a chat also `stop` (`top`/`end`/`middle`: where it came to rest) and `jump` (how far the row on screen at rest moved by itself in those 300 ms, in points/dp; rows loading in above don't count). Never text, names or ids |
 | `bot_created` | host | `createBot` | `kind` (`bot`/`group`), `agent`, `model` or `members` (count) |
 | `bots_imported` | host | `importBots` (bots it makes send no `bot_created`) | `source` (`grok-bot`/`openbot`/`other`), `bots`, `groups` (counts) |
 | `bot_updated` | host | `updateBot` | `fields`: the settings that changed, as the bot config's own camelCase keys (`model`, `permission`, `pinned`, `section`, `modelOptions`, `fastMode`, …), never their values; when the edit changes `compaction`, also `compaction`: the kind picked (`early`/`nearLimit`/`off`/`tokens`, never the size) |
@@ -210,6 +212,22 @@ The *Onboarding & conversion* dashboard in PostHog reads these steps, each per `
 - **Star**: `star_prompt_answered` with `starred` ÷ all `star_prompt_answered`, per `ask`.
 - **Website**: `$pageview` → `download_clicked` (per `platform`) → the first `app_opened` that day
   (counts only, no link between a visitor and an install).
+
+## Scroll smoothness
+
+`scroll_hitches` per release, list and phone (SQL insight; add `AND person.properties.email = '…'` or
+`distinct_id = '…'` for one person's phone; the simulator and emulators send none):
+
+```sql
+SELECT properties.app_version AS version, properties.$os AS os, properties.list AS list,
+       count() AS scrolls, round(avg(properties.hitch_ms_per_s), 1) AS hitch_ms_per_s,
+       sum(properties.hitches) AS hitches, max(properties.longest_ms) AS longest_ms,
+       countIf(properties.jump > 2) AS stops_that_moved, any(properties.fps) AS fps
+FROM events
+WHERE event = 'scroll_hitches' AND timestamp > now() - INTERVAL 14 DAY
+GROUP BY version, os, list
+ORDER BY version DESC, os, list
+```
 
 ## Website
 

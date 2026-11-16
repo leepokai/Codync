@@ -72,6 +72,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case quoteOpened(found: Bool)
     /// Something from another app's share sheet handed to a bot, or why it wasn't; never names or content.
     case shareSent(ShareSent)
+    /// How smoothly one of the reader's scrolls of the bot list or a chat drew, from the drag to just after it came to rest.
+    case scrollHitches(ScrollHitches)
 
     public enum Notifications: String, Sendable { case allowed, denied, notAsked = "not_asked" }
     public enum OnboardingStep: String, Sendable { case welcome, choose, install, scan }
@@ -116,6 +118,35 @@ public enum AnalyticsEvent: Equatable, Sendable {
             self.files = files
             self.text = text
             self.recent = recent
+        }
+    }
+    /// One scroll's frames: how many, how many were late (a hitch: longer than one and a half frame intervals), the
+    /// longest in ms and the late time per second (Apple's hitch-time ratio). A chat also says where it came to rest and how
+    /// far its rows moved by themselves after that (a jump or second bounce at the stop), in points.
+    public struct ScrollHitches: Equatable, Sendable {
+        public enum List: String, Sendable { case bots, chat }
+        public enum Stop: String, Sendable { case top, end, middle }
+        public let list: List
+        public let rows: Int
+        public let frames: Int
+        public let hitches: Int
+        public let longestMs: Int
+        public let hitchMsPerSecond: Int
+        public let fps: Int
+        public let stop: Stop?
+        public let jump: Int?
+
+        public init(list: List, rows: Int, frames: Int, hitches: Int, longestMs: Int, hitchMsPerSecond: Int, fps: Int,
+                    stop: Stop? = nil, jump: Int? = nil) {
+            self.list = list
+            self.rows = rows
+            self.frames = frames
+            self.hitches = hitches
+            self.longestMs = longestMs
+            self.hitchMsPerSecond = hitchMsPerSecond
+            self.fps = fps
+            self.stop = stop
+            self.jump = jump
         }
     }
     public enum VoiceEngine: String, Sendable { case onDevice = "on_device", openai, gemini, cloud }
@@ -275,6 +306,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .conversationFindSearched: "conversation_find_searched"
         case .quoteOpened: "quote_opened"
         case .shareSent: "share_sent"
+        case .scrollHitches: "scroll_hitches"
         }
     }
 
@@ -335,6 +367,14 @@ public enum AnalyticsEvent: Equatable, Sendable {
             var p: [String: Analytics.Value] = ["outcome": .string(share.outcome.rawValue), "files": .int(share.files),
                                                 "text": .bool(share.text), "recent": .bool(share.recent)]
             p["error"] = share.error.map { .string($0.rawValue) }
+            return p
+        case let .scrollHitches(scroll):
+            var p: [String: Analytics.Value] = ["list": .string(scroll.list.rawValue), "rows": .int(scroll.rows),
+                                                "frames": .int(scroll.frames), "hitches": .int(scroll.hitches),
+                                                "longest_ms": .int(scroll.longestMs), "hitch_ms_per_s": .int(scroll.hitchMsPerSecond),
+                                                "fps": .int(scroll.fps)]
+            p["stop"] = scroll.stop.map { .string($0.rawValue) }
+            p["jump"] = scroll.jump.map(Analytics.Value.int)
             return p
         }
     }

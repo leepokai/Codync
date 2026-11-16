@@ -107,12 +107,12 @@ computer is online, so play starts at once: one fetch per card, shared by that p
 tap (a tap during it shows the spinner and plays when the bytes arrive); a failed preload
 stays silent and the tap fetches again. The preload also reads the sound's length off those
 bytes' headers alone (desktop `preload = 'metadata'`, iOS `AVAudioPlayer` never prepared,
-Android `MediaMetadataRetriever`), so the bar and `0:00 / 0:04` show before the first play and
-stay after a failure; until then, and for a sound not preloaded, the caption shows its size.
-On a phone on an expensive or metered network (iOS: also before the network's first report)
-only a sound under 2 MiB preloads; a bigger one is fetched on the tap. While a sound loads its
-button shows a spinner; once its length is known its caption reads elapsed / total time over a
-progress bar, the elapsed half written in the
+Android `MediaMetadataRetriever`), so the bar and `0:00 / 0:04` show before the first play (a
+failed play keeps that length for its bar, its caption the failure); until then, and for a
+sound not preloaded, the caption shows its size. On a phone on an expensive or metered network
+(iOS: also before the network's first report) only a sound under 2 MiB preloads; a bigger one
+is fetched on the tap. While a sound loads its button shows a spinner; once its length is
+known its caption reads elapsed / total time over a progress bar, the elapsed half written in the
 length's shape (`00:05 / 12:00`, `0:00:05 / 1:02:00`) so the caption keeps one width and the
 bar's end stays put as it plays. The play glyph is the outline in every state: on desktop
 hover lays a soft round chip behind it (press deepens it), on the phones a press does, and

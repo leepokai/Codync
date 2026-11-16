@@ -234,10 +234,13 @@ device would connect to OpenAI with a credential only that server issued). Each 
 `voiceStatus` it reads (`callServer.<provider>`: the call settings, dictation, and the start of a call), and while it is
 one of the user's own, that engine is in Speech mode on the device whatever mode was picked: the Mode row reads
 **Speech** with "Your own server works in Speech mode only.", and calls use Speech. The picked mode (`callMode.<provider>`)
-is left as it was and comes back with OpenAI; other engines keep theirs. A device that hasn't read the status since the
+is left as it was and comes back with OpenAI; other engines keep theirs. A `server` other than the one the device kept
+drops the models picked for the one before (`callModel`, `callSpeechToText`, `callSpeechModel`) and its cached list
+(`callModels`), so a name only one server knows never goes to the other. A device that hasn't read the status since the
 server was saved starts one Realtime call, which says to use Speech mode. An empty address goes back to OpenAI without
 a check and deletes the key saved with the server, and the defaults go back to OpenAI's: a key only the server took
-never holds the address and never goes to OpenAI, and the user adds an OpenAI key again. The section's footer
+never holds the address and never goes to OpenAI, and the user adds an OpenAI key again (the Server row's footnote
+says so, and the section shows no key at once). The section's footer
 ("billed by OpenAI") and the call bar still name the engine, OpenAI: the Server row is where the address shows.
 
 **Google Search** is an opt-in switch shown only for Gemini in Realtime mode on desktop, iPhone and Android.

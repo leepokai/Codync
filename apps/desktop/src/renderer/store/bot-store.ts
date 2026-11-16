@@ -17,6 +17,7 @@ import {
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
 import { localEntryId } from '@shared/tasks'
+import { pendingCards } from '@shared/work'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -50,6 +51,9 @@ export interface ThreadRef {
 }
 
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
+
+/** How many older pages opening an item's card loads to find it, like the iPhone. */
+const CARD_PAGES = 5
 
 /**
  * One computer's mirror (bots, transcripts), kept by one events stream (catch-up since
@@ -644,6 +648,17 @@ export class BotStore extends BotSync {
       for (const e of older) this.upsert(e)
       this.changed()
     } catch {}
+  }
+
+  /** The card waiting in the bot's chat for item `itemId` (`pendingCards`: the one its row reads), older pages loaded
+   * until it is there (`CARD_PAGES` at most). */
+  async cardOf(botId: string, itemId: string): Promise<Entry | undefined> {
+    let found = pendingCards(this.allEntries(botId)).get(itemId)
+    for (let page = 0; !found && page < CARD_PAGES && this.canLoadOlder(botId); page++) {
+      await this.loadOlder(botId)
+      found = pendingCards(this.allEntries(botId)).get(itemId)
+    }
+    return found
   }
 
   setSelection(id: string | null) {

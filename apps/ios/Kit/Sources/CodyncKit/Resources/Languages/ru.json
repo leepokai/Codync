@@ -2111,7 +2111,7 @@
   "Couldn't open the link.": "Не удалось открыть ссылку.",
   "Server": "Сервер",
   "Your own server works in Speech mode only.": "Собственный сервер работает только в режиме «Речь».",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "Совместимый с OpenAI сервер для режима «Речь»: https или http на этом компьютере. Пустое поле — OpenAI.",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.": "Совместимый с OpenAI сервер для режима «Речь»: https или http на этом компьютере. Пустое поле — OpenAI, сохранённый ключ удаляется.",
   "Select Text": "Выбрать текст",
   "Later": "Позже",
   "{count} waiting": "Ожидает: {count}",

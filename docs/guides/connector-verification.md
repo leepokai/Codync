@@ -32,8 +32,10 @@ invalidates pending sign-ins and refreshes, and checks the new endpoint's sign-i
 requirements using only the newly supplied headers. Even changing away and back
 requires fresh sign-in. When the endpoint revision changes, an existing proxy on
 streamable HTTP sends its next request to the edited endpoint without the old HTTP
-session, and one on the older SSE transport refuses further requests, so an old SSE
-posting URL or HTTP session never receives the replacement credentials. A fresh tool
+session (a new server that needs a session refuses it, and the proxy says to restart
+its tools rather than trying the older transport), and one on the older SSE transport
+refuses further requests, so an old SSE posting URL or HTTP session never receives the
+replacement credentials. A fresh tool
 process uses the edited endpoint. HTTPS is required except for parsed loopback HTTP hosts;
 URLs with user information or fragments and invalid headers are refused.
 

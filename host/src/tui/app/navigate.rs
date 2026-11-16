@@ -173,7 +173,7 @@ impl App {
     pub(super) fn pick_key(&mut self, k: KeyEvent) -> bool {
         let Some(id) = self.selected.clone() else { return false };
         let picked = self.pick.as_ref().and_then(|p| self.lane(&id).into_iter().find(|e| &e.id == p).cloned());
-        // A picked card waiting for an answer: its own keys answer it (`answered`).
+        // A picked card waiting for an answer: its own keys answer it (`to_answer`).
         if picked.as_ref().is_some_and(Entry::pending) && matches!(k.code, KeyCode::Char('1'..='9')) {
             return false;
         }

@@ -73,7 +73,8 @@ struct Remote {
     port: u16,
     token: String,
     connector: String,
-    // Sessions and legacy posting endpoints belong to the first connection this proxy used.
+    // Sessions and legacy posting endpoints belong to the first connection this proxy used: the one the agent
+    // initialized against.
     endpoint: std::sync::Mutex<Option<Connection>>,
 }
 
@@ -114,22 +115,32 @@ impl Endpoint {
     }
 }
 
-/// Where to send, the headers to send, and (a cloud computer) the keeper's grant the URL is under.
-type Target = (String, reqwest::header::HeaderMap, Option<String>);
+/// Where to send, as the host says now.
+struct Target {
+    url: String,
+    headers: reqwest::header::HeaderMap,
+    /// On a cloud computer: the keeper's grant the URL is under.
+    base: Option<String>,
+    /// The user edited the connection since this proxy first used it (`Edited::Adopt` only).
+    moved: bool,
+}
+
+/// What a request the edited connection can't carry answers.
+const SETTINGS_CHANGED: &str = "The connector connection settings changed. Restart its tools before continuing.";
 
 /// What a request does when the user edited the connector's connection since this proxy first used it.
 #[derive(Clone, Copy, PartialEq)]
 enum Edited {
-    /// Streamable HTTP asks the host where to send every time: it goes there, without the old server's session.
+    /// Streamable HTTP asks the host where to send every time: it goes there, without the old server's session (a
+    /// server that needs one refuses it, and the user restarts the tools).
     Adopt,
     /// The older transport posts to an endpoint the old server named: never with the new credentials.
     Refuse,
 }
 
 impl Remote {
-    /// The connector's URL and headers, with a fresh sign-in token (`stale` forces a refresh), and whether the
-    /// connection changed since the last request (`Edited::Adopt` only).
-    async fn target(&self, stale: bool, edited: Edited) -> Result<(Target, bool)> {
+    /// The connector's URL and headers, with a fresh sign-in token (`stale` forces a refresh).
+    async fn target(&self, stale: bool, edited: Edited) -> Result<Target> {
         let res = crate::http()
             .post(format!("http://127.0.0.1:{}/api/connectorTarget", self.port))
             .bearer_auth(&self.token)
@@ -148,12 +159,12 @@ impl Remote {
         };
         let connection = Connection { url: text("connectorUrl")?, revision: text("authRevision")? };
         let moved = {
-            let mut endpoint = self.endpoint.locked();
-            let moved = endpoint.as_ref().is_some_and(|original| *original != connection);
+            let mut first = self.endpoint.locked();
+            let moved = first.as_ref().is_some_and(|first| *first != connection);
             if moved && edited == Edited::Refuse {
-                anyhow::bail!("The connector connection settings changed. Restart its tools before continuing.");
+                anyhow::bail!(SETTINGS_CHANGED);
             }
-            *endpoint = Some(connection);
+            first.get_or_insert(connection);
             moved
         };
         let mut headers = reqwest::header::HeaderMap::new();
@@ -164,17 +175,17 @@ impl Remote {
             );
         }
         let base = target["base"].as_str().map(str::to_owned);
-        Ok(((target["url"].as_str().unwrap_or_default().to_owned(), headers, base), moved))
+        Ok(Target { url: target["url"].as_str().unwrap_or_default().to_owned(), headers, base, moved })
     }
 
     /// Sends one message over streamable HTTP; returns what the server answered (JSON, or
     /// the events of an SSE stream). None: the server doesn't speak streamable HTTP.
     async fn forward(&self, msg: &Value, session: &mut Option<String>) -> Result<Option<Vec<Value>>> {
         for stale in [false, true] {
-            let ((url, headers, _), moved) = self.target(stale, Edited::Adopt).await?;
+            let Target { url, headers, moved, .. } = self.target(stale, Edited::Adopt).await?;
             if moved {
-                // ponytail: a server that needs its session sees no `initialize` from this agent; replay the agent's
-                // own one here if such servers strand bots after an edit.
+                // ponytail: the new server never saw this agent's `initialize`, so one that needs a session refuses
+                // (below); replay the agent's own one here if restarting the tools after an edit proves too blunt.
                 *session = None;
             }
             let mut req = crate::http()
@@ -195,8 +206,12 @@ impl Remote {
                 *session = None;
                 continue;
             }
-            // The spec's test for an older server: its first POST fails with one of these.
+            // The spec's test for an older server: its first POST fails with one of these. After an edit, it is
+            // the new server asking for a session this agent never opened there.
             if session.is_none() && matches!(res.status().as_u16(), 400 | 404 | 405) {
+                if moved {
+                    anyhow::bail!(SETTINGS_CHANGED);
+                }
                 return Ok(None);
             }
             if let Some(s) = res.headers().get("mcp-session-id").and_then(|v| v.to_str().ok()) {
@@ -230,7 +245,7 @@ impl Remote {
     /// (sent to `tx`); returns the URL messages are posted to and the task reading the stream.
     async fn open_legacy(&self, tx: mpsc::UnboundedSender<Value>) -> Result<(Endpoint, tokio::task::JoinHandle<()>)> {
         for stale in [false, true] {
-            let ((url, headers, base), _) = self.target(stale, Edited::Adopt).await?;
+            let Target { url, headers, base, .. } = self.target(stale, Edited::Adopt).await?;
             let res = crate::http()
                 .get(&url)
                 .headers(headers)
@@ -275,7 +290,7 @@ impl Remote {
     /// a server that answers in the body is heard too.
     async fn post_legacy(&self, endpoint: &Endpoint, msg: &Value) -> Result<Vec<Value>> {
         for stale in [false, true] {
-            let ((_, headers, base), _) = self.target(stale, Edited::Refuse).await?;
+            let Target { headers, base, .. } = self.target(stale, Edited::Refuse).await?;
             let endpoint = endpoint.url(base.as_deref())?;
             let res = crate::http()
                 .post(&endpoint)

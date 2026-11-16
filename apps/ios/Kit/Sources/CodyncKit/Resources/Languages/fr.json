@@ -2111,7 +2111,7 @@
   "Couldn't open the link.": "Impossible d’ouvrir le lien.",
   "Server": "Serveur",
   "Your own server works in Speech mode only.": "Votre propre serveur ne fonctionne qu'en mode Parole.",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "Un serveur compatible OpenAI pour le mode Parole : https, ou http sur cet ordinateur. Vide : OpenAI.",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.": "Un serveur compatible OpenAI pour le mode Parole : https, ou http sur cet ordinateur. Vide : OpenAI, et la clé enregistrée est supprimée.",
   "Select Text": "Sélectionner le texte",
   "Later": "Plus tard",
   "{count} waiting": "{count} en attente",

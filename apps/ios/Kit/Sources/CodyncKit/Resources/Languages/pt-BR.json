@@ -2111,7 +2111,7 @@
   "Couldn't open the link.": "Não foi possível abrir o link.",
   "Server": "Servidor",
   "Your own server works in Speech mode only.": "Seu próprio servidor só funciona no modo Fala.",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "Um servidor compatível com a OpenAI para o modo Fala: https, ou http neste computador. Vazio usa a OpenAI.",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.": "Um servidor compatível com a OpenAI para o modo Fala: https, ou http neste computador. Vazio usa a OpenAI e remove a chave salva.",
   "Select Text": "Selecionar texto",
   "Later": "Mais tarde",
   "{count} waiting": "{count} aguardando",

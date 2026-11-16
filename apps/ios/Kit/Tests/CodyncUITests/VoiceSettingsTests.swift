@@ -98,3 +98,22 @@ import Testing
     #expect(VoiceStatus.serverLabel("") == "api.openai.com")
     #expect(VoiceStatus.serverLabel("http://127.0.0.1:8890") == "http://127.0.0.1:8890")
 }
+
+/// Another server has other models: the ones picked for the server before go, and the same server keeps them.
+@Test @MainActor func anotherServerDropsTheModelsPickedForTheOneBefore() throws {
+    let p = VoiceProvider.openAI
+    let keys = [VoiceSettings.serverKey(p), VoiceSettings.speechKey(p), VoiceSettings.modelsKey(p)]
+    let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+    defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+    let status = { (server: String) in
+        try JSONDecoder().decode(VoiceStatus.self, from: Data(#"{"providers":[{"provider":"openai","configured":true,"server":"\#(server)"}]}"#.utf8))
+    }
+    VoiceSettings.remember(try status(""))
+    UserDefaults.standard.set("tts-9", forKey: VoiceSettings.speechKey(p))
+    UserDefaults.standard.set(Data("{}".utf8), forKey: VoiceSettings.modelsKey(p))
+    VoiceSettings.remember(try status(""))
+    #expect(VoiceSettings.speechModel(p) == "tts-9")
+    VoiceSettings.remember(try status("http://127.0.0.1:8890"))
+    #expect(VoiceSettings.speechModel(p) == VoiceSettings.defaults(p).speech)
+    #expect(UserDefaults.standard.object(forKey: VoiceSettings.modelsKey(p)) == nil)
+}

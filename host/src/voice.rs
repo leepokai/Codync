@@ -318,7 +318,7 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
         transcribe: newest(p, &entries, &transcribe).unwrap_or(fallback.transcribe),
         speech: newest(p, &entries, &speech).unwrap_or(fallback.speech),
     };
-    if access.upstream == Upstream::Compatible {
+    let (realtime, transcribe, speech) = if access.upstream == Upstream::Compatible {
         // A server of the user's own names its models as it likes (`whisper-large-v3`, `kokoro`): any of them can
         // do either Speech job, the first by default where the names don't say. It has no Realtime.
         let all: Vec<String> = entries.into_iter().map(|m| m.id).collect();
@@ -330,9 +330,10 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
                 defaults.speech.clone_from(first);
             }
         }
-        store.kv_set(&defaults_key(p), &serde_json::to_string(&defaults)?)?;
-        return Ok(json!({"models": [], "transcribe": all, "speech": all, "defaults": defaults}));
-    }
+        (Vec::new(), all.clone(), all)
+    } else {
+        (realtime, transcribe, speech)
+    };
     store.kv_set(&defaults_key(p), &serde_json::to_string(&defaults)?)?;
     Ok(json!({"models": realtime, "transcribe": transcribe, "speech": speech, "defaults": defaults}))
 }

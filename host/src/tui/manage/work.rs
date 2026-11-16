@@ -7,8 +7,7 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use super::super::app::Source;
 use super::super::app::{
-    After, App, Background, Confirm, ConfirmAct, Entry, Focus, Overlay, Sections, WorkItem, WorkStatus, can_cut_in,
-    places,
+    After, App, Background, Confirm, ConfirmAct, Focus, Overlay, Sections, WorkItem, WorkStatus, can_cut_in, places,
 };
 use super::super::l10n::tr;
 use super::DetailsPage;
@@ -223,8 +222,7 @@ impl App {
             self.chat_page = true;
             self.focus = Focus::Chat;
             self.chat_scroll = 0;
-            let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
-            self.pick = self.lane(bot).into_iter().rev().find(waits).map(|e| e.id.clone());
+            self.pick = self.card_of(bot, item).map(|e| e.id.clone());
             return None;
         }
         self.overlays.push(page);

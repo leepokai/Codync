@@ -75,7 +75,7 @@ pub(super) fn rule_form(buf: &mut Buffer, body: Rect, n: &NetworkSheet, form: &R
     y += 1;
     wrapped(buf, body, &mut y, &tr(level_detail(LEVELS[form.access])), t.secondary);
     y += 1;
-    wrapped(buf, body, &mut y, &tr(FOOTER), t.secondary);
+    wrapped(buf, body, &mut y, &tr(footer(n)), t.secondary);
     "↵ add · tab next field · ←→ change · esc back"
 }
 

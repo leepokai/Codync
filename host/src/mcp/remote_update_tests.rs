@@ -64,3 +64,47 @@ async fn a_running_proxy_follows_an_edit_without_the_old_session_but_never_to_a_
     server.abort();
     let _ = server.await;
 }
+
+#[tokio::test]
+async fn a_server_that_needs_its_session_asks_for_a_restart_after_an_edit() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let url = format!("http://{address}/mcp");
+    let target = Arc::new(Mutex::new(json!({"url":url,"connectorUrl":url,"headers":{},"authRevision":"before"})));
+    let read_target = target.clone();
+    // As the SDKs' stateful servers do: a request without the session `initialize` opened is a bad request.
+    let stateful = |headers: HeaderMap| async move {
+        if headers.contains_key("mcp-session-id") {
+            (axum::http::StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":1,"result":{}})))
+        } else {
+            (axum::http::StatusCode::BAD_REQUEST, Json(json!({"error":"No valid session ID provided"})))
+        }
+    };
+    let app = Router::new()
+        .route(
+            "/api/connectorTarget",
+            routing::post(move || {
+                let value = read_target.lock().unwrap().clone();
+                async { Json(value) }
+            }),
+        )
+        .route("/mcp", routing::post(stateful));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let remote = Remote {
+        port: address.port(),
+        token: "fixture".into(),
+        connector: "remote".into(),
+        endpoint: Mutex::new(None),
+    };
+    let message = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
+    let mut session = Some("opened".to_owned());
+    remote.forward(&message, &mut session).await.unwrap();
+    *target.lock().unwrap() =
+        json!({"url":url,"connectorUrl":url,"headers":{"X-Key":"new-key"},"authRevision":"after"});
+    // Not taken for the older transport: it says what to do, every time until the tools restart.
+    for _ in 0..2 {
+        assert_eq!(remote.forward(&message, &mut session).await.unwrap_err().to_string(), SETTINGS_CHANGED);
+    }
+    server.abort();
+    let _ = server.await;
+}

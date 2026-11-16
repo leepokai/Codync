@@ -6,7 +6,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
-import com.codync.android.core.Entry
 import com.codync.android.core.WorkItem
 import com.codync.android.core.workSections
 import com.codync.android.design.*
@@ -16,13 +15,13 @@ import com.codync.android.design.*
  * between), top to bottom, empty sections left out: Threads (while an item is live or waiting: the agent sessions that
  * run now, of the most allowed, a faint row per place not in use), Event box (what waits for a thread, numbered in the
  * order it will be taken), Later (its follow-ups), Routines, Dev servers and Recent (items ended in the last day). A row
- * opens its item's thread (`openThread`); one that needs the user goes to its card in the chat (`openCard`, or `openCardOf`
- * with the item for the chat to find it). `routineId`: open on that routine's editor.
+ * opens its item's thread (`openThread`); one that needs the user goes to its card in the chat (`openCard`; null: its
+ * thread too). `routineId`: open on that routine's editor.
  */
-@Composable internal fun WorkTimeline(bot: Bot, state: AppState, store: AppStore, routineId: String?, openCard: (Entry) -> Unit,
-    openCardOf: ((WorkItem) -> Unit)?, openThread: (WorkItem) -> Unit) {
+@Composable internal fun WorkTimeline(bot: Bot, state: AppState, store: AppStore, routineId: String?, openCard: ((WorkItem) -> Unit)?,
+    openThread: (WorkItem) -> Unit) {
     val work = workSections(bot.work, bot.maxAgents)
-    WorkRowsHost(bot, state, store, openCard, openThread, openCardOf) { rows ->
+    WorkRowsHost(bot, state, store, openCard, openThread) { rows ->
         /** [items]' rows under [title] and what its heading carries ([count]); [numbered]: each row's turn; then a row per place [free]. */
         @Composable fun Section(title: String, items: List<WorkItem>, count: String? = null, numbered: Boolean = false, free: Int = 0) {
             if (items.isEmpty() && free == 0) return

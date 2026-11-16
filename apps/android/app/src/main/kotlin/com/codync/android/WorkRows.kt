@@ -84,12 +84,11 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
 /**
  * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions and the Stop and
  * Cut in dialogs. [content] places the rows: its `rows(items, numbered)` adds one per item to a card, [numbered] with
- * its turn in the mark's place. A row that needs the user goes to its card in the chat: [openCard] over that chat,
- * where the card is at hand, else [openCardOf] with the item, for the chat to find it. Any other row of an item a task
- * has or had opens its thread ([openThread]).
+ * its turn in the mark's place. A row that needs the user goes to its card in the chat ([openCard], which finds it there;
+ * null where that chat isn't at hand). Any other row of an item a task has or had opens its thread ([openThread]).
  */
-@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openThread: (WorkItem) -> Unit,
-    openCardOf: ((WorkItem) -> Unit)? = null, content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
+@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: ((WorkItem) -> Unit)?, openThread: (WorkItem) -> Unit,
+    content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
     // A change reaches the computer one at a time, and only while it's there.
     val enabled = state.actualConnection is LinkState.Ready && workKey(bot.id) !in state.busy
     val chat = state.entries.filter { it.botId == bot.id }
@@ -107,8 +106,7 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
         for ((index, item) in items.withIndex()) row {
             val card = if (item.status == WorkStatus.NeedsYou) pendingCard(chat, item) else null
             val open: (() -> Unit)? = when {
-                item.status == WorkStatus.NeedsYou && openCardOf != null -> { { openCardOf(item) } }
-                card != null -> { { openCard(card) } }
+                item.status == WorkStatus.NeedsYou && openCard != null -> { { openCard(item) } }
                 else -> item.task?.let { { openThread(item) } }
             }
             WorkRow(item, cardLine(card, translator()) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open, state.home,

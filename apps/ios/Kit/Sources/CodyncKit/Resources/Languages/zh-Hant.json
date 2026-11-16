@@ -2111,7 +2111,7 @@
   "Couldn't open the link.": "無法開啟連結。",
   "Server": "伺服器",
   "Your own server works in Speech mode only.": "自己的伺服器只能用語音識別模式。",
-  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.": "與 OpenAI 相容的伺服器，用於語音識別模式：需為 https，或這台電腦上的 http。留空則使用 OpenAI。",
+  "An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.": "與 OpenAI 相容的伺服器，用於語音識別模式：需為 https，或這台電腦上的 http。留空則使用 OpenAI，並刪除已儲存的金鑰。",
   "Select Text": "選取文字",
   "Later": "之後",
   "{count} waiting": "{count} 等待中",

@@ -109,7 +109,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.right", size = 12.dp, tint = Palette.tertiary)
         }
-        WorkRowsHost(bot, state, store, openCard = {}, openThread = openThread, openCardOf = openCard) { rows ->
+        WorkRowsHost(bot, state, store, openCard, openThread) { rows ->
             CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) { CardSection { rows(work.threads, false); rows(work.box, true) } }
         }
     }

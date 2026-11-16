@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Span;
 
-use super::super::app::{App, Background, Bot, Entry, Source, WorkItem, WorkStatus, word};
+use super::super::app::{App, Background, Bot, Source, WorkItem, WorkStatus, word};
 use super::super::l10n::{fill, tr};
 use super::super::manage::{CutIn, DetailRow, giving_way};
 use super::super::md::{self, truncate, width as w};
@@ -70,18 +70,10 @@ pub(super) fn standing(item: &WorkItem) -> String {
     if time.is_empty() { status.into_owned() } else { format!("{status} · {time}") }
 }
 
-/// What the card of `item` waiting in `bot`'s chat asks (an approval's title, a choice's question, the agent a sign-in
-/// waits on): the newest one, or, when that is a sign-in and another (the agent the turn left signed out, while its
-/// fallback was too) holds the item's message, that one, whose sign-in sends it again.
+/// What the card of `item` waiting in `bot`'s chat (`App::card_of`) asks: an approval's title, a choice's question, the
+/// agent a sign-in waits on.
 fn asks(app: &App, bot: &str, item: &WorkItem) -> Option<String> {
-    let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
-    let cards: Vec<&Entry> = app.entries.get(bot)?.values().filter(waits).collect();
-    let newest = *cards.last()?;
-    let card = if newest.waits_for_sign_in() {
-        cards.into_iter().rfind(|e| e.holds_messages()).unwrap_or(newest)
-    } else {
-        newest
-    };
+    let card = app.card_of(bot, item)?;
     if let Some(agent) = card.data["connectionRequest"]["title"].as_str() {
         return Some(fill(&tr("Needs {agent} sign-in"), &[("agent", agent)]));
     }

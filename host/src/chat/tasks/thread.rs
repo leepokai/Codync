@@ -104,8 +104,9 @@ fn reopen(hub: &Hub, owner: &BotConfig, item: &mut Item, task: &mut BotConfig) -
     item.started_at = Some(now_ms());
     item.ended_at = None;
     item.failure = None;
-    // ponytail: a worktree being looked over this very moment (its item just ended) may still go; the task then
-    // fails to start in it and says so. Hold the look until no message can come if that ever shows.
+    // A worktree being looked over (`Settling`: its item just ended) is in use again too, which the look then leaves.
+    // ponytail: that look may still remove an untouched one; the task then fails to start in it and says so. Hold
+    // the look until no message can come if that ever shows.
     if let Some(kept) = item.worktree.as_mut().filter(|w| worktree::usable(w)) {
         kept.left = worktree::Left::InUse;
     } else if !Path::new(&task.cwd).is_dir() {

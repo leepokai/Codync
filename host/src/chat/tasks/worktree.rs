@@ -40,8 +40,9 @@ pub enum Left {
     /// Its task still works in it, or work that follows will.
     #[default]
     InUse,
-    /// Its item is over and it is being looked over (`settle_then`): no work starts in it until that says kept or
-    /// removed. A host that stopped meanwhile left it kept (`unsettled`).
+    /// Its item is over and it is being looked over (`settle_then`): work tried again waits until that says kept or
+    /// removed; a message to the item's thread takes it back (`InUse`). A host that stopped meanwhile left it kept
+    /// (`unsettled`).
     Settling,
     /// It has changes or commits of its own: it stays, with its branch.
     Kept,
@@ -149,9 +150,10 @@ fn ours(worktree: &Worktree) -> bool {
     inside && named && Path::new(&worktree.cwd).strip_prefix(path).is_ok_and(plain)
 }
 
-/// Whether `worktree` is still there to work in.
+/// Whether `worktree` is still there to work in (one being looked over too: `dispatch` holds work back until that
+/// is done).
 pub fn usable(worktree: &Worktree) -> bool {
-    matches!(worktree.left, Left::InUse | Left::Kept) && ours(worktree) && Path::new(&worktree.cwd).is_dir()
+    worktree.left != Left::Removed && ours(worktree) && Path::new(&worktree.cwd).is_dir()
 }
 
 /// Makes a worktree of the repository `workspace` is in, for `item` of `bot`, from the workspace's HEAD.
@@ -438,7 +440,7 @@ mod tests {
         assert!(Path::new(&dirty.cwd).join("new.txt").exists() && Path::new(&committed.path).exists());
         assert_eq!(branches(&repo).await, "codync/docs\ncodync/fix-login-2", "the untouched one's branch went too");
         assert!(usable(&dirty) && !usable(&Worktree { left: Left::Removed, ..clean.clone() }));
-        assert!(!usable(&Worktree { left: Left::Settling, ..dirty.clone() }), "nothing starts while it is looked over");
+        assert!(usable(&Worktree { left: Left::Settling, ..dirty.clone() }), "a reopened item takes it back");
 
         // A record that points elsewhere is left alone, whatever is there.
         let foreign = Worktree { path: web.clone(), cwd: web.clone(), ..clean };

@@ -113,8 +113,9 @@ advance the same grant, but intervening edits cannot supply its readiness result
 URL changes require explicit replacement headers,
 and clear the old OAuth grant. URL or header changes advance the revision and
 invalidate pending sign-ins; a running proxy moves to the edited connection without
-the old server's session (one on the older SSE transport stops instead).
-On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it, and the edit fails with "this computer's keeper is out of date: update Codync on this computer first": saved without the revision, that keeper's live grants could carry the new secret to the old URL.
+the old server's session (one on the older SSE transport stops instead, and so does one
+whose new server needs a session: both say to restart the connector's tools).
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it. It still gets the revision already saved, without the field, as it always did (another connector saved, a 1Password reference resolved), but an edit to a new revision fails with "this computer's keeper is out of date: update Codync on this computer first": saved without the revision, that keeper's live grants could carry the new secret to the old URL.
 
 See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
 Registry connectors are still refused.

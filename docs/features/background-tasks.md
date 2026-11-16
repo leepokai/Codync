@@ -394,7 +394,8 @@ of the bot's own items that starts **while another task of the bot is working** 
   An item the user stopped is looked over once its task's turn has ended; it reports nothing.
 - An item that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
   item's worktree is being looked over (`Left::Settling`) the item tried again waits; the look notes kept or removed
-  and runs the dispatcher again.
+  and runs the dispatcher again. A message to the item's thread meanwhile takes the worktree back as in use, which
+  the look then leaves as it is.
 - **Codync never merges, rebases, resets, forces or deletes a branch that has work on it**, and never touches a
   worktree it didn't make: what a box says is checked first (the folder is `~/.codync/worktrees/<id>/<id>`, the
   branch `codync/…`). Git runs with an argument list, never through a shell, each command for at most a minute.

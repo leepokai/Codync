@@ -132,11 +132,17 @@ enum VoiceSettings {
     }
 
     /// Keeps what the computer says of each provider: its newest models become the defaults, and its server
-    /// decides the mode.
+    /// decides the mode. Another server has other models: the ones picked, and the list, for the one before go.
     static func remember(_ status: VoiceStatus) {
         for entry in status.providers {
-            remember(entry.defaults, for: entry.provider)
-            UserDefaults.standard.set(entry.server, forKey: serverKey(entry.provider))
+            let p = entry.provider
+            if (UserDefaults.standard.string(forKey: serverKey(p)) ?? "") != (entry.server ?? "") {
+                for key in [modelKey(p), transcribeKey(p), speechKey(p), modelsKey(p)] {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            }
+            remember(entry.defaults, for: p)
+            UserDefaults.standard.set(entry.server, forKey: serverKey(p))
         }
     }
 

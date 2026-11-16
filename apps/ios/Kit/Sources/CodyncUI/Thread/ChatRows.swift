@@ -33,6 +33,7 @@ struct ChatRow: View {
                 UserBubble(entry: entry, reply: reply, selectText: selectText, openQuote: openQuote)
                 ReactionsRow(entry: entry)
             }
+            .swipeToReply(.left, margin: 56, reply: reply)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
             .padding(.top, groupStart ? 12 : 4)
@@ -43,6 +44,7 @@ struct ChatRow: View {
                 ReactionsRow(entry: entry)
                     .padding(.leading, chat?.isGroup == true ? 34 : 0)
             }
+            .swipeToReply(.right, margin: 40, reply: reply)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.botReactions)
             .padding(.top, groupStart ? 12 : 4)
@@ -153,7 +155,6 @@ struct UserBubble: View {
             if !(entry.data.text ?? "").isEmpty || entry.data.replyTo != nil { text }
                 status
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 56)
     }
 
@@ -245,7 +246,6 @@ struct AgentBubble: View {
             }
             TaskLine(data: entry.data).padding(.leading, 4)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)
     }
 

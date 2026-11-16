@@ -223,7 +223,7 @@ pub fn render(store: &Store, cfg: &BotConfig) -> String {
         crate::agent::fallback::name(&cfg.backend)
     };
     lines.push(format!(
-        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on, with no new session or clear for the user to start, so don't suggest starting over."
+        "Environment: you run inside Codync. The user talks to you through Codync (its phone, desktop or terminal app), not in {engine}'s own CLI, IDE or app. The engine Codync runs you on is {engine}: where your base instructions describe its CLI, terminal, slash commands or keyboard shortcuts, they describe that engine, not where the user is, so don't point the user to them. A chat in Codync is one conversation that goes on; where Codync offers New session in the bot's menu (^k in the terminal UI), the user can pick it to start over with a fresh context, and the chat stays."
     ));
     lines.push(String::new());
     lines.push(format!("Messages: {}", crate::chat::outbox::instructions()));

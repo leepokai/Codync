@@ -22,16 +22,18 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。
 - 聽寫中按「傳送」會等說的話轉成文字再一起送出。
 - 等待核准的卡片會算在 Bot 的未讀數字裡（琥珀色），直到你回覆為止。
+- 長按 Bot 選「新會話」，讓智慧體從新的上下文開始，聊天記錄會保留。
 
 ### en-US
-- Bots, routines and other bots' requests work in the background.
+- Bots, routines and bot requests work in the background.
 - The Work button lists background work.
 - Approval cards stay in the badge, amber, until answered.
 - Background work can ask or send files.
-- Details: Threads, Event box (First, Cut in, Drop).
+- Details: Threads, Event box.
 - Settings: Agents at once, Worktree per agent.
 - On a fallback, the Agent card says why.
-- Fallbacks: ⋯ has Edit.
-- `/` also lists the agent's own commands.
+- Fallbacks have Edit.
+- `/` lists the agent's commands.
 - Network rules gain Auto and Ask.
 - Send while dictating keeps your words.
+- Hold a bot for New session: a fresh context.

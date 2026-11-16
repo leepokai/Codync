@@ -14,32 +14,41 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.codync.android.core.HeldRosterHost
+import com.codync.android.core.HostConnector
+import com.codync.android.core.LinkState
+import com.codync.android.core.Pairing
+import java.util.Base64
 import java.util.UUID
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** The app's real channel: an open's first milestones and a real scroll reach the host. */
+/**
+ * The app's real store and channel against a real host, which logs what the phone sends: an open's first
+ * milestones and a real scroll land in its `phone-performance.jsonl`. Driven by `host/tests/phone_performance_e2e.rs`,
+ * which passes the host's pairing link, base64url-encoded, as the `pairing` instrumentation argument; skipped without it.
+ */
 class PhonePerformanceDeliveryTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun anOpenAndAScrollReachTheHost() {
-        val host = HeldRosterHost()
+        val encoded = InstrumentationRegistry.getArguments().getString("pairing")
+        assumeTrue("needs a host's pairing link", encoded != null)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val local = LocalStore(context, "performance-delivery-" + UUID.randomUUID())
-        val store = AppStore(context.applicationContext as Application, local, host.computer, "local", 0,
+        val link = String(Base64.getUrlDecoder().decode(encoded))
+        val pairing = Pairing.parse(link, BuildConfig.URL_SCHEME).withoutRelay
+        val computer = runBlocking { HostConnector.pair(pairing, local.identity(), "Performance test", null) }.computer
+        val store = AppStore(context.applicationContext as Application, local, computer, "local", 0,
             SupervisorJob(), {}, {})
         // Emulators skip delivery unless a test asks; the host here is this test's own.
         deliverFromEmulator = true
+        var scrolled = false
         compose.setContent { Hosted {
             val list = rememberLazyListState()
-            TrackScrollHitches(list, ScrollList.Bots) { store.recordPerformance(it) }
+            TrackScrollHitches(list, ScrollList.Bots) { store.recordPerformance(it); scrolled = true }
             LazyColumn(Modifier.fillMaxSize().testTag("bot-list"), state = list) {
                 items(30) { Text("Bot $it", Modifier.height(56.dp)) }
             }
@@ -51,28 +60,16 @@ class PhonePerformanceDeliveryTest {
                 store.openTiming.beginCold()
                 store.setForeground(true)
             }
-            compose.waitUntil(10_000) { host.openTimings().size == 2 }
-            assertEquals(listOf("link_ready", "hello"), host.openTimings().map { it.phase() })
-
+            compose.waitUntil(20_000) { store.state.value.actualConnection is LinkState.Ready }
             compose.onNodeWithTag("bot-list").performTouchInput { swipeUp() }
-            compose.waitUntil(10_000) { host.measurements("scroll").isNotEmpty() }
-            val scroll = host.measurements("scroll").single()
-            assertEquals("bots", scroll.getValue("list").jsonPrimitive.content)
-            assertEquals(30, scroll.getValue("rows").jsonPrimitive.content.toInt())
-            assertTrue(scroll.getValue("frames").jsonPrimitive.content.toInt() > 0)
+            compose.waitUntil(10_000) { scrolled }
+            // Delivery is fire-and-forget: let the sends reach the host, which checks its log once this test ends.
+            Thread.sleep(500)
         } finally {
             deliverFromEmulator = false
             compose.runOnUiThread { store.setForeground(false) }
             runBlocking { store.retire(unregister = false) }
             local.erase()
-            host.close()
         }
     }
-
-    private fun HeldRosterHost.measurements(type: String) =
-        performances.filter { it["type"]?.jsonPrimitive?.content == type }
-
-    private fun HeldRosterHost.openTimings() = measurements("open_timing")
-
-    private fun JsonObject.phase() = getValue("phase").jsonPrimitive.content
 }

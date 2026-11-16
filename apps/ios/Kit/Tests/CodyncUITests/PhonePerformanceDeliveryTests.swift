@@ -4,11 +4,12 @@ import Testing
 @testable import CodyncUI
 
 /// The real iPhone store and channel against a real host, which logs what the phone sends: an open's
-/// first milestones land in its `phone-performance.jsonl`. Driven by `host/tests/phone_performance_e2e.rs`,
-/// which runs only when asked. `TEST_RUNNER_CODYNC_PERFORMANCE_DIR=<dir>` holds the host's pairing URL,
-/// and `TEST_RUNNER_CODYNC_RECORD_PERFORMANCE=1` lets the simulator send.
+/// first milestones and a scroll's frames, timed by the app's own meter, land in its `phone-performance.jsonl`.
+/// Driven by `host/tests/phone_performance_e2e.rs`, which runs only when asked.
+/// `TEST_RUNNER_CODYNC_PERFORMANCE_DIR=<dir>` holds the host's pairing URL, and
+/// `TEST_RUNNER_CODYNC_RECORD_PERFORMANCE=1` lets the simulator send.
 @MainActor @Test(.enabled(if: performanceDir != nil), .timeLimit(.minutes(5)))
-func aPhoneOpenSendsItsTimingToTheHost() async throws {
+func aPhoneOpenAndScrollSendTheirTimingToTheHost() async throws {
     let dir = try #require(performanceDir)
     let (storage, suite) = context()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -28,8 +29,12 @@ func aPhoneOpenSendsItsTimingToTheHost() async throws {
     store.setActive(true)
     defer { store.retire() }
     #expect(await wait { store.caughtUp && store.connection == .online })
-    // Delivery is fire-and-forget: let the sends reach the host before the test ends.
-    try await Task.sleep(for: .milliseconds(500))
+    let meter = ScrollHitchMeter(.bots) { store.recordPerformance(.scroll($0)) }
+    meter.begin()
+    try await Task.sleep(for: .milliseconds(200))
+    meter.rest(rows: 30)
+    // The meter reports `tail` after the rest; delivery is fire-and-forget: let the sends reach the host.
+    try await Task.sleep(for: ScrollHitchMeter.tail + .milliseconds(700))
 }
 
 private let performanceDir = ProcessInfo.processInfo.environment["CODYNC_PERFORMANCE_DIR"].map(URL.init(fileURLWithPath:))

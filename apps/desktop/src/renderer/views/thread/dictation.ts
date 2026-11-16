@@ -119,8 +119,14 @@ export class Dictation extends Observable {
   finish(done?: () => void) {
     this.byShortcut = false
     if (this.recording) return void this.transcribe(this.recording, done)
+    // Still transcribing: `done` waits for it too, so a second Send doesn't go before the words.
+    if (this.transcribing) {
+      if (done) this.done = done
+      return
+    }
     if (!this.off) return done?.()
-    this.done = done ?? null
+    // A finish without `done` (another tab, the pill's stop) keeps a Send already waiting for the last words.
+    if (done) this.done = done
     this.listening = false
     this.level = 0
     this.changed()

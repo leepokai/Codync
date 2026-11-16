@@ -79,8 +79,12 @@ pill's stop turns the pill into "Transcribing…" and the whole recording goes t
 box when it arrives (typing goes on while it records). The recording goes in 20 s pieces (one
 channel message each on the iPhone; under the host's 2 MB request body on the desktop), three at a
 time, joined in order; a tail under half a second stays with the piece before, and the first piece
-that fails fails the dictation. Under half a second of audio in all is dropped. Sending a message,
-starting a call or switching chats drops a dictation still recording or transcribing. The
+that fails fails the dictation. Under half a second of audio in all is dropped. Send while dictating
+with a provider finishes it first (`finish` with a completion on every client) and sends the typed
+and dictated text as one message once the transcript is in; a failed transcription sends nothing and
+leaves the box. (On device, the desktop's Send waits for the helper's last words; the phones send
+what was recognized so far, as the pill's stop does.)
+Starting a call or switching chats drops a dictation still recording or transcribing. The
 recording's length counts toward the provider's minutes this month. The island's mic stays
 on-device (its window doesn't reach the host).
 

@@ -214,7 +214,7 @@ struct Composer: View {
     /// listens or transcribes, the recording pill.
     private var micButton: some View {
         Group {
-            if dictation.listening || dictation.transcribing {
+            if dictation.busy {
                 RecordingPill(dictation: dictation, height: buttonSize)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
             } else {
@@ -240,7 +240,7 @@ struct Composer: View {
                 .transition(.opacity)
             }
         }
-        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.listening || dictation.transcribing)
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.busy)
         .codyncSheet(isPresented: $dictation.needsKey) { VoiceChatSettingsView() }
         .codyncDialog("Couldn't dictate", isPresented: Binding(get: { dictation.failure != nil }, set: { if !$0 { dictation.failure = nil } }),
                       message: dictation.failure, cancel: "OK") { [] }
@@ -393,10 +393,14 @@ struct Composer: View {
     }
 
     private func submit() {
-        // Words still on their way would land in the emptied box.
+        // Sent once the words still on their way are in the box, with what was typed.
+        if dictation.busy { return dictation.finish(then: submit) }
+        // A start still waiting (key check, permission) never opens the microphone after the send.
         dictation.stop()
         if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
+        // The store's copy follows the box a view update late: a transcript just put in is not in it yet.
+        model.setComposerDraft(draft, for: draftKey)
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
             guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo,
                                           files: files) else { return }

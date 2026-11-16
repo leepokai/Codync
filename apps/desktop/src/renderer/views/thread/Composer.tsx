@@ -23,7 +23,7 @@ import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
 import { mentionSuggestions, returnMentions, withMention } from './mentions'
 import { builtInCommand, returnRuns, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
-import { useVoiceShortcut } from './voice-shortcut-keys'
+import { useSubmitAfterRender, useVoiceShortcut } from './voice-shortcut-keys'
 
 type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 
@@ -160,8 +160,8 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const submit = () => {
     const command = files.length ? null : builtInCommand(bot, draft, members)
     if (!command && !canSend) return
-    // Words still on their way would land in the emptied box (and the shortcut's tap would send them again).
-    dictation.cancel()
+    // Sent once the words still on their way are in the box, with what was typed.
+    if (dictation.busy) return dictation.finish(submitLater)
     if (command) return run(command)
     store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
     cancelReply?.()
@@ -170,7 +170,8 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     setFiles([])
     field.current?.focus()
   }
-  useVoiceShortcut(dictation, draft, submit, () => field.current?.focus())
+  const submitLater = useSubmitAfterRender(submit)
+  useVoiceShortcut(dictation, draft, submitLater, () => field.current?.focus())
 
   const trailing: Trailing = onInterrupt && !draft && !files.length ? 'interrupt' : working && !draft && !files.length ? 'stop' : onCall && !draft && !files.length ? 'call' : 'send'
   const [symbol, label] = ({

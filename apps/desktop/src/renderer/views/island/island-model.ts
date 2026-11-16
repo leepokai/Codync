@@ -160,6 +160,8 @@ export class IslandModel extends Observable {
   send() {
     const bot = this.messageBot
     if (!bot || !this.draft.trim()) return
+    // Sent once the words still on their way are in the field, with what was typed.
+    if (this.dictation.busy) return this.dictation.finish(() => this.send())
     window.codync.island.send(bot.ref, this.draft)
     this.close()
   }

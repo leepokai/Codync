@@ -20,15 +20,17 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 備援的 ⋯ 選單新增「編輯」，順序不變。
 - 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
 - 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。
+- 聽寫中按「傳送」會等說的話轉成文字再一起送出。
 
 ### en-US
 - Bots do long work in the background and keep answering.
 - Routines and other bots' requests run there too.
-- The bot list's Work button shows all background work.
-- Background work can ask, or send a file, in the chat.
+- The bot list's Work button shows it all.
+- Background work can ask or send files.
 - Details: Threads (running), Event box (waiting: First, Cut in, Drop).
 - Settings: Agents at once, Worktree per agent.
 - On a fallback, the Agent card says why.
 - Fallbacks: ⋯ has Edit.
 - `/` also lists the agent's own commands.
-- Network rules gain Auto and Ask levels.
+- Network rules gain Auto and Ask.
+- Send while dictating keeps your words.

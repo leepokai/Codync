@@ -206,12 +206,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
       <VStack gap={12} className="routine-editor-footer">
         {previewError !== null ? (
           <button className="press routine-retry" disabled={store.isOffline} onClick={() => void checkSchedule()}>
-            Check schedule again
+            {tr('Check schedule again')}
           </button>
         ) : null}
         {!loaded && error !== null ? (
           <button className="press routine-retry" onClick={() => void loadSchedule()}>
-            Retry loading schedule
+            {tr('Retry loading schedule')}
           </button>
         ) : null}
         {schedule.kind !== 'cron' && previewError ? <Text size="caption" tone="danger">{previewError}</Text> : null}

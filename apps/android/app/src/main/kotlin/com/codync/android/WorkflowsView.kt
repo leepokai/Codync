@@ -111,7 +111,7 @@ private sealed class WorkflowPage {
     val pinned = remember(pinRevision, state.workflows) { WorkflowPins.load(context, state.computer.id).toSet() }
     LaunchedEffect(state.actualConnection, state.offersWorkflows) {
         if (state.actualConnection is LinkState.Ready && state.offersWorkflows) {
-            try { store.refreshWorkflows(); loadError = null }
+            try { store.refreshOpenWorkflows(); loadError = null }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { loadError = error.message }
         }

@@ -154,12 +154,17 @@ internal fun AppStore.receiveWorkflows(events: List<MirrorEvent>) {
         }
     }
     if (notes.any { it.change != "deleted" }) {
-        mutableState.update { it.copy(workflowTick = it.workflowTick + 1) }
-        contextScope.launch {
-            try { refreshWorkflows() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { }
-        }
+        refreshOpenWorkflows()
+    }
+}
+
+/** Reconnects and live workflow events both reload summaries and whatever detail or run the phone has open. */
+internal fun AppStore.refreshOpenWorkflows() {
+    mutableState.update { it.copy(workflowTick = it.workflowTick + 1) }
+    contextScope.launch {
+        try { refreshWorkflows() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { }
     }
 }
 

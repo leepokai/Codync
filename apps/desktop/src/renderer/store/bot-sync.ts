@@ -1,7 +1,7 @@
 import { isChat, unseen, type AccessRequest, type CloudStatus, type Entry, type Hello, type PairingRequest } from '@shared/models'
 import { isOutsideLoadedWindow, snapshotFloors } from '@shared/mirror-window'
 import { HostClient, HostError, type HostEvent } from '../client/host-client'
-import { fetchWorkflow, fetchWorkflowRun, listWorkflows } from '../views/workflows/api'
+import { fetchWorkflow, fetchWorkflowRun, listWorkflows, workflowRuns } from '../views/workflows/api'
 import { undoOnFailure } from '../lib/undo-on-failure'
 import { BotMirror, type Connection } from './bot-mirror'
 import { Artifacts } from './artifacts'
@@ -246,7 +246,7 @@ export class BotSync extends BotMirror {
     if (this.retired || loop !== this.eventsLoop || epoch !== this.iconsEpoch) return
     this.iconsRevision = -1
     this.hello = h
-    if (h.workflows === true) void this.loadWorkflowSummaries()
+    if (h.workflows === true) void this.reloadWorkflowMirror()
     else this.workflows = []
     this.applyIcons(h.icons ?? {}, h.iconsRevision)
     this.noteSyncStamp(syncStamp(h))
@@ -284,7 +284,7 @@ export class BotSync extends BotMirror {
         this.screen = event.screen
         this.network = event.network
         if (this.hello) this.hello = { ...this.hello, workflows: event.workflows }
-        if (event.workflows) void this.loadWorkflowSummaries()
+        if (event.workflows) void this.reloadWorkflowMirror()
         else this.workflows = []
         if (event.rev < this.rev) this.rev = 0
         this.floors = snapshotFloors(this.entries, this.rev === 0 ? 0 : this.requestedSince)
@@ -395,6 +395,26 @@ export class BotSync extends BotMirror {
     this.refetched = new Set()
     this.historyComplete = new Set()
     this.resetWorkflowMirror()
+  }
+
+  /** Reconnects have no live-workflow replay: refresh the summary plus the open detail and run. */
+  private async reloadWorkflowMirror() {
+    await this.loadWorkflowSummaries()
+    const session = this.workflowSession
+    if (!session) return
+    if (!session.dirty) void this.pullWorkflowDetail(session.id)
+    if (session.runId) void this.pullWorkflowRun(session.runId)
+    else if (session.followLive) {
+      const client = this.live
+      if (!client) return
+      try {
+        const { runs } = await workflowRuns(client, session.id, 1)
+        const open = runs.find((run) => run.status === 'running' || run.status === 'approval' || run.status === 'stopping')
+        if (open) void this.pullWorkflowRun(open.id)
+      } catch (error) {
+        this.reportWorkflowFailure(error)
+      }
+    }
   }
 
   private async loadWorkflowSummaries() {

@@ -83,7 +83,14 @@ extension BotStore {
         noteHostVersion(HostVersion(version: h.version, minApp: h.minApp))
         // A reconnect, including the one a lagged stream asks for, fills the pin rows in again.
         if h.workflows == true {
-            Task { [weak self] in await self?.reloadWorkflows() }
+            Task { [weak self] in
+                guard let self else { return }
+                await self.reloadWorkflows()
+                // Workflow events are live only: an open detail or run can miss the run ending or an approval
+                // while the phone was away. Bump both reloads after the summaries are back.
+                workflowReload += 1
+                workflowRunReload += 1
+            }
         } else {
             workflows = []
         }

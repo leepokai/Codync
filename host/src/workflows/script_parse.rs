@@ -884,6 +884,11 @@ fn record(mut step: Step, steps: &mut Vec<Step>, gates: &mut Vec<String>, order:
         order.effects += 1;
     }
     let own = step.name.clone();
+    // A prompt made from a constant has no input port. An approval gate on it would make the
+    // compiled graph invalid, so leave this shape to the script executor instead.
+    if step.kind == NodeKind::Prompt && !gates.is_empty() {
+        return false;
+    }
     for gate in gates.iter() {
         if own.as_deref() == Some(gate.as_str()) {
             continue;

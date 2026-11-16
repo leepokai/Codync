@@ -2139,7 +2139,5 @@
   "Using {to} while {own} is rate limited": "正在使用 {to}，{own} 正被限速",
   "Using {to} while {own} is overloaded": "正在使用 {to}，{own} 过载了",
   "Using {to} while {own} is signed out": "正在使用 {to}，{own} 已退出登录",
-  "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 无法启动",
-  "Using {to} while {own} doesn't have this bot's model": "正在使用 {to}，{own} 没有这个 Bot 的模型",
-  "Using {to} while {own} doesn't have this bot's mode": "正在使用 {to}，{own} 没有这个 Bot 的模式"
+  "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 无法启动"
 }

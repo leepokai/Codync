@@ -2139,7 +2139,5 @@
   "Using {to} while {own} is rate limited": "{own} がレート制限中のため {to} を使用中",
   "Using {to} while {own} is overloaded": "{own} が過負荷のため {to} を使用中",
   "Using {to} while {own} is signed out": "{own} がサインアウトしているため {to} を使用中",
-  "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中",
-  "Using {to} while {own} doesn't have this bot's model": "{own} にこの Bot のモデルがないため {to} を使用中",
-  "Using {to} while {own} doesn't have this bot's mode": "{own} にこの Bot のモードがないため {to} を使用中"
+  "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中"
 }

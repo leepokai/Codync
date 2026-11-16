@@ -84,17 +84,15 @@ public struct AgentRest: Codable, Hashable, Sendable {
     }
 
     /// Why it rests, in the banner's words: "is signed out", "is rate limited"…
-    public var phrase: String {
+    /// A usage limit says when it resets instead, and a missing model or mode never rests an agent (`rest::record`).
+    var phrase: String {
         switch reason {
-        case "usageLimit": return "reached its usage limit"
-        case "outOfCredits": return "is out of credits"
-        case "rateLimited": return "is rate limited"
-        case "overloaded": return "is overloaded"
-        case "signedOut": return "is signed out"
-        case "notStarting": return "couldn't start"
-        case "modelMissing": return "doesn't have this bot's model"
-        case "modeMissing": return "doesn't have this bot's mode"
-        default: return "can't answer"
+        case "outOfCredits": "is out of credits"
+        case "rateLimited": "is rate limited"
+        case "overloaded": "is overloaded"
+        case "signedOut": "is signed out"
+        case "notStarting": "couldn't start"
+        default: "can't answer"
         }
     }
 }

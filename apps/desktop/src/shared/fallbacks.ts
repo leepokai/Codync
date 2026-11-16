@@ -1,5 +1,4 @@
 import { AUTO_MODE } from './approvals.ts'
-import { fill } from './fill.ts'
 import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type FallbackReason, type Resting } from './models.ts'
 
 /** The host refuses more. */
@@ -42,23 +41,20 @@ export function clockTime(ms: number, now: number): string {
 export const restLine = (rest: Resting, now: number) =>
   `${rest.reason === 'usageLimit' ? 'Usage resets' : 'Resting until'} ${clockTime(rest.until, now)}`
 
-/** Why an agent rests, in the banner's words: "is signed out", "is rate limited"… */
+/** Why an agent rests, in the banner's words: "is signed out", "is rate limited"… A usage limit says when it resets instead, and a missing model or mode never rests an agent (`rest::record`). */
 export function restPhrase(reason: FallbackReason): string {
   switch (reason) {
-    case 'usageLimit': return 'reached its usage limit'
     case 'outOfCredits': return 'is out of credits'
     case 'rateLimited': return 'is rate limited'
     case 'overloaded': return 'is overloaded'
     case 'signedOut': return 'is signed out'
     case 'notStarting': return "couldn't start"
-    case 'modelMissing': return "doesn't have this bot's model"
-    case 'modeMissing': return "doesn't have this bot's mode"
     default: return "can't answer"
   }
 }
 
 /** A sentence before it's translated: the phrase, and the names to put in once it's read in the app's language. */
-export interface Phrase {
+export interface FallbackPhrase {
   key: string
   values: Record<string, string>
 }
@@ -69,7 +65,7 @@ export interface Phrase {
  * name too, which tells two logins of one agent apart. Translating the phrase before the names go in keeps a name that
  * holds " while " from being read as the sentence's own word.
  */
-export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) => string, now: number): Phrase | null {
+export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) => string, now: number): FallbackPhrase | null {
   const step = stepLogin(bot)
   if (!step) return null
   const same = step.backend === bot.backend
@@ -80,12 +76,6 @@ export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) =>
   return rest.reason === 'usageLimit'
     ? { key: 'Using {to} until {own} resets at {time}', values: { to, own, time: clockTime(rest.until, now) } }
     : { key: `Using {to} while {own} ${restPhrase(rest.reason)}`, values: { to, own } }
-}
-
-/** The banner as one English line, for callers that show English; views translate the phrase first. */
-export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
-  const phrase = stepBannerPhrase(bot, name, now)
-  return phrase && fill(phrase.key, phrase.values)
 }
 
 /** The list with the fallback at `index` moved `by` places (clamped to the ends). */

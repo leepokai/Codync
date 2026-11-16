@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBanner, stepBannerPhrase, withBackend } from './fallbacks.ts'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBannerPhrase, withBackend } from './fallbacks.ts'
 import { fill } from './fill.ts'
-import { draftOf, normalizeBot, type Backend } from './models.ts'
+import { draftOf, normalizeBot, type Backend, type Bot } from './models.ts'
 
 const now = new Date(2026, 9, 21, 10, 0).getTime()
 const at3 = new Date(2026, 9, 21, 15, 0).getTime()
 const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 const names: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' }
 const name = (id: string) => names[id] ?? id
+/** The banner as English reads it: the phrase with its names put in. */
+const stepBanner = (bot: Bot, called: Parameters<typeof stepBannerPhrase>[1], at: number) => {
+  const phrase = stepBannerPhrase(bot, called, at)
+  return phrase && fill(phrase.key, phrase.values)
+}
 
 test('a time today is just the time; another day names the weekday', () => {
   assert.equal(clockTime(at3, now), time(at3))
@@ -66,9 +71,6 @@ test('only a usage limit gives the banner a reset time; other rests name their r
     assert.doesNotMatch(stepBanner(resting(reason), called, now) ?? '', /resets/, reason)
   }
   assert.equal(stepBanner(resting('signedOut'), called, now), 'Using Codex while Claude Code is signed out')
-  // The two reasons the host reports that the banner used to leave as "can't answer".
-  assert.equal(stepBanner(resting('modelMissing'), called, now), "Using Codex while Claude Code doesn't have this bot's model")
-  assert.equal(stepBanner(resting('modeMissing'), called, now), "Using Codex while Claude Code doesn't have this bot's mode")
   assert.equal(restPhrase('somethingElse'), "can't answer")
 })
 

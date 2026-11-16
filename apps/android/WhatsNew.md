@@ -16,7 +16,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 點輸入框上方的膠囊開啟 Bot 的「詳情」：Threads（正在跑的）和 Event Box（等待中的：先做、插隊、丟掉）。
 - 「同時幾個 agent」在 Bot 的「設定」。
 - 「每個 agent 一個 worktree」：同時在同一個 repository 工作的 agent 各有自己的分支。
-- 改用備援時，智慧體卡片會說明原因。
+- 改用備援時，智慧體卡片會用 App 的語言說明原因。
 - 備援的 ⋯ 選單新增「編輯」，順序不變。
 - 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
 - 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。

@@ -2139,7 +2139,5 @@
   "Using {to} while {own} is rate limited": "Utilisation de {to} : {own} est limité en débit",
   "Using {to} while {own} is overloaded": "Utilisation de {to} : {own} est surchargé",
   "Using {to} while {own} is signed out": "Utilisation de {to} : {own} est déconnecté",
-  "Using {to} while {own} couldn't start": "Utilisation de {to} : {own} n'a pas pu démarrer",
-  "Using {to} while {own} doesn't have this bot's model": "Utilisation de {to} : {own} n'a pas le modèle de ce bot",
-  "Using {to} while {own} doesn't have this bot's mode": "Utilisation de {to} : {own} n'a pas le mode de ce bot"
+  "Using {to} while {own} couldn't start": "Utilisation de {to} : {own} n'a pas pu démarrer"
 }

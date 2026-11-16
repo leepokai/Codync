@@ -4,6 +4,10 @@ import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 
+/** The banner as English reads it: the phrase with its names put in. */
+private fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()) =
+    stepBannerPhrase(name, clock, now)?.let { fill(it.key, it.values) }
+
 class FallbacksTest {
     @Test fun `a bot decodes its fallbacks, the step it runs on and its resting agents, and an older host's without them`() {
         val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude",
@@ -91,9 +95,17 @@ class FallbacksTest {
             assertFalse(reason, resting(reason).stepBanner(name, clock, now = 1000).orEmpty().contains("resets"))
         }
         assertEquals("Using codex while claude is signed out", resting("signedOut").stepBanner(name, clock, now = 1000))
-        // The two reasons the host reports that the banner used to leave as "can't answer".
-        assertEquals("Using codex while claude doesn't have this bot's model", resting("modelMissing").stepBanner(name, clock, now = 1000))
-        assertEquals("Using codex while claude doesn't have this bot's mode", resting("modeMissing").stepBanner(name, clock, now = 1000))
+    }
+
+    @Test fun `every banner the host can cause has its phrase in the catalog`() {
+        val catalog = Json.parseToJsonElement(java.io.File("../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json").readText()).jsonObject
+        // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+        for (reason in listOf(null, "usageLimit", "outOfCredits", "rateLimited", "overloaded", "signedOut", "notStarting")) {
+            val rest = reason?.let { ""","resting":[{"agent":"claude","until":2000,"reason":"$it"}]""" }.orEmpty()
+            val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"B","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}$rest}""").jsonObject)
+            val key = bot.stepBannerPhrase({ login, _ -> login.backend }, { "3:00 PM" }, now = 1000)!!.key
+            assertTrue("$reason: $key", key in catalog)
+        }
     }
 
     @Test fun `a login profile name holding while stays one name`() {

@@ -2139,7 +2139,5 @@
   "Using {to} while {own} is rate limited": "Используется {to}: {own} ограничен по частоте запросов",
   "Using {to} while {own} is overloaded": "Используется {to}: {own} перегружен",
   "Using {to} while {own} is signed out": "Используется {to}: {own} вышел из аккаунта",
-  "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить",
-  "Using {to} while {own} doesn't have this bot's model": "Используется {to}: у {own} нет модели этого бота",
-  "Using {to} while {own} doesn't have this bot's mode": "Используется {to}: у {own} нет режима этого бота"
+  "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить"
 }

@@ -4,6 +4,13 @@ import Testing
 
 private func bot(_ json: String) throws -> Bot { try JSONDecoder().decode(Bot.self, from: Data(json.utf8)) }
 
+private extension Bot {
+    /// The banner as English reads it: the phrase with its names put in.
+    func stepBanner(_ name: (AgentLogin, Bool) -> String) -> String? {
+        stepBannerPhrase(name: name).map { L10n.fill($0.key, $0.values) }
+    }
+}
+
 private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
 }
@@ -115,10 +122,10 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
         login.backend + (login.loginProfile.map { " (\($0))" } ?? (own ? " (Default login profile)" : ""))
     }
     let onProfile = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"claude","loginProfile":"Work","since":1}}"#)
-    #expect(onProfile.stepBanner(name: name) == "Using claude (Work) while claude (Default login profile) can't answer")
+    #expect(onProfile.stepBanner(name) == "Using claude (Work) while claude (Default login profile) can't answer")
     let onCodex = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}}"#)
-    #expect(onCodex.stepBanner(name: name) == "Using codex while claude can't answer")
-    #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name: name) == nil)
+    #expect(onCodex.stepBanner(name) == "Using codex while claude can't answer")
+    #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name) == nil)
 }
 
 @Test func onlyAUsageLimitGivesTheBannerAResetTime() throws {
@@ -128,14 +135,29 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
         try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1},"resting":[{"agent":"claude","until":\#(soon),"reason":"\#(reason)"}]}"#)
     }
     let clock = RelativeTime.clock(Date(milliseconds: soon))
-    #expect(try resting("usageLimit").stepBanner(name: name) == "Using codex until claude resets at \(clock)")
+    #expect(try resting("usageLimit").stepBanner(name) == "Using codex until claude resets at \(clock)")
     for reason in ["signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting"] {
-        #expect(try resting(reason).stepBanner(name: name)?.contains("resets") == false, "\(reason)")
+        #expect(try resting(reason).stepBanner(name)?.contains("resets") == false, "\(reason)")
     }
-    #expect(try resting("signedOut").stepBanner(name: name) == "Using codex while claude is signed out")
-    // The two reasons the host reports that the banner used to leave as "can't answer".
-    #expect(try resting("modelMissing").stepBanner(name: name) == "Using codex while claude doesn't have this bot's model")
-    #expect(try resting("modeMissing").stepBanner(name: name) == "Using codex while claude doesn't have this bot's mode")
+    #expect(try resting("signedOut").stepBanner(name) == "Using codex while claude is signed out")
+}
+
+@Test func everyBannerTheHostCanCauseIsTranslated() throws {
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+    for reason in [nil, "usageLimit", "outOfCredits", "rateLimited", "overloaded", "signedOut", "notStarting"] {
+        let rest = reason.map { #","resting":[{"agent":"claude","until":\#(soon),"reason":"\#($0)"}]"# } ?? ""
+        let b = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}\#(rest)}"#)
+        let key = try #require(b.stepBannerPhrase { login, _ in login.backend }).key
+        #expect(L10n.tr(key, preference: .zhHant) != key, "\(reason ?? "none")")
+        // A rest line goes through the catalog's "{time}" templates: a reworded line or key falls back to English.
+        if reason != nil {
+            let line = try #require(b.rest(of: b.login)).line
+            #expect(L10n.tr(line, preference: .zhHant) != line, "\(reason ?? "")")
+        }
+    }
+    #expect(L10n.fill(L10n.tr("Using {to} while {own} is signed out", preference: .zhHant), ["to": "Codex", "own": "Kimi Code"])
+        == "正在使用 Codex，Kimi Code 已登出")
 }
 
 @Test func aLoginProfileNameHoldingWhileStaysOneName() throws {

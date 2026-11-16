@@ -68,11 +68,6 @@ public extension Bot {
             values: ["to": to, "own": own, "time": RelativeTime.clock(Date(milliseconds: rest.until))]
         )
     }
-
-    /// The banner as one English line, for callers that show English; views translate the phrase first.
-    func stepBanner(now: Date = .now, name: (AgentLogin, _ own: Bool) -> String) -> String? {
-        stepBannerPhrase(now: now, name: name).map { L10n.fill($0.key, $0.values) }
-    }
 }
 
 public extension Backend {

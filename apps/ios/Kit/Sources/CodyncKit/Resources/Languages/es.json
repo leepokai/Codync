@@ -2139,7 +2139,5 @@
   "Using {to} while {own} is rate limited": "Usando {to} porque {own} tiene el límite de velocidad activo",
   "Using {to} while {own} is overloaded": "Usando {to} porque {own} está sobrecargado",
   "Using {to} while {own} is signed out": "Usando {to} porque {own} ha cerrado la sesión",
-  "Using {to} while {own} couldn't start": "Usando {to} porque {own} no pudo iniciarse",
-  "Using {to} while {own} doesn't have this bot's model": "Usando {to} porque {own} no tiene el modelo de este bot",
-  "Using {to} while {own} doesn't have this bot's mode": "Usando {to} porque {own} no tiene el modo de este bot"
+  "Using {to} while {own} couldn't start": "Usando {to} porque {own} no pudo iniciarse"
 }

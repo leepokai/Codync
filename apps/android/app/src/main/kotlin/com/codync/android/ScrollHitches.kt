@@ -60,7 +60,6 @@ internal class ScrollHitchAccumulator {
             if (window?.isActive == true) return@collect
             window = launch {
                 val accumulator = ScrollHitchAccumulator()
-
                 val startedAt = System.nanoTime()
                 val choreographer = Choreographer.getInstance()
                 var previousFrame: Long? = null

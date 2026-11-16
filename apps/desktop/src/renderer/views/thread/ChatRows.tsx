@@ -49,14 +49,14 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   switch (entry.kind) {
     case 'user':
       return (
-        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
     case 'agent':
       return (
-        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
           <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>

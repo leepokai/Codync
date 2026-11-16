@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Entry } from '@shared/models'
 import { isTold } from '@shared/tasks'
 import { isLive, isThreadMessage, sharedLine, threadEntries, type WorkItem } from '@shared/work'
@@ -22,8 +22,8 @@ import './work.css'
  * user's own and the task's replies as the chat's bubbles), with one quiet line where the task put something in the
  * bot's chat (a card, a file, a voice note, an artifact), which shows that entry in the chat (`showInChat`). Fetched
  * as it opens and kept current while the task works.
- * ponytail: only among the chat's loaded messages, like a needs-you card; load older pages if an old item's thread
- * misses what it shared.
+ * ponytail: only among the chat's shown messages (a needs-you card pages back to its own); load older pages, as the
+ * card does, if an old item's thread misses what it shared.
  */
 export function WorkThreadTranscript({ thread, item, openArtifact, showInChat }: { thread: ThreadRef; item: WorkItem; openArtifact: (artifactId: string) => void; showInChat: (entryId: string) => void }) {
   const tr = useTr()
@@ -31,6 +31,13 @@ export function WorkThreadTranscript({ thread, item, openArtifact, showInChat }:
   const taskId = item.task ?? ''
   const live = isLive(item)
   const [attempt, setAttempt] = useState(0)
+  // Read again when the link comes back: its catch-up carries no task entries. Not as it drops: a read wakes the link.
+  const online = store.connection.kind === 'online'
+  const wasOnline = useRef(online)
+  useEffect(() => {
+    if (online && !wasOnline.current) setAttempt((n) => n + 1)
+    wasOnline.current = online
+  }, [online])
   // Read again once it ends, for how it ended.
   const { fetched, error } = useFetched(() => store.loadTask(thread.botId, taskId), [store, thread.botId, taskId, live, attempt])
   const entries = store.taskEntriesOf(taskId)

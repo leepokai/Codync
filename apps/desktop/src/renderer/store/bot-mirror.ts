@@ -14,7 +14,7 @@ import {
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import { mergeTaskEntries } from '@shared/tasks'
+import { mergeTaskEntries, unsentEntries } from '@shared/tasks'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
@@ -85,7 +85,8 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
-  /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
+  /** Background tasks' transcripts by task id, held while a task's details are open (`watchTask`); once closed, only
+   *  the messages that haven't reached the thread yet. */
   private taskTranscripts = new Map<string, Entry[]>()
   /** How many views hold each of them open. */
   private taskWatchers = new Map<string, number>()
@@ -330,7 +331,7 @@ export class BotMirror extends Observable {
       const left = (this.taskWatchers.get(taskId) ?? 1) - 1
       if (left > 0) return void this.taskWatchers.set(taskId, left)
       this.taskWatchers.delete(taskId)
-      this.taskTranscripts.delete(taskId)
+      this.holdTask(taskId, this.taskEntriesOf(taskId))
     }
   }
 
@@ -339,10 +340,18 @@ export class BotMirror extends Observable {
     return this.taskTranscripts.get(taskId) ?? []
   }
 
-  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nobody watches the task. */
+  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nothing holds the task (`holdTask`). */
   protected mergeTask(taskId: string, entries: Entry[]) {
     const held = this.taskTranscripts.get(taskId)
-    if (held) this.taskTranscripts.set(taskId, mergeTaskEntries(held, entries))
+    if (held) this.holdTask(taskId, mergeTaskEntries(held, entries))
+  }
+
+  /** All of a watched task's transcript; of a closed one, only its unsent messages, so none is lost before it arrives. */
+  private holdTask(taskId: string, entries: Entry[]) {
+    if (this.taskWatchers.has(taskId)) return void this.taskTranscripts.set(taskId, entries)
+    const unsent = unsentEntries(entries)
+    if (unsent.length) this.taskTranscripts.set(taskId, unsent)
+    else this.taskTranscripts.delete(taskId)
   }
 
   setError(message: string | null) {

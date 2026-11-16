@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use super::super::app::Source;
 use super::super::app::{
-    After, App, Background, Confirm, ConfirmAct, Focus, Overlay, Sections, WorkItem, WorkStatus, can_cut_in, places,
+    After, App, Background, Confirm, ConfirmAct, Entry, Focus, Overlay, Sections, WorkItem, WorkStatus, can_cut_in,
+    places,
 };
 use super::super::l10n::tr;
 use super::DetailsPage;
@@ -217,11 +218,13 @@ impl App {
             return Some(page);
         }
         if act == WorkAct::Open && item.status == WorkStatus::NeedsYou {
-            // Its card waits at the end of the bot's chat.
+            // Its card in the bot's chat, picked: on screen, and the chat's keys answer it.
             self.select(bot);
             self.chat_page = true;
             self.focus = Focus::Chat;
             self.chat_scroll = 0;
+            let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
+            self.pick = self.lane(bot).into_iter().rev().find(waits).map(|e| e.id.clone());
             return None;
         }
         self.overlays.push(page);
@@ -526,6 +529,25 @@ pub(in crate::tui) mod tests {
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert!(app.overlays.is_empty());
         assert_eq!((app.focus, app.chat_page, app.chat_scroll), (Focus::Chat, true, 0));
+    }
+
+    #[tokio::test]
+    async fn work_that_needs_you_opens_at_its_own_card_and_its_keys_answer_it() {
+        let mut app = test_app();
+        bot_with(&mut app, &BOX);
+        let allow = json!([{"optionId": "ok", "name": "Allow", "kind": "allow_once"}]);
+        // Its card, and a newer one of other work below it.
+        for (id, seq, item) in [("its", 1, "n"), ("newer", 2, "w1")] {
+            let data = json!({"status": "pending", "item": item, "title": "Edit", "options": allow});
+            let entry = json!({"id": id, "botId": "a", "seq": seq, "kind": "permission", "turn": seq, "data": data});
+            app.on_msg(Msg::Event(json!({"type": "entry", "entry": entry})));
+        }
+        details(&mut app);
+        pick(&mut app, "n");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.pick.as_deref(), Some("its"));
+        key(&mut app, 'y');
+        assert!(app.answering.contains_key("its") && !app.answering.contains_key("newer"));
     }
 
     #[tokio::test]

@@ -52,7 +52,8 @@ function FeatureStory({ feature }: { feature: Feature }) {
     <VStack gap={8} align="stretch">
       {clip ? (
         <div className="whats-new-clip">
-          <video src={clip} autoPlay={!still} muted loop playsInline aria-hidden onError={clipFailed} />
+          {/* A new element when Reduce Motion changes: `autoPlay` alone doesn't stop a clip that's playing. */}
+          <video key={still ? 'still' : 'play'} src={clip} autoPlay={!still} muted loop playsInline aria-hidden onError={clipFailed} />
           {film ? (
             <button className="whats-new-film" title={tr('Watch the full video')} aria-label={tr('Watch the full video')} onClick={() => openLink(film, 'whats_new_film')}>
               <Icon name="play.fill" size={11} />

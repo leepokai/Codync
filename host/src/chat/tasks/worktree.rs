@@ -40,6 +40,9 @@ pub enum Left {
     /// Its task still works in it, or work that follows will.
     #[default]
     InUse,
+    /// Its item is over and it is being looked over (`settle_then`): no work starts in it until that says kept or
+    /// removed. A host that stopped meanwhile left it kept (`unsettled`).
+    Settling,
     /// It has changes or commits of its own: it stays, with its branch.
     Kept,
     /// It had neither: it and its branch are gone.
@@ -74,7 +77,7 @@ impl Worktree {
             Left::Removed => "[Codync: it worked in a git worktree of its own, which had no changes and no commits \
                               and was removed with its branch.]"
                 .to_owned(),
-            Left::Kept => format!(
+            Left::Kept | Left::Settling => format!(
                 "[Codync: it worked in a git worktree of its own, because other work of yours ran in the same \
                  repository: branch {branch}, in {path}. Its changes are there, not in your folder, and nothing \
                  was merged: tell the user the branch, and merge it when they ask.]"
@@ -148,7 +151,7 @@ fn ours(worktree: &Worktree) -> bool {
 
 /// Whether `worktree` is still there to work in.
 pub fn usable(worktree: &Worktree) -> bool {
-    worktree.left != Left::Removed && ours(worktree) && Path::new(&worktree.cwd).is_dir()
+    matches!(worktree.left, Left::InUse | Left::Kept) && ours(worktree) && Path::new(&worktree.cwd).is_dir()
 }
 
 /// Makes a worktree of the repository `workspace` is in, for `item` of `bot`, from the workspace's HEAD.
@@ -245,13 +248,20 @@ async fn remove_if_untouched(worktree: &Worktree) -> Result<Left> {
 }
 
 /// The worktree of item `id` of `items`, when the item is over and no work waits to follow it there: taken to be
-/// looked over ([`settle_then`]), once. It reads as kept until that says otherwise.
+/// looked over ([`settle_then`]), once. It reads as settling until that says what became of it.
 pub(super) fn claim(items: &mut [Item], id: &str) -> Option<Worktree> {
     let followed = items.iter().any(|i| i.status == Status::Waiting && i.after.as_deref() == Some(id));
     let item = items.iter_mut().find(|i| i.id == id && i.status.ended() && !followed)?;
     let worktree = item.worktree.as_mut().filter(|w| w.left == Left::InUse)?;
-    worktree.left = Left::Kept;
+    worktree.left = Left::Settling;
     Some(worktree.clone())
+}
+
+/// At host start: a look the last process didn't finish leaves its worktree kept, as it is.
+pub(super) fn unsettled(items: &mut [Item]) {
+    for worktree in items.iter_mut().filter_map(|i| i.worktree.as_mut()).filter(|w| w.left == Left::Settling) {
+        worktree.left = Left::Kept;
+    }
 }
 
 /// The worktrees of `items` that are over and that nothing works in any more (`busy`: a task's turn still runs),
@@ -269,8 +279,8 @@ pub(super) fn over(items: &mut [Item], busy: impl Fn(&str) -> bool) -> Vec<(Stri
     ids.into_iter().filter_map(|id| claim(items, &id).map(|worktree| (id, worktree))).collect()
 }
 
-/// Looks over the claimed `worktree` of `bot`'s item `item` (it goes when untouched), then does `then`: what had to
-/// wait for where the work is. Without a runtime (a unit test) it stays as it is.
+/// Looks over the claimed `worktree` of `bot`'s item `item` (it goes when untouched) and notes what became of it,
+/// then does `then`: what had to wait for where the work is. Without a runtime (a unit test) it stays as it is.
 pub(super) fn settle_then(
     hub: &Arc<Hub>,
     bot: &str,
@@ -281,18 +291,18 @@ pub(super) fn settle_then(
     let Ok(runtime) = tokio::runtime::Handle::try_current() else { return then(hub) };
     let (hub, bot, item) = (hub.clone(), bot.to_owned(), item.to_owned());
     runtime.spawn(async move {
-        // ponytail: a host that stops here leaves an untouched worktree behind, marked kept; look them over at
-        // host start if that ever piles up.
-        if settle(&worktree).await == Left::Removed {
-            let noted = super::items::change(&hub, &bot, |items| {
-                if let Some(w) = items.iter_mut().find(|i| i.id == item).and_then(|i| i.worktree.as_mut()) {
-                    w.left = Left::Removed;
-                }
-                Ok(())
-            });
-            if let Err(error) = noted {
-                tracing::warn!(item, error = format!("{error:#}"), "couldn't note that a worktree went");
+        // ponytail: a host that stops here leaves an untouched worktree behind, marked kept (`unsettled`); look
+        // them over at host start if that ever piles up.
+        let left = settle(&worktree).await;
+        let noted = super::items::change(&hub, &bot, |items| {
+            let item = items.iter_mut().find(|i| i.id == item);
+            if let Some(w) = item.and_then(|i| i.worktree.as_mut()).filter(|w| w.left == Left::Settling) {
+                w.left = left;
             }
+            Ok(())
+        });
+        if let Err(error) = noted {
+            tracing::warn!(item, error = format!("{error:#}"), "couldn't note what became of a worktree");
         }
         then(&hub);
     });
@@ -361,6 +371,18 @@ mod tests {
     }
 
     #[test]
+    fn a_worktree_being_looked_over_settles_or_stays_kept_after_a_restart() {
+        let worktree = serde_json::json!({"branch": "codync/t", "path": "/w", "cwd": "/w", "base": "abc"});
+        let item = serde_json::json!({"id": "i1", "title": "t", "brief": "x", "status": "failed", "order": 1,
+            "createdAt": 0, "worktree": worktree});
+        let mut items: Vec<Item> = serde_json::from_value(serde_json::json!([item])).expect("items");
+        assert_eq!(claim(&mut items, "i1").map(|w| w.left), Some(Left::Settling));
+        assert!(claim(&mut items, "i1").is_none(), "once");
+        unsettled(&mut items);
+        assert_eq!(items[0].worktree.as_ref().map(|w| w.left), Some(Left::Kept));
+    }
+
+    #[test]
     fn a_branch_is_named_from_the_title() {
         assert_eq!(slug("Fix the Login redirect!"), "fix-the-login-redirect");
         assert_eq!(slug("  ../../etc  "), "etc");
@@ -416,6 +438,7 @@ mod tests {
         assert!(Path::new(&dirty.cwd).join("new.txt").exists() && Path::new(&committed.path).exists());
         assert_eq!(branches(&repo).await, "codync/docs\ncodync/fix-login-2", "the untouched one's branch went too");
         assert!(usable(&dirty) && !usable(&Worktree { left: Left::Removed, ..clean.clone() }));
+        assert!(!usable(&Worktree { left: Left::Settling, ..dirty.clone() }), "nothing starts while it is looked over");
 
         // A record that points elsewhere is left alone, whatever is there.
         let foreign = Worktree { path: web.clone(), cwd: web.clone(), ..clean };

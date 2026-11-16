@@ -69,6 +69,23 @@ internal fun AppStore.takeCardRequest(botId: String): Boolean {
     return true
 }
 
+/**
+ * Pages [botId]'s open chat back for the card its [item] waits on while the rows loaded don't hold it, up to five pages
+ * (iOS `card(for:in:)`); the chat takes the request once it holds the card. One it can't find drops the request, and
+ * the chat stays where it was.
+ */
+internal fun AppStore.pageToCard(botId: String, item: WorkItem) = action(historyKey(botId)) {
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, item) != null }
+    try {
+        repeat(5) {
+            if (found() || state.value.selectedBot != botId || botId in state.value.historyEnd) return@action
+            pageHistory(botId)
+        }
+    } finally {
+        if (!found() && state.value.cardRequest == (botId to item)) takeCardRequest(botId)
+    }
+}
+
 /** Once: a chat that already has a call takes it too, so it can't start one later. */
 fun AppStore.takeCallRequest(botId: String): Boolean {
     if (state.value.callRequest != botId) return false

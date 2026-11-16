@@ -336,8 +336,11 @@ pub fn restore_statusline(settings: &Path) -> Result<()> {
 /// The command our wrapper wraps (empty when it wraps nothing), or `None`
 /// when `cmd` isn't ours.
 fn unwrap_statusline(cmd: &str) -> Option<String> {
-    // Ours always starts with the quoted host path followed by ` statusline`.
-    if !cmd.starts_with('\'') || !cmd.contains("' statusline") {
+    // Ours always starts with the quoted host path followed by ` statusline`: this host, or one that moved.
+    let (program, _) = cmd.strip_prefix('\'')?.split_once("' statusline")?;
+    let program = Path::new(program);
+    let named = program.file_name().is_some_and(|name| name == "codync-host" || name == "codync-host.exe");
+    if !named && current_exe().ok().as_deref() != Some(program) {
         return None;
     }
     let Some((_, rest)) = cmd.split_once(STATUSLINE_MARK) else { return Some(String::new()) };
@@ -440,6 +443,11 @@ mod tests {
         assert!(read(&f).get("statusLine").is_none());
         let f = temp_settings(&settings("sh ~/mine.sh"));
         assert!(!refresh_statusline(&f).unwrap(), "the user's own line stays theirs");
+        // Also one that only looks like ours: another program's `statusline`.
+        let f = temp_settings(&settings("'/usr/local/bin/my-helper' statusline"));
+        assert!(!refresh_statusline(&f).unwrap());
+        restore_statusline(&f).unwrap();
+        assert_eq!(read(&f)["statusLine"]["command"], "'/usr/local/bin/my-helper' statusline");
     }
 
     /// Runs the settings command the way Claude Code does (one shell), with the host

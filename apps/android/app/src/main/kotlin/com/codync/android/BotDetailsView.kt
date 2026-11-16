@@ -32,6 +32,7 @@ import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
 import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
+import com.codync.android.core.WorkItem
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
 import java.io.IOException
@@ -65,10 +66,11 @@ private sealed interface DetailsPage {
  * A bot's details (iOS `BotDetailsView`): who it is, then what it does (Details), its computer, library, memory and how it
  * is set up (Settings). Settings save as you edit. A row of an item a task has or had pushes its thread inside the sheet
  * ([WorkThreadView]); back returns to the details. `openCard`: the chat at an entry, the approval card of an item
- * that needs you or what a thread's task put there. `openArtifact`: an artifact picked in the Library, for the chat's viewer.
+ * that needs you or what a thread's task put there; `openCardOf`: the chat at the card an item that needs you waits on,
+ * found there (null where that chat isn't under the details). `openArtifact`: an artifact picked in the Library, for the chat's viewer.
  */
 @Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openCard: (Entry) -> Unit,
-    openArtifact: (OpenArtifact) -> Unit) {
+    openCardOf: ((WorkItem) -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
     val dismiss = LocalDismissModal.current
     var tab by remember(request) { mutableStateOf(request.tab) }
@@ -105,7 +107,7 @@ private sealed interface DetailsPage {
                         Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
                             when (tab) {
                                 DetailsTab.Details -> {
-                                    WorkTimeline(bot, state, store, routineId, openCard) { thread = it.id }
+                                    WorkTimeline(bot, state, store, routineId, openCard, openCardOf) { thread = it.id }
                                     LaunchedEffect(Unit) { routineId = null }
                                 }
                                 DetailsTab.Computer -> BotComputerTab(bot, state, store, draft.computer, online) { on -> draft = draft.copy(computer = on) }

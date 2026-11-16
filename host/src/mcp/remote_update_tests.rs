@@ -3,19 +3,17 @@ use axum::{Json, Router, http::HeaderMap, routing};
 use std::sync::{Arc, Mutex};
 
 #[tokio::test]
-async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions() {
+async fn a_running_proxy_follows_an_edit_without_the_old_session_but_never_to_a_cached_endpoint() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let old_url = format!("http://{address}/old");
     let new_url = format!("http://{address}/new");
-    let target = Arc::new(Mutex::new(
-        json!({"url":old_url,"connectorUrl":old_url,"headers":{"X-Key":"old-key"},"authRevision":"before"}),
-    ));
+    let target = Arc::new(Mutex::new(Value::Null));
     let read_target = target.clone();
     let requests = Arc::new(Mutex::new(Vec::new()));
     let received = requests.clone();
-    let sink = move |headers: HeaderMap| {
-        received.lock().unwrap().push(headers);
+    let sink = move |uri: axum::http::Uri, headers: HeaderMap| {
+        received.lock().unwrap().push((uri.path().to_owned(), headers));
         async { Json(json!({"jsonrpc":"2.0","id":1,"result":{}})) }
     };
     let app = Router::new()
@@ -38,19 +36,11 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
             connector: "remote".into(),
             endpoint: Mutex::new(None),
         };
-        remote.target(false).await.unwrap();
+        remote.target(false, Edited::Adopt).await.unwrap();
         *target.lock().unwrap() =
             json!({"url":replacement,"connectorUrl":replacement,"headers":{"X-Key":"new-key"},"authRevision":"after"});
         let message = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"});
-        let mut session = Some("old-private-session".into());
-        assert!(
-            remote
-                .forward(&message, &mut session)
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("connection settings changed")
-        );
+        // The older transport's endpoint was named by the old server: refused, nothing sent.
         assert!(
             remote
                 .post_legacy(&Endpoint::Url(old_url.clone()), &message)
@@ -59,14 +49,16 @@ async fn old_proxies_never_send_new_credentials_to_cached_endpoints_or_sessions(
                 .to_string()
                 .contains("connection settings changed")
         );
-        assert!(requests.lock().unwrap().is_empty(), "no request to either MCP endpoint");
-        // A newly started proxy can use the edited endpoint and its explicit credentials.
-        let restarted = Remote { endpoint: Mutex::new(None), ..remote };
-        restarted.forward(&message, &mut None).await.unwrap();
+        assert!(requests.lock().unwrap().is_empty(), "nothing to the cached endpoint");
+        // Streamable HTTP goes where the host says now, with the new key and without the old server's session.
+        let mut session = Some("old-private-session".to_owned());
+        remote.forward(&message, &mut session).await.unwrap();
         let mut seen = requests.lock().unwrap();
         assert_eq!(seen.len(), 1);
-        assert_eq!(seen[0]["x-key"], "new-key");
-        assert!(!seen[0].contains_key("mcp-session-id"));
+        assert_eq!(seen[0].0, reqwest::Url::parse(replacement).unwrap().path());
+        assert_eq!(seen[0].1["x-key"], "new-key");
+        assert!(!seen[0].1.contains_key("mcp-session-id"));
+        assert_eq!(session, None);
         seen.clear();
     }
     server.abort();

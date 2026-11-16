@@ -1,8 +1,10 @@
 """ACP agent with its own `/` commands, like Claude Code's adapter: right after `session/new` it sends an
-`available_commands_update` (review, with an input hint, and compact). It answers each prompt with `ok` and logs
-every request to requests.jsonl in its folder."""
+`available_commands_update` (review, with an input hint, and compact, or the list in commands.json in its folder);
+reopening a session (`session/load`), it sends the list among the replay, before it answers. It answers each prompt
+with `ok` and logs every request to requests.jsonl in its folder."""
 
 import json
+import os
 import sys
 
 COMMANDS = [
@@ -30,8 +32,16 @@ for line in sys.stdin:
     if method == "initialize":
         send({"id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {"loadSession": True}}})
     elif method in ("session/new", "session/load"):
+        commands = COMMANDS
+        if os.path.exists("commands.json"):
+            with open("commands.json", encoding="utf-8") as f:
+                commands = json.load(f)
+        listed = {"sessionUpdate": "available_commands_update", "availableCommands": commands}
+        if method == "session/load":
+            update(listed)
         send({"id": rid, "result": {"sessionId": "s1"}})
-        update({"sessionUpdate": "available_commands_update", "availableCommands": COMMANDS})
+        if method == "session/new":
+            update(listed)
     elif method == "session/prompt":
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "ok"}})
         send({"id": rid, "result": {"stopReason": "end_turn"}})

@@ -55,7 +55,7 @@ standalone crate, and it reaches Claude Code and Codex sessions too.
   agent to asking its user. Only an agent the app runs can be held to one, so a letter under a ceiling to a session
   the network knocks on is refused. The answer to a request
   this computer sent still gets in, from the computer it asked and to the agent that asked, so a rule added
-  meanwhile doesn't strand it.
+  meanwhile doesn't strand it; under a ceiling (past a `deny` it comes in at `ask`) only to an agent the app runs.
 - **A computer that moves says so.** When its addresses change (a laptop on another Wi-Fi), it signs where it is
   now into the roster and tells the others, so they find it without a restart.
 

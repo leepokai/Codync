@@ -223,8 +223,8 @@ pub async fn set_key(store: &Store, p: Provider, key: &str) -> Result<Value> {
 
 /// Points the `OpenAI` engine's Speech mode at an OpenAI-compatible server (`url`), or back at `OpenAI` (blank).
 /// A saved key is checked with the new server first, so a wrong address fails here and not in a call. Going back
-/// to `OpenAI` checks nothing: a key only the server took must not hold the address, and never goes to `OpenAI`
-/// for a check.
+/// to `OpenAI` checks nothing and deletes the key saved with the server: it may be one only the server took, so it
+/// must not hold the address and never goes to `OpenAI` (the user adds an `OpenAI` key again).
 pub async fn set_server(store: &Store, p: Provider, url: &str) -> Result<Value> {
     if p != Provider::OpenAi {
         return Err(ServerRefused::error("unsupported", "Only the OpenAI engine can use another server."));
@@ -250,9 +250,18 @@ pub async fn set_server(store: &Store, p: Provider, url: &str) -> Result<Value> 
             )
         })?;
     }
+    if url.is_none() && server::saved(store).is_some() {
+        // Only a key that is there: deleting none would open the vault for nothing.
+        if keys::own(store, p)?.is_some() {
+            keys::save(store, p, "")?;
+        }
+        store.kv_delete(&defaults_key(p))?;
+    }
     server::save(store, url.as_deref())?;
-    // The other server has its own models; the defaults follow it now instead of tomorrow.
-    let _ = models(store, p).await;
+    if url.is_some() {
+        // The other server has its own models; the defaults follow it now instead of tomorrow.
+        let _ = models(store, p).await;
+    }
     status(store)
 }
 
@@ -304,11 +313,26 @@ pub async fn models(store: &Store, p: Provider) -> Result<Value> {
     };
     let (realtime, transcribe, speech) = classify(p, &entries);
     let fallback = p.fallback();
-    let defaults = Defaults {
+    let mut defaults = Defaults {
         realtime: newest(p, &entries, &realtime).unwrap_or(fallback.realtime),
         transcribe: newest(p, &entries, &transcribe).unwrap_or(fallback.transcribe),
         speech: newest(p, &entries, &speech).unwrap_or(fallback.speech),
     };
+    if access.upstream == Upstream::Compatible {
+        // A server of the user's own names its models as it likes (`whisper-large-v3`, `kokoro`): any of them can
+        // do either Speech job, the first by default where the names don't say. It has no Realtime.
+        let all: Vec<String> = entries.into_iter().map(|m| m.id).collect();
+        if let Some(first) = all.first() {
+            if transcribe.is_empty() {
+                defaults.transcribe.clone_from(first);
+            }
+            if speech.is_empty() {
+                defaults.speech.clone_from(first);
+            }
+        }
+        store.kv_set(&defaults_key(p), &serde_json::to_string(&defaults)?)?;
+        return Ok(json!({"models": [], "transcribe": all, "speech": all, "defaults": defaults}));
+    }
     store.kv_set(&defaults_key(p), &serde_json::to_string(&defaults)?)?;
     Ok(json!({"models": realtime, "transcribe": transcribe, "speech": speech, "defaults": defaults}))
 }
@@ -598,8 +622,26 @@ mod tests {
         assert_eq!(category(&cleartext), "bad_address", "cleartext off this computer");
         assert_eq!(category(&set_server(&store, Provider::Gemini, &url).await.unwrap_err()), "unsupported");
 
-        // Back to OpenAI without asking it about a key only the server took.
-        assert_eq!(openai(&set_server(&store, Provider::OpenAi, "").await.unwrap())["server"], "");
+        // Back to OpenAI without asking it about a key only the server took: that key goes with the server.
+        let cleared = set_server(&store, Provider::OpenAi, "").await.unwrap();
+        assert_eq!((&openai(&cleared)["server"], &openai(&cleared)["configured"]), (&json!(""), &json!(false)));
+        assert_eq!(openai(&cleared)["defaults"]["transcribe"], "gpt-transcribe", "OpenAI's own until its list is read");
+    }
+
+    #[tokio::test]
+    async fn every_model_a_server_lists_can_be_picked() {
+        let store = Store::open(std::path::Path::new(":memory:")).unwrap();
+        let url = compatible_server(&["whisper-large-v3", "kokoro"]).await;
+        set_server(&store, Provider::OpenAi, &url).await.unwrap();
+        set_key(&store, Provider::OpenAi, "local-key").await.unwrap();
+        let listed = models(&store, Provider::OpenAi).await.unwrap();
+        let all = json!(["whisper-large-v3", "kokoro"]);
+        assert_eq!((&listed["transcribe"], &listed["speech"], &listed["models"]), (&all, &all, &json!([])));
+        let defaults = &listed["defaults"];
+        assert_eq!(
+            (&defaults["transcribe"], &defaults["speech"]),
+            (&json!("whisper-large-v3"), &json!("whisper-large-v3"))
+        );
     }
 
     fn category(error: &anyhow::Error) -> &'static str {

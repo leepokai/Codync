@@ -243,7 +243,7 @@ impl Actor {
             }
             let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
-            drop_replay(conn).await;
+            let about_agent = drop_replay(conn).await;
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
@@ -268,6 +268,9 @@ impl Actor {
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
                     self.note_options(&sid, &res, Listing::Session);
+                    for update in &about_agent {
+                        self.on_session_wide(update);
+                    }
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
@@ -370,10 +373,14 @@ impl Actor {
         self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
         let res = self.session_request("session/fork", params).await?;
         // A fork may replay the chat's history, as a reopened session does.
-        if let Some(conn) = self.conn.as_mut() {
-            drop_replay(conn).await;
-        }
+        let about_agent = match self.conn.as_mut() {
+            Some(conn) => drop_replay(conn).await,
+            None => Vec::new(),
+        };
         let sid = self.adopt_opened(&res, None, renamed.clone()).await?;
+        for update in &about_agent {
+            self.on_session_wide(update);
+        }
         // It already holds the instructions and memory as the chat's session had them: nothing to send again.
         let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
         context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
@@ -430,11 +437,22 @@ impl Actor {
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
 
 /// An agent replays a session's history as `session/update` before it answers a reopen or a fork: drops it, and
-/// refuses the requests in it.
-async fn drop_replay(conn: &mut Conn) {
+/// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for
+/// `on_session_wide`.
+async fn drop_replay(conn: &mut Conn) -> Vec<Value> {
+    let mut about_agent = Vec::new();
     while let Ok(inc) = conn.rx.try_recv() {
-        if let Incoming::Request { id, .. } = inc {
-            let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+        match inc {
+            Incoming::Request { id, .. } => {
+                let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+            }
+            Incoming::Notification { method, params }
+                if method == "session/update" && params["update"]["sessionUpdate"] == "available_commands_update" =>
+            {
+                about_agent.push(params);
+            }
+            _ => {}
         }
     }
+    about_agent
 }

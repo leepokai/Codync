@@ -205,6 +205,30 @@ async fn the_bots_own_agent_without_its_mode_fails_the_turn() {
 }
 
 #[tokio::test]
+async fn a_command_right_after_going_back_leaves_the_catch_up_for_the_next_message() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.commands"), "").unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Fix the login tests").await;
+    wait_for(&host, &bot, "reply", |e| e["data"]["text"] == "standin answered").await;
+
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    wait_for(&host, &bot, "back line", |e| e["data"]["text"] == "Back on Custom command.").await;
+    host.reply(&bot, "/review the login tests").await;
+    assert_eq!(last_prompt(&host, &bot, "primary"), "/review the login tests", "the command goes as typed");
+    host.reply(&bot, "Thanks").await;
+    let last = last_prompt(&host, &bot, "primary");
+    assert!(last.contains("<catch_up>") && last.contains("\"standin answered\""), "{last}");
+}
+
+#[tokio::test]
 async fn an_agent_back_in_a_new_session_hears_the_conversation_unless_the_user_started_over() {
     let host = Host::start().await;
     let bot =

@@ -281,9 +281,9 @@ export class HostController extends EventEmitter<{ change: []; setupFailed: [sta
 
   async isIdleForUpdate(): Promise<boolean> {
     if (this.installing || this.preparingForUpdate || devPort !== null) return false
-    if (!serviceInstalled()) return true
+    // Ask the host first: on Windows its Run entry can be gone while it keeps working.
     const health = await fetchHealth()
-    return health?.busy === false
+    return health ? health.busy === false : !serviceInstalled()
   }
 
   private stopLoop() {

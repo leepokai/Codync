@@ -209,9 +209,6 @@ impl Actor {
         let _ = tokio::task::spawn_blocking(move || memory::files::scan(&hub, &cfg)).await;
         let slot = self.slot();
         self.ensure_turn_session(slot.as_deref()).await?;
-        if !hidden {
-            self.carry_in();
-        }
         let written = self.written_to_thread(entry_ids);
         let picked_up = self.hear_thread(&written);
         let session = self.turn_session.clone();
@@ -270,6 +267,9 @@ impl Actor {
             // The profile stays owed: the first message the agent hears that isn't a command carries it.
             self.session_fresh = false;
             analytics::agent_command_sent(&self.hub, &self.cfg.backend);
+        } else if !hidden {
+            // So does a recap: a command goes without it, and it waits in `relay.recap` for the next message.
+            self.carry_in();
         }
         // What the user wrote to a task's thread says so, after the work itself where the session doesn't hold it.
         let text =

@@ -175,11 +175,35 @@ impl App {
         }
     }
 
-    /// `send` for `task`'s thread answered: a delivered message leaves the draft, a refused one says why.
-    pub(in crate::tui) fn thread_sent(&mut self, task: &str, answer: Result<(), String>) {
+    /// `bot`'s box changed: an open transcript whose item another task took since (tried again, or replaced)
+    /// follows that one, so it reads the same attempt its heading and Stop are about.
+    pub(in crate::tui) fn follow_tasks(&mut self, bot: &str) {
+        let Some(work) = self.bots.get(bot).map(|b| b.work.clone()) else { return };
+        let mut moved = Vec::new();
         for o in &mut self.overlays {
             if let Overlay::Task(s) = o
-                && s.task == task
+                && s.bot == bot
+                && let Some(task) = work.iter().find(|i| i.id == s.item).and_then(|i| i.task.clone())
+                && task != s.task
+            {
+                moved.push((std::mem::replace(&mut s.task, task), s.task.clone()));
+                (s.fetched, s.pick) = (Fetched::Loading, None);
+                s.scroll.set(0);
+            }
+        }
+        for (old, new) in moved {
+            self.fetch_task(bot, &new);
+            if !works(&work, &old) {
+                self.task_entries.forget(&old);
+            }
+        }
+    }
+
+    /// `send` for `item`'s thread answered: a delivered message leaves the draft, a refused one says why.
+    pub(in crate::tui) fn thread_sent(&mut self, item: &str, answer: Result<(), String>) {
+        for o in &mut self.overlays {
+            if let Overlay::Task(s) = o
+                && s.item == item
                 && let Some(sent) = s.sending.take()
                 && answer.is_ok()
                 && s.draft.text.trim() == sent
@@ -207,7 +231,7 @@ impl App {
         // the nonce with the draft as the chat does if that shows.
         let nonce = uuid::Uuid::new_v4().to_string();
         let body = json!({"botId": s.bot, "itemId": s.item, "text": text, "clientNonce": nonce});
-        self.sheet("send", body, Reply::ThreadSent(s.task.clone()));
+        self.sheet("send", body, Reply::ThreadSent(s.item.clone()));
         s.sending = Some(text);
         s.scroll.set(0);
     }
@@ -412,11 +436,11 @@ mod tests {
         assert_eq!(sheet(&app).sending.as_deref(), Some("also q"));
         app.on_key(KeyEvent::from(KeyCode::Enter));
         assert_eq!(hint(&mut app), "Sending…", "one at a time");
-        app.thread_sent("task-1", Err("\"Fix login\" hasn't started yet".into()));
+        app.thread_sent("i", Err("\"Fix login\" hasn't started yet".into()));
         assert_eq!(hint(&mut app), "\"Fix login\" hasn't started yet");
         assert_eq!(sheet(&app).draft.text, "also q", "refused: the words stay");
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        app.thread_sent("task-1", Ok(()));
+        app.thread_sent("i", Ok(()));
         assert!(sheet(&app).draft.text.is_empty() && sheet(&app).sending.is_none());
 
         // What waits in the thread: `S` sends the next one now, `D` takes back the last, as in a chat.
@@ -452,6 +476,34 @@ mod tests {
         app.open_task("a", &run);
         key(&mut app, 'i');
         assert!(!sheet(&app).typing);
+    }
+
+    #[tokio::test]
+    async fn a_paste_goes_to_the_thread_being_written() {
+        let mut app = test_app();
+        let work = json!([{"id": "i", "title": "Fix login", "status": "working", "task": "task-1", "talk": true}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work}})));
+        app.selected = Some("a".into());
+        let own = app.bots["a"].work[0].clone();
+        app.open_task("a", &own);
+        key(&mut app, 'i');
+        app.on_paste("run the tests");
+        assert_eq!(sheet(&app).draft.text, "run the tests");
+        assert!(app.draft().text.is_empty(), "not the chat's");
+    }
+
+    #[tokio::test]
+    async fn the_transcript_follows_the_task_that_took_its_item_since() {
+        let mut app = test_app();
+        let work = |task: &str| json!([{"id": "i", "title": "Fix login", "status": "working", "task": task}]);
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work("task-1")}})));
+        let own = app.bots["a"].work[0].clone();
+        app.open_task("a", &own);
+        app.task_fetched("task-1", Ok(&json!({"entries": []})));
+        // Tried again elsewhere, or replaced: a new task has the item now.
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "work": work("task-2")}})));
+        assert_eq!(sheet(&app).task, "task-2");
+        assert!(matches!(sheet(&app).fetched, Fetched::Loading), "its transcript loads");
     }
 
     #[tokio::test]

@@ -143,4 +143,6 @@ test('a step picked in place takes a free login, and gets its own back on its ow
   assert.deepEqual(stepLogins(claude, own, taken), ['a1', 'a2'])
   assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }]), [])
   assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }], [own]), [claude])
+  // Once another step has the remembered login and no other is free, its agent can't be picked: it would land on the bot's own.
+  assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }, { backend: 'claude', loginProfile: 'a2' }], [own]), [])
 })

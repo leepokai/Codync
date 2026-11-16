@@ -67,9 +67,11 @@ struct SpeechSegments {
     }
 
     private func startsOver(_ text: String, ends: Bool, gap: TimeInterval) -> Bool {
-        if continues(text) { return false }
-        // After a closed segment, other words are the next one; an empty result keeps the words before it.
-        if ended || text.isEmpty { return true }
+        // After a closed segment, only all of its words going on are the same segment; other words are the next one.
+        if ended { return !continues(text, share: 1) }
+        if continues(text, share: 0.5) { return false }
+        // An empty result keeps the words before it.
+        if text.isEmpty { return true }
         // A result that closes the segment is its last revision.
         if ends { return false }
         // ponytail: no end marker, so other words after a pause are a new segment; a revision of more than half
@@ -77,13 +79,13 @@ struct SpeechSegments {
         return gap >= Self.pause
     }
 
-    /// `text` starts with at least half of `current`, ignoring case, spaces and punctuation: the same words, revised
+    /// `text` starts with at least `share` of `current`, ignoring case, spaces and punctuation: the same words, revised
     /// or going on.
-    private func continues(_ text: String) -> Bool {
+    private func continues(_ text: String, share: Double) -> Bool {
         let letters = { (text: String) in text.lowercased().filter { $0.isLetter || $0.isNumber } }
         let before = letters(current)
         let same = zip(before, letters(text)).prefix { $0.0 == $0.1 }.count
-        return same * 2 >= before.count
+        return Double(same) >= Double(before.count) * share
     }
 }
 

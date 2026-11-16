@@ -31,6 +31,8 @@ test('after a closed segment, new words are a new segment and the same words aga
   assert.equal(run([['OK', true], ['now', false]]), 'OK now')
   assert.equal(run([['in the parser', true], ['in the parser', true]]), 'in the parser')
   assert.equal(run([['in the', true], ['in the parser', false]]), 'in the parser')
+  // Only all of the closed words going on are the same segment: a phrase sharing its start is the next one.
+  assert.equal(run([['run the tests', true], ['run the build', false]]), 'run the tests run the build')
   // The result that closes a segment, after the pause, is its last revision.
   assert.equal(run([['Three hundred', false], ['300', true, 1500], ['now', false]]), '300 now')
 })

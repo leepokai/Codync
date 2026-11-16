@@ -162,19 +162,18 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const presentAgent = useCallback((id: string) => (id === botId ? showDetails('settings') : setEditingMember(id)), [botId, showDetails])
   // The capsule opens what the bot does.
   const openWork = useCallback(() => showDetails('details'), [showDetails])
+  // The chat at the card an item that needs the user waits on, the one its row reads (`pendingCards`), older pages
+  // loaded until it is there.
+  const [card, setCard] = useState<{ itemId: string } | null>(null)
+  const openCard = useCallback((itemId: string) => {
+    setCompactDetails(false)
+    setCard({ itemId })
+  }, [])
   // The chat at one of its entries, beside the panel: what an item's thread says its task put there.
   const showInChat = useCallback((entryId: string) => {
     setCompactDetails(false)
     requestAnimationFrame(() => root.current?.querySelector(`.transcript [data-entry-id="${CSS.escape(entryId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
   }, [])
-  // The chat at the card an item that needs the user waits on, the one its row reads.
-  // ponytail: looks among the loaded messages only; a card still waiting is among the newest. Load older pages
-  // until it is found if cards ever wait that long.
-  const openCard = useCallback((itemId: string) => {
-    const card = pendingCards(store.allEntries(botId)).get(itemId)
-    if (card) showInChat(card.id)
-    else setCompactDetails(false)
-  }, [botId, showInChat])
   // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
   useEffect(() => {
     if (!request) return
@@ -236,7 +235,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
           </button>
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
-        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
+        <Transcript botId={botId} card={card} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
@@ -338,8 +337,16 @@ function ConnectionSubtitle() {
 
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
+/** How many older pages opening an item's card loads to find it, like the iPhone. */
+const CARD_PAGES = 5
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+/** Where the shown rows start: at the row `first`, or with the newest `PAGE` rows. */
+function startOf(list: ChatItem[], first: string | null) {
+  const found = first ? list.findIndex((i) => i.id === first) : -1
+  return found >= 0 ? found : Math.max(0, list.length - PAGE)
+}
+
+const Transcript = memo(function Transcript({ botId, card, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; card: { itemId: string } | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -355,8 +362,7 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const found = firstShown ? all.findIndex((i) => i.id === firstShown) : -1
-  const start = found >= 0 ? found : Math.max(0, all.length - PAGE)
+  const start = startOf(all, firstShown)
   const items = all.slice(start)
   const more = start > 0 || store.canLoadOlder(botId)
   // Following the newest message, or reading history: scrolling up releases the bottom,
@@ -379,6 +385,34 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   useEffect(() => {
     if (!firstShown && items[0]) setFirstShown(items[0].id)
   }, [firstShown, items])
+
+  // An item's card (`card`): older pages come in until the chat has it, the shown rows reach back to it, and it
+  // scrolls into the middle. One that can't be found leaves the chat where it was.
+  const [revealing, setRevealing] = useState<{ entryId: string } | null>(null)
+  useEffect(() => {
+    if (!card) return
+    let current = true
+    void (async () => {
+      let found = pendingCards(store.allEntries(botId)).get(card.itemId)
+      for (let page = 0; current && !found && page < CARD_PAGES && store.canLoadOlder(botId); page++) {
+        await store.loadOlder(botId)
+        found = pendingCards(store.allEntries(botId)).get(card.itemId)
+      }
+      if (!current || !found) return
+      const entryId = found.id
+      const list = chatOf(store.allEntries(botId))
+      const at = list.findIndex((i) => i.kind !== 'separator' && i.entry.id === entryId)
+      if (at < 0) return
+      setFirstShown((first) => list[Math.min(at, startOf(list, first))]!.id)
+      setRevealing({ entryId })
+    })()
+    return () => {
+      current = false
+    }
+  }, [card])
+  useEffect(() => {
+    if (revealing) scroller.current?.querySelector(`[data-entry-id="${CSS.escape(revealing.entryId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [revealing])
 
   const showEarlier = async () => {
     if (loadingEarlier) return

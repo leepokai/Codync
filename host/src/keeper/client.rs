@@ -102,15 +102,12 @@ pub fn put(store: &Store, slot: &str, value: &str) -> Result<()> {
 
 /// Saves `record` in `slot`, keeping what `keep` names from the record before it (same upstream only).
 pub fn put_proxied(store: &Store, slot: &str, record: &Record, keep: &Keep) -> Result<()> {
-    let send = |record: &Record| {
-        let request = Request::PutProxied { slot: slot.into(), record: Box::new(record.clone()), keep: keep.clone() };
-        call(store, &request).map(|_: bool| ())
-    };
-    match send(record) {
-        // A keeper from before connection revisions refuses the field as a bad request. Without it, that keeper
-        // still ends the slot's grants when its origin or headers change, only not on a path-only edit.
+    let request = Request::PutProxied { slot: slot.into(), record: Box::new(record.clone()), keep: keep.clone() };
+    match call(store, &request).map(|_: bool| ()) {
+        // A keeper from before connection revisions refuses the field as a bad request. Saving without it would let
+        // that keeper's live grants carry the new secret to the old upstream, so the edit waits for its update.
         Err(e) if !record.auth_revision.is_empty() && e.to_string() == "the keeper refused: bad request" => {
-            send(&Record { auth_revision: String::new(), ..record.clone() })
+            bail!("this computer's keeper is out of date: update Codync on this computer first")
         }
         answer => answer,
     }

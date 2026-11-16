@@ -8,14 +8,13 @@ mod park;
 pub(super) use park::resume_step;
 
 use super::sign_in::Held;
-use super::{Actor, Done, NoticeStyle};
+use super::{Actor, DoneTx, NoticeStyle};
 use crate::LockExt;
 use crate::agent::fallback::{self, Reason, carry, rest};
 use crate::agent::login_profiles::Login;
 use crate::analytics::Carried;
 use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
 
 /// What a chat line carries of a handoff for the apps to unfold, in bytes (`carry::excerpt`).
 const LINE_CARRIED: usize = 8_000;
@@ -372,7 +371,7 @@ impl Actor {
 
     /// The turn failed with `error`: when it may move on and another agent can take it, starts it again there.
     /// Whether the turn is handled (running again, or its failure reported).
-    pub(super) async fn fall_back(&mut self, error: &anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
+    pub(super) async fn fall_back(&mut self, error: &anyhow::Error, done_tx: &DoneTx) -> bool {
         if self.stop_requested || self.routine_timed_out || self.compacting.is_some() || self.turn.is_none() {
             return false;
         }
@@ -515,7 +514,7 @@ impl Actor {
     }
 
     /// A turn that couldn't start: on the next agent if one can take it, otherwise the failure as usual.
-    pub(super) async fn start_error(&mut self, error: anyhow::Error, done_tx: &mpsc::UnboundedSender<Done>) {
+    pub(super) async fn start_error(&mut self, error: anyhow::Error, done_tx: &DoneTx) {
         if !self.fall_back(&error, done_tx).await {
             self.start_failed(&error);
         }

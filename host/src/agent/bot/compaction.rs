@@ -2,7 +2,7 @@
 //! agent reports about its context and its own compactions, and the compactions and rollovers the host starts. The
 //! rules are `codync_mem::compaction`; this records what it needs and acts on what it decides.
 
-use super::{Actor, Adapter, Done, Instructions, Queued};
+use super::{Actor, Adapter, Done, DoneTx, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
@@ -322,7 +322,7 @@ impl Actor {
 
     /// Runs a compaction the host decided on, as a hidden turn in the main chat. Dreaming goes first, and Claude's
     /// opening is rendered again, so the compaction keeps current memory (render, load, compact).
-    pub(super) async fn start_compaction(&mut self, idle: bool, done_tx: &tokio::sync::mpsc::UnboundedSender<Done>) {
+    pub(super) async fn start_compaction(&mut self, idle: bool, done_tx: &DoneTx) {
         let (Some(sid), Some(command)) = (self.session_id.clone(), self.compact_command()) else { return };
         // Decided when it was queued; another turn or a change of the setting may have come first.
         let (c, at, now) = (self.conversation(&sid), self.threshold(), now_ms());

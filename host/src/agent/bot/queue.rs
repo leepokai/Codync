@@ -2,7 +2,7 @@
 
 use super::sign_in::Held;
 use super::{
-    Actor, CANCEL_GRACE, Cmd, Done, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
+    Actor, CANCEL_GRACE, Cmd, DoneTx, HostTurn, Inflight, NoticeStyle, Queued, RESUME_PROMPT, RoutineCompletion,
 };
 use crate::agent::own_memory;
 use crate::chat::memory;
@@ -13,10 +13,28 @@ use anyhow::{Result, anyhow};
 use codync_network::Access;
 use serde_json::json;
 use std::time::Instant;
-use tokio::sync::mpsc;
+
+/// What a Stop still has to do, given the agent the turn was talking to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CancelStep {
+    /// The agent is running: ask it to stop and wait for the turn's answer.
+    AskAgent,
+    /// It outlived the grace period: stop its process, and its pending answer ends the turn.
+    KillAgent,
+    /// No agent is left to ask or kill: end the turn here rather than wait for an answer that can't come.
+    EndTurn,
+}
+
+pub(super) fn cancel_step(has_agent: bool, past_grace: bool) -> CancelStep {
+    match (has_agent, past_grace) {
+        (true, true) => CancelStep::KillAgent,
+        (true, false) => CancelStep::AskAgent,
+        (false, _) => CancelStep::EndTurn,
+    }
+}
 
 impl Actor {
-    pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
+    pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &DoneTx) -> bool {
         match cmd {
             Cmd::RefreshTools => {
                 self.restart_before_turn = true;
@@ -158,7 +176,7 @@ impl Actor {
     }
 
     /// Queues `item`, and starts it right away when the bot is free.
-    async fn enqueue(&mut self, item: Queued, done_tx: &mpsc::UnboundedSender<Done>) {
+    async fn enqueue(&mut self, item: Queued, done_tx: &DoneTx) {
         self.queue.push_back(item);
         if self.turn.is_none() {
             self.next_in_queue(done_tx).await;
@@ -217,9 +235,35 @@ impl Actor {
         for id in ids {
             self.answer_permission(&id, None).await;
         }
-        if let (Some(c), Some(sid)) = (&self.conn, &self.turn_session) {
-            let _ = c.acp.notify("session/cancel", json!({"sessionId": sid})).await;
+        match cancel_step(self.conn.is_some(), false) {
+            CancelStep::AskAgent => {
+                if let (Some(c), Some(sid)) = (&self.conn, &self.turn_session) {
+                    let _ = c.acp.notify("session/cancel", json!({"sessionId": sid})).await;
+                }
+            }
+            // Nothing is left to ask: the turn would otherwise stay open (and the bot Working) until the
+            // host restarts. The run loop ends it once this command is done (see `Actor::run`).
+            CancelStep::EndTurn => {
+                tracing::warn!(bot = %self.cfg.id, "no agent left to cancel; the turn ends here");
+                self.gone_turn = true;
+            }
+            CancelStep::KillAgent => {}
         }
+    }
+
+    /// Ends a turn no agent is left to answer. The answers and steers that belonged to it are dropped first, so a late
+    /// one cannot finish the turn that starts next; a message the user took back while it waited is withdrawn here
+    /// rather than left queued to go out with that next turn.
+    pub(super) async fn end_turn_without_agent(&mut self, done_tx: &DoneTx) {
+        if self.turn.is_none() {
+            return;
+        }
+        if !self.steers_in_flight.is_empty() {
+            tracing::debug!(bot = %self.cfg.id, "the agent is gone; its unanswered steers wait for the next turn");
+        }
+        self.drop_unanswered_steers();
+        self.held_done = None;
+        self.on_turn_done(Err(anyhow!("the agent process is gone")), done_tx).await;
     }
 
     /// A new agent, model, command, folder or memory: the agent starts again with a fresh context.
@@ -234,7 +278,7 @@ impl Actor {
         self.forget_session();
     }
 
-    pub(super) async fn next_in_queue(&mut self, done_tx: &mpsc::UnboundedSender<Done>) {
+    pub(super) async fn next_in_queue(&mut self, done_tx: &DoneTx) {
         if self.turn.is_none() && std::mem::take(&mut self.restart_after_turn) {
             self.restart_agent().await;
         }
@@ -539,7 +583,7 @@ impl Actor {
 
     /// Grok Bot's upgrade resume: the previous host process stopped mid-turn, so
     /// the agent is told, in the same session, to finish without redoing steps.
-    pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &mpsc::UnboundedSender<Done>) {
+    pub(super) async fn resume_interrupted(&mut self, lane: Lane, done_tx: &DoneTx) {
         let follow_up = Inflight::load(&self.hub.store, &self.cfg.id)
             .and_then(|turn| turn.follow_up)
             .filter(|_| self.active_routine.is_none());
@@ -585,5 +629,18 @@ impl Actor {
         if let Err(error) = Inflight::save(&self.hub.store, &self.cfg.id, turn) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the running turn");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CancelStep, cancel_step};
+
+    #[test]
+    fn a_stop_ends_a_turn_no_agent_can_answer() {
+        assert_eq!(cancel_step(false, false), CancelStep::EndTurn, "no agent to ask");
+        assert_eq!(cancel_step(false, true), CancelStep::EndTurn, "still none after the grace period");
+        assert_eq!(cancel_step(true, false), CancelStep::AskAgent, "a running agent is asked to stop");
+        assert_eq!(cancel_step(true, true), CancelStep::KillAgent, "one that ignored it is stopped");
     }
 }

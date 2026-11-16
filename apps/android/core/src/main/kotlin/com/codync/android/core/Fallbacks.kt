@@ -26,18 +26,34 @@ val Bot.login: Login get() = Login(backend, loginProfile)
 fun Bot.restOf(login: Login, now: Long = System.currentTimeMillis()): Resting? = resting.firstOrNull { Login(it.agent, it.loginProfile) == login && it.until > now }
 
 /**
- * The Agent card's first line while the bot runs on a fallback; null on its own agent. [name] says what to call a login
- * ("Claude Code (Work)" on a login profile), the computer's own by its name too when asked, which tells two logins of one
- * agent apart; [clock] writes a time.
+ * A sentence before it's translated: the phrase, and the names to put in once it's read in the app's language.
  */
-fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): String? {
+data class StepBanner(val key: String, val values: Map<String, String>)
+
+/** Puts a translated phrase's names in: a login profile named "Work while traveling" stays one name. */
+fun fillTemplate(text: String, values: Map<String, String>): String =
+    Regex("\\{(\\w+)\\}").replace(text) { match -> values[match.groupValues[1]] ?: match.value }
+
+/**
+ * The Agent card's first line while the bot runs on a fallback, as a phrase and its names; null on its own agent. [name]
+ * says what to call a login ("Claude Code (Work)" on a login profile), the computer's own by its name too when asked,
+ * which tells two logins of one agent apart; [clock] writes a time. Translating the phrase before the names go in keeps
+ * a name that holds " while " from being read as the sentence's own word.
+ */
+fun Bot.stepBannerPhrase(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): StepBanner? {
     val step = agentStep?.login ?: return null
     val same = step.backend == backend
     val (to, own) = name(step, same) to name(login, same)
     val rest = restOf(login, now)
-    if (rest?.reason == "usageLimit") return "Using $to until $own resets at ${clock(rest.until)}"
-    return "Using $to while $own ${rest?.phrase ?: "can't answer"}"
+    if (rest == null) return StepBanner("Using {to} while {own} can't answer", mapOf("to" to to, "own" to own))
+    // A reset time is real only for a usage limit; another rest names what it is (signed out, rate limited…).
+    return if (rest.reason == "usageLimit") StepBanner("Using {to} until {own} resets at {time}", mapOf("to" to to, "own" to own, "time" to clock(rest.until)))
+    else StepBanner("Using {to} while {own} ${rest.phrase}", mapOf("to" to to, "own" to own))
 }
+
+/** The banner as one English line, for callers that show English; views translate the phrase first. */
+fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): String? =
+    stepBannerPhrase(name, clock, now)?.let { fillTemplate(it.key, it.values) }
 
 /** The login the draft is set to run on. */
 val BotDraft.login: Login get() = Login(backend, loginProfile)
@@ -58,14 +74,17 @@ data class Resting(val agent: String = "", val until: Long = 0, val reason: Stri
     /** Its line under the agent, with `until` as [time]: "Usage resets 3:00 PM", "Resting until 3:00 PM". */
     fun line(time: String): String = if (reason == "usageLimit") "Usage resets $time" else "Resting until $time"
 
-    /** Why it rests, as the host's chat notice says it (`Reason::phrase`): "is signed out". Null for a usage limit, which says when it resets instead, and for a reason this app doesn't know. */
-    val phrase: String? get() = when (reason) {
+    /** Why it rests, in the banner's words: "is signed out", "is rate limited"… */
+    val phrase: String get() = when (reason) {
+        "usageLimit" -> "reached its usage limit"
         "outOfCredits" -> "is out of credits"
         "rateLimited" -> "is rate limited"
         "overloaded" -> "is overloaded"
         "signedOut" -> "is signed out"
         "notStarting" -> "couldn't start"
-        else -> null
+        "modelMissing" -> "doesn't have this bot's model"
+        "modeMissing" -> "doesn't have this bot's mode"
+        else -> "can't answer"
     }
 }
 

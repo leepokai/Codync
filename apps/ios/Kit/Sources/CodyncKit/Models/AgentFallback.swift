@@ -83,16 +83,18 @@ public struct AgentRest: Codable, Hashable, Sendable {
         return reason == "usageLimit" ? "Usage resets \(time)" : "Resting until \(time)"
     }
 
-    /// Why it rests, as the host's chat notice says it (`Reason::phrase`): "is signed out". Nil for a usage limit,
-    /// which says when it resets instead, and for a reason this app doesn't know.
-    var phrase: String? {
+    /// Why it rests, in the banner's words: "is signed out", "is rate limited"…
+    public var phrase: String {
         switch reason {
-        case "outOfCredits": "is out of credits"
-        case "rateLimited": "is rate limited"
-        case "overloaded": "is overloaded"
-        case "signedOut": "is signed out"
-        case "notStarting": "couldn't start"
-        default: nil
+        case "usageLimit": return "reached its usage limit"
+        case "outOfCredits": return "is out of credits"
+        case "rateLimited": return "is rate limited"
+        case "overloaded": return "is overloaded"
+        case "signedOut": return "is signed out"
+        case "notStarting": return "couldn't start"
+        case "modelMissing": return "doesn't have this bot's model"
+        case "modeMissing": return "doesn't have this bot's mode"
+        default: return "can't answer"
         }
     }
 }

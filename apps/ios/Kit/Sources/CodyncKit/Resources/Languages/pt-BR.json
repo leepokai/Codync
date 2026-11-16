@@ -2130,5 +2130,16 @@
   "Watch the full video": "Assistir ao vídeo completo",
   "Work": "Trabalho",
   "Worktree per agent": "Um worktree por agente",
-  "Agents that work at once in this repository each get their own branch.": "Os agentes que trabalham ao mesmo tempo neste repositório têm cada um a sua própria branch."
+  "Agents that work at once in this repository each get their own branch.": "Os agentes que trabalham ao mesmo tempo neste repositório têm cada um a sua própria branch.",
+  "Usage resets {time}": "O uso é redefinido às {time}",
+  "Resting until {time}": "Em pausa até {time}",
+  "Using {to} until {own} resets at {time}": "Usando {to} até o uso de {own} ser redefinido às {time}",
+  "Using {to} while {own} can't answer": "Usando {to} porque {own} não pode responder",
+  "Using {to} while {own} is out of credits": "Usando {to} porque {own} está sem créditos",
+  "Using {to} while {own} is rate limited": "Usando {to} porque {own} está com limite de taxa",
+  "Using {to} while {own} is overloaded": "Usando {to} porque {own} está sobrecarregado",
+  "Using {to} while {own} is signed out": "Usando {to} porque {own} saiu da conta",
+  "Using {to} while {own} couldn't start": "Usando {to} porque {own} não conseguiu iniciar",
+  "Using {to} while {own} doesn't have this bot's model": "Usando {to} porque {own} não tem o modelo deste bot",
+  "Using {to} while {own} doesn't have this bot's mode": "Usando {to} porque {own} não tem o modo deste bot"
 }

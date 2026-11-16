@@ -2130,5 +2130,16 @@
   "Watch the full video": "動画を全編見る",
   "Work": "作業",
   "Worktree per agent": "エージェントごとに worktree",
-  "Agents that work at once in this repository each get their own branch.": "このリポジトリで同時に作業するエージェントは、それぞれ自分のブランチを使います。"
+  "Agents that work at once in this repository each get their own branch.": "このリポジトリで同時に作業するエージェントは、それぞれ自分のブランチを使います。",
+  "Usage resets {time}": "{time} に使用量がリセットされます",
+  "Resting until {time}": "{time} まで休止中",
+  "Using {to} until {own} resets at {time}": "{own} が {time} にリセットされるまで {to} を使用中",
+  "Using {to} while {own} can't answer": "{own} が応答できないため {to} を使用中",
+  "Using {to} while {own} is out of credits": "{own} のクレジットが不足しているため {to} を使用中",
+  "Using {to} while {own} is rate limited": "{own} がレート制限中のため {to} を使用中",
+  "Using {to} while {own} is overloaded": "{own} が過負荷のため {to} を使用中",
+  "Using {to} while {own} is signed out": "{own} がサインアウトしているため {to} を使用中",
+  "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中",
+  "Using {to} while {own} doesn't have this bot's model": "{own} にこの Bot のモデルがないため {to} を使用中",
+  "Using {to} while {own} doesn't have this bot's mode": "{own} にこの Bot のモードがないため {to} を使用中"
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBanner, withBackend } from './fallbacks.ts'
+import { clockTime, fillNames, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBanner, stepBannerPhrase, withBackend } from './fallbacks.ts'
 import { draftOf, normalizeBot, type Backend } from './models.ts'
 
 const now = new Date(2026, 9, 21, 10, 0).getTime()
@@ -65,6 +65,22 @@ test('only a usage limit gives the banner a reset time; other rests name their r
     assert.doesNotMatch(stepBanner(resting(reason), called, now) ?? '', /resets/, reason)
   }
   assert.equal(stepBanner(resting('signedOut'), called, now), 'Using Codex while Claude Code is signed out')
+  // The two reasons the host reports that the banner used to leave as "can't answer".
+  assert.equal(stepBanner(resting('modelMissing'), called, now), "Using Codex while Claude Code doesn't have this bot's model")
+  assert.equal(stepBanner(resting('modeMissing'), called, now), "Using Codex while Claude Code doesn't have this bot's mode")
+  assert.equal(restPhrase('somethingElse'), "can't answer")
+})
+
+test('a login profile name holding " while " stays one name, not the banner\'s own word', () => {
+  const step = { step: 1, agent: 'codex', model: null, since: now, reason: 'signedOut' }
+  const called = (login: { backend: string; loginProfile?: string | null }, own: boolean) =>
+    `${name(login.backend)}${login.loginProfile ? ' (Work while traveling)' : own ? ' (Default login profile)' : ''}`
+  const signingOut = normalizeBot({ id: 'b', backend: 'claude', loginProfile: 'p1', agentStep: step, resting: [{ agent: 'claude', loginProfile: 'p1', until: at3, reason: 'signedOut' }] })
+  const phrase = stepBannerPhrase(signingOut, called, now)
+  // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
+  assert.equal(phrase?.key, 'Using {to} while {own} is signed out')
+  assert.deepEqual(phrase?.values, { to: 'Codex', own: 'Claude Code (Work while traveling)' })
+  assert.equal(fillNames(phrase!.key, phrase!.values), 'Using Codex while Claude Code (Work while traveling) is signed out')
 })
 
 test('fallbacks move within the list', () => {

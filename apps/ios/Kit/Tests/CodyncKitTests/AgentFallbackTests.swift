@@ -133,6 +133,25 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
         #expect(try resting(reason).stepBanner(name: name)?.contains("resets") == false, "\(reason)")
     }
     #expect(try resting("signedOut").stepBanner(name: name) == "Using codex while claude is signed out")
+    // The two reasons the host reports that the banner used to leave as "can't answer".
+    #expect(try resting("modelMissing").stepBanner(name: name) == "Using codex while claude doesn't have this bot's model")
+    #expect(try resting("modeMissing").stepBanner(name: name) == "Using codex while claude doesn't have this bot's mode")
+}
+
+@Test func aLoginProfileNameHoldingWhileStaysOneName() throws {
+    let name: (AgentLogin, Bool) -> String = { login, own in
+        login.backend + (login.loginProfile.map { " (\($0))" } ?? (own ? " (Default login profile)" : ""))
+    }
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    let signingOut = try bot("""
+    {"id":"b","backend":"claude","loginProfile":"Work while traveling","agentStep":{"step":1,"agent":"codex","since":1},
+     "resting":[{"agent":"claude","loginProfile":"Work while traveling","until":\(soon),"reason":"signedOut"}]}
+    """)
+    let phrase = try #require(signingOut.stepBannerPhrase(name: name))
+    // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
+    #expect(phrase.key == "Using {to} while {own} is signed out")
+    #expect(phrase.values == ["to": "codex", "own": "claude (Work while traveling)"])
+    #expect(L10n.fill(phrase.key, phrase.values) == "Using codex while claude (Work while traveling) is signed out")
 }
 
 @Test func freeLoginsAreTheDefaultAndSignedInLoginProfilesTheChainLacks() throws {

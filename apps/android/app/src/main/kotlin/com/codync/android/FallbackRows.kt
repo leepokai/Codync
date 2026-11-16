@@ -30,11 +30,12 @@ import com.codync.android.core.Fallback
 import com.codync.android.core.Login
 import com.codync.android.core.MAX_FALLBACKS
 import com.codync.android.core.Resting
+import com.codync.android.core.fillTemplate
 import com.codync.android.core.freeLogins
 import com.codync.android.core.login
 import com.codync.android.core.moved
 import com.codync.android.core.restOf
-import com.codync.android.core.stepBanner
+import com.codync.android.core.stepBannerPhrase
 import com.codync.android.design.*
 import com.kyant.shapes.Capsule
 
@@ -74,7 +75,9 @@ private fun fallbackChoices(state: AppState, taken: List<Login>, own: String? = 
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         AgentIcon(agentRegistry(state, step.agent), 22.dp)
-        Text(bot.stepBanner(name, RelativeTime::clock).orEmpty(), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
+        // The phrase is translated before its names go in: a login profile named "Work while traveling" stays whole.
+        val banner = bot.stepBannerPhrase(name, RelativeTime::clock)
+        Text(banner?.let { fillTemplate(tr(it.key), it.values) }.orEmpty(), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
         if ("switchBack:" + bot.id in state.busy) Spinner() else SecondaryButton("Switch back") { store.switchBack(bot) }
     }
 }
@@ -122,7 +125,7 @@ private fun fallbackChoices(state: AppState, taken: List<Login>, own: String? = 
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // ponytail: the model's id, not its name: a name needs the agent's model list, an agent start per row.
             Text("$name · ${tr(fallback.model ?: "Default")}", style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (rest != null) Text(rest.line(RelativeTime.clock(rest.until)), style = Type.caption, color = Palette.secondary)
+            if (rest != null) Text(tr(rest.line(RelativeTime.clock(rest.until))), style = Type.caption, color = Palette.secondary)
         }
         if (inUse) Text("In use", Modifier.clip(Capsule()).background(Palette.accentFill).padding(horizontal = 8.dp, vertical = 3.dp),
             style = Type.caption.medium, color = Palette.onAccent)

@@ -2130,5 +2130,16 @@
   "Watch the full video": "觀看完整影片",
   "Work": "工作",
   "Worktree per agent": "每個 agent 一個 worktree",
-  "Agents that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 agent 各有自己的分支。"
+  "Agents that work at once in this repository each get their own branch.": "同時在這個 repository 工作的 agent 各有自己的分支。",
+  "Usage resets {time}": "用量將在 {time} 重置",
+  "Resting until {time}": "休息到 {time}",
+  "Using {to} until {own} resets at {time}": "正在使用 {to}，等 {own} 於 {time} 重置後切回",
+  "Using {to} while {own} can't answer": "正在使用 {to}，{own} 暫時無法回答",
+  "Using {to} while {own} is out of credits": "正在使用 {to}，{own} 額度已用完",
+  "Using {to} while {own} is rate limited": "正在使用 {to}，{own} 目前被限速",
+  "Using {to} while {own} is overloaded": "正在使用 {to}，{own} 過載中",
+  "Using {to} while {own} is signed out": "正在使用 {to}，{own} 已登出",
+  "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 無法啟動",
+  "Using {to} while {own} doesn't have this bot's model": "正在使用 {to}，{own} 沒有這個 Bot 的模型",
+  "Using {to} while {own} doesn't have this bot's mode": "正在使用 {to}，{own} 沒有這個 Bot 的模式"
 }

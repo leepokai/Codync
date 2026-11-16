@@ -14,7 +14,8 @@ struct FallbackBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             AgentIcon(registry: model.agentRegistry(step.agent), size: 18)
-            Text(bot.stepBanner(name: name) ?? "")
+            // The phrase is translated before its names go in: a login profile named "Work while traveling" stays whole.
+            Text(bot.stepBannerPhrase(name: name).map { L10n.fill(L10n.tr($0.key), $0.values) } ?? "")
                 .font(.subheadline)
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -113,7 +114,7 @@ struct FallbackList: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(name) · \(L10n.tr(fallback.model ?? "Default"))").foregroundStyle(Palette.text).lineLimit(1)
                 if let rest = bot?.rest(of: fallback.login) {
-                    Text(rest.line).font(.caption).foregroundStyle(Palette.secondary)
+                    Text(L10n.tr(rest.line)).font(.caption).foregroundStyle(Palette.secondary)
                 }
             }
             Spacer(minLength: 8)

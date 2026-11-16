@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { freeLogins, MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBanner, stepLogin, type Login } from '@shared/fallbacks'
+import { freeLogins, MAX_FALLBACKS, moveFallback, restLine, restOf, runningAgent, sameLogin, stepBannerPhrase, stepLogin, type Login } from '@shared/fallbacks'
 import type { Backend, Bot, BotDraft, Fallback } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Button, CardForm, CardSection, DropdownMenu, IconButton } from '../../components/Controls'
@@ -8,6 +8,7 @@ import { Dialog, ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, IconSlot, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
+import { fill } from '../../lib/fill'
 import { useStore } from '../../store/context'
 import { FormSheet } from '../marketplace/pieces'
 import { useAgentModels } from './agent-models'
@@ -33,10 +34,12 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
       : own ? backend?.defaultLoginProfile?.name ?? tr('Default login profile') : null
     return profile ? `${store.backendName(login.backend)} (${profile})` : store.backendName(login.backend)
   }
+  // The phrase is translated before its names go in, so a login profile named "Work while traveling" stays one name.
+  const banner = stepBannerPhrase(bot, name, Date.now())
   return (
     <HStack gap={8} className="fade-in">
       <AgentIcon registry={store.agentRegistry(runningAgent(bot))} size={14} />
-      <Text tone="text" grow>{stepBanner(bot, name, Date.now())}</Text>
+      <Text tone="text" grow>{banner === null ? null : fill(tr(banner.key), banner.values)}</Text>
       <Button kind="secondary" className="fallback-switch-back" onClick={() => store.switchBack(bot.id)}>Switch back</Button>
     </HStack>
   )
@@ -130,7 +133,7 @@ function FallbackRow({ fallback, index, count, bot, now, move, onEdit, remove }:
       <AgentIcon registry={store.agentRegistry(fallback.backend)} size={14} />
       <VStack gap={2} grow>
         <Text tone="text" truncate>{`${stepName} · ${fallback.model || tr(`Default`)}`}</Text>
-        {rest ? <Text size="caption" tone="secondary">{restLine(rest, now)}</Text> : null}
+        {rest ? <Text size="caption" tone="secondary">{tr(restLine(rest, now))}</Text> : null}
       </VStack>
       {step && sameLogin(step, fallback) ? <Text size="caption" weight="medium" tone="text" className="fallback-chip fade-in">{tr(`In use`)}</Text> : null}
       <DropdownMenu

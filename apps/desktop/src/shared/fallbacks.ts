@@ -1,5 +1,5 @@
 import { AUTO_MODE } from './approvals.ts'
-import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type Resting } from './models.ts'
+import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type FallbackReason, type Resting } from './models.ts'
 
 /** The host refuses more. */
 export const MAX_FALLBACKS = 3
@@ -41,31 +41,54 @@ export function clockTime(ms: number, now: number): string {
 export const restLine = (rest: Resting, now: number) =>
   `${rest.reason === 'usageLimit' ? 'Usage resets' : 'Resting until'} ${clockTime(rest.until, now)}`
 
-/** Why an agent rests, as the host's chat notice says it (`Reason::phrase`): "is signed out"; none for a usage limit (it resets) or a reason this app doesn't know. */
-export function restPhrase(rest: Resting): string | undefined {
-  switch (rest.reason) {
+/** Why an agent rests, in the banner's words: "is signed out", "is rate limited"… */
+export function restPhrase(reason: FallbackReason): string {
+  switch (reason) {
+    case 'usageLimit': return 'reached its usage limit'
     case 'outOfCredits': return 'is out of credits'
     case 'rateLimited': return 'is rate limited'
     case 'overloaded': return 'is overloaded'
     case 'signedOut': return 'is signed out'
     case 'notStarting': return "couldn't start"
-    default: return undefined
+    case 'modelMissing': return "doesn't have this bot's model"
+    case 'modeMissing': return "doesn't have this bot's mode"
+    default: return "can't answer"
   }
 }
 
+/** A sentence before it's translated: the phrase, and the names to put in once it's read in the app's language. */
+export interface Phrase {
+  key: string
+  values: Record<string, string>
+}
+
+/** Puts a translated phrase's names in: a login profile named "Work while traveling" stays one name. */
+export const fillNames = (phrase: string, values: Record<string, string>) =>
+  phrase.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
+
 /**
- * The Agent card's first line while the bot runs on a fallback; null on its own agent. `name` says what to call a login
- * ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its name too, which tells two
- * logins of one agent apart.
+ * The Agent card's first line while the bot runs on a fallback, as a phrase and its names; null on its own agent. `name`
+ * says what to call a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its
+ * name too, which tells two logins of one agent apart. Translating the phrase before the names go in keeps a name that
+ * holds " while " from being read as the sentence's own word.
  */
-export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
+export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) => string, now: number): Phrase | null {
   const step = stepLogin(bot)
   if (!step) return null
   const same = step.backend === bot.backend
   const [to, own] = [name(step, same), name(bot, same)]
   const rest = restOf(bot, bot, now)
-  if (rest?.reason === 'usageLimit') return `Using ${to} until ${own} resets at ${clockTime(rest.until, now)}`
-  return `Using ${to} while ${own} ${(rest && restPhrase(rest)) ?? "can't answer"}`
+  if (!rest) return { key: "Using {to} while {own} can't answer", values: { to, own } }
+  // A reset time is real only for a usage limit; another rest names what it is (signed out, rate limited…).
+  return rest.reason === 'usageLimit'
+    ? { key: 'Using {to} until {own} resets at {time}', values: { to, own, time: clockTime(rest.until, now) } }
+    : { key: `Using {to} while {own} ${restPhrase(rest.reason)}`, values: { to, own } }
+}
+
+/** The banner as one English line, for callers that show English; views translate the phrase first. */
+export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
+  const phrase = stepBannerPhrase(bot, name, now)
+  return phrase && fillNames(phrase.key, phrase.values)
 }
 
 /** The list with the fallback at `index` moved `by` places (clamped to the ends). */

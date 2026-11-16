@@ -1,14 +1,14 @@
 /* A bot's work in the background: the capsule above the composer (WorkCapsule.tsx), the items on its Details
    (WorkTimeline.tsx) and the dialogs they ask with (WorkDialogs.tsx). */
+/* The composer's own box (its column and 14px side padding), so the capsule is as wide as the composer under it. */
 .work-capsule-slot {
-  display: flex;
-  justify-content: center;
-  /* The composer's side padding. */
-  padding: 0 16px 8px;
+  width: 100%;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 0 14px 8px;
 }
 .work-capsule {
-  max-width: min(100%, var(--column));
-  min-width: 0;
+  width: 100%;
   height: 32px;
   box-sizing: border-box;
   padding: 0 4px 0 12px;
@@ -26,6 +26,7 @@
   min-width: 0;
   height: 100%;
   padding-right: 6px;
+  flex: 1;
 }
 .work-capsule-lead {
   flex: none;

@@ -80,6 +80,10 @@ test('a working item shows in the capsule and on Details, opens its transcript, 
     await expect(capsule(page)).toContainText('In the background ·')
     await expect(capsule(page)).toContainText(/\d+:\d\d/)
     await expect(capsule(page)).not.toContainText('1 working')
+    // As wide as the composer under it.
+    const [above, below] = await Promise.all([capsule(page).boundingBox(), page.locator('.composer-surface').boundingBox()])
+    expect(Math.abs(above!.x - below!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(above!.width - below!.width)).toBeLessThanOrEqual(1)
     // The chat itself is free: the roster row counts what goes on in the background.
     await expect(page.locator('.roster-row', { hasText: name })).toContainText('1 working')
     // And it answers: a message typed under the capsule gets its reply while the item is worked on.

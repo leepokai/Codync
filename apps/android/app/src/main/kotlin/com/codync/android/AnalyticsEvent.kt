@@ -168,6 +168,14 @@ internal sealed class AnalyticsEvent(val name: String) {
     /** A quote at the top of a message was tapped: whether the quoted message was loaded and came into view (iOS `quoteOpened`). */
     data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
+    /** A message dragged sideways far enough to start a reply (iOS `replySwiped`). */
+    data object ReplySwiped : AnalyticsEvent("reply_swiped")
+    /** One reader drag and its fling, including the settling tail; never row keys or content. */
+    data class ScrollHitches(val list: ScrollList, val rows: Int, val frames: Int, val hitches: Int, val longestMs: Int,
+        val hitchMsPerS: Int, val fps: Int, val stop: ScrollStop? = null, val jump: Int? = null) : AnalyticsEvent("scroll_hitches") {
+        override val properties get() = mapOf("list" to list.json, "rows" to JsonPrimitive(rows), "frames" to JsonPrimitive(frames),
+            "hitches" to JsonPrimitive(hitches), "longest_ms" to JsonPrimitive(longestMs), "hitch_ms_per_s" to JsonPrimitive(hitchMsPerS),
+            "fps" to JsonPrimitive(fps)) + listOfNotNull(stop?.let { "stop" to it.json }, jump?.let { "jump" to JsonPrimitive(it) })
     }
 }
 
@@ -175,6 +183,10 @@ internal sealed class AnalyticsEvent(val name: String) {
 internal interface CatalogValue { val wire: String }
 
 private val CatalogValue.json get() = JsonPrimitive(wire)
+
+internal enum class ScrollList(override val wire: String) : CatalogValue { Bots("bots"), Chat("chat") }
+
+internal enum class ScrollStop(override val wire: String) : CatalogValue { Top("top"), End("end"), Middle("middle") }
 
 internal enum class NotificationAccess(override val wire: String) : CatalogValue {
     Allowed("allowed"), Denied("denied"), NotAsked("not_asked");

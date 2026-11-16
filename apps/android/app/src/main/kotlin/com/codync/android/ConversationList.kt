@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 @Composable internal fun ConversationList(list: LazyListState, last: String?, rev: Long?, working: Boolean, padding: PaddingValues,
     refresh: (suspend () -> Unit)? = null, indicatorTop: Dp = 0.dp, reveal: ConversationReveal? = null, onOpened: () -> Unit = {},
     content: LazyListScope.() -> Unit) {
+    TrackScrollHitches(list, ScrollList.Chat)
     val bottom = padding.calculateBottomPadding()
     val following = rememberFollowing(list, last, rev, working, bottom, onOpened)
     // Find's shown match: its row a third of the way down, leaving the newest message. Keyed on the row, not its index,

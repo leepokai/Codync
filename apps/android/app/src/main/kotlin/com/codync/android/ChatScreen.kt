@@ -96,6 +96,8 @@ import kotlinx.coroutines.delay
     val startCall = rememberStartVoice(bot.id, state, store) { micDenied = true }
     // "Talk to Codync" asked for a call here: taken even during a call, so it can't start one after it.
     LaunchedEffect(state.callRequest) { if (store.takeCallRequest(bot.id) && state.voice == null) startCall() }
+    // A heading of the view of all bots' work asked for this bot's details.
+    LaunchedEffect(state.detailsRequest) { if (store.takeDetailsRequest(bot.id) && bot.kind != "group") details = DetailsRequest() }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var composerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -111,6 +113,11 @@ import kotlinx.coroutines.delay
     // Find in the conversation: null while its bar is closed; each step bumps `findStep` to bring the match into view.
     var find by remember(bot.id) { mutableStateOf<ConversationFind?>(null) }
     var findStep by remember(bot.id) { mutableIntStateOf(0) }
+    // A needs-you row of the view of all bots' work asked for its card: brought into view once this chat holds it.
+    // ponytail: only among the rows the open chat has loaded; page back for it (iOS `card(for:in:)`) if a pending
+    // card is ever older than those.
+    val askedCard = state.cardRequest?.takeIf { it.first == bot.id }?.let { (_, item) -> pendingCard(state.entries.filter { it.botId == bot.id }, item) }
+    LaunchedEffect(askedCard?.id) { if (askedCard != null && store.takeCardRequest(bot.id)) { details = null; card = askedCard.id; findStep++ } }
     val matches = find?.let { ConversationFind.matches(findable(chatState.chatItems(bot)), it.query) }.orEmpty()
     val shown = find?.index(matches)?.let(matches::get)
     // The first match found is held, so earlier messages with matches loading above don't move it.

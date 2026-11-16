@@ -1,0 +1,56 @@
+# A fallback's row menu edits it in place (#377): Edit opens the fallback sheet filled in with the step's agent and
+# model, another model is picked, and the step keeps its place in the chain. The phone must already be signed in and
+# paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from
+# `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags fallbacks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/relay_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - fallbacks
+onFlowComplete:
+  - runScript:
+      file: fallback-edit.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: fallback-edit.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Codex.* · e2e-model"
+- tapOn: "Codex.* actions"
+- tapOn: "Edit"
+- extendedWaitUntil:
+    visible: "Edit fallback"
+    timeout: 5000
+- tapOn: "e2e-model"
+# The agent's default model, the one every agent lists.
+- tapOn: "Default.*"
+- assertNotVisible: "e2e-model"
+- tapOn: "Save"
+- extendedWaitUntil:
+    notVisible: "Edit fallback"
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "Codex.* · Default"
+    timeout: 5000
+- runScript:
+    file: fallback-edit.js
+    env:
+      STEP: saved

@@ -3,9 +3,8 @@
 
 use super::dispatch::{Places, Standing};
 use super::items::{self, Item, Status};
-use super::{dispatch, finished_properties};
+use super::{dispatch, ended, sources};
 use crate::agent::bot::Cmd;
-use crate::analytics::{self, Event};
 use crate::hub::Hub;
 use crate::store::now_ms;
 use anyhow::{Result, anyhow, bail};
@@ -96,14 +95,21 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
     let released = items::change(hub, bot, |items| {
         waiting(items, id)?;
         let full = dispatch::places(hub, &cfg, items, None).free == 0;
+        // Only the bot's own work gives way: it starts again later, which a routine run or a request never does.
         let gives_way = if let Some(named) = instead_of {
             let item = find(items, named)?;
             if item.status != Status::Working {
                 bail!("\"{}\" isn't working: nothing to give way", item.title);
             }
+            if !item.source.is_bot() {
+                bail!(
+                    "\"{}\" is a routine run or another bot's request: it can't give way, stop it instead",
+                    item.title
+                );
+            }
             Some(named.to_owned())
         } else {
-            let working = items.iter().filter(|i| i.status == Status::Working);
+            let working = items.iter().filter(|i| i.status == Status::Working && i.source.is_bot());
             working.max_by_key(|i| i.started_at).map(|i| i.id.clone())
         };
         let gives_way = gives_way.filter(|_| full);
@@ -127,6 +133,9 @@ pub fn replace(hub: &Arc<Hub>, bot: &str, id: &str, brief: &str) -> Result<()> {
         let item = find(items, id)?;
         if item.status.ended() {
             bail!("\"{}\" has ended: add new work instead", item.title);
+        }
+        if !item.source.is_bot() {
+            bail!("\"{}\" is a routine run or another bot's request: its brief isn't yours to replace", item.title);
         }
         brief.clone_into(&mut item.brief);
         let released = item.task.clone().filter(|_| item.status == Status::Working);
@@ -159,7 +168,8 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
             .collect::<Vec<_>>())
     })?;
     for (task, item) in stopped {
-        analytics::capture(hub, Event::WorkFinished, finished_properties(&item, None));
+        // A routine's run is cancelled; the bot that asked hears its request was stopped.
+        ended(hub, bot, &item);
         if let Some(task) = task {
             let _ = hub.send_cmd(&task, Cmd::Stop);
         }
@@ -168,22 +178,36 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Takes a waiting item, or one that ended, out of the box.
+/// Takes a waiting item, or one that ended, out of the box. A waiting routine run is cancelled, and the bot whose
+/// request waited hears it was.
 pub fn drop_item(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
-    items::change(hub, bot, |items| {
-        let item = find(items, id)?;
+    let dropped = items::change(hub, bot, |items| {
+        let item = find(items, id)?.clone();
         if item.status == Status::Working {
             bail!("\"{}\" is being worked on: stop it first", item.title);
         }
         items.retain(|i| i.id != id);
-        Ok(())
+        Ok(item)
     })?;
+    if dropped.status == Status::Waiting {
+        sources::deliver(hub, bot, &dropped);
+    }
+    // A worktree it had from before it gave way goes with it, if nothing was done there.
+    super::worktree::leave(std::slice::from_ref(&dropped));
     settle(hub, bot, None);
     Ok(())
 }
 
-/// A stopped or failed item goes back to waiting, last.
+/// A stopped or failed item goes back to waiting, last. A routine's run isn't done again as it was: the routine
+/// runs again, as a new item.
 pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
+    let item = items::load(&hub.store, bot).into_iter().find(|i| i.id == id).ok_or_else(|| anyhow!("no such work"))?;
+    if !matches!(item.status, Status::Stopped | Status::Failed) {
+        bail!("only work that was stopped or failed can be tried again");
+    }
+    if !item.source.is_bot() {
+        return sources::run_again(hub, bot, &item);
+    }
     items::change(hub, bot, |items| {
         let last = items::last(items);
         let item = find(items, id)?;
@@ -194,6 +218,7 @@ pub fn retry(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
         item.ended_at = None;
         item.result = None;
         item.report = None;
+        item.failure = None;
         item.cut_in = false;
         item.restarted = false;
         Ok(())

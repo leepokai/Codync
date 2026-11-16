@@ -81,10 +81,14 @@ pub struct Bot {
     pub dev_servers: Vec<super::super::manage::DevServer>,
     pub connectors: Vec<String>,
     pub skills: Vec<String>,
+    /// The `/` commands of the agent it runs on now, as `(name, description)`.
+    pub agent_commands: Vec<(String, String)>,
     pub status: Status,
     pub activity: String,
     pub started_at: Option<i64>,
     pub unread: i64,
+    /// How many of `unread` are cards waiting on the user: the badge turns amber.
+    pub waiting: i64,
     pub last_message: String,
     pub last_at: i64,
     /// A group chat: several bots and the user, no agent of its own.
@@ -97,6 +101,13 @@ pub struct Bot {
     pub work: Vec<WorkItem>,
     /// The most agents it runs at once; `None` from a host before the box.
     pub max_agents: Option<u8>,
+    /// How it stands outside its chat (`bot.outside.status`); `None` from a host before it.
+    pub outside: Option<Status>,
+    /// A task that starts beside another in the same git repository gets a worktree of its own; `None` from a host
+    /// before worktrees.
+    pub task_worktrees: Option<bool>,
+    /// Its folder is in a git repository: where `task_worktrees` matters.
+    pub git_repo: bool,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -108,6 +119,17 @@ pub struct Rest {
     pub login_profile: Option<String>,
     pub until: i64,
     pub reason: Reason,
+}
+
+/// A status as the wire names it; none for one this terminal doesn't know.
+fn status(v: &Value) -> Option<Status> {
+    match v.as_str()? {
+        "idle" => Some(Status::Idle),
+        "working" => Some(Status::Working),
+        "needsInput" => Some(Status::NeedsInput),
+        "error" => Some(Status::Error),
+        _ => None,
+    }
 }
 
 fn strs(v: &Value) -> Vec<String> {
@@ -232,15 +254,20 @@ impl Bot {
             dev_servers: serde_json::from_value(v["devServers"].clone()).unwrap_or_default(),
             connectors: strs(&v["connectors"]),
             skills: strs(&v["skills"]),
-            status: match v["status"].as_str() {
-                Some("working") => Status::Working,
-                Some("needsInput") => Status::NeedsInput,
-                Some("error") => Status::Error,
-                _ => Status::Idle,
-            },
+            agent_commands: v["agentCommands"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| {
+                    Some((c["name"].as_str()?.to_owned(), c["description"].as_str().unwrap_or_default().to_owned()))
+                })
+                .collect(),
+            status: status(&v["status"]).unwrap_or(Status::Idle),
+            outside: status(&v["outside"]["status"]),
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
             unread: v["unread"].as_i64().unwrap_or(0),
+            waiting: v["waiting"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),
             last_at: v["lastAt"].as_i64().unwrap_or(0),
             group: v["kind"] == "group",
@@ -248,6 +275,8 @@ impl Bot {
             working_chat: v["workingChat"].as_str().map(str::to_owned),
             work: WorkItem::list(&v["work"]),
             max_agents: work::max_agents(&v["maxAgents"]),
+            task_worktrees: v["taskWorktrees"].as_bool(),
+            git_repo: v["gitRepo"] == true,
         })
     }
 
@@ -276,8 +305,24 @@ impl Bot {
         self.working_chat.as_deref().filter(|c| *c != self.id)
     }
 
+    /// What its chat shows: the chat's own status.
     pub fn mark(&self) -> Mark {
-        match self.status {
+        self.mark_of(self.status)
+    }
+
+    /// What its row in the roster shows: how it stands outside its chat, where its box counts too (it works while
+    /// an item works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
+    pub fn roster_mark(&self) -> Mark {
+        self.mark_of(self.outside.unwrap_or(self.status))
+    }
+
+    /// The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted).
+    pub fn unseen(&self) -> i64 {
+        self.unread - self.waiting
+    }
+
+    fn mark_of(&self, status: Status) -> Mark {
+        match status {
             Status::NeedsInput => Mark::Need,
             Status::Error => Mark::Error,
             Status::Working => Mark::Work,

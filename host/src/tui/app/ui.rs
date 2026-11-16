@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport, Library,
-    Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
+    AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
 };
 use super::{Editor, Mark, WhatsNew};
 
@@ -189,6 +189,8 @@ pub enum Field {
     Folder,
     /// The most agents it runs at once; only on a host that sends `maxAgents`.
     MaxAgents,
+    /// A worktree per agent; only for a bot in a git repository, on a host that sends `taskWorktrees`.
+    TaskWorktrees,
     Approvals,
     Compaction,
     Notify,
@@ -202,7 +204,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 22] = [
+pub const FIELDS: [Field; 23] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -215,6 +217,7 @@ pub const FIELDS: [Field; 22] = [
     Field::Compaction,
     Field::Folder,
     Field::MaxAgents,
+    Field::TaskWorktrees,
     Field::Approvals,
     Field::Notify,
     Field::Computer,
@@ -251,6 +254,8 @@ pub struct Form {
     pub cwd: String,
     /// The most agents it runs at once; `None`: the host has no event box.
     pub max_agents: Option<u8>,
+    /// A worktree per agent; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    pub task_worktrees: Option<bool>,
     /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
@@ -371,6 +376,8 @@ pub enum Overlay {
     Task(TaskSheet),
     /// Which working item gives way to the one that cuts in.
     CutIn(CutIn),
+    /// Every bot's work on one page.
+    AllWork(AllWork),
     /// A bot's dev servers.
     DevServers(DevServersSheet),
     Details(DetailsPage),

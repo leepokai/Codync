@@ -34,9 +34,9 @@ pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str, login_profile: Option<&s
     })
 }
 
-/// The Settings page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00". A login
-/// on a login profile goes by it too ("Claude Code (Work)"), and so does the computer's own when both are the same
-/// agent.
+/// The Settings page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00" on a usage
+/// limit, "Using Codex while Claude Code is signed out" on another rest. A login on a login profile goes by it too
+/// ("Claude Code (Work)"), and so does the computer's own when both are the same agent.
 pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
     let step = bot.agent_step.as_deref()?;
     let same = step == bot.backend;
@@ -49,8 +49,10 @@ pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
     let (own, using) =
         (name(&bot.backend, bot.login_profile.as_deref()), name(step, bot.step_login_profile.as_deref()));
     Some(match bot.rests(&bot.backend, bot.login_profile.as_deref(), now_ms()) {
-        Some(rest) => format!("Using {using} until {own} resets {}", when_future(rest.until)),
-        None => format!("Using {using} while {own} can't answer"),
+        Some(rest) if rest.reason == Reason::UsageLimit => {
+            format!("Using {using} until {own} resets {}", when_future(rest.until))
+        }
+        rest => format!("Using {using} while {own} {}", rest.map_or("can't answer", |r| r.reason.phrase())),
     })
 }
 
@@ -76,5 +78,21 @@ mod tests {
             Some("Using Claude Code (Work) while Claude Code (Default login profile) can't answer")
         );
         assert_eq!(line(json!({"agent": "codex"})).as_deref(), Some("Using Codex while Claude Code can't answer"));
+    }
+
+    #[tokio::test]
+    async fn only_a_usage_limit_gives_the_line_a_reset_time() {
+        let mut app = test_app();
+        app.backends = vec![json!({"id": "claude", "name": "Claude Code"}), json!({"id": "codex", "name": "Codex"})];
+        let line = |reason: &str| {
+            let rest = json!({"agent": "claude", "until": now_ms() + 3_600_000, "reason": reason});
+            let bot = json!({"id": "b", "name": "B", "backend": "claude", "agentStep": {"agent": "codex"}, "resting": [rest]});
+            using_line(&app, &Bot::parse(&bot).expect("a bot")).expect("on a fallback")
+        };
+        assert!(line("usageLimit").starts_with("Using Codex until Claude Code resets "));
+        for reason in ["signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting"] {
+            assert!(!line(reason).contains("resets"), "{reason}");
+        }
+        assert_eq!(line("signedOut"), "Using Codex while Claude Code is signed out");
     }
 }

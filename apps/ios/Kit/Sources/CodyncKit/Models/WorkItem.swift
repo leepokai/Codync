@@ -53,6 +53,45 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Where an item came from when the bot didn't add it itself: a run of the routine `id`, or a request from the
+    /// bot `id` (nil when the asking bot isn't one of this computer's). One of a kind this app doesn't know reads
+    /// as the bot's own.
+    public struct Source: Codable, Hashable, Sendable {
+        public enum Kind: String, Codable, Sendable { case routine, request }
+
+        public var kind: Kind
+        public var id: String?
+
+        public init(_ kind: Kind, id: String? = nil) {
+            self.kind = kind
+            self.id = id
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try c.decode(Kind.self, forKey: .kind)
+            id = try? c.decodeIfPresent(String.self, forKey: .id)
+        }
+    }
+
+    /// A git worktree of the item's own: its branch, and its folder on the computer.
+    public struct Worktree: Codable, Hashable, Sendable {
+        public var branch: String
+        public var path: String
+
+        public init(branch: String, path: String = "") {
+            self.branch = branch
+            self.path = path
+        }
+
+        /// Only one without a branch is unreadable.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            branch = try c.decode(String.self, forKey: .branch)
+            path = (try? c.decodeIfPresent(String.self, forKey: .path)) ?? ""
+        }
+    }
+
     public var id: String
     public var title: String
     public var status: Status
@@ -68,9 +107,14 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
     public var endedAt: Int64?
     /// What its task reported, or why it could not finish; empty until it ended.
     public var result: String
+    /// Nil for one the bot added.
+    public var source: Source?
+    /// The git worktree its task works in, while it is still there.
+    public var worktree: Worktree?
 
     public init(id: String, title: String, status: Status, activity: String = "", task: String? = nil, wait: Wait? = nil,
-                cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "") {
+                cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
+                source: Source? = nil, worktree: Worktree? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -82,6 +126,8 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.result = result
+        self.source = source
+        self.worktree = worktree
     }
 
     /// Lenient, but for what says which item it is and where it stands: one without an id, or with a status this
@@ -99,7 +145,17 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         startedAt = try? c.decodeIfPresent(Int64.self, forKey: .startedAt)
         endedAt = try? c.decodeIfPresent(Int64.self, forKey: .endedAt)
         result = (try? c.decodeIfPresent(String.self, forKey: .result)) ?? ""
+        source = try? c.decodeIfPresent(Source.self, forKey: .source)
+        worktree = try? c.decodeIfPresent(Worktree.self, forKey: .worktree)
     }
+
+    /// Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has
+    /// its answer already. A routine's item runs the routine again.
+    public var canRetry: Bool { (status == .failed || status == .stopped) && source?.kind != .request }
+
+    /// A task has it and it may give way to an item that cuts in: only work the bot added. A routine's run or
+    /// another bot's request is stopped, never set aside.
+    public var givesWay: Bool { status.isLive && source == nil }
 }
 
 /// A bot's `work` as the host sent it, each item that doesn't read left out.
@@ -218,10 +274,14 @@ public struct WorkSections: Equatable, Sendable {
         !live.isEmpty && free(maxAgents: maxAgents) == 0
     }
 
-    /// Whether the first waiting item may cut in: every place is taken, and a freed one would start it (not one
-    /// that follows unfinished work, or waits for usage).
-    private func canCutIn(_ item: WorkItem, maxAgents: Int?) -> Bool {
-        isFull(maxAgents: maxAgents) && item.wait?.kind != .after && item.wait?.kind != .usage
+    /// The live items that may give way to one that cuts in: what the cut-in dialog lists.
+    public var givingWay: [WorkItem] { live.filter(\.givesWay) }
+
+    /// Whether the first waiting item may cut in: every place is taken, a task may give way, and a freed place
+    /// would start it (not one that follows unfinished work, or waits for usage).
+    public func canCutIn(maxAgents: Int?) -> Bool {
+        guard let first = waiting.first else { return false }
+        return isFull(maxAgents: maxAgents) && !givingWay.isEmpty && first.wait?.kind != .after && first.wait?.kind != .usage
     }
 
     /// The Threads heading's `2 / 3`: how many run, of the most allowed.
@@ -233,9 +293,9 @@ public struct WorkSections: Equatable, Sendable {
     public func actions(for item: WorkItem, maxAgents: Int?) -> [WorkAction] {
         switch item.status {
         case .working, .needsYou: [.stop]
-        case .waiting where item.id == waiting.first?.id: canCutIn(item, maxAgents: maxAgents) ? [.cutIn, .drop] : [.drop]
+        case .waiting where item.id == waiting.first?.id: canCutIn(maxAgents: maxAgents) ? [.cutIn, .drop] : [.drop]
         case .waiting: [.first, .drop]
-        case .failed, .stopped: [.retry, .drop]
+        case .failed, .stopped: item.canRetry ? [.retry, .drop] : [.drop]
         case .done: [.drop]
         }
     }
@@ -252,6 +312,18 @@ public struct WorkSections: Equatable, Sendable {
     public func capsuleLabel(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
         let said = needsYou.isEmpty ? [solo?.what(tr) ?? counts(tr)] : [tr("Needs you"), counts(tr)]
         return ([tr("In the background")] + said).filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// All bots' work in one view: the roster's rows whose bot has a live or waiting item, in roster order, and how
+/// many items are worked on in all (the count on the view's button).
+public struct AllWork<Row> {
+    public var bots: [Row]
+    public var working: Int
+
+    public init(_ roster: [Row], work: (Row) -> [WorkItem]) {
+        bots = roster.filter { !WorkSections(work($0)).isIdle }
+        working = bots.reduce(0) { $0 + work($1).count { $0.status == .working } }
     }
 }
 
@@ -276,6 +348,46 @@ public extension Bot {
     var needsYouLine: String {
         guard needsInput else { return "Needs you" }
         return activity.isEmpty ? "Needs your approval" : activity
+    }
+
+    /// How a bot stands outside its chat (the Live Activity, the widgets): it needs the user while the chat or one
+    /// of its items waits on them, and works while the chat works or its box holds anything that isn't over.
+    struct Outside: Codable, Hashable, Sendable {
+        /// idle | working | needsInput | error
+        public var status: String
+        /// The chat turn's start, else the earliest open item's.
+        public var startedAt: Int64?
+
+        public init(status: String, startedAt: Int64? = nil) {
+            self.status = status
+            self.startedAt = startedAt
+        }
+
+        /// Only one without a status is unreadable.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            status = try c.decode(String.self, forKey: .status)
+            startedAt = try? c.decodeIfPresent(Int64.self, forKey: .startedAt)
+        }
+    }
+
+    /// `outside`, or the chat's own from a host that doesn't send it.
+    var outsideStatus: String { outside?.status ?? status }
+    var outsideStartedAt: Int64? { outside == nil ? startedAt : outside?.startedAt }
+    var needsYouOutside: Bool { outsideStatus == "needsInput" }
+    /// Something goes on, in its chat or its box: what keeps its Live Activity up.
+    var isBusyOutside: Bool { outsideStatus == "working" || needsYouOutside }
+
+    /// The one line beside the bot outside its chat, in the app's language: `Needs you` when an item waits on the
+    /// user, else what its chat does, else how many items work and wait. Empty when nothing goes on.
+    func outsideLine(_ tr: (String) -> String = { L10n.tr($0) }) -> String {
+        let work = WorkSections(work)
+        switch rosterLine {
+        case .needsYou where !work.needsYou.isEmpty: return tr("Needs you")
+        case .needsYou, .activity: return tr(activity)
+        case .work: return work.counts(tr)
+        case .lastMessage: return ""
+        }
     }
 
     var rosterLine: RosterLine {
@@ -308,6 +420,9 @@ public struct ItemRef: Codable, Hashable, Sendable {
 }
 
 public extension Entry {
+    /// What a card asks: an approval's title, a choice's question.
+    var ask: String? { data.title ?? data.question }
+
     /// What a task was told (its item): the host wrote it, the user didn't type it.
     var isToldToTask: Bool { kind == "user" && data.from == "host" }
 }
@@ -320,10 +435,11 @@ public extension Array where Element == Entry {
         return byId.values.sorted { ($0.seq, $0.id) < ($1.seq, $1.id) }
     }
 
-    /// The card in a bot's chat that an item waits on: the newest pending one that names it.
+    /// The card in a bot's chat that an item waits on (an approval, or a choice its task asks): the newest pending
+    /// one that names it.
     func card(for item: WorkItem) -> Entry? {
         last { e in
-            e.kind == "permission" && e.data.status == "pending"
+            (e.kind == "permission" || e.data.decision == true) && e.data.status == "pending"
                 && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
         }
     }

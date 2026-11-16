@@ -80,9 +80,14 @@ pill's stop turns the pill into "Transcribing…" and the whole recording goes t
 box when it arrives (typing goes on while it records). The recording goes in 20 s pieces (one
 channel message each on the iPhone; under the host's 2 MB request body on the desktop), three at a
 time, joined in order; a tail under half a second stays with the piece before, and the first piece
-that fails fails the dictation. Under half a second of audio in all is dropped. Sending a message,
-starting a call or switching chats drops a dictation still recording or transcribing. The
-recording's length counts toward the provider's minutes this month.
+that fails fails the dictation. Under half a second of audio in all is dropped. Send while dictating
+with a provider finishes it first (`finish` with a completion on every client) and sends the typed
+and dictated text as one message once the transcript is in; a failed transcription sends nothing and
+leaves the box. (On device, the desktop's Send waits for the helper's last words; the phones send
+what was recognized so far, as the pill's stop does.)
+Starting a call or switching chats drops a dictation still recording or transcribing. The
+recording's length counts toward the provider's minutes this month. The island's mic stays
+on-device (its window doesn't reach the host).
 
 The computer's speech server records the same way, and `voiceTranscribe` with `provider: "local"` has the host
 send each piece to a speech server the user runs and links (`host/src/voice/local.rs`): any server
@@ -415,9 +420,15 @@ carries audio and talks to these methods:
 
 - The host decides what the voice hears while the call lasts (`chat::calls::announce`, one watcher per call): each
   new final reply in the bot's chat (one already final when the call began isn't; one that began before it and
-  finishes during it is), an approval card waiting, a failure notice, and the bot's activity line while it works:
+  finishes during it is), an approval card waiting, a choice card waiting (`request_decision`: "Mika asks the
+  user to choose: … (options: …)"), a failure notice, and the bot's activity line while it works:
   at most one progress line every 15 s, only when it changed, and "<bot> is still working" after 45 s with nothing
-  said. It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
+  said. [Work in the background](background-tasks.md) joins in: each item at work is a progress line of its own
+  when what its task does changed (`Mika, in the background on "Fix login": Running tests`, the chat's own turn
+  first, each said once per change, within the same 15 s), the "still working" names the item when only the box
+  works, and an approval or choice card a task raised in the chat names its item (`Mika needs the user's approval
+  for "Fix login" in the background: …`); a task's choice card adds that it takes a press in the chat, since what
+  the user says goes to the bot there. `bot_status` names the item with a pending approval (`approval.work`). It sends each as a `call` event `{call, owner, kind: reply | notice | progress, text, seq}`, worded for the
   call's mode as `startCall` last gave it: a realtime voice gets replies shortened for speech, approvals with their
   options ("Mika needs the user's approval: … (options: …)") and progress; an on-device or speech-to-text call gets
   replies as written (its engine shortens them), approvals for the listener ("Mika needs your approval in the chat:
@@ -532,7 +543,8 @@ Host tests (`chat::calls`) cover a call's flow (start, lines, `send_to_bot` with
 end), the voice's instructions (the relay role and the bot's name first, each section present and within its cap,
 OpenAI's smaller share), transcript checks and dreaming over a call. `chat::calls::announce` tests cover what the
 voice hears: new replies, approvals and failures said once, a reply unfinished when the call began, a group's
-member named, the wording per call mode, progress rate-limited with a "still working" after a silence, and the
+member named, the wording per call mode, progress rate-limited with a "still working" after a silence, work in the
+background in the progress and its cards naming their item, a choice card said, and the
 replies and notices kept for the device holding the call; `api::events` tests check that only that device gets
 them, and `calls_e2e` that an on-device call hears its approval and reply. `StoreTests` (iPhone) hand each cue to
 the call once, also when a reconnect replays it after an engine switch; the desktop tests parse cues

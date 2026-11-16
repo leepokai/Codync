@@ -53,6 +53,8 @@ import kotlinx.coroutines.launch
         following.value = false
         val layout = list.layoutInfo
         list.animateScrollToItem(row.index, -(layout.viewportEndOffset - layout.viewportStartOffset) / 3)
+        // A row by the end leaves the list at the end: it follows again, as on iOS.
+        following.value = !list.canScrollForward
     }
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current

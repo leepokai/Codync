@@ -219,6 +219,11 @@ struct BotSettingsForm: View {
                         }
                     }
                 }
+                // Only in a git repository, from a host that has the setting.
+                if bot?.gitRepo == true, let worktrees = draft.taskWorktrees {
+                    SwitchRow("Worktree per agent", detail: "Agents that work at once in this repository each get their own branch.",
+                              isOn: Binding(get: { worktrees }, set: { draft.taskWorktrees = $0 }))
+                }
             }
 
             CardSection("Activity") {

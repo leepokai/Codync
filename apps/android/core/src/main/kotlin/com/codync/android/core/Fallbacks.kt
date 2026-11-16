@@ -35,14 +35,12 @@ fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> Strin
     val same = step.backend == backend
     val (to, own) = name(step, same) to name(login, same)
     val rest = restOf(login, now)
-    return if (rest != null) "Using $to until $own resets at ${clock(rest.until)}" else "Using $to while $own can't answer"
+    if (rest?.reason == "usageLimit") return "Using $to until $own resets at ${clock(rest.until)}"
+    return "Using $to while $own ${rest?.phrase ?: "can't answer"}"
 }
 
 /** The login the draft is set to run on. */
 val BotDraft.login: Login get() = Login(backend, loginProfile)
-
-/** The logins the chain has, the bot's own first: each is in it once, so an agent comes again only on another of its login profiles. */
-val BotDraft.logins: List<Login> get() = listOf(login) + fallbacks.orEmpty().map { it.login }
 
 /** The logins of this agent a new step can still take: the computer's own (first, as null) and its signed-in login profiles, without the ones in [taken]. */
 fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
@@ -59,6 +57,16 @@ fun List<Bot>.mixesAgents(): Boolean = filter { it.kind != "group" }.mapTo(HashS
 data class Resting(val agent: String = "", val until: Long = 0, val reason: String = "", val loginProfile: String? = null) {
     /** Its line under the agent, with `until` as [time]: "Usage resets 3:00 PM", "Resting until 3:00 PM". */
     fun line(time: String): String = if (reason == "usageLimit") "Usage resets $time" else "Resting until $time"
+
+    /** Why it rests, as the host's chat notice says it (`Reason::phrase`): "is signed out". Null for a usage limit, which says when it resets instead, and for a reason this app doesn't know. */
+    val phrase: String? get() = when (reason) {
+        "outOfCredits" -> "is out of credits"
+        "rateLimited" -> "is rate limited"
+        "overloaded" -> "is overloaded"
+        "signedOut" -> "is signed out"
+        "notStarting" -> "couldn't start"
+        else -> null
+    }
 }
 
 /** Most fallbacks a bot has (the host refuses more). */

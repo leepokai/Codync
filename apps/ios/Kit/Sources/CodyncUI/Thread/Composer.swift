@@ -90,7 +90,7 @@ struct Composer: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             if !commands.isEmpty {
-                CommandList(commands: commands, pick: run)
+                CommandList(commands: commands, agentRegistry: model.agentRegistry, agentName: model.backendName, pick: run)
                     .padding(.horizontal, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -387,7 +387,7 @@ struct Composer: View {
         case .fast:
             model.toggleFastMode(bot)
             draft = ""
-        case .skill(let id):
+        case .skill(let id), .agent(let id, _):
             draft = "/\(id) "
         }
         focused = true
@@ -401,10 +401,14 @@ struct Composer: View {
     }
 
     private func submit() {
-        // Words still on their way would land in the emptied box.
+        // Sent once the words still on their way are in the box, with what was typed.
+        if dictation.busy { return dictation.finish(then: submit) }
+        // A start still waiting (key check, permission) never opens the microphone after the send.
         dictation.stop()
         if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
+        // The store's copy follows the box a view update late: a transcript just put in is not in it yet.
+        model.setComposerDraft(draft, for: draftKey)
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
             guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo,
                                           files: files) else { return }

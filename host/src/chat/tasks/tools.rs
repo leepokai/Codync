@@ -2,7 +2,7 @@
 
 use super::items::{self, Item, Shown, Status};
 use super::steer::{self, Steer};
-use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch};
+use super::{MAX_BRIEF, MAX_HOPS, MAX_TITLE, MAX_WAITING, dispatch, sources};
 use crate::LockExt;
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
@@ -23,16 +23,24 @@ pub fn refuse_in_task(hub: &Hub, bot: &str, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// Refuses a task the `chat` server's tools that ask the user, share with them, change the bot or its box
-/// (`prompts::item_prompt` tells it so).
+/// The bot a call to the servers that are the bot's own (`routines`, `team`) acts as. A task on a routine run or on
+/// another bot's request is its bot there, as that turn was when it ran in the chat (a run saves its progress and
+/// sets follow-ups; an asked bot runs its own routine); a task on the bot's own work is refused.
+pub fn acting_as(hub: &Hub, bot: &str, what: &str) -> Result<String> {
+    let Some(cfg) = hub.store.bot(bot)?.map(|row| row.config).filter(crate::store::BotConfig::is_task) else {
+        return Ok(bot.to_owned());
+    };
+    if sources::source_of(&hub.store, &cfg).is_bot() {
+        refuse_in_task(hub, bot, what)?;
+    }
+    Ok(cfg.owner().to_owned())
+}
+
+/// Refuses a task the `chat` server's tools that change the bot or its box (`prompts::item_prompt` tells it so).
+/// What asks the user or shares with them goes to the task's actor, which posts it in the bot's chat.
 pub fn refuse_chat_only(hub: &Hub, bot: &str, name: &str) -> Result<()> {
-    use crate::chat::{artifacts, decision, fallbacks, outbox, profile};
-    let chat_only = TOOLS.contains(&name)
-        || profile::TOOLS.contains(&name)
-        || name == decision::TOOL
-        || fallbacks::TOOLS.contains(&name)
-        || artifacts::TOOLS.contains(&name)
-        || name == outbox::SEND_FILE;
+    use crate::chat::{fallbacks, profile};
+    let chat_only = TOOLS.contains(&name) || profile::TOOLS.contains(&name) || fallbacks::TOOLS.contains(&name);
     if chat_only { refuse_in_task(hub, bot, name) } else { Ok(()) }
 }
 
@@ -95,7 +103,7 @@ enum Admission {
 fn add(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     let added = admit(hub, bot, args);
     let outcome = added.as_ref().map_or_else(|(reason, _)| *reason, |_| Admission::Added);
-    let properties = json!({"outcome": outcome, "after": args["after"].is_string()});
+    let properties = json!({"outcome": outcome, "after": args["after"].is_string(), "source": "bot"});
     analytics::capture(hub, Event::WorkAdded, properties.as_object().cloned().unwrap_or_default());
     let id = added.map_err(|(_, error)| error)?;
     dispatch(hub, bot);

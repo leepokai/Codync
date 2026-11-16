@@ -24,8 +24,9 @@ quotes itself.
   `data.replyTo = {id, author, text}`: the answered message, who wrote it (`"user"` or a bot
   id) and its text (or its files' names when it has none), at most 500 bytes. The host builds
   it from `send`'s `replyTo` (`host/src/chat/replies.rs`).
-- Read state: one per chat (`read_rev`). A bot's `unread` badge counts final replies and pending
-  cards newer than it; a reacted-to message doesn't count again.
+- Read state: one per chat (`read_rev`). A bot's `unread` badge counts final replies newer than
+  it, plus every permission card still pending, read or not; `waiting` says how many of those are
+  cards (the badge turns amber). A reacted-to message doesn't count again.
 - The `events` catch-up carries each chat's recent entries; `history` pages older ones.
 
 ## Methods (`POST /api/<method>`, same on the E2E channel)
@@ -41,7 +42,7 @@ quotes itself.
 | `stop` | `botId` | For a group: ends its room turn and stops members working in it. |
 | `react` | `entryId, emoji` | Toggles the user's reaction on a chat message (`data.reactions`, oldest first, at most 8). A reacted-to message never turns unread again. The bot isn't told, except in a group, where members see reactions on the room lines they're shown. Bots react themselves with the `chat` server's `react` ([bot reactions](chat-messages.md#bot-reactions)). |
 | `respondPermission` | `entryId, optionId?` | Routed to `data.author`, so cards in a group reach the bot that asked. |
-| `markRead` | `botId` | Reads the chat. A no-op when nothing there is unread, so clients call it whenever a chat is on screen. `send` marks its chat read. |
+| `markRead` | `botId` | Reads the chat. A no-op when nothing arrived since it was last read (a waiting permission card stays counted, `waiting` of `unread`), so clients call it whenever a chat is on screen. `send` marks its chat read. |
 
 ## How a group answers (`host/src/chat/group.rs`, `group/rooms.rs`, Grok Bot's design)
 

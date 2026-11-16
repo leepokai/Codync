@@ -37,8 +37,9 @@ report (until the coordinator's turn for it has ended)`.
 ## What goes in
 
 *(owner)* The user talks to the coordinator; when it judges the request worth it, it adds an item. Short things it
-answers itself. In this version only the coordinator adds items; routines and other bots' requests keep their own
-paths and join the box in a later stage.
+answers itself. A run of one of the bot's routines and another bot's request are items too (stage 3): the host adds
+them, and their result goes to the chat as the routine's message or back to the asking bot, not through the
+coordinator.
 
 ## The dispatcher
 
@@ -154,7 +155,8 @@ no row of free places), and its heading says what is true (`2 / 1` right after t
 
 **Terminal**: the line over the composer says the same as the capsule; `B` opens the bot's Details page, which lists
 the same sections; on a row `↵` opens the transcript, `X` stops (asks), `F` moves first, `C` cuts in (asks which),
-`D` drops, `A` tries again. Agent and Instructions are on its Settings page.
+`D` drops, `A` tries again. Agent and Instructions are on its Settings page. `E` from the roster opens the page of
+every bot's work (stage 4).
 
 **Words** (English key = Traditional Chinese): `Threads` Threads, `Event box` Event Box, `Free` 空位,
 `Later` 之後, `Recent` 最近,
@@ -180,8 +182,9 @@ apply are reused; `{count} tasks running` goes.
 
 ## Analytics
 
-`work_added {outcome: added | elsewhere | invalid | full | hops | failed, after}`, `work_finished {outcome, start,
-forkFailed, minutes, error}`, `work_steered {how, by: bot | user}`, replacing the `task_*` events. Screen `task`
+`work_added {outcome: added | elsewhere | invalid | full | hops | failed, after, source}`, `work_finished {outcome,
+start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
+user}`, replacing the `task_*` events. Screen `task`
 stays for a task's transcript.
 
 ## As built (host, stage 1)
@@ -204,25 +207,170 @@ Where the host differs from, or settles, the text above ([what is built](../feat
   the last it worked on.
 - `wait` is null on an item that isn't waiting. `maxAgents` is on every bot row, groups included (unused there).
 
+## As built (host, stages 3 and 5)
+
+What is built is in [background tasks](../features/background-tasks.md#other-sources); where it settles or differs
+from the text below:
+
+- **Wire**: `work[].source = {kind: routine | request, id?}`, absent on the bot's own item. `id` is the routine's
+  id, or the asking bot's (absent for a request from another computer or the cloud assistant). A routine row's
+  title is the routine's name; a request row's is the request's first line (80 characters). No new API method.
+- **A bot with computer use or Manage the team on keeps its routine runs and requests as turns in its chat**
+  (`tasks::boxed`): a task has neither server, so a run that drives the screen or sets up a bot would break.
+- **A run or a request is never started twice**: it doesn't give way to a cut in (`workCutIn` with it as
+  `insteadOf` is refused, and it isn't picked when none is named), `steer_work replace` refuses it, and the
+  restart rule and the hourly look end it at once (a run `interrupted`, so its routine's retry rules decide; a
+  request failed) where the bot's own item waits again once.
+- **`retryWork`** on a routine's item runs the routine again (a new run, a new item, the old row gone); on a
+  request's it is refused. **`stopWork` / `dropWork`** cancel the run or the request. `workFirst` is as for any item.
+- **Stop in the chat** stops neither: they are the box's now.
+- **A routine's run in a task starts in a new session with only its own prompt**, as a run in the chat does: no
+  fork and no chat so far, so it costs and sees what it did before (corrected after stage 3 first forked it). A
+  request starts like any item.
+- **A request answered with exactly `(pass)`** gives the asking bot those words, as a turn in the chat did.
+- **What those turns could do in the chat holds in their task**: `request_decision`, `send_message`, `send_file`
+  and artifact cards refused; the `routines` tools (and, from a run, `message_bot`) work as the bot. Stage 5's
+  asking and sharing is for the bot's own items.
+- **A task's choice card is answered by a press only**: a message the user types is the coordinator's, so it neither
+  answers the card nor ends it; the chat's Stop doesn't end it either (stopping the item does). The cases are
+  listed in [asking and sharing from a task](../features/background-tasks.md#asking-and-sharing-from-a-task).
+- **A task's file and artifact are the bot's** (its files, its Library); only the card or message carries the item.
+
+## As built (host, stages 6 to 9)
+
+What is built is in [background tasks](../features/background-tasks.md) ([memory](../features/background-tasks.md#memory),
+[worktrees](../features/background-tasks.md#worktrees), [outside the chat](../features/background-tasks.md#outside-the-chat))
+and [voice calls](../features/voice-call.md#how-the-voice-talks); where it settles or differs from the text below:
+
+- **6.** A progress cue for an item reads `<bot>, in the background on "<title>": <activity>`; the chat's own turn
+  and each item at work are said when what they do changed, one line every 15 s. A choice card (`request_decision`)
+  is a cue too, the chat's own as well as a task's; a task's says it takes a press in the chat.
+- **7.** Wire: `bot.taskWorktrees` (true unless set, `updateBot`), `bot.gitRepo`, `work[].worktree = {branch,
+  path}` while it is there. **A task in a worktree starts from a brief, not a fork** (no agent is checked to honor
+  another folder on a fork). The worktree is made by the task as its first turn starts, not by the dispatcher, so
+  no git runs under the box's lock. An item that follows another stays in that task's folder; one that starts again
+  reuses its worktree. A stopped item's worktree is looked over when its task's turn has ended, with no report.
+  Git runs through `tokio::process` with an argument list and a one-minute limit per command, not on a blocking
+  thread: the limit can stop it. `work_finished` gains `worktree`, `kept` and `worktreeFailed`.
+- **8.** The host builds no line: the Live Activity and the ongoing notification get the status and a start time
+  only (the relay passes nothing else), so the host's part is the lifecycle. Working means the box holds an item
+  that is working or waiting, or one whose report the chat hasn't taken. The same status is `bot.outside =
+  {status, startedAt}` on the wire. No alert was added or removed.
+- **9.** Keyed by the acting bot or task, not by session id: each has one turn at a time, and the turn records its
+  session. A task's turn is never the user's own, so a task adds to memory and never takes out, for the bot's own
+  items too.
+
+## As built (clients, stages 3 to 8)
+
+The same on iPhone, Android, desktop and terminal unless said; where it settles or differs from the text below:
+
+- **3.** Before a row's title: the routine symbol (`clock.arrow.circlepath`; terminal `↻`) for a routine's run, the
+  asking bot's small avatar (terminal: its name and `›`) for a request. A request from a bot the client doesn't
+  have (another computer, the cloud assistant, a deleted bot) has no mark. **Try again** isn't offered on a
+  request's row. **Cut in** shows only when some live item can give way (the bot's own), and the list it asks with
+  holds only those.
+- **4.** The roster header's button (`tray.full`, titled **Work**, with the count of working items, no number at
+  none) shows only while a bot has a live or waiting item: a toolbar button on iPhone, a glass button on Android,
+  an icon button in the desktop's roster header. It opens a sheet titled **Work**: the bots in the roster's
+  on-screen order, each a heading (avatar, name, with the computer's name
+  when there are several computers) that opens that bot's Details, over its Threads rows then its numbered Event
+  box rows, with the rows' own actions. No `Free` rows, Later, Routines or Recent there. A row that needs you opens
+  the chat at its card (terminal: the chat, scrolled to its end); the sheet closes when nothing is live or waiting.
+  Terminal: `E` from the roster (listed in the keys sheet only while there is work; with none it says `Nothing in
+  the background`), `↵` on a name opens Details, the item keys are the Details page's, `esc`, `q` or `E` closes.
+  Screen `all_work`.
+- **5.** The `In the background · <title>` line is on a task's choice card, file message, voice note and artifact
+  card as on its permission card. A task's choice card has no **Something else** row: only a press answers it.
+- **7.** **Worktree per agent** is a switch in Settings > Workspace, shown only when the host says the bot's folder
+  is in a git repository and sends the setting, with the caption `Agents that work at once in this repository each
+  get their own branch.` The item's branch is in its task's transcript header (terminal: `⎇ <branch>` after the
+  status; the desktop shows the folder on hover), not on its Details row.
+- **8.** Each client reads `bot.outside` (the chat's own `status` for a host that doesn't send it). On every
+  client a bot's avatar follows it, its mood and its needs-you badge alike (terminal: the roster row's mark), so a
+  bot whose chat is idle shows working while its items work and needing you while one waits on a card.
+  Desktop: the island's face, badge and dot and the tray's face, dot and working mark follow it; they show no
+  counts line. iPhone: the Live Activity (the updates the app makes while it runs) and the widgets follow it, and
+  the activity and a widget's bot row show the roster's line (`Needs you`, the chat's activity,
+  `2 working · 3 waiting`). Android: the ongoing notification and the widgets follow it and show the same line.
+  A widget says `Failed` only when that status is `error`: a chat that failed while items still work reads as
+  working on both phones. An update that
+  arrives by push carries the status only, on both phones.
+
 ## Stages
 
 - [x] **1. Host**: items and the dispatcher in `chat/tasks/` (the task bot machinery stays), the tools, the API, the
   wire, `maxAgents`, analytics, tests (`tests/tasks_e2e.rs` rewritten for items: the ceiling, order, first, cut in,
   replace, after, stop, retry, restart), a real-agent check.
 - [x] **2. Clients**: capsule, Details, Settings, cut in, roster, on iPhone, Android, desktop and terminal.
-- [ ] **3. Other sources**: routines and bot requests as items.
-- [ ] **4. One view of all bots' work.**
-- [ ] **5. A task asks and shares through the chat**: `request_decision`, `send_file` and artifacts from a task, as
-  cards and messages in the bot's chat (today refused: the task says what it needs in its report).
-- [ ] **6. Voice calls know the box**: built: items in `bot_status` and the call's opening context, `stop_bot` stops
-  them too (a task's approval card was already heard and answered from a call). Left: a task's activity in the
-  call's progress cues, approval cues that name the item.
-- [ ] **7. Worktrees** for tasks that run side by side in one git repository.
-- [ ] **8. The same line elsewhere**: the iPhone Live Activity, Android's ongoing notification and the desktop island.
-- [ ] **9. Memory credit per session**: turn tracking keyed by session, so a task's memory writes are its own.
-- [ ] **10. Fork for other agents**: the fork spikes
-  ([run with Claude](../archive/background-tasks-plan-2026-11-15.md#spikes)) for Codex, Cursor and the rest; each
-  forks where it passes, and starts from a brief until then.
+- [x] **3. Other sources**: routines and bot requests as items, and on the four clients the row's mark (the
+  routine's symbol or the asking bot's avatar before the title).
+- [x] **4. One view of all bots' work**, on the four clients.
+- [x] **5. A task asks and shares through the chat**: `request_decision`, `send_file` and artifacts from a task, as
+  cards and messages in the bot's chat; the four clients show the item's line on a choice card, a file message, a
+  voice note and an artifact card as on a permission card (`data.task`, `data.item`).
+- [x] **6. Voice calls know the box**: items in `bot_status` and the call's opening context, `stop_bot` stops
+  them too, a task's activity in the call's progress cues, approval and choice cues that name the item.
+- [x] **7. Worktrees** for tasks that run side by side in one git repository; the four clients have the switch
+  (`taskWorktrees`, shown where `gitRepo`) and show the item's branch in its task's transcript header
+  (`work[].worktree`).
+- [x] **8. The same line elsewhere**: the iPhone Live Activity, widgets and avatar mood, Android's ongoing
+  notification and the desktop island and tray follow `bot.outside`; the two phones show the roster's line while
+  the app runs. Checked by each client's unit tests only: a push-updated activity or notification (status only, no
+  line) and a real iPhone's Lock Screen were not seen.
+- [x] **9. Memory credit per session**: turn tracking keyed by the actor (the bot or a task), so a task's memory
+  writes are its own turn's.
+- [x] **10. Fork for other agents**: the fork spikes
+  ([results](../archive/background-tasks-plan-2026-11-15.md#spikes), and each agent's page under
+  `docs/upstream-agents/`) were run for the agents installed on the computer. Codex, Hermes, oh-my-pi and OpenCode
+  advertise fork and passed, so they fork; Antigravity, Cursor, DeepSeek Harness, Grok Build and pi don't advertise
+  it and start from a brief (Grok Build wasn't signed in, so only its `initialize` was read). The spikes ran
+  without Codync's MCP servers: a fork with them attached was not checked for these agents.
 
-Not in this version: an item given to a running task by the dispatcher (only `after`); a worktree per parallel task;
-priorities the user sets; preempting without being asked.
+## Stages 3 to 10: what each builds
+
+Decided 2026-11-15 ("do all of them"). Each stage keeps the rules above: the chat shows text and what the user must
+act on, the user never types into a task, four clients behave the same, nothing wakes an agent that has nothing to do.
+
+**3. Other sources.** An item says where it came from: `source` = `bot` (today's `add_work`), `routine` (with the
+routine's id) or `request` (with the asking bot's id). A routine run and another bot's request (`message_bot`)
+become items in the bot's box instead of turns in its chat, so the chat stays free and they count under `maxAgents`.
+Their result does not go through a turn of the coordinator: a routine item's last message is posted in the chat as
+the routine's message exactly as a routine run posts today (title, progress note, follow-ups and alerts unchanged);
+a request item's last message is the reply the asking bot receives. They start like any item (fork where the agent
+can, else a brief that carries the routine's instructions or the request). A bot whose `maxAgents` places are all
+taken makes them wait in the box like anything else. Rows show the source as the existing symbol of a routine or
+the asking bot's avatar before the title; no new words. `Try again` on a failed routine item runs the routine again.
+Rooms (group chats) keep their own path.
+
+**4. One view of all bots' work.** Each client gets one list of every bot that has live or waiting items: the bot's
+name and avatar as a heading, under it the same rows as its Details (Threads rows then Event box rows, same actions).
+It opens from one icon in the roster's header, shown only while any bot has such items, with the count of working
+items; a row's heading opens that bot's Details. Terminal: `E` from the roster (`W` is taken: rename / remove section). Tray and island keep their own lines.
+
+**5. A task asks and shares through the chat.** `request_decision`, `send_file` and artifacts called by a task are
+no longer refused: the card or message appears in its bot's chat with `data.item` (the same "In the background ·
+<title>" line as a permission card), the user answers there, and the answer goes back to the task (`card_actor`
+already routes by item). An item waiting on such a card reads `needsYou`.
+
+**6. Voice calls.** A task's activity joins the call's progress cues (said as the item's title and what it does),
+and an approval cue from a task names its item.
+
+**7. Worktrees.** Per bot setting `taskWorktrees` (Settings > Workspace, "Worktree per agent", on by default, shown
+only when the workspace is a git repository). With it on, a task that starts while another task of the bot works in
+the same repository gets its own git worktree (`~/.codync/worktrees/<bot>/<item>`, branch `codync/<title-slug>` from
+the workspace's HEAD) as its working directory; the first task alone keeps the workspace. Its report names the
+branch. When the item ends: a worktree with no changes and no commits of its own is removed with its branch; anything
+else is kept and the report says where it is. Codync never merges, rebases or deletes a branch that has work on it.
+
+**8. The same line elsewhere.** The iPhone Live Activity, Android's ongoing notification and the desktop island
+(face and status dot included) treat a bot with working items as working and show the roster's line
+(`2 working · 3 waiting`, or `Needs you`).
+
+**9. Memory credit per session.** Turn tracking is keyed by session, so a task's `edit_memory` and its file edits to
+memory are credited to the task's own session, not the chat's.
+
+**10. Fork for other agents.** The fork spikes run for each installed agent other than Claude; one that passes
+forks, the others keep starting from a brief. Results go in the agent's page under `docs/upstream-agents/`.
+
+Not in this version: an item given to a running task by the dispatcher (only `after`); priorities the user sets;
+preempting without being asked.

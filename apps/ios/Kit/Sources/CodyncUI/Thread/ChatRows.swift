@@ -225,6 +225,7 @@ struct AgentBubble: View {
                     menu.textItems(more: entry.data.voiceNoteFile.map { [downloadItem($0)] } ?? [])
                 }
             }
+            TaskLine(data: entry.data).padding(.leading, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.trailing, 40)

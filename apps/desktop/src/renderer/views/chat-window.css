@@ -222,6 +222,11 @@ html[data-platform="darwin"] .sidebar-header {
   font-size: var(--text-caption);
   font-weight: 600;
 }
+/* Counts a card waiting on the user: the needs-you colour of the avatar badge. */
+.unread-badge.waiting {
+  background: var(--warning);
+  color: var(--on-warning);
+}
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;

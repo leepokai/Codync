@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -161,24 +162,26 @@ private enum class Trailing { Interrupt, Stop, Call, Send }
     fun clear() = text.edit { replace(0, length, "") }
     fun mention(member: Bot) = text.setTextAndPlaceCursorAtEnd(typed.substring(0, typed.lastIndexOf('@')) + "@${member.name} ")
     fun run(command: SlashCommand) {
-        val skill = command.skill
-        when {
-            skill != null -> text.setTextAndPlaceCursorAtEnd("/$skill ")
-            else -> { store.toggleFastMode(bot); clear() }
-        }
+        if (command.fills) text.setTextAndPlaceCursorAtEnd("/${command.name} ") else { store.toggleFastMode(bot); clear() }
     }
-    fun send() {
-        // Words still on their way would land in the emptied box.
+    fun sendNow() {
+        // A start still waiting (the key check) never opens the microphone after the send.
         dictation.stop()
-        val command = if (files.isEmpty()) SlashCommands.builtIn(bot, typed, members) else null
-        if (command != null) run(command) else store.sendDraft(draftKey, bot.id, typed, replyTo) { clear(); cancelReply() }
+        // The box now, not as composed: a send after dictation has the transcript too.
+        val message = text.text.toString()
+        val command = if (files.isEmpty()) SlashCommands.builtIn(bot, message, members) else null
+        if (command != null) run(command) else store.sendDraft(draftKey, bot.id, message, replyTo) { clear(); cancelReply() }
     }
+    // The composition current when the transcript arrives: a reply cancelled while it transcribes stays cancelled.
+    val latestSend by rememberUpdatedState(::sendNow)
+    // Sent once the words still on their way are in the box, with what was typed.
+    fun send() = if (dictation.busy) dictation.finish { latestSend() } else sendNow()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     // Over the box, past the + button.
     QueuedMessages(queued, state, store, Modifier.padding(start = 16.dp + FIELD_HEIGHT + 8.dp, end = 16.dp))
     AnimatedVisibility(commands.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {
-        CommandList(commands, ::run, Modifier.padding(horizontal = 16.dp))
+        CommandList(commands, { agentRegistry(state, it) }, { backendName(state, it) }, ::run, Modifier.padding(horizontal = 16.dp))
     }
     AnimatedVisibility(mentions.isNotEmpty(), enter = fadeIn(Motion.fade()) + expandVertically(Motion.layoutSize),
         exit = fadeOut(Motion.fade()) + shrinkVertically(Motion.layoutSize)) {

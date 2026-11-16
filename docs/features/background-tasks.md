@@ -2,11 +2,13 @@
 
 A bot puts long work in its **box** as **items**. **Tasks** take them: other sessions of the same bot that work away
 from the chat, so the chat keeps answering. The chat shows only messages and what needs the user (a task's approval
-cards); the work shows as one capsule above the composer, and each item's report comes back as the bot's own message.
+and choice cards, the files and artifacts it shares); the work shows as one capsule above the composer, and each
+item's report comes back as the bot's own message. A run of one of the bot's routines and another bot's request are
+items too ([other sources](#other-sources)).
 
 | | The chat (the coordinator) | A task |
 |---|---|---|
-| Session | The bot's main one | Its own, forked from the main one where the agent can |
+| Session | The bot's main one | Its own, forked from the main one where the agent can (a routine's run: a new one) |
 | Agent process | The bot's | Its own |
 | Transcript | The chat | Its own, read from the item's details |
 | Who talks to it | The user | No one: it gets items, one at a time |
@@ -15,21 +17,23 @@ cards); the work shows as one capsule above the composer, and each item's report
 Design: [the event box](../plans/event-box.md); why a task is a bot of its own, and the fork spikes:
 [the first design](../archive/background-tasks-plan-2026-11-15.md). Code: `host/src/chat/tasks/` (`items.rs`: the box, its wire shape and what the bot reads of it;
 `dispatch.rs`: which item a task takes next; `steer.rs`: first, cut in, replace, stop, drop, retry; `mod.rs`: a
-task's turn end, the report, host start; `tools.rs`: the bot's tools and what a task may not call; `prompts.rs`: the
-words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt
-and the report, `queue.rs` for `turn_over`, `updates.rs` for cards).
+task's turn end, the report, host start; `sources.rs`: routine runs and other bots' requests as items; `tools.rs`:
+the bot's tools and what a task may not call; `sweep.rs`: the hourly look; `worktree.rs`: a task's git worktree;
+`prompts.rs`: the words); the actor's side is in `host/src/agent/bot/` (`session.rs` for the fork, `turn.rs` for the box in the prompt, the worktree
+and the report, `queue.rs` for `turn_over`, `updates.rs` for cards). Git is run through `host/src/git.rs`.
 
 ## An item
 
-One piece of work: `id, title, brief, words` (the user's own, word for word), `notes` (what the user said about it
-since), `status, order, after, task, cutIn, hops, createdAt, startedAt, endedAt, result, report`. A bot's items are one
+One piece of work: `id, title, brief, source` (where it came from: the bot, a routine's run, another bot's request),
+`words` (the user's own, word for word), `notes` (what the user said about it
+since), `status, order, after, task, cutIn, hops, createdAt, startedAt, endedAt, result, report, failure, worktree`. A bot's items are one
 JSON list in kv `work.<bot>`; every change to a box is made under one lock (`items::change`).
 
 | Status | Meaning |
 | --- | --- |
 | `waiting` | In the box; no task works on it |
 | `working` | A task works on it |
-| `needsYou` | Its task waits on an approval (never saved: a working item reads so while its task's card is open) |
+| `needsYou` | Its task waits on an approval or a choice (never saved: a working item reads so while its task's card is open) |
 | `done` | Finished; `result` is what its task reported |
 | `failed` | It could not be finished; `result` says why |
 | `stopped` | The user or the bot stopped it |
@@ -39,8 +43,8 @@ JSON list in kv `work.<bot>`; every change to a box is made under one lock (`ite
 Everything a running turn touches is keyed by bot id, so a task is a **task bot**: a `bots` row with
 `taskOf = <bot id>` and id `task-<uuid>`, its config copied from its bot when it starts (without `computer` and
 `manage`). It has its own actor, agent process, session, transcript, restart mark, fallback state and compaction
-record. Its memory and instruction snapshot are its bot's (`BotConfig::as_owner`; its `memory` MCP server is started
-for its bot).
+record. Its memory and instruction snapshot are its bot's (`BotConfig::as_owner`); its `memory` MCP server is its
+own, and reads and writes its bot's memory as the task's own turn ([memory](#memory)).
 
 No client lists a task bot. `Store::bots()` leaves them out, `emit_bot` for one emits its bot instead, and its
 entries leave as `taskEntry` events, not `entry`.
@@ -76,15 +80,20 @@ The decisions are one pure function (`dispatch::standings`), which the wire's `w
   outside the bot's own chat with the user (a room, another bot's request, a routine run: `add_work works only in
   your own chat with the user`), in a task, past 20 waiting items, when `after` names
   no item that is working or waiting, and for the ninth item added in a row with no message from the user (an item
-  added from a report's turn carries that report's hops). Stopping the turn that added an item drops it.
+  added from a report's turn carries that report's hops). Stopping the turn that added an item drops it. Refused
+  too in a turn a network rule holds to a ceiling, such as one that reads another computer's answer
+  ([ceilings](codync-network.md#ceilings-auto-and-ask)): its work would run without it.
 - `steer_work {item, how, brief?, insteadOf?}`: `first` (a waiting item moves to the front), `now` (it cuts in),
   `replace` (a new brief), `stop`. The user's own words of the running turn are added to the item's `notes`.
+  Refused under a ceiling, as `add_work` is.
 - `work_status {}`: every item that is working or waiting, and those ended in the last day: status, what its task
   does now, why it waits, seconds, result.
 
-Refused in a task: these three, `request_decision`, `send_file`, artifacts, and changes to the bot's profile or
-fallbacks (`tasks::refuse_chat_only`, the `chat` server's), and the `routines`, `team` and `manage` tools
-(`tasks::refuse_in_task`). The refusal says to put what it needs in its report.
+Refused in a task: these three and changes to the bot's profile or fallbacks (`tasks::refuse_chat_only`, the `chat`
+server's), and the `routines`, `team` and `manage` tools (`tasks::acting_as`, `tasks::refuse_in_task`). The refusal
+says to put what it needs in its report. `request_decision`, `send_file` and artifacts work from a task
+([below](#asking-and-sharing-from-a-task)). A task on a routine's run or another bot's request has that turn's own
+rules instead ([other sources](#other-sources)).
 
 A task may start [dev servers](dev-servers.md). They are its bot's: listed on the bot, stopped there, counted toward
 its limit, and so is what the task's agent leaves listening through its own shell. The approval card is the task's,
@@ -122,7 +131,10 @@ A task that gives its item up is told to stop; when its turn has ended, the disp
   `sessionCapabilities.fork`, the bot is on its own agent (not a fallback), and the main session has used under half
   its window.
 - **Brief**: `session/new`, with the chat so far before the task's first message (`handoff::build`: summary, last
-  requests, last reply, plan). Used when a condition fails or the fork errors.
+  requests, last reply, plan). Used when a condition fails or the fork errors, and for a task that works in a
+  [worktree](#worktrees) (a fork would be taken in another folder than its session's).
+- **A routine's run**: `session/new` with the run's own prompt and nothing of the chat, as a run in the chat has:
+  no fork and no chat so far, so it costs and sees what it did before runs were items (`sources::from_chat`).
 
 A task's message for an item says what it is, gives the brief, the user's own words and what they said since, and
 how its words reach the user (`prompts::item_prompt`). An item that follows another is the task's next message in
@@ -136,7 +148,9 @@ bot's reply there is an ordinary message with the usual alert; `(pass)` stays si
 until that turn has ended: a host restart before then sends it again (the cut-off report turn isn't resumed). When
 the turn ends without the bot's answer (stopped, failed, or it never started), the chat shows the report as a notice
 (`"<title>" finished in the background: …`), so what the task found isn't lost with the turn. An item the user
-stopped reports nothing. Reports are `from: host`: memory and dreaming don't take them as the user's words.
+stopped reports nothing. Reports are `from: host`: memory and dreaming don't take them as the user's words. A
+report of an item that worked in a [worktree](#worktrees) says where its changes are (the branch and the folder),
+or that the worktree had none and was removed.
 
 An item that doesn't finish reports why, the same way: its task's agent couldn't start (`it could not start: …`),
 failed mid-turn, or ended short of `end_turn`. Every way a task's turn ends goes through `Actor::turn_over`, so no
@@ -149,14 +163,158 @@ its item's title), `data.item` (the item's id) and the bot as `data.author`, so 
 task's actor and a client can link the card to the item. The approval setting is the bot's (copied when the task
 starts). A waiting card stops only its task; the chat goes on.
 
+## Asking and sharing from a task
+
+A task on the bot's own work reaches the user through the bot's chat, as its approval card does. What it posts there
+is the bot's (`data.author`), numbered with the chat's latest turn, and carries `data.task = {id, title}` and
+`data.item`, so a client shows the same `In the background · <title>` line and can open the item
+(`Actor::add_for_user`).
+
+- **`request_decision`**: the choice card is posted in the bot's chat, the item reads `needsYou` while it is open,
+  the alert (*needs you*) opens the bot's chat, and a press (`respondDecision`) goes to the task (`tasks::card_actor`).
+  The user's choice is recorded as their message in the chat, under the card.
+- **`send_file`** (a voice note too): the file message is the bot's in the chat. The copy is kept in the bot's files,
+  so it outlives the task.
+- **`publish_artifact`, `list_artifacts`**: the artifact is the bot's (its Library), and its card is in the chat.
+
+A card that belongs to a task, case by case:
+
+| What happens | A chat's own card | A task's card |
+| --- | --- | --- |
+| The user types a message | It answers the card, or ends it (`other_message`) | Nothing: the message is for the bot in the chat. Only a press answers, so the card's text doesn't ask for a typed reply |
+| Stop in the chat | Ends it (`stopped`) | Nothing: the chat's Stop is the chat's turn. Stopping the item (`stopWork`, the bot's `steer_work stop`) ends it |
+| The item gives way or gets a new brief | | Ends it (`stopped`): its task is closed |
+| The turn ends | Ends it (`turn_ended`) | The task's turn, not the chat's: a card the task left open ends with the item |
+| Four and a half minutes | Ends it (`timeout`), the call returns | The same; the task goes on without an answer |
+| Host restart | Ends it (`restart`) | The same: the resumed task has no call waiting |
+| One at a time | One card per bot | One card per task; two tasks may each have one open in the chat |
+| Alert | *needs you*, the bot's chat | The same, named for the bot |
+
+A permission card follows the same rows, except that a typed message never touched it. An item waiting on a card is
+never taken for lost by the hourly look: its turn runs.
+
+## Other sources
+
+A run of one of the bot's routines and another bot's `message_bot` request are items in the bot's box
+(`sources.rs`), so the chat stays free while they work and they wait for a place under `maxAgents` like anything
+else. An item's `source` says which: `routine` with the routine's id, or `request` with the asking bot's id (none
+when it was asked from another computer or by the cloud assistant). A request starts like any item (a fork of the
+chat's session where the agent can, else a new session told the chat so far); a routine's run starts in a new
+session that knows only its own prompt, as it did in the chat. Their task is told the routine's own
+prompt or the request as it is, not an item's brief, and **their result takes no turn of the bot's**:
+
+- **A routine's run** ([routines](routines.md#execution)): when a task takes it, the run begins as it did in the
+  chat (the latest instruction and progress note, the `Routine · <name>` line). Its last message is posted in the
+  chat as the bot's message, in the turn that line took, and the run's outcome is saved: the alert, `(pass)`, the
+  failure line, the retries after 1, 5 and 15 minutes and the Try again button are the routine's as before. The
+  routine's time limit stops its task, its session's setup included, and only while the run is what the task works
+  on (an item that followed the run into its task has no limit). The item's title is the routine's name.
+- **A request** ([bot collaboration](bot-collaboration.md#how-a-message-runs)): the exchange's notices read
+  `Running…` when a task takes it, and the item's last message is the reply the asking bot gets, with the same
+  hop count, as it is: a reply of exactly `(pass)` goes back as those words, and a turn that ends with no text is
+  `recipient finished without a text reply`, both as from a turn in the chat. Its title is the request's first line.
+
+What such a turn could and couldn't do in the chat holds in its task (`Actor::task_source`): `request_decision`,
+`send_message`, `send_file` and artifact cards are refused with the same words; the `routines` tools work, as the
+bot (a run saves its progress and sets follow-ups, an asked bot runs its own routine); `message_bot` works from a
+run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task. A
+request from another computer under a network rule's `auto` or `ask` holds its task to that
+[ceiling](codync-network.md#ceilings-auto-and-ask) (`tasks::access_of`), as it held the turn in the chat.
+
+What differs from the bot's own items:
+
+- **Stop** cancels the run (`Stopped by user`, no failure line) or tells the asking bot its request was stopped.
+  **Drop** on a waiting one does the same.
+- **Try again** on a routine's item runs the routine again: a new run (with the failed run's event when it kept
+  one, else as `runRoutine` does) and a new item in the old one's place. A request can't be tried again: the bot
+  that asked has its answer.
+- **They never give way** to an item that cuts in, and `steer_work replace` refuses them: started again they could
+  act twice.
+- **They never start twice.** Cut off by a host restart with a task that can't resume, or lost (the hourly look), a
+  run ends `interrupted` at once and its routine's retry rules decide, and a request fails. A request lives in the
+  host process (its notices are marked interrupted at start, as before), so its item leaves the box at host start.
+- A run whose routine was paused or deleted while it waited leaves the box.
+- Stop in the chat no longer cancels a routine's run that waits in the box, nor a request: the box's Stop does.
+
+**Kept as turns in the chat**: a bot with **computer use** or **Manage the team** on takes its routine runs and
+requests in its chat as before (`tasks::boxed`), because a task has neither the `computer` nor the `manage` server
+(one screen and one team stay with the chat), so a run that drives the screen or sets up a bot would stop working.
+Rooms keep their own path.
+
+## Memory
+
+A task's writes to memory are its own turn's (`memory::turns`, keyed by the actor: the bot, or one of its tasks),
+credited to its bot and made in the task's session, for the bot's own items, a routine's run and a request alike:
+
+- **`edit_memory`** from a task is a call of the task's own `memory` server. No message of the user's started the
+  task's turn, so it may add lines and never change or take one out, whatever the chat is doing meanwhile (before,
+  it borrowed the chat's running turn, and could take a line out while the user's own turn ran there).
+- **File tools and shell commands** in a task are checked at the end of the task's turn, as a chat turn's are: a
+  change that may not stand (a line taken out) is put back, and the task's session hears why. A line it added is
+  recorded as the bot's.
+- The task's session knows what it wrote itself; the chat's hears of the change with its next message.
+
+## Worktrees
+
+Two tasks in one git repository would write over each other's files. With **`taskWorktrees`** on (per bot, on
+unless set; it matters only where the bot's folder is in a git repository, `gitRepo` on the wire), a task for one
+of the bot's own items that starts **while another task of the bot is working** gets a git worktree of its own
+(`worktree.rs`):
+
+- `~/.codync/worktrees/<bot id>/<item id>`, on a new branch `codync/<title in lowercase, dashes>` (`-2`, `-3`… when
+  taken), from the commit the bot's folder is on. The task's agent starts there (in the same place of the
+  repository as the bot's folder, when that is a folder inside it), is told so with its item, and starts from a
+  brief, not a fork. Uncommitted changes of the bot's folder aren't in it.
+- **The first task alone keeps the bot's folder**; a routine's run and a request never get a worktree; an item that
+  follows another (`after`) goes on in that task's folder, worktree or not.
+- It is made by the task itself as its first turn starts. When git fails (no commit yet, git missing, the folder in
+  the way, a checkout hook that fails) or the checkout lacks the bot's folder (git doesn't track it: ignored, or
+  never added), the task works in the bot's folder as before, and the failure is logged. A worktree git made and
+  the task can't use is taken back at once, with its branch (`git worktree remove --force`, `git branch -D`):
+  nothing has worked there.
+- **When the item is over** and nothing waits to follow it (an item the hourly look or a host restart ended
+  included): a worktree with nothing in `git status --porcelain --untracked-files=all` (untracked files count
+  whatever the user's `status.showUntrackedFiles` says), on
+  its own branch, with that branch still at the commit it started from, is removed (`git worktree remove`, then
+  `git branch -d`, neither forced), and the report says so. Anything else is kept, with its branch, and the
+  item's report to the chat names the branch and the folder, for the bot to tell the user and merge when asked.
+  An item the user stopped is looked over once its task's turn has ended; it reports nothing.
+- An item that gave way, got a new brief or is tried again starts again in the worktree it had.
+- **Codync never merges, rebases, resets, forces or deletes a branch that has work on it**, and never touches a
+  worktree it didn't make: what a box says is checked first (the folder is `~/.codync/worktrees/<id>/<id>`, the
+  branch `codync/…`). Git runs with an argument list, never through a shell, each command for at most a minute.
+- Dev servers, `send_file` and `publish_artifact` of a task in a worktree start from the worktree.
+
+## Outside the chat
+
+What shows a bot away from its chat (the iPhone's Live Activity, Android's ongoing notification, both fed by
+`push::live_activity_update`) reads the bot through `Hub::outside_runtime` (`tasks::outside`): it **needs you**
+while the chat or one of its items waits on the user; it **works** while the chat works or its box holds anything
+that isn't over (an item working or waiting, or one whose report the chat hasn't taken yet); otherwise it is the
+chat's own status. An update goes out when that status changes (`Hub::outside_changed`: after the chat's or a
+task's status changed, and after each dispatcher pass), so an activity doesn't end when the chat's turn does while
+items work, and ends once the box is empty and the chat idle. The push carries the status and the start time only,
+as before: the line (`Needs you`, the chat's activity, `2 working · 3 waiting`) is each client's, from `bot.work`.
+The same status is on the wire as `bot.outside = {status, startedAt}`, beside the chat's own `status`, for what a
+client keeps up to date itself (the activity while the app runs, the tray, the island).
+An item's end sends no alert of its own: its report is a turn of the bot's, whose reply alerts as any reply does.
+
 ## Wire
 
 - Bot: `work: [item]`: every working item (oldest first), then the waiting in dispatch order, then the items ended
   in the last 24 hours (newest first, at most 20). Item: `{id, title, status, activity, task, wait, cutIn,
-  createdAt, startedAt, endedAt, result}`; `activity` is its task's, `task` the task bot that has or had it, `wait`
+  createdAt, startedAt, endedAt, result, source?, worktree?}`; `activity` is its task's, `task` the task bot that has or had it, `wait`
   is `{kind: next | behind | after | usage, ahead?}` on a waiting item and null otherwise, `result` at most 280
-  characters. The bot's own `status` stays the chat's.
+  characters. `source` is `{kind: routine, id: <routine id>}` or `{kind: request, id?: <asking bot id>}`, and absent
+  on an item the bot added, so a client that doesn't know it shows the row as before. `worktree` is
+  `{branch, path}` while the item has a [worktree](#worktrees) that is still there, and absent otherwise. The bot's own `status` stays the chat's.
+- Cards and messages a task posts in the chat carry `data.task = {id, title}` and `data.item`: permission cards,
+  choice cards (`data.decision`), file messages (`data.files`) and artifact cards (`data.artifact`).
 - Bot: `maxAgents`, set with `updateBot` (1 to 6).
+- Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
+  `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
+- Bot: `taskWorktrees` (true unless set; `updateBot`), and `gitRepo`: whether the bot's folder is in a git
+  repository, which is where the setting matters and a client shows its switch. Both absent on an older host.
 - `taskEntry` events `{rev, task, entry}` for a task's transcript; none in the catch-up.
 - `taskEntries {botId, taskId}` → `{task: {id, title, status, startedAt, endedAt, start}, entries}` (newest 500):
   `taskId` is an item's `task`; `title`, `status` and the times are of the item it works on, else the last it
@@ -167,7 +325,7 @@ starts). A waiting card stops only its task; the chat goes on.
 ## In the apps
 
 The capsule, the bot's Details (Threads, Event box, Later, Routines, Dev servers, Recent), `Agents at once` in its
-Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). A client reads `bot.work` and `bot.maxAgents`; both are
+Settings and cutting in are specified in [the event box](../plans/event-box.md#in-the-apps) (stage 2). The sheet of every bot's work, the rows' source marks, the `In the background · <title>` line on what a task posts, the **Worktree per agent** switch and what follows `bot.outside` are in [as built, clients](../plans/event-box.md#as-built-clients-stages-3-to-8). A client reads `bot.work` and `bot.maxAgents`; both are
 absent on an older host, where the feature doesn't show.
 
 ## Restart and cleanup
@@ -175,8 +333,10 @@ absent on an older host, where the feature doesn't show.
 At host start (`tasks::restore`): items ended over 7 days ago are deleted; a working item whose task's turn was cut
 off and can be resumed (`agent::bot::resumable`: a restart mark under an hour old) stays working, and its task's
 actor resumes the turn; one whose task can't goes back to waiting once, as an item that was cut in on, and fails with
-a report the second time. An ended item's undelivered report is sent again. Task bots whose bot is gone, or that no
-item names, are deleted. Deleting a bot deletes its box and its tasks.
+a report the second time. An ended item's undelivered report is sent again: to the bot, or, for a routine's run,
+as its message in the chat (posted once, by its entry id) and its saved outcome. A run the box no longer holds is
+queued again if it waited, and ends `interrupted` if it ran. Task bots whose bot is gone, or that no
+item names, are deleted. Deleting a bot deletes its box and its tasks, and cancels the requests it hadn't answered.
 
 The hourly look (`tasks/sweep.rs`) catches what no event said. After every dispatcher pass that leaves waiting or
 working items in a box, one timer per bot is set for an hour later (reset by the next pass, none for an empty box).
@@ -187,26 +347,48 @@ code only: no agent is woken unless an item was lost.
 
 ## Limits of this version
 
-- A task's memory tools run as its bot, so a task's `edit_memory` is credited to the chat's session, and its edits
-  through file tools are taken at the bot's next scan as changes outside a turn.
-- No worktree for tasks that run side by side; no subagent rows.
+- A task never changes or takes out a line of memory, the bot's own items included: no message of the user's
+  starts its turn. What the user asks the bot to forget, the bot does in the chat.
+- No subagent rows.
+- A task in a worktree starts from a brief, not a fork (no agent is checked to honor another folder on a fork).
+- A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
+  files) isn't in it, and removing an untouched one deletes what its task left there ignored.
+- On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
+  while it looks a worktree over leaves it, marked kept.
+- A turn of the chat that ends while items still work alerts as done with the bot's words; the Live Activity goes
+  on.
+- A Live Activity or ongoing notification updated by a push shows the status only; the counts line needs the app
+  (the relay passes no more than the status and a date).
 - What a task's agent runs inside its own process (a harness's background agents and shells in the agent's session)
   ends when the task does: its process and that session's processes are stopped (`Acp::kill`). A program it
   detached into a session of its own (a server from its shell) isn't reached and keeps running; one left listening
   shows among the bot's [dev servers](dev-servers.md).
-- A voice call reads the box (`bot_status`, and the call's opening context) and its `stop_bot` stops the items too,
-  but a task's activity isn't in the call's progress cues.
 - A task ends as soon as its item does when nothing waits to follow it, so `after` is for work that is still
   working or waiting.
-- Only the bot adds items; routines and other bots' requests keep their own paths.
+- A routine's run in a task has its `send_message` refused as before, and what it wrote reaches the chat when it
+  ends.
+- A task on a routine's run or a request can't change the bot's profile or fallbacks, which that turn could in the chat.
+- A typed message never answers a task's choice card; a client without buttons can't answer one.
 
 Tests: `host/tests/tasks_e2e.rs` with `tests/fixtures/task_agent.py` (fork, brief, a card with `data.item` answered
 from the chat, refusals in a task from each server, the ceiling and the order, first, drop, cut in from the user and
 from the bot, replace on a waiting and on a working item, `after` in the same session, stop one and all, retry, an
 agent that can't start, a stopped turn dropping the item it added, a deleted bot taking its box and tasks, a host
 restart mid-item, cut in on an item that follows working one closing nothing, no `bot` or `entry` event for a task
-bot); unit tests of the dispatch order and the `wait` reasons
-(`dispatch.rs`), an item's end and the restart rule (`mod.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
-covered by a test: the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
+bot; a routine's run as an item: its source on the wire, waiting for a place, its message posted once in its line's
+turn with no turn of the bot's, `(pass)`, its progress note, the refusals of a run, stop, a deleted routine's waiting
+run, try again, never giving way, an agent that can't start, a host restart mid-run; another bot's request as an
+item: its source, the notices, the reply turn of the asking bot, the refusals of a request, stop, no try again; a
+task's choice card answered by a press and not by a typed message, ended by stopping its item and not by the chat's
+Stop, its file and artifact in the chat and kept with the bot; a run that never forks nor sees the chat, a request's
+`(pass)`; a task's `edit_memory` adding and refused a removal while the user's own turn runs in the chat; a task
+beside another in a repository working in its worktree, an untouched one removed with its branch, a touched one
+kept and named in the report, the switch off and a folder that is no repository); `memory_files_e2e` (a line a
+routine's run in a task takes out with a shell command is put back); unit tests of a worktree made, removed, kept
+and never touched when it isn't Codync's (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
+(`dispatch.rs`), an item's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`items.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
+covered by a test: a worktree reused by an item that starts again, one inherited by an item that follows, a
+stopped item's worktree looked over, a worktree's dev server and artifact, git failing, a real agent in a worktree,
+the Live Activity push itself (the relay isn't in the tests), a routine's time limit in a task, a lost run or request at the hourly look, a run the box lost at host start, a request from another computer or the cloud assistant as an item, `message_bot` from a run's task, a task's voice note, a choice card's timeout and its end at a host restart, the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
 task's dev server, an item sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
 known harness's prompt.

@@ -82,6 +82,19 @@ public struct AgentRest: Codable, Hashable, Sendable {
         let time = RelativeTime.clock(Date(milliseconds: until))
         return reason == "usageLimit" ? "Usage resets \(time)" : "Resting until \(time)"
     }
+
+    /// Why it rests, as the host's chat notice says it (`Reason::phrase`): "is signed out". Nil for a usage limit,
+    /// which says when it resets instead, and for a reason this app doesn't know.
+    var phrase: String? {
+        switch reason {
+        case "outOfCredits": "is out of credits"
+        case "rateLimited": "is rate limited"
+        case "overloaded": "is overloaded"
+        case "signedOut": "is signed out"
+        case "notStarting": "couldn't start"
+        default: nil
+        }
+    }
 }
 
 /// notice: the bot moved to another agent (`back`: to its own), with what the new one was told (`carried`).

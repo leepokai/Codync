@@ -223,6 +223,7 @@ pub enum Link {
     Privacy,
     Support,
     InstallCommand,
+    WhatsNewFilm,
     #[serde(other)]
     Other,
 }
@@ -299,6 +300,8 @@ pub enum Screen {
     Network,
     /// A background task's details.
     Task,
+    /// Every bot's work on one page.
+    AllWork,
     #[serde(other)]
     Other,
 }

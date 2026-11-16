@@ -319,7 +319,7 @@ fn command_menu(buf: &mut Buffer, body: Rect, app: &App) {
         let x = put(buf, body.x + 3, y, 26, &truncate(&format!("/{}", c.name), 26), name.patch(bg)) + 2;
         let hint = match (i == sel, c.action) {
             (false, _) => "",
-            (true, SlashAction::Skill) => "tab fills in",
+            (true, SlashAction::Skill | SlashAction::Agent) => "tab fills in",
             (true, _) => "↵ runs",
         };
         let rx = rput(buf, body.right() - 1, y, hint, t.dim.patch(bg));

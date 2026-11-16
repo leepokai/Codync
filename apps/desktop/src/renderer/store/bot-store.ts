@@ -2,6 +2,7 @@ import {
   isWorking,
   needsInput,
   normalizeBot,
+  unseen,
   type Bot,
   type BotDraft,
   type DirListing,
@@ -331,11 +332,11 @@ export class BotStore extends BotSync {
     if (runId) this.answer(entry, 'retry', (c) => c.call('retryRoutineRun', { botId: entry.botId, runId }))
   }
 
-  /** The roster's "Mark as read". */
+  /** The roster's "Mark as read": cards still waiting on the user stay counted until they're answered. */
   markAllRead(botId: string) {
     const bot = this.bots.get(botId)
-    if (!bot || bot.unread <= 0) return
-    this.bots.set(botId, { ...bot, unread: 0 })
+    if (!bot || unseen(bot) <= 0) return
+    this.bots.set(botId, { ...bot, unread: bot.waiting })
     this.changed()
     this.perform((c) => c.call('markRead', { botId }), true)
   }

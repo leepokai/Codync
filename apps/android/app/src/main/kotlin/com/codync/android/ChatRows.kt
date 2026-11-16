@@ -284,6 +284,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             .contextActions(reactions = menu.reactions, onClick = { focus.clearFocus() }, preview = { AgentText(entry.text, selectable = true) }, items = textMenu)) {
             AgentText(entry.text, selectable = false)
         }
+        TaskLine(entry, Modifier.padding(start = 4.dp))
     }
 }
 

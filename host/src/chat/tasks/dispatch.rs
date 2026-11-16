@@ -1,7 +1,9 @@
 //! The dispatcher: which waiting item a task takes next, which task ends, and why an item still waits.
 
 use super::items::{self, Item, Status};
-use super::{Failure, Outcome, finished, of, prompts};
+use super::sources::{self, Begin};
+use super::worktree::{self, Place, Worktree};
+use super::{Outcome, finished, of, prompts};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, TASK_PREFIX, now_ms};
@@ -159,6 +161,10 @@ struct Plan {
     end: Vec<String>,
     /// Task bots no item names any more.
     delete: Vec<String>,
+    /// An item left the box as it was about to start, so its place may go to the next: another pass.
+    again: bool,
+    /// Worktrees of items that are over, which nothing works in any more: each goes if it is untouched.
+    settle: Vec<(String, Worktree)>,
 }
 
 /// Looks over `bot`'s box: waiting items go to tasks where they can, tasks with nothing left end. Run whenever the
@@ -181,6 +187,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
     };
     for (task, item) in plan.start {
         hub.spawn_bot(task.clone());
+        sources::watch(hub, bot, &task.id, &item);
         begin(hub, &task, &item, true);
     }
     for (task, item) in plan.join {
@@ -198,12 +205,23 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
             tracing::warn!(task, error = format!("{error:#}"), "couldn't remove a task");
         }
     }
+    for (item, left) in plan.settle {
+        let bot = bot.to_owned();
+        worktree::settle_then(hub, &bot.clone(), &item, left, move |hub| hub.emit_bot(&bot));
+    }
+    if plan.again {
+        return run(hub, bot, over);
+    }
     hub.emit_bot(bot);
+    // What follows the bot from outside its chat counts it working while its box holds work.
+    hub.outside_changed(bot);
     super::sweep::arm(hub, bot);
 }
 
-fn plan(hub: &Hub, cfg: &BotConfig, items: &mut [Item], over: Option<&str>) -> Result<Plan> {
+fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -> Result<Plan> {
     let mut plan = Plan::default();
+    // A run whose routine was paused or deleted while it waited, a request the last host process took with it.
+    items.retain(|i| i.status != Status::Waiting || !sources::withdrawn(hub, i));
     let places = places(hub, cfg, items, over);
     for (id, standing) in standings(items, &places, |task| task_state(hub, task, over)) {
         if matches!(standing, Standing::Wait(_)) {
@@ -211,19 +229,45 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut [Item], over: Option<&str>) -> R
         }
         // What it follows began its task's session.
         let before = items.iter().find(|i| i.id == id).and_then(|i| i.after.clone());
-        let began = before.and_then(|id| items.iter().find(|i| i.id == id)).and_then(|i| i.start);
-        let Some(item) = items.iter_mut().find(|i| i.id == id) else { continue };
+        let before = before.and_then(|id| items.iter().position(|i| i.id == id));
+        let began = before.and_then(|at| items[at].start);
+        // Another task of the bot works in its folder now: a new one beside it gets a worktree, in a repository.
+        let side_by_side = items::working(items) > 0;
+        let Some(at) = items.iter().position(|i| i.id == id) else { continue };
+        match sources::begin(hub, &cfg.id, &mut items[at])? {
+            Begin::Go => {}
+            Begin::Later => continue,
+            Begin::Gone => {
+                items.remove(at);
+                plan.again = true;
+                continue;
+            }
+        }
+        // It goes on where the task it joins works: a worktree that task is in is this item's from here.
+        let inherited = before
+            .filter(|_| matches!(standing, Standing::Join(_)))
+            .and_then(|before| items[before].worktree.take_if(|w| w.left == worktree::Left::InUse));
+        let item = &mut items[at];
         item.status = Status::Working;
         item.started_at = Some(now_ms());
         if let Standing::Join(task) = standing {
             item.start = began;
             item.task = Some(task.clone());
+            item.worktree = inherited.or(item.worktree.take());
             plan.join.push((task, item.clone()));
         } else {
             let task = task_bot(cfg);
             item.start = None;
             item.fork_failed = false;
-            item.fork_from = fork_source(hub, &cfg.id);
+            // One it has from before (it gave way, or is tried again) is where its work is.
+            item.worktree.take_if(|w| !worktree::usable(w));
+            let beside = cfg.task_worktrees && item.source.is_bot() && side_by_side && worktree::in_repo(&cfg.cwd);
+            item.place = if item.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
+            // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
+            // ponytail: a task in a worktree starts from a brief, not a fork: a fork is taken in another folder
+            // than its session's, which no agent is checked to honor. Fork there once one is (stage 10's spikes).
+            let forks = sources::from_chat(&item.source) && item.place == Place::Folder;
+            item.fork_from = forks.then(|| fork_source(hub, &cfg.id)).flatten();
             item.task = Some(task.id.clone());
             {
                 let _g = hub.emit_lock.locked();
@@ -232,6 +276,7 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut [Item], over: Option<&str>) -> R
             plan.start.push((task, item.clone()));
         }
     }
+    plan.settle = worktree::over(items, |task| turn_runs(hub, task, over));
     for task in of(&hub.store, &cfg.id) {
         if items::of_task(items, &task.id).is_some() || turn_runs(hub, &task.id, over) {
             continue;
@@ -245,12 +290,13 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut [Item], over: Option<&str>) -> R
     Ok(plan)
 }
 
-/// Hands `item` to `task` as its next turn. `first`: the task is new.
+/// Hands `item` to `task` as its next turn. `first`: the task is new. A routine run's prompt and another bot's
+/// request go as they are: they say themselves what the turn is and where its reply goes.
 fn begin(hub: &Arc<Hub>, task: &BotConfig, item: &Item, first: bool) {
-    let text = prompts::item_prompt(item, first);
+    let text = if item.source.is_bot() { prompts::item_prompt(item, first) } else { item.brief.clone() };
     if let Err(error) = crate::chat::messages::post(hub, task, json!({"text": text, "from": "host"})) {
         tracing::error!(task = %task.id, error = format!("{error:#}"), "couldn't hand work to a task");
-        finished(hub, task, Outcome::Failed(Failure::Start, "it could not start".into()));
+        finished(hub, task, Outcome::not_started(&error));
     }
 }
 
@@ -273,6 +319,8 @@ fn task_bot(cfg: &BotConfig) -> BotConfig {
         // One screen and one team: those stay with the chat.
         computer: false,
         manage_team: false,
+        // As its bot's, wherever the task works (a worktree isn't the bot's own folder).
+        shared_memory: Some(crate::chat::memory::shared(cfg)),
         ..cfg.clone()
     }
 }

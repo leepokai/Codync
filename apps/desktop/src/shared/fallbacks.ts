@@ -41,6 +41,18 @@ export function clockTime(ms: number, now: number): string {
 export const restLine = (rest: Resting, now: number) =>
   `${rest.reason === 'usageLimit' ? 'Usage resets' : 'Resting until'} ${clockTime(rest.until, now)}`
 
+/** Why an agent rests, as the host's chat notice says it (`Reason::phrase`): "is signed out"; none for a usage limit (it resets) or a reason this app doesn't know. */
+export function restPhrase(rest: Resting): string | undefined {
+  switch (rest.reason) {
+    case 'outOfCredits': return 'is out of credits'
+    case 'rateLimited': return 'is rate limited'
+    case 'overloaded': return 'is overloaded'
+    case 'signedOut': return 'is signed out'
+    case 'notStarting': return "couldn't start"
+    default: return undefined
+  }
+}
+
 /**
  * The Agent card's first line while the bot runs on a fallback; null on its own agent. `name` says what to call a login
  * ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its name too, which tells two
@@ -52,7 +64,8 @@ export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => strin
   const same = step.backend === bot.backend
   const [to, own] = [name(step, same), name(bot, same)]
   const rest = restOf(bot, bot, now)
-  return rest ? `Using ${to} until ${own} resets at ${clockTime(rest.until, now)}` : `Using ${to} while ${own} can't answer`
+  if (rest?.reason === 'usageLimit') return `Using ${to} until ${own} resets at ${clockTime(rest.until, now)}`
+  return `Using ${to} while ${own} ${(rest && restPhrase(rest)) ?? "can't answer"}`
 }
 
 /** The list with the fallback at `index` moved `by` places (clamped to the ends). */

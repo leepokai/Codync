@@ -18,7 +18,7 @@ keys and preserve every `{placeholder}`. Missing phrases fall back to English;
 Traditional Chinese retains its existing Simplified fallback. Translate an
 interface template before inserting a user's name or text. Conversation content
 is not translated. The desktop catalog test checks key and placeholder parity, and that every
-[What's new](../features/whats-new.md) note is a phrase in every catalog.
+[What's new](../features/whats-new.md) title, body and note is a phrase in every catalog.
 
 A captured name, title, query, sign-in code or message is opaque, even when it
 matches an English interface phrase. Only app-owned `{hint}`, `{error}`,

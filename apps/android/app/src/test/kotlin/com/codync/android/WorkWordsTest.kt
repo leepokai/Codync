@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WorkWordsTest {
@@ -138,6 +139,15 @@ class WorkWordsTest {
         assertEquals("byTask", pendingCard(listOf(card("byTask", task = "task-1")), asking)?.id)
         assertNull(pendingCard(listOf(card("chat"), card("byTask", task = "task-1")), asking.copy(task = null)))
         assertNull(pendingCard(emptyList(), asking))
+        // A task's choice card counts as its approval card does; a file or message it sent doesn't.
+        fun choice(id: String, status: String = "pending") = Entry(id, 1, "b", 1, "notice", data = buildJsonObject {
+            put("decision", true); put("status", status); put("question", "Which branch?"); put("item", asking.id)
+        })
+        assertEquals("choice", pendingCard(entries + choice("choice"), asking)?.id)
+        assertEquals("old", pendingCard(entries + choice("answered-choice", "answered"), asking)?.id)
+        assertEquals("Which branch?", cardLine(choice("choice")))
+        assertTrue(choice("c").data.let { !Entry("x", 1, "b", 1, "agent", data = it).fromTask })
+        assertTrue(card("t", task = "task-1").fromTask)
     }
 
     @Test fun `a needs-you row says what its card asks`() {
@@ -170,5 +180,43 @@ class WorkWordsTest {
         assertEquals("12:30", timerText(750_000))
         assertEquals("1:02:03", timerText(3_723_000))
         assertEquals("0:00", timerText(-5_000))
+    }
+
+    @Test fun `outside the chat a bot says what needs you, then its chat's activity, then how many work and wait`() {
+        val box = listOf(working, waiting, waiting)
+        assertEquals("Needs you", outsideLine(bot("working", "Thinking…", box + needsYou), english))
+        assertEquals("需要你", outsideLine(bot(work = listOf(needsYou)), traditional))
+        assertEquals("Thinking…", outsideLine(bot("working", "Thinking…", box), english))
+        assertEquals("Wants to run a command", outsideLine(bot("needsInput", "Wants to run a command", box), english))
+        assertEquals("1 working · 2 waiting", outsideLine(bot(work = box), english))
+        // The chat works with nothing to say: its work is what there is to say.
+        assertEquals("1 working · 2 waiting", outsideLine(bot("working", work = box), english))
+        assertEquals("", outsideLine(bot(), english))
+    }
+
+    @Test fun `the ongoing notification follows the bot outside its chat, and ends once nothing is left`() {
+        fun at(rev: Long, chat: String, outside: String? = null, startedAt: Long? = null) =
+            Bot(id = "b", name = "Bot", status = chat, rev = rev, outside = outside?.let { com.codync.android.core.Outside(it, startedAt) })
+        val watch = TaskWatch(botId = "b", name = "Bot", lastRev = 1, startedAt = 100)
+        // The chat's turn ended while items work: it goes on, with the line and the start of what goes on.
+        val going = watch.after(at(2, "idle", "working", startedAt = 250), "2 working", now = 1_000)!!
+        assertEquals(listOf("working", false, "2 working", true, 2L, 250L, 901_000L),
+            listOf(going.status, going.finished, going.activity, going.seenRunning, going.lastRev, going.startedAt, going.deadline))
+        // An item waits on the user.
+        assertEquals("needsInput" to false, going.after(at(3, "idle", "needsInput"), "Needs you")!!.let { it.status to it.finished })
+        // One item ended, others go on: no end.
+        assertEquals(false, going.after(at(3, "idle", "working"), "1 working")!!.finished)
+        // The box is empty and the chat idle: it ends, once, keeping when it started.
+        val ended = going.after(at(4, "idle", "idle"), "")!!
+        assertEquals(listOf("idle", true, 250L), listOf(ended.status, ended.finished, ended.startedAt))
+        assertNull(ended.after(at(5, "working", "working"), ""))
+        assertEquals("error" to true, going.after(at(4, "error", "error"), "")!!.let { it.status to it.finished })
+        // Nothing new, a state it doesn't show, or idle before it ever ran: nothing to post.
+        assertNull(going.after(at(2, "idle", "idle"), ""))
+        assertNull(going.after(at(3, "idle", "paused"), ""))
+        assertNull(watch.after(at(2, "idle", "idle"), ""))
+        // An older host names no outside: the chat's own status.
+        assertEquals("working" to false, watch.after(at(2, "working"), "Thinking…")!!.let { it.status to it.finished })
+        assertEquals(true, going.after(at(3, "idle"), "")!!.finished)
     }
 }

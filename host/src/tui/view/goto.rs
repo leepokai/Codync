@@ -58,7 +58,7 @@ pub(super) fn goto(buf: &mut Buffer, area: Rect, app: &mut App, g: &super::super
                     restyle(buf, Rect::new(inner.x - 1, y, inner.width + 2, 1), t.sel);
                 }
                 app.hits.clicks.push((Rect::new(inner.x - 1, y, inner.width + 2, 1), Click::Bot(id.clone())));
-                let (gl, gs) = glyph(app, b.mark());
+                let (gl, gs) = glyph(app, b.roster_mark());
                 put(buf, inner.x, y, 1, gl, gs.patch(base));
                 put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
                 put(buf, inner.x + 5, y, 10, &b.name, t.bold.patch(base));

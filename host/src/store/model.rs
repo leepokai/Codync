@@ -165,6 +165,10 @@ pub struct BotConfig {
     /// The most tasks that work on the bot's box at once (see `chat::tasks`): 1 to [`MAX_AGENTS`].
     #[serde(default = "default_max_agents")]
     pub max_agents: u8,
+    /// A task that starts while another of the bot's works in the same git repository gets a worktree of its own
+    /// (see `chat::tasks::worktree`). Only matters where the workspace is in a repository.
+    #[serde(default = "yes")]
+    pub task_worktrees: bool,
     #[serde(default)]
     pub created_at: i64,
 }

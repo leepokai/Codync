@@ -7,25 +7,31 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.48.2
+## 2.49.0
 ### zh-Hant
 - Bot 把比較久的工作放到背景做，聊天照常回你。
+- 例行任務和其他 Bot 的請求也在背景進行，不再占住聊天。
+- Bot 列表的「工作」按鈕列出每個 Bot 的背景工作。
+- 背景工作要核准、要問你問題或傳檔案時，會出現在聊天裡。
 - 點輸入框上方的膠囊開啟 Bot 的「詳情」：Threads（正在跑的）和 Event Box（等待中的：先做、插隊、丟掉）。
-- 背景工作要核准時，卡片出現在聊天裡。
 - 「同時幾個 agent」在 Bot 的「設定」。
-- 從任何 App 的分享選單把文字、連結、照片或檔案傳給 Bot。
-- Bot 可以設定跟進，晚點自己回來；例行任務接著上次做。
-- 可以只回覆訊息的其中一段：長按訊息選「選取文字」。
-- 開始 OpenAI 即時語音通話或遠端螢幕時，App 不會再關閉。
-- 選擇卡片可以直接打字回答。
+- 「每個 agent 一個 worktree」：同時在同一個 repository 工作的 agent 各有自己的分支。
+- 改用備援時，智慧體卡片會說明原因。
+- 備援的 ⋯ 選單新增「編輯」，順序不變。
+- 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
+- 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。
+- 聽寫中按「傳送」會等說的話轉成文字再一起送出。
+- 等待核准的卡片會算在 Bot 的未讀數字裡（琥珀色），直到你回覆為止。
 
 ### en-US
-- Bots do long work in the background and keep answering.
-- Tap the capsule over the message box for Details: Threads (running) and Event box (waiting: First, Cut in, Drop).
-- Its approval cards appear in the chat.
-- Agents at once is in the bot's Settings.
-- Share text, links, photos or files to a bot from any app.
-- Bots can check back later; routines resume.
-- Reply to one part of a message.
-- OpenAI calls and remote screen no longer close the app.
-- Choice cards take your own answer.
+- Bots, routines and other bots' requests work in the background.
+- The Work button lists background work.
+- Approval cards stay in the badge, amber, until answered.
+- Background work can ask or send files.
+- Details: Threads, Event box (First, Cut in, Drop).
+- Settings: Agents at once, Worktree per agent.
+- On a fallback, the Agent card says why.
+- Fallbacks: ⋯ has Edit.
+- `/` also lists the agent's own commands.
+- Network rules gain Auto and Ask.
+- Send while dictating keeps your words.

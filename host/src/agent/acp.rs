@@ -208,7 +208,8 @@ impl Acp {
         #[cfg(unix)]
         let pid = child.id();
         let child = Arc::new(tokio::sync::Mutex::new(Process::new(child)?));
-        Process::monitor(&child);
+        let (ended, leader_ended) = oneshot::channel();
+        Process::monitor(&child, ended);
         // Deliberately unbounded: `session/load` replays a whole history as notifications
         // *before* its response, while the bot is still awaiting that response. A bounded
         // queue would stall this reader, and with it the response — a deadlock.
@@ -233,33 +234,48 @@ impl Acp {
         {
             let pending = pending.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-                        tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
-                        continue;
-                    };
-                    let method = msg["method"].as_str().map(str::to_owned);
-                    match (method, msg.get("id").cloned()) {
-                        (Some(method), Some(id)) if !id.is_null() => {
-                            let _ = tx.send(Incoming::Request { id, method, params: msg["params"].clone() });
-                        }
-                        (Some(method), _) => {
-                            let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
-                        }
-                        (None, Some(id)) => {
-                            if let Some(id) = id.as_i64()
-                                && let Some(waiter) = pending.locked().remove(&id)
-                            {
-                                let res = match msg.get("error") {
-                                    Some(err) => Err(err.clone()),
-                                    None => Ok(msg["result"].clone()),
-                                };
-                                let _ = waiter.send(res);
+                let read = async {
+                    let mut lines = BufReader::new(stdout).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+                            tracing::debug!(target: "agent", stdout = %line, "ignoring non-JSON output");
+                            continue;
+                        };
+                        let method = msg["method"].as_str().map(str::to_owned);
+                        match (method, msg.get("id").cloned()) {
+                            (Some(method), Some(id)) if !id.is_null() => {
+                                let _ = tx.send(Incoming::Request { id, method, params: msg["params"].clone() });
                             }
+                            (Some(method), _) => {
+                                let _ = tx.send(Incoming::Notification { method, params: msg["params"].clone() });
+                            }
+                            (None, Some(id)) => {
+                                if let Some(id) = id.as_i64()
+                                    && let Some(waiter) = pending.locked().remove(&id)
+                                {
+                                    let res = match msg.get("error") {
+                                        Some(err) => Err(err.clone()),
+                                        None => Ok(msg["result"].clone()),
+                                    };
+                                    let _ = waiter.send(res);
+                                }
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                };
+                // Once the agent exited by itself, what it wrote last is read for a moment, not until stdout closes: a
+                // process that left its tree (its own session, a job escapee on Windows) can hold it open forever (#466).
+                let left = async {
+                    match leader_ended.await {
+                        Ok(()) => tokio::time::sleep(exit::STDERR_FLUSH).await,
+                        // Being stopped: `kill` fails the waiters.
+                        Err(_) => std::future::pending().await,
+                    }
+                };
+                tokio::select! {
+                    () = read => {}
+                    () = left => {}
                 }
                 // What it printed on its way out is still being read; a child that keeps stderr open isn't waited for.
                 // Read before the waiters fail, so `Closed` follows their failure at once.
@@ -355,6 +371,9 @@ impl Acp {
     /// lets it exit by itself first: Claude Code killed during an OAuth refresh loses the new
     /// refresh token, and the user's login with it.
     pub async fn kill(&self) {
+        // Its requests fail now as `FailureKind::Exited`, not at stdout EOF: a process that left its tree (its own
+        // session, or a job escapee on Windows) can hold stdout open forever, and with it the turn (#466).
+        self.pending.locked().clear();
         let mut child = self.child.lock().await;
         if !child.begin_stop() {
             return;

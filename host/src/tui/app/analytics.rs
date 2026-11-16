@@ -63,6 +63,7 @@ impl App {
             Overlay::Market(_) => Some(Screen::Marketplace),
             Overlay::Help(_) => Some(Screen::Help),
             Overlay::Task(_) => Some(Screen::Task),
+            Overlay::AllWork(_) => Some(Screen::AllWork),
             Overlay::Form(_) => Some(Screen::BotDetails),
             Overlay::Group(g) if g.group_id.is_some() => Some(Screen::BotDetails),
             _ => None,
@@ -115,6 +116,12 @@ mod tests {
         app.overlays.push(Overlay::Task(crate::tui::manage::TaskSheet::new("b".into(), "i".into(), "task-1".into())));
         app.report_screen();
         assert_eq!(app.seen.screen, Some(Screen::Task), "a task's transcript");
+        app.overlays.pop();
+        app.overlays.push(Overlay::AllWork(crate::tui::manage::AllWork::default()));
+        app.report_screen();
+        assert_eq!(app.seen.screen, Some(Screen::AllWork), "every bot's work");
+        let body = serde_json::to_value(Screen::AllWork).expect("a screen's name");
+        assert_eq!(body, "all_work", "named as on the other clients");
 
         app.overlays.clear();
         app.trace = TraceMode::Full;

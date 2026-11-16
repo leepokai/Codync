@@ -59,7 +59,7 @@ public struct CharacterAvatar: View {
 }
 
 public extension Bot {
-    var mood: CharacterAvatar.Mood { needsInput ? .needsInput : isWorking ? .working : .idle }
+    var mood: CharacterAvatar.Mood { needsYouOutside ? .needsInput : isBusyOutside ? .working : .idle }
 }
 
 /// Keep the halftone at every size: 9 × 9 large dots from 18 pt up. Tiny icons use 7 × 7 so the
@@ -360,10 +360,10 @@ public struct AvatarWithStatus: View {
     public var body: some View {
         BotAvatar(bot: bot, members: members, size: size)
             .overlay(alignment: bot.lead ? .topTrailing : .bottomTrailing) {
-                if bot.needsInput {
+                if bot.needsYouOutside {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.onWarning)
                         .frame(width: size * 0.36, height: size * 0.36)
                         .background(Palette.warning, in: Circle())
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))

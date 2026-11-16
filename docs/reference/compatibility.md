@@ -72,6 +72,8 @@ Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud`
 
 Apps older than 2.45.1 would show a voice note (`voiceNote: true`, a sound in `files` and the message in `text`) as its file card only, without the message, so 2.45.1 raises `minApp`.
 
+Apps older than 2.49.0 don't know a bot's box (`work`, `outside`), where its routine runs and other bots' requests now work: the chat's `status` stays idle while one runs, so they show no work and no Stop for it (the chat's Stop leaves the box alone), and a choice card a task raises in the chat still has their **Something else** field, whose text goes to the chat as a message and never answers the card. So 2.49.0 raises `minApp`.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 
@@ -174,6 +176,7 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.49.0 | 2.49.0 | 2.26.0 (unchanged) | Routine runs and other bots' requests work as items in the bot's box, away from its chat: the chat's `status` no longer says they run and its Stop no longer stops them, and a task's choice card in the chat isn't answered by a typed message. Older apps show a running routine as an idle bot with nothing to stop, and their **Something else** answer to a task's card becomes an unrelated message. |
 | 2.45.1 | 2.45.1 | 2.26.0 (unchanged) | A bot's voice note is one message: the player and, in `text`, what the bot wrote. Older apps show a message with `files` as the file card only and never its `text`, so they would drop the message. |
 | 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
 | 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |

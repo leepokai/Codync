@@ -67,7 +67,6 @@ class FallbacksTest {
         assertNotNull(bot.restOf(bot.login, now = 1000))
         assertNull("another login of the same agent isn't resting", bot.restOf(Login("claude"), now = 1000))
         val draft = BotDraft.from(bot)
-        assertEquals(listOf(Login("claude", "a1"), Login("claude", "a2"), Login("claude"), Login("codex")), draft.logins)
         val sent = draft.body().getValue("fallbacks").jsonArray.map { it.jsonObject["loginProfile"] }
         assertEquals(listOf(JsonPrimitive("a2"), JsonNull, JsonNull), sent)
     }
@@ -80,6 +79,18 @@ class FallbacksTest {
             bot("""{"step":1,"agent":"claude","loginProfile":"Work","since":1}""").stepBanner(name, clock))
         assertEquals("Using codex while claude can't answer", bot("""{"step":1,"agent":"codex","since":1}""").stepBanner(name, clock))
         assertNull(bot("null").stepBanner(name, clock))
+    }
+
+    @Test fun `only a usage limit gives the banner a reset time, other rests name their reason`() {
+        fun resting(reason: String) = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"B","backend":"claude",
+            "agentStep":{"step":1,"agent":"codex","since":1},"resting":[{"agent":"claude","until":2000,"reason":"$reason"}]}""").jsonObject)
+        val name = { login: Login, _: Boolean -> login.backend }
+        val clock = { _: Long -> "3:00 PM" }
+        assertEquals("Using codex until claude resets at 3:00 PM", resting("usageLimit").stepBanner(name, clock, now = 1000))
+        for (reason in listOf("signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting")) {
+            assertFalse(reason, resting(reason).stepBanner(name, clock, now = 1000).orEmpty().contains("resets"))
+        }
+        assertEquals("Using codex while claude is signed out", resting("signedOut").stepBanner(name, clock, now = 1000))
     }
 
     @Test fun `a new step takes a login the chain doesn't have, signed in`() {

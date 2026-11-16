@@ -1,7 +1,8 @@
 //! A bot's box: its items (kv `work.<bot>`, one JSON list), how they read on the wire and to the bot itself.
 
 use super::dispatch::{self, Standing, Wait};
-use super::{Report, Start};
+use super::worktree::{Place, Worktree};
+use super::{Failure, Report, Start};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Store, now_ms};
@@ -43,13 +44,59 @@ impl Status {
     }
 }
 
+/// Where an item came from (`work[].source`, absent for the bot's own).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Source {
+    /// The bot added it (`add_work`).
+    #[default]
+    Bot,
+    /// A run of one of the bot's routines: `id` is the routine.
+    Routine { id: String, run: String },
+    /// Another bot's `message_bot` request: `id` is the asking bot, when it is one of this computer's.
+    Request {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+    },
+}
+
+impl Source {
+    pub fn is_bot(&self) -> bool {
+        *self == Self::Bot
+    }
+
+    /// `work_added` and `work_finished`'s `source`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Bot => "bot",
+            Self::Routine { .. } => "routine",
+            Self::Request { .. } => "request",
+        }
+    }
+
+    /// `work[].source`: `{kind, id?}`; none for the bot's own, so a client that doesn't know sources shows the row.
+    fn wire(&self) -> Option<Value> {
+        match self {
+            Self::Bot => None,
+            Self::Routine { id, .. } => Some(json!({"kind": self.kind(), "id": id})),
+            Self::Request { id } => Some(match id {
+                Some(id) => json!({"kind": self.kind(), "id": id}),
+                None => json!({"kind": self.kind()}),
+            }),
+        }
+    }
+}
+
 /// One piece of work in a bot's box.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Item {
     pub id: String,
     pub title: String,
+    /// What its task is told: the bot's brief, a routine run's prompt (written when it starts) or the request.
     pub brief: String,
+    #[serde(default, skip_serializing_if = "Source::is_bot")]
+    pub source: Source,
     /// The user's own words that led to it, word for word.
     #[serde(default)]
     pub words: Option<String>,
@@ -81,9 +128,13 @@ pub(super) struct Item {
     /// What its task reported, or why it didn't finish.
     #[serde(default)]
     pub result: Option<String>,
-    /// Its report, until its bot's turn for it has ended: a host restart before that sends it again.
+    /// Its report, until it has reached where it goes (its bot's turn for it has ended; a routine's result is in
+    /// the chat; the asking bot has its reply): a host restart before that sends it again.
     #[serde(default)]
     pub report: Option<Report>,
+    /// What kept it from finishing, with its report.
+    #[serde(default)]
+    pub failure: Option<Failure>,
     /// How its task's session began, once known.
     #[serde(default)]
     pub start: Option<Start>,
@@ -93,6 +144,13 @@ pub(super) struct Item {
     /// The agent refused or didn't answer the fork, so its task started from a brief.
     #[serde(default)]
     pub fork_failed: bool,
+    /// Where its new task works: in a git worktree of its own when another task of the bot worked in the
+    /// repository as it began, or when it has one from before.
+    #[serde(default)]
+    pub place: Place,
+    /// The worktree its task works or worked in (`worktree`).
+    #[serde(default)]
+    pub worktree: Option<Worktree>,
 }
 
 impl Item {
@@ -102,6 +160,7 @@ impl Item {
             id: uuid::Uuid::new_v4().to_string(),
             title: title.to_owned(),
             brief: brief.to_owned(),
+            source: Source::Bot,
             words,
             notes: Vec::new(),
             status: Status::Waiting,
@@ -116,9 +175,12 @@ impl Item {
             ended_at: None,
             result: None,
             report: None,
+            failure: None,
             start: None,
             fork_from: None,
             fork_failed: false,
+            place: Place::Folder,
+            worktree: None,
         }
     }
 
@@ -154,7 +216,7 @@ pub(super) fn change<T>(hub: &Hub, bot: &str, change: impl FnOnce(&mut Vec<Item>
 }
 
 /// A deleted bot's box goes with it.
-pub fn forget(store: &Store, bot: &str) {
+pub(super) fn forget(store: &Store, bot: &str) {
     if let Err(error) = store.kv_delete(&key(bot)) {
         tracing::warn!(bot, error = format!("{error:#}"), "couldn't drop a bot's work");
     }
@@ -235,12 +297,19 @@ pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
         shown(hub, cfg)
             .into_iter()
             .map(|Shown { item, status, activity, wait }| {
-                json!({
+                let mut row = json!({
                     "id": item.id, "title": item.title, "status": status, "activity": activity, "task": item.task,
                     "wait": wait, "cutIn": item.cut_in, "createdAt": item.created_at, "startedAt": item.started_at,
                     "endedAt": item.ended_at,
                     "result": item.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
-                })
+                });
+                if let Some(source) = item.source.wire() {
+                    row["source"] = source;
+                }
+                if let Some(worktree) = item.worktree.as_ref().and_then(Worktree::wire) {
+                    row["worktree"] = worktree;
+                }
+                row
             })
             .collect(),
     )
@@ -252,6 +321,47 @@ pub fn lines(hub: &Hub, cfg: &BotConfig, whose: &str) -> Option<String> {
     let live: Vec<Shown> = shown(hub, cfg).into_iter().filter(|s| !s.status.ended()).collect();
     let live: Vec<_> = live.iter().map(|s| (s.status, s.item.title.as_str(), s.item.id.as_str())).collect();
     summary(&live, cfg.max_agents, whose)
+}
+
+/// What one of a bot's items does now, for who follows the bot from outside its chat (a call's voice).
+pub struct Doing {
+    pub item: String,
+    pub title: String,
+    /// Its task's activity line; empty when it says none.
+    pub activity: String,
+}
+
+/// What each of `cfg`'s items at work does now, oldest first. One that waits on the user isn't at work.
+pub fn doing(hub: &Hub, cfg: &BotConfig) -> Vec<Doing> {
+    let mut items = load(&hub.store, &cfg.id);
+    items.sort_by_key(|i| i.started_at);
+    let at_work = items.into_iter().filter(|i| i.status == Status::Working).filter_map(|item| {
+        let rt = hub.runtime(item.task.as_deref()?);
+        (rt.status == BotStatus::Working).then_some(Doing { item: item.id, title: item.title, activity: rt.activity })
+    });
+    at_work.collect()
+}
+
+/// How `cfg` stands to what shows it outside its chat (a Live Activity, an ongoing notification), given its
+/// chat's own runtime: it needs the user while one of its items does, and works while its box holds anything
+/// that isn't over: an item working or waiting, or one whose report its chat hasn't taken yet. Otherwise the
+/// chat's own status. With it, when that work began.
+pub fn outside(hub: &Hub, cfg: &BotConfig, chat: &crate::hub::Runtime) -> (BotStatus, Option<i64>) {
+    let items = load(&hub.store, &cfg.id);
+    let open: Vec<&Item> =
+        items.iter().filter(|i| !i.status.ended() || (i.source.is_bot() && i.report.is_some())).collect();
+    let asks = |i: &&Item| {
+        i.status == Status::Working && i.task.as_deref().is_some_and(|t| hub.runtime(t).status == BotStatus::NeedsInput)
+    };
+    let status = if chat.status == BotStatus::NeedsInput || open.iter().copied().any(|i| asks(&i)) {
+        BotStatus::NeedsInput
+    } else if open.is_empty() {
+        chat.status
+    } else {
+        BotStatus::Working
+    };
+    let began = open.iter().map(|i| i.started_at.unwrap_or(i.created_at)).min();
+    (status, chat.started_at.or(began))
 }
 
 /// The task bots that work on an item now, on the whole computer.
@@ -317,6 +427,63 @@ mod tests {
             about.starts_with("Its work in the background: 1 working, 0 waiting; at most 1 run at once"),
             "{about}"
         );
+    }
+
+    #[test]
+    fn an_item_says_where_it_came_from_unless_the_bot_added_it() {
+        assert_eq!(Source::Bot.wire(), None, "absent: an older client shows the row as the bot's own");
+        let routine = Source::Routine { id: "r1".into(), run: "run1".into() };
+        assert_eq!(routine.wire(), Some(json!({"kind": "routine", "id": "r1"})));
+        assert_eq!(Source::Request { id: Some("b2".into()) }.wire(), Some(json!({"kind": "request", "id": "b2"})));
+        assert_eq!(Source::Request { id: None }.wire(), Some(json!({"kind": "request"})), "asked from elsewhere");
+        // An item saved before sources is the bot's own.
+        let old: Item = serde_json::from_value(json!({
+            "id": "i", "title": "t", "brief": "b", "status": "waiting", "order": 1, "createdAt": 0,
+        }))
+        .expect("an item");
+        assert!(old.source.is_bot());
+        assert!(json!(old).get("source").is_none());
+    }
+
+    #[test]
+    fn outside_its_chat_a_bot_works_while_its_box_does_and_needs_the_user_when_an_item_does() {
+        let hub = crate::chat::calls::context::tests::hub();
+        let cfg = crate::chat::calls::context::tests::bot("b-out", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        let stands = || hub.outside_runtime(&cfg).status;
+        assert_eq!(stands(), BotStatus::Idle);
+        hub.set_runtime(&cfg.id, |r| r.status = BotStatus::Error);
+        assert_eq!(stands(), BotStatus::Error, "the chat's own, with an empty box");
+
+        let item = |status: &str, more: Value| {
+            let mut item = json!({"id": "i1", "title": "Work", "brief": "x", "status": status, "order": 1,
+                "createdAt": 5, "task": "task-out"});
+            item.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            hub.store.kv_set(&key(&cfg.id), &json!([item]).to_string()).expect("saved");
+        };
+        item("waiting", json!({}));
+        assert_eq!(stands(), BotStatus::Working, "what waits will start");
+        item("working", json!({"startedAt": 9}));
+        let rt = hub.outside_runtime(&cfg);
+        assert_eq!((rt.status, rt.started_at), (BotStatus::Working, Some(9)), "since its item began");
+        hub.set_runtime("task-out", |r| r.status = BotStatus::NeedsInput);
+        assert_eq!(stands(), BotStatus::NeedsInput, "its task's card waits");
+        // The same on the wire, beside the chat's own status.
+        let row = hub.store.bot(&cfg.id).expect("read").expect("a bot");
+        let wire = hub.bot_json(&row);
+        assert_eq!(
+            (&wire["status"], &wire["outside"]),
+            (&json!("error"), &json!({"status": "needsInput", "startedAt": 9}))
+        );
+        // Done, but the chat hasn't taken its report yet: the bot still has that to say.
+        let report = json!({"item": "i1", "title": "Work", "outcome": {"Ok": "done"}, "hops": 0});
+        item("done", json!({"endedAt": 10, "report": report}));
+        assert_eq!(stands(), BotStatus::Working);
+        item("done", json!({"endedAt": 10}));
+        assert_eq!(stands(), BotStatus::Error, "the box is empty: the chat's own again");
+        item("stopped", json!({"endedAt": 10}));
+        hub.set_runtime(&cfg.id, |r| r.status = BotStatus::Idle);
+        assert_eq!(stands(), BotStatus::Idle);
     }
 
     #[test]

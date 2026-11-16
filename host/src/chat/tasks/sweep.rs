@@ -2,7 +2,7 @@
 //! a task whose end never arrived. It runs in the host alone and wakes no agent unless something is lost.
 
 use super::dispatch::{self, TaskState};
-use super::{Failure, Outcome, Status, end, ended, items};
+use super::{Failure, Outcome, Status, close, end_claimed, items};
 use crate::LockExt;
 use crate::hub::Hub;
 use std::sync::Arc;
@@ -55,12 +55,12 @@ pub(super) fn sweep(hub: &Arc<Hub>, bot: &str) {
             .iter()
             .filter_map(|task| {
                 tracing::warn!(bot, task, "a task stopped without ending its item");
-                end(items, task, Outcome::Failed(Failure::Lost, LOST.into()))
+                end_claimed(items, task, Outcome::Failed(Failure::Lost, LOST.into()))
             })
             .collect::<Vec<_>>())
     });
     match lost {
-        Ok(failed) => failed.iter().for_each(|(item, failure)| ended(hub, bot, item, *failure)),
+        Ok(failed) => failed.into_iter().for_each(|over| close(hub, bot, over, |_| {})),
         Err(error) => tracing::error!(bot, error = format!("{error:#}"), "couldn't look a bot's work over"),
     }
     dispatch::dispatch(hub, bot);

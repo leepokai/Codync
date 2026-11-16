@@ -68,6 +68,18 @@ test('on-device words go after the draft, and finish waits for the last of them'
   assert.equal(s.dictation.busy, false)
 })
 
+test('a finish without a send keeps the send already waiting for the last on-device words', () => {
+  const s = setup()
+  s.dictation.start(s.box())
+  let sent = false
+  s.dictation.finish(() => (sent = true))
+  s.dictation.finish()
+  s.say({ type: 'final', text: 'today' })
+  s.say({ type: 'stopped' })
+  assert.equal(sent, true)
+  assert.equal(s.box(), 'Fix the bug today')
+})
+
 test('cancel drops words still on their way', () => {
   const s = setup()
   s.dictation.start(s.box())
@@ -161,17 +173,34 @@ test("a provider's transcript lands after what's in the box by then, in order, t
   assert.equal(s.dictation.transcribing, false)
 })
 
-test('cancel while transcribing drops the transcript', async () => {
+test('Send again while transcribing still waits for the transcript', async () => {
   const s = setup({ target: () => 'openai' })
   s.dictation.start(s.box())
   await settle()
   s.hear(MIN_SAMPLES * 2)
-  s.dictation.finish()
+  const sent: string[] = []
+  s.dictation.finish(() => sent.push(s.box()))
+  s.dictation.finish(() => sent.push(s.box()))
+  await settle()
+  assert.deepEqual(sent, [])
+  s.pending[0]!.answer('and the follow-up')
+  await settle()
+  assert.deepEqual(sent, ['Fix the bug and the follow-up'])
+})
+
+test('cancel while transcribing drops the transcript and the send waiting for it', async () => {
+  const s = setup({ target: () => 'openai' })
+  s.dictation.start(s.box())
+  await settle()
+  s.hear(MIN_SAMPLES * 2)
+  let sent = false
+  s.dictation.finish(() => (sent = true))
   await settle()
   s.dictation.cancel()
   s.pending[0]!.answer('too late')
   await settle()
   assert.equal(s.box(), 'Fix the bug')
+  assert.equal(sent, false)
   assert.equal(s.dictation.busy, false)
 })
 

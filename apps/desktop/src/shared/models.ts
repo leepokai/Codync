@@ -1,7 +1,7 @@
 import type { ArtifactCard } from './artifacts'
 import type { CallLine } from './calls'
 import { normalizeDevServer, type DevServer } from './dev-servers.ts'
-import { normalizeMaxAgents, normalizeWork, type WorkItem } from './work.ts'
+import { normalizeMaxAgents, normalizeOutside, normalizeWork, type OutsideStatus, type WorkItem } from './work.ts'
 
 // Wire types for codync-host (see host/src/api/). Field names match the
 // host's camelCase JSON. Timestamps are epoch milliseconds.
@@ -60,6 +60,8 @@ export interface Bot {
   notify?: boolean | null
   connectors: string[]
   skills: string[]
+  /** The `/` commands of the agent it runs on now, as the agent lists them; none for a group. */
+  agentCommands: AgentCommand[]
   /** The bot can see and operate the computer's desktop. */
   computer: boolean
   /** The bot can create bots (which can too) and change any bot's setup (the built-in `manage` tools); null from an older host. */
@@ -94,12 +96,26 @@ export interface Bot {
   work: WorkItem[]
   /** The most agents it runs at once, 1 to 6; null from a host before the box. */
   maxAgents: number | null
+  /** A task that starts while another of the bot's works in the same git repository gets a worktree of its own;
+   * null from a host before worktrees. */
+  taskWorktrees: boolean | null
+  /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
+  gitRepo: boolean
+  /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
+  outside: OutsideStatus | null
   unread: number
+  /** How many of `unread` are cards waiting on the user: the badge turns amber. 0 from an older host. */
+  waiting: number
   lastMessage?: string | null
   lastAt: number
 }
 
 /** Lenient: a host that is a little newer or older than the app still yields a usable bot. */
+/** The messages in a bot's badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+export function unseen(bot: Pick<Bot, 'unread' | 'waiting'>): number {
+  return bot.unread - bot.waiting
+}
+
 export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
   const createdAt = raw.createdAt ?? 0
   return {
@@ -125,6 +141,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     fallbacks: raw.fallbacks ?? [],
     selfFallbacks: raw.selfFallbacks ?? null,
     agentStep: raw.agentStep ?? null,
+    agentCommands: raw.agentCommands ?? [],
     resting: raw.resting ?? [],
     devServers: (raw.devServers ?? []).map(normalizeDevServer),
     pinned: raw.pinned ?? false,
@@ -156,7 +173,11 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     workingChat: raw.workingChat ?? null,
     work: normalizeWork(raw.work),
     maxAgents: normalizeMaxAgents(raw.maxAgents),
+    taskWorktrees: raw.taskWorktrees ?? null,
+    gitRepo: raw.gitRepo ?? false,
+    outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
+    waiting: raw.waiting ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }
@@ -177,6 +198,15 @@ export interface Fallback {
 export type FallbackReason = string
 
 /** The fallback a bot runs on: which step, its agent and model, since when, and why it left the one before. */
+/** One of an agent's own `/` commands (ACP `available_commands_update`). */
+export interface AgentCommand {
+  /** What follows the `/`. */
+  name: string
+  description: string
+  /** What to type after the name, for a command that takes input. */
+  hint?: string
+}
+
 export interface AgentStep {
   step: number
   agent: string
@@ -797,6 +827,8 @@ export interface BotDraft {
   compaction?: CompactionThreshold
   /** The most agents at once, 1 to 6; left out for a host before the box. */
   maxAgents?: number
+  /** Left out for a host before worktrees. */
+  taskWorktrees?: boolean
 }
 
 export function draftOf(bot: Bot): BotDraft {
@@ -828,6 +860,7 @@ export function draftOf(bot: Bot): BotDraft {
     reachableByAssistants: bot.reachableByAssistants ?? undefined,
     compaction: bot.compaction ?? undefined,
     maxAgents: bot.maxAgents ?? undefined,
+    taskWorktrees: bot.taskWorktrees ?? undefined,
   }
 }
 

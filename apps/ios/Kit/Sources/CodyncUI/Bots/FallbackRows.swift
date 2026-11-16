@@ -2,7 +2,7 @@ import CodyncKit
 import SwiftUI
 
 // The Agent card's fallbacks (docs/features/agent-fallback.md): while the bot runs on one, a banner to switch back;
-// after Model, its fallbacks in order, moved and removed from each row's menu and added with +. Edits change the
+// after Model, its fallbacks in order, moved, edited and removed from each row's menu and added with +. Edits change the
 // draft, which saves like the rest of the form.
 
 /// The Agent card's first row while the bot runs on one of its fallbacks (`step`).
@@ -42,17 +42,28 @@ struct FallbackList: View {
     let bot: Bot?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var adding = false
+    /// The step the sheet adds (at the end) or edits in place.
+    @State private var sheet: SheetStep?
     @State private var explaining = false
+
+    /// A step as the sheet opened on it: its place, and its own (nil for a new one).
+    private struct SheetStep: Identifiable {
+        let id: Int
+        var initial: BotFallback?
+    }
 
     private var fallbacks: [BotFallback] { draft.fallbacks ?? [] }
 
     /// Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
-    private var taken: [AgentLogin] { [draft.login] + fallbacks.map(\.login) }
+    /// The step being edited (`i`) keeps its own login.
+    private func taken(but i: Int) -> [AgentLogin] {
+        [draft.login] + fallbacks.enumerated().filter { $0.offset != i }.map(\.element.login)
+    }
 
-    /// Agents a new fallback can use: the ones with a login the chain doesn't have yet.
-    private var choices: [Backend] {
-        (model.hello?.backends ?? []).filter { !$0.freeLogins(taken: taken).isEmpty }
+    /// Agents step `i` can use: the ones with a login the rest of the chain doesn't have, and its `own` (its login may
+    /// have signed out since).
+    private func choices(but i: Int, own: String? = nil) -> [Backend] {
+        (model.hello?.backends ?? []).filter { $0.id == own || !$0.freeLogins(taken: taken(but: i)).isEmpty }
     }
 
     var body: some View {
@@ -70,7 +81,11 @@ struct FallbackList: View {
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .codyncSheet(isPresented: $adding) { AddFallbackSheet(choices: choices, taken: taken) { new in change { $0.append(new) } } }
+        .codyncSheet(item: $sheet) { step in
+            FallbackSheet(choices: choices(but: step.id, own: step.initial?.backend), taken: taken(but: step.id), initial: step.initial) { new in
+                change { list in if step.initial != nil, list.indices.contains(step.id) { list[step.id] = new } else { list.append(new) } }
+            }
+        }
         .codyncSheet(isPresented: $explaining) { FallbackInfoSheet() }
         SwitchRow("Let the bot change its fallbacks", detail: "It can set this list itself, for example when you ask it to.",
                   isOn: Binding(get: { draft.selfFallbacks ?? true }, set: { draft.selfFallbacks = $0 }))
@@ -81,8 +96,8 @@ struct FallbackList: View {
             Text(L10n.tr("Fallbacks")).foregroundStyle(Palette.text)
             IconButton("About fallbacks", systemImage: "info.circle") { explaining = true }
             Spacer(minLength: 8)
-            if fallbacks.count < BotFallback.limit, !choices.isEmpty {
-                IconButton("Add fallback", systemImage: "plus") { adding = true }
+            if fallbacks.count < BotFallback.limit, !choices(but: fallbacks.count).isEmpty {
+                IconButton("Add fallback", systemImage: "plus") { sheet = SheetStep(id: fallbacks.count) }
             }
         }
     }
@@ -125,7 +140,8 @@ struct FallbackList: View {
         var items: [MenuItem] = []
         if i > 0 { items.append(MenuItem("Move up", icon: "arrow.up") { change { $0.swapAt(i, i - 1) } }) }
         if i < fallbacks.count - 1 { items.append(MenuItem("Move down", icon: "arrow.down") { change { $0.swapAt(i, i + 1) } }) }
-        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: !items.isEmpty) { change { $0.remove(at: i) } })
+        items.append(MenuItem("Edit", icon: "pencil") { sheet = SheetStep(id: i, initial: fallbacks[i]) })
+        items.append(MenuItem("Remove", icon: "trash", destructive: true, divider: true) { change { $0.remove(at: i) } })
         return items
     }
 
@@ -136,34 +152,44 @@ struct FallbackList: View {
     }
 }
 
-/// +: a new fallback's agent (or the bot's own on another of its login profiles) and model, from the same pickers as the bot's own.
-struct AddFallbackSheet: View {
+/// + (or a row's Edit, with the step's own as `initial`): a fallback's agent (or the bot's own on another of its login
+/// profiles) and model, from the same pickers as the bot's own.
+struct FallbackSheet: View {
     let choices: [Backend]
     let taken: [AgentLogin]
-    let add: (BotFallback) -> Void
+    let initial: BotFallback?
+    let save: (BotFallback) -> Void
     @State private var fallback: BotFallback
     @Environment(BotStore.self) private var model
     @Environment(\.dismissModal) private var dismiss
 
     private var agent: Backend? { choices.first { $0.id == fallback.backend } }
-    private var free: [String?] { agent?.freeLogins(taken: taken) ?? [] }
+    /// The step's own while its agent stays the same.
+    private var own: BotFallback? { initial.flatMap { $0.backend == fallback.backend ? $0 : nil } }
+    /// A step keeps its own login, even one that has signed out since.
+    private var free: [String?] {
+        let open = agent?.freeLogins(taken: taken) ?? []
+        guard let own, !open.contains(own.loginProfile) else { return open }
+        return open + [own.loginProfile]
+    }
     /// The picked login, or the first the chain doesn't have yet.
     private var loginProfile: String? { free.contains(fallback.loginProfile) ? fallback.loginProfile : free.first ?? nil }
 
-    init(choices: [Backend], taken: [AgentLogin], add: @escaping (BotFallback) -> Void) {
+    init(choices: [Backend], taken: [AgentLogin], initial: BotFallback?, save: @escaping (BotFallback) -> Void) {
         self.choices = choices
         self.taken = taken
-        self.add = add
-        _fallback = State(initialValue: BotFallback(backend: (choices.first(where: \.available) ?? choices.first)?.id ?? ""))
+        self.initial = initial
+        self.save = save
+        _fallback = State(initialValue: initial ?? BotFallback(backend: (choices.first(where: \.available) ?? choices.first)?.id ?? ""))
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ModalHeader("Add fallback") {
-                IconButton("Add", systemImage: "checkmark") {
+            ModalHeader(initial != nil ? "Edit fallback" : "Add fallback") {
+                IconButton(initial != nil ? "Save" : "Add", systemImage: "checkmark") {
                     var new = fallback
                     new.loginProfile = loginProfile
-                    add(new)
+                    save(new)
                     dismiss()
                 }
                 .disabled(fallback.backend.isEmpty)
@@ -172,7 +198,9 @@ struct AddFallbackSheet: View {
                 CardSection {
                     AgentModelPicker(backend: fallback.backend, selection: $fallback.model, options: $fallback.modelOptions,
                                      agents: choices.map { ($0.id, model.agentLabel($0)) },
-                                     onAgentChange: { fallback = BotFallback(backend: $0) }, collapsible: false)
+                                     // Back on the step's own agent, its model and login come back with it.
+                                     onAgentChange: { id in fallback = initial.flatMap { $0.backend == id ? $0 : nil } ?? BotFallback(backend: id) },
+                                     collapsible: false)
                     if let agent, agent.loginProfiles != nil {
                         LoginProfileRow(backend: agent, loginProfile: Binding(get: { loginProfile }, set: { fallback.loginProfile = $0 }), free: free)
                     }

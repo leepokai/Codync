@@ -22,6 +22,15 @@ pub fn word(status: WorkStatus) -> &'static str {
     }
 }
 
+/// Where an item came from when the bot didn't add it itself.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Source {
+    /// A run of one of the bot's routines.
+    Routine,
+    /// Another bot asked for it: that bot's id, when it is one of this computer's.
+    Request(Option<String>),
+}
+
 /// One piece of work in a bot's box (`bot.work`).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct WorkItem {
@@ -40,6 +49,10 @@ pub struct WorkItem {
     pub ended_at: Option<i64>,
     /// What its task reported, or why it failed.
     pub result: String,
+    /// None for one the bot added, or from a source this terminal doesn't know.
+    pub source: Option<Source>,
+    /// The branch of the git worktree its task works in, while there is one.
+    pub branch: Option<String>,
 }
 
 impl WorkItem {
@@ -57,6 +70,12 @@ impl WorkItem {
             started_at: v["startedAt"].as_i64(),
             ended_at: v["endedAt"].as_i64(),
             result: text("result"),
+            source: match v["source"]["kind"].as_str() {
+                Some("routine") => Some(Source::Routine),
+                Some("request") => Some(Source::Request(v["source"]["id"].as_str().map(str::to_owned))),
+                _ => None,
+            },
+            branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
         })
     }
 
@@ -89,6 +108,24 @@ impl WorkItem {
             status => tr(word(status)).into_owned(),
         }
     }
+
+    /// Still in the box's hands: a task has it, or it waits for one.
+    pub fn open(&self) -> bool {
+        self.status.live() || self.status == WorkStatus::Waiting
+    }
+
+    /// Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has
+    /// its answer already. A routine's item runs the routine again.
+    pub fn can_retry(&self) -> bool {
+        matches!(self.status, WorkStatus::Failed | WorkStatus::Stopped)
+            && !matches!(self.source, Some(Source::Request(_)))
+    }
+
+    /// A task has it and it may give way to an item that cuts in: only work the bot added. A routine's run or
+    /// another bot's request is stopped, never set aside.
+    pub fn gives_way(&self) -> bool {
+        self.status.live() && self.source.is_none()
+    }
 }
 
 /// A bot's `maxAgents`, within 1 to 6; none from a host before the box.
@@ -115,9 +152,13 @@ pub fn counts(work: &[WorkItem]) -> String {
     parts.into_iter().flatten().collect::<Vec<_>>().join(" · ")
 }
 
-/// Every place is taken, so the item first in line can only start now if a task gives way.
+/// Every place is taken, so the item first in line can only start now if a task gives way, and one may. Not one
+/// that follows unfinished work or waits for usage: a freed place wouldn't start it.
 pub fn can_cut_in(work: &[WorkItem], max_agents: Option<u8>) -> bool {
-    work.iter().filter(|i| i.status.live()).count() >= places(max_agents)
+    let first = work.iter().find(|i| i.status == WorkStatus::Waiting);
+    first.is_some_and(|first| !matches!(first.wait, Some(Wait::After | Wait::Usage)))
+        && work.iter().any(WorkItem::gives_way)
+        && work.iter().filter(|i| i.status.live()).count() >= places(max_agents)
 }
 
 /// The Details page's sections of items, each in the order its rows show.
@@ -222,6 +263,59 @@ mod tests {
         assert_eq!((places(None), places(Some(1))), (3, 1), "no maxAgents from the host counts 3");
         let three = work(&["working", "needsYou", "working", "waiting"]);
         assert!(can_cut_in(&three, None) && !can_cut_in(&three, Some(4)) && can_cut_in(&three[1..], Some(2)));
+        assert!(!can_cut_in(&three[..3], None), "nothing waits");
+    }
+
+    #[test]
+    fn a_source_and_a_worktree_parse_and_set_what_an_item_may_do() {
+        let with = |status: &str, more: Value| {
+            let mut v = item("a", status);
+            v.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            WorkItem::parse(&v).expect("an item")
+        };
+        let source = |source: Value| with("working", json!({"source": source})).source;
+        assert_eq!(source(json!({"kind": "routine", "id": "r1"})), Some(Source::Routine));
+        assert_eq!(source(json!({"kind": "request", "id": "mika"})), Some(Source::Request(Some("mika".into()))));
+        assert_eq!(source(json!({"kind": "request"})), Some(Source::Request(None)), "a bot elsewhere");
+        assert_eq!(
+            (source(Value::Null), source(json!({"kind": "webhook"}))),
+            (None, None),
+            "absent or unknown: the bot's own"
+        );
+        let branch = |worktree: Value| with("working", json!({"worktree": worktree})).branch;
+        assert_eq!(branch(json!({"branch": "codync/fix-login", "path": "/w"})).as_deref(), Some("codync/fix-login"));
+        assert_eq!(branch(Value::Null), None);
+
+        let routine = json!({"source": {"kind": "routine", "id": "r1"}});
+        let request = json!({"source": {"kind": "request", "id": "mika"}});
+        let retries = |status: &str, more: &Value| with(status, more.clone()).can_retry();
+        assert!(retries("failed", &Value::Null) && retries("stopped", &routine), "a routine's item runs it again");
+        assert!(!retries("failed", &request) && !retries("stopped", &request), "the asking bot has its answer");
+        assert!(!retries("done", &Value::Null) && !retries("working", &Value::Null));
+        let gives = |status: &str, more: &Value| with(status, more.clone()).gives_way();
+        assert!(gives("working", &Value::Null) && gives("needsYou", &Value::Null));
+        assert!(!gives("working", &routine) && !gives("needsYou", &request) && !gives("waiting", &Value::Null));
+
+        // Cutting in needs every place taken, an item that gives way, and a first in line a freed place would start.
+        let boxed = |items: Vec<Value>| WorkItem::list(&Value::Array(items));
+        let own = || item("w", "working");
+        let run = || {
+            let mut v = item("r", "working");
+            v["source"] = json!({"kind": "routine", "id": "r1"});
+            v
+        };
+        let waits = |kind: &str| {
+            let mut v = item("q", "waiting");
+            v["wait"] = json!({"kind": kind});
+            v
+        };
+        assert!(can_cut_in(&boxed(vec![own(), waits("next")]), Some(1)));
+        assert!(!can_cut_in(&boxed(vec![run(), waits("next")]), Some(1)), "a routine's run never gives way");
+        assert!(can_cut_in(&boxed(vec![run(), own(), waits("next")]), Some(2)));
+        assert!(!can_cut_in(&boxed(vec![own(), waits("after")]), Some(1)), "it follows unfinished work");
+        assert!(!can_cut_in(&boxed(vec![own(), waits("usage")]), Some(1)), "it waits for usage");
+        assert!(!can_cut_in(&boxed(vec![own(), waits("next")]), Some(2)), "a place is free");
+        assert!(boxed(vec![waits("next")])[0].open() && !with("done", Value::Null).open());
     }
 
     #[test]

@@ -54,7 +54,7 @@ The **Workspace** setting is the folder the bot starts in.
 - **Personal workspace** (the default): a folder of its own inside Codync's data folder, `~/.codync/bots/`. It stays when you rename the bot, change its model, restart the computer or start a new session.
 - **Choose project folder…**: an existing folder on the computer, such as a Git repository. The folder picker browses the computer's folders, wherever you are. Start with **Recent workspaces**, or choose **Browse other folders**. In the browser, use the path breadcrumbs and **Parent folder** to move through folders or Windows drives, or **Enter folder path** to paste an absolute path (including `~/`). Search filters the visible recent list or the current folder, not the whole computer. Confirm with **Use this folder** at the bottom. Recent selections are stored on that computer and shared across its connected clients; older hosts support browsing without recent history. Linked folders (symlinks, junctions, mounted drives) show up like any other folder.
 
-Either way, the bot can work in other folders when you ask it to. A workspace isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them.
+Either way, the bot can work in other folders when you ask it to. A workspace isn't a sandbox: the bot can reach whatever its agent's own permissions allow. Several bots working in the same project folder can get in each other's way, and Codync doesn't create separate Git worktrees for them. One bot's own [background tasks](/docs/conversations#background-tasks) do get a worktree each when they run side by side: when the folder is in a Git repository, the bot's **Settings** show **Worktree per agent** under **Workspace**, on unless you turn it off. Codync never merges or deletes a branch that has work on it.
 
 Changing the folder starts a new agent session.
 
@@ -78,7 +78,7 @@ The **Permissions** setting decides how much the agent does on its own before it
 
 Bots made before Codync 2.34 keep the setting they had. With any setting, your agent's own settings still apply: if Claude Code's permission rules block a tool, it stays blocked. In the terminal UI this field is called **Approvals**, and ←/→ goes through the same choices.
 
-The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow.
+The same setting covers changes a bot makes to other bots with **Manage the team**: unless it's Approve automatically, each change waits for your Allow. The bots it creates get the same setting. It also covers [starting a dev server](/docs/dev-servers#start-one): unless it's Approve automatically, the start waits for your Allow. A message from another computer that your network rules hold to **Auto** or **Ask** is the exception: while the bot works on it, every request, team change and dev server start waits for your Allow whatever this setting ([choose who reaches your bots](/docs/teamwork#choose-who-reaches-your-bots)).
 
 How approval cards work: [Conversations](/docs/conversations#approval-cards).
 
@@ -123,7 +123,7 @@ Each bot keeps a long-term memory across sessions, which you can read on its **M
   - **iPhone:** tap the connection status at the top of the Bots tab (such as **1 connected**), choose **Manage computers**, and tap the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Desktop:** open **Settings → General** and click the eye button (**Unhide**) beside the bot under **Hidden bots**.
   - **Terminal UI:** press Ctrl+K, type `unhide`, and pick **Unhide** followed by the bot's name.
-- **Mark as read:** clears a bot's unread badge, from the same menus.
+- **Mark as read:** clears a bot's unread badge, from the same menus. An [approval card](/docs/conversations#approval-cards) still waiting stays counted until you answer it.
 
 ### Sections
 
@@ -131,7 +131,7 @@ Sections group a computer's bots under headings you name, such as Work and Perso
 
 - **Move a bot into a section:** open the bot's menu (iPhone: touch and hold it; Desktop: right-click it) and choose **Move to section**, then a section, **New section…** or **Remove from section**. On Desktop, hover over **Move to section** to open its submenu; clicking it or pressing `→` also opens it. Terminal UI: `w`, then type the section's name, or leave it empty to take the bot out.
 - **Reorder sections:** drag a heading up or down (iPhone: touch and hold, then drag). Move custom sections above or below **Bots**; pinned bots stay on top. Each device remembers its own order. On Desktop, focus a heading and press `Alt+↑` or `Alt+↓`. Terminal UI: select a bot in the section and press `Alt+↑` or `Alt+↓`; its order lasts until you quit.
-- **Fold a section:** tap or click its heading to fold its bots away. A folded heading shows their unread count. Each device keeps its own folds. Terminal UI: `z`, or click the section's label; its folds last until you quit.
+- **Fold a section:** tap or click its heading to fold its bots away. A folded heading shows their unread count, in amber while one of them waits on an approval card. Each device keeps its own folds. Terminal UI: `z`, or click the section's label; its folds last until you quit.
 - **Rename or remove a section:** touch and hold its heading (Desktop: right-click it) and choose **Rename section…** or **Remove section**. Its bots stay, without a section. Renaming it to another section's name merges the two. Terminal UI: `W`; an empty name removes the section.
 - Pinned bots stay on top, outside sections. A pinned bot goes back to its section when you unpin it. Bots in no section sit under a **Bots** label, and dragging moves a bot only within its section.
 

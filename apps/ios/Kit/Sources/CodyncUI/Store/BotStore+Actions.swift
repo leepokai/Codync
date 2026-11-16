@@ -200,10 +200,11 @@ extension BotStore {
         }
     }
 
-    /// The roster's "Mark as read": everything in the chat.
+    /// The roster's "Mark as read": everything in the chat, except cards still waiting on the user, which stay
+    /// counted until they're answered.
     public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
-        bots[botId]?.unread = 0
+        guard let bot = bots[botId], bot.unseen > 0 else { return }
+        bots[botId]?.unread = bot.waiting
         perform(replay: true) { try await $0.markRead(botId) }
     }
 
@@ -393,6 +394,37 @@ extension BotStore {
     /// A task's transcript, for its item's details. Never `upsert`ed: a task's entries stay out of chats.
     public func fetchTaskEntries(_ botId: String, task: String) async throws -> [Entry] {
         try await withLink(replay: true) { try await $0.taskEntries(botId: botId, taskId: task) }
+    }
+
+    /// Has the bot's conversation open its details once it is on screen.
+    public func requestDetails(of botId: String) { detailsRequest = botId }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeDetailsRequest(for botId: String) -> Bool {
+        guard detailsRequest == botId else { return false }
+        detailsRequest = nil
+        return true
+    }
+
+    /// Has the bot's conversation show the card `item` waits on once it is on screen.
+    public func requestCard(of botId: String, item: WorkItem) { cardRequest = (botId, item) }
+
+    /// Consumed once, including when the conversation was already on screen.
+    func takeCardRequest(for botId: String) -> WorkItem? {
+        guard let request = cardRequest, request.botId == botId else { return nil }
+        cardRequest = nil
+        return request.item
+    }
+
+    /// The card in the bot's chat that `item` waits on, read from the computer when this device doesn't hold it
+    /// yet: up to five pages of earlier messages. Nil when it isn't there.
+    public func card(for item: WorkItem, in botId: String) async -> Entry? {
+        for _ in 0..<5 {
+            if let card = chat(botId).card(for: item) { return card }
+            guard canLoadOlder(botId) else { return nil }
+            await loadOlder(botId)
+        }
+        return chat(botId).card(for: item)
     }
 
     /// Stops one working item of the bot's, or all of them (nil).

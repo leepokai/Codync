@@ -109,6 +109,8 @@ async fn behind_other_work_a_steered_message_goes_first_in_line() {
     }
     let host = Host::start().await;
     let bot = host.fixture_bot("Behind", "steer_agent.py", "steer 5").await;
+    // Routine runs as turns in the chat are what this is about; in a box they wouldn't hold the chat.
+    host.works_in_chat(&bot).await;
     let mut routines = vec![];
     for name in ["The running routine", "The waiting routine"] {
         let body = json!({"botId": bot, "name": name, "instruction": name, "triggers": [{"type": "webhook"}], "timeoutSeconds": 60});

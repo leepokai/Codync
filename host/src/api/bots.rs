@@ -11,6 +11,9 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+/// The methods a bot's MCP servers call the host's tools through.
+const BOT_TOOL_CALLS: [&str; 5] = ["routineCall", "memoryCall", "chatCall", "teamCall", "manageCall"];
+
 /// What the user does to an item of a bot's box.
 async fn steer_work(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
     let (hub, bot) = (hub.clone(), str_arg(b, "botId")?.to_owned());
@@ -37,17 +40,30 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
     if let Some(steer) = Steer::of_method(method) {
         return Ok(ControlFlow::Break(steer_work(hub, steer, &b).await?));
     }
+    // A turn a network rule holds to a ceiling calls only the host's tools that read or answer the user. `botId`
+    // is whoever's turn calls, a task included. The computer and connector servers are the agent's own tools, which
+    // its mode holds.
+    if BOT_TOOL_CALLS.contains(&method) {
+        hub.ceilings.check_tool(str_arg(&b, "botId")?, str_arg(&b, "name")?)?;
+    }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
-        "saveRoutine" => hub.routines.save(hub, str_arg(&b, "botId")?, &b)?,
-        "setRoutineEnabled" => hub.routines.set_enabled(
-            &hub.store,
-            str_arg(&b, "botId")?,
-            str_arg(&b, "id")?,
-            b["enabled"].as_bool().context("enabled is required")?,
-        )?,
-        "deleteRoutine" => hub.routines.remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?,
+        "saveRoutine" => {
+            let saved = hub.routines.save(hub, str_arg(&b, "botId")?, &b)?;
+            tasks::routines_changed(hub, str_arg(&b, "botId")?);
+            saved
+        }
+        "setRoutineEnabled" | "deleteRoutine" => {
+            let (bot, id) = (str_arg(&b, "botId")?, str_arg(&b, "id")?);
+            let answer = if method == "deleteRoutine" {
+                hub.routines.remove(hub, bot, id)?
+            } else {
+                hub.routines.set_enabled(&hub.store, bot, id, b["enabled"].as_bool().context("enabled is required")?)?
+            };
+            tasks::routines_changed(hub, bot);
+            answer
+        }
         "runRoutine" => hub.routines.enqueue(
             &hub.store,
             str_arg(&b, "botId")?,
@@ -70,9 +86,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             crate::routines::Cancelled::User,
         )?,
         "routineCall" => {
-            let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            tasks::refuse_in_task(hub, bot, name)?;
-            crate::routines::call(hub, bot, name, &b["arguments"])?
+            let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            let bot = tasks::acting_as(hub, caller, name)?;
+            let answer = crate::routines::call(hub, &bot, caller, name, &b["arguments"])?;
+            if matches!(name, "save_routine" | "set_routine_enabled" | "delete_routine") {
+                tasks::routines_changed(hub, &bot);
+            }
+            answer
         }
         "memoryCall" => {
             crate::chat::memory::tool_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
@@ -105,9 +125,9 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .await?
         }
         "teamCall" => {
-            let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            tasks::refuse_in_task(hub, bot, name)?;
-            crate::chat::team::call_async(hub, bot, name, &b["arguments"]).await?
+            let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            let bot = tasks::acting_as(hub, caller, name)?;
+            crate::chat::team::call_async(hub, &bot, caller, name, &b["arguments"]).await?
         }
         "manageCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);

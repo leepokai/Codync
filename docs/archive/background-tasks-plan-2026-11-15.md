@@ -91,14 +91,35 @@ counted (`hops`, as bot requests) and refused past the limit.
 
 | # | Question | Result |
 | --- | --- | --- |
-| 1 | Which agents advertise `sessionCapabilities.fork`? | **Claude: yes** (`claude-agent-acp` 0.107.0, 2026-11-15). Others untested. |
+| 1 | Which agents advertise `sessionCapabilities.fork`? | **Claude: yes** (`claude-agent-acp` 0.107.0, 2026-11-15). Others: the table below. |
 | 2 | Does `session/fork` from a second process work on a session another process holds, right after its turn? | **Claude: yes**: the fork knew the chat, and the chat's session never saw what the fork did after. |
 | 3 | Does the fork read the prompt cache (same instructions and tools)? | **Claude: yes** (41,453 of 42,425 input tokens read from cache on the fork's first turn). |
 | 4 | With the instructions alone, does the agent hand long work on rather than do it in the chat's turn? | **Claude (haiku): not with the instructions alone** (two tries, 85 to 95 s of reading in the chat's turn); **yes with one line on each message** (`tasks::EACH_TURN`), and a quick question was still answered in the chat. |
 | 5 | Can a subagent's start, end and result be read from the adapter's tool calls? | Not run. |
 
 Where an agent fails 1 to 3, its tasks start from a brief: the feature is whole, a task just starts from a summary.
-The same spikes for the other agents are [still open](../plans/event-box.md#stages).
+
+Spikes 1 to 3 for the other agents on the same computer (2026-11-15, each agent started the way the host starts it,
+on its default login, with no MCP servers and no instructions; details on each agent's page in
+[upstream agents](../upstream-agents/README.md)):
+
+| Agent (version) | 1. Advertises `sessionCapabilities.fork` | 2. Fork from a second process | Original untouched | 3. Cache read on the fork's first turn |
+| --- | --- | --- | --- | --- |
+| Codex (codex-acp 2.6.0, CLI 0.167.0) | yes | yes, knew the chat | yes | partly: 7,168 of 25,728 input tokens (the chat's only turn had written none yet); 25,600 of 25,751 on its second |
+| Hermes 0.22.5 | yes | yes, knew the chat | yes | yes: 18,048 of 18,231 |
+| oh-my-pi 18.14.0 | yes | yes, knew the chat | yes | yes: 12,416 of 12,482 |
+| OpenCode 1.19.5 (installed; registry 2.3.0 not tried) | yes | yes, knew the chat (replays the history first) | yes | not shown: 1,792 of 82,200, the same as the original's own next turn on this free model |
+| Cursor (cursor-agent 2026.10.22) | no | `Method not found` | | |
+| Pi (pi-acp 0.0.34, pi 1.4.0) | no | `Method not found` | | |
+| GitHub Copilot 1.0.105 | no | `Method not found` | | |
+| DeepSeek Harness (dsh 0.2.1-rc.5) | no | `Method not found` | | |
+| Antigravity (antigravity-acp 1.4.3) | no | answers `{}` with no `sessionId` | | |
+| Grok Build 1.0.77 | no | not run: not signed in | | |
+| Gemini CLI 0.68.0 (registry build; not installed) | no (no `sessionCapabilities` at all) | not run: no login | | |
+
+The four that pass advertise the field the host already reads (`SessionCaps.fork`, `host/src/agent/bot/launch.rs`),
+so their tasks fork with no change. Not tried: a fork that also sends the instructions (`systemPrompt`, which Codex
+advertises) and Codync's MCP servers, as the host's does.
 
 ## Left out then, and still
 

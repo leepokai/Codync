@@ -3,6 +3,7 @@ import type { Entry } from '@shared/models'
 import { isTold } from '@shared/tasks'
 import { isLive, workStatusWord, type WorkItem } from '@shared/work'
 import { Button, CardSection, IconButton, Spinner } from '../../components/Controls'
+import { Icon } from '../../components/Icon'
 import { ModalHeader, SheetPage } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
@@ -18,13 +19,20 @@ import { Timer } from './WorkingIndicator'
 import './trace.css'
 import './tasks.css'
 
-/** An item's status in a word and how long its task has run (or ran, once it ended). */
+/** An item's status in a word, how long its task has run (or ran, once it ended), and the branch of the worktree it
+ * works in, when it has one. */
 function ItemStatusLine({ item }: { item: WorkItem }) {
   const tr = useTr()
   return (
     <HStack as="span" gap={6}>
       <Text size="callout" tone="secondary">{tr(workStatusWord(item.status))}</Text>
       {item.startedAt !== null ? <Timer since={item.startedAt} until={item.endedAt ?? undefined} /> : null}
+      {item.worktree ? (
+        <HStack as="span" gap={4} shrink title={item.worktree.path}>
+          <Icon name="arrow.triangle.branch" size={11} color="var(--tertiary)" />
+          <Text size="callout" tone="secondary" mono truncate className="selectable">{item.worktree.branch}</Text>
+        </HStack>
+      ) : null}
     </HStack>
   )
 }

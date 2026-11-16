@@ -22,6 +22,13 @@ export interface WorkWait {
   ahead: number
 }
 
+/** Where an item came from when the bot didn't add it itself: a run of the routine `id`, or a request from the bot
+ * `id` (null when the asking bot isn't one of this computer's). */
+export interface WorkSource {
+  kind: 'routine' | 'request'
+  id: string | null
+}
+
 /** One piece of work in a bot's box (`bot.work`). */
 export interface WorkItem {
   id: string
@@ -39,10 +46,14 @@ export interface WorkItem {
   endedAt: number | null
   /** What its task reported, or why it failed. */
   result: string
+  /** Null for one the bot added. */
+  source: WorkSource | null
+  /** The git worktree its task works in, while there is one: its branch and folder. */
+  worktree: { branch: string; path: string } | null
 }
 
 type Translate = (text: string) => string
-type Raw = Partial<Omit<WorkItem, 'wait'>> & { wait?: Partial<WorkWait> | null }
+type Raw = Partial<Omit<WorkItem, 'wait' | 'source' | 'worktree'>> & { worktree?: { branch?: string; path?: string } | null } & { wait?: Partial<WorkWait> | null; source?: { kind?: string; id?: string | null } | null }
 
 /** `bot.work`; a host from before the box sends none, and the feature doesn't show. An item in a status this app
  * doesn't know is left out. */
@@ -62,6 +73,9 @@ export function normalizeWork(raw: unknown): WorkItem[] {
           startedAt: i.startedAt ?? null,
           endedAt: i.endedAt ?? null,
           result: i.result ?? '',
+          // A source this app doesn't know reads as the bot's own.
+          worktree: i.worktree?.branch ? { branch: i.worktree.branch, path: i.worktree.path ?? '' } : null,
+          source: i.source?.kind === 'routine' || i.source?.kind === 'request' ? { kind: i.source.kind, id: i.source.id ?? null } : null,
         }]
       : [],
   )
@@ -74,9 +88,40 @@ export const normalizeMaxAgents = (raw: unknown): number | null =>
 /** A task has it: working, or waiting on the user's approval. */
 export const isLive = (item: WorkItem) => item.status === 'working' || item.status === 'needsYou'
 
-/** The bot is at work: its chat is in a turn, or a task has one of its items. What the tray and the notch island
- * mark as working. */
-export const isBusy = (bot: { status: string; work: WorkItem[] }) => bot.status === 'working' || bot.status === 'needsInput' || bot.work.some(isLive)
+/** Still in the box's hands: a task has it, or it waits for one. */
+export const isOpen = (item: WorkItem) => isLive(item) || item.status === 'waiting'
+
+/** All bots' work in one view: the bots of `roster` (as its rows are on screen) that have a live or waiting item, in that order, and how many
+ * items are worked on in all (the count on the view's button). */
+export function allWork<T extends { bot: { work: WorkItem[] } }>(roster: T[]): { bots: T[]; working: number } {
+  const bots = roster.filter((r) => r.bot.work.some(isOpen))
+  return { bots, working: bots.reduce((sum, r) => sum + r.bot.work.filter((i) => i.status === 'working').length, 0) }
+}
+
+/** How a bot stands outside its chat, as the host says it (`bot.outside`); null from a host before it. */
+export interface OutsideStatus {
+  /** idle | working | needsInput | error, or a newer one. */
+  status: string
+  startedAt: number | null
+}
+
+export const normalizeOutside = (raw: unknown): OutsideStatus | null => {
+  const outside = raw as Partial<OutsideStatus> | null | undefined
+  return outside && typeof outside.status === 'string' ? { status: outside.status, startedAt: outside.startedAt ?? null } : null
+}
+
+/** The status a bot has for what shows it outside its chat (its avatar, the tray, the notch island): it needs the
+ * user while its chat or one of its items does, it works while its chat or its box does, else the chat's own status.
+ * The host's word (`bot.outside`); the chat's own status from a host before it, as on every client. */
+export function outsideStatus(bot: { status: string; outside: OutsideStatus | null }): string {
+  return bot.outside?.status ?? bot.status
+}
+
+/** Working or waiting on the user, outside its chat: the tray's working mark. */
+export function worksOutside(bot: { status: string; outside: OutsideStatus | null }): boolean {
+  const status = outsideStatus(bot)
+  return status === 'working' || status === 'needsInput'
+}
 
 /** The Details timeline's sections of items, each in the order its rows show. */
 export interface WorkSections {
@@ -210,15 +255,25 @@ export function itemLine(item: WorkItem, tr: Translate): string {
   }
 }
 
-/** Every place is taken, so the item first in line can only start now if a task gives way. Not one that follows
- * unfinished work or waits for usage: a freed place wouldn't start it. */
+/** Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has its
+ * answer already. A routine's item runs the routine again. */
+export const canRetry = (item: WorkItem) => (item.status === 'failed' || item.status === 'stopped') && item.source?.kind !== 'request'
+
+/** A task has it and it may give way to an item that cuts in: only work the bot added. A routine's run or another
+ * bot's request is stopped, never set aside. */
+export const givesWay = (item: WorkItem) => isLive(item) && item.source === null
+
+/** Every place is taken, so the item first in line can only start now if a task gives way, and one may. Not one that
+ * follows unfinished work or waits for usage: a freed place wouldn't start it. */
 export function canCutIn(work: WorkItem[], maxAgents: number | null): boolean {
   const first = work.find((i) => i.status === 'waiting')
   const held = first?.wait?.kind === 'after' || first?.wait?.kind === 'usage'
-  return !!first && !held && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
+  return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
 }
 
-/** What each item that needs the user is asked, by item id: the titles of the approval cards waiting in the chat. */
+/** What each item that needs the user is asked, by item id: what its task's card waiting in the chat says (an
+ * approval's title, a choice's question). */
 export function pendingAsks(entries: Entry[]): Map<string, string> {
-  return new Map(entries.flatMap((e) => (e.kind === 'permission' && e.data.status === 'pending' && e.data.item ? [[e.data.item, e.data.title ?? ''] as const] : [])))
+  const isCard = (e: Entry) => e.kind === 'permission' || !!e.data.decision
+  return new Map(entries.flatMap((e) => (isCard(e) && e.data.status === 'pending' && e.data.item ? [[e.data.item, e.data.title ?? e.data.question ?? ''] as const] : [])))
 }

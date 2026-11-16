@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) start() else dictation.failure = "Allow microphone access in Settings to dictate."
     }
-    AnimatedContent(dictation.listening || dictation.transcribing, transitionSpec = {
+    AnimatedContent(dictation.busy, transitionSpec = {
         (fadeIn(Motion.morph()) + scaleIn(Motion.morph(), 0.9f)) togetherWith fadeOut(Motion.morph())
     }, label = "Dictation") { recording ->
         if (recording) RecordingPill(dictation, height)

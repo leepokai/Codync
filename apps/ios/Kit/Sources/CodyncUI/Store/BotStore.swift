@@ -93,6 +93,12 @@ public final class BotStore {
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
 
+    /// A bot whose details its conversation should open (from the view of all bots' work), consumed by it.
+    public internal(set) var detailsRequest: String?
+
+    /// An item whose card its bot's conversation should bring into view, consumed by it.
+    public internal(set) var cardRequest: (botId: String, item: WorkItem)?
+
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
     @ObservationIgnored var preparingVoiceCall: UUID?

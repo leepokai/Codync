@@ -100,6 +100,8 @@ final class Dictation {
     /// A recording's transcription, from the pill's stop until its words are in the box (after the pill has gone);
     /// `stop()` cancels it so no more pieces go out to the computer. A start before then does nothing.
     @ObservationIgnored private var transcription: Task<Void, Never>?
+    /// Runs once the transcript is in the box (a send while dictating); dropped on a failure or a stop.
+    @ObservationIgnored private var done: (() -> Void)?
     /// Bumped per start and stop, so a start still waiting (key check, permission) or a late
     /// result from an earlier recognition is dropped.
     @ObservationIgnored private var generation = 0
@@ -133,14 +135,31 @@ final class Dictation {
         }
     }
 
-    /// The pill's stop: on-device speech has already typed its words; a recording gets transcribed.
-    func finish() {
-        guard let recording else { return stop() }
+    /// Listening, or waiting for a recording's transcript, including the pill's exit animation.
+    var busy: Bool { listening || transcription != nil }
+
+    /// The pill's stop, or a send while dictating: on-device speech has already typed its words; a recording gets
+    /// transcribed. `done` runs once the words are in the box, not after a failure.
+    func finish(then done: (() -> Void)? = nil) {
+        // Still waiting for the transcript: `done` waits for it too, so a second send doesn't go before the words.
+        if transcription != nil {
+            if let done { self.done = done }
+            return
+        }
+        guard let recording else {
+            stop()
+            done?()
+            return
+        }
         let edit = edit
         stop()
-        guard recording.pcm.count >= Self.minBytes else { return }
+        guard recording.pcm.count >= Self.minBytes else {
+            done?()
+            return
+        }
         let generation = generation
         transcribing = true
+        self.done = done
         transcription = Task {
             do {
                 let said = try await service.transcribe(recording.pcm, recording.engine, recording.model)
@@ -151,12 +170,16 @@ final class Dictation {
                     guard let self, generation == self.generation else { return }
                     transcription = nil
                     edit? { SpeechSegments.join($0, said) }
+                    let done = self.done
+                    self.done = nil
+                    done?()
                 }
             } catch {
                 guard generation == self.generation else { return }
                 failure = error.localizedDescription
                 transcribing = false
                 transcription = nil
+                self.done = nil
             }
         }
     }
@@ -166,6 +189,7 @@ final class Dictation {
         generation += 1
         transcription?.cancel()
         transcription = nil
+        done = nil
         task?.cancel()
         task = nil
         request?.endAudio()

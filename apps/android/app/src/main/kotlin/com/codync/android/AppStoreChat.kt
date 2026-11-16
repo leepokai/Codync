@@ -21,7 +21,8 @@ fun AppStore.openBot(id: String?) {
         windows.remove(left)
         mutableState.update { it.copy(historyEnd = it.historyEnd - left) }
     }
-    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving }) }
+    mutableState.update { it.copy(selectedBot = id, trace = false, callRequest = it.callRequest.takeUnless { leaving },
+        detailsRequest = it.detailsRequest.takeUnless { leaving }, cardRequest = it.cardRequest.takeUnless { leaving }) }
     if (id != null) { opened(this); acknowledgeVisible() }
     // The open chat swaps its preview for its window.
     if (leaving) contextScope.launch { refresh() }
@@ -41,6 +42,32 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
+/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String) {
+    openBot(botId)
+    mutableState.update { it.copy(detailsRequest = botId) }
+}
+
+/** Once. */
+internal fun AppStore.takeDetailsRequest(botId: String): Boolean {
+    if (state.value.detailsRequest != botId) return false
+    mutableState.update { it.copy(detailsRequest = null) }
+    return true
+}
+
+/** Opens [botId]'s chat at the card its [item] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
+internal fun AppStore.openCard(botId: String, item: WorkItem) {
+    openBot(botId)
+    mutableState.update { it.copy(cardRequest = botId to item) }
+}
+
+/** Once. */
+internal fun AppStore.takeCardRequest(botId: String): Boolean {
+    if (state.value.cardRequest?.first != botId) return false
+    mutableState.update { it.copy(cardRequest = null) }
+    return true
+}
+
 /** Once: a chat that already has a call takes it too, so it can't start one later. */
 fun AppStore.takeCallRequest(botId: String): Boolean {
     if (state.value.callRequest != botId) return false
@@ -51,12 +78,12 @@ fun AppStore.takeCallRequest(botId: String): Boolean {
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
 internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
 
-/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread messages. */
 internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
             is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
-            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unseen > 0
             else -> false
         }
     }

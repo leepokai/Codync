@@ -82,9 +82,22 @@ fn card_data(args: &Value) -> Result<Value> {
     if let Some(i) = recommended {
         let _ = write!(text, "\n\nSuggested: {}", choices[i]);
     }
-    text.push_str("\n\nReply with the full option, its number or your own answer. Exact option text takes priority over a number.");
+    text.push_str(TYPED_HINT);
     Ok(json!({"decision": true, "text": text, "question": question, "choices": choices,
         "recommended": recommended, "status": Status::Pending, "selected": Value::Null}))
+}
+
+/// How a card's text tells a client without buttons to answer.
+const TYPED_HINT: &str =
+    "\n\nReply with the full option, its number or your own answer. Exact option text takes priority over a number.";
+
+/// A card's data for a card only a press answers (a task's, in its bot's chat): its text doesn't ask for a typed
+/// reply, which would go to the bot in the chat.
+pub fn pressed_only(mut data: Value) -> Value {
+    if let Some(text) = data["text"].as_str().and_then(|text| text.strip_suffix(TYPED_HINT)) {
+        data["text"] = text.to_owned().into();
+    }
+    data
 }
 
 pub fn is_card(card: &Entry) -> bool {
@@ -153,7 +166,7 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
     if Status::of(&card.data) != Some(Status::Pending) {
         bail!("that card is already answered or expired");
     }
-    let owner = card.data["author"].as_str().unwrap_or(&card.bot_id);
+    let owner = crate::chat::tasks::card_actor(&card);
     let (reply, received) = tokio::sync::oneshot::channel();
     hub.send_cmd(owner, Cmd::Decision { entry_id: entry_id.to_owned(), choice: option.to_owned(), reply })?;
     tokio::time::timeout(Duration::from_secs(10), received)

@@ -16,20 +16,34 @@ class RosterSectionsTest {
     private val work2 = Bot("w2", section = "Work", unread = 3)
     private val roster = listOf(pinned, work1, loose, personal, work2)
 
+    @Test fun everyBotListsInTheOrderTheRosterShowsThemWithNothingFolded() {
+        assertEquals(listOf(pinned, personal, work1, work2, loose), shownBots(roster))
+        // As the user ordered the sections ("" is the bots in none).
+        assertEquals(listOf(pinned, loose, work1, work2, personal), shownBots(roster, order = listOf("", "Work", "Personal")))
+    }
+
     @Test fun pinnedBotsComeFirstThenEachSectionByNameThenBotsWithoutOneUnderTheLabel() {
         assertEquals(listOf(
             RosterLine.Row(pinned),
-            RosterLine.Header("Personal", count = 1, unread = 0, folded = false), RosterLine.Row(personal),
-            RosterLine.Header("Work", count = 2, unread = 5, folded = false), RosterLine.Row(work1), RosterLine.Row(work2),
+            RosterLine.Header("Personal", count = 1, unread = 0, waiting = false, folded = false), RosterLine.Row(personal),
+            RosterLine.Header("Work", count = 2, unread = 5, waiting = false, folded = false), RosterLine.Row(work1), RosterLine.Row(work2),
             RosterLine.Label, RosterLine.Row(loose),
         ), rosterLines(roster, folded = emptySet()))
+    }
+
+    @Test fun aSectionWaitsOnTheUserWhileOneOfItsBotsDoes() {
+        // Issue #366: its folded badge takes the needs-you colour.
+        val asking = Bot("a", section = "Work", unread = 2, waiting = 1)
+        val waiting = rosterLines(listOf(asking, Bot("b", section = "Work"), Bot("c", section = "Home")), folded = emptySet())
+            .filterIsInstance<RosterLine.Header>().map { "${it.name} ${it.waiting}" }
+        assertEquals(listOf("Home false", "Work true"), waiting)
     }
 
     @Test fun theLeadSitsInItsSectionLikeAnyBot() {
         val lead = Bot("lead", lead = true, section = "Work")
         assertEquals(listOf(
             RosterLine.Row(pinned),
-            RosterLine.Header("Work", count = 2, unread = 2, folded = false), RosterLine.Row(work1), RosterLine.Row(lead),
+            RosterLine.Header("Work", count = 2, unread = 2, waiting = false, folded = false), RosterLine.Row(work1), RosterLine.Row(lead),
             RosterLine.Label, RosterLine.Row(loose),
         ), rosterLines(listOf(pinned, work1, lead, loose), folded = emptySet()))
         assertEquals(listOf("lead", "w1"), moved(listOf(work1, lead), "lead", -1))
@@ -38,8 +52,8 @@ class RosterSectionsTest {
     @Test fun aFoldedSectionKeepsItsHeaderAndUnreadAndHidesItsBots() {
         assertEquals(listOf(
             RosterLine.Row(pinned),
-            RosterLine.Header("Personal", count = 1, unread = 0, folded = false), RosterLine.Row(personal),
-            RosterLine.Header("Work", count = 2, unread = 5, folded = true),
+            RosterLine.Header("Personal", count = 1, unread = 0, waiting = false, folded = false), RosterLine.Row(personal),
+            RosterLine.Header("Work", count = 2, unread = 5, waiting = false, folded = true),
             RosterLine.Label, RosterLine.Row(loose),
         ), rosterLines(roster, folded = setOf("Work")))
     }
@@ -70,7 +84,7 @@ class RosterSectionsTest {
     }
 
     @Test fun theLabelNeedsABotInNoSection() {
-        assertEquals(listOf(RosterLine.Header("Work", count = 1, unread = 2, folded = false), RosterLine.Row(work1)),
+        assertEquals(listOf(RosterLine.Header("Work", count = 1, unread = 2, waiting = false, folded = false), RosterLine.Row(work1)),
             rosterLines(listOf(work1), emptySet()))
     }
 

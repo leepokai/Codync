@@ -9,7 +9,7 @@ use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
-use super::permission::{chosen_line, decided_line, decision_card, permission_card};
+use super::permission::{background_line, chosen_line, decided_line, decision_card, permission_card};
 use super::roster::plain;
 use super::style::{FACE, bot_color, face_style, person, spin, theme};
 use super::time::clock;
@@ -223,6 +223,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
+            // What a task shares through the chat (a file, a voice note, an artifact) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
+            }
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),

@@ -127,3 +127,8 @@ button.decision-option:hover:not(:disabled),
 .diff-line {
   white-space: pre;
 }
+
+/* Under a message a task put in the chat (TaskLine): which item it comes from. */
+.message > .task-line {
+  padding: 3px 2px 0;
+}

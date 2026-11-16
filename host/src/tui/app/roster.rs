@@ -20,12 +20,13 @@ const LEAD_CHOICE_SINCE: &str = "2.33.0";
 pub enum RosterLine<'a> {
     /// `PINNED` above the pinned bots, `BOTS` above the bots in no section.
     Label(&'static str),
-    /// A section's label: how many bots it holds, their unread messages (shown while folded) and the
-    /// first of them, which the cursor lands on while it is folded.
+    /// A section's label: how many bots it holds, their unread messages (shown while folded), whether
+    /// those count a card waiting on the user, and the first of them, which the cursor lands on while it is folded.
     Section {
         name: &'a str,
         bots: usize,
         unread: i64,
+        waiting: bool,
         folded: bool,
         first: &'a Bot,
     },
@@ -79,6 +80,7 @@ pub fn roster_lines<'a>(roster: &[&'a Bot], folded: &HashSet<String>) -> Vec<Ros
                         name,
                         bots: members.len(),
                         unread: members.iter().map(|m| m.unread).sum(),
+                        waiting: members.iter().any(|m| m.waiting > 0),
                         folded: folded.contains(name),
                         first: b,
                     }

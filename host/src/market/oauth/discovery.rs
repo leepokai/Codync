@@ -28,8 +28,11 @@ pub async fn required(url: &str, headers: &std::collections::BTreeMap<String, St
         req = req.header(k, v);
     }
     let Ok(res) = req.send().await else { return false };
+    // A 401 to an Authorization the user gave is a rejected key, not a sign-in request: OAuth
+    // would own that header and leave no way to retry with the right key.
+    let own_authorization = headers.keys().any(|k| k.eq_ignore_ascii_case("authorization"));
     if res.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return true;
+        return !own_authorization;
     }
     if res.status().is_success() {
         // Headers the user gave (an API key) are their way in; don't ask for sign-in on top.
@@ -44,7 +47,7 @@ pub async fn required(url: &str, headers: &std::collections::BTreeMap<String, St
     for (k, v) in headers {
         req = req.header(k, v);
     }
-    req.send().await.is_ok_and(|r| r.status() == reqwest::StatusCode::UNAUTHORIZED)
+    !own_authorization && req.send().await.is_ok_and(|r| r.status() == reqwest::StatusCode::UNAUTHORIZED)
 }
 
 /// `resource_metadata="…"` from a `WWW-Authenticate: Bearer …` header.

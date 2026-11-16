@@ -23,6 +23,8 @@ impl Fixture {
                 "id": id, "name": id, "backend": "fixture", "cwd": cwd,
                 "command": crate::shell::python(&agent),
                 "notify": false, "permission": "ask",
+                // They answer requests in their chat, whose queue these tests are about (the box: `tasks_e2e`).
+                "manageTeam": true,
             }))
             .unwrap();
             store.save_bot(&cfg).unwrap();
@@ -47,7 +49,7 @@ impl Fixture {
     }
 
     fn message(&self, message: &str) -> Result<Value> {
-        call(&self.hub, "a", "message_bot", &json!({"botId": "b", "message": message}))
+        call(&self.hub, "a", "a", "message_bot", &json!({"botId": "b", "message": message}))
     }
 
     fn notices(&self, request: &Value) -> Vec<crate::store::Entry> {
@@ -192,7 +194,7 @@ async fn permission_cards_still_require_the_recipients_approval_and_a_request_me
     let receipt = f.message("PERMISSION inspect the project").unwrap();
     f.until(|| f.hub.runtime("b").status == BotStatus::NeedsInput).await;
     // Its reply goes back to a: a message from this turn would be answered in b's own chat instead.
-    let back = call(&f.hub, "b", "message_bot", &json!({"botId": "c", "message": "pass it on"}));
+    let back = call(&f.hub, "b", "b", "message_bot", &json!({"botId": "c", "message": "pass it on"}));
     assert!(back.unwrap_err().to_string().contains("answering another bot's request"));
     assert_eq!(f.hub.team.0.locked().messages, 1);
     let card = f.hub.store.history("b", i64::MAX, 100).unwrap().into_iter().find(|e| e.kind == "permission").unwrap();
@@ -332,7 +334,7 @@ async fn replies_that_arrive_while_the_sender_works_are_one_turn() {
     f.send_to("a", "BLOCK user work").await;
     f.until(|| f.prompts_of("a").len() == 1).await;
     f.message("first").unwrap();
-    call(&f.hub, "a", "message_bot", &json!({"botId": "c", "message": "second"})).unwrap();
+    call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "second"})).unwrap();
     f.until(|| f.took("b", 1) && f.took("c", 1)).await;
     std::fs::write(f.dir.join("a/release"), "").unwrap();
     f.until(|| f.took("a", 2)).await;
@@ -367,7 +369,7 @@ async fn requests_from_several_senders_keep_fifo_and_user_batch_boundaries() {
     f.send_user("first user").await;
     f.send_user("second user").await;
     let first = f.message("first message").unwrap();
-    let from_c = call(&f.hub, "c", "message_bot", &json!({"botId": "b", "message": "message from c"}));
+    let from_c = call(&f.hub, "c", "c", "message_bot", &json!({"botId": "b", "message": "message from c"}));
     let second = f.message("second message").unwrap();
     f.send_user("third user").await;
     f.send_user("fourth user").await;
@@ -442,11 +444,11 @@ async fn invalid_messages_never_start_and_stopped_senders_cannot_admit_more() {
     let mut hidden = visible_bot(&f.hub, "c").unwrap();
     hidden.hidden = true;
     f.hub.store.save_bot(&hidden).unwrap();
-    let list = call(&f.hub, "a", "list_bots", &json!({})).unwrap();
+    let list = call(&f.hub, "a", "a", "list_bots", &json!({})).unwrap();
     assert_eq!(list["bots"].as_array().unwrap().len(), 1);
     assert_eq!(list["bots"][0]["id"], "b");
     for target in ["a", "c", "missing"] {
-        let result = call(&f.hub, "a", "message_bot", &json!({"botId": target, "message": "work"}));
+        let result = call(&f.hub, "a", "a", "message_bot", &json!({"botId": target, "message": "work"}));
         assert!(result.is_err());
     }
     for message in [" ".to_owned(), "x".repeat(MAX_MESSAGE_BYTES + 1)] {
@@ -502,7 +504,7 @@ async fn sender_deletion_preserves_messages_and_recipient_deletion_closes_them()
     }
     assert_eq!(f.prompts().len(), 1);
     // Deleting the recipient doesn't wake the sender: its only turn is a later message's reply.
-    let later = call(&f.hub, "a", "message_bot", &json!({"botId": "c", "message": "later work"})).unwrap();
+    let later = call(&f.hub, "a", "a", "message_bot", &json!({"botId": "c", "message": "later work"})).unwrap();
     f.until(|| f.took("a", 1)).await;
     assert!(f.prompts_of("a")[0].contains(later["requestId"].as_str().unwrap()));
     f.shutdown().await;

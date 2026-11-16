@@ -88,6 +88,7 @@ impl Hub {
         }
         self.routines.disable_bot(&self.store, id)?;
         self.team.end_turn(id);
+        self.ceilings.set(id, codync_network::Access::Allow);
         crate::chat::group::stop(self, id);
         let _ = self.send_cmd(id, Cmd::Shutdown);
         self.bots.locked().remove(id);
@@ -102,7 +103,7 @@ impl Hub {
                 let _ = self.events.send(deleted);
             }
         }
-        crate::chat::tasks::forget(&self.store, id);
+        crate::chat::tasks::forget(self, id);
         crate::network::publish(self);
         // Its shared files and artifacts are unreachable once the bot is deleted.
         let folders = [crate::chat::files::root(id), crate::chat::artifacts::root(id)];

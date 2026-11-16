@@ -130,6 +130,9 @@ private class ComputerRoster(private val context: Context, val key: String) {
     }
     val toggleSection = { name: String -> folded = if (name in folded) folded - name else folded + name; FoldedSections.save(context, folded) }
     val agentLogos by AppearancePreferences.agentLogos.collectAsStateWithLifecycle()
+    // Every bot's work in one sheet, from the header's button while any bot has some.
+    val work = allWork(ordered) { rosters[it.computer.id]?.order.orEmpty() }
+    var workOpen by remember { mutableStateOf(false) }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     GlassStage(Modifier.fillMaxSize().background(Palette.background), chrome = {
         ScrollEdge(Edge.Top, top + 64.dp)
@@ -140,6 +143,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                 ComputerFilterHeader(states, hidden, { hidden = it; RosterComputers.setHidden(context, it) },
                     { for (state in shown) accounts.store(state.computer.id)?.reconnect() }, manage)
             }
+            AllWorkButton(work.bots.isNotEmpty(), work.working) { workOpen = true }
             // A new bot starts on the first computer online (its dialog can move it); a group chat gathers one computer's bots.
             NewMenuButton(enabled = available.isNotEmpty(), groupEnabled = online.isNotEmpty(),
                 { (online.firstOrNull() ?: available.firstOrNull())?.let { newBot(it.computer.id) } },
@@ -186,6 +190,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
             confirmDelete?.let { (id, bot) -> accounts.store(id)?.deleteBot(bot) {} }
         })
     }
+    AllWorkSheet(workOpen, work.bots, grouped, accounts) { workOpen = false }
     NameDialog(naming, "Section name", { naming = null }, ::limitSectionName, ::sectionName)
 }
 
@@ -356,17 +361,18 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
-                if (bot.unread > 0) UnreadBadge(bot.unread)
+                if (bot.unread > 0) UnreadBadge(bot.unread, waiting = bot.waiting > 0)
             }
         }
     }
 }
 
-/** A count of unread messages in the accent capsule (a row, a folded section). */
-@Composable internal fun UnreadBadge(count: Int) {
-    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
+/** A count of unread messages in the accent capsule (a row, a folded section). [waiting]: it counts a card waiting on
+ *  the user, so it takes the needs-you colour of the avatar badge (iOS `UnreadBadge`). */
+@Composable internal fun UnreadBadge(count: Int, waiting: Boolean) {
+    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(if (waiting) Palette.warning else Palette.accentFill)
         .padding(horizontal = 6.dp).semantics { contentDescription = "$count unread" }, contentAlignment = Alignment.Center) {
-        Text("$count", style = Type.caption2.bold, color = Palette.onAccent)
+        Text("$count", style = Type.caption2.bold, color = if (waiting) Palette.onWarning else Palette.onAccent)
     }
 }
 

@@ -4,12 +4,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use serde_json::{Value, json};
 
+#[cfg(test)]
+use super::super::app::Source;
 use super::super::app::{
     After, App, Background, Confirm, ConfirmAct, Focus, Overlay, Sections, WorkItem, WorkStatus, can_cut_in, places,
 };
 use super::super::l10n::tr;
 use super::DetailsPage;
-use crate::chat::tasks::Wait;
 
 /// A row of the Details page.
 pub enum DetailRow<'a> {
@@ -31,7 +32,7 @@ impl<'a> DetailRow<'a> {
         }
     }
 
-    fn item(&self) -> Option<&'a WorkItem> {
+    pub(super) fn item(&self) -> Option<&'a WorkItem> {
         match self {
             Self::Thread(item) | Self::Waiting(_, item) | Self::Recent(item) => Some(item),
             Self::FollowUp(_) | Self::Routine(_) => None,
@@ -119,29 +120,28 @@ impl WorkAct {
         (Self::Retry, KeyCode::Char('A'), "A", "Try again"),
     ];
 
-    /// Whether `row` offers it; `full`: every place of the bot is taken.
-    fn offered(self, row: &DetailRow<'_>, full: bool) -> bool {
+    /// Whether `row` offers it; `cut_in`: the first in line may cut in (`can_cut_in`).
+    fn offered(self, row: &DetailRow<'_>, cut_in: bool) -> bool {
         match (self, row) {
             (Self::Open, DetailRow::Thread(item) | DetailRow::Recent(item)) => {
                 item.task.is_some() || item.status == WorkStatus::NeedsYou
             }
             (Self::Stop, DetailRow::Thread(_)) | (Self::Drop, DetailRow::Waiting(..) | DetailRow::Recent(_)) => true,
             (Self::First, DetailRow::Waiting(place, _)) => *place > 1,
-            // One that follows unfinished work, or waits for usage, couldn't take the place a task gives up.
-            (Self::CutIn, DetailRow::Waiting(1, item)) => full && !matches!(item.wait, Some(Wait::After | Wait::Usage)),
-            (Self::Retry, DetailRow::Recent(item)) => matches!(item.status, WorkStatus::Failed | WorkStatus::Stopped),
+            (Self::CutIn, DetailRow::Waiting(1, _)) => cut_in,
+            (Self::Retry, DetailRow::Recent(item)) => item.can_retry(),
             _ => false,
         }
     }
 
     /// What `key` does on `row`.
-    fn of(key: KeyCode, row: &DetailRow<'_>, full: bool) -> Option<Self> {
-        Self::KEYS.iter().find(|(act, code, ..)| *code == key && act.offered(row, full)).map(|(act, ..)| *act)
+    pub(super) fn of(key: KeyCode, row: &DetailRow<'_>, cut_in: bool) -> Option<Self> {
+        Self::KEYS.iter().find(|(act, code, ..)| *code == key && act.offered(row, cut_in)).map(|(act, ..)| *act)
     }
 
     /// The keys `row` offers, as the page's last line lists them; empty on a row that isn't an item's.
-    pub fn keys(row: &DetailRow<'_>, full: bool) -> Vec<String> {
-        let offered = Self::KEYS.iter().filter(|(act, ..)| act.offered(row, full));
+    pub fn keys(row: &DetailRow<'_>, cut_in: bool) -> Vec<String> {
+        let offered = Self::KEYS.iter().filter(|(act, ..)| act.offered(row, cut_in));
         offered.map(|(_, _, key, word)| [tr(key), tr(word)].join(" ").trim().to_owned()).collect()
     }
 
@@ -161,8 +161,13 @@ pub struct CutIn {
     pub bot: String,
     /// The waiting item that cuts in.
     pub item: String,
-    /// Over the bot's threads.
+    /// Over the items that give way.
     pub cursor: usize,
+}
+
+/// The threads that may give way to an item that cuts in, in the Threads section's order: only work the bot added.
+pub fn giving_way(work: &[WorkItem]) -> Vec<&WorkItem> {
+    Sections::of(work).threads.into_iter().filter(|i| i.gives_way()).collect()
 }
 
 /// `workCutIn`: `item` cuts in and `instead_of` gives way (none: the host picks the one that started last).
@@ -201,24 +206,31 @@ impl App {
         let act = picked.as_ref().and_then(|row| WorkAct::of(k.code, row, can_cut_in(work, max_agents)));
         let (Some(act), Some(item)) = (act, picked.and_then(|row| row.item().cloned())) else { return Err(l) };
         let bot = l.bot.clone();
+        Ok(self.work_act(&bot, act, &item, Overlay::Details(l)))
+    }
+
+    /// Does `act` to `item` of `bot` from `page` (the bot's Details, or the page of every bot's work): what became
+    /// of the page.
+    pub(super) fn work_act(&mut self, bot: &str, act: WorkAct, item: &WorkItem, page: Overlay) -> Option<Overlay> {
         if let Some(method) = act.method() {
             self.call(method, json!({"botId": bot, "itemId": item.id}), After::Nothing);
-            return Ok(Some(Overlay::Details(l)));
+            return Some(page);
         }
         if act == WorkAct::Open && item.status == WorkStatus::NeedsYou {
             // Its card waits at the end of the bot's chat.
+            self.select(bot);
             self.chat_page = true;
             self.focus = Focus::Chat;
             self.chat_scroll = 0;
-            return Ok(None);
+            return None;
         }
-        self.overlays.push(Overlay::Details(l));
+        self.overlays.push(page);
         match act {
-            WorkAct::Open => self.open_task(&bot, &item),
-            WorkAct::Stop => self.confirm_stop(bot, &item),
-            _ => self.overlays.push(Overlay::CutIn(CutIn { bot, item: item.id, cursor: 0 })),
+            WorkAct::Open => self.open_task(bot, item),
+            WorkAct::Stop => self.confirm_stop(bot.to_owned(), item),
+            _ => self.overlays.push(Overlay::CutIn(CutIn { bot: bot.to_owned(), item: item.id.clone(), cursor: 0 })),
         }
-        Ok(None)
+        None
     }
 
     /// `X` in the chat: stops the one item a task has, after asking; with several, the Details page lists them.
@@ -251,7 +263,7 @@ impl App {
     }
 
     pub(in crate::tui) fn cut_in_key(&mut self, mut c: CutIn, k: KeyEvent) -> Option<Overlay> {
-        let threads = Sections::of(self.box_of(&c.bot).0).threads;
+        let threads = giving_way(self.box_of(&c.bot).0);
         let last = threads.len().saturating_sub(1);
         c.cursor = c.cursor.min(last);
         match k.code {
@@ -278,6 +290,11 @@ pub(in crate::tui) mod tests {
     pub(in crate::tui) fn key(app: &mut App, c: char) {
         let modifiers = if c.is_uppercase() { KeyModifiers::SHIFT } else { KeyModifiers::NONE };
         app.on_key(KeyEvent::new(KeyCode::Char(c), modifiers));
+    }
+
+    /// `item` as a routine's run.
+    fn run_of(item: &WorkItem) -> WorkItem {
+        WorkItem { id: "run".into(), source: Some(Source::Routine), ..item.clone() }
     }
 
     fn hint(app: &mut App) -> String {
@@ -404,13 +421,22 @@ pub(in crate::tui) mod tests {
         assert_eq!(acts(&DetailRow::Waiting(1, &waiting), true), [CutIn, Drop], "first in line, every place taken");
         assert_eq!(acts(&DetailRow::Waiting(1, &waiting), false), [Drop], "a place is free: it starts by itself");
         assert_eq!(acts(&DetailRow::Waiting(2, &waiting), true), [First, Drop], "only the first cuts in");
-        for wait in [Wait::After, Wait::Usage] {
-            let held = WorkItem { wait: Some(wait), ..waiting.clone() };
-            assert_eq!(acts(&DetailRow::Waiting(1, &held), true), [Drop], "{wait:?}: a freed place wouldn't start it");
-        }
         assert_eq!(acts(&DetailRow::Recent(&done), true), [Open, Drop]);
         assert_eq!(acts(&DetailRow::Recent(&failed), true), [Drop, Retry], "no task took it: nothing to open");
         assert_eq!(acts(&DetailRow::Recent(&stopped), true), [Open, Drop, Retry]);
+        // Another bot's request isn't tried again (that bot has its answer); a routine's run is.
+        let asked = WorkItem { source: Some(Source::Request(None)), ..failed.clone() };
+        let run = WorkItem { source: Some(Source::Routine), ..failed.clone() };
+        assert_eq!(acts(&DetailRow::Recent(&asked), true), [Drop], "A isn't offered on a request");
+        assert_eq!(acts(&DetailRow::Recent(&run), true), [Drop, Retry]);
+        assert_eq!(WorkAct::keys(&DetailRow::Recent(&asked), true), ["D Drop"]);
+        // Only work the bot added gives way to an item that cuts in.
+        let live = [
+            WorkItem { id: "w".into(), ..working.clone() },
+            run_of(&working),
+            WorkItem { id: "n".into(), ..asks.clone() },
+        ];
+        assert_eq!(giving_way(&live).iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), ["n", "w"]);
         let routine = json!({"id": "r"});
         assert_eq!(acts(&DetailRow::Routine(&routine), true), [], "a routine's keys are its own");
         assert_eq!(acts(&DetailRow::FollowUp(&routine), true), []);

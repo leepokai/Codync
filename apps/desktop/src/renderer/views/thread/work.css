@@ -84,6 +84,15 @@
   font-size: var(--text-body);
   text-align: left;
 }
+/* An item's title with where it came from before it. */
+.work-row-title {
+  max-width: 100%;
+  min-width: 0;
+}
+.work-row-source {
+  display: flex;
+  flex: none;
+}
 /* A place not in use: as tall as an item's row, in faint text. */
 .work-row.free {
   min-height: 48px;

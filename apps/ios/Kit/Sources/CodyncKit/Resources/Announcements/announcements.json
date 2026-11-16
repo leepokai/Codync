@@ -1,9 +1,0 @@
-[
-  {
-    "version": "2.47.1",
-    "notes": [
-      "New: Codync Cloud (beta). Start a cloud computer on your own Boat or InstaBox account, so your bots work while your computer is off.",
-      "New: login profiles. Sign an agent in to several accounts or add API keys under Login profiles in its setup, then pick which one each bot uses."
-    ]
-  }
-]

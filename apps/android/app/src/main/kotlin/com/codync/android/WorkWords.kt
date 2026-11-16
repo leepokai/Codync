@@ -69,6 +69,17 @@ internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
     }
 }
 
+/**
+ * A bot's line outside the chat (the ongoing notification), in the roster row's order: `Needs you` when an item waits
+ * on the user, else the chat's own activity, else how many items work and wait; empty when there is none to say (its
+ * status then).
+ */
+internal fun outsideLine(bot: Bot, tr: (String) -> String): String = when {
+    bot.work.any { it.status == WorkStatus.NeedsYou } -> tr("Needs you")
+    bot.isWorking && bot.activity.isNotEmpty() -> tr(bot.activity)
+    else -> workCounts(bot.work, tr)
+}
+
 /** Why a waiting item waits. */
 internal fun waitText(item: WorkItem, tr: (String) -> String): String {
     if (item.cutIn) return tr("Was cut in on; starts again")

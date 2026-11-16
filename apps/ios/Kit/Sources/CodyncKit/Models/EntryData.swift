@@ -197,6 +197,10 @@ public enum DecisionStatus: String, Sendable {
 }
 
 public extension EntryData {
+    /// A background task put it in the chat (a card, a file, a voice note, an artifact): its line names the task,
+    /// and typing in the chat doesn't answer it.
+    var isFromTask: Bool { !(task?.title.isEmpty ?? true) || !(item?.id.isEmpty ?? true) }
+
     /// A choice card's status; nil for a value this app doesn't know.
     var decisionStatus: DecisionStatus? { status.flatMap(DecisionStatus.init(rawValue:)) }
 }

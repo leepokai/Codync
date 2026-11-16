@@ -141,18 +141,76 @@ private extension Dictation {
     }
 }
 
-/// A stop (a send, another chat) while the transcript is on its way drops it when it comes.
+/// A send after the pill has gone but before the words are in the box still waits for them.
+@MainActor @Test func aSendBeforeTheTranscriptLandsWaitsForIt() async {
+    let transcript = Pending<String>(), mic = Mic()
+    var exit: (@MainActor () -> Void)?
+    await dictating(transcript: transcript, mic: mic, pillGone: { exit = $0 }) { dictation, store in
+        var box = "Fix the bug", sent: [String] = []
+        await dictation.start(after: box, model: store) { box = $0(box) }
+        mic.heard?(Data(count: Dictation.minBytes), 0.5)
+        #expect(await until { dictation.level > 0 })
+        dictation.finish { sent.append(box) }
+        #expect(await transcript.asked())
+        transcript.answer("in the parser")
+        #expect(await until { exit != nil })
+        #expect(dictation.busy && !dictation.transcribing)
+        dictation.finish { sent.append(box) }
+        #expect(sent.isEmpty)
+        exit?()
+        #expect(sent == ["Fix the bug in the parser"])
+    }
+}
+
+/// Send while recording: it runs once the transcript is in the box, and a second Send waits for it too.
+@MainActor @Test func aSendWhileDictatingWaitsForTheTranscript() async {
+    let transcript = Pending<String>(), mic = Mic()
+    await dictating(transcript: transcript, mic: mic) { dictation, store in
+        var box = "A", sent: [String] = []
+        await dictation.start(after: box, model: store) { box = $0(box) }
+        mic.heard?(Data(count: Dictation.minBytes), 0.5)
+        #expect(await until { dictation.level > 0 })
+        dictation.finish { sent.append(box) }
+        dictation.finish { sent.append(box) }
+        #expect(await transcript.asked())
+        #expect(sent.isEmpty)
+        transcript.answer("and the follow-up")
+        #expect(await until { !sent.isEmpty })
+        #expect(sent == ["A and the follow-up"])
+    }
+}
+
+/// A failed transcription sends nothing: what was typed stays in the box.
+@MainActor @Test func aSendWhileDictatingSendsNothingWhenTranscriptionFails() async {
+    let transcript = Pending<String>(), mic = Mic()
+    await dictating(transcript: transcript, mic: mic) { dictation, store in
+        var sent = false
+        await dictation.start(after: "A", model: store) { _ in }
+        mic.heard?(Data(count: Dictation.minBytes), 0.5)
+        #expect(await until { dictation.level > 0 })
+        dictation.finish { sent = true }
+        #expect(await transcript.asked())
+        transcript.fail(Offline())
+        #expect(await until { !dictation.transcribing })
+        #expect(!sent && dictation.failure == "The computer is offline.")
+    }
+}
+
+/// A stop (another chat, a call) while the transcript is on its way drops it when it comes, with the send waiting for it.
 @MainActor @Test func aTranscriptArrivingAfterAStopIsDropped() async {
     let transcript = Pending<String>(), mic = Mic()
     await dictating(transcript: transcript, mic: mic) { dictation, store in
-        var box = "Fix the bug"
-        await dictation.dictate(Dictation.minBytes, from: mic, on: store) { box = $0(box) }
+        var box = "Fix the bug", sent = false
+        await dictation.start(after: box, model: store) { box = $0(box) }
+        mic.heard?(Data(count: Dictation.minBytes), 0.5)
+        #expect(await until { dictation.level > 0 })
+        dictation.finish { sent = true }
         #expect(await transcript.asked())
         dictation.stop()
         #expect(!dictation.transcribing)
         transcript.answer("too late")
         #expect(await until { transcript.returned == 1 })
-        #expect(box == "Fix the bug")
+        #expect(box == "Fix the bug" && !sent)
         #expect(dictation.failure == nil && !dictation.transcribing)
     }
 }
@@ -171,12 +229,16 @@ private extension Dictation {
     }
 }
 
-/// Under half a second is a tap of the mic: nothing goes out on the user's key.
+/// Under half a second is a tap of the mic: nothing goes out on the user's key, and a send goes right away.
 @MainActor @Test func aTapOfTheMicSendsNothing() async {
     let transcript = Pending<String>(), mic = Mic()
     await dictating(transcript: transcript, mic: mic) { dictation, store in
-        await dictation.dictate(Dictation.minBytes - 1, from: mic, on: store) { _ in }
-        #expect(!dictation.transcribing)
+        var sent = false
+        await dictation.start(after: "", model: store) { _ in }
+        mic.heard?(Data(count: Dictation.minBytes - 1), 0.5)
+        #expect(await until { dictation.level > 0 })
+        dictation.finish { sent = true }
+        #expect(sent && !dictation.transcribing)
         #expect(transcript.calls == 0)
     }
 }
@@ -225,7 +287,7 @@ private extension Dictation {
 
 /// A stop while the readiness check is on its way wins, whatever the check says: no recording
 /// starts and nothing is reported.
-@MainActor @Test(arguments: [true, false]) func aStopWhileTheKeyIsCheckedWins(checkAnswers: Bool) async {
+@MainActor @Test(arguments: [true, false]) func aStopWhileReadyIsCheckedWins(checkAnswers: Bool) async {
     let key = Pending<DictationGate>(), mic = Mic()
     await dictating(check: { try await key.call() }, mic: mic) { dictation, store in
         let starting = Task { await dictation.start(after: "", model: store) { _ in } }

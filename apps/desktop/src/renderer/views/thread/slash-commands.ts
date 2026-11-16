@@ -1,11 +1,13 @@
 // The composer's `/` commands, listed while the draft is just `/partial`: Fast mode runs here
 // through the host's `updateBot` (a new session is in the bot's menu); a skill fills in `/<id> `, and the host turns that message into "read this skill first"
 // (host/src/market/skills.rs `expand_command`). A group lists its members' commands: Fast mode
-// for all of them, and every skill one of them has. docs/features/marketplace.md, "Commands".
+// for all of them, and every skill one of them has. A bot's own chat then lists its agent's commands (`agentCommands`),
+// which fill in `/<name> ` and reach the agent as typed. docs/features/marketplace.md, "Commands".
 import { fastModeDetail, fastModeShown, fastModeState, groupFastMode, type FastModeState } from '../../../shared/fast-mode.ts'
+import { runningAgent } from '../../../shared/fallbacks.ts'
 import type { Bot } from '../../../shared/models.ts'
 
-export type SlashAction = { kind: 'fast' } | { kind: 'skill'; id: string }
+export type SlashAction = { kind: 'fast' } | { kind: 'skill'; id: string } | { kind: 'agent'; agent: string }
 
 export interface SlashCommand {
   /** What follows the `/`. */
@@ -33,9 +35,15 @@ function ownFastMode(bot: Bot): { state: FastModeState; detail: string } | null 
   return fastModeShown(bot) ? { state: fastModeState(bot), detail: fastModeDetail(bot) } : null
 }
 
+/** The commands the agent a bot runs on lists, drawn with that agent's logo. */
+function agentCommands(bot: Bot): SlashCommand[] {
+  const agent = runningAgent(bot)
+  return bot.agentCommands.map((c) => ({ name: c.name, icon: '', title: c.name, detail: c.description || (c.hint ?? ''), warning: false, action: { kind: 'agent', agent } }))
+}
+
 /**
- * Built-in commands, then the bot's skills (ids in `bot.skills`; a group's `members` have them),
- * whose name or title holds `query`.
+ * Built-in commands, then the bot's skills (ids in `bot.skills`; a group's `members` have them), then a bot's
+ * agent's own commands, whose name (or, for Codync's, title) holds `query`.
  */
 export function slashCommands(bot: Bot | null, query: string, installedSkills: { id: string; name: string; description: string }[], members: Bot[] = []): SlashCommand[] {
   if (!bot) return []
@@ -44,7 +52,8 @@ export function slashCommands(bot: Bot | null, query: string, installedSkills: {
     .filter((s) => enabled.includes(s.id))
     .map((s): SlashCommand => ({ name: s.id, icon: 'book.pages', title: s.name, detail: s.description, warning: false, action: { kind: 'skill', id: s.id } }))
   const q = query.toLowerCase()
-  return [...builtIn(bot, members), ...skills].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
+  const own = [...builtIn(bot, members), ...skills].filter((c) => c.name.includes(q) || c.title.toLowerCase().includes(q))
+  return bot.kind === 'group' ? own : [...own, ...agentCommands(bot).filter((c) => c.name.toLowerCase().includes(q))]
 }
 
 /** A draft that is just a built-in command (`/fast`): sending it runs the command. */
@@ -54,9 +63,9 @@ export function builtInCommand(bot: Bot | null, draft: string, members: Bot[] = 
 }
 
 /**
- * What Return does with `picked` highlighted: run it, except a skill whose name is already
- * typed out, which sends.
+ * What Return does with `picked` highlighted: run it, except a skill or agent command whose name
+ * is already typed out, which sends.
  */
 export function returnRuns(picked: SlashCommand, draft: string): boolean {
-  return picked.action.kind !== 'skill' || draft !== `/${picked.name}`
+  return picked.action.kind === 'fast' || draft !== `/${picked.name}`
 }

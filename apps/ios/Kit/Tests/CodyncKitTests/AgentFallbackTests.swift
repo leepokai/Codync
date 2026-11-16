@@ -121,6 +121,20 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name: name) == nil)
 }
 
+@Test func onlyAUsageLimitGivesTheBannerAResetTime() throws {
+    let name: (AgentLogin, Bool) -> String = { login, _ in login.backend }
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    let resting = { (reason: String) in
+        try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1},"resting":[{"agent":"claude","until":\#(soon),"reason":"\#(reason)"}]}"#)
+    }
+    let clock = RelativeTime.clock(Date(milliseconds: soon))
+    #expect(try resting("usageLimit").stepBanner(name: name) == "Using codex until claude resets at \(clock)")
+    for reason in ["signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting"] {
+        #expect(try resting(reason).stepBanner(name: name)?.contains("resets") == false, "\(reason)")
+    }
+    #expect(try resting("signedOut").stepBanner(name: name) == "Using codex while claude is signed out")
+}
+
 @Test func freeLoginsAreTheDefaultAndSignedInLoginProfilesTheChainLacks() throws {
     let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
     #expect(claude.freeLogins(taken: []) == [nil, "a1", "a3"])

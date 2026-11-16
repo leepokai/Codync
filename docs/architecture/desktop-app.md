@@ -149,7 +149,8 @@ CODYNC_PORT=19333 CODYNC_HOME=/path/to/home npm run dev   # against a manually r
 npm run typecheck && npm test
 ```
 
-UI checks: `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
+UI checks: `CODYNC_HEADLESS=1` keeps every window off the screen (what `npm run dev -- --cdp` sets:
+[headless by default](../guides/test-stack.md#headless-by-default)), `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
 `CODYNC_DEBUG_OPEN=newBot|newGroup|plugins|computers|<bot name>` opens a screen, and
 `CODYNC_REMOTE_DEBUG=<port>` lets a script drive the renderer over the DevTools protocol.
 Each packaging script names its environment:

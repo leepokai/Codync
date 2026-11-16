@@ -378,6 +378,10 @@ impl Store {
                 };
                 e.data["status"] = status.into();
                 self.update_entry(id, &e.data)?;
+                if e.kind == EntryKind::Permission.as_str() {
+                    // Its chat's badge counted the card (`Store::badge`): resync the bot.
+                    self.touch_bot(&e.bot_id)?;
+                }
             }
         }
         Ok(Expired { closed: ids.len(), decisions })

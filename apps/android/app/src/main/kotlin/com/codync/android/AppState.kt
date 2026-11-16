@@ -95,6 +95,10 @@ data class AppState(
     val selectedBot: String? = null,
     /** A call to start in this bot's chat once it shows ("Talk to Codync"). */
     val callRequest: String? = null,
+    /** This bot's details to open over its chat once it shows (a heading of the view of all bots' work). */
+    val detailsRequest: String? = null,
+    /** A bot and the item of its whose card its chat brings into view once it holds it (a needs-you row of the view of all bots' work). */
+    val cardRequest: Pair<String, WorkItem>? = null,
     val trace: Boolean = false,
     val busy: Set<String> = emptySet(),
     /** Chats that page back no further, and why: their earlier row is dropped. */

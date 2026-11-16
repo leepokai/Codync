@@ -191,6 +191,7 @@ MAP = {
     "tab": "keyboard_tab",
     "terminal": "terminal",
     "text.bubble": "chat",
+    "tray.full": "inbox",
     "trash": "delete",
     "waveform": "graphic_eq",
     "wifi": "wifi",

@@ -19,10 +19,11 @@ export interface IslandBot {
   shape: string
   /** Its avatar palette id. */
   color: string
-  /** A `BotStatus`, or a newer one this app doesn't know. */
+  /** How it stands outside its chat (`outsideStatus`): what its face, badge and dot show, and whether the island
+   * counts it. A `BotStatus`, or a newer one this app doesn't know. */
   status: BotStatus | string
-  /** It is at work: its chat is in a turn, or a task has an item of its box (`isBusy`). */
-  busy: boolean
+  /** Its chat's own status: done and failed follow the chat's turns. */
+  chat: BotStatus | string
   /** The agent it runs, as the app names it ("Claude Code"). */
   backend: string
   /** Its working folder's name. */
@@ -110,11 +111,10 @@ const OPEN_HEIGHT = 196
 /** The resting bar at a plain top edge (no notch). */
 const BAR = 26
 
-/** The bot is at work, in its chat or in the background: what the island shows and counts, as the tray does. */
-export const isActive = (b: Pick<IslandBot, 'busy'>) => b.busy
-/** The bot's chat is in a turn. Done and failed follow the chat's own turns, never an item's end: an item's report
- * arrives as the bot's message, in a turn of its own. */
+/** Working or waiting on the user. */
 export const inTurn = (status: string) => status === 'working' || status === 'needsInput'
+/** The bot is at work, in its chat or in the background: what the island shows and counts, as the tray does. */
+export const isActive = (b: Pick<IslandBot, 'status'>) => inTurn(b.status)
 export const isOpenMode = (mode: IslandMode) => mode !== 'hidden' && mode !== 'peek' && mode !== 'compact'
 /** Leaving the message tab hides its recording pill, so dictation still going there stops (keeping the words). */
 export const stopsDictation = (from: IslandTab, to: IslandTab, dictating: boolean) => dictating && from === 'message' && to !== 'message'
@@ -138,12 +138,13 @@ export function islandMode(
   return summary.bots.some(isActive) ? 'overview' : 'empty'
 }
 
-/** Bots that just stopped working since `before` (their last statuses by ref): done or failed. */
+/** Bots whose chat just ended its turn since `before` (their chats' last statuses by ref): done or failed. Never an
+ * item's end: its report arrives as the bot's message, in a turn of the chat's own. */
 export function transitions(before: ReadonlyMap<string, string>, bots: IslandBot[]): IslandNotice[] {
   return bots.flatMap((b): IslandNotice[] => {
     if (!inTurn(before.get(b.ref) ?? '')) return []
-    if (b.status === 'idle') return [{ kind: 'finished', ref: b.ref }]
-    if (b.status === 'error') return [{ kind: 'failed', ref: b.ref }]
+    if (b.chat === 'idle') return [{ kind: 'finished', ref: b.ref }]
+    if (b.chat === 'error') return [{ kind: 'failed', ref: b.ref }]
     return []
   })
 }

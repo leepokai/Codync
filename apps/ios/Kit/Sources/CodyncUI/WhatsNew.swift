@@ -1,23 +1,76 @@
+import CodyncKit
 import Foundation
 import Observation
 import os
 
 /// A release's highlights, shown once after updating to it (docs/features/whats-new.md).
 public struct Announcement: Decodable, Equatable, Identifiable, Sendable {
+    /// One highlight: a short preview clip over its name and a sentence about it.
+    public struct Feature: Decodable, Equatable, Identifiable, Sendable {
+        /// English interface phrases, translated in every catalog.
+        public let title: String
+        public let body: String
+        /// Still in beta: a tag beside the title.
+        public let beta: Bool
+        /// The name of its muted, looping clip (`Resources/Announcements/<media>.mp4`).
+        public let media: String?
+        /// Where the full video plays.
+        public let film: URL?
+        public var id: String { title }
+
+        public init(title: String, body: String, beta: Bool = false, media: String? = nil, film: URL? = nil) {
+            self.title = title
+            self.body = body
+            self.beta = beta
+            self.media = media
+            self.film = film
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            try self.init(title: values.decode(String.self, forKey: .title), body: values.decode(String.self, forKey: .body),
+                          beta: values.decodeIfPresent(Bool.self, forKey: .beta) ?? false,
+                          media: values.decodeIfPresent(String.self, forKey: .media),
+                          film: values.decodeIfPresent(URL.self, forKey: .film))
+        }
+
+        private enum CodingKeys: String, CodingKey { case title, body, beta, media, film }
+
+        /// The bundled clip, when the file is there.
+        public var clip: URL? {
+            media.flatMap { Bundle.module.url(forResource: $0, withExtension: "mp4", subdirectory: Announcement.folder) }
+        }
+    }
+
     public let version: String
-    /// English interface phrases, translated in every catalog.
+    public let features: [Feature]
+    /// Smaller changes, text only: English interface phrases, translated in every catalog.
     public let notes: [String]
     public var id: String { version }
 
-    public init(version: String, notes: [String]) {
+    public init(version: String, features: [Feature] = [], notes: [String] = []) {
         self.version = version
+        self.features = features
         self.notes = notes
     }
 
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(version: values.decode(String.self, forKey: .version),
+                      features: values.decodeIfPresent([Feature].self, forKey: .features) ?? [],
+                      notes: values.decodeIfPresent([String].self, forKey: .notes) ?? [])
+    }
+
+    private enum CodingKeys: String, CodingKey { case version, features, notes }
+
+    /// Every phrase the window shows, for the catalogs.
+    var phrases: [String] { features.flatMap { [$0.title, $0.body] } + notes }
+
+    static let folder = "Announcements"
     private static let log = Logger(subsystem: "com.pokai.Codync", category: "WhatsNew")
 
-    /// The bundled list (`Resources/Announcements/announcements.json`, shared with every client). A missing or
-    /// malformed file is logged and shows nothing.
+    /// The bundled list (`Resources/Announcements/announcements.json`, shared with every client, beside its clips).
+    /// A missing or malformed file is logged and shows nothing.
     public static let bundled: [Announcement] = {
         do { return try load() }
         catch {
@@ -27,7 +80,7 @@ public struct Announcement: Decodable, Equatable, Identifiable, Sendable {
     }()
 
     static func load() throws -> [Announcement] {
-        guard let url = Bundle.module.url(forResource: "announcements", withExtension: "json") else {
+        guard let url = Bundle.module.url(forResource: "announcements", withExtension: "json", subdirectory: folder) else {
             throw CocoaError(.fileNoSuchFile)
         }
         return try JSONDecoder().decode([Announcement].self, from: Data(contentsOf: url))

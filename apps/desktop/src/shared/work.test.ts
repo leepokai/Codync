@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { canCutIn, capsuleLabel, itemLine, pendingAsks, rosterLine, summaryLine, waitText, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
+import { allWork, canCutIn, canRetry, capsuleLabel, givesWay, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, rosterLine, summaryLine, waitText, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const item = (id: string, status: WorkStatus = 'working', change: Partial<WorkItem> = {}): WorkItem => ({
-  id, title: `Title ${id}`, status, activity: '', task: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', ...change,
+  id, title: `Title ${id}`, status, activity: '', task: null, wait: null, cutIn: false, createdAt: 1000, startedAt: null, endedAt: null, result: '', source: null, worktree: null, ...change,
 })
 const ids = (items: WorkItem[]) => items.map((i) => i.id)
 
@@ -15,7 +15,7 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   assert.equal(old.maxAgents, null)
   assert.equal('maxAgents' in JSON.parse(JSON.stringify(draftOf(old))), false, 'a save leaves the ceiling out for a host without one')
   const raw = [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '' },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null },
     { id: 'i2', status: 'waiting', wait: { kind: 'behind', ahead: 2 } },
     { id: 'i3', status: 'waiting', wait: { kind: 'someday' } },
     { id: 'i4', status: 'waiting', wait: { kind: 'behind' } },
@@ -26,10 +26,10 @@ test('a bot from a host before the box has no work and no ceiling, and one with 
   ]
   const work = normalizeBot({ id: 'b', work: raw as WorkItem[] }).work
   assert.deepEqual(work, [
-    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '' },
-    { id: 'i2', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '' },
-    { id: 'i3', title: '', status: 'waiting', activity: '', task: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '' },
-    { id: 'i4', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '' },
+    { id: 'i1', title: 'Audit', status: 'needsYou', activity: 'Reading', task: 'task-1', wait: null, cutIn: true, createdAt: 3, startedAt: 5, endedAt: null, result: '', source: null, worktree: null },
+    { id: 'i2', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 2 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
+    { id: 'i3', title: '', status: 'waiting', activity: '', task: null, wait: null, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
+    { id: 'i4', title: '', status: 'waiting', activity: '', task: null, wait: { kind: 'behind', ahead: 1 }, cutIn: false, createdAt: 0, startedAt: null, endedAt: null, result: '', source: null, worktree: null },
   ], 'a status this app does not know, or none, leaves the item out; a reason it does not know reads as none')
 })
 
@@ -170,13 +170,100 @@ test('the first in line can cut in only when every place is taken', () => {
   }
 })
 
+test('the view of all bots lists the ones with live or waiting items, in roster order, and counts what is worked on', () => {
+  const roster = [
+    { ref: 'idle', bot: { work: [] } },
+    { ref: 'ended', bot: { work: [item('a', 'done'), item('b', 'stopped'), item('c', 'failed')] } },
+    { ref: 'busy', bot: { work: [item('d', 'working'), item('e', 'working'), item('f', 'waiting'), item('g', 'done')] } },
+    { ref: 'asks', bot: { work: [item('h', 'needsYou')] } },
+    { ref: 'queued', bot: { work: [item('i', 'waiting')] } },
+    { ref: 'one', bot: { work: [item('j', 'working')] } },
+  ]
+  const all = allWork(roster)
+  assert.deepEqual(all.bots.map((r) => r.ref), ['busy', 'asks', 'queued', 'one'])
+  assert.equal(all.working, 3, 'items that need the user or wait are not counted as working')
+  assert.deepEqual(allWork(roster.slice(0, 2)), { bots: [], working: 0 }, 'nothing live or waiting: no button, and an open view closes')
+  assert.equal(allWork([roster[3]!, roster[4]!]).working, 0, 'the button shows without a count')
+})
+
+test("outside its chat a bot stands as the host says, and as its chat does on an older host", () => {
+  const stands = (status: string, outside: { status: string; startedAt: number | null } | null = null) => outsideStatus({ status, outside })
+  // The host's word wins, whatever the chat looks like here.
+  assert.equal(stands('idle', { status: 'working', startedAt: 5 }), 'working', 'a report the chat has not taken yet')
+  assert.equal(stands('working', { status: 'needsInput', startedAt: 5 }), 'needsInput')
+  assert.equal(stands('working', { status: 'idle', startedAt: null }), 'idle')
+  // A host before `outside`: the chat's own status.
+  assert.equal(stands('needsInput'), 'needsInput')
+  assert.equal(stands('working'), 'working')
+  assert.equal(stands('error'), 'error')
+  assert.equal(stands('idle'), 'idle')
+  // The tray's working mark.
+  assert.equal(worksOutside({ status: 'idle', outside: { status: 'working', startedAt: 1 } }), true)
+  assert.equal(worksOutside({ status: 'idle', outside: { status: 'needsInput', startedAt: 1 } }), true)
+  assert.equal(worksOutside({ status: 'working', outside: { status: 'idle', startedAt: null } }), false)
+  assert.equal(worksOutside({ status: 'working', outside: null }), true)
+  assert.equal(worksOutside({ status: 'error', outside: null }), false)
+})
+
+test('a bot says how it stands outside its chat, whether its tasks get worktrees, and an item its worktree', () => {
+  const old = normalizeBot({ id: 'b' })
+  assert.deepEqual([old.outside, old.taskWorktrees, old.gitRepo], [null, null, false])
+  assert.equal('taskWorktrees' in JSON.parse(JSON.stringify(draftOf(old))), false, 'a save leaves the setting out for a host without it')
+  const bot = normalizeBot({ id: 'b', outside: { status: 'working', startedAt: 7 }, taskWorktrees: false, gitRepo: true })
+  assert.deepEqual(bot.outside, { status: 'working', startedAt: 7 })
+  assert.deepEqual([bot.taskWorktrees, bot.gitRepo, draftOf(bot).taskWorktrees], [false, true, false])
+  assert.equal(normalizeBot({ id: 'b', outside: {} as never }).outside, null)
+  const [own, none] = normalizeWork([
+    { id: 'a', status: 'working', worktree: { branch: 'codync/fix-login', path: '/home/u/.codync/worktrees/b/a' } },
+    { id: 'c', status: 'working' },
+  ])
+  assert.deepEqual(own!.worktree, { branch: 'codync/fix-login', path: '/home/u/.codync/worktrees/b/a' })
+  assert.equal(none!.worktree, null)
+})
+
+test('an item says where it came from when the bot did not add it', () => {
+  const sources = normalizeWork([
+    { id: 'a', status: 'working' },
+    { id: 'b', status: 'working', source: { kind: 'routine', id: 'r1' } },
+    { id: 'c', status: 'working', source: { kind: 'request', id: 'bot-2' } },
+    { id: 'd', status: 'working', source: { kind: 'request' } },
+    { id: 'e', status: 'working', source: { kind: 'webhook', id: 'x' } },
+  ]).map((i) => i.source)
+  assert.deepEqual(sources, [null, { kind: 'routine', id: 'r1' }, { kind: 'request', id: 'bot-2' }, { kind: 'request', id: null }, null])
+})
+
+test("try again is not offered on another bot's request, and a routine's run or a request never gives way", () => {
+  const routine = { kind: 'routine', id: 'r1' } as const
+  const request = { kind: 'request', id: 'bot-2' } as const
+  // Try again: failed or stopped, the bot's own or a routine's.
+  assert.equal(canRetry(item('a', 'failed')), true)
+  assert.equal(canRetry(item('a', 'stopped')), true)
+  assert.equal(canRetry(item('a', 'stopped', { source: routine })), true, 'it runs the routine again')
+  assert.equal(canRetry(item('a', 'failed', { source: request })), false)
+  assert.equal(canRetry(item('a', 'stopped', { source: { kind: 'request', id: null } })), false)
+  for (const status of ['waiting', 'working', 'needsYou', 'done'] as const) assert.equal(canRetry(item('a', status)), false, status)
+  // Giving way: live, and the bot's own.
+  assert.equal(givesWay(item('a', 'working')), true)
+  assert.equal(givesWay(item('a', 'needsYou')), true)
+  assert.equal(givesWay(item('a', 'waiting')), false)
+  assert.equal(givesWay(item('a', 'working', { source: routine })), false)
+  assert.equal(givesWay(item('a', 'needsYou', { source: request })), false)
+  // Cut in is offered only when some live item may give way.
+  const waiting = item('w', 'waiting', { wait: { kind: 'next', ahead: 0 } })
+  assert.equal(canCutIn([item('a', 'working', { source: routine }), item('b', 'working', { source: request }), waiting], 2), false)
+  assert.equal(canCutIn([item('a', 'working', { source: routine }), item('b', 'working'), waiting], 2), true)
+  assert.equal(canCutIn([item('a', 'working'), { ...waiting, source: routine }], 1), true, 'a routine item may cut in itself')
+})
+
 test('an item that needs the user is asked what its card in the chat asks', () => {
   const card = (id: string, data: Entry['data']): Entry => ({ id, seq: 1, botId: 'b', rev: 1, kind: 'permission', turn: 1, data, createdAt: 0, updatedAt: 0 })
   const asks = pendingAsks([
     card('e1', { status: 'pending', title: 'npm test', item: 'i1', task: { id: 'task-1', title: 'Run the suite' } }),
     card('e2', { status: 'allowed', title: 'rm -rf build', item: 'i2' }),
     card('e3', { status: 'pending', title: 'the chat\'s own card' }),
+    { ...card('e5', { status: 'pending', decision: true, question: 'Which branch?', item: 'i5' }), kind: 'notice' },
+    { ...card('e6', { status: 'answered', decision: true, question: 'Done already', item: 'i6' }), kind: 'notice' },
     { ...card('e4', { status: 'pending', title: 'not a card', item: 'i4' }), kind: 'notice' },
   ])
-  assert.deepEqual([...asks], [['i1', 'npm test']])
+  assert.deepEqual([...asks], [['i1', 'npm test'], ['i5', 'Which branch?']], 'an approval\'s title, a choice\'s question')
 })

@@ -304,6 +304,8 @@ pub struct Writer<'a> {
     /// A bot's write: the user's message that started the turn, when it was one the user started in the bot's own
     /// chat. Only then may it change or take out what memory says.
     pub message: Option<&'a str>,
+    /// A bot's write: the session it was made in (the chat's, or a task's own), which therefore knows the change.
+    pub session: Option<&'a str>,
 }
 
 /// Writes a file the way every host writer does: only over the content whose hash is `expected` (`None`: no file
@@ -355,8 +357,7 @@ pub fn write(
     };
     match writer.bot {
         Some(cfg) if writer.author == Author::Bot => {
-            let session = hub.runtime(&cfg.id).session;
-            record_bot_change(hub, cfg, session.as_deref(), now.as_deref(), &change, asked)
+            record_bot_change(hub, cfg, writer.session, now.as_deref(), &change, asked)
         }
         _ => record(hub, &change),
     }

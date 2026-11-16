@@ -39,12 +39,7 @@ struct PermissionCard: View {
             Label(L10n.fill(L10n.tr("Runs on {name}{path}"), ["name": hostName, "path": d.cwd.map { " · \(($0 as NSString).lastPathComponent)" } ?? ""]), systemImage: "desktopcomputer")
                 .font(.caption)
                 .foregroundStyle(Palette.tertiary)
-            if let task = d.task, !task.title.isEmpty {
-                Label(L10n.tr("In the background") + " · " + task.title, systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(Palette.tertiary)
-                    .lineLimit(1)
-            }
+            TaskLine(data: d)
 
             if hasDetail {
                 Disclosure(isExpanded: $expanded) {
@@ -182,6 +177,21 @@ struct DiffView: View {
             }
             .frame(maxHeight: 260)
             .background(Palette.codeBackground, in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
+/// "In the background · <title>" under what a background task put in the chat (a card, a file, a voice note, an
+/// artifact); nothing for the chat's own.
+struct TaskLine: View {
+    let data: EntryData
+
+    var body: some View {
+        if let task = data.task, !task.title.isEmpty {
+            Label(L10n.tr("In the background") + " · " + task.title, systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(Palette.tertiary)
+                .lineLimit(1)
         }
     }
 }

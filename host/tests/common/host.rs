@@ -159,6 +159,12 @@ impl Host {
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
 
+    /// From here `bot` takes its routine runs and other bots' requests as turns in its chat, not as items in its
+    /// box: it manages the team, which a task can't.
+    pub async fn works_in_chat(&self, bot: &str) {
+        self.call("updateBot", json!({"id": bot, "manageTeam": true})).await;
+    }
+
     /// Sends `text` and waits for the bot's reply.
     pub async fn reply(&self, bot: &str, text: &str) {
         let finals = |history: &Value| {

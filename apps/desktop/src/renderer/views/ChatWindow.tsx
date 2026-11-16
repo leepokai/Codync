@@ -3,7 +3,7 @@ import type { WindowCommand } from '@shared/ipc'
 import { isSSHConnecting, showsChat as shouldShowChat } from '@shared/ssh-startup'
 import { detailMinWidth, sidebarMinWidth } from '@shared/chat-layout'
 import { draftOf, type Bot, type BotDraft } from '@shared/models'
-import { isLive } from '@shared/work'
+import { allWork, isLive } from '@shared/work'
 import { CharacterAvatar } from '../components/Avatar'
 import { Button, IconButton, ResizeHandle } from '../components/Controls'
 import { Dialog, ModalHeader, Sheet } from '../components/Overlay'
@@ -15,9 +15,10 @@ import { prefs, stepTextSize, usePref, DEFAULT_TEXT_SIZE } from '../lib/prefs'
 import { limitSectionName, sectionName } from '../lib/roster-sections'
 import { useApp, StoreContext } from '../store/context'
 import { analytics } from '../store/analytics'
-import { refKey, sameRef, parseRef } from '../store/app-model'
+import { refKey, sameRef, parseRef, type BotRef } from '../store/app-model'
 import type { BotStore } from '../store/bot-store'
 import { useComputerRoster } from '../store/computer-roster'
+import { AllWorkButton, AllWorkSheet } from './AllWorkView'
 import { BotRoster } from './BotRoster'
 import { ExtensionsMovedTip } from './ExtensionsMovedTip'
 import { RailAccountNotice, SidebarFooter } from './SidebarFooter'
@@ -226,6 +227,9 @@ function ChatSplitView() {
   const [settings, setSettings] = useState<SettingsPage | null>(null)
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
+  const [showWork, setShowWork] = useState(false)
+  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, or the card of `item`.
+  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; item?: string } | null>(null)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const railNewButton = useRef<HTMLButtonElement>(null)
@@ -251,6 +255,18 @@ function ChatSplitView() {
   const localOnline = !!app.local && onlineStores.includes(app.local)
   const roster = useComputerRoster(app, shown)
   const visibleRoster = roster.items
+  const work = allWork(roster.ordered)
+  const closeWork = useCallback(() => setShowWork(false), [])
+  /** From the view of all work: the bot's chat, at its Details or at the card of `item`. */
+  const showInChat = (ref: BotRef, item?: string) => {
+    app.select(ref)
+    setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, item }))
+    setShowWork(false)
+  }
+  // Asked once: coming back to that bot later opens its chat as it was left.
+  const selectionKey = app.selection ? refKey(app.selection) : null
+  useEffect(() => setShownRequest((asked) => (asked && asked.ref !== selectionKey ? null : asked)), [selectionKey])
+  const workButton = (size: number, className?: string) => <AllWorkButton shown={work.bots.length > 0} working={work.working} size={size} className={className} onClick={() => setShowWork(true)} />
 
   const create = (kind: CreateTarget['kind']) => {
     // The selected bot's computer if it's online, else this computer, else any online one.
@@ -361,7 +377,7 @@ function ChatSplitView() {
   if (selected && selectedStore && selectedBot) {
     detail = (
       <StoreContext.Provider value={selectedStore}>
-        <ThreadView key={refKey(selected)} botId={selected.botId} />
+        <ThreadView key={refKey(selected)} botId={selected.botId} request={shownRequest?.ref === refKey(selected) ? shownRequest : null} />
       </StoreContext.Provider>
     )
   } else if (!onlineStores.length && ssh.state.profiles.length) {
@@ -392,6 +408,7 @@ function ChatSplitView() {
           <Spacer />
           <HStack gap={6} className="no-drag">
             <ComputerFilterHeader hidden={hidden} setHidden={setHidden} manage={() => setSettings('computers')} compact />
+            {workButton(32, 'sidebar-header-action')}
             <IconButton title="Search" icon="magnifyingglass" size={32} className="sidebar-header-action" onClick={() => setSearching(true)} />
             <IconButton title="New" icon="plus" size={32} className="sidebar-header-action" buttonRef={newButton} menuOpen={newMenu} onClick={() => setNewMenu((o) => !o)} disabled={!onlineStores.length} />
           </HStack>
@@ -427,6 +444,7 @@ function ChatSplitView() {
         {compact ? (
           <div className="rail-actions">
             <IconButton title="Search" icon="magnifyingglass" onClick={() => setSearching(true)} />
+            {workButton(36)}
             <IconButton title="New" icon="plus" size={36} buttonRef={railNewButton} menuOpen={railNewMenu} disabled={!onlineStores.length} onClick={() => setRailNewMenu((o) => !o)} />
             <AnchoredMenu open={railNewMenu} onClose={() => setRailNewMenu(false)} anchor={railNewButton} items={newItems} />
             <IconButton title="Extensions" icon="square.grid.2x2" size={36} onClick={openMarketplace} />
@@ -474,6 +492,14 @@ function ChatSplitView() {
         </div>
       ) : null}
 
+      <AllWorkSheet
+        open={showWork}
+        bots={work.bots}
+        many={app.computers.length > 1}
+        openDetails={(ref) => showInChat(ref)}
+        openCard={showInChat}
+        onClose={closeWork}
+      />
       <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />
       <Sheet open={editing !== null} onClose={() => setEditing(null)} width={520} height={Math.min(680, sheetHeight)}>
         {editing ? (

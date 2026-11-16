@@ -76,15 +76,26 @@ extension BotStore {
         }
     }
 
-    /// Best-effort diagnostics never wait for a reconnect or surface a host error to the reader.
+    /// Simulators skip delivery unless a test asks (`CODYNC_RECORD_PERFORMANCE=1`), so a UI test's
+    /// scrolling never writes into a computer's log.
+    private static let recordsFromSimulator = ProcessInfo.processInfo.environment["CODYNC_RECORD_PERFORMANCE"] == "1"
+
+    /// Best-effort diagnostics never wait for a reconnect or surface a host error to the reader. The
+    /// link's client is enough: an open's first milestones land while the store is still `connecting`.
     public func recordPerformance(_ measurement: PhonePerformance) {
-        #if !targetEnvironment(simulator)
-        guard let client = live else { return }
+        #if targetEnvironment(simulator)
+        guard Self.recordsFromSimulator else { return }
+        #endif
+        guard !retired, let client, transport != nil else { return }
         Task {
             do { try await client.recordPerformance(measurement) }
             catch { log.info("phone performance was not recorded: \(error.localizedDescription)") }
         }
-        #endif
+    }
+
+    public func recordOpenTiming(_ phase: OpenPhase, chats: Int? = nil, messages: Int? = nil) {
+        guard let step = openTiming.record(phase, computer: computer.id, chats: chats, messages: messages) else { return }
+        recordPerformance(.openTiming(step))
     }
 
     public func stop(_ botId: String) { perform(replay: true) { try await $0.stop(botId) } }

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    `java-test-fixtures`
 }
 
 kotlin {
@@ -22,6 +23,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.mockwebserver)
+    testFixturesImplementation(libs.mockwebserver.app)
+    testFixturesImplementation(libs.serialization.json)
 }
 
 tasks.test {

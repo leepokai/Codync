@@ -519,6 +519,7 @@ impl Channel {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     mod accounts;
+    mod performance;
     mod screen_signaling;
     use super::*;
     use crate::remote::identity::Identity;

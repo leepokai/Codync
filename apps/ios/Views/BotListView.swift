@@ -188,6 +188,7 @@ struct BotListView: View {
             .listRowBackground(Color.clear)
         }
         .listStyle(.plain)
+        .accessibilityIdentifier("botList")
         .scrollHitches(.bots, rows: lines.count) { app.currentStore?.recordPerformance(.scroll($0)) }
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
@@ -381,6 +382,13 @@ struct BotListView: View {
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { sectionOrder.set(names, on: computer) }
     }
 
+    private func recordNewestShown(_ bot: Bot, store: BotStore) {
+        guard !app.launching, accounts.selection == nil,
+              store.openTiming.hasRecorded(.catchUp, computer: store.computer.id), bot.lastMessage != nil,
+              store.roster.max(by: { $0.lastAt < $1.lastAt })?.id == bot.id else { return }
+        store.recordOpenTiming(.chatList)
+    }
+
     private func row(_ item: RosterItem, store: BotStore) -> some View {
         let bot = item.bot
         let line = RosterLine.bot(item, store)
@@ -394,6 +402,10 @@ struct BotListView: View {
                 .environment(store)
         }
         .buttonStyle(.plain)
+        .onAppear { recordNewestShown(bot, store: store) }
+        .onChange(of: store.catchUpsCompleted) { _, _ in recordNewestShown(bot, store: store) }
+        .onChange(of: store.openTiming.opens) { _, _ in recordNewestShown(bot, store: store) }
+        .onChange(of: app.launching) { _, _ in recordNewestShown(bot, store: store) }
         // Lifted, it's a rounded card with room around the avatar.
         .padding(.horizontal, 8)
         .background(lifted == line.id ? Palette.surface : .clear, in: card)

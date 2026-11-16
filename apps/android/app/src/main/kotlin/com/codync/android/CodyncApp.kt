@@ -138,12 +138,12 @@ private data class Editing<T>(val computerId: String, val draft: T)
                             }
                         }
                     }
-                    Root.Tabs -> MainTabs(app, states, accounts, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
+                    Root.Tabs -> MainTabs(app, states, accounts, launching, account = { showAccount = true }, manage = { showComputers = true }, usage = { showUsage = true },
                         newBot = { creating = NewTarget(group = false, computerId = it) }, newGroup = { creating = NewTarget(group = true, computerId = it) },
                         edit = edit, extensions = openMarketplace, tab = tab, onTab = { tab = it }, covered = showAccount || showComputers || showPairing || showUsage ||
                             marketplace != null || creating != null || access != null || editor != null || groupEditor != null || app.error != null) { chat ->
                         // A conversation, talking to the computer the bot lives on.
-                        accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store) { bot -> edit(chat.computer.id, bot) } }
+                        accounts.store(chat.computer.id)?.let { store -> ChatScreen(chat, store, editGroup = { bot -> edit(chat.computer.id, bot) }, launching = launching) }
                     }
                 }
             }

@@ -33,9 +33,23 @@ extension BotStore {
         isActive = active
         if active {
             // Returning to the foreground must not interrupt a live call's sends.
-            if !hasBackgroundWork || streamTask == nil { restartStream() }
+            if !hasBackgroundWork || streamTask == nil {
+                restartStream()
+            } else {
+                recordReadyOpen()
+            }
         } else {
             stopIfIdle()
+        }
+    }
+
+    /// A live call kept the link through the background: it is already current, so this open caught up nothing.
+    private func recordReadyOpen() {
+        guard hostRoute != nil else { return }
+        recordOpenTiming(.linkReady)
+        if hello != nil { recordOpenTiming(.hello) }
+        if caughtUpSubscription == eventSubscription && eventSubscription > 0 {
+            recordOpenTiming(.catchUp, chats: 0, messages: 0)
         }
     }
 
@@ -136,6 +150,7 @@ extension BotStore {
             guard !Task.isCancelled, !retired else { return }
             switch state {
             case let .ready(route):
+                recordOpenTiming(.linkReady)
                 setHostRoute(route)
                 if eventsTask == nil {
                     if connection != .online { setConnection(.connecting) }

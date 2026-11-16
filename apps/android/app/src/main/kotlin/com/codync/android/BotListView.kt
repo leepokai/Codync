@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,7 +89,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
  * The roster, as iOS `BotListView` draws it: every bot on every computer is a person you can message. One
  * computer shows a flat list; more get a heading each, which folds its bots and drags to reorder the computers.
  */
-@Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
+@Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, launching: Boolean, account: () -> Unit, manage: () -> Unit,
     newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp) {
     var confirmDelete by remember { mutableStateOf<Pair<String, Bot>?>(null) }
     // A bot whose agent starts over with a fresh context, once confirmed.
@@ -179,7 +180,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                         extensions = { extensions(id) })
                 }
                 if (grouped && (movingComputer || id in collapsed)) continue
-                botLines(state, store, roster, folded, grouped, agentLogos, RosterActions(toggleSection,
+                botLines(state, store, roster, folded, grouped, agentLogos, launching, RosterActions(toggleSection,
                     rename = { name -> naming = Naming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
                     newSection = { bot -> naming = Naming("New section", "") { store.setSection(bot.id, it) } },
@@ -223,7 +224,7 @@ private class RosterActions(val toggleSection: (String) -> Unit, val rename: (St
 
 /** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
 private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
-    agentLogos: Boolean, actions: RosterActions) {
+    agentLogos: Boolean, launching: Boolean, actions: RosterActions) {
     val id = state.computer.id
     val sectionReorder = roster.sections
     val reorder = roster.reorder
@@ -247,7 +248,7 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, actions)
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, launching, agent, actions)
                 }
             }
         }
@@ -314,7 +315,14 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section == other.section)
 
 @Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, grouped: Boolean,
-    agent: AgentMark?, actions: RosterActions) {
+    launching: Boolean, agent: AgentMark?, actions: RosterActions) {
+    // The newest message's row reports `chat_list` once the current open's catch-up is recorded (iOS
+    // `recordNewestShown`) and no chat covers it: each open counts it again, so the triggers are this open and catch-up.
+    LaunchedEffect(launching, state.opensSeen, state.catchUpsCompleted, bot.id) {
+        if (!launching && state.selectedBot == null && store.openTiming.hasRecorded(OpenPhase.CatchUp, state.computer.id) &&
+            bot.lastMessage != null && roster(state.bots).maxByOrNull { it.lastAt }?.id == bot.id)
+            store.recordOpenTiming(OpenPhase.ChatList)
+    }
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state, agent) }
     }) {

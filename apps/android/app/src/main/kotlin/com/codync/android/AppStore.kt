@@ -52,6 +52,11 @@ class AppStore internal constructor(
     internal var channel: EncryptedChannel? = null
     internal var foreground = false
     internal val foregroundState = MutableStateFlow(false)
+    /** The app's open timing (iOS `BotStore.openTiming`); [openSeen] is the last open this store noticed. */
+    internal var openTiming = OpenTiming.shared
+    internal var openSeen = 0
+    internal var eventSubscription = 0
+    internal var caughtUpSubscription = 0
     internal val setupTerminals = mutableMapOf<String, SetupTerminalSession>()
     internal val appConnections = mutableMapOf<String, AppConnectionSession>()
     internal var oauthRequestId: String? = null

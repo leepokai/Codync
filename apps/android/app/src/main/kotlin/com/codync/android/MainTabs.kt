@@ -38,7 +38,7 @@ internal enum class AppTab { Bots, State, Settings }
  * The system tab bar over Bots, State and Settings, as iOS `RootView.tabs`: every tab stays alive, the bar
  * floats as glass over their content and hides while a conversation is open.
  */
-@Composable internal fun MainTabs(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
+@Composable internal fun MainTabs(app: AccountContext, states: List<AppState>, accounts: AccountStore, launching: Boolean, account: () -> Unit, manage: () -> Unit,
     usage: () -> Unit, newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit,
     tab: AppTab, onTab: (AppTab) -> Unit, covered: Boolean, chat: @Composable (AppState) -> Unit) {
     // The open chat, on whichever computer it lives (one at a time).
@@ -84,7 +84,7 @@ internal enum class AppTab { Bots, State, Settings }
             NavStack(listOfNotNull("roster", open?.let { "${it.computer.id}/${it.selectedBot}" } ?: REMOVED_CHAT.takeIf { app.removedChat }),
                 key = { it }, pop = { accounts.openBot(null) }) { entry ->
                 when (entry) {
-                    "roster" -> BotListView(app, states, accounts, account, manage, newBot, newGroup, edit, extensions, barSpace)
+                    "roster" -> BotListView(app, states, accounts, launching, account, manage, newBot, newGroup, edit, extensions, barSpace)
                     REMOVED_CHAT -> RemovedComputer { accounts.openBot(null) }
                     else -> (states.firstOrNull { "${it.computer.id}/${it.selectedBot}" == entry } ?: shown)?.let { chat(it) }
                 }

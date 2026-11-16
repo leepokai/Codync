@@ -34,4 +34,9 @@ class PhonePerformanceTest {
         assertEquals("""{"type":"chat_open","platform":"android","durationMs":1234}""",
             PhonePerformance.ChatOpen(1234).body().toString())
     }
+
+    @Test fun `open timing uses host diagnostic wire shape`() {
+        assertEquals("""{"type":"open_timing","platform":"android","phase":"catch_up","open":"foreground","ms":1250,"chats":8,"messages":31}""",
+            PhonePerformance.OpenStep(OpenPhase.CatchUp, OpenKind.Foreground, 1250, chats = 8, messages = 31).body().toString())
+    }
 }

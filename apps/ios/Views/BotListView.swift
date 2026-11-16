@@ -390,6 +390,9 @@ struct BotListView: View {
         .padding(.horizontal, -8)
         .itemProvider { lift(line) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(name), on \(store.hostName)" : name)
+        // The badge, said (Android's `UnreadBadge` description), and that a card in it waits on the user.
+        .accessibilityValue([bot.unread > 0 ? "\(bot.unread) unread" : nil, bot.waiting > 0 ? L10n.tr("Needs approval") : nil]
+            .compactMap { $0 }.joined(separator: ", "))
         .accessibilityActions {
             Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
             Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }

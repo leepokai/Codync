@@ -104,11 +104,18 @@ export interface Bot {
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
   outside: OutsideStatus | null
   unread: number
+  /** How many of `unread` are cards waiting on the user: the badge turns amber. 0 from an older host. */
+  waiting: number
   lastMessage?: string | null
   lastAt: number
 }
 
 /** Lenient: a host that is a little newer or older than the app still yields a usable bot. */
+/** The messages in a bot's badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+export function unseen(bot: Pick<Bot, 'unread' | 'waiting'>): number {
+  return bot.unread - bot.waiting
+}
+
 export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
   const createdAt = raw.createdAt ?? 0
   return {
@@ -170,6 +177,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     gitRepo: raw.gitRepo ?? false,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
+    waiting: raw.waiting ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }

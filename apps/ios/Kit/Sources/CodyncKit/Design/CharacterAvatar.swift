@@ -363,7 +363,7 @@ public struct AvatarWithStatus: View {
                 if bot.needsYouOutside {
                     Image(systemName: "exclamationmark")
                         .font(.system(size: size * 0.2, weight: .black))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.onWarning)
                         .frame(width: size * 0.36, height: size * 0.36)
                         .background(Palette.warning, in: Circle())
                         .overlay(Circle().stroke(Palette.background, lineWidth: 2))

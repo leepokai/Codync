@@ -422,7 +422,7 @@ impl App {
         if self.chat_visible()
             && self.term_focused
             && let Some(b) = self.bot()
-            && b.unread > 0
+            && b.unseen() > 0
         {
             let id = b.id.clone();
             if self.reading.insert(id.clone()) {

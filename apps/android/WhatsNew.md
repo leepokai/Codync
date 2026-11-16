@@ -21,11 +21,12 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
 - 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。
 - 聽寫中按「傳送」會等說的話轉成文字再一起送出。
+- 等待核准的卡片會算在 Bot 的未讀數字裡（琥珀色），直到你回覆為止。
 
 ### en-US
-- Bots do long work in the background and keep answering.
-- Routines and other bots' requests run there too.
-- The bot list's Work button shows it all.
+- Bots, routines and other bots' requests work in the background.
+- The Work button lists background work.
+- Approval cards stay in the badge, amber, until answered.
 - Background work can ask or send files.
 - Details: Threads (running), Event box (waiting: First, Cut in, Drop).
 - Settings: Agents at once, Worktree per agent.

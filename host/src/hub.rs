@@ -272,14 +272,14 @@ impl Hub {
         self.store.bot(id).ok().flatten().map_or_else(|| "A deleted bot".into(), |b| b.config.name)
     }
 
-    /// Marks what the user has seen as read. Nothing unread there is a no-op, so clients
-    /// may call it whenever a chat is on screen. So is a task bot: no client lists it, so it has no unread to show.
+    /// Marks what the user has seen as read. Nothing new there is a no-op (a waiting approval card stays counted
+    /// until answered), so clients may call it whenever a chat is on screen. So is a task bot: no client lists it, so it has no unread to show.
     pub fn mark_read(&self, id: &str) -> Result<()> {
         if crate::store::is_task_id(id) {
             return Ok(());
         }
         let Some(row) = self.store.bot(id)? else { bail!("unknown bot") };
-        if self.store.unread(id, row.read_rev) == 0 {
+        if self.store.badge(id, row.read_rev).unseen() == 0 {
             return Ok(());
         }
         let _g = self.emit_lock.locked();
@@ -456,11 +456,18 @@ impl Hub {
 
     /// [`Self::set_entry`] that also moves the entry into `turn` when given.
     pub fn set_entry_turn(&self, id: &str, turn: Option<i64>, data: &Value) -> Option<Entry> {
+        let old = self.store.entry(id);
         // A reply counts as a message once it's finished, which is an update; nothing else here is a new message.
-        let finishes = data["final"] == true && self.store.entry(id).is_some_and(|old| old.data["final"] != true);
+        let finishes = data["final"] == true && old.as_ref().is_some_and(|old| old.data["final"] != true);
+        // A card answered or expired leaves its chat's badge (`Store::badge`).
+        let settles = data["status"] != "pending"
+            && old.is_some_and(|old| old.kind == EntryKind::Permission.as_str() && old.data["status"] == "pending");
         let e = self.update_entry(id, turn, data)?;
         if finishes {
             self.order_on_message(&e);
+        }
+        if settles {
+            self.emit_bot(&e.bot_id);
         }
         Some(e)
     }

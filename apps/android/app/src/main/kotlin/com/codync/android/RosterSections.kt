@@ -17,8 +17,8 @@ internal sealed interface RosterLine {
         override val key: String get() = bot.id
     }
 
-    /** [count] and [unread] cover the section's unpinned bots, the ones shown under it. */
-    data class Header(val name: String, val count: Int, val unread: Int, val folded: Boolean) : RosterLine {
+    /** [count], [unread] and [waiting] (those count a card waiting on the user) cover the section's unpinned bots, the ones shown under it. */
+    data class Header(val name: String, val count: Int, val unread: Int, val waiting: Boolean, val folded: Boolean) : RosterLine {
         override val key: String get() = "section:$name"
     }
 
@@ -45,7 +45,7 @@ internal fun rosterLines(roster: List<Bot>, folded: Set<String>, order: List<Str
             if (!moving) sections[null].orEmpty().forEach { add(RosterLine.Row(it)) }
         } else {
             val bots = sections.getValue(name)
-            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, moving || name in folded)
+            val header = RosterLine.Header(name, bots.size, bots.sumOf { it.unread }, bots.any { it.waiting > 0 }, moving || name in folded)
             add(header)
             if (!header.folded) bots.forEach { add(RosterLine.Row(it)) }
         }

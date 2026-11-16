@@ -200,10 +200,11 @@ extension BotStore {
         }
     }
 
-    /// The roster's "Mark as read": everything in the chat.
+    /// The roster's "Mark as read": everything in the chat, except cards still waiting on the user, which stay
+    /// counted until they're answered.
     public func markAllRead(_ botId: String) {
-        guard (bots[botId]?.unread ?? 0) > 0 else { return }
-        bots[botId]?.unread = 0
+        guard let bot = bots[botId], bot.unseen > 0 else { return }
+        bots[botId]?.unread = bot.waiting
         perform(replay: true) { try await $0.markRead(botId) }
     }
 

@@ -495,6 +495,20 @@ impl Actor {
         self.flush(true);
         self.seg = Seg::None;
         self.expire_decisions(crate::chat::decision::Expiry::TurnEnded);
+        self.expire_perms();
+        for entry_id in self.tools.values() {
+            if let Some(mut e) = self.hub.store.entry(entry_id)
+                && matches!(e.data["status"].as_str(), Some("pending" | "in_progress"))
+            {
+                e.data["status"] = if failed { "failed" } else { "completed" }.into();
+                self.hub.set_entry(entry_id, &e.data);
+            }
+        }
+    }
+
+    /// Expires the permission cards still unanswered: no one can answer them once their turn, or the actor, is
+    /// gone, and a pending card would stay in its chat's badge (`Store::badge`).
+    pub(super) fn expire_perms(&mut self) {
         let client = self.conn.as_ref().map(|c| c.acp.clone());
         for (id, answer) in self.perms.drain() {
             if let Some(mut e) = self.hub.store.entry(&id) {
@@ -504,14 +518,6 @@ impl Actor {
             // The agent would wait on a card no one can answer any more.
             if let (super::updates::Answer::Agent(rpc_id), Some(client)) = (answer, client.clone()) {
                 tokio::spawn(async move { client.respond(rpc_id, acp::permission_answer(None)).await });
-            }
-        }
-        for entry_id in self.tools.values() {
-            if let Some(mut e) = self.hub.store.entry(entry_id)
-                && matches!(e.data["status"].as_str(), Some("pending" | "in_progress"))
-            {
-                e.data["status"] = if failed { "failed" } else { "completed" }.into();
-                self.hub.set_entry(entry_id, &e.data);
             }
         }
     }

@@ -361,17 +361,18 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
-                if (bot.unread > 0) UnreadBadge(bot.unread)
+                if (bot.unread > 0) UnreadBadge(bot.unread, waiting = bot.waiting > 0)
             }
         }
     }
 }
 
-/** A count of unread messages in the accent capsule (a row, a folded section). */
-@Composable internal fun UnreadBadge(count: Int) {
-    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
+/** A count of unread messages in the accent capsule (a row, a folded section). [waiting]: it counts a card waiting on
+ *  the user, so it takes the needs-you colour of the avatar badge (iOS `UnreadBadge`). */
+@Composable internal fun UnreadBadge(count: Int, waiting: Boolean) {
+    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(if (waiting) Palette.warning else Palette.accentFill)
         .padding(horizontal = 6.dp).semantics { contentDescription = "$count unread" }, contentAlignment = Alignment.Center) {
-        Text("$count", style = Type.caption2.bold, color = Palette.onAccent)
+        Text("$count", style = Type.caption2.bold, color = if (waiting) Palette.onWarning else Palette.onAccent)
     }
 }
 

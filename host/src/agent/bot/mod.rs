@@ -449,6 +449,8 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
+        // Its cards may sit in another chat (a group's, a task's parent's), which outlives it.
+        self.expire_perms();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
         }

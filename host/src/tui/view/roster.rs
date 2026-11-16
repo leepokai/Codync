@@ -78,8 +78,9 @@ pub(super) fn roster(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
             RosterLine::Label(l) => {
                 put(buf, x0 + 1, yy, wd, l, t.dim.add_modifier(Modifier::BOLD));
             }
-            RosterLine::Section { name, bots: count, unread, folded, .. } => {
-                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, *unread, *folded);
+            RosterLine::Section { name, bots: count, unread, waiting, folded, .. } => {
+                let badge = (*folded && *unread > 0).then(|| (*unread, badge_style(*waiting)));
+                section_row(buf, Rect::new(x0, yy, wd, 1), cursor_bar, name, *count, badge, *folded);
             }
             RosterLine::Bot(b) => bot_row(buf, Rect::new(x0, yy, wd, 2), app, b, cursor_bar),
         }
@@ -102,20 +103,34 @@ fn extent(line: &RosterLine<'_>) -> (u16, u16) {
 
 /// A section's label row, `▾ name (bots)`: the name is cut so `(bots)` and a gap before the unread
 /// badge (shown while folded) always fit.
-fn section_row(buf: &mut Buffer, row: Rect, bar: Option<Style>, name: &str, bots: usize, unread: i64, folded: bool) {
+fn section_row(
+    buf: &mut Buffer,
+    row: Rect,
+    bar: Option<Style>,
+    name: &str,
+    bots: usize,
+    unread: Option<(i64, Style)>,
+    folded: bool,
+) {
     let t = theme();
     if let Some(bar) = bar {
         mark_cursor(buf, row, bar);
     }
-    let badge = if folded && unread > 0 { format!(" {unread} ") } else { String::new() };
+    let badge = unread.map_or_else(String::new, |(n, _)| format!(" {n} "));
     let room = usize::from(row.width.saturating_sub(2)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
     let tail = format!(" ({bots})");
     let name = truncate(name, room.saturating_sub(2 + w(&tail)));
     let label = format!("{} {name}{tail}", if folded { "▸" } else { "▾" });
     put(buf, row.x + 1, row.y, u(room), &label, t.dim.add_modifier(Modifier::BOLD));
-    if !badge.is_empty() {
-        rput(buf, row.right() - 1, row.y, &badge, t.btn_primary);
+    if let Some((_, style)) = unread {
+        rput(buf, row.right() - 1, row.y, &badge, style);
     }
+}
+
+/// An unread badge's colours: amber while it counts a card waiting on the user (the needs-you mark's colour).
+fn badge_style(waiting: bool) -> Style {
+    let t = theme();
+    if waiting { t.amber.add_modifier(Modifier::REVERSED | Modifier::BOLD) } else { t.btn_primary }
 }
 
 /// A bot's two rows: avatar, name, status glyph and time, then its preview and unread badge; the
@@ -144,7 +159,7 @@ fn bot_row(buf: &mut Buffer, row: Rect, app: &mut App, b: &Bot, bar: Option<Styl
     let room = usize::from(row.width.saturating_sub(7)).saturating_sub(w(&badge) + usize::from(!badge.is_empty()));
     put(buf, x0 + 5, y + 1, u(room), &truncate(&pv, room), ps);
     if !badge.is_empty() {
-        rput(buf, row.right() - 1, y + 1, &badge, t.btn_primary);
+        rput(buf, row.right() - 1, y + 1, &badge, badge_style(b.waiting > 0));
     }
 }
 
@@ -211,8 +226,9 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
             mark_cursor(buf, row, if app.focus == Focus::Roster { t.bold } else { t.secondary });
         }
         match &lines[i] {
-            RosterLine::Section { bots: count, unread, .. } => {
-                compact_section(buf, row, *count, (*unread > 0).then(|| glyph(app, Mark::Unread)));
+            RosterLine::Section { bots: count, unread, waiting, .. } => {
+                let mark = if *waiting { Some(Mark::Need) } else { (*unread > 0).then_some(Mark::Unread) };
+                compact_section(buf, row, *count, mark.map(|m| glyph(app, m)));
             }
             RosterLine::Bot(b) => {
                 put_line(buf, r.x + 1, y, 2, &avatar(app, b));
@@ -228,7 +244,8 @@ pub(super) fn compact_roster(buf: &mut Buffer, r: Rect, app: &mut App) {
     }
 }
 
-/// A folded section in the compact strip: `▸`, its bot count and the unread glyph if it has unread.
+/// A folded section in the compact strip: `▸`, its bot count and the needs-you glyph if its unread count a card
+/// waiting on the user, else the unread glyph if it has unread.
 fn compact_section(buf: &mut Buffer, row: Rect, bots: usize, unread: Option<(&str, Style)>) {
     let t = theme();
     let x = put(buf, row.x + 1, row.y, 1, "▸", t.dim);
@@ -254,9 +271,12 @@ mod tests {
     fn a_long_section_name_gives_way_to_the_count_and_leaves_a_gap_before_the_badge() {
         let row = Rect::new(0, 0, 24, 1);
         let mut buf = Buffer::empty(row);
-        section_row(&mut buf, row, None, &"n".repeat(40), 12, 7, true);
+        section_row(&mut buf, row, None, &"n".repeat(40), 12, Some((7, badge_style(true))), true);
         let text = (0..row.width).map(|x| buf[(x, 0)].symbol()).collect::<String>();
         assert_eq!(text, " ▸ nnnnnnnnnn… (12)  7  ");
+        // It counts a card waiting on the user (#366): the needs-you colour, not the plain badge's.
+        assert_eq!(buf[(row.width - 2, 0)].fg, badge_style(true).fg.expect("amber"));
+        assert_ne!(badge_style(true), badge_style(false));
     }
 
     #[test]

@@ -125,7 +125,7 @@ extension BotStore {
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
-            if bot.unread > 0 { acknowledgeVisibleConversations(bot.id) }
+            if bot.unseen > 0 { acknowledgeVisibleConversations(bot.id) }
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil

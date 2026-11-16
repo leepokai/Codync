@@ -76,6 +76,7 @@
     "event:bot.bot.status": "string",
     "event:bot.bot.taskWorktrees": "bool",
     "event:bot.bot.unread": "number",
+    "event:bot.bot.waiting": "number",
     "event:bot.bot.work": "array",
     "event:bot.bot.workingChat": "null",
     "event:bot.rev": "number",

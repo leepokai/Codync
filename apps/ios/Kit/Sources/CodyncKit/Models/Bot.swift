@@ -108,6 +108,10 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     /// How it stands outside its chat (`Bot.Outside`). Nil from an older host: the chat's own status.
     public var outside: Outside?
     public var unread: Int
+    /// How many of `unread` are cards waiting on the user: the badge turns amber. 0 from an older host.
+    public var waiting: Int = 0
+    /// The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted).
+    public var unseen: Int { unread - waiting }
     public var lastMessage: String?
     public var lastAt: Int64
 
@@ -186,6 +190,7 @@ extension Bot {
         gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
+        waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         lastAt = try c.decodeIfPresent(Int64.self, forKey: .lastAt) ?? createdAt
     }

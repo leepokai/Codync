@@ -78,12 +78,12 @@ fun AppStore.takeCallRequest(botId: String): Boolean {
 /** The chat being read (iOS `ReadingConversation`): the open one, still on screen under Full conversation. */
 internal val AppState.readingChats: List<String> get() = listOfNotNull(selectedBot)
 
-/** The chats events make unread while they're on screen: a message in one, or its bot counting unread. */
+/** The chats events make unread while they're on screen: a message in one, or its bot counting unread messages. */
 internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<String> = chats.filter { chat ->
     events.any { event ->
         when (event) {
             is MirrorEvent.EntryChanged -> event.entry.isChat && event.entry.botId == chat
-            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unread > 0
+            is MirrorEvent.BotChanged -> event.bot.id == chat && event.bot.unseen > 0
             else -> false
         }
     }

@@ -1,6 +1,6 @@
-//! The phones' own stores and channels against a real host: an app open's first milestones and a scroll
-//! reach the host's `phone-performance.jsonl`. The phone sides are `PhonePerformanceDeliveryTests.swift`, run
-//! on a simulator, and `PhonePerformanceDeliveryTest.kt`, run on an emulator. Run only when asked:
+//! The phones' apps against a real host: an app open's first milestones and a scroll reach the host's
+//! `phone-performance.jsonl`. The phone sides are `PhonePerformanceDeliveryUITests.swift`, run on a simulator,
+//! and `PhonePerformanceDeliveryTest.kt`, run on an emulator. Run only when asked:
 //! `CODYNC_IOS_SIMULATOR=<udid> cargo test --test phone_performance_e2e iphone -- --ignored` (macOS, Xcode);
 //! `CODYNC_ANDROID_EMULATOR=<serial> cargo test --test phone_performance_e2e android -- --ignored` (JDK 21, Android SDK).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)] // test code: failing loudly is the point
@@ -23,16 +23,17 @@ async fn an_iphone_open_and_scroll_reach_the_hosts_performance_log() {
     let dir = host.home.join("handoff");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("pairing"), pairing).unwrap();
+    // A fresh install: the roster must hold only this host's bots.
+    let _ = Command::new("xcrun").args(["simctl", "uninstall", &simulator, "com.pokai.Codync.ios.dev"]).status();
 
-    let kit = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../apps/ios/Kit");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut phone = Command::new("xcodebuild");
     phone
-        .current_dir(&kit)
-        .args(["test", "-scheme", "CodyncKit-Package", "-derivedDataPath", "../../../build/dd"])
+        .current_dir(&root)
+        .args(["test", "-project", "apps/Codync.xcodeproj", "-scheme", "iOS Dev", "-derivedDataPath", "build/dd"])
         .args(["-destination", &format!("platform=iOS Simulator,id={simulator}")])
-        .arg("-only-testing:CodyncUITests/aPhoneOpenAndScrollSendTheirTimingToTheHost()")
-        .env("TEST_RUNNER_CODYNC_PERFORMANCE_DIR", &dir)
-        .env("TEST_RUNNER_CODYNC_RECORD_PERFORMANCE", "1");
+        .arg("-only-testing:iOSUITests/PhonePerformanceDeliveryUITests")
+        .env("TEST_RUNNER_CODYNC_PERFORMANCE_DIR", &dir);
     run_phone(&host, phone).await;
     expect_open_and_scroll(&host, "ios").await;
 }
@@ -69,7 +70,10 @@ async fn an_android_open_and_scroll_reach_the_hosts_performance_log() {
 
 async fn performance_host() -> Host {
     let host = Host::start().await;
-    host.bot("Performance bot", "auto").await;
+    // Enough bots for a phone's roster to scroll; the lead bot makes it 30.
+    for n in 1..=29 {
+        host.bot(&format!("Performance bot {n}"), "auto").await;
+    }
     host
 }
 

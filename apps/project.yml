@@ -88,6 +88,7 @@ schemes:
       config: DevDebug
       targets:
         - iOSAppTests
+        - iOSUITests
     archive:
       config: DevRelease
   Screen:
@@ -150,6 +151,7 @@ targets:
           - NotificationService
           - Share
           - AppTests
+          - UITests
           - WhatsNew.md
           # The app's shared Swift package (models, client, screens), added as a package below.
           - Kit
@@ -216,6 +218,19 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID).tests
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/$(CODYNC_APP_NAME).app/$(CODYNC_APP_NAME)
+  # Drives the app itself (its scroll meters report only what the app really scrolls).
+  iOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - ios/UITests
+    dependencies:
+      - target: iOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(CODYNC_IOS_BUNDLE_ID).uitests
+        TEST_TARGET_NAME: iOS
   Widgets:
     type: app-extension
     platform: iOS

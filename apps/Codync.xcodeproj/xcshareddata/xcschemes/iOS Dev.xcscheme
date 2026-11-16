@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Codync.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7FABB1918EEF308998C59837"
+               BuildableName = "iOSUITests.xctest"
+               BlueprintName = "iOSUITests"
+               ReferencedContainer = "container:Codync.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

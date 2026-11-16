@@ -4,6 +4,10 @@ import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 
+/** The banner as English reads it: the phrase with its names put in. */
+private fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()) =
+    stepBannerPhrase(name, clock, now)?.let { fill(it.key, it.values) }
+
 class FallbacksTest {
     @Test fun `a bot decodes its fallbacks, the step it runs on and its resting agents, and an older host's without them`() {
         val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"Scout","backend":"claude",
@@ -91,6 +95,30 @@ class FallbacksTest {
             assertFalse(reason, resting(reason).stepBanner(name, clock, now = 1000).orEmpty().contains("resets"))
         }
         assertEquals("Using codex while claude is signed out", resting("signedOut").stepBanner(name, clock, now = 1000))
+    }
+
+    @Test fun `every banner the host can cause has its phrase in the catalog`() {
+        val catalog = Json.parseToJsonElement(java.io.File("../../ios/Kit/Sources/CodyncKit/Resources/Languages/zh-Hant.json").readText()).jsonObject
+        // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+        for (reason in listOf(null, "usageLimit", "outOfCredits", "rateLimited", "overloaded", "signedOut", "notStarting")) {
+            val rest = reason?.let { ""","resting":[{"agent":"claude","until":2000,"reason":"$it"}]""" }.orEmpty()
+            val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"B","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}$rest}""").jsonObject)
+            val key = bot.stepBannerPhrase({ login, _ -> login.backend }, { "3:00 PM" }, now = 1000)!!.key
+            assertTrue("$reason: $key", key in catalog)
+        }
+    }
+
+    @Test fun `a login profile name holding while stays one name`() {
+        val bot = HostClient.decode(Json.parseToJsonElement("""{"id":"b","name":"B","backend":"claude","loginProfile":"Work while traveling",
+            "agentStep":{"step":1,"agent":"codex","since":1},
+            "resting":[{"agent":"claude","loginProfile":"Work while traveling","until":2000,"reason":"signedOut"}]}""").jsonObject)
+        val name = { login: Login, own: Boolean -> login.backend + (login.loginProfile?.let { " ($it)" } ?: if (own) " (Default login profile)" else "") }
+        val clock = { _: Long -> "3:00 PM" }
+        val phrase = bot.stepBannerPhrase(name, clock, now = 1000)
+        // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
+        assertEquals("Using {to} while {own} is signed out", phrase?.key)
+        assertEquals(mapOf("to" to "codex", "own" to "claude (Work while traveling)"), phrase?.values)
+        assertEquals("Using codex while claude (Work while traveling) is signed out", phrase?.let { fill(it.key, it.values) })
     }
 
     @Test fun `a new step takes a login the chain doesn't have, signed in`() {

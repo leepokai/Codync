@@ -7,7 +7,7 @@ import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */

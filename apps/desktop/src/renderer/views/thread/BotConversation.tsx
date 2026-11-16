@@ -12,7 +12,7 @@ import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /** The compact chat row for bot-to-bot messages with one peer: who, never what. Opens the conversation. */

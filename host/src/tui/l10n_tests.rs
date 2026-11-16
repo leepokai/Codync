@@ -297,3 +297,29 @@ fn event_box_words_read_in_traditional_chinese() {
     let title = fill(&translate_with("Let \"{title}\" cut in", &super::HANT), &[("title", "Fix login")]);
     assert_eq!(title, "讓「Fix login」插隊");
 }
+
+#[test]
+fn fallback_lines_read_in_traditional_chinese() {
+    use crate::agent::fallback::Reason;
+    use crate::tui::view::{rest_phrase, using_phrase};
+    // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+    let rests = [
+        Reason::UsageLimit,
+        Reason::OutOfCredits,
+        Reason::RateLimited,
+        Reason::Overloaded,
+        Reason::SignedOut,
+        Reason::NotStarting,
+    ];
+    for rest in rests.map(Some).into_iter().chain([None]) {
+        let key = using_phrase(rest);
+        assert_ne!(translate_with(&key, &super::HANT), key, "{rest:?}");
+    }
+    for reason in [Reason::UsageLimit, Reason::SignedOut] {
+        assert_ne!(translate_with(rest_phrase(reason), &super::HANT), rest_phrase(reason), "{reason:?}");
+    }
+    let key = using_phrase(Some(Reason::SignedOut));
+    let line =
+        fill(&translate_with(&key, &super::HANT), &[("to", "Codex"), ("own", "Kimi Code (Work while traveling)")]);
+    assert_eq!(line, "正在使用 Codex，Kimi Code (Work while traveling) 已登出");
+}

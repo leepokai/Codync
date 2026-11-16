@@ -148,7 +148,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
       onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
         <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
-      {ownRest && <Text size="caption" tone="secondary">{restLine(ownRest, Date.now())}</Text>}
+      {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
       {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>

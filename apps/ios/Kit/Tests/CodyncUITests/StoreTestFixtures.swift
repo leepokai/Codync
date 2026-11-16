@@ -48,6 +48,11 @@ actor FakeRemote: RemoteTransport {
 
     func setReadFailure(_ fail: Bool) { failReadReceipts = fail }
     private(set) var calls: [String] = []
+    /// What the newest call of each method carried, where it was all text.
+    private(set) var bodies: [String: [String: String]] = [:]
+    /// A method the computer refuses, with its sentence.
+    private var refusals: [String: String] = [:]
+    func refuse(_ method: String, _ sentence: String?) { refusals[method] = sentence }
     private var failures: [String: Int] = [:]
     /// The next `count` calls of `method` fail as if the link dropped under them.
     func fail(_ method: String, times count: Int) { failures[method] = count }
@@ -101,6 +106,8 @@ actor FakeRemote: RemoteTransport {
         guard !isShutdown else { throw HostError.unreachable }
         calls.append(method)
         record(.called(method))
+        bodies[method] = (try? JSONSerialization.jsonObject(with: body)) as? [String: String]
+        if let sentence = refusals[method] { throw HostError.http(400, sentence) }
         if let left = failures[method], left > 0 {
             failures[method] = left - 1
             throw HostError.unreachable

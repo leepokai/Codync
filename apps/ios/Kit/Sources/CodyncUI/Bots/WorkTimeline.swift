@@ -3,17 +3,18 @@ import SwiftUI
 
 /// What a bot does, on its details: Threads (the sessions that run now, and the places not in use) and the event
 /// box (what waits for one) above `between` (what it does later and keeps running), Recent below. A row opens its
-/// task's transcript; one that needs the user goes to its card in the chat. `plain` (the view of all bots' work):
+/// task's thread (`openThread`); one that needs the user goes to its card in the chat. `plain` (the view of all bots' work):
 /// only the rows of what runs and what waits, in one card.
 struct WorkTimeline<Between: View>: View {
     let bot: Bot
     /// Shows the bot's chat at the card an item waits on; nil where the details aren't over that chat.
     let openCard: ((WorkItem) -> Void)?
+    /// Shows the thread of an item a task has or had.
+    let openThread: (WorkItem) -> Void
     var plain = false
     @ViewBuilder let between: Between
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var transcript: WorkItem?
     /// The item Stop or Cut in asks about.
     @State private var asked: WorkItem?
     @State private var confirmingStop = false
@@ -47,7 +48,6 @@ struct WorkTimeline<Between: View>: View {
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot.work.map(\.id))
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: bot.work.map(\.status))
-        .codyncSheet(item: $transcript) { TaskDetailsView(botId: bot.id, item: $0) }
         .stopWorkDialog(isPresented: $confirmingStop) {
             if let asked { model.stopWork(bot.id, item: asked.id) }
         }
@@ -78,7 +78,7 @@ struct WorkTimeline<Between: View>: View {
 
     private func opener(_ item: WorkItem, card: Entry?) -> (() -> Void)? {
         if item.status == .needsYou, let openCard { return { openCard(item) } }
-        return item.task == nil ? nil : { transcript = item }
+        return item.task == nil ? nil : { openThread(item) }
     }
 
     private func run(_ action: WorkAction, on item: WorkItem) {
@@ -105,13 +105,13 @@ struct WorkTimeline<Between: View>: View {
 
 extension WorkTimeline where Between == EmptyView {
     /// A bot's rows in the view of all bots' work.
-    init(plain bot: Bot, openCard: @escaping (WorkItem) -> Void) {
-        self.init(bot: bot, openCard: openCard, plain: true) {}
+    init(plain bot: Bot, openCard: @escaping (WorkItem) -> Void, openThread: @escaping (WorkItem) -> Void) {
+        self.init(bot: bot, openCard: openCard, openThread: openThread, plain: true) {}
     }
 }
 
-/// One item: its mark, title and what goes on, its time, and the action that matters most; the rest is in its
-/// touch-and-hold menu.
+/// One item: its mark, title, what goes on and where its task works, its time, and the action that matters most; the
+/// rest is in its touch-and-hold menu.
 private struct WorkRow: View {
     let item: WorkItem
     /// Its place in the event box, shown where the mark is.
@@ -151,6 +151,7 @@ private struct WorkRow: View {
                     .font(.footnote)
                     .foregroundStyle(item.status == .failed || item.status == .stopped ? Palette.danger : Palette.secondary)
                     .lineLimit(2)
+                if let place = item.whereLine(home: model.hello?.home ?? "") { WhereLabel(place: place) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             WorkElapsed(item: item)
@@ -221,6 +222,20 @@ struct WorkMark: View {
         }
         .frame(width: 16, height: 16)
         .accessibilityLabel(L10n.tr(status.word))
+    }
+}
+
+/// Where an item's task works, one quiet line: the folder symbol and the folder, or the branch symbol and the
+/// branch of its own worktree. A long one keeps both ends.
+struct WhereLabel: View {
+    let place: WhereLine
+
+    var body: some View {
+        Label(place.text, systemImage: place.kind.symbol)
+            .font(.footnote)
+            .foregroundStyle(Palette.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }
 

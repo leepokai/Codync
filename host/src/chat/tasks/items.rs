@@ -1,12 +1,12 @@
 //! A bot's box: its items (kv `work.<bot>`, one JSON list), how they read on the wire and to the bot itself.
 
 use super::dispatch::{self, Standing, Wait};
-use super::worktree::{Place, Worktree};
+use super::worktree::{Left, Place, Worktree};
 use super::{Failure, Report, Start};
 use crate::LockExt;
 use crate::hub::{BotStatus, Hub};
 use crate::store::{BotConfig, Store, now_ms};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -151,6 +151,13 @@ pub(super) struct Item {
     /// The worktree its task works or worked in (`worktree`).
     #[serde(default)]
     pub worktree: Option<Worktree>,
+    /// What the user wrote to its thread since its last report, word for word (`thread`): its next report ends
+    /// with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub told: Vec<String>,
+    /// What it reported before the user wrote to it again: a new session that picks the work up is told.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub said: Option<String>,
 }
 
 impl Item {
@@ -181,6 +188,8 @@ impl Item {
             fork_failed: false,
             place: Place::Folder,
             worktree: None,
+            told: Vec::new(),
+            said: None,
         }
     }
 
@@ -237,6 +246,11 @@ pub(super) fn working(items: &[Item]) -> usize {
     items.iter().filter(|i| i.status == Status::Working).count()
 }
 
+/// The item `id`.
+pub(super) fn find<'a>(items: &'a mut [Item], id: &str) -> Result<&'a mut Item> {
+    items.iter_mut().find(|i| i.id == id).ok_or_else(|| anyhow!("no such work"))
+}
+
 /// The item `task` works on.
 pub(super) fn of_task<'a>(items: &'a [Item], task: &str) -> Option<&'a Item> {
     items.iter().find(|i| i.status == Status::Working && i.task.as_deref() == Some(task))
@@ -291,18 +305,38 @@ pub(super) fn shown(hub: &Hub, cfg: &BotConfig) -> Vec<Shown> {
         .collect()
 }
 
+/// Where `item`'s task works, of its row's folder `cwd`: not a worktree that had nothing in it and went.
+fn folder_of<'a>(item: &Item, cwd: Option<&'a String>) -> Option<&'a String> {
+    let gone = |worktree: &Worktree| worktree.left == Left::Removed && cwd == Some(&worktree.cwd);
+    cwd.filter(|_| !item.worktree.as_ref().is_some_and(gone))
+}
+
 /// The bot's `work` on the wire.
 pub fn wire(hub: &Hub, cfg: &BotConfig) -> Value {
+    let shown = shown(hub, cfg);
+    // Where each task works: a worktree's folder, or the bot's as it was when the task began.
+    let folders: HashMap<String, String> = if shown.is_empty() {
+        HashMap::new()
+    } else {
+        super::of(&hub.store, &cfg.id).into_iter().map(|task| (task.id, task.cwd)).collect()
+    };
     Value::Array(
-        shown(hub, cfg)
+        shown
             .into_iter()
             .map(|Shown { item, status, activity, wait }| {
+                let cwd = item.task.as_ref().and_then(|task| folders.get(task));
+                let folder = folder_of(&item, cwd);
                 let mut row = json!({
                     "id": item.id, "title": item.title, "status": status, "activity": activity, "task": item.task,
                     "wait": wait, "cutIn": item.cut_in, "createdAt": item.created_at, "startedAt": item.started_at,
                     "endedAt": item.ended_at,
                     "result": item.result.map(|r| crate::agent::acp::truncate(&r, WIRE_RESULT)),
+                    // The user may write to its thread: the bot's own work, whose task is still there.
+                    "talk": item.source.is_bot() && cwd.is_some(),
                 });
+                if let Some(folder) = folder {
+                    row["folder"] = folder.clone().into();
+                }
                 if let Some(source) = item.source.wire() {
                     row["source"] = source;
                 }
@@ -428,6 +462,21 @@ mod tests {
             about.starts_with("Its work in the background: 1 working, 0 waiting; at most 1 run at once"),
             "{about}"
         );
+    }
+
+    #[test]
+    fn a_worktree_that_was_removed_is_no_folder_to_show() {
+        let mut item: Item = serde_json::from_value(json!({
+            "id": "i", "title": "t", "brief": "b", "status": "done", "order": 1, "createdAt": 0, "task": "task-1",
+            "worktree": {"branch": "codync/t", "path": "/w", "cwd": "/w/app", "base": "abc", "left": "kept"},
+        }))
+        .expect("an item");
+        let (worktree, workspace) = ("/w/app".to_owned(), "/repo/app".to_owned());
+        assert_eq!(folder_of(&item, Some(&worktree)), Some(&worktree), "kept: it is there to go to");
+        item.worktree.as_mut().expect("a worktree").left = Left::Removed;
+        assert_eq!(folder_of(&item, Some(&worktree)), None, "it went with its branch");
+        assert_eq!(folder_of(&item, Some(&workspace)), Some(&workspace), "reopened: its task is in the bot's folder");
+        assert_eq!(folder_of(&item, None), None);
     }
 
     #[test]

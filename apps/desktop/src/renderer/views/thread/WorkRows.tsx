@@ -1,35 +1,33 @@
 import { useState, type ReactNode } from 'react'
 import type { Bot } from '@shared/models'
-import { canCutIn, itemLine, pendingAsks, workSections, type WorkItem } from '@shared/work'
+import { canCutIn, itemLine, pendingAsks, whereLine, wherePath, workSections, type WorkItem } from '@shared/work'
 import { BotAvatar } from '../../components/Avatar'
 import { Button, IconButton } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
-import { Sheet } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
-import { TaskDetails } from './TaskDetails'
 import { CutInDialog, StopWorkDialog, WORK_MARK, WorkDot } from './WorkDialogs'
 import { Timer } from './WorkingIndicator'
+import { WorkWhere } from './WorkWhere'
 import './work.css'
 
 /**
  * What a bot works on now and what waits, with their actions: its threads (items that need the user, then the
  * working ones; Stop) and its event box (the waiting ones, numbered in the order they will be taken; First, Cut in,
- * Drop). A row of an item a task has opens that task's transcript; one that needs the user calls `openCard`.
+ * Drop). A row of an item a task has opens its thread (`openThread`); one that needs the user calls `openCard`.
  *
  * On the bot's Details they are two titled cards, **Threads** (`2 / 3`, with a faint row per place not in use) and
  * **Event box** (how many wait). `plain` is the view of all bots: one card of the same rows, no titles, no free places.
  */
-export function LiveWork({ bot, openCard, plain = false }: { bot: Bot; openCard: (itemId: string) => void; plain?: boolean }) {
+export function LiveWork({ bot, openCard, openThread, plain = false }: { bot: Bot; openCard: (itemId: string) => void; openThread: (itemId: string) => void; plain?: boolean }) {
   const tr = useTr()
   const store = useStore()
   const { threads, places, free, box } = workSections(bot.work, bot.maxAgents)
   const asks = pendingAsks(store.allEntries(bot.id), tr)
   const cutIn = canCutIn(bot.work, bot.maxAgents)
   const offline = store.isOffline
-  const [reading, setReading] = useState<WorkItem | null>(null)
   const [stopping, setStopping] = useState<string | null>(null)
   const [cuttingIn, setCuttingIn] = useState<WorkItem | null>(null)
   const stop = (item: WorkItem) => <IconButton title="Stop" icon="stop.fill" size={24} disabled={offline} onClick={() => setStopping(item.id)} />
@@ -41,7 +39,7 @@ export function LiveWork({ bot, openCard, plain = false }: { bot: Bot; openCard:
         key={item.id}
         item={item}
         line={itemLine(item, tr)}
-        open={item.task ? () => setReading(item) : undefined}
+        open={item.task ? () => openThread(item.id) : undefined}
         time={item.startedAt !== null ? <Timer since={item.startedAt} /> : null}
         onHover={stop(item)}
       />
@@ -77,17 +75,7 @@ export function LiveWork({ bot, openCard, plain = false }: { bot: Bot; openCard:
       )}
       <StopWorkDialog botId={bot.id} itemId={stopping} onClose={() => setStopping(null)} />
       <CutInDialog bot={bot} item={cuttingIn} onClose={() => setCuttingIn(null)} />
-      <TaskSheet botId={bot.id} item={reading} onClose={() => setReading(null)} />
     </>
-  )
-}
-
-/** The transcript of the task that has or had `item`, in a sheet; closed while it is null. */
-export function TaskSheet({ botId, item, onClose }: { botId: string; item: WorkItem | null; onClose: () => void }) {
-  return (
-    <Sheet open={item !== null} onClose={onClose} width={620} height={560}>
-      {item ? <TaskDetails botId={botId} item={item} /> : null}
-    </Sheet>
   )
 }
 
@@ -118,12 +106,14 @@ function FreeRow() {
 }
 
 /**
- * One item: its mark (or `number`, its place in line), its title over `line`, and `time`. `open` makes the row a button. `always` is an action that
+ * One item: its mark (or `number`, its place in line), its title over `line` and where its task works, and `time`. `open` makes the row a button. `always` is an action that
  * always shows (Cut in, Try again); `onHover` holds the icon actions, out of sight until the row is hovered or
  * holds the focus.
  */
 export function WorkRow({ item, number, line, time, open, always, onHover }: { item: WorkItem; number?: number; line: string; time?: ReactNode; open?: () => void; always?: ReactNode; onHover?: ReactNode }) {
+  const store = useStore()
   const mark = WORK_MARK[item.status]
+  const where = whereLine(item, store.hello?.home ?? '')
   const Open = open ? 'button' : 'div'
   return (
     <HStack gap={4} className="work-row" data-work-status={item.status}>
@@ -135,6 +125,7 @@ export function WorkRow({ item, number, line, time, open, always, onHover }: { i
             <Text tone="text" truncate>{item.title}</Text>
           </HStack>
           <Text size="caption" tone={mark === 'danger' ? 'danger' : mark === 'attention' ? 'attention' : 'secondary'} truncate>{line}</Text>
+          {where ? <span className="work-row-where" title={wherePath(item) ?? undefined}><WorkWhere where={where} /></span> : null}
         </VStack>
         {time}
       </Open>

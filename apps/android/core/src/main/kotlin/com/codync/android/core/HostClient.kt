@@ -101,6 +101,8 @@ data class Bot(
     val taskWorktrees: Boolean? = null,
     /** Its folder is in a git repository: where [taskWorktrees] matters. */
     val gitRepo: Boolean = false,
+    /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
+    val gitInstalled: Boolean? = null,
     /** How it stands outside its chat ([Outside]); null from an older host. */
     @Serializable(with = OutsideSerializer::class)
     val outside: Outside? = null,

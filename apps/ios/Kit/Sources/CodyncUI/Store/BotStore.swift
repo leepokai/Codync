@@ -99,6 +99,9 @@ public final class BotStore {
     /// An item whose card its bot's conversation should bring into view, consumed by it.
     public internal(set) var cardRequest: (botId: String, item: WorkItem)?
 
+    /// An item whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, item: WorkItem)?
+
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
     @ObservationIgnored var preparingVoiceCall: UUID?

@@ -26,7 +26,9 @@ impl Actor {
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
             Cmd::Send { lane, entry_id, text } => {
-                if !self.try_decision_message(&lane, &entry_id) {
+                // What the user writes to a task's thread waits behind the turn its card holds: only a press
+                // answers a task's card, and a message neither answers nor ends it.
+                if self.cfg.is_task() || !self.try_decision_message(&lane, &entry_id) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
                 }
             }

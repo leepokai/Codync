@@ -1,6 +1,6 @@
 # A bot's event box on the phones. One item working is a capsule over the composer, which opens the bot's details:
 # Threads says how many run of the most allowed (`1 / 3`) with a Free row per place not in use, and the row opens its
-# task's transcript. With the ceiling at 1, what is added next waits in the Event box, numbered in order; First moves a
+# thread, where a message written while it works waits and can be taken back. With the ceiling at 1, what is added next waits in the Event box, numbered in order; First moves a
 # waiting item to the front, Drop (touch and hold) takes one out, and Cut in asks which working item gives way: that
 # one returns to the box. Stop on the capsule asks once. An item's approval card is answered in the chat and says it
 # comes from the background, its Threads row leads to it, and its report comes back as the bot's message; so does the
@@ -70,10 +70,47 @@ onFlowComplete:
 - assertVisible: ".*Audit the repo.*"
 - assertNotVisible: "Event box"
 - takeScreenshot: tasks-threads
-# The row opens its task's transcript, with what the task was told.
+# The row opens its thread in the details' place: what the task was told is folded on top, and the composer writes
+# to it.
 - tapOn: ".*Audit the repo.*"
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 10000
+- assertNotVisible: "Threads"
+- tapOn: "What it was told"
 - assertVisible: ".*HOLD:audit.*"
-- tapOn: "Close"
+# A message written while the task's turn runs waits over the composer, where Remove takes it back.
+- tapOn: "Message this thread"
+- inputText: "also the docs"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "also the docs"
+    timeout: 10000
+- assertVisible: "Send now"
+- takeScreenshot: tasks-thread
+- tapOn: "Remove"
+- extendedWaitUntil:
+    notVisible: "also the docs"
+    timeout: 10000
+# Back returns to Details, and on iPhone so does a swipe to the right anywhere on the thread.
+- tapOn: "Back to details"
+- extendedWaitUntil:
+    visible: "Threads"
+    timeout: 10000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: ".*Audit the repo.*"
+      - extendedWaitUntil:
+          visible: "Message this thread"
+          timeout: 10000
+      - swipe:
+          start: 10%, 50%
+          end: 90%, 50%
+      - extendedWaitUntil:
+          visible: "Threads"
+          timeout: 10000
 # With the ceiling at 1, what is added next waits in the Event box, numbered in the order it will be taken.
 - runScript:
     file: tasks.js
@@ -155,12 +192,14 @@ onFlowComplete:
     element: "1 / 1"
     direction: UP
 # Agents at once, in Settings, is the ceiling Threads counts against (the system stepper on iPhone, ours on Android).
-# The page is still settling after Try again moved the row.
+# The page is still settling after Try again moved the row. Each scroll here waits for the page to settle, which on a
+# busy emulator takes most of the default 20 s for the few it needs.
 - waitForAnimationToEnd
 - tapOn: "Settings"
 - scrollUntilVisible:
     element: "Agents at once"
     centerElement: true
+    timeout: 60000
 # The iPhone's stepper names its buttons by identifier (their text is the value); ours on Android by label.
 - runFlow:
     when:
@@ -176,6 +215,7 @@ onFlowComplete:
 - scrollUntilVisible:
     element: "Details"
     direction: UP
+    timeout: 60000
 - tapOn: "Details"
 - extendedWaitUntil:
     visible: "1 / 2"

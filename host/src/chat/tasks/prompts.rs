@@ -56,6 +56,60 @@ pub(super) fn item_prompt(item: &Item, first: bool) -> String {
     )
 }
 
+/// How many of the user's messages to a thread its report carries, the newest, and how much of each.
+const TOLD_IN_REPORT: usize = 5;
+const TOLD_LONGEST: usize = 280;
+
+/// Said after each message the user writes to a task's thread, so the task knows who speaks and where its answer
+/// goes.
+const IN_THREAD: &str = "the user wrote this to you directly, in this work's thread, which they read. Your last \
+message of this turn is again the report the chat gets.";
+
+/// What the user wrote to a task's thread (`text`), as the task hears it: after the work itself (`picked_up`) where
+/// its session doesn't hold it, and saying who wrote it and where.
+pub fn in_thread(text: &str, picked_up: Option<String>) -> String {
+    let written = format!("{text}\n\n[Codync: {IN_THREAD}]");
+    picked_up.map_or(written.clone(), |work| format!("{work}\n\n{written}"))
+}
+
+/// What a new session is told before the user's message to `item`'s thread, when the session that did the work
+/// can't be picked up: the work, what the user said about it, and what it reported.
+pub(super) fn picked_up(item: &Item) -> String {
+    let mut said = item.words.as_deref().map(|w| format!("\n\n[The user's own words: «{w}»]")).unwrap_or_default();
+    for note in &item.notes {
+        let _ = write!(said, "\n\n[The user said since: «{note}»]");
+    }
+    let reported = item.said.as_deref().map_or_else(
+        || "[Codync: it ended without a report.]".to_owned(),
+        |text| format!("[Codync: what you reported when it ended:]\n{}", crate::agent::acp::truncate(text, 2_000)),
+    );
+    format!(
+        "[Task] You are the same bot, away from the chat. You worked on \"{}\" before, in a session that can't be \
+         picked up, so this is a new one. What it was:\n\n{}{said}\n\n{reported}\n\n\
+         [Codync: the user now writes to you about it. See what is already done before doing anything again.]",
+        item.title, item.brief
+    )
+}
+
+/// What a report says of the user's messages to the item's thread since its last report: their own words, the
+/// newest few, each shortened. Nothing when they wrote none.
+fn told_line(told: &[String]) -> Option<String> {
+    let shown = &told[told.len().saturating_sub(TOLD_IN_REPORT)..];
+    let words: Vec<String> =
+        shown.iter().map(|w| format!("«{}»", crate::agent::acp::truncate(w, TOLD_LONGEST))).collect();
+    let earlier = match told.len() - shown.len() {
+        0 => String::new(),
+        n => format!(" (and {n} earlier)"),
+    };
+    (!words.is_empty()).then(|| {
+        format!(
+            "[Codync: while it worked, the user wrote to it directly. These are the user's own words, not the \
+             task's: {}{earlier}]",
+            words.join(" ")
+        )
+    })
+}
+
 /// The prompt of the turn that takes `reports` in the bot's chat.
 pub fn report_prompt(reports: &[Report]) -> String {
     let parts: Vec<String> = reports
@@ -65,8 +119,9 @@ pub fn report_prompt(reports: &[Report]) -> String {
                 Ok(text) => format!("[Codync: your work \"{}\" finished. Its report:]\n{text}", r.title),
                 Err(why) => format!("[Codync: your work \"{}\" did not finish: {why}]", r.title),
             };
-            // Where its changes are, when it worked in a worktree of its own.
-            r.worktree.as_ref().map_or(said.clone(), |worktree| format!("{said}\n{}", worktree.line()))
+            // Where its changes are, when it worked in a worktree of its own; then what the user told it.
+            let lines = [r.worktree.as_ref().map(super::Worktree::line), told_line(&r.told)];
+            lines.into_iter().flatten().fold(said, |said, line| format!("{said}\n{line}"))
         })
         .collect();
     format!(
@@ -102,6 +157,7 @@ mod tests {
             outcome: outcome.map(str::to_owned).map_err(str::to_owned),
             hops: 1,
             worktree: None,
+            told: Vec::new(),
         };
         let done = report("i1", "Fix login", Ok("All green."));
         let failed = report("i2", "Docs", Err("it was cut off"));
@@ -110,6 +166,43 @@ mod tests {
         assert!(prompt.contains("your work \"Fix login\" finished. Its report:]\nAll green."));
         assert!(prompt.contains("your work \"Docs\" did not finish: it was cut off"));
         assert!(prompt.ends_with("reply with only (pass) if there is nothing to tell.]"));
+        assert!(!prompt.contains("the user wrote to it"), "nothing is added when the user wrote nothing");
+    }
+
+    #[test]
+    fn a_report_ends_with_what_the_user_told_the_thread_as_their_own_words() {
+        let told: Vec<String> = (1..=7).map(|n| format!("note {n}")).chain(["x".repeat(400)]).collect();
+        let report = Report {
+            item: "i".into(),
+            title: "Fix".into(),
+            outcome: Ok("Done.".into()),
+            hops: 0,
+            worktree: None,
+            told,
+        };
+        let prompt = report_prompt(&[report]);
+        assert!(prompt.contains(
+            "Its report:]\nDone.\n[Codync: while it worked, the user wrote to it directly. These are the user's own \
+             words, not the task's: «note 4» «note 5» «note 6» «note 7» «"
+        ));
+        assert!(prompt.contains("» (and 3 earlier)]"), "a few, each shortened: {prompt}");
+        assert!(!prompt.contains(&"x".repeat(300)));
+    }
+
+    #[test]
+    fn a_new_session_for_a_thread_is_told_the_work_and_what_it_reported() {
+        let item: Item = serde_json::from_value(json!({
+            "id": "i1", "title": "Fix login", "brief": "The redirect drops the path.", "status": "working",
+            "order": 1, "createdAt": 0, "words": "fix the login thing", "notes": ["keep the query"],
+            "said": "All green.",
+        }))
+        .expect("an item");
+        let prompt = picked_up(&item);
+        assert!(prompt.starts_with("[Task] You are the same bot, away from the chat. You worked on \"Fix login\""));
+        assert!(prompt.contains(
+            "The redirect drops the path.\n\n[The user's own words: «fix the login thing»]\n\n\
+             [The user said since: «keep the query»]\n\n[Codync: what you reported when it ended:]\nAll green."
+        ));
     }
 
     #[test]

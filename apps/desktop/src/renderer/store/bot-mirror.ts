@@ -87,6 +87,8 @@ export class BotMirror extends Observable {
   entries = new Map<string, Entry[]>()
   /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
   private taskTranscripts = new Map<string, Entry[]>()
+  /** How many views hold each of them open. */
+  private taskWatchers = new Map<string, number>()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -322,7 +324,12 @@ export class BotMirror extends Observable {
   /** Holds a task's transcript from now until the returned function is called: its details are open. */
   watchTask(taskId: string): () => void {
     if (!this.taskTranscripts.has(taskId)) this.taskTranscripts.set(taskId, [])
+    this.taskWatchers.set(taskId, (this.taskWatchers.get(taskId) ?? 0) + 1)
     return () => {
+      // The inspector and its sheet for a narrow window can both show a thread for a moment.
+      const left = (this.taskWatchers.get(taskId) ?? 1) - 1
+      if (left > 0) return void this.taskWatchers.set(taskId, left)
+      this.taskWatchers.delete(taskId)
       this.taskTranscripts.delete(taskId)
     }
   }

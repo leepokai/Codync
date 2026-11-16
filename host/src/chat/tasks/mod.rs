@@ -21,6 +21,7 @@ mod prompts;
 mod sources;
 mod steer;
 mod sweep;
+mod thread;
 mod tools;
 mod worktree;
 
@@ -28,9 +29,10 @@ pub use dispatch::{Wait, dispatch};
 #[cfg(test)]
 pub use items::put_working_for_test;
 pub use items::{Source, Status, doing, lines, outside, wire, working_tasks};
-pub use prompts::{BRIEF, reminder, report_notice, report_prompt};
+pub use prompts::{BRIEF, in_thread, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_item, first, retry, stop};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, task as thread_task};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_task, tools};
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
 
@@ -81,6 +83,9 @@ pub struct Report {
     /// The git worktree it worked in, if it had one of its own: where its changes are.
     #[serde(default)]
     pub worktree: Option<Worktree>,
+    /// What the user wrote to its thread since its last report, word for word: not the task's words.
+    #[serde(default)]
+    pub told: Vec<String>,
 }
 
 /// How a task's turn ended (from its actor).
@@ -292,12 +297,16 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 
 /// Task `cfg`'s turn ended: its item says how, its result goes where its source reads it (the bot's own work: a
 /// report, as a turn in the chat), and the dispatcher decides what the task does next. An item the user stopped
-/// reports nothing: they know.
+/// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the item isn't
+/// over: that turn's end is its end.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
     let Some(bot) = cfg.task_of.as_deref() else { return };
     let (owner, task) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&task));
-    match items::change(hub, bot, |items| Ok(end_claimed(items, &cfg.id, outcome))) {
+    let ended = items::change(hub, bot, |items| {
+        Ok(if thread::unheard(&hub.store, &cfg.id) { None } else { end_claimed(items, &cfg.id, outcome) })
+    });
+    match ended {
         Ok(Some(over)) => close(hub, bot, over, next),
         Ok(None) => next(hub),
         Err(error) => {
@@ -368,6 +377,7 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
         outcome,
         hops: item.hops,
         worktree: None,
+        told: std::mem::take(&mut item.told),
     });
     Some(item.clone())
 }

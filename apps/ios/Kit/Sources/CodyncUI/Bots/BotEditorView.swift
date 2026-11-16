@@ -207,6 +207,10 @@ struct BotSettingsForm: View {
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
                 }
+                // From a host that says, for any folder (one Codync made too).
+                if let bot, bot.taskWorktrees != nil {
+                    GitStateRow(state: bot.gitState)
+                }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).
                 if let agents = draft.maxAgents {

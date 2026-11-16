@@ -147,10 +147,11 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   return id
 }
 
-/** Sends `text` from the open chat's composer. */
+/** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
-  await page.locator('.composer textarea').fill(text)
-  await page.locator('.composer textarea').press('Enter')
+  const box = page.locator('.composer:not(.work-thread-composer) textarea')
+  await box.fill(text)
+  await box.press('Enter')
 }
 
 /** Opens Settings from the account panel, on its General page. */

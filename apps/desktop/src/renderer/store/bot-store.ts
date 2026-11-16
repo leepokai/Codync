@@ -16,6 +16,7 @@ import {
   type Usage,
 } from '@shared/models'
 import type { CallLine } from '@shared/calls'
+import { localEntryId } from '@shared/tasks'
 import type { HostClient } from '../client/host-client'
 import { readSharedFile } from '../../shared/files.ts'
 import { errorText } from '../lib/error-text'
@@ -40,6 +41,12 @@ export interface SendOptions {
   replyTo?: ReplyQuote | null
   /** The voice call it was said in. */
   call?: string | null
+}
+
+/** A thread, as the computer is asked about it: the bot and its item, never the task's own id. */
+export interface ThreadRef {
+  botId: string
+  itemId: string
 }
 
 export const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅']
@@ -310,19 +317,56 @@ export class BotStore extends BotSync {
     })
   }
 
-  /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. */
-  steer(entry: Entry) {
-    this.answer(entry, 'steer', (c) => c.call('steer', { botId: entry.botId, entryId: entry.id }))
+  /** Has a queued message handled now (`steer`): the computer's update takes it out of the queue. One in a
+   *  `thread` is named by its bot and item, never by the task that holds it. */
+  steer(entry: Entry, thread?: ThreadRef) {
+    this.answer(entry, 'steer', (c) => c.call('steer', { botId: thread?.botId ?? entry.botId, itemId: thread?.itemId, entryId: entry.id }))
   }
 
   /** Takes back a queued message (`unqueue`): gone at once, back if the computer refuses. */
-  unqueue(entry: Entry) {
+  unqueue(entry: Entry, thread?: ThreadRef) {
     const show = (e: Entry) => {
-      this.upsert(e)
+      if (thread) this.mergeTask(entry.botId, [e])
+      else this.upsert(e)
       this.changed()
     }
     show({ ...entry, data: { ...entry.data, status: 'cancelled', removed: true } })
-    this.perform((c) => c.call('unqueue', { botId: entry.botId, entryId: entry.id }), true, () => show(entry))
+    this.perform((c) => c.call('unqueue', { botId: thread?.botId ?? entry.botId, itemId: thread?.itemId, entryId: entry.id }), true, () => show(entry))
+  }
+
+  /**
+   * Writes to the thread of the bot's item (`send` with `itemId`): the message shows in the task's transcript at
+   * once, and the computer's own entry replaces it (queued while the task's turn runs; the first one to an ended
+   * item reopens it). A refusal leaves it as failed and says why. `nonce` again sends the same message once more.
+   */
+  sendToThread(thread: ThreadRef, taskId: string, text: string, nonce: string = crypto.randomUUID()) {
+    const trimmed = text.trim()
+    if (!trimmed || this.retired) return
+    const show = (e: Entry) => {
+      this.mergeTask(taskId, [e])
+      this.changed()
+    }
+    const local: Entry = {
+      id: localEntryId(nonce), seq: Number.MAX_SAFE_INTEGER, botId: taskId, rev: 0, kind: 'user',
+      turn: 0, data: { text: trimmed, status: 'sending', clientNonce: nonce }, createdAt: Date.now(), updatedAt: 0,
+    }
+    show(local)
+    // Safe to repeat: the computer answers a nonce it already has with the same entry.
+    void this.withLink((c) => c.call<{ entry: Entry }>('send', { ...thread, text: trimmed, clientNonce: nonce }), true).then(
+      (res) => show({ ...res.entry, data: res.entry.data ?? {} }),
+      (error: unknown) => {
+        this.lastError = errorText(error)
+        // Unless the computer's copy came in on the events stream after all.
+        if (this.taskEntriesOf(taskId).some((e) => e.id === local.id)) show({ ...local, data: { ...local.data, status: 'failed' } })
+        else this.changed()
+      },
+    )
+  }
+
+  /** Takes a message that never reached the thread out of its transcript. */
+  discardFromThread(entry: Entry) {
+    this.mergeTask(entry.botId, [{ ...entry, data: { ...entry.data, removed: true } }])
+    this.changed()
   }
 
   /** Saves the user's version of a handoff that hasn't been sent; whether it did. */

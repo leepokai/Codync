@@ -31,7 +31,9 @@ import com.codync.android.core.LinkState
 import com.codync.android.core.SourceKind
 import com.codync.android.core.WorkAction
 import com.codync.android.core.WorkItem
+import com.codync.android.core.WhereLine
 import com.codync.android.core.WorkStatus
+import com.codync.android.core.whereLine
 import com.codync.android.core.fill
 import com.codync.android.core.givesWay
 import com.codync.android.core.workActions
@@ -69,18 +71,17 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
 }?.takeIf(String::isNotEmpty)
 
 /**
- * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions, the transcript a
- * row opens, and the Stop and Cut in dialogs. [content] places the rows: its `rows(items, numbered)` adds one per item
- * to a card, [numbered] with its turn in the mark's place. A row that needs the user goes to its card in the chat:
- * [openCard] over that chat, where the card is at hand, else [openCardOf] with the item, for the chat to find it.
+ * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions and the Stop and
+ * Cut in dialogs. [content] places the rows: its `rows(items, numbered)` adds one per item to a card, [numbered] with
+ * its turn in the mark's place. A row that needs the user goes to its card in the chat: [openCard] over that chat,
+ * where the card is at hand, else [openCardOf] with the item, for the chat to find it. Any other row of an item a task
+ * has or had opens its thread ([openThread]).
  */
-@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openCardOf: ((WorkItem) -> Unit)? = null,
-    content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
+@Composable internal fun WorkRowsHost(bot: Bot, state: AppState, store: AppStore, openCard: (Entry) -> Unit, openThread: (WorkItem) -> Unit,
+    openCardOf: ((WorkItem) -> Unit)? = null, content: @Composable (rows: CardRows.(List<WorkItem>, Boolean) -> Unit) -> Unit) {
     // A change reaches the computer one at a time, and only while it's there.
     val enabled = state.actualConnection is LinkState.Ready && workKey(bot.id) !in state.busy
     val chat = state.entries.filter { it.botId == bot.id }
-    /** The item whose task's transcript is open, with that task. */
-    var reading by remember(bot.id) { mutableStateOf<Pair<String, String>?>(null) }
     /** The item Stop or Cut in asks about. */
     var stopping by remember(bot.id) { mutableStateOf<WorkItem?>(null) }
     var cuttingIn by remember(bot.id) { mutableStateOf<WorkItem?>(null) }
@@ -97,23 +98,22 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
             val open: (() -> Unit)? = when {
                 item.status == WorkStatus.NeedsYou && openCardOf != null -> { { openCardOf(item) } }
                 card != null -> { { openCard(card) } }
-                else -> item.task?.let { task -> { reading = item.id to task } }
+                else -> item.task?.let { { openThread(item) } }
             }
-            WorkRow(item, cardLine(card, translator()) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open,
+            WorkRow(item, cardLine(card, translator()) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open, state.home,
                 number = (index + 1).takeIf { numbered }, source = { SourceMark(item, state.bots) }) { run(it, item) }
         }
     }
-    CodyncSheet(reading, { reading = null }) { (itemId, taskId) -> TaskDetailsView(bot, itemId, taskId, state, store) }
     StopWorkDialog(stopping != null, { stopping = null }) { stopping?.let { store.stopWork(bot.id, it.id) } }
     CutInDialog(cuttingIn, bot.work.filter(::givesWay), { cuttingIn = null }) { item, insteadOf -> store.workCutIn(bot.id, item.id, insteadOf.id) }
 }
 
 /**
- * One item (iOS `WorkRow`): its mark, title and what goes on ([subtitle]), its time, and the action that matters most
- * (the first of [actions]); all of them are in its touch-and-hold menu. Tapping it runs [open]. [number]: its turn in
+ * One item (iOS `WorkRow`): its mark, title, what goes on ([subtitle]) and where it works, its time, and the action that matters most
+ * (the first of [actions]); all of them are in its touch-and-hold menu. Tapping it runs [open]. [home]: the computer's, which its folder shows as `~`. [number]: its turn in
  * the event box, in the mark's place. [source]: where it came from, before its title.
  */
-@Composable internal fun WorkRow(item: WorkItem, subtitle: String, actions: List<WorkAction>, enabled: Boolean, open: (() -> Unit)?,
+@Composable internal fun WorkRow(item: WorkItem, subtitle: String, actions: List<WorkAction>, enabled: Boolean, open: (() -> Unit)?, home: String,
     number: Int? = null, source: @Composable () -> Unit = {}, run: (WorkAction) -> Unit) {
     val ended = item.status.ended
     Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).contextActions(onClick = open) {
@@ -129,6 +129,7 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
                 }
                 Text(subtitle, style = Type.footnote, color = if (ended && item.status != WorkStatus.Done) Palette.danger else Palette.secondary,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
+                whereLine(item, home)?.let { WhereLabel(it) }
             }
             WorkElapsed(item)
             if (open != null && ended) Symbol("chevron.right", size = 13.dp, tint = Palette.tertiary)
@@ -174,8 +175,19 @@ internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.dat
     }
 }
 
+/**
+ * Where an item's task works ([whereLine]), on its row and in its thread's header: the folder or the branch symbol, then
+ * [text] (the folder or the branch unless said), cut in the middle when it doesn't fit.
+ */
+@Composable internal fun WhereLabel(where: WhereLine, modifier: Modifier = Modifier, text: String = where.text) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Symbol(where.kind.symbol, size = 12.dp, tint = Palette.tertiary)
+        Text(text, style = Type.caption, color = Palette.tertiary, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
+    }
+}
+
 /** How long a task has had an item (iOS `WorkElapsed`): counting while it works, fixed once it ended. */
-@Composable private fun WorkElapsed(item: WorkItem) {
+@Composable internal fun WorkElapsed(item: WorkItem) {
     val started = item.startedAt ?: return
     val ended = item.endedAt
     if (ended != null) Text(timerText(ended - started), style = Type.footnote.monospacedDigit, color = Palette.tertiary)

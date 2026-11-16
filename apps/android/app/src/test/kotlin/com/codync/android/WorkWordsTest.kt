@@ -1,10 +1,15 @@
 package com.codync.android
 
 import com.codync.android.core.Bot
+import com.codync.android.core.Computer
 import com.codync.android.core.Entry
 import com.codync.android.core.MirrorEvent
+import com.codync.android.core.PendingSend
+import com.codync.android.core.SendStatus
+import com.codync.android.core.SourceKind
 import com.codync.android.core.WaitKind
 import com.codync.android.core.WorkItem
+import com.codync.android.core.WorkSource
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.WorkWait
 import kotlinx.serialization.json.buildJsonObject
@@ -25,7 +30,8 @@ class WorkWordsTest {
     private val needsYou get() = item(WorkStatus.NeedsYou)
     private val english = { text: String -> text }
     private val chinese = mapOf("Needs you" to "需要你", "{count} working" to "{count} 進行中", "{count} waiting" to "{count} 等待中", "Thinking…" to "思考中…",
-        "Next up" to "下一個", "{count} ahead" to "前面還有 {count} 件", "Follows what it works on" to "接在進行中的事後面", "Waiting for usage" to "等用量恢復",
+        "Next up" to "下一個", "{count} ahead" to "前面還有 {count} 件", "Follows what it works on" to "接在進行中的事後面",
+        "Near the usage limit: one at a time" to "用量接近上限，一次只跑一個",
         "Was cut in on; starts again" to "被插隊，會重新開始", "Waiting" to "等待中", "Stopped" to "已停止")
     private val traditional = { text: String -> chinese[text] ?: text }
     private fun bot(status: String = "idle", activity: String = "", work: List<WorkItem> = emptyList()) =
@@ -104,13 +110,33 @@ class WorkWordsTest {
         assertEquals("Next up", text(WorkWait(WaitKind.Next)))
         assertEquals("2 ahead", text(WorkWait(WaitKind.Behind, 2)))
         assertEquals("Follows what it works on", text(WorkWait(WaitKind.After)))
-        assertEquals("Waiting for usage", text(WorkWait(WaitKind.Usage)))
+        assertEquals("Near the usage limit: one at a time", text(WorkWait(WaitKind.Usage)))
         assertEquals("Waiting", text(null))
         // One that gave way says so, whatever it waits for now.
         assertEquals("Was cut in on; starts again", text(WorkWait(WaitKind.Next), cutIn = true))
-        assertEquals(listOf("下一個", "前面還有 3 件", "接在進行中的事後面", "等用量恢復", "等待中", "被插隊，會重新開始"),
+        assertEquals(listOf("下一個", "前面還有 3 件", "接在進行中的事後面", "用量接近上限，一次只跑一個", "等待中", "被插隊，會重新開始"),
             listOf(text(WorkWait(WaitKind.Next), tr = traditional), text(WorkWait(WaitKind.Behind, 3), tr = traditional), text(WorkWait(WaitKind.After), tr = traditional),
                 text(WorkWait(WaitKind.Usage), tr = traditional), text(null, tr = traditional), text(null, cutIn = true, tr = traditional)))
+    }
+
+    @Test fun `a thread that takes no message says whose it is, and the bot's own says nothing`() {
+        val own = item(WorkStatus.Working)
+        assertEquals("Read only: a routine's run", readOnlyLine(own.copy(source = WorkSource(SourceKind.Routine, "r1"))))
+        assertEquals("Read only: another bot's request", readOnlyLine(own.copy(source = WorkSource(SourceKind.Request))))
+        assertNull(readOnlyLine(own))
+    }
+
+    @Test fun `a message to a thread shows until its transcript has it, and a refused one keeps its place and why`() {
+        fun send(nonce: String, status: SendStatus = SendStatus.Sending, error: String? = null) = PendingSend(nonce, "b", "hi", 1, status, error)
+        val state = AppState(Computer("fixture", "Studio", "fixture"))
+        val sent = state.holdingThreadSend("w1", send("n1")).holdingThreadSend("w1", send("n2"))
+        val refused = sent.holdingThreadSend("w1", send("n1", SendStatus.Failed, "\"Fix login\" is a routine's run"))
+        assertEquals(listOf("n1" to SendStatus.Failed, "n2" to SendStatus.Sending), refused.threadSends.getValue("w1").map { it.nonce to it.status })
+        assertEquals(emptyMap<String, List<PendingSend>>(), refused.withoutThreadSend("w1", "n1").withoutThreadSend("w1", "n2").threadSends)
+        // What `send` answers joins the task's transcript only while that is open.
+        val entry = Entry("e1", 1, "task-1", 2, "user", data = buildJsonObject { put("text", "hi"); put("clientNonce", "n1") })
+        assertEquals(emptyMap<String, List<Entry>>(), state.receivingThreadEntry(entry).taskEntries)
+        assertEquals(mapOf("task-1" to listOf(entry)), state.copy(taskEntries = mapOf("task-1" to emptyList())).receivingThreadEntry(entry).taskEntries)
     }
 
     @Test fun `a row's line is why it waits, what its task does or how it ended`() {

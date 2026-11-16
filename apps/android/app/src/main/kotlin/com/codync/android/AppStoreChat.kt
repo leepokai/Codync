@@ -42,17 +42,18 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
-/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
-internal fun AppStore.openDetails(botId: String) {
+/** Opens [botId]'s chat with its details over it, at the thread of its item [itemId] when one is named; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String, itemId: String? = null) {
     openBot(botId)
-    mutableState.update { it.copy(detailsRequest = botId) }
+    mutableState.update { it.copy(detailsRequest = botId to itemId) }
 }
 
-/** Once. */
-internal fun AppStore.takeDetailsRequest(botId: String): Boolean {
-    if (state.value.detailsRequest != botId) return false
+/** Once: what [botId]'s details were asked to open on, or null when they weren't. */
+internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
+    val (asked, itemId) = state.value.detailsRequest ?: return null
+    if (asked != botId) return null
     mutableState.update { it.copy(detailsRequest = null) }
-    return true
+    return DetailsRequest(itemId = itemId)
 }
 
 /** Opens [botId]'s chat at the card its [item] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */

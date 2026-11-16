@@ -294,15 +294,16 @@ public extension HostClient {
     /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
+    /// `itemId`: the bot's item whose thread it is for (text only); the entry that comes back is in its task's transcript.
     func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
-              attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+              attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil, itemId: String? = nil) async throws -> Entry {
         struct Body: Encodable {
             var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var replyPart: String?
-            var attachments: [String]?; var pasted: [String]?; var call: String?
+            var attachments: [String]?; var pasted: [String]?; var call: String?; var itemId: String?
         }
         struct Res: Decodable { var entry: Entry }
         let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, replyPart: replyPart, attachments: attachments,
-                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call, itemId: itemId)
         let res: Res = try await self.call("send", body)
         return res.entry
     }
@@ -419,13 +420,20 @@ public extension HostClient {
     }
 
     /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
-    func steer(botId: String, entryId: String) async throws {
-        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    /// `itemId`: the bot's item whose thread the message waits in.
+    func steer(botId: String, entryId: String, itemId: String? = nil) async throws {
+        let _: Empty = try await call("steer", QueuedMessage(botId: botId, entryId: entryId, itemId: itemId))
     }
 
     /// A queued message taken back: it never goes out (host 2.39.0).
-    func unqueue(botId: String, entryId: String) async throws {
-        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
+    func unqueue(botId: String, entryId: String, itemId: String? = nil) async throws {
+        let _: Empty = try await call("unqueue", QueuedMessage(botId: botId, entryId: entryId, itemId: itemId))
+    }
+
+    private struct QueuedMessage: Encodable {
+        var botId: String
+        var entryId: String
+        var itemId: String?
     }
 
     func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {

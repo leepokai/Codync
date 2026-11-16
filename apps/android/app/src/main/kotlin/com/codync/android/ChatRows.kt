@@ -226,8 +226,27 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     if (text != null) Text(tr(text), style = Type.caption2, color = Palette.tertiary)
 }
 
-/** A message this phone is still delivering: the same bubble, with how far it got. */
-@Composable internal fun PendingBubble(send: PendingSend, groupStart: Boolean, state: AppState, store: AppStore) {
+/**
+ * A message of a task's own transcript in its thread ([WorkThreadView]): the chat's bubble with Copy alone in its menu.
+ * Those entries are the task's, never the chat's, so the chat's reactions and replies don't reach them.
+ */
+@Composable internal fun PlainMessageRow(entry: Entry) {
+    val context = LocalContext.current
+    val user = entry.kind == "user"
+    val menu = { listOf(textCopyItem(context, entry.text)) }
+    Column(Modifier.fillMaxWidth().padding(start = if (user) 56.dp else 0.dp, end = if (user) 0.dp else 40.dp),
+        horizontalAlignment = if (user) Alignment.End else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (user) {
+            Box(Modifier.clip(RoundedRectangle(18.dp)).contextActions(items = menu)) { UserText(entry.text) }
+            SendStatusLine(entry.status)
+        } else Box(Modifier.clip(RoundedRectangle(18.dp)).background(Palette.bubbleAgent)
+            .contextActions(preview = { AgentText(entry.text, selectable = true) }, items = menu)) { AgentText(entry.text, selectable = false) }
+    }
+}
+
+/** A message this phone is still delivering: the same bubble, with how far it got. A failed one goes again ([retry]) or is dropped ([discard]): the chat's own sends unless said. */
+@Composable internal fun PendingBubble(send: PendingSend, groupStart: Boolean, state: AppState, store: AppStore,
+    retry: () -> Unit = { store.retry(send) }, discard: () -> Unit = { store.discard(send) }) {
     Column(Modifier.fillMaxWidth().padding(top = if (groupStart) 12.dp else 4.dp).padding(start = 56.dp),
         horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (file in send.files) Text(file.name + " · " + formatBytes(file.size), Modifier.clip(RoundedRectangle(14.dp))
@@ -244,11 +263,12 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
                 }
             }
             SendStatus.Failed -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(send.error ?: "Failed to send", style = Type.caption2.bold, color = Palette.danger)
-                Box(Modifier.clickable(role = Role.Button) { store.retry(send) }.semantics { contentDescription = "Resend" }) {
+                // A refusal is a sentence: it wraps and leaves the buttons their room.
+                Text(send.error ?: "Failed to send", Modifier.weight(1f, fill = false), style = Type.caption2.bold, color = Palette.danger)
+                Box(Modifier.clickable(role = Role.Button, onClick = retry).semantics { contentDescription = "Resend" }) {
                     Symbol("arrow.clockwise", size = 14.dp, tint = Palette.text)
                 }
-                Box(Modifier.clickable(role = Role.Button) { store.discard(send) }.semantics { contentDescription = "Delete" }) {
+                Box(Modifier.clickable(role = Role.Button, onClick = discard).semantics { contentDescription = "Delete" }) {
                     Symbol("trash", size = 14.dp, tint = Palette.text)
                 }
             }

@@ -8,7 +8,7 @@ import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
-import { HStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
@@ -24,6 +24,7 @@ import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
+import { GitStateLine } from './GitStateLine'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
@@ -203,27 +204,31 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          <ValueRow
-            label="Workspace"
-            detail={
-              draft.cwd
-                ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
-                : 'This bot has its own space for files. It can work in other folders when you ask.'
-            }
-          >
-            <DropdownMenu
-              title={draft.cwd || tr('A persistent workspace allocated for this bot')}
-              items={() => [
-                { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
-                { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
-              ]}
+          <VStack gap={6}>
+            <ValueRow
+              label="Workspace"
+              detail={
+                draft.cwd
+                  ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
+                  : 'This bot has its own space for files. It can work in other folders when you ask.'
+              }
             >
-              <Pill outlined className="workspace-pill">
-                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
-                <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
-              </Pill>
-            </DropdownMenu>
-          </ValueRow>
+              <DropdownMenu
+                title={draft.cwd || tr('A persistent workspace allocated for this bot')}
+                items={() => [
+                  { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
+                  { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
+                ]}
+              >
+                <Pill outlined className="workspace-pill">
+                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
+                  <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                </Pill>
+              </DropdownMenu>
+            </ValueRow>
+            {/* Of the saved folder, from a host that says (one with worktrees). */}
+            {saved && saved.taskWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+          </VStack>
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
           {/* Only from a host that has the box (its bots say). */}
           {saved && saved.maxAgents !== null ? (

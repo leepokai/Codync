@@ -918,10 +918,15 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     // Nothing changed in it: the worktree and its branch go, and the report says so.
     std::fs::write(folder(&second).join("release-second"), "").unwrap();
     let report = relayed_for(&host, &bot, "Second task").await;
-    assert!(report.contains("had no changes and no commits and was removed with its branch"), "{report}");
     let done = item(&host, &bot, "Second task", "done").await;
-    assert!(done["worktree"].is_null() && !folder(&second).exists(), "{done}");
-    assert!(!branches().contains("codync/second-task"), "{}", branches());
+    // On Windows a folder a process is still in can't be removed: the worktree stays and the report says where.
+    if cfg!(windows) {
+        assert!(report.contains("branch codync/second-task") && report.contains("nothing was merged"), "{report}");
+    } else {
+        assert!(report.contains("had no changes and no commits and was removed with its branch"), "{report}");
+        assert!(done["worktree"].is_null() && !folder(&second).exists(), "{done}");
+        assert!(!branches().contains("codync/second-task"), "{}", branches());
+    }
 
     // A file it made: both stay, and the report names the branch and the folder for the bot to tell the user.
     std::fs::write(folder(&third).join("release-third"), "").unwrap();

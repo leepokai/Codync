@@ -14,6 +14,7 @@ class ConversationCollectionView: UICollectionView {
     private var displayLink: CADisplayLink?
     private var lastFrame: TimeInterval?
     private var opened = false
+    var hasLaidOutMessage: () -> Bool = { false }
     var onOpened: (() -> Void)?
     private var motion = ConversationScrollMotion()
 
@@ -61,7 +62,7 @@ class ConversationCollectionView: UICollectionView {
     override func layoutSubviews() {
         super.layoutSubviews()
         if following { pinToEnd() }
-        if !opened, numberOfSections > 0, numberOfItems(inSection: 0) > 0, bounds.height > 0 {
+        if !opened, bounds.height > 0, hasLaidOutMessage() {
             opened = true
             onOpened?()
         }

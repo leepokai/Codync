@@ -1,8 +1,36 @@
 import CryptoKit
 import Foundation
+import SwiftUI
 import Testing
+import UIKit
 @testable import CodyncKit
 @testable import CodyncUI
+
+@Test func onlyVisibleConversationItemsFinishOpening() {
+    let rows = [
+        ConversationRow("intro", isPlaceholder: true) { EmptyView() },
+        ConversationRow("working", isPlaceholder: true) { EmptyView() },
+        ConversationRow("message") { EmptyView() },
+    ]
+    #expect(!hasLaidOutMessage(rows, visibleIDs: ["intro", "working"]))
+    #expect(hasLaidOutMessage(rows, visibleIDs: ["intro", "message"]))
+}
+
+@MainActor @Test func placeholderOnlyLayoutWaitsForAMessageToFinishOpening() {
+    let view = ConversationCollectionView(frame: CGRect(x: 0, y: 0, width: 320, height: 600),
+                                          collectionViewLayout: UICollectionViewFlowLayout())
+    var opened = 0
+    view.onOpened = { opened += 1 }
+    view.layoutIfNeeded()
+    #expect(opened == 0)
+    view.hasLaidOutMessage = { true }
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    #expect(opened == 1)
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    #expect(opened == 1)
+}
 
 @MainActor @Test func theSelectionActionStartsTheChatOpeningAndItsFirstMessagesFinishItOnce() throws {
     let suite = "ChatOpening.\(UUID().uuidString)"

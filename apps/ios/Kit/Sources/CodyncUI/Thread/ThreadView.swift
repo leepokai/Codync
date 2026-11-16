@@ -467,7 +467,7 @@ extension ThreadView {
     func transcript(_ items: [ChatItem], shown: ConversationFind.Match?) -> some View {
         var rows: [ConversationRow] = []
         if moreOnComputer {
-            rows.append(ConversationRow("earlier") {
+            rows.append(ConversationRow("earlier", isPlaceholder: true) {
                 Spinner(size: 14)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -477,7 +477,7 @@ extension ThreadView {
             })
         }
         if items.isEmpty, let bot {
-            rows.append(ConversationRow("intro") {
+            rows.append(ConversationRow("intro", isPlaceholder: true) {
                 if bot.isGroup { GroupIntroCard(group: bot).padding(.top, 40) } else { IntroCard(bot: bot).padding(.top, 40) }
             })
         }
@@ -490,7 +490,7 @@ extension ThreadView {
         }
         // Offline, "working" is only what the computer last said; don't show it as live.
         if let bot, working {
-            rows.append(ConversationRow("working") {
+            rows.append(ConversationRow("working", isPlaceholder: true) {
                 // Each turn starts folded.
                 WorkingIndicator(bot: bot, steps: Entry.workingSteps(model.chat(botId)))
                     .id(bot.startedAt)

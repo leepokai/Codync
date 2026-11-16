@@ -7,11 +7,13 @@ struct ConversationRow {
     let id: String
     /// The reader's own new message: the list goes back down to it.
     var isUserMessage = false
+    var isPlaceholder = false
     let content: AnyView
 
-    init(_ id: String, isUserMessage: Bool = false, @ViewBuilder content: () -> some View) {
+    init(_ id: String, isUserMessage: Bool = false, isPlaceholder: Bool = false, @ViewBuilder content: () -> some View) {
         self.id = id
         self.isUserMessage = isUserMessage
+        self.isPlaceholder = isPlaceholder
         self.content = AnyView(content())
     }
 }
@@ -20,6 +22,10 @@ struct ConversationRow {
 struct ConversationReveal: Equatable {
     let id: String
     let step: Int
+}
+
+func hasLaidOutMessage(_ rows: [ConversationRow], visibleIDs: Set<String>) -> Bool {
+    rows.contains { !$0.isPlaceholder && visibleIDs.contains($0.id) }
 }
 
 /// A conversation's scrolling list, in UIKit (a collection view of hosted SwiftUI rows): only
@@ -128,6 +134,11 @@ private struct ConversationCollection: UIViewRepresentable {
             view.allowsSelection = false
             view.delegate = self
             view.onOpened = { [weak self] in self?.parent?.onOpened() }
+            view.hasLaidOutMessage = { [weak self, weak view] in
+                guard let self, let view else { return false }
+                let ids = Set(view.indexPathsForVisibleItems.compactMap(self.dataSource.itemIdentifier(for:)))
+                return hasLaidOutMessage(self.parent?.rows ?? [], visibleIDs: ids)
+            }
             if #available(iOS 26, *) { view.topEdgeEffect.style = .soft }
             // Only the empty collection background; hosted rows arbitrate their own taps.
             let tap = UITapGestureRecognizer(target: view, action: #selector(ConversationCollectionView.dismissComposerKeyboard))

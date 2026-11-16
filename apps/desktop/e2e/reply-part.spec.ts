@@ -77,3 +77,30 @@ test('Reply quotes the part of a message that is selected, and the whole message
     await browser.close()
   }
 })
+
+test('A bot message quotes the message it answers (reply_to), above its bubble', async () => {
+  const { browser, page } = await attach()
+  const name = `Bot quote e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    botId = (await echoBot(page, name)).id
+    const { entry } = await api<{ entry: { id: string } }>(page, 'send', { botId, text: 'quote this one' })
+    await page.locator('.roster-row', { hasText: name }).click()
+    await expect(page.locator('.message.agent', { hasText: 'quote this one' }).last()).toBeVisible({ timeout: 20_000 })
+    // A long message in between pushes the quoted one out of sight.
+    await api(page, 'chatCall', { botId, name: 'send_message', arguments: { text: Array.from({ length: 60 }, (_, i) => `Line ${i}.`).join('\n\n') } })
+    // A late answer, as a background result sends it: the bot's agent is still connected.
+    await api(page, 'chatCall', { botId, name: 'send_message', arguments: { text: 'About that one.', reply_to: entry.id } })
+    const answer = page.locator('.message.agent', { hasText: 'About that one.' })
+    const quote = answer.locator('.agent-quote')
+    await expect(quote).toHaveText('“quote this one”')
+    // Clicking the quote brings the quoted message into view.
+    const original = page.locator(`[data-entry-id="${entry.id}"]`)
+    await expect(original).not.toBeInViewport()
+    await quote.click()
+    await expect(original).toBeInViewport()
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    await browser.close()
+  }
+})

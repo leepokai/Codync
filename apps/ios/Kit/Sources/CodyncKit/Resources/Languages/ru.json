@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "Используется {to}: {own} ограничен по частоте запросов",
   "Using {to} while {own} is overloaded": "Используется {to}: {own} перегружен",
   "Using {to} while {own} is signed out": "Используется {to}: {own} вышел из аккаунта",
-  "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить"
+  "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить",
+  "Show the quoted message": "Показать цитируемое сообщение",
+  "That message isn't loaded": "Это сообщение не загружено",
+  "This message quotes nothing": "Это сообщение ничего не цитирует"
 }

@@ -256,6 +256,17 @@ async fn sent_messages_are_the_reply() {
     host.call("chatCall", send("Fixing the typo now.")).await;
     let first = host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["text"] == "Found it.").await;
     assert_eq!(first["data"]["final"], true);
+    // `reply_to` quotes a message of the chat above the bot's (issue #402); one it can't quote still goes out, unquoted.
+    let asked = host.wait_for(&bot, |e| e["kind"] == "user").await;
+    let quoting = |text: &str, id: &Value| json!({"botId": bot, "name": "send_message", "arguments": {"text": text, "reply_to": id}});
+    let answer = host.call("chatCall", quoting("About that:", &asked["id"])).await;
+    assert!(answer.get("warning").is_none(), "{answer}");
+    let quoted = host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["text"] == "About that:").await;
+    assert_eq!(quoted["data"]["replyTo"], json!({"id": asked["id"], "author": "user", "text": "go"}));
+    let answer = host.call("chatCall", quoting("Unquoted.", &json!("no-such-message"))).await;
+    assert!(answer["warning"].as_str().is_some_and(|w| w.contains("no-such-message")), "{answer}");
+    let unquoted = host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["text"] == "Unquoted.").await;
+    assert!(unquoted["data"]["replyTo"].is_null());
 
     host.call("respondPermission", json!({"entryId": card["id"], "optionId": "allow"})).await;
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -272,13 +283,14 @@ async fn sent_messages_are_the_reply() {
         .filter(|e| e["kind"] == "agent" && e["data"]["final"] == true)
         .map(|e| e["data"]["text"].as_str().unwrap())
         .collect();
-    assert_eq!(finals, ["Found it.", "Fixing the typo now."]);
+    assert_eq!(finals, ["Found it.", "Fixing the typo now.", "About that:", "Unquoted."]);
 
     // Work the agent goes on with after its turn (a background subagent) still reaches the user.
-    host.call("chatCall", send("The background check passed.")).await;
+    host.call("chatCall", quoting("The background check passed.", &asked["id"])).await;
     let late =
         host.wait_for(&bot, |e| e["kind"] == "agent" && e["data"]["text"] == "The background check passed.").await;
     assert_eq!((&late["data"]["final"], &late["data"]["author"]), (&json!(true), &json!(bot)));
+    assert_eq!(late["data"]["replyTo"]["id"], asked["id"], "a background result quotes too");
 }
 
 #[tokio::test]

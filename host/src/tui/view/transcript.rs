@@ -228,6 +228,7 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 out.lines
                     .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
             }
+            out.lines.extend(quote_line(e, width));
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),

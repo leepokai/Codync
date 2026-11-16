@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "{own} がレート制限中のため {to} を使用中",
   "Using {to} while {own} is overloaded": "{own} が過負荷のため {to} を使用中",
   "Using {to} while {own} is signed out": "{own} がサインアウトしているため {to} を使用中",
-  "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中"
+  "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中",
+  "Show the quoted message": "引用元のメッセージを表示",
+  "That message isn't loaded": "そのメッセージは読み込まれていません",
+  "This message quotes nothing": "このメッセージは何も引用していません"
 }

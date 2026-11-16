@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "{own}이(가) 속도 제한 중이어서 {to} 사용 중",
   "Using {to} while {own} is overloaded": "{own}이(가) 과부하 상태여서 {to} 사용 중",
   "Using {to} while {own} is signed out": "{own}이(가) 로그아웃되어 {to} 사용 중",
-  "Using {to} while {own} couldn't start": "{own}을(를) 시작할 수 없어 {to} 사용 중"
+  "Using {to} while {own} couldn't start": "{own}을(를) 시작할 수 없어 {to} 사용 중",
+  "Show the quoted message": "인용된 메시지 보기",
+  "That message isn't loaded": "해당 메시지가 로드되지 않았습니다",
+  "This message quotes nothing": "이 메시지는 인용한 내용이 없습니다"
 }

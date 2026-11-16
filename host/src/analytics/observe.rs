@@ -196,6 +196,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
+        // A bot's message quoting another (`reply_to`; a quoted voice note counts as the voice note); never the id.
+        "chatCall"
+            if matches!(b["name"].as_str(), Some("send_message" | "send_file"))
+                && crate::chat::outbox::reply_to(&b["arguments"]).is_some() =>
+        {
+            p.insert("tool".into(), (if b["name"] == "send_file" { "file" } else { "message" }).into());
+            Event::BotQuoted
+        }
         "agentSetup" | "agentAuthenticate" | "agentAuth" => {
             // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
             let on_profile = b["loginProfile"].is_string();
@@ -314,6 +322,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
+        // An id it couldn't quote: the message went out without the quote.
+        Event::BotQuoted => {
+            p.insert("outcome".into(), if answer["warning"].is_null() { "quoted" } else { "unquoted" }.into());
         }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,

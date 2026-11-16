@@ -68,6 +68,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case conversationFindOpened
     /// A search in the find bar settled: whether it found anything, never the text.
     case conversationFindSearched(found: Bool)
+    /// A quote at the top of a message was tapped: whether the quoted message was loaded and came into view.
+    case quoteOpened(found: Bool)
     /// Something from another app's share sheet handed to a bot, or why it wasn't; never names or content.
     case shareSent(ShareSent)
 
@@ -271,6 +273,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceNotePlayed: "voice_note_played"
         case .conversationFindOpened: "conversation_find_opened"
         case .conversationFindSearched: "conversation_find_searched"
+        case .quoteOpened: "quote_opened"
         case .shareSent: "share_sent"
         }
     }
@@ -288,7 +291,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
              .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened: return [:]
-        case let .conversationFindSearched(found): return ["found": .bool(found)]
+        case let .conversationFindSearched(found), let .quoteOpened(found): return ["found": .bool(found)]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .imagePreviewAction(action, from, outcome):
             var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]

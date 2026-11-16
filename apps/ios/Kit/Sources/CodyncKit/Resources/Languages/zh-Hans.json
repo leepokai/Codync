@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "正在使用 {to}，{own} 正被限速",
   "Using {to} while {own} is overloaded": "正在使用 {to}，{own} 过载了",
   "Using {to} while {own} is signed out": "正在使用 {to}，{own} 已退出登录",
-  "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 无法启动"
+  "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 无法启动",
+  "Show the quoted message": "显示引用的消息",
+  "That message isn't loaded": "那条消息尚未载入",
+  "This message quotes nothing": "这条消息没有引用任何内容"
 }

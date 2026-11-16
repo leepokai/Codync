@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "{to} wird verwendet, da {own} rate-limitiert ist",
   "Using {to} while {own} is overloaded": "{to} wird verwendet, da {own} überlastet ist",
   "Using {to} while {own} is signed out": "{to} wird verwendet, da {own} abgemeldet ist",
-  "Using {to} while {own} couldn't start": "{to} wird verwendet, da {own} nicht starten konnte"
+  "Using {to} while {own} couldn't start": "{to} wird verwendet, da {own} nicht starten konnte",
+  "Show the quoted message": "Zitierte Nachricht anzeigen",
+  "That message isn't loaded": "Diese Nachricht ist nicht geladen",
+  "This message quotes nothing": "Diese Nachricht zitiert nichts"
 }

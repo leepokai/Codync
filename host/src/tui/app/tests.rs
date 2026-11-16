@@ -183,6 +183,40 @@ async fn r_on_a_picked_message_replies_to_it() {
 }
 
 #[tokio::test]
+async fn q_on_a_picked_quote_picks_the_quoted_message() {
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "Bot"})).expect("a bot with an id parses"));
+    app.selected = Some("b".into());
+    let messages = [
+        (1, "user", json!({"text": "why?"})),
+        (
+            2,
+            "agent",
+            json!({"text": "Because.", "final": true, "replyTo": {"id": "e1", "author": "user", "text": "why?"}}),
+        ),
+        (
+            3,
+            "agent",
+            json!({"text": "Late.", "final": true, "replyTo": {"id": "gone", "author": "user", "text": "old"}}),
+        ),
+    ];
+    for (seq, kind, data) in messages {
+        let v = json!({"botId": "b", "id": format!("e{seq}"), "seq": seq, "turn": 1, "kind": kind, "data": data});
+        let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+        app.entries.entry(bot).or_default().insert(e.seq, e);
+    }
+    let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
+    app.pick = Some("e2".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e1"), "the quoted message is picked, so it comes on screen");
+    assert!(app.pick_key(q), "q never quits while a message is picked");
+    assert_eq!(app.pick.as_deref(), Some("e1"), "a message that quotes nothing stays picked");
+    app.pick = Some("e3".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e3"), "a quote of a message that isn't loaded stays put");
+}
+
+#[tokio::test]
 async fn a_calls_messages_hide_behind_its_line() {
     let mut app = test_app();
     let messages = [

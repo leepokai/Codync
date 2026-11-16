@@ -2146,5 +2146,8 @@
   "Using {to} while {own} is rate limited": "Uso di {to} perché {own} è limitato per frequenza",
   "Using {to} while {own} is overloaded": "Uso di {to} perché {own} è sovraccarico",
   "Using {to} while {own} is signed out": "Uso di {to} perché {own} ha effettuato la disconnessione",
-  "Using {to} while {own} couldn't start": "Uso di {to} perché {own} non è riuscito ad avviarsi"
+  "Using {to} while {own} couldn't start": "Uso di {to} perché {own} non è riuscito ad avviarsi",
+  "Show the quoted message": "Mostra il messaggio citato",
+  "That message isn't loaded": "Quel messaggio non è caricato",
+  "This message quotes nothing": "Questo messaggio non cita nulla"
 }

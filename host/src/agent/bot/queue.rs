@@ -53,8 +53,8 @@ impl Actor {
             Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
             Cmd::Prompt { text, call } => self.enqueue(Queued::Prompt { text, call }, done_tx).await,
-            Cmd::SendToUser { text, reply } => {
-                let _ = reply.send(self.send_to_user(text));
+            Cmd::SendToUser { text, quote, reply } => {
+                let _ = reply.send(self.send_to_user(text, quote));
             }
             Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
             Cmd::Decision { entry_id, choice, reply } => {
@@ -66,7 +66,9 @@ impl Actor {
             Cmd::React { emoji, to, reply } => {
                 let _ = reply.send(self.react(&emoji, to.as_deref()));
             }
-            Cmd::SendFile { path, name, text, cancelled, reply } => self.begin_file(path, name, text, cancelled, reply),
+            Cmd::SendFile { path, name, text, quote, cancelled, reply } => {
+                self.begin_file(path, name, text, quote, cancelled, reply);
+            }
             Cmd::PostArtifact { data, reply } => {
                 let _ = reply.send(self.post_artifact(data));
             }

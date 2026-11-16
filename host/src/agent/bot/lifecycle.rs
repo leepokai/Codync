@@ -104,7 +104,7 @@ impl Actor {
         let Some(conn) = &self.conn else { return };
         match after_keeper(conn.acp.holds_grants(), conn.sessions.reopen.is_some(), self.turn.is_some()) {
             AfterKeeper::Nothing => {}
-            AfterKeeper::BeforeNextTurn => self.tools_changed = true,
+            AfterKeeper::BeforeNextTurn => self.restart_before_turn = true,
             AfterKeeper::AfterTurn => self.restart_after_turn = true,
             AfterKeeper::Now => self.restart_agent().await,
         }

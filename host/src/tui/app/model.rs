@@ -240,6 +240,11 @@ impl Entry {
         request["kind"] == "agent" && request["status"] == "pending"
     }
 
+    /// A sign-in card that holds messages: signing in there is what sends them again.
+    pub fn holds_messages(&self) -> bool {
+        self.data["connectionRequest"]["entryIds"].as_array().is_some_and(|ids| !ids.is_empty())
+    }
+
     pub fn pending(&self) -> bool {
         match self.kind {
             Kind::Permission => self.data["status"] == "pending",

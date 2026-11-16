@@ -142,7 +142,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         cancel_deadline: None,
         exit_tail: None,
         agent_error: None,
-        tools_changed: false,
+        restart_before_turn: false,
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
@@ -355,9 +355,9 @@ struct Actor {
     exit_tail: Option<String>,
     /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
     agent_error: Option<String>,
-    /// Connectors changed: restart the agent before the next turn so the
-    /// session is resumed with the new MCP servers.
-    tools_changed: bool,
+    /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
+    /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
+    restart_before_turn: bool,
     /// A change that restarts the agent (`restart_agent`) came during a turn: it restarts once the turn ends.
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.

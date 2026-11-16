@@ -1024,9 +1024,36 @@ async fn a_tasks_sign_in_is_asked_in_the_chat_and_its_item_goes_on_in_the_same_t
     host.reply(&bot, "hello again").await;
     let done = item(&host, &bot, "Login", "done").await;
     assert_eq!(done["task"], waiting["task"], "the same task");
+    // A new agent process (the old one kept the old sign-in) goes on in the task's session: its fork of the chat
+    // and what it did are still there.
+    let tries = task_prompts(&host, &bot, "Login");
+    assert_eq!(tries.len(), 2, "{tries:?}");
+    assert_eq!(tries[0]["session"], tries[1]["session"], "{tries:?}");
     assert!(reply(&host, &bot, "Relayed:").await.contains("Login"));
     let card = entry(&host, &bot, "the card", |e| e["id"] == card["id"]).await;
     assert_eq!(card["data"]["connectionRequest"]["status"], "ready");
+}
+
+#[tokio::test]
+async fn a_tasks_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_the_chat() {
+    let host = Host::start().await;
+    let command = common::fixture_command("task_agent.py", "no-load");
+    let bot = json!({"name": "Mika", "backend": "kimi", "command": command, "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.reply(&bot, "Remember the blue theme").await;
+    let signed_out = flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    item(&host, &bot, "Login", "needsYou").await;
+    std::fs::remove_file(signed_out).unwrap();
+    host.reply(&bot, "hello again").await;
+    item(&host, &bot, "Login", "done").await;
+    // A new agent process can't take the task's session up again: a new one is told the chat it comes from.
+    let tries = task_prompts(&host, &bot, "Login");
+    assert_eq!(tries.len(), 2, "{tries:?}");
+    assert_ne!(tries[0]["session"], tries[1]["session"], "{tries:?}");
+    let text = tries[1]["text"].as_str().unwrap();
+    assert!(text.contains("[The chat you come from, so far]") && text.contains("blue theme"), "{text}");
 }
 
 #[tokio::test]

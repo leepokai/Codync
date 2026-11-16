@@ -1,5 +1,14 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { api, attach, taskBot, typeMessage } from './sandbox.ts'
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { api, attach, sandbox, taskAgent, taskBot, typeMessage } from './sandbox.ts'
+
+/** The prompts of the task working item `title`, as the scripted agent logged them in the bot's folder. */
+const taskPrompts = (botId: string, title: string) =>
+  readFileSync(join(sandbox().home, 'bots', botId, 'workspace', 'prompts.jsonl'), 'utf8')
+    .split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line) as { session: string; text: string })
+    .filter((p) => p.text.includes('[Task]') && p.text.includes(`"${title}"`))
 
 // The event box (docs/plans/event-box.md) on the scripted agent host/tests/fixtures/task_agent.py:
 //   - A message line `ADD <title>|<brief>` in the bot's chat adds an item (reply `Added: {"itemId":…}`); titles are
@@ -47,6 +56,17 @@ async function cleanUp(page: Page, botId: string | undefined) {
   await api(page, 'stopWork', { botId }).catch(() => {})
   await api(page, 'stop', { botId }).catch(() => {})
   await api(page, 'deleteBot', { botId }).catch(() => {})
+}
+
+/** Ends agent `backend`'s rest on this computer, through a bot of its own that switches back to it. */
+async function endRest(page: Page, backend: string) {
+  const bot = await taskBot(page, `Rest ${backend} e2e ${Date.now()}`, backend)
+  try {
+    await api(page, 'switchBack', { botId: bot.id })
+    await expect.poll(async () => ((await api<{ bot: { resting?: unknown[] } }>(page, 'updateBot', { id: bot.id })).bot.resting ?? []).length).toBe(0)
+  } finally {
+    await api(page, 'deleteBot', { botId: bot.id }).catch(() => {})
+  }
 }
 
 const capsule = (page: Page) => page.locator('.work-capsule')
@@ -389,6 +409,51 @@ test("a task's agent sign-in is asked in the chat, its row leads to the card, an
     await expect(card).toContainText('Signed in')
     await expect(page.locator('.transcript')).toContainText('Relayed:')
     await expect(row(details, 'Recent', 'Log in')).toHaveAttribute('data-work-status', 'done')
+    // The new agent process (the old one kept the old sign-in) went on in the task's session.
+    const tries = taskPrompts(botId, 'Log in')
+    expect(tries).toHaveLength(2)
+    expect(tries[1].session).toBe(tries[0].session)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test('when the fallback is signed out too, the row names and opens the sign-in that sends the work again', async () => {
+  const { browser, page } = await attach()
+  const name = `Work two sign-ins e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // Kimi Code with a Qwen Code fallback (no other spec uses it: it rests signed out after this), both the scripted
+    // agent, and every task turn asks to sign in. Neither rests from an earlier run (a rest is the computer's, for an
+    // hour): Switch back ends a bot's own agent's.
+    await endRest(page, 'qwen')
+    await endRest(page, 'kimi')
+    botId = await openBot(page, name, undefined, 'kimi')
+    await api(page, 'updateBot', { id: botId, fallbacks: [{ backend: 'qwen', command: `python3 -X utf8 -u '${taskAgent}'`, model: null, modelOptions: {} }] })
+    const signedOut = join(sandbox().home, 'bots', botId, 'workspace', 'task-signedout')
+    writeFileSync(signedOut, '')
+    await addWork(page, botId, 'Two sign-ins', 'anything')
+
+    // Two sign-in cards: Kimi Code's holds the item's message, Qwen Code's is newer.
+    const cards = page.locator('.request-card', { hasText: 'In the background · Two sign-ins' })
+    await expect(cards).toHaveCount(2)
+    const kimi = cards.filter({ hasText: 'Kimi Code' })
+    await expect(cards.filter({ hasText: 'Qwen Code' })).toHaveCount(1)
+
+    // The row names Kimi Code, whose sign-in sends the work again, and opens the chat at its card.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Two sign-ins')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Needs Kimi Code sign-in')
+    await asking.locator('.work-row-open').click()
+    await expect(kimi).toBeInViewport()
+
+    // Signed in to Kimi Code (a turn of it ends well), the item goes on.
+    unlinkSync(signedOut)
+    await api(page, 'send', { botId, text: 'hello' })
+    await expect(kimi).toContainText('Signed in')
+    await expect(row(details, 'Recent', 'Two sign-ins')).toHaveAttribute('data-work-status', 'done')
   } finally {
     await cleanUp(page, botId)
     await browser.close()

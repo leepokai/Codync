@@ -436,6 +436,9 @@ public extension Entry {
         return data.title ?? data.question
     }
 
+    /// A sign-in card that holds messages: signing in there is what sends them again.
+    fileprivate var holdsMessages: Bool { data.connectionRequest?.entryIds?.isEmpty == false }
+
     /// A card waiting in the chat for the user: an approval, a choice, or a sign-in an agent needs.
     fileprivate var isPendingCard: Bool {
         if let request = data.connectionRequest { return request.kind == "agent" && request.status == "pending" }
@@ -457,10 +460,13 @@ public extension Array where Element == Entry {
     }
 
     /// The card in a bot's chat that an item waits on (an approval, a choice its task asks, a sign-in its agent
-    /// needs): the newest pending one that names it.
+    /// needs): the newest pending one that names it, or, when that is a sign-in and another (the agent the turn left
+    /// signed out, while its fallback was too) holds the item's message, that one, whose sign-in sends it again.
     func card(for item: WorkItem) -> Entry? {
-        last { e in
+        let cards = filter { e in
             e.isPendingCard && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
         }
+        guard let newest = cards.last else { return nil }
+        return newest.data.connectionRequest == nil ? newest : cards.last(where: \.holdsMessages) ?? newest
     }
 }

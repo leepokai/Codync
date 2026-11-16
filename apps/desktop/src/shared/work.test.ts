@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { draftOf, normalizeBot, type Entry } from './models.ts'
-import { allWork, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
+import { allWork, canCutIn, canRetry, capsuleLabel, gitState, givesWay, isThreadMessage, itemLine, normalizeWork, outsideStatus, worksOutside, pendingAsks, pendingCards, readOnlyReason, rosterLine, sharedLine, summaryLine, threadEntries, waitText, whereLine, wherePath, workCounts, workSections, workStatusWord, type WorkItem, type WorkStatus } from './work.ts'
 
 const same = (text: string) => text
 const item = (id: string, status: WorkStatus = 'working', change: Partial<WorkItem> = {}): WorkItem => ({
@@ -257,7 +257,7 @@ test("try again is not offered on another bot's request, and a routine's run or 
 
 test('an item that needs the user is asked what its card in the chat asks', () => {
   const card = (id: string, data: Entry['data']): Entry => ({ id, seq: 1, botId: 'b', rev: 1, kind: 'permission', turn: 1, data, createdAt: 0, updatedAt: 0 })
-  const asks = pendingAsks([
+  const chat = [
     card('e1', { status: 'pending', title: 'npm test', item: 'i1', task: { id: 'task-1', title: 'Run the suite' } }),
     card('e2', { status: 'allowed', title: 'rm -rf build', item: 'i2' }),
     card('e3', { status: 'pending', title: 'the chat\'s own card' }),
@@ -266,12 +266,22 @@ test('an item that needs the user is asked what its card in the chat asks', () =
     { ...card('e4', { status: 'pending', title: 'not a card', item: 'i4' }), kind: 'notice' },
     { ...card('e7', { item: 'i7', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code' } }), kind: 'notice' },
     { ...card('e8', { item: 'i8', connectionRequest: { kind: 'agent', status: 'ready', title: 'Codex' } }), kind: 'notice' },
-  ], (text) => (text === 'Needs {agent} sign-in' ? '需要登入 {agent}' : text))
+    // The turn left Kimi Code signed out, and its fallback was too: Kimi Code's card holds the item's message.
+    { ...card('e9', { item: 'i9', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code', entryIds: ['m9'] } }), kind: 'notice' },
+    { ...card('e10', { item: 'i9', connectionRequest: { kind: 'agent', status: 'pending', title: 'Codex', entryIds: [] } }), kind: 'notice' },
+    // A sign-in that holds the item's message, then an approval its running turn now waits on.
+    { ...card('e11', { item: 'i11', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code', entryIds: ['m11'] } }), kind: 'notice' },
+    card('e12', { status: 'pending', title: 'npm run build', item: 'i11' }),
+  ]
+  const asks = pendingAsks(chat, (text) => (text === 'Needs {agent} sign-in' ? '需要登入 {agent}' : text))
   assert.deepEqual(
     [...asks],
-    [['i1', 'npm test'], ['i5', 'Which branch?'], ['i7', '需要登入 Kimi Code']],
-    'an approval\'s title, a choice\'s question, the agent a sign-in waits on',
+    [['i1', 'npm test'], ['i5', 'Which branch?'], ['i7', '需要登入 Kimi Code'], ['i9', '需要登入 Kimi Code'], ['i11', 'npm run build']],
+    'an approval\'s title, a choice\'s question, the agent a sign-in waits on (the one whose card sends the work again)',
   )
+  // The row opens the card it reads.
+  assert.equal(pendingCards(chat).get('i9')?.id, 'e9')
+  assert.equal(pendingCards(chat).get('i11')?.id, 'e12')
 })
 
 test('the host says which threads take a message, and a read-only one says whose it is', () => {

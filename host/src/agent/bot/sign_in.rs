@@ -43,8 +43,7 @@ impl Actor {
         if crate::agent::backends::harness(&backend).is_none() || !crate::agent::acp::needs_sign_in(e) {
             return false;
         }
-        // The process keeps the credentials it started with (Claude's revoked token): the next turn starts a new one.
-        self.restart_after_turn = true;
+        self.restart_for_sign_in();
         let held = self.held_for_sign_in().to_vec();
         if self.process_predates_turn() && !held.is_empty() {
             match agent_sign_in::send_again(&self.hub, held.iter().map(String::as_str)) {
@@ -58,6 +57,21 @@ impl Actor {
         let login = Login::of(&self.hub.store, &self.cfg);
         self.note_signed_out(&login);
         self.sign_in_card(&login, &held)
+    }
+
+    /// The process keeps the credentials it started with (Claude's revoked token): the next turn starts a new one. An
+    /// agent that can reopen its session goes on in it, so a task keeps its fork or brief and what it did; one that
+    /// can't starts a new session, told the conversation so far as after a move to another agent (a task's, the chat
+    /// it comes from too). With no process (it quit, or couldn't start), the next turn starts one and reopens the
+    /// session where it can, as after any exit.
+    fn restart_for_sign_in(&mut self) {
+        let Some(conn) = &self.conn else { return };
+        if conn.sessions.reopen.is_some() {
+            self.restart_before_turn = true;
+        } else {
+            self.restart_after_turn = true;
+            self.owe_recap();
+        }
     }
 
     /// `login` refused the bot's prompt for auth: a login profile, or the computer's own login. Only that one

@@ -240,6 +240,15 @@ impl Actor {
         entry.map(|e| e.id)
     }
 
+    /// The main session is left (a move to another agent, or its agent starts again and can't reopen it): the next
+    /// one hears the conversation so far with this agent. A recap still owed is of an agent before it, which this one
+    /// never got to answer.
+    pub(super) fn owe_recap(&mut self) {
+        if self.relay.recap.is_none() {
+            self.relay.recap = Some((self.cfg.backend.clone(), self.session_id.clone()));
+        }
+    }
+
     /// What the agent the main session just moved to should hear first: a catch-up when it resumed its own
     /// session, a recap of the conversation when it started a new one. Only the user's messages and the bot's
     /// replies count, never from before the user last started a new session.

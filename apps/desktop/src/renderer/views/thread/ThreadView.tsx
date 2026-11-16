@@ -25,6 +25,7 @@ import { Composer } from './Composer'
 import { QueuedMessages } from './QueuedMessages'
 import { WorkCapsule } from './WorkCapsule'
 import { fill } from '@shared/fill'
+import { pendingCards } from '@shared/work'
 import { outsideQueue } from './queued-messages'
 import { ChatSidePanel } from './ChatSidePanel'
 import { DetailsPanel, type DetailsTab } from './DetailsPanel'
@@ -161,18 +162,19 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const presentAgent = useCallback((id: string) => (id === botId ? showDetails('settings') : setEditingMember(id)), [botId, showDetails])
   // The capsule opens what the bot does.
   const openWork = useCallback(() => showDetails('details'), [showDetails])
-  // The chat at the approval card of an item that needs the user.
-  const openCard = useCallback((itemId: string) => {
-    setCompactDetails(false)
-    // ponytail: looks among the loaded messages only; a card still waiting is among the newest. Load older pages
-    // until it is found if cards ever wait that long.
-    requestAnimationFrame(() => root.current?.querySelector(`[data-work-item="${CSS.escape(itemId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
-  }, [])
   // The chat at one of its entries, beside the panel: what an item's thread says its task put there.
   const showInChat = useCallback((entryId: string) => {
     setCompactDetails(false)
     requestAnimationFrame(() => root.current?.querySelector(`.transcript [data-entry-id="${CSS.escape(entryId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
   }, [])
+  // The chat at the card an item that needs the user waits on, the one its row reads.
+  // ponytail: looks among the loaded messages only; a card still waiting is among the newest. Load older pages
+  // until it is found if cards ever wait that long.
+  const openCard = useCallback((itemId: string) => {
+    const card = pendingCards(store.allEntries(botId)).get(itemId)
+    if (card) showInChat(card.id)
+    else setCompactDetails(false)
+  }, [botId, showInChat])
   // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
   useEffect(() => {
     if (!request) return

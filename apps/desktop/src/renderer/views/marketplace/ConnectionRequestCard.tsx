@@ -71,7 +71,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
   const pending = request.status === 'pending'
   return (
     // A task's sign-in card: the item's row on the bot's Details finds it by this.
-    <VStack gap={12} className="request-card" data-work-item={entry.data.item}>
+    <VStack gap={12} className="request-card">
       <HStack gap={14}>
         <RequestLogo request={request} />
         <VStack gap={2} grow>

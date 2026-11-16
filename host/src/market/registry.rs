@@ -23,6 +23,7 @@ const FEATURED: &[&str] = &[
     "com.atlassian/atlassian-mcp-server",
     "io.github.upstash/context7",
     "io.github.microsoft/playwright-mcp",
+    "ai.keenable/web-search",
 ];
 
 /// One page of the registry (a search, or everything), with the cursor for the next page.
@@ -224,6 +225,16 @@ mod tests {
         assert_eq!(title_from_name("com.notion/mcp"), "Notion");
         assert_eq!(title_from_name("com.vercel/vercel-mcp"), "Vercel");
         assert_eq!(title_from_name("io.github.microsoft/playwright-mcp"), "Playwright");
+        assert_eq!(title_from_name("ai.keenable/web-search"), "Web Search");
+    }
+
+    #[test]
+    fn featured_connectors_include_keenable_web_search() {
+        assert!(FEATURED.contains(&"ai.keenable/web-search"));
+        let mut names = FEATURED.to_vec();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), FEATURED.len(), "featured registry names must be unique");
     }
 
     #[tokio::test]

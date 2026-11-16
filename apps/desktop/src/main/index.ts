@@ -5,7 +5,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron'
 import type { HostSnapshot, TraySummary, WindowCommand } from '../shared/ipc'
-import { chatWindowMinWidth } from '../shared/chat-layout'
+import { chatWindowMinHeight, chatWindowMinWidth } from '../shared/chat-layout'
 import { devPort, HostController } from './host-controller'
 import { registerFileSaves } from './file-saves'
 import { keepArtifactsInFrame, registerArtifacts, registerArtifactScheme } from './artifacts'
@@ -76,6 +76,28 @@ function snapshot(): HostSnapshot {
   return { state: host.state, local: host.local, dev: devPort !== null, logPath: host.logPath }
 }
 
+/**
+ * The window's minimum counts its frame and menu bar while the stylesheet's floor (chat-layout.ts) is
+ * the page: on Windows the minimum would give the page 474 points instead of 500 and cut the composer
+ * off. Raise the minimum by what the window adds around the page.
+ *
+ * Measured from the page rather than from `getContentSize()`, and only once the window is shown: a
+ * hidden window reports a shorter page than the one it lays out after the menu bar appears.
+ */
+async function holdPageMinimum(window: BrowserWindow) {
+  try {
+    const [pageWidth, pageHeight] = (await window.webContents.executeJavaScript('[innerWidth, innerHeight]')) as [number, number]
+    if (window.isDestroyed()) return
+    const [width, height] = window.getSize()
+    const minimumWidth = chatWindowMinWidth + width - pageWidth
+    const minimumHeight = chatWindowMinHeight + height - pageHeight
+    window.setMinimumSize(minimumWidth, minimumHeight)
+    if (width < minimumWidth || height < minimumHeight) window.setSize(Math.max(width, minimumWidth), Math.max(height, minimumHeight))
+  } catch {
+    // The page went away before it could measure itself; the constructor's own minimum still holds.
+  }
+}
+
 /** The chat window: roster on the left, the conversation on the right (Grok Bot's desktop layout). */
 function openChat() {
   if (chat) {
@@ -88,13 +110,22 @@ function openChat() {
   chat = new BrowserWindow({
     width: 1100,
     height: 760,
+    // The stylesheet's floor is the page, so the minimum is raised past the constructor's by the
+    // frame and menu bar once the page can report them (holdPageMinimum).
     minWidth: chatWindowMinWidth,
-    minHeight: 500,
+    minHeight: chatWindowMinHeight,
     title: app.getName(),
     show: false,
     backgroundColor: background(),
     titleBarStyle: isMac ? 'hidden' : 'default',
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
+  })
+  const window = chat
+  // The menu bar is part of the window's chrome only once it is shown, so measure after `show`; a
+  // reload of an already visible window measures again.
+  window.once('show', () => void holdPageMinimum(window))
+  window.webContents.on('did-finish-load', () => {
+    if (window.isVisible()) void holdPageMinimum(window)
   })
   // CODYNC_SHOW_INACTIVE: development and UI checks open the window without taking focus.
   chat.on('ready-to-show', () => (process.env.CODYNC_SHOW_INACTIVE ? chat?.showInactive() : chat?.show()))

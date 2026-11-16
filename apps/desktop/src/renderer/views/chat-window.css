@@ -1,7 +1,7 @@
 .chat-window {
   height: 100%;
   min-width: 680px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
-  min-height: 500px;
+  min-height: 500px; /* chatWindowMinHeight in src/shared/chat-layout.ts */
   background: var(--background);
   position: relative;
 }

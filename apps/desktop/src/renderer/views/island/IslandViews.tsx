@@ -232,8 +232,14 @@ export function Message({ model }: { model: IslandModel }) {
                 if (e.key === 'Escape') model.close()
               }}
             />
-            {dictation.listening ? (
-              <RecordingPill startedAt={dictation.startedAt} sample={() => dictation} onStop={() => dictation.finish()} color="#ffffff" />
+            {dictation.listening || dictation.transcribing ? (
+              <RecordingPill
+                startedAt={dictation.startedAt}
+                sample={() => dictation}
+                onStop={() => dictation.finish()}
+                transcribing={dictation.transcribing}
+                color="#ffffff"
+              />
             ) : dictation.available ? (
               <button type="button" className="island-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => dictation.start(model.draft)}>
                 <Icon name="mic" size={12} weight="medium" scaled={false} />

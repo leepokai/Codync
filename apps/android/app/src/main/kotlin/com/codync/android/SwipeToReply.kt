@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -95,52 +96,55 @@ internal enum class ReplyDirection(val sign: Float) {
         Box(Modifier.align(direction.edge)
             .onGloballyPositioned { coordinates ->
                 gap = coordinates.parentLayoutCoordinates?.let { (it.size.width - coordinates.size.width).toFloat() + marginPx } ?: 0f
-            }.pointerInput(direction) {
+            }.pointerInput(direction, density, marginPx, haptics) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    var dx = 0f
-                    var dy = 0f
-                    // The swipe takes the pointer only once horizontal travel beats the slop in the allowed direction
-                    // before a mostly-vertical drag would: the list's scroll and taps hold still keep working. A child
-                    // that claims the drag (the voice note's seek bar consumes first, on the Main pass) ends the wait.
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
-                        if (change.isConsumed || !change.pressed) return@awaitEachGesture
-                        dx += change.positionChange().x
-                        dy += change.positionChange().y
-                        if (abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy)) {
-                            if (dx * direction.sign > 0f) { change.consume(); settling?.cancel(); break }
-                            return@awaitEachGesture
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    try {
+                        var dx = 0f
+                        var dy = 0f
+                        // The swipe takes the pointer only once horizontal travel beats the slop in the allowed direction
+                        // before a mostly-vertical drag would: the list's scroll and taps hold still keep working. Listen on
+                        // the Initial pass so a voice note's seek bar cannot consume a drag after this row has accepted it.
+                        while (true) {
+                            val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+                            if (change.isConsumed || !change.pressed) return@awaitEachGesture
+                            dx += change.positionChange().x
+                            dy += change.positionChange().y
+                            if (abs(dx) > viewConfiguration.touchSlop && abs(dx) > abs(dy)) {
+                                if (dx * direction.sign > 0f) { change.consume(); settling?.cancel(); break }
+                                return@awaitEachGesture
+                            }
+                            if (abs(dy) > viewConfiguration.touchSlop && abs(dy) >= abs(dx)) return@awaitEachGesture
                         }
-                        if (abs(dy) > viewConfiguration.touchSlop && abs(dy) >= abs(dx)) return@awaitEachGesture
-                    }
-                    var travel = 0f
-                    var past = false
-                    fun pull(delta: Float) {
-                        travel += delta * direction.sign
-                        offset = ReplySwipe.offset(travel, threshold)
-                        val now = offset >= threshold
-                        if (now != past) {
-                            past = now
-                            if (now) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                        var travel = 0f
+                        var past = false
+                        fun pull(delta: Float) {
+                            travel += delta * direction.sign
+                            offset = ReplySwipe.offset(travel, threshold)
+                            val now = offset >= threshold
+                            if (now != past) {
+                                past = now
+                                if (now) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                            }
                         }
+                        // The move that crossed the slop already counts, so a lift right after it still replies.
+                        pull(dx)
+                        var lifted = false
+                        while (true) {
+                            val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                            if (change.changedToUp()) { change.consume(); lifted = true; break }
+                            if (change.isConsumed || !change.pressed) break
+                            pull(change.positionChange().x)
+                            change.consume()
+                        }
+                        if (lifted && offset >= threshold) {
+                            Analytics.capture(AnalyticsEvent.ReplySwiped)
+                            action()
+                        }
+                    } finally {
+                        // Android turns ACTION_CANCEL into coroutine cancellation; settle there too.
+                        settle()
                     }
-                    // The move that crossed the slop already counts, so a lift right after it still replies.
-                    pull(dx)
-                    var lifted = false
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        if (change.changedToUp()) { change.consume(); lifted = true; break }
-                        if (change.isConsumed || !change.pressed) break
-                        change.consume()
-                        pull(change.positionChange().x)
-                    }
-                    // Only a lift replies; a touch the system cancelled springs back like an early release.
-                    if (lifted && offset >= threshold) {
-                        Analytics.capture(AnalyticsEvent.ReplySwiped)
-                        action()
-                    }
-                    settle()
                 }
             }.graphicsLayer { translationX = direction.sign * ReplySwipe.shown(offset, gap) }) { content() }
     }

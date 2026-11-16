@@ -58,10 +58,11 @@ onFlowComplete:
     end: 33%, 79%
     duration: 300
 - assertNotVisible: "Cancel reply"
-# The bot's voice note, swiped right past the threshold.
+# The bot's voice note, swiped right past the threshold. Explicit travel is needed on Android: a directional swipe
+# from the caption is too short to reach the reply threshold.
 - swipe:
-    from: "Here is the plan."
-    direction: RIGHT
+    start: 20%, 79%
+    end: 80%, 79%
     duration: 600
 - assertVisible: "Cancel reply"
 - assertVisible: "“Here is the plan.”"
@@ -83,3 +84,17 @@ onFlowComplete:
 - assertVisible: "Cancel reply"
 - takeScreenshot: swipe-to-reply-own-message
 - tapOn: "Cancel reply"
+# The edge swipe still goes back to the bot list on the iPhone (Android's back is the system's gesture).
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          start: 1%, 50%
+          end: 80%, 50%
+          duration: 400
+      - extendedWaitUntil:
+          notVisible: "Read me the spoken plan"
+          timeout: 10000
+      - assertVisible: ${output.bot.name}
+      - takeScreenshot: swipe-to-reply-back

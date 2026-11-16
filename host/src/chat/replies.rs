@@ -1,5 +1,6 @@
 //! Quote replies: a message the user sends in answer to an earlier one of the same chat (theirs or a bot's).
 //! `send` stores the answered message as the new one's `replyTo`; the agent reads it as a note before the text.
+//! A bot quotes the same way, with `reply_to` on `send_message` and `send_file` (`chat::outbox`).
 //! A reply can answer one part of the message, the text the user selected in it: the quote is then that part.
 
 use crate::agent::acp;
@@ -35,6 +36,14 @@ pub fn quote(store: &Store, chat: &str, id: &str, part: Option<&str>) -> Result<
         quote["part"] = true.into();
     }
     Ok(quote)
+}
+
+/// A bot message's `data` with the message it quotes (`reply_to`, a `quote`), if any, as its `replyTo`.
+pub fn with_quote(mut data: Value, quote: Option<Value>) -> Value {
+    if let Some(quote) = quote {
+        data["replyTo"] = quote;
+    }
+    data
 }
 
 /// The note `me` reads before a reply's text: `[Codync: this replies to your message: "…"]` (`… to this part of your

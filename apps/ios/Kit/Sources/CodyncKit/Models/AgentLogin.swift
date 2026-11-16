@@ -25,6 +25,17 @@ public extension AgentRest {
     var login: AgentLogin { AgentLogin(backend: agent, loginProfile: loginProfile) }
 }
 
+/// A sentence before it's translated: the phrase, and the names to put in once it's read in the app's language.
+public struct FallbackPhrase: Sendable, Hashable {
+    public let key: String
+    public let values: [String: String]
+
+    public init(key: String, values: [String: String]) {
+        self.key = key
+        self.values = values
+    }
+}
+
 public extension Bot {
     /// The bot's own login.
     var login: AgentLogin { AgentLogin(backend: backend, loginProfile: loginProfile) }
@@ -37,18 +48,25 @@ public extension Bot {
         resting.first { $0.login == login && Date(milliseconds: $0.until) > now }
     }
 
-    /// The Agent card's first line while the bot runs on a fallback; nil on its own agent. `name` says what to call
-    /// a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its login profile too,
-    /// which tells two logins of one agent apart.
-    func stepBanner(now: Date = .now, name: (AgentLogin, _ own: Bool) -> String) -> String? {
+    /// The Agent card's first line while the bot runs on a fallback, as a phrase and its names; nil on its own agent.
+    /// `name` says what to call a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own
+    /// login by its login profile too, which tells two logins of one agent apart. Translating the phrase before the
+    /// names go in keeps a name that holds " while " from being read as the sentence's own word.
+    func stepBannerPhrase(now: Date = .now, name: (AgentLogin, _ own: Bool) -> String) -> FallbackPhrase? {
         guard let step = stepLogin else { return nil }
         let same = step.backend == backend
         let to = name(step, same), own = name(login, same)
-        let rest = rest(of: login, now: now)
-        if let rest, rest.reason == "usageLimit" {
-            return "Using \(to) until \(own) resets at \(RelativeTime.clock(Date(milliseconds: rest.until)))"
+        guard let rest = rest(of: login, now: now) else {
+            return FallbackPhrase(key: "Using {to} while {own} can't answer", values: ["to": to, "own": own])
         }
-        return "Using \(to) while \(own) \(rest?.phrase ?? "can't answer")"
+        // A reset time is real only for a usage limit; another rest names what it is (signed out, rate limited…).
+        guard rest.reason == "usageLimit" else {
+            return FallbackPhrase(key: "Using {to} while {own} \(rest.phrase)", values: ["to": to, "own": own])
+        }
+        return FallbackPhrase(
+            key: "Using {to} until {own} resets at {time}",
+            values: ["to": to, "own": own, "time": RelativeTime.clock(Date(milliseconds: rest.until))]
+        )
     }
 }
 

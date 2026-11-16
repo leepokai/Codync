@@ -161,6 +161,10 @@ The quote is then only what you selected, and the bot is told your reply is abou
 
 While you reply, the box shows the quote above it and reads "Reply…". The bot gets the quoted text with your reply, so it knows what you mean even when that message is from an earlier session.
 
+A bot can quote a message too, usually when its answer comes later, after other messages. The quote shows above its message, so you can tell which question it answers.
+
+Tap or click a quote to scroll to the message it quotes. In the terminal, pick the message with `v` and press `q`. The message has to be loaded in the chat: scroll up first to load older ones.
+
 ## Reactions
 
 - **iPhone:** touch and hold a message; the reactions are at the top of the menu.
@@ -190,7 +194,7 @@ Type `/` at the start of a message to see the bot's commands:
 - `/` followed by a skill's ID: tells the bot to read that skill first and follow it for this message. The bot's skills are listed after the built-in commands.
 - The agent's own commands (Claude Code's, Codex's, OpenCode's and so on), under the agent's name and marked with its logo, come last, apart from Codync's own commands and skills (under **Codync**), with the agent's description of each. In the terminal UI each of them names the agent. Picking one fills in `/<command>`; add anything it needs and send it. The list follows the agent the bot runs on now, and shows up once that agent has started for the bot. A group chat doesn't list them.
 
-A message that starts with one of the agent's commands goes to the agent exactly as you typed it, so the agent runs it. Any other `/command` goes to the agent unchanged too, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. There's no command to start a new session: Codync starts one on its own when a conversation needs it, for a Claude Code or Codex bot whose [Summarize long chats](/docs/bots#summarize-long-chats) isn't Auto. See [Bots](/docs/bots#sessions).
+A message that starts with one of the agent's commands goes to the agent exactly as you typed it, so the agent runs it. Any other `/command` goes to the agent unchanged too, so the agent's own commands keep working. In the terminal UI that includes `/servers` while the bot has no dev servers. New session isn't a command; it's in the bot's menu in the list. See [Bots](/docs/bots#sessions).
 
 ## Follow-ups
 

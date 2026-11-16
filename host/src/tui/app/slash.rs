@@ -227,7 +227,7 @@ mod tests {
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "only skills the bot has on");
         app.drafts.insert("b".into(), super::Editor::with("/new"));
-        assert!(names(&app).is_empty(), "no command for a new session");
+        assert!(names(&app).is_empty(), "a new session is in the ^k menu");
         app.bots.get_mut("b").expect("the bot").fast_support = "unknown".into();
         app.drafts.insert("b".into(), super::Editor::with("/"));
         assert_eq!(names(&app), ["fast", "pdf", "docx"], "offered until the agent says otherwise");

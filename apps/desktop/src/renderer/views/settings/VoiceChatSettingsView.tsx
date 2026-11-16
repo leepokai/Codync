@@ -16,7 +16,7 @@ import * as voice from './voice-settings'
 import { LocalDictationModel } from './local-dictation-model'
 import type { VoiceModels, VoiceProvider } from './voice-settings'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /**

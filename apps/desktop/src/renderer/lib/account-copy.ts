@@ -1,6 +1,6 @@
 /** What the interface says when a computer joins or leaves an account (docs/plans/optional-sign-in.md). */
 import type { PairingRequest } from '@shared/models'
-import { fill } from './fill.ts'
+import { fill } from '../../shared/fill.ts'
 
 type Tr = (text: string) => string
 

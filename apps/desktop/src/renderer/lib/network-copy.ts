@@ -1,7 +1,7 @@
 /** What the Network section says about this computer's networks (codync-network). */
 
 import type { Network, NetworkComputer, NetworkRole, NetworkRule } from '@shared/network'
-import { fill } from './fill.ts'
+import { fill } from '../../shared/fill.ts'
 
 /** How computers reach each other without a direct path. */
 export type ConnectorChoice = 'public' | 'private' | 'relay'

@@ -10,6 +10,7 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
+import { analytics } from '../../store/analytics'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
@@ -109,14 +110,44 @@ export function AuthorLabel({ botId, name }: { botId?: string | null; name?: str
   )
 }
 
-/** The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying. */
-export function QuoteRow({ quote, className }: { quote: ReplyQuote; className?: string }) {
+/**
+ * The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying.
+ * In a bubble (`jumps`) a click brings the quoted message into view.
+ */
+export function QuoteRow({ quote, className, jumps = false }: { quote: ReplyQuote; className?: string; jumps?: boolean }) {
+  const tr = useTr()
+  const jump = (from: HTMLElement) => analytics.track({ event: 'quote_opened', found: showMessage(from, quote.id) })
+  const press = jumps
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        title: tr('Show the quoted message'),
+        onClick: (e: React.MouseEvent<HTMLDivElement>) => jump(e.currentTarget),
+        onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          jump(e.currentTarget)
+        },
+      }
+    : {}
   return (
-    <HStack gap={6} className={className ?? 'bubble-quote'}>
+    <HStack gap={6} className={className ?? 'bubble-quote'} {...press}>
       <Icon name="text.bubble" size={12} color="var(--secondary)" />
       <Text size="footnote" tone="secondary" truncate grow>{`“${messagePreview(quote.text)}”`}</Text>
     </HStack>
   )
+}
+
+/**
+ * Scrolls the message `id` of the transcript around `from` to the middle; false when it isn't there.
+ * At once, like a find match: a smooth scroll stops short when it reaches the top, where earlier messages load.
+ * ponytail: only among the loaded messages, like a needs-you card; load older pages until it is found if
+ * quotes of long-gone messages turn out common (`quote_opened` with `found: false`).
+ */
+function showMessage(from: HTMLElement, id: string): boolean {
+  const row = from.closest('[data-find-root]')?.querySelector(`[data-entry-id="${CSS.escape(id)}"]`)
+  row?.scrollIntoView({ block: 'center' })
+  return !!row
 }
 
 /** A message's text with a right-click menu (with quick reactions on top). */
@@ -159,7 +190,7 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
-            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
+            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} jumps /> : null}
             <span data-find-text>{entry.data.text}</span>
           </Bubble>
         ) : null}
@@ -206,6 +237,8 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
   const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   return (
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      {/* The message the bot answers (`reply_to`), above its bubble. */}
+      {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} className="bubble-quote agent-quote" jumps /> : null}
       <div className="message-body">
         <Bubble
           className={!voiceNote && (entry.data.files?.length || entry.data.artifact) ? 'file-message' : 'bubble agent'}

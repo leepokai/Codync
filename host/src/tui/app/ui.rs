@@ -53,6 +53,7 @@ pub enum Action {
     Memory,
     Details,
     Library,
+    NewSession,
     RefreshAgents,
     Pair,
     Network,
@@ -67,13 +68,14 @@ pub enum Action {
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 20] = [
+pub const ACTIONS: [(&str, &str, Action); 21] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
     ("Memory of this bot…", "M", Action::Memory),
     ("Details of this bot…", "R", Action::Details),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
+    ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Pair a phone…", "P", Action::Pair),
@@ -105,6 +107,7 @@ pub struct Goto {
 
 pub enum ConfirmAct {
     Delete(String),
+    NewSession(String),
     /// Keeps a bot's harness's own memory on beside Codync's.
     KeepHarnessMemory(String),
     DeleteRoutine(String, String),

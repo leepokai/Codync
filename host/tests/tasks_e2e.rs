@@ -692,8 +692,9 @@ async fn another_bots_request_is_an_item_and_its_last_message_is_the_reply() {
     // The reply went to the bot that asked, as a turn of its own, and not into the asked bot's chat.
     let prompt = wait("the reply turn", async || {
         let prompts = host.log(&asker, "prompts.jsonl");
-        let reply =
-            prompts.iter().find(|p| p["text"].as_str().unwrap().contains("replied to your message_bot request"));
+        let reply = prompts
+            .iter()
+            .find(|p| p["text"].as_str().unwrap().contains("[Codync: Mika replied to your message_bot request"));
         reply.map(|p| p["text"].as_str().unwrap().to_owned())
     })
     .await;
@@ -737,7 +738,7 @@ async fn a_task_asks_the_user_to_choose_and_shares_in_the_chat() {
     let host = Host::start().await;
     let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
     host.reply(&bot, "hello").await;
-    host.reply(&bot, "ADD Pick one|ASK then SHARE and ARTIFACT").await;
+    host.reply(&bot, "ADD Pick one|ASK then SHARE QUOTE and ARTIFACT").await;
 
     let card = wait("the task's choice card in the chat", async || {
         let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
@@ -773,6 +774,11 @@ async fn a_task_asks_the_user_to_choose_and_shares_in_the_chat() {
         (&json!("agent"), &waits["id"], &json!(bot))
     );
     assert_eq!(file["data"]["files"][0]["name"], "shared.txt");
+    // Its `reply_to` quotes a message of the bot's chat, where the file shows, not of the task's own (issue #402).
+    let asked = chat
+        .iter()
+        .find(|e| e["kind"] == "user" && e["data"]["text"] == "ADD Pick one|ASK then SHARE QUOTE and ARTIFACT");
+    assert_eq!(file["data"]["replyTo"]["id"], asked.expect("the message that added the item")["id"]);
     let stored = host.home.join("bots").join(&bot).join("files").join(file["data"]["files"][0]["id"].as_str().unwrap());
     assert!(stored.exists(), "kept with the bot, not with the task: {}", stored.display());
     let page = chat.iter().find(|e| !e["data"]["artifact"].is_null()).expect("the artifact's card");

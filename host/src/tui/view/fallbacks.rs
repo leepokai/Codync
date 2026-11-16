@@ -1,12 +1,15 @@
 //! How the terminal shows a bot's fallback chain (`agent::fallback`): the agent it's on, and each step's state.
 
+use std::borrow::Cow;
+
 use super::super::app::{App, Bot};
 use super::time::now_ms;
 use super::usage::when_future;
 use crate::agent::fallback::Reason;
 use crate::store::Fallback;
+use crate::tui::l10n::{fill, tr};
 
-/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Claude Code (Work) · default (usage resets 15:00)".
+/// Fallback `i` of `bot`'s chain: "1 Codex · gpt-5.5 (in use)", "2 Claude Code (Work) · default (Usage resets 15:00)".
 pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fallback) -> String {
     let login_profile = f.login_profile.as_deref();
     let agent = app.agent_name(&f.backend);
@@ -24,19 +27,21 @@ pub(in crate::tui) fn step_item(app: &App, bot: Option<&Bot>, i: usize, f: &Fall
     }
 }
 
-/// A resting login's state: "usage resets 15:00" or "resting until 15:00".
+/// A resting login's state, in the interface language: "Usage resets 15:00" or "Resting until 15:00".
 pub(in crate::tui) fn rest_note(bot: &Bot, agent: &str, login_profile: Option<&str>) -> Option<String> {
     let rest = bot.rests(agent, login_profile, now_ms())?;
-    Some(if rest.reason == Reason::UsageLimit {
-        format!("usage resets {}", when_future(rest.until))
-    } else {
-        format!("resting until {}", when_future(rest.until))
-    })
+    Some(fill(&tr(rest_phrase(rest.reason)), &[("time", &when_future(rest.until))]))
 }
 
-/// The Settings page's line while the bot runs on a fallback: "Using Codex until Claude Code resets 15:00" on a usage
-/// limit, "Using Codex while Claude Code is signed out" on another rest. A login on a login profile goes by it too
-/// ("Claude Code (Work)"), and so does the computer's own when both are the same agent.
+/// A resting login's phrase before it's translated.
+pub(in crate::tui) fn rest_phrase(reason: Reason) -> &'static str {
+    if reason == Reason::UsageLimit { "Usage resets {time}" } else { "Resting until {time}" }
+}
+
+/// The Settings page's line while the bot runs on a fallback, in the interface language: "Using Codex until Claude
+/// Code resets at 15:00" on a usage limit, "Using Codex while Claude Code is signed out" on another rest. A login on a
+/// login profile goes by it too ("Claude Code (Work)"), and so does the computer's own when both are the same agent.
+/// The phrase is translated before the names go in, so a login profile named "Work while traveling" stays whole.
 pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
     let step = bot.agent_step.as_deref()?;
     let same = step == bot.backend;
@@ -48,12 +53,18 @@ pub(in crate::tui) fn using_line(app: &App, bot: &Bot) -> Option<String> {
     };
     let (own, using) =
         (name(&bot.backend, bot.login_profile.as_deref()), name(step, bot.step_login_profile.as_deref()));
-    Some(match bot.rests(&bot.backend, bot.login_profile.as_deref(), now_ms()) {
-        Some(rest) if rest.reason == Reason::UsageLimit => {
-            format!("Using {using} until {own} resets {}", when_future(rest.until))
-        }
-        rest => format!("Using {using} while {own} {}", rest.map_or("can't answer", |r| r.reason.phrase())),
-    })
+    let rest = bot.rests(&bot.backend, bot.login_profile.as_deref(), now_ms());
+    let time = rest.map(|r| when_future(r.until)).unwrap_or_default();
+    Some(fill(&tr(&using_phrase(rest.map(|r| r.reason))), &[("to", &using), ("own", &own), ("time", &time)]))
+}
+
+/// The Settings page line's phrase before it's translated, for why the bot's own login rests (none: it can't answer);
+/// only a usage limit gives a reset time.
+pub(in crate::tui) fn using_phrase(rest: Option<Reason>) -> Cow<'static, str> {
+    match rest {
+        Some(Reason::UsageLimit) => Cow::Borrowed("Using {to} until {own} resets at {time}"),
+        rest => Cow::Owned(format!("Using {{to}} while {{own}} {}", rest.map_or("can't answer", Reason::phrase))),
+    }
 }
 
 #[cfg(test)]
@@ -89,7 +100,7 @@ mod tests {
             let bot = json!({"id": "b", "name": "B", "backend": "claude", "agentStep": {"agent": "codex"}, "resting": [rest]});
             using_line(&app, &Bot::parse(&bot).expect("a bot")).expect("on a fallback")
         };
-        assert!(line("usageLimit").starts_with("Using Codex until Claude Code resets "));
+        assert!(line("usageLimit").starts_with("Using Codex until Claude Code resets at "));
         for reason in ["signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting"] {
             assert!(!line(reason).contains("resets"), "{reason}");
         }

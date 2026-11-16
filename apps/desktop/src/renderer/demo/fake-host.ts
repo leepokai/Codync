@@ -226,6 +226,8 @@ export class FakeHost {
         this.settle(id)
         return {}
       }
+      case 'newSession':
+        return {}
       case 'createBot':
       case 'updateBot':
         return { bot: this.saveBot(b as unknown as BotDraft | GroupDraft) }

@@ -83,10 +83,10 @@ export async function steerBot(page: Page, name: string, seconds: number) {
   return bot
 }
 
-/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`. */
-export async function echoBot(page: Page, name: string) {
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
+export async function echoBot(page: Page, name: string, cwd?: string) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, cwd, connectors: [], skills: [], notify: false,
   })
   return bot
 }

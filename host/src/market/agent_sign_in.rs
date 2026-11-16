@@ -239,7 +239,7 @@ pub fn send_again<'a>(hub: &Hub, bot: &str, ids: impl IntoIterator<Item = &'a st
     let Some(bot) = hub.store.bot(bot)?.filter(|b| !b.deleted) else { return Ok(()) };
     let held = ids.into_iter().filter_map(|id| hub.store.entry(id));
     for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {
-        let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
+        let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry);
         entry.data["status"] = "queued".into();
         hub.set_entry(&entry.id, &entry.data);
         let lane = Lane::main(&entry.bot_id);

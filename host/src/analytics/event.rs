@@ -29,6 +29,7 @@ pub enum Event {
     ImagePreviewAction,
     ConversationFindOpened,
     ConversationFindSearched,
+    QuoteOpened,
     BotCreated,
     BotUpdated,
     BotsReordered,
@@ -117,6 +118,8 @@ pub enum Event {
     SpeechServerLinked,
     /// One piece of local-engine dictation transcribed on the linked speech server (`outcome`).
     LocalDictationTranscribed,
+    /// A bot's `send_message` or `send_file` with `reply_to` (`tool`), quoted or sent without it (`outcome`).
+    BotQuoted,
     CredentialSaved,
     AgentSetupStarted,
     AgentSignedIn,
@@ -192,6 +195,7 @@ impl Event {
             Self::ImagePreviewAction => "image_preview_action",
             Self::ConversationFindOpened => "conversation_find_opened",
             Self::ConversationFindSearched => "conversation_find_searched",
+            Self::QuoteOpened => "quote_opened",
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
@@ -253,6 +257,7 @@ impl Event {
             Self::VoiceNotePlayed => "voice_note_played",
             Self::SpeechServerLinked => "speech_server_linked",
             Self::LocalDictationTranscribed => "local_dictation_transcribed",
+            Self::BotQuoted => "bot_quoted",
             Self::CredentialSaved => "credential_saved",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",

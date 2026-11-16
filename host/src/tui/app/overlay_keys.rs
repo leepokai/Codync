@@ -55,6 +55,7 @@ impl App {
             Action::Memory => self.open_memory(),
             Action::Details => self.open_details(),
             Action::Library => self.open_library(),
+            Action::NewSession => self.ask_new_session(),
             Action::RefreshAgents => self.call("refreshBackends", json!({}), After::Backends),
             Action::Pair => self.open_pair(),
             Action::Network => self.open_network(),
@@ -100,6 +101,7 @@ impl App {
                     let changed = After::Sheet(Reply::Changed);
                     match &c.act {
                         ConfirmAct::Delete(id) => self.call("deleteBot", json!({"botId": id}), After::Nothing),
+                        ConfirmAct::NewSession(id) => self.call("newSession", json!({"botId": id}), After::Nothing),
                         ConfirmAct::KeepHarnessMemory(id) => {
                             self.call("updateBot", json!({"id": id, "harnessMemory": true}), changed);
                         }

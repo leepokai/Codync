@@ -181,6 +181,11 @@ export class BotStore extends BotSync {
     this.perform((c) => c.call('switchBack', { botId }), true)
   }
 
+  /** The bot's agent starts over with a fresh context; the chat stays. */
+  newSession(botId: string) {
+    this.perform((c) => c.call('newSession', { botId }))
+  }
+
   /** A finished call's line, with the rest of its transcript; the chat then shows the call's messages behind it. */
   async endCall(botId: string, call: string, seconds: number, lines: CallLine[]) {
     try {

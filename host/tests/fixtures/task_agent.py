@@ -3,9 +3,9 @@
 In the chat: `ADD title|brief[|hold][|after=<title>]`, `STEER how|title[|brief, or the title that gives way]`,
 `STATUS`, `MESSAGE <bot id>|<request>` (asks another bot). In a task, the brief says what it does: `HOLD:<name>`
 works until a `release-<name>` file is in its folder, `PERMISSION` asks for an approval, `ASK` asks the user to
-choose, `SHARE` sends a file, `ARTIFACT` publishes one, `NEST` tries what a task may not, `REMEMBER` adds a line to
-`MEMORY.md` with `edit_memory` and `FORGET` tries to take one out (both once it is released), `TOUCH` writes
-`made.txt` in its folder.
+choose, `SHARE` sends a file (`QUOTE`: quoting the chat message that added the item), `ARTIFACT` publishes one,
+`NEST` tries what a task may not, `REMEMBER` adds a line to `MEMORY.md` with `edit_memory` and `FORGET` tries to take
+one out (both once it is released), `TOUCH` writes `made.txt` in its folder.
 
 A routine run and another bot's request read the same words in the routine's instruction or the request, and also
 `SEND` (a message to the user), `PROGRESS` (saves the routine's progress note), `FOLLOW` (sets a follow-up) and
@@ -135,7 +135,9 @@ def work(text, session):
         notes.append(ask())
     if "SHARE" in brief:
         pathlib.Path("shared.txt").write_text("from a task", encoding="utf-8")
-        notes.append(said(chat_tool("send_file", {"path": "shared.txt"}), "Shared: ")[:60])
+        quoted = re.search(r"QUOTE:(\S+)", brief)
+        arguments = {"path": "shared.txt", **({"reply_to": quoted.group(1)} if quoted else {})}
+        notes.append(said(chat_tool("send_file", arguments), "Shared: ")[:60])
     if "ARTIFACT" in brief:
         pathlib.Path("page.html").write_text("<h1>Page</h1>", encoding="utf-8")
         notes.append(said(chat_tool("publish_artifact", {"path": "page.html", "title": "Page"}), "Published: ")[:40])
@@ -177,6 +179,9 @@ def answer(text, session):
     name, rest = command.groups()
     if name == "ADD":
         title, brief, *flags = rest.split("|")
+        asked = re.search(r"^\[Codync: message ([^\]]+)\]$", text, re.M)
+        if asked:
+            brief = brief.replace("QUOTE", "QUOTE:" + asked.group(1))
         arguments = {"title": title, "brief": brief}
         for flag in flags:
             if flag.startswith("after="):

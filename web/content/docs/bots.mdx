@@ -139,7 +139,15 @@ Sections group a computer's bots under headings you name, such as Work and Perso
 
 A bot's chat and its agent's session are two different things. The chat is the permanent record you scroll through. The session is the agent's working context: what the model currently remembers of the conversation.
 
-You never start a session yourself. For a Claude Code or Codex bot whose [Summarize long chats](#summarize-long-chats) isn't Auto, Codync starts a fresh one on its own when a long conversation needs one; the chat then shows a card with a summary you can edit or skip. See [Fresh conversations](/docs/conversations#fresh-conversations). A new session also starts when you change the bot's agent, model or folder. Either way the chat history stays where it is, and so do the bot's memory, settings and files.
+**New session** starts the agent with a fresh context. Use it before unrelated work, or when the agent's context has drifted.
+
+- **iPhone and Android:** touch and hold the bot in the list, then **New session**.
+- **Desktop:** right-click the bot in the sidebar, then **New session**.
+- **Terminal UI:** press `Ctrl+K` and choose **New session for this bot…**.
+
+Codync asks you to confirm first. A reply the bot is writing stops, and so does a routine run going on in the chat. Messages and follow-ups waiting their turn run in the new session; waiting routine runs still run, each in a session of its own. [Background work](/docs/conversations#background-tasks) keeps going and reports into the new session; work the bot added in the reply you cut short is dropped, as with Stop. A group chat has no session of its own, so it has no New session.
+
+For a Claude Code or Codex bot whose [Summarize long chats](#summarize-long-chats) isn't Auto, Codync also starts a fresh one on its own when a long conversation needs one; the chat then shows a card with a summary you can edit or skip. See [Fresh conversations](/docs/conversations#fresh-conversations). A new session also starts when you change the bot's agent, model or folder. Either way the chat history stays where it is, and so do the bot's memory, settings and files.
 
 ## Delete a bot
 

@@ -86,8 +86,9 @@ import kotlinx.coroutines.delay
     var peer by remember(bot.id) { mutableStateOf<String?>(null) }
     /** The voice call whose conversation is open (its line's entry id). */
     var callLine by remember(bot.id) { mutableStateOf<String?>(null) }
-    // The approval card a needs-you item's row in the details led to: brought into view once.
-    var card by remember(bot.id) { mutableStateOf<String?>(null) }
+    // The approval card a needs-you item's row in the details led to, or the message a tapped quote quotes (an entry id):
+    // brought into view once.
+    var revealed by remember(bot.id) { mutableStateOf<String?>(null) }
     var micDenied by remember { mutableStateOf(false) }
     var setupEntry by rememberSaveable { mutableStateOf<String?>(null) }
     var app by remember { mutableStateOf<ComposioApp?>(null) }
@@ -113,11 +114,12 @@ import kotlinx.coroutines.delay
     // Find in the conversation: null while its bar is closed; each step bumps `findStep` to bring the match into view.
     var find by remember(bot.id) { mutableStateOf<ConversationFind?>(null) }
     var findStep by remember(bot.id) { mutableIntStateOf(0) }
+    val reveal = { id: String -> revealed = id; findStep++ }
     // A needs-you row of the view of all bots' work asked for its card: brought into view once this chat holds it.
     // ponytail: only among the rows the open chat has loaded; page back for it (iOS `card(for:in:)`) if a pending
     // card is ever older than those.
     val askedCard = state.cardRequest?.takeIf { it.first == bot.id }?.let { (_, item) -> pendingCard(state.entries.filter { it.botId == bot.id }, item) }
-    LaunchedEffect(askedCard?.id) { if (askedCard != null && store.takeCardRequest(bot.id)) { details = null; card = askedCard.id; findStep++ } }
+    LaunchedEffect(askedCard?.id) { if (askedCard != null && store.takeCardRequest(bot.id)) { details = null; reveal(askedCard.id) } }
     val matches = find?.let { ConversationFind.matches(findable(chatState.chatItems(bot)), it.query) }.orEmpty()
     val shown = find?.index(matches)?.let(matches::get)
     // The first match found is held, so earlier messages with matches loading above don't move it.
@@ -127,7 +129,7 @@ import kotlinx.coroutines.delay
         find?.searched()?.let { find = it; Analytics.capture(AnalyticsEvent.ConversationFindSearched(found)) }
     }
     val openFind = {
-        if (find == null) { Analytics.capture(AnalyticsEvent.ConversationFindOpened); find = ConversationFind(); card = null }
+        if (find == null) { Analytics.capture(AnalyticsEvent.ConversationFindOpened); find = ConversationFind(); revealed = null }
     }
     val stepFind = { forward: Boolean -> find = find?.step(forward, matches); findStep++; reportFind(matches.isNotEmpty()) }
     // A new text shows its first match; it counts as searched once typing pauses.
@@ -174,7 +176,7 @@ import kotlinx.coroutines.delay
         Transcript(bot, chatState, store, connect, PaddingValues(start = 16.dp, end = 16.dp, top = top + 60.dp,
             bottom = with(density) { composerHeight.toDp() } + 8.dp), indicatorTop = top + 50.dp, openRoutine = openRoutine, reply = { reply(it, null) }, selectText = { selecting = it },
             addFallback = { details = DetailsRequest.fallbacks(it.id) }, openArtifact = { viewing = it }, openCall = { callLine = it },
-            found = shown?.id, revealed = card, findStep = findStep) { peer = it }
+            found = shown?.id, revealed = revealed, findStep = findStep, openQuote = { reveal(it) }) { peer = it }
     }
     CodyncDialog("Microphone access is off", micDenied, { micDenied = false },
         message = "Allow the microphone in Android settings to talk to your bot.") {
@@ -186,7 +188,7 @@ import kotlinx.coroutines.delay
     }
     CodyncSheet(details, { details = null }) { request ->
         val shown = state.bots.firstOrNull { it.id == (request.botId ?: bot.id) }
-        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { details = null; card = it.id; findStep++ }) { viewing = it }
+        if (shown != null) BotDetailsView(shown, request, state, store, openCard = { details = null; reveal(it.id) }) { viewing = it }
     }
     ArtifactLayer(viewing) { open ->
         state.bots.firstOrNull { it.id == open.botId }?.let { owner -> ArtifactViewer(open, owner, state, store) { viewing = null } }
@@ -301,7 +303,7 @@ private fun AppState.chatItems(bot: Bot) =
 /** The messages: all this phone has, earlier ones from the computer near the top, following the newest. */
 @Composable private fun Transcript(bot: Bot, state: AppState, store: AppStore, connect: ConnectionRequestActions, padding: PaddingValues,
     indicatorTop: Dp, openRoutine: (String) -> Unit, reply: (Entry) -> Unit, selectText: (Entry) -> Unit, addFallback: (Bot) -> Unit, openArtifact: (OpenArtifact) -> Unit,
-    openCall: (String) -> Unit, found: String?, revealed: String?, findStep: Int, openPeer: (String) -> Unit) {
+    openCall: (String) -> Unit, found: String?, revealed: String?, findStep: Int, openQuote: (String) -> Unit, openPeer: (String) -> Unit) {
     val entries = state.chatEntries(bot)
     val items = state.chatItems(bot)
     val working = bot.isWorking(bot.id) && state.connection is LinkState.Ready
@@ -314,8 +316,9 @@ private fun AppState.chatItems(bot: Bot) =
     var settled by remember { mutableStateOf(false) }
     val paging = remember { EarlierPaging() }
     // Pull to refresh reconnects, like Reconnect in the roster's computer menu, until the link is back.
-    // Find's shown match, else the approval card the details led to: its row, after the earlier-messages row when there is one.
-    val reveal = items.indexOfFirst { it.id == (found ?: revealed) }.takeIf { it >= 0 }?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
+    // Find's shown match, else the card or quoted message brought into view: its row, after the earlier-messages row when
+    // there is one. `revealed` is an entry id, and a user row is keyed by its nonce.
+    val reveal = items.rowOf(found ?: revealed)?.let { ConversationReveal(items[it].id, it + if (more) 1 else 0, findStep) }
     ConversationList(list, items.lastOrNull()?.id, entries.lastOrNull()?.rev, working, padding, store::refreshConnection, indicatorTop,
         reveal = reveal, onOpened = { settled = true }) {
         if (more) item("earlier") {
@@ -349,7 +352,12 @@ private fun AppState.chatItems(bot: Bot) =
                         // An update card takes the composer's place, so there's nothing to reply with.
                         reply = if (item.entry.isReplyable && state.mismatch == null) { { reply(item.entry) } } else null,
                         selectText = if (state.supportsReplyPart) { { selectText(item.entry) } } else null, connect = connect,
-                        addFallback = addFallback, openArtifact = openArtifact)
+                        addFallback = addFallback, openArtifact = openArtifact, openQuote = { id ->
+                            // ponytail: only among the loaded messages, like a card; page back until it is found if
+                            // `quote_opened` shows `found: false` often.
+                            Analytics.capture(AnalyticsEvent.QuoteOpened(items.any { (it as? ChatItem.Message)?.entry?.id == id }))
+                            openQuote(id)
+                        })
                 }
                 is ChatItem.Pending -> PendingBubble(item.send, item.groupStart, state, store)
                 is ChatItem.Exchanges -> BotMessageRow(item.group, state) { openPeer(item.group.peerId) }

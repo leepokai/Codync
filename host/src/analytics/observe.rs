@@ -199,6 +199,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         // Never the server's address, its model, the audio or the transcript. An empty address unlinks.
         "setSpeechServer" if b["url"].as_str().is_some_and(|u| !u.trim().is_empty()) => Event::SpeechServerLinked,
         "voiceTranscribe" if b["provider"] == "local" => Event::LocalDictationTranscribed,
+        // A bot's message quoting another (`reply_to`; a quoted voice note counts as the voice note); never the id.
+        "chatCall"
+            if matches!(b["name"].as_str(), Some("send_message" | "send_file"))
+                && crate::chat::outbox::reply_to(&b["arguments"]).is_some() =>
+        {
+            p.insert("tool".into(), (if b["name"] == "send_file" { "file" } else { "message" }).into());
+            Event::BotQuoted
+        }
         "agentSetup" | "agentAuthenticate" | "agentAuth" => {
             // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
             let on_profile = b["loginProfile"].is_string();
@@ -325,6 +333,10 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::LocalDictationTranscribed => {
             let heard = answer["text"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("outcome".into(), if heard { "transcribed" } else { "silent" }.into());
+        }
+        // An id it couldn't quote: the message went out without the quote.
+        Event::BotQuoted => {
+            p.insert("outcome".into(), if answer["warning"].is_null() { "quoted" } else { "unquoted" }.into());
         }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,

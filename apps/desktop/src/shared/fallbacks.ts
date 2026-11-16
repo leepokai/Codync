@@ -1,4 +1,5 @@
 import { AUTO_MODE } from './approvals.ts'
+import { fill } from './fill.ts'
 import { isGroup, type Backend, type Bot, type BotDraft, type Fallback, type FallbackReason, type Resting } from './models.ts'
 
 /** The host refuses more. */
@@ -62,10 +63,6 @@ export interface Phrase {
   values: Record<string, string>
 }
 
-/** Puts a translated phrase's names in: a login profile named "Work while traveling" stays one name. */
-export const fillNames = (phrase: string, values: Record<string, string>) =>
-  phrase.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match)
-
 /**
  * The Agent card's first line while the bot runs on a fallback, as a phrase and its names; null on its own agent. `name`
  * says what to call a login ("Claude Code (Work)" on a login profile); `own` asks for the computer's own login by its
@@ -88,7 +85,7 @@ export function stepBannerPhrase(bot: Bot, name: (login: Login, own: boolean) =>
 /** The banner as one English line, for callers that show English; views translate the phrase first. */
 export function stepBanner(bot: Bot, name: (login: Login, own: boolean) => string, now: number): string | null {
   const phrase = stepBannerPhrase(bot, name, now)
-  return phrase && fillNames(phrase.key, phrase.values)
+  return phrase && fill(phrase.key, phrase.values)
 }
 
 /** The list with the fallback at `index` moved `by` places (clamped to the ends). */

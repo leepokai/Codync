@@ -30,10 +30,6 @@ fun Bot.restOf(login: Login, now: Long = System.currentTimeMillis()): Resting? =
  */
 data class StepBanner(val key: String, val values: Map<String, String>)
 
-/** Puts a translated phrase's names in: a login profile named "Work while traveling" stays one name. */
-fun fillTemplate(text: String, values: Map<String, String>): String =
-    Regex("\\{(\\w+)\\}").replace(text) { match -> values[match.groupValues[1]] ?: match.value }
-
 /**
  * The Agent card's first line while the bot runs on a fallback, as a phrase and its names; null on its own agent. [name]
  * says what to call a login ("Claude Code (Work)" on a login profile), the computer's own by its name too when asked,
@@ -53,7 +49,7 @@ fun Bot.stepBannerPhrase(name: (Login, own: Boolean) -> String, clock: (Long) ->
 
 /** The banner as one English line, for callers that show English; views translate the phrase first. */
 fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> String, now: Long = System.currentTimeMillis()): String? =
-    stepBannerPhrase(name, clock, now)?.let { fillTemplate(it.key, it.values) }
+    stepBannerPhrase(name, clock, now)?.let { fill(it.key, it.values) }
 
 /** The login the draft is set to run on. */
 val BotDraft.login: Login get() = Login(backend, loginProfile)

@@ -30,7 +30,7 @@ import com.codync.android.core.Fallback
 import com.codync.android.core.Login
 import com.codync.android.core.MAX_FALLBACKS
 import com.codync.android.core.Resting
-import com.codync.android.core.fillTemplate
+import com.codync.android.core.fill
 import com.codync.android.core.freeLogins
 import com.codync.android.core.login
 import com.codync.android.core.moved
@@ -77,7 +77,7 @@ private fun fallbackChoices(state: AppState, taken: List<Login>, own: String? = 
         AgentIcon(agentRegistry(state, step.agent), 22.dp)
         // The phrase is translated before its names go in: a login profile named "Work while traveling" stays whole.
         val banner = bot.stepBannerPhrase(name, RelativeTime::clock)
-        Text(banner?.let { fillTemplate(tr(it.key), it.values) }.orEmpty(), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
+        Text(banner?.let { fill(tr(it.key), it.values) }.orEmpty(), Modifier.weight(1f), style = Type.subheadline, color = Palette.text)
         if ("switchBack:" + bot.id in state.busy) Spinner() else SecondaryButton("Switch back") { store.switchBack(bot) }
     }
 }

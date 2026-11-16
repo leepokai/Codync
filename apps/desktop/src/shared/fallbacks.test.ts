@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, fillNames, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBanner, stepBannerPhrase, withBackend } from './fallbacks.ts'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBanner, stepBannerPhrase, withBackend } from './fallbacks.ts'
+import { fill } from './fill.ts'
 import { draftOf, normalizeBot, type Backend } from './models.ts'
 
 const now = new Date(2026, 9, 21, 10, 0).getTime()
@@ -80,7 +81,7 @@ test('a login profile name holding " while " stays one name, not the banner\'s o
   // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
   assert.equal(phrase?.key, 'Using {to} while {own} is signed out')
   assert.deepEqual(phrase?.values, { to: 'Codex', own: 'Claude Code (Work while traveling)' })
-  assert.equal(fillNames(phrase!.key, phrase!.values), 'Using Codex while Claude Code (Work while traveling) is signed out')
+  assert.equal(fill(phrase!.key, phrase!.values), 'Using Codex while Claude Code (Work while traveling) is signed out')
 })
 
 test('fallbacks move within the list', () => {

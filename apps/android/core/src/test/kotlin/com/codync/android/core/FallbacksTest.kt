@@ -106,7 +106,7 @@ class FallbacksTest {
         // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
         assertEquals("Using {to} while {own} is signed out", phrase?.key)
         assertEquals(mapOf("to" to "codex", "own" to "claude (Work while traveling)"), phrase?.values)
-        assertEquals("Using codex while claude (Work while traveling) is signed out", phrase?.let { fillTemplate(it.key, it.values) })
+        assertEquals("Using codex while claude (Work while traveling) is signed out", phrase?.let { fill(it.key, it.values) })
     }
 
     @Test fun `a new step takes a login the chain doesn't have, signed in`() {

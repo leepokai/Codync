@@ -92,6 +92,27 @@ class SwipeToReplyGestureTest {
         compose.runOnIdle { assertEquals(0, replies) }
     }
 
+    /** A tap starts a spring back of its own; the next swipe must still follow the finger, not the earlier one. */
+    @Test fun aTapWhileSpringingBackKeepsTheNextSwipeFollowingTheFinger() {
+        show(ReplyDirection.Right)
+        compose.mainClock.autoAdvance = false
+        flick(32f)
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText("Here is the plan.").performTouchInput {
+            down(center)
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText("Here is the plan.").performTouchInput {
+            down(center)
+            moveBy(Offset((ReplySwipe.THRESHOLD_DP + 16f).dp.toPx(), 0f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText("Here is the plan.").performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
+        compose.runOnIdle { assertEquals(1, replies) }
+    }
+
     @Test fun aVoiceNotesSeekBarSeeksInsteadOfReplying() {
         var seek = 0f
         compose.setContent {

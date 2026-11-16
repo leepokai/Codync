@@ -78,6 +78,8 @@ internal enum class ReplyDirection(val sign: Float) {
     var gap by remember { mutableFloatStateOf(0f) }
     var settling by remember { mutableStateOf<Job?>(null) }
     fun settle() {
+        // Only one spring back runs: a tap while the last one is still moving starts from where it is.
+        settling?.cancel()
         settling = scope.launch {
             animate(ReplySwipe.shown(offset, gap), 0f, animationSpec = Motion.layout()) { value, _ -> offset = value }
         }

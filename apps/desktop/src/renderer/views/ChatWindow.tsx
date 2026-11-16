@@ -54,7 +54,7 @@ import { moveToSectionItems, sectionHeaderItems } from './section-menus'
 import { makeLeadItems, offersDelete, voiceTarget } from './lead-menus'
 import { NameDialog, type Naming } from './NameDialog'
 import { useTraySummary } from './tray-summary'
-import { useIslandSummary } from './island-summary'
+import { answerIslandCall, useIslandSummary } from './island-summary'
 import { useSSH, useSSHAttachments } from './settings/ssh-model'
 import { useCloudAttachments } from '../store/cloud-attachments'
 import './chat-window.css'
@@ -90,6 +90,8 @@ export function ChatWindow() {
             return setConfirmReset(true)
           case 'upToDate':
             return setUpToDate(true)
+          case 'islandCall':
+            return void answerIslandCall(app, c)
           case 'reviewApprovals':
             return app.reviewApprovals()
           case 'setTextSize':

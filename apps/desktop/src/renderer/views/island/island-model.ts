@@ -1,19 +1,34 @@
+import type { CallError } from '@shared/ipc'
 import {
   FINISHED_MS, focusOf, inTurn, isActive, islandFrame, islandMode, islandRect, othersOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandScreen, type IslandSummary, type IslandTab,
 } from '@shared/island'
 import { VOICE_SHORTCUT_KEYS, type VoiceKey, type VoiceShortcut } from '@shared/voice-shortcut'
-import { HostClient, LoopbackTransport } from '../../client/host-client'
+import { HostClient, HostError, type HostTransport } from '../../client/host-client'
 import { Observable } from '../../lib/observable'
 import { pref } from '../../lib/prefs'
 import { Dictation } from '../thread/dictation'
 import { dictationPlatform } from '../thread/dictation-platform'
 
-/** The island reaches this computer's own host through the main process's loopback address and token. */
-async function islandHost(): Promise<HostClient> {
-  const { local } = await window.codync.host.snapshot()
-  if (!local) throw new Error("The computer's host isn't running yet.")
-  return new HostClient(new LoopbackTransport(local.baseURL, local.token))
+/**
+ * The island has no connection of its own: a call reaches the host of the computer `ref`'s bot is
+ * on through the chat window, as its buttons do.
+ */
+class IslandTransport implements HostTransport {
+  constructor(private ref: string) {}
+
+  async call(method: string, body: unknown, timeoutMs: number) {
+    try {
+      return await window.codync.island.call(this.ref, method, body, timeoutMs)
+    } catch (e) {
+      const error = e as CallError
+      throw new HostError(error.status, error.message, error.offline === true)
+    }
+  }
+
+  stream(): () => void {
+    throw new Error('The island only calls the host.')
+  }
 }
 
 /** The bare notch peeks at once and opens after a rest; the compact island opens sooner. */
@@ -42,8 +57,10 @@ export class IslandModel extends Observable {
   /** Talking into the message field (the field's mic, or the voice input shortcut). */
   readonly dictation = new Dictation(
     (change) => this.update(() => (this.draft = change(this.draft))),
-    dictationPlatform(islandHost, () => {}, () => window.codync.island.openVoiceSettings()),
+    dictationPlatform(async () => new HostClient(new IslandTransport(this.dictatingTo)), () => {}, () => window.codync.island.openVoiceSettings()),
   )
+  /** The bot whose computer transcribes the recording: the message field's bot when it started. */
+  private dictatingTo = ''
   /** The voice input shortcut, as Settings → General has it. */
   shortcut: VoiceShortcut = 'off'
   /** The shape grew on its last change: open with a spring, close without one. */
@@ -218,12 +235,20 @@ export class IslandModel extends Observable {
     this.keyboard = false
   }
 
+  /** Starts dictating into the field; the message field's bot's computer transcribes it, even after the chip moves on. */
+  dictate(byShortcut = false) {
+    const bot = this.messageBot
+    if (!bot) return
+    this.dictatingTo = bot.ref
+    this.dictation.start(this.draft, byShortcut)
+  }
+
   /** A double tap opens the message field and listens; the next tap sends what was said once the last words are in. */
   private voiceKey(key: VoiceKey) {
     if (!this.dictation.shortcutKey(key, () => this.send())) return
     voiceShortcutUsed.set(true)
     this.setTab('message')
-    if (this.messageBot) this.dictation.start(this.draft, true)
+    this.dictate(true)
   }
 
   private readShortcut() {

@@ -8,31 +8,26 @@ import { Dictation, type DictationPlatform } from './dictation'
 import { trNow } from '../../lib/l10n.ts'
 
 /**
- * Dictation's real surroundings: the speech helper and the microphone, and with `host` a provider
- * on the user's key or the computer's own speech model through it; `report` shows its errors
+ * Dictation's real surroundings: the speech helper and the microphone, and through `host` a
+ * provider on the user's key or the computer's own speech model; `report` shows its errors
  * (the island shows them in its field instead).
  */
-export function dictationPlatform(host: (() => Promise<HostClient>) | null = null, report: (message: string) => void = () => {}, configureKey: () => void = () => {}): DictationPlatform {
-  const client = async () => {
-    if (!host) throw new Error(trNow('Dictating on a host needs the chat window.'))
-    return host()
-  }
+export function dictationPlatform(host: () => Promise<HostClient>, report: (message: string) => void, configureKey: () => void): DictationPlatform {
   return {
     speech: window.codync.speech.available ? window.codync.speech : null,
     // Read when shown, so a language change since the window opened applies.
     get noSpeech() { return onDeviceUnavailableReason() },
-    host: host !== null,
     language: () => VoiceSettings.language() || null,
     target: VoiceSettings.dictationTarget,
     async checkReady(target) {
-      if (target !== 'local') return configured(await voiceStatus(await client()), target)
-      const local = await localDictation(await client())
+      if (target !== 'local') return configured(await voiceStatus(await host()), target)
+      const local = await localDictation(await host())
       if (!local.ready) throw new Error(local.message ?? trNow('No speech model is linked on this computer.'))
       return true
     },
     configureKey,
     microphone: micPCM16k,
-    transcribe: async (target, piece) => transcribeOnHost(await client(), target, target === 'local' ? '' : VoiceSettings.transcribeModel(target), wav([piece])),
+    transcribe: async (target, piece) => transcribeOnHost(await host(), target, target === 'local' ? '' : VoiceSettings.transcribeModel(target), wav([piece])),
     count: countVoiceUsage,
     report,
   }

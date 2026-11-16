@@ -27,6 +27,7 @@ test('Island dictation waits for its transcript without offering another recordi
   const name = `Island dictation e2e ${Date.now()}`
   let botId: string | undefined
   try {
+    await setPref(page, 'appLanguage', 'en')
     await api(page, 'setVoiceServer', { provider: 'openai', url: address })
     await api(page, 'setVoiceKey', { provider: 'openai', key: 'sk-e2e-local' })
     await setPref(page, 'dictationEngine', 'openai')

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
-import type { WindowCommand } from '../shared/ipc'
+import type { CallResult, WindowCommand } from '../shared/ipc'
 import type { VoiceKey } from '../shared/voice-shortcut'
 import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
 import { present, webPreferences } from './headless'
@@ -44,11 +44,15 @@ function readScreens(): Promise<NotchScreen[]> {
 
 /** Answers the approval on screen from any app while it shows. */
 const KEYS = { 'Alt+Y': 'allow', 'Alt+N': 'deny' } as const
+/** A call the chat window never answers (it reloaded meanwhile) fails this long after its own timeout. */
+const ANSWER_GRACE_MS = 5000
+const noChatWindow: CallResult = { ok: false, error: { status: 0, message: 'Open the Codync window to dictate here.' } }
 
 interface Deps {
   url: string
   preload: string
-  send: (command: WindowCommand, show?: boolean) => void
+  /** Returns whether a chat window took the command. */
+  send: (command: WindowCommand, show?: boolean) => boolean
   openApp: () => void
   /** The setting changed (the tray's Settings menu shows it). */
   changed: () => void
@@ -68,6 +72,9 @@ export class Island {
   private timer: NodeJS.Timeout | null = null
   private shaped: IslandRect = { x: 0, y: 0, width: 0, height: 0 }
   private unfocus: NodeJS.Timeout | undefined
+  /** Host calls the island made, waiting for the chat window's answer. */
+  private calls = new Map<string, (result: CallResult) => void>()
+  private callId = 0
 
   constructor(private deps: Deps) {}
 
@@ -104,12 +111,29 @@ export class Island {
     ipcMain.on('island:newBot', () => this.deps.send({ kind: 'newBot' }))
     ipcMain.on('island:openApp', () => this.deps.openApp())
     ipcMain.on('island:openVoiceSettings', () => this.deps.send({ kind: 'voiceSettings' }))
+    ipcMain.handle('island:call', (_e, ref: string, method: string, body: unknown, timeoutMs: number) => this.call(ref, method, body, timeoutMs))
+    ipcMain.on('island:answer', (_e, id: string, result: CallResult) => this.calls.get(id)?.(result))
     ipcMain.on('island:focusable', (_e, on: boolean) => this.setFocusable(on))
     ipcMain.on('island:keys', (_e, on: boolean) => this.setKeys(on))
     screen.on('display-added', () => void this.place())
     screen.on('display-removed', () => void this.place())
     screen.on('display-metrics-changed', () => void this.place())
     this.sync()
+  }
+
+  /** Hands the island's host call to the chat window and waits for its answer (`island:answer`). */
+  private call(ref: string, method: string, body: unknown, timeoutMs: number) {
+    const id = String(++this.callId)
+    return new Promise<CallResult>((resolve) => {
+      const timer = setTimeout(() => settle(noChatWindow), timeoutMs + ANSWER_GRACE_MS)
+      const settle = (result: CallResult) => {
+        clearTimeout(timer)
+        this.calls.delete(id)
+        resolve(result)
+      }
+      this.calls.set(id, settle)
+      if (!this.deps.send({ kind: 'islandCall', id, ref, method, body, timeoutMs }, false)) settle(noChatWindow)
+    })
   }
 
   private sync() {

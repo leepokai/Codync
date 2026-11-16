@@ -240,11 +240,11 @@ export function Message({ model }: { model: IslandModel }) {
                 transcribing={dictation.transcribing}
                 color="#ffffff"
               />
-            ) : dictation.available ? (
-              <button type="button" className="island-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => dictation.start(model.draft)}>
+            ) : (
+              <button type="button" className="island-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => model.dictate()}>
                 <Icon name="mic" size={12} weight="medium" scaled={false} />
               </button>
-            ) : null}
+            )}
             <button type="submit" className="island-send" aria-label={tr('Send')} title={tr('Send')} disabled={!model.draft.trim()}>
               <Icon name="arrow.up" size={12} weight="bold" scaled={false} />
             </button>

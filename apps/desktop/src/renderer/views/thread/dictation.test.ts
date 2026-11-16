@@ -20,7 +20,6 @@ function setup(over: Partial<DictationPlatform> = {}) {
       },
     },
     noSpeech: 'No speech here.',
-    host: true,
     language: () => null,
     target: () => null,
     checkReady: async () => true,

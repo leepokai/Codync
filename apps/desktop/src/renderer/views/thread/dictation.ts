@@ -19,8 +19,6 @@ export interface DictationPlatform {
   speech: Pick<CodyncBridge['speech'], 'start' | 'stop' | 'onEvent'> | null
   /** Why there's no on-device speech here, said when it's picked anyway. */
   noSpeech: string
-  /** This window reaches a host, so it can dictate with a provider on the user's key. */
-  host: boolean
   /** The on-device recognizer's language; null is the computer's. */
   language(): string | null
   /** What transcribes dictation, picked beside the mic; null is on-device. */
@@ -89,11 +87,6 @@ export class Dictation extends Observable {
     this.platform = platform
   }
 
-  /** On-device speech here, or a host to transcribe with a provider. */
-  get available() {
-    return this.platform.speech !== null || this.platform.host
-  }
-
   /** Listening, or stopped and waiting for the last words. */
   get busy() {
     return this.off !== null || this.recording !== null || this.transcribing
@@ -107,7 +100,7 @@ export class Dictation extends Observable {
     this.before = draft
     this.segments = new SpeechSegments()
     const { speech } = this.platform
-    const target = this.platform.host ? this.platform.target() : null
+    const target = this.platform.target()
     if (target) {
       this.recording = { target, pcm: [], stopMic: null }
       return void this.record(this.recording, ++this.generation)

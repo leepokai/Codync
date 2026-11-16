@@ -11,10 +11,11 @@ class ScrollHitchesTest {
             val accumulator = ScrollHitchAccumulator()
             val expected = 1_000_000_000.0 / fps
             repeat(fps) { accumulator.add((1_000_000_000L / fps), expected) }
-            val event = accumulator.event(1_000_000_000, ScrollList.Chat, 20, fps)!!
+            val event = accumulator.event(1_000_000_000, ScrollList.Chat, 20)!!
             assertEquals(fps, event.frames)
             assertEquals(0, event.hitches)
             assertEquals(0, event.hitchMsPerS)
+            assertEquals(fps, event.fps)
         }
     }
 
@@ -23,7 +24,7 @@ class ScrollHitchesTest {
         val expected = 1_000_000_000.0 / 60
         repeat(59) { accumulator.add(16_666_667, expected) }
         accumulator.add(50_000_000, expected)
-        val event = accumulator.event(1_000_000_000, ScrollList.Chat, 20, 60)!!
+        val event = accumulator.event(1_000_000_000, ScrollList.Chat, 20)!!
         assertEquals(60, event.frames)
         assertEquals(1, event.hitches)
         assertEquals(50, event.longestMs)
@@ -33,11 +34,19 @@ class ScrollHitchesTest {
     @Test fun `exactly one and a half expected intervals is not a hitch`() {
         val accumulator = ScrollHitchAccumulator()
         accumulator.add(30_000_000, 20_000_000.0)
-        assertEquals(0, accumulator.event(1_000_000_000, ScrollList.Bots, 20, 60)!!.hitches)
+        assertEquals(0, accumulator.event(1_000_000_000, ScrollList.Bots, 20)!!.hitches)
+    }
+
+    @Test fun `the top refresh rate is the shortest interval the display ran at`() {
+        // Adaptive refresh drops to 60 while the scroll slows down; the display still runs up to 120.
+        val accumulator = ScrollHitchAccumulator()
+        accumulator.add(8_333_333, 1_000_000_000.0 / 120)
+        accumulator.add(16_666_667, 1_000_000_000.0 / 60)
+        assertEquals(120, accumulator.event(1_000_000_000, ScrollList.Bots, 20)!!.fps)
     }
 
     @Test fun `a window without drawn frames sends no event`() {
-        assertNull(ScrollHitchAccumulator().event(300_000_000, ScrollList.Bots, 20, 60))
+        assertNull(ScrollHitchAccumulator().event(300_000_000, ScrollList.Bots, 20))
     }
 
     @Test fun `scroll event properties include chat stop and jump`() {

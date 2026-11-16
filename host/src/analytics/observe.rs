@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 /// Methods that stand for one event with one fixed property.
-const FIXED: [(&str, Event, &str, &str); 14] = [
+const FIXED: [(&str, Event, &str, &str); 15] = [
     ("editHandoff", Event::HandoffAnswered, "action", "edit"),
     ("keepConversation", Event::HandoffAnswered, "action", "keep"),
     ("credentialSaveLogin", Event::CredentialSaved, "kind", "login"),
@@ -20,6 +20,7 @@ const FIXED: [(&str, Event, &str, &str); 14] = [
     ("setComposioKey", Event::CredentialSaved, "kind", "composio"),
     ("setVoiceKey", Event::CredentialSaved, "kind", "voice"),
     ("setAgentEnv", Event::CredentialSaved, "kind", "agent_env"),
+    ("resetCredentials", Event::CredentialsReset, "outcome", "done"),
     // Never the computer's name, the invite or the recovery code.
     ("networkInvite", Event::NetworkChanged, "action", "invite"),
     ("networkPromote", Event::NetworkChanged, "action", "promote"),
@@ -342,13 +343,18 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit, a login profile and a voice
-/// server report their category, never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile and a voice
+/// server report their category and a credentials reset `other`, never the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
+        }
+        Event::CredentialsReset => {
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), "other".into());
+            Some((event, p))
         }
         // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
         // one sign-in.

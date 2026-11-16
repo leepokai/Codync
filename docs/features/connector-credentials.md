@@ -30,6 +30,14 @@ its selected host.
   with `CODYNC_VAULT=folder` keeps the key in `<data dir>/vault.key`, protected by file permissions alone.
   A production build ignores the switch.
 
+`resetCredentials` (loopback only: desktop Settings → Computers → Reset → Saved credentials, asked twice, the terminal palette's *Reset saved
+credentials…*) is the way out when the key is gone but sealed records remain (data moved to a new computer without its
+keychain, which otherwise fails every unlock with *the key … is missing*): it deletes every `vault:v1:` row,
+`vault.id` and `vault.initialized` and drops the cached key and a folder key; the next unlock makes a new key under a
+new id. The old keyring item stays, since a copy of this database elsewhere (a sandbox) may still use it. It answers
+with the agents checked again. A Codync Cloud computer refuses it (its keeper holds the records); `hello`'s
+`credentialsReset` says whether a computer offers it.
+
 A host makes its key the first time something needs the vault, such as a connector, voice, credential or agent
 sign-in request, or a new bot once connectors are saved. A new computer's first start makes none.
 

@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "Uso di {to} perché {own} non è riuscito ad avviarsi",
   "Show the quoted message": "Mostra il messaggio citato",
   "That message isn't loaded": "Quel messaggio non è caricato",
-  "This message quotes nothing": "Questo messaggio non cita nulla"
+  "This message quotes nothing": "Questo messaggio non cita nulla",
+  "Saved credentials": "Credenziali salvate",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Chiavi e token salvati in Codync per agenti, connettori e chat vocale.",
+  "Deletes agent and voice keys, connectors, apps and logins.": "Elimina chiavi degli agenti e vocali, connettori, app e accessi.",
+  "Reset": "Reimposta",
+  "Reset saved credentials on {name}?": "Reimpostare le credenziali salvate su {name}?",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Elimina le chiavi e i token che Codync ha salvato su {name}: chiavi degli agenti, connettori, app collegate, chiavi della chat vocale e accessi salvati. Usalo quando non si possono più leggere, ad esempio dopo il passaggio a un nuovo computer, poi inseriscili di nuovo. Gli agenti che hanno effettuato l'accesso da soli restano connessi.",
+  "Reset saved credentials…": "Reimposta credenziali salvate…",
+  "Agents signed in on their own stay signed in.": "Gli agenti che hanno effettuato l'accesso da soli restano connessi.",
+  "Saved credentials reset. Enter them again where you use them.": "Credenziali salvate reimpostate. Inseriscile di nuovo dove le usi.",
+  "Delete saved credentials on {name} for good?": "Eliminare definitivamente le credenziali salvate su {name}?",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync non può recuperarle: dovrai inserire di nuovo ogni chiave e ricollegare ogni connettore. Questa azione non può essere annullata.",
+  "Delete saved credentials": "Elimina credenziali salvate",
+  "This can't be undone.": "Questa azione non può essere annullata.",
+  "All data": "Tutti i dati",
+  "Every account, bot, conversation, key and setting on this computer.": "Ogni account, bot, conversazione, chiave e impostazione su questo computer.",
+  "Delete all of Codync's data for good?": "Eliminare definitivamente tutti i dati di Codync?",
+  "Delete everything": "Elimina tutto"
 }

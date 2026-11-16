@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "Usando {to} porque {own} não conseguiu iniciar",
   "Show the quoted message": "Mostrar a mensagem citada",
   "That message isn't loaded": "Essa mensagem não está carregada",
-  "This message quotes nothing": "Esta mensagem não cita nada"
+  "This message quotes nothing": "Esta mensagem não cita nada",
+  "Saved credentials": "Credenciais salvas",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Chaves e tokens salvos no Codync para agentes, conectores e chat de voz.",
+  "Deletes agent and voice keys, connectors, apps and logins.": "Apaga chaves de agentes e de voz, conectores, apps e logins.",
+  "Reset": "Redefinir",
+  "Reset saved credentials on {name}?": "Redefinir as credenciais salvas em {name}?",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Apaga as chaves e tokens que o Codync salvou em {name}: chaves de agentes, conectores, apps conectados, chaves do chat de voz e logins salvos. Use quando não puderem mais ser lidos, como depois de mudar para um computador novo, e depois insira-os de novo. Agentes conectados por conta própria continuam conectados.",
+  "Reset saved credentials…": "Redefinir credenciais salvas…",
+  "Agents signed in on their own stay signed in.": "Agentes conectados por conta própria continuam conectados.",
+  "Saved credentials reset. Enter them again where you use them.": "Credenciais salvas redefinidas. Insira-as de novo onde você as usa.",
+  "Delete saved credentials on {name} for good?": "Apagar de vez as credenciais salvas em {name}?",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "O Codync não consegue recuperá-las: você vai inserir cada chave e conectar cada conector de novo. Isso não pode ser desfeito.",
+  "Delete saved credentials": "Apagar credenciais salvas",
+  "This can't be undone.": "Isso não pode ser desfeito.",
+  "All data": "Todos os dados",
+  "Every account, bot, conversation, key and setting on this computer.": "Cada conta, bot, conversa, chave e ajuste neste computador.",
+  "Delete all of Codync's data for good?": "Apagar de vez todos os dados do Codync?",
+  "Delete everything": "Apagar tudo"
 }

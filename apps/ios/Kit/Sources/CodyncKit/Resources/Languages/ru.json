@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "Используется {to}: {own} не удалось запустить",
   "Show the quoted message": "Показать цитируемое сообщение",
   "That message isn't loaded": "Это сообщение не загружено",
-  "This message quotes nothing": "Это сообщение ничего не цитирует"
+  "This message quotes nothing": "Это сообщение ничего не цитирует",
+  "Saved credentials": "Сохранённые учётные данные",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Ключи и токены, сохранённые в Codync для агентов, коннекторов и голосового чата.",
+  "Deletes agent and voice keys, connectors, apps and logins.": "Удаляет ключи агентов и голоса, коннекторы, приложения и логины.",
+  "Reset": "Сбросить",
+  "Reset saved credentials on {name}?": "Сбросить сохранённые учётные данные на {name}?",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Удаляет ключи и токены, которые Codync сохранил на {name}: ключи агентов, коннекторы, подключённые приложения, ключи голосового чата и сохранённые логины. Используйте, когда их больше нельзя прочитать, например после переезда на новый компьютер, а затем введите их снова. Агенты, вошедшие самостоятельно, останутся в системе.",
+  "Reset saved credentials…": "Сбросить сохранённые учётные данные…",
+  "Agents signed in on their own stay signed in.": "Агенты, вошедшие самостоятельно, останутся в системе.",
+  "Saved credentials reset. Enter them again where you use them.": "Сохранённые учётные данные сброшены. Введите их снова там, где вы их используете.",
+  "Delete saved credentials on {name} for good?": "Удалить сохранённые учётные данные на {name} навсегда?",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync не сможет их вернуть: вам придётся заново ввести каждый ключ и подключить каждый коннектор. Это действие нельзя отменить.",
+  "Delete saved credentials": "Удалить сохранённые учётные данные",
+  "This can't be undone.": "Это действие нельзя отменить.",
+  "All data": "Все данные",
+  "Every account, bot, conversation, key and setting on this computer.": "Все аккаунты, боты, разговоры, ключи и настройки на этом компьютере.",
+  "Delete all of Codync's data for good?": "Удалить все данные Codync навсегда?",
+  "Delete everything": "Удалить всё"
 }

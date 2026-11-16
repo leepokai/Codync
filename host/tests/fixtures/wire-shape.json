@@ -229,6 +229,7 @@
     "hello.canUpdate": "bool",
     "hello.cloud": "null",
     "hello.computerId": "string",
+    "hello.credentialsReset": "bool",
     "hello.device": "string",
     "hello.home": "string",
     "hello.hostId": "string",

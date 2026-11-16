@@ -4,6 +4,7 @@ mod analytics;
 mod approvals;
 mod auto_order;
 mod bot;
+mod credentials;
 mod editor;
 mod events;
 mod exchange;

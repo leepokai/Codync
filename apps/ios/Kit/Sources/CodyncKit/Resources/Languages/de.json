@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "{to} wird verwendet, da {own} nicht starten konnte",
   "Show the quoted message": "Zitierte Nachricht anzeigen",
   "That message isn't loaded": "Diese Nachricht ist nicht geladen",
-  "This message quotes nothing": "Diese Nachricht zitiert nichts"
+  "This message quotes nothing": "Diese Nachricht zitiert nichts",
+  "Saved credentials": "Gespeicherte Zugangsdaten",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Schlüssel und Tokens, die Codync für Agenten, Konnektoren und Sprachchat gespeichert hat.",
+  "Deletes agent and voice keys, connectors, apps and logins.": "Löscht Agenten- und Sprachschlüssel, Konnektoren, Apps und Logins.",
+  "Reset": "Zurücksetzen",
+  "Reset saved credentials on {name}?": "Gespeicherte Zugangsdaten auf {name} zurücksetzen?",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Löscht die Schlüssel und Tokens, die Codync auf {name} gespeichert hat: Agentenschlüssel, Konnektoren, verbundene Apps, Sprachchat-Schlüssel und gespeicherte Logins. Verwende das, wenn sie sich nicht mehr lesen lassen, etwa nach dem Umzug auf einen neuen Computer, und gib sie danach erneut ein. Agenten, die selbst angemeldet sind, bleiben angemeldet.",
+  "Reset saved credentials…": "Gespeicherte Zugangsdaten zurücksetzen…",
+  "Agents signed in on their own stay signed in.": "Agenten, die selbst angemeldet sind, bleiben angemeldet.",
+  "Saved credentials reset. Enter them again where you use them.": "Gespeicherte Zugangsdaten zurückgesetzt. Gib sie dort erneut ein, wo du sie verwendest.",
+  "Delete saved credentials on {name} for good?": "Gespeicherte Zugangsdaten auf {name} endgültig löschen?",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync kann sie nicht wiederherstellen: Du gibst jeden Schlüssel erneut ein und verbindest jeden Konnektor neu. Das lässt sich nicht rückgängig machen.",
+  "Delete saved credentials": "Gespeicherte Zugangsdaten löschen",
+  "This can't be undone.": "Das lässt sich nicht rückgängig machen.",
+  "All data": "Alle Daten",
+  "Every account, bot, conversation, key and setting on this computer.": "Jedes Konto, jeder Bot, jede Unterhaltung, jeder Schlüssel und jede Einstellung auf diesem Computer.",
+  "Delete all of Codync's data for good?": "Alle Daten von Codync endgültig löschen?",
+  "Delete everything": "Alles löschen"
 }

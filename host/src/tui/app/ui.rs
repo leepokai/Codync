@@ -62,13 +62,14 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    ResetCredentials,
     Language,
     ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 21] = [
+pub const ACTIONS: [(&str, &str, Action); 22] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
@@ -84,6 +85,7 @@ pub const ACTIONS: [(&str, &str, Action); 21] = [
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
     ("About usage analytics…", "", Action::AboutAnalytics),
+    ("Reset saved credentials…", "", Action::ResetCredentials),
     ("Appearance: System", "", Action::Appearance(super::super::appearance::Appearance::System)),
     ("Appearance: Light", "", Action::Appearance(super::super::appearance::Appearance::Light)),
     ("Appearance: Dark", "", Action::Appearance(super::super::appearance::Appearance::Dark)),
@@ -114,6 +116,10 @@ pub enum ConfirmAct {
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
+    /// Asks again before deleting every credential saved on this computer: it's dangerous and final.
+    ResetCredentials,
+    /// Deletes them (`resetCredentials`).
+    DeleteCredentials,
     /// Stops one item of a bot's box.
     StopWork {
         bot: String,

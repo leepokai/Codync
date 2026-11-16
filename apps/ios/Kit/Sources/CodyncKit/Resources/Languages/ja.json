@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "{own} を起動できないため {to} を使用中",
   "Show the quoted message": "引用元のメッセージを表示",
   "That message isn't loaded": "そのメッセージは読み込まれていません",
-  "This message quotes nothing": "このメッセージは何も引用していません"
+  "This message quotes nothing": "このメッセージは何も引用していません",
+  "Saved credentials": "保存済みの認証情報",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Codync がエージェント、コネクタ、音声通話のために保存したキーとトークン。",
+  "Deletes agent and voice keys, connectors, apps and logins.": "エージェントと音声のキー、コネクタ、アプリ、ログインを削除します。",
+  "Reset": "リセット",
+  "Reset saved credentials on {name}?": "{name} の保存済み認証情報をリセットしますか？",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Codync が {name} に保存したキーとトークン（エージェントのキー、コネクタ、接続済みのアプリ、音声通話のキー、保存済みのログイン）を削除します。新しいコンピュータへの移行後など、読み取れなくなったときに使い、その後もう一度入力してください。自分でサインインしたエージェントはサインインしたままです。",
+  "Reset saved credentials…": "保存済みの認証情報をリセット…",
+  "Agents signed in on their own stay signed in.": "自分でサインインしたエージェントはサインインしたままです。",
+  "Saved credentials reset. Enter them again where you use them.": "保存済みの認証情報をリセットしました。使う場所でもう一度入力してください。",
+  "Delete saved credentials on {name} for good?": "{name} の保存済み認証情報を完全に削除しますか？",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync では元に戻せません。キーをすべて入力し直し、コネクタをすべて接続し直す必要があります。この操作は取り消せません。",
+  "Delete saved credentials": "保存済みの認証情報を削除",
+  "This can't be undone.": "この操作は取り消せません。",
+  "All data": "すべてのデータ",
+  "Every account, bot, conversation, key and setting on this computer.": "このコンピュータ上のすべてのアカウント、ボット、会話、キー、設定。",
+  "Delete all of Codync's data for good?": "Codync のすべてのデータを完全に削除しますか？",
+  "Delete everything": "すべて削除"
 }

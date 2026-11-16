@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "正在使用 {to}，{own} 無法啟動",
   "Show the quoted message": "顯示引用的訊息",
   "That message isn't loaded": "那則訊息尚未載入",
-  "This message quotes nothing": "這則訊息沒有引用任何內容"
+  "This message quotes nothing": "這則訊息沒有引用任何內容",
+  "Saved credentials": "已存憑證",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Codync 為 agent、聯結器和語音儲存的金鑰與權杖。",
+  "Deletes agent and voice keys, connectors, apps and logins.": "刪除 agent 與語音金鑰、聯結器、App 和登入資料。",
+  "Reset": "重設",
+  "Reset saved credentials on {name}?": "要重設 {name} 上的已存憑證嗎？",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "刪除 Codync 在 {name} 上儲存的金鑰與權杖：agent 金鑰、聯結器、已連接的 App、語音金鑰和已存的登入資料。在它們無法再讀取時使用（例如換到新電腦之後），之後再重新輸入。自行登入的 agent 會維持登入。",
+  "Reset saved credentials…": "重設已存憑證…",
+  "Agents signed in on their own stay signed in.": "自行登入的 agent 會維持登入。",
+  "Saved credentials reset. Enter them again where you use them.": "已重設已存憑證。請在使用的地方重新輸入。",
+  "Delete saved credentials on {name} for good?": "要永久刪除 {name} 上的已存憑證嗎？",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync 無法復原它們：你需要重新輸入每個金鑰、重新連接每個聯結器。此動作無法復原。",
+  "Delete saved credentials": "刪除已存憑證",
+  "This can't be undone.": "此動作無法復原。",
+  "All data": "所有資料",
+  "Every account, bot, conversation, key and setting on this computer.": "這台電腦上的所有帳號、bot、對話、金鑰和設定。",
+  "Delete all of Codync's data for good?": "要永久刪除 Codync 的所有資料嗎？",
+  "Delete everything": "全部刪除"
 }

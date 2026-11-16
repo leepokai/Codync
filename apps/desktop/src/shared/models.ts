@@ -669,6 +669,8 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
+  credentialsReset?: boolean
 }
 
 export interface PairingInfo {

@@ -2149,5 +2149,22 @@
   "Using {to} while {own} couldn't start": "Utilisation de {to} : {own} n'a pas pu démarrer",
   "Show the quoted message": "Afficher le message cité",
   "That message isn't loaded": "Ce message n’est pas chargé",
-  "This message quotes nothing": "Ce message ne cite rien"
+  "This message quotes nothing": "Ce message ne cite rien",
+  "Saved credentials": "Identifiants enregistrés",
+  "Keys and tokens saved in Codync for agents, connectors and voice chat.": "Clés et jetons enregistrés dans Codync pour les agents, les connecteurs et le chat vocal.",
+  "Deletes agent and voice keys, connectors, apps and logins.": "Supprime clés des agents et vocales, connecteurs, apps et identifiants.",
+  "Reset": "Réinitialiser",
+  "Reset saved credentials on {name}?": "Réinitialiser les identifiants enregistrés sur {name} ?",
+  "Deletes the keys and tokens Codync saved on {name}: agent keys, connectors, connected apps, voice chat keys and saved logins. Use it when they can't be read anymore, as after moving to a new computer, then enter them again. Agents signed in on their own stay signed in.": "Supprime les clés et jetons que Codync a enregistrés sur {name} : clés des agents, connecteurs, apps connectées, clés du chat vocal et identifiants de connexion. À utiliser quand ils ne peuvent plus être lus, par exemple après un passage à un nouvel ordinateur, puis saisissez-les à nouveau. Les agents connectés par eux-mêmes restent connectés.",
+  "Reset saved credentials…": "Réinitialiser les identifiants enregistrés…",
+  "Agents signed in on their own stay signed in.": "Les agents connectés par eux-mêmes restent connectés.",
+  "Saved credentials reset. Enter them again where you use them.": "Identifiants enregistrés réinitialisés. Saisissez-les à nouveau là où vous les utilisez.",
+  "Delete saved credentials on {name} for good?": "Supprimer définitivement les identifiants enregistrés sur {name} ?",
+  "Codync can't bring them back: you'll enter each key and connect each connector again. This can't be undone.": "Codync ne pourra pas les récupérer : vous devrez saisir à nouveau chaque clé et reconnecter chaque connecteur. Cette action est irréversible.",
+  "Delete saved credentials": "Supprimer les identifiants enregistrés",
+  "This can't be undone.": "Cette action est irréversible.",
+  "All data": "Toutes les données",
+  "Every account, bot, conversation, key and setting on this computer.": "Chaque compte, bot, conversation, clé et réglage sur cet ordinateur.",
+  "Delete all of Codync's data for good?": "Supprimer définitivement toutes les données de Codync ?",
+  "Delete everything": "Tout supprimer"
 }

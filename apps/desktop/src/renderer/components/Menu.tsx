@@ -9,9 +9,9 @@ import { Text } from './Text'
 /** What every row in a Codync menu has. */
 interface MenuRow {
   title: string
-  /** Secondary context below the main label. */
+  /** Secondary context below the main label, or beside it when `detailBeside` is set. */
   detail?: string
-  /** Put the secondary context beside the title instead of below it. */
+  /** A shortcut or status on the same line as the title (a chord), rather than under it. */
   detailBeside?: boolean
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
@@ -198,9 +198,6 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, c
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
-    <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
       <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width }}>
         {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />}
       </div>

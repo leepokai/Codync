@@ -66,7 +66,7 @@ pub async fn call(workflows: &Workflows, hub: &Arc<Hub>, bot: &str, name: &str, 
                     ),
                 )
                 .await?;
-                workflows.create(hub, title, None, Some(script), Some(bot))
+                workflows.create(hub, title, None, Some(script), triggers_of(args)?, Some(bot))
             }
         }
         "run_workflow" => {

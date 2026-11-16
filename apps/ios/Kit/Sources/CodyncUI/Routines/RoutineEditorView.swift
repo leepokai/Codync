@@ -280,13 +280,8 @@ struct RoutineEditorView: View {
         } else if let preview {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr(preview.summary)).font(.caption.weight(.medium))
-                if let next = preview.nextRunAt {
-                    let when = Date(milliseconds: next).formatted(
-                        Date.FormatStyle(date: .abbreviated, time: .shortened).locale(locale)
-                    )
-                    Text(L10n.tr("Next {when}").replacingOccurrences(of: "{when}", with: when))
-            VStack(alignment: .leading, spacing: 2) {
                 Text(preview.draft.spoken).font(.caption.weight(.medium))
+                if let next = preview.nextRunAt {
                     Text(scheduleNextLine(next))
                         .font(.caption).foregroundStyle(Palette.secondary)
                 }

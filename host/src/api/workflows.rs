@@ -22,9 +22,14 @@ pub(super) async fn call(hub: &Arc<Hub>, method: &str, b: Value) -> Result<Contr
             .await?
         }
         "workflow" => hub.workflows.workflow(hub, str_arg(&b, "id")?, b["reveal"].as_bool().unwrap_or(false))?,
-        "createWorkflow" => {
-            hub.workflows.create(hub, b["title"].as_str().unwrap_or(""), graph_of(&b)?, b["script"].as_str(), None)?
-        }
+        "createWorkflow" => hub.workflows.create(
+            hub,
+            b["title"].as_str().unwrap_or(""),
+            graph_of(&b)?,
+            b["script"].as_str(),
+            triggers_of(&b)?,
+            None,
+        )?,
         "saveWorkflowScript" => hub.workflows.save_script(
             hub,
             str_arg(&b, "id")?,

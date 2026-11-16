@@ -42,6 +42,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [scriptOpen, setScriptOpen] = useState(false)
   const [scriptText, setScriptText] = useState('')
+  const scriptDirty = useRef(false)
   const [source, setSource] = useState<'graph' | 'script'>('graph')
   const [now, setNow] = useState(() => Date.now())
   const [chrome, setChrome] = useState(true)
@@ -106,7 +107,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
     previewRef.current = null
     saver.current = new GraphSaver(workflow.revision, async (base, nextGraph) => saveWorkflowGraph(await store.ready(), workflow.id, base, nextGraph))
     setSource(workflow.source ?? 'graph')
-    setScriptText(workflow.script ?? '')
+    if (!scriptDirty.current) setScriptText(workflow.script ?? '')
     sync(workflow.id, false)
     store.upsertWorkflow(workflow)
     store.rememberWorkflowDetail(workflow)
@@ -186,7 +187,10 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
     if (result.status === 'saved') {
       dirtyRef.current = false
       sync(selected, false)
-      if (result.workflow) store.upsertWorkflow(result.workflow)
+      if (result.workflow) {
+        store.upsertWorkflow(result.workflow)
+        if (!scriptDirty.current) setScriptText(result.workflow.script ?? '')
+      }
     }
     return 'ok'
   }
@@ -327,7 +331,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         onPreview={(version) => void preview(version)}
         onShowCurrent={showCurrent}
         onRestore={() => void restore()}
-        onScript={() => { setScriptText(scriptText); setScriptOpen(true) }}
+        onScript={() => { void openScript() }}
         onShowHistory={() => void refreshRuns()}
       />
       ) : null}
@@ -382,10 +386,26 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
       </Dialog>
       <Dialog open={confirmDelete} title="Delete workflow" actions={[{ title: 'Delete workflow', destructive: true, action: () => void remove() }]} onClose={() => setConfirmDelete(false)} />
       <Dialog open={scriptOpen} cardClassName="workflow-script-dialog" title={tr('Script')} actions={[{ title: 'Save', action: () => void saveScript() }]} onClose={() => setScriptOpen(false)}>
-        <textarea className="workflow-input workflow-script" aria-label={tr('Script')} value={scriptText} onChange={(event) => setScriptText(event.target.value)} />
+        <textarea className="workflow-input workflow-script" aria-label={tr('Script')} value={scriptText} onChange={(event) => { scriptDirty.current = true; setScriptText(event.target.value) }} />
       </Dialog>
     </div>
   )
+
+  async function openScript() {
+    if (!selected) return
+    if ((await settle()) !== 'ok' || !selected) return
+    const id = selected
+    try {
+      const { workflow } = await fetchWorkflow(await store.ready(), id, false)
+      if (selected !== id) return
+      adopt(workflow)
+      setScriptText(workflow.script ?? '')
+      scriptDirty.current = false
+      setScriptOpen(true)
+    } catch (error) {
+      if (!store.reportWorkflowFailure(error)) setNotice(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   async function saveScript() {
     if (!selected || !saver.current) return
@@ -402,6 +422,7 @@ export function WorkflowsView({ focusId }: { focusId?: string | null }) {
         adopt(result.workflow)
       }
       setScriptOpen(false)
+      scriptDirty.current = false
     } catch (error) {
       if (!store.reportWorkflowFailure(error)) setNotice(error instanceof Error ? error.message : String(error))
     }

@@ -172,8 +172,6 @@ private data class Editing<T>(val computerId: String, val draft: T)
         }
         // What another app shared: which bot it goes to.
         CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { shared -> ShareToBot(shared, app, states, accounts) }
-        // Text another app shared: which bot's box it goes to.
-        CodyncSheet(app.sharing?.takeIf { root == Root.Tabs }, accounts::finishSharing) { text -> ShareToBot(text, states, accounts) }
         CodyncSheet(showStatus && !app.loading, { showStatus = false }) {
             AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.State))
             val current = states.firstOrNull { it.computer.id == app.currentComputerId }

@@ -71,11 +71,9 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         // Listed by the host: they depend on this computer's driver.
         Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
-        Server::Workflows => (
-            "codync-workflows",
-            crate::workflows::INSTRUCTIONS.to_owned(),
-            crate::workflows::tool_list(),
-        ),
+        Server::Workflows => {
+            ("codync-workflows", crate::workflows::INSTRUCTIONS.to_owned(), crate::workflows::tool_list())
+        }
         Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),

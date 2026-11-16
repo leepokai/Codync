@@ -13,7 +13,7 @@ use super::style::theme;
 /// The key of the page of every bot's work: listed only while some bot has a live or waiting item.
 const WORK_KEY: &str = "E";
 
-const HELP: [(&str, &str, &str); 86] = [
+const HELP: [(&str, &str, &str); 85] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),

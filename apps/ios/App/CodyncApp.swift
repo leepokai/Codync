@@ -95,8 +95,8 @@ struct CodyncApp: App {
                     if let email = ProcessInfo.processInfo.environment["CODYNC_TEST_SIGN_IN"] {
                         await app.account.signInTestAccount(email)
                     }
-                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .state; app.showUsage = true }
-                    if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .state }
+                    if ProcessInfo.processInfo.environment["CODYNC_OPEN_USAGE"] != nil { app.tab = .settings; app.showStatus = true; app.showUsage = true }
+                    if ProcessInfo.processInfo.environment["CODYNC_STATE_SURFACE"] != nil { app.tab = .settings; app.showStatus = true }
                     // Screenshots: CODYNC_OPEN_URL=codync://bot/<botId>?scope=local&computer=<id>, without the system prompt.
                     if let s = ProcessInfo.processInfo.environment["CODYNC_OPEN_URL"], let url = URL(string: s) {
                         try? await Task.sleep(for: .seconds(1))

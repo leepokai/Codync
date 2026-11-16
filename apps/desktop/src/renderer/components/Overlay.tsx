@@ -321,8 +321,7 @@ export function ModalHeader({ title, subtitle, icon, trailing, onClose, closeTit
 }
 
 /** Plain icon button that lights up on hover and press. Icon-only, labelled for VoiceOver. */
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, disabled, className, buttonRef, menuOpen, tabIndex }: {
-export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, iconSize, disabled, className, buttonRef, menuOpen, systemTip = true }: {
+export function IconButtonBase({ title, icon, onClick, selected = false, size = 28, iconSize, disabled, className, buttonRef, menuOpen, tabIndex, systemTip = true }: {
   title: string
   icon: string
   onClick?: (e: React.MouseEvent) => void

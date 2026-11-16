@@ -15,7 +15,6 @@ import {
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
 import { mergeTaskEntries } from '@shared/tasks'
-import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import { HostError, type HostClient, type HostRoute, type HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import type { RunDetail, WorkflowDetail, WorkflowSummary } from '../views/workflows/workflow'
@@ -108,6 +107,7 @@ export class BotMirror extends Observable {
   workflowSession: { id: string; dirty: boolean; runId: string | null; followLive: boolean } | null = null
   workflowDetail: WorkflowDetail | null = null
   workflowDetailToken = 0
+  workflowRunToken = 0
   workflowRun: RunDetail | null = null
   workflowDeleted: string | null = null
   /** A kit view selected a bot on this store (new bot or group, editor); the account picks it up. */

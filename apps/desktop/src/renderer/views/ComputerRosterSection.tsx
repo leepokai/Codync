@@ -24,13 +24,12 @@ interface Props {
   openExtensions?: () => void
   /** Its screen, for another computer that has one; absent otherwise. */
   openScreen?: () => void
+  /** This computer's workflows, beside Extensions. */
+  openWorkflows?: () => void
   children: ReactNode
 }
 
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openScreen, children }: Props) {
-  /** This computer's workflows, beside Extensions. */
-  openWorkflows?: () => void
-export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openWorkflows, children }: Props) {
+export function ComputerRosterSection({ store, compact, collapsed, previous, next, lifted, drag, toggle, move, openExtensions, openScreen, openWorkflows, children }: Props) {
   const tr = useTr()
   const section = useRef<HTMLElement>(null)
   const id = store.computer.id
@@ -52,9 +51,8 @@ export function ComputerRosterSection({ store, compact, collapsed, previous, nex
           <ComputerHeadingLabel store={store} compact={compact} collapsed={collapsed} />
         </button>
         {openScreen && !compact ? <IconButton className="computer-roster-action" title="Screen" icon="display" size={24} onClick={openScreen} /> : null}
+        {openWorkflows && !compact ? <IconButton className="computer-roster-action" title="Workflows" icon="flowchart" size={24} onClick={openWorkflows} /> : null}
         {openExtensions && !compact ? <IconButton className="computer-roster-action" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
-        {openWorkflows && !compact ? <IconButton className="computer-roster-extensions" title="Workflows" icon="flowchart" size={24} onClick={openWorkflows} /> : null}
-        {openExtensions && !compact ? <IconButton className="computer-roster-extensions" title="Extensions" icon="square.grid.2x2" size={24} onClick={openExtensions} /> : null}
       </div>
       <div className={`computer-roster-content ${collapsed ? 'collapsed' : ''}`} inert={collapsed} aria-hidden={collapsed}>
         <div>{children}</div>

@@ -65,9 +65,27 @@ impl Workflows {
         title: &str,
         graph: Option<Graph>,
         script: Option<&str>,
+        triggers: Option<Graph>,
         owner: Option<&str>,
     ) -> Result<Value> {
         let _gate = self.gate.locked();
+        let graph = match (triggers, graph) {
+            (Some(triggers), Some(mut graph)) => {
+                let kept: Vec<_> = triggers
+                    .nodes
+                    .into_iter()
+                    .filter(|n| n.kind == crate::workflows::model::NodeKind::Trigger)
+                    .collect();
+                if !kept.is_empty() {
+                    graph.nodes.retain(|n| n.kind != crate::workflows::model::NodeKind::Trigger);
+                    for (index, node) in kept.into_iter().enumerate() {
+                        graph.nodes.insert(index, node);
+                    }
+                }
+                Some(graph)
+            }
+            (_, graph) => graph,
+        };
         let id = store::create(&hub.store, title, graph, script, owner)?;
         self.changed();
         emit(hub, "graph", &id, json!({}));

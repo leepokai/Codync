@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compiledCron, durationText, followUpLine, repeatChoice, runLabel, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
-import { compiledCron, durationText, emptyDraft, repeatChoice, runLabel, scheduleCaption, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
+import { compiledCron, durationText, emptyDraft, followUpLine, repeatChoice, runLabel, scheduleCaption, type FollowUp, type RoutineRun, type RoutineSchedulePreview } from './routine.ts'
 import { matchZones, timeZoneOptions, zoneOffset } from './time-zones.ts'
 
 test('time zones match like the phones: name start, word starts, inside, letters in order', () => {

@@ -389,15 +389,6 @@ export class BotSync extends BotMirror {
     this.saveCache()
   }
 
-  private resetWorkflowMirror() {
-    this.workflows = []
-    this.workflowSession = null
-    this.workflowDetail = null
-    this.workflowRun = null
-    this.workflowDetailToken += 1
-    this.workflowRunToken += 1
-  }
-
   /** Fetches everything again from rev 0, underneath what's shown: the chats keep their entries until the catch-up has all arrived (`finishRefetch`). */
   private refetchAll() {
     this.rev = 0
@@ -476,17 +467,17 @@ export class BotSync extends BotMirror {
       if (session.followLive && session.runId && session.runId !== runId) return
       this.workflowRun = run
       if (session.runId !== runId) this.workflowSession = { ...session, runId }
+      this.changed()
+    } catch (error) {
+      this.reportWorkflowFailure(error)
+    }
+  }
+
   /**
    * Fetches everything again from rev 0. That catch-up brings only each chat's newest entries, so the
    * main-chat ones held now go too: an older one kept would hide the gap from `loadOlder`, which pages
    * from the oldest one held. Messages still sending stay.
    */
-  private refetchAll() {
-    this.rev = 0
-    this.refetched = new Set()
-    this.historyComplete = new Set()
-  }
-
   /**
    * The catch-up from rev 0 brought only each chat's newest entries and never says one is gone, so the held
    * ones it didn't bring go: an older one kept would hide the gap from `loadOlder`, which pages from the

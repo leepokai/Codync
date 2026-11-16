@@ -1307,7 +1307,7 @@ pub fn retry_one(hub: &Hub, step_id: &str) -> Result<Value> {
     let Some(run_id) = row.run.clone() else {
         return run_solo(hub, &row.workflow, &row.node, &new_id());
     };
-    let _gate = hub.workflows.enter();
+    let gate = hub.workflows.enter();
     if let Some(open) = open_run(&hub.store, &row.workflow)?
         && open != run_id
     {
@@ -1317,7 +1317,7 @@ pub fn retry_one(hub: &Hub, step_id: &str) -> Result<Value> {
         bail!("This step is still running");
     }
     if super::script_run::is_script_run(&hub.store, &run_id) {
-        drop(_gate);
+        drop(gate);
         return retry_script(hub, &row, &run_id, step_id);
     }
     let now = now_ms();

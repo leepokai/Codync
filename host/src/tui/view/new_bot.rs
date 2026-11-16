@@ -11,7 +11,7 @@ use super::buffer::{centered, frame_box, put, rput, u};
 use super::overlay::input_line;
 use super::style::{FACE, bot_color, face_style, theme};
 
-/// "Color " + "‹ " + the swatches (2 cells and a gap each) + "›".
+/// 6 cells of "Color", then "‹ ", the swatches (2 cells and a gap each), then "›".
 const LOOKS_W: usize = 6 + 2 + COLORS.len() * 3 + 1;
 
 pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
@@ -34,7 +34,9 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let on_color = n.field == NewBotField::Color;
     let x0 = mid(LOOKS_W);
     let y = inner.y + 11;
-    let mut x = put(buf, x0, y, 6, tr("Color").as_ref(), label(NewBotField::Color));
+    // Keep the six-cell label column whatever the translation: `put` returns the text's own end.
+    let color = format!("{:<6}", tr("Color"));
+    let mut x = put(buf, x0, y, 6, &color, label(NewBotField::Color));
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {
         let s = if t.color { Style::default().bg(bot_color(c)) } else { t.text };

@@ -173,7 +173,7 @@ iPhone, Android, desktop and terminal show the same things:
   it offers the logins the chain doesn't have yet, signed in, so the bot's own agent is offered on its other
   login profiles and an agent with no login left is left out); a row per fallback with its
   number, logo, "Agent · Model" ("Agent (login profile) · Model" on one), "Usage resets 3:00 PM" / "Resting until 3:00 PM" while resting, an **In use** chip,
-  and a ⋯ menu (Move up, Move down, Remove); "No fallbacks yet."; a caption; and the "Let the bot change its
+  and a ⋯ menu (Move up, Move down, Edit, Remove: Edit opens that sheet as Edit fallback, filled in with the step's agent, model, model options and login profile, its own login offered again even when it has signed out since, and saves the step in its place; picking another agent and then its own again brings those back); "No fallbacks yet."; a caption; and the "Let the bot change its
   fallbacks" switch. The bot's own Agent row says when it resets.
 - **Chat**: one line where another agent took over ("Claude Code reached its usage limit (resets in 2 h). Codex carried
   on.") or the bot's own came back ("Back on Claude Code."); it unfolds to what the agent was told (past 8,000 bytes,

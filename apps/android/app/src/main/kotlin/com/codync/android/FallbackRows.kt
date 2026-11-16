@@ -51,9 +51,13 @@ internal fun agentChoices(state: AppState): List<Pair<String, String>> = backend
     id to ((info.text("name") ?: id) + if (!info.available) " (not installed)" else "")
 }
 
-/** The agents a new fallback can use: each that still has a login the chain ([taken]: the bot's own and its fallbacks') doesn't. */
-private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<String, String>> {
-    val free = agentBackends(state).filter { it.freeLogins(taken).isNotEmpty() }.map { it.id }
+/** The chain's logins, the bot's [own] first, without step [but]'s: each is in it once, and the step being edited keeps its own. */
+private fun taken(own: Login, list: List<Fallback>, but: Int): List<Login> = listOf(own) + list.filterIndexed { i, _ -> i != but }.map { it.login }
+
+/** The agents a step can use: each that still has a login the rest of the chain ([taken]) doesn't, and the step's [own] (its
+ *  login may have signed out since). */
+private fun fallbackChoices(state: AppState, taken: List<Login>, own: String? = null): List<Pair<String, String>> {
+    val free = agentBackends(state).filter { it.id == own || it.freeLogins(taken).isNotEmpty() }.map { it.id }
     return agentChoices(state).filter { it.first in free }
 }
 
@@ -76,28 +80,36 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
 }
 
 /** The Fallbacks header (ⓘ and "+"), a row per fallback, and what they do. Changes go into the form like any other. */
-@Composable internal fun FallbackList(state: AppState, own: Login, list: List<Fallback>, bot: Bot?, change: (List<Fallback>) -> Unit,
-    addFallback: () -> Unit, modifier: Modifier = Modifier) {
+@Composable internal fun FallbackList(state: AppState, store: AppStore, own: Login, list: List<Fallback>, bot: Bot?, change: (List<Fallback>) -> Unit,
+    modifier: Modifier = Modifier) {
     var about by remember { mutableStateOf(false) }
+    // The step the sheet is open on: its place, and its own as the sheet opened (null for a new one, at the end).
+    var sheet by remember { mutableStateOf<Pair<Int, Fallback?>?>(null) }
     Column(modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(tr("Fallbacks"), style = Type.body, color = Palette.text)
             IconButton("About fallbacks", "info.circle") { about = true }
             Box(Modifier.weight(1f))
-            if (list.size < MAX_FALLBACKS && fallbackChoices(state, listOf(own) + list.map { it.login }).isNotEmpty()) IconButton("Add fallback", "plus", action = addFallback)
+            if (list.size < MAX_FALLBACKS && fallbackChoices(state, taken(own, list, list.size)).isNotEmpty()) IconButton("Add fallback", "plus") { sheet = list.size to null }
         }
         if (list.isEmpty()) Text(tr("No fallbacks yet."), style = Type.subheadline, color = Palette.secondary)
         for ((index, fallback) in list.withIndex()) key(fallback.login) {
             FallbackRow(state, index + 1, fallback, bot?.restOf(fallback.login), bot?.agentStep?.login == fallback.login) { buildList {
                 if (index > 0) add(MenuItem("Move up", icon = "arrow.up") { change(list.moved(index, -1)) })
                 if (index < list.lastIndex) add(MenuItem("Move down", icon = "arrow.down") { change(list.moved(index, 1)) })
-                add(MenuItem("Remove", icon = "trash", destructive = true) { change(list - fallback) })
+                add(MenuItem("Edit", icon = "pencil") { sheet = index to fallback })
+                add(MenuItem("Remove", icon = "trash", destructive = true, divider = true) { change(list - fallback) })
             } }
         }
         Text(tr("If {agent} runs out of usage or can't answer, the bot carries on with the next one. Chat, memory and workspace carry over.")
             .replace("{agent}", backendName(state, own.backend)), style = Type.caption, color = Palette.secondary)
     }
     CodyncDialog("Fallbacks", about, { about = false }, ABOUT_FALLBACKS, cancel = "OK") { emptyList() }
+    CodyncSheet(sheet, { sheet = null }) { (i, initial) ->
+        FallbackSheet(state, store, taken(own, list, i), initial) { new ->
+            change(list.toMutableList().apply { if (initial != null && i < size) set(i, new) else add(new) }); sheet = null
+        }
+    }
 }
 
 @Composable private fun FallbackRow(state: AppState, number: Int, fallback: Fallback, rest: Resting?, inUse: Boolean, menu: () -> List<MenuItem>) {
@@ -120,24 +132,30 @@ private fun fallbackChoices(state: AppState, taken: List<Login>): List<Pair<Stri
     }
 }
 
-/** "+": another agent (or the bot's own on another of its login profiles) and its model, added at the end of the list. */
-@Composable internal fun AddFallbackSheet(state: AppState, store: AppStore, chain: List<Login>, add: (Fallback) -> Unit) {
+/** "+" (or a row's Edit, with the step's own as [initial]): an agent (or the bot's own on another of its login profiles) and its
+ *  model. [chain] is the rest of the chain's logins. */
+@Composable private fun FallbackSheet(state: AppState, store: AppStore, chain: List<Login>, initial: Fallback?, save: (Fallback) -> Unit) {
     // Taken as the sheet opens, so the added login doesn't drop out of the pickers while the sheet slides away.
     val taken = remember { chain }
-    val choices = remember { fallbackChoices(state, taken) }
+    val choices = remember { fallbackChoices(state, taken, initial?.backend) }
     // An installed agent first, as on the other apps.
     val installed = remember { agentBackends(state).filter { it.available }.map { it.id } }
-    var backend by remember { mutableStateOf((choices.firstOrNull { it.first in installed } ?: choices.firstOrNull())?.first.orEmpty()) }
-    var model by remember(backend) { mutableStateOf<String?>(null) }
-    var options by remember(backend) { mutableStateOf(emptyMap<String, String>()) }
+    var backend by remember { mutableStateOf(initial?.backend ?: (choices.firstOrNull { it.first in installed } ?: choices.firstOrNull())?.first.orEmpty()) }
+    // The step's own while its agent stays the same.
+    val own = initial?.takeIf { it.backend == backend }
+    var model by remember(backend) { mutableStateOf(own?.model) }
+    var options by remember(backend) { mutableStateOf(own?.modelOptions.orEmpty()) }
     val agent = agentBackends(state).firstOrNull { it.id == backend }
-    val free = agent?.freeLogins(taken).orEmpty()
+    // A step keeps its own login, even one that has signed out since.
+    val free = agent?.freeLogins(taken).orEmpty().let { if (own == null || own.loginProfile in it) it else it + own.loginProfile }
     // The first login the chain doesn't have yet, until the user picks one.
-    var picked by remember(backend) { mutableStateOf<String?>(null) }
+    var picked by remember(backend) { mutableStateOf(own?.loginProfile) }
     val loginProfile = if (picked in free) picked else free.firstOrNull()
     Column(Modifier.fillMaxSize()) {
-        ModalHeader("Add fallback") {
-            IconButton("Add fallback", "checkmark", enabled = backend.isNotEmpty()) { add(Fallback(backend, model = model, modelOptions = options, loginProfile = loginProfile)) }
+        ModalHeader(if (initial != null) "Edit fallback" else "Add fallback") {
+            IconButton(if (initial != null) "Save" else "Add fallback", "checkmark", enabled = backend.isNotEmpty()) {
+                save(Fallback(backend, command = own?.command, model = model, modelOptions = options, loginProfile = loginProfile))
+            }
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
             CardSection {

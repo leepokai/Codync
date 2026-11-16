@@ -42,17 +42,20 @@ export function AgentStepBanner({ bot }: { bot: Bot }) {
   )
 }
 
-/** The Agent card's Fallbacks: the agents that carry on in order, added, moved and removed here, saved with the form. */
+/** The Agent card's Fallbacks: the agents that carry on in order, added, moved, edited and removed here, saved with the form. */
 export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: Bot; onChange: (update: (d: BotDraft) => BotDraft) => void }) {
   const store = useStore()
   const tr = useTr()
-  const [adding, setAdding] = useState(false)
+  // The step the sheet adds (list.length) or edits in place.
+  const [sheet, setSheet] = useState<number | null>(null)
   const [about, setAbout] = useState(false)
   const list = draft.fallbacks ?? []
   // Each login is in the chain once, the bot's own included: an agent comes again only on another of its login profiles.
-  const taken: Login[] = [draft, ...list]
-  const choices = (store.hello?.backends ?? []).filter((b) => freeLogins(b, taken).length)
-  const edit = (change: (list: Fallback[]) => Fallback[]) => onChange((d) => ({ ...d, fallbacks: change(d.fallbacks ?? []) }))
+  // The step being edited keeps its own login, and its agent stays a choice even when that login has signed out since.
+  const takenBut = (index: number): Login[] => [draft, ...list.filter((_, j) => j !== index)]
+  const choicesBut = (index: number) => (store.hello?.backends ?? []).filter((b) => b.id === list[index]?.backend || freeLogins(b, takenBut(index)).length)
+  const choices = choicesBut(list.length)
+  const update = (change: (list: Fallback[]) => Fallback[]) => onChange((d) => ({ ...d, fallbacks: change(d.fallbacks ?? []) }))
   const now = Date.now()
   return (
     <VStack gap={8}>
@@ -60,7 +63,7 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
         <Text tone="text">{tr(`Fallbacks`)}</Text>
         <IconButton title="About fallbacks" icon="info.circle" size={22} onClick={() => setAbout(true)} />
         <Spacer />
-        {list.length < MAX_FALLBACKS && choices.length ? <IconButton title="Add fallback" icon="plus" className="fade-in" onClick={() => setAdding(true)} /> : null}
+        {list.length < MAX_FALLBACKS && choices.length ? <IconButton title="Add fallback" icon="plus" className="fade-in" onClick={() => setSheet(list.length)} /> : null}
       </HStack>
       {list.length ? (
         list.map((f, i) => (
@@ -71,8 +74,9 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
             count={list.length}
             bot={bot}
             now={now}
-            move={(by) => edit((l) => moveFallback(l, i, by))}
-            remove={() => edit((l) => l.filter((_, j) => j !== i))}
+            move={(by) => update((l) => moveFallback(l, i, by))}
+            onEdit={() => setSheet(i)}
+            remove={() => update((l) => l.filter((_, j) => j !== i))}
           />
         ))
       ) : (
@@ -82,14 +86,15 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
         {tr('If {agent} runs out of usage or can\'t answer, the bot carries on with the next one. Chat, memory and workspace carry over.').replace('{agent}', store.backendName(draft.backend))}
       </Text>
       <Dialog open={about} title={tr('Fallbacks')} message={tr(ABOUT)} actions={[]} cancel="OK" onClose={() => setAbout(false)} />
-      <FormSheet open={adding} onClose={() => setAdding(false)} width={460} height={420}>
-        {adding ? (
-          <AddFallback
-            choices={choices}
-            taken={taken}
-            onAdd={(f) => {
-              edit((l) => [...l, f])
-              setAdding(false)
+      <FormSheet open={sheet !== null} onClose={() => setSheet(null)} width={460} height={420}>
+        {sheet !== null ? (
+          <FallbackSheet
+            choices={choicesBut(sheet)}
+            taken={takenBut(sheet)}
+            initial={list[sheet]}
+            onSave={(f) => {
+              update((l) => l.toSpliced(sheet, 1, f))
+              setSheet(null)
             }}
           />
         ) : null}
@@ -99,13 +104,14 @@ export function FallbacksRow({ draft, bot, onChange }: { draft: BotDraft; bot: B
 }
 
 /** One fallback: its place, agent and model, whether it's resting or in use, and its menu. */
-function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
+function FallbackRow({ fallback, index, count, bot, now, move, onEdit, remove }: {
   fallback: Fallback
   index: number
   count: number
   bot: Bot
   now: number
   move: (by: number) => void
+  onEdit: () => void
   remove: () => void
 }) {
   const store = useStore()
@@ -133,7 +139,8 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
         items={() => [
           ...(index > 0 ? [{ title: 'Move up', icon: 'arrow.up', action: () => move(-1) }] : []),
           ...(index < count - 1 ? [{ title: 'Move down', icon: 'arrow.down', action: () => move(1) }] : []),
-          { title: 'Remove', icon: 'trash', destructive: true, divider: count > 1, action: remove },
+          { title: 'Edit', icon: 'pencil', action: onEdit },
+          { title: 'Remove', icon: 'trash', destructive: true, divider: true, action: remove },
         ]}
       >
         <Icon name="ellipsis" size={14} weight="medium" />
@@ -142,29 +149,43 @@ function FallbackRow({ fallback, index, count, bot, now, move, remove }: {
   )
 }
 
-/** The "Add fallback" sheet: another agent (or this one on another of its login profiles), and the model to use on it. */
-function AddFallback({ choices, taken, onAdd }: { choices: Backend[]; taken: Login[]; onAdd: (f: Fallback) => void }) {
+/** The "Add fallback" sheet, or "Edit fallback" with a step's own (`initial`): another agent (or this one on another of its login profiles), and the model to use on it. */
+function FallbackSheet({ choices, taken, initial, onSave }: { choices: Backend[]; taken: Login[]; initial?: Fallback; onSave: (f: Fallback) => void }) {
   const tr = useTr()
-  const [backend, setBackend] = useState((choices.find((b) => b.available) ?? choices[0])?.id ?? '')
+  const [backend, setBackend] = useState(initial?.backend ?? (choices.find((b) => b.available) ?? choices[0])?.id ?? '')
   const agent = choices.find((b) => b.id === backend)
-  const free = agent ? freeLogins(agent, taken) : []
+  // The step's own while its agent stays the same.
+  const ownOf = (id: string) => (id === initial?.backend ? initial : undefined)
+  const own = ownOf(backend)
+  const open = agent ? freeLogins(agent, taken) : []
+  // A step keeps its own login, even one that has signed out since.
+  const free = own && !open.includes(own.loginProfile ?? null) ? [...open, own.loginProfile ?? null] : open
   // The first login the chain doesn't have yet, until the user picks one.
-  const [picked, setPicked] = useState<string | null | undefined>(undefined)
+  const [picked, setPicked] = useState<string | null | undefined>(initial ? initial.loginProfile ?? null : undefined)
   const loginProfile = picked !== undefined && free.includes(picked) ? picked : free[0] ?? null
-  const [model, setModel] = useState<string | null>(null)
-  const [modelOptions, setModelOptions] = useState<Record<string, string>>({})
+  const [model, setModel] = useState<string | null>(initial?.model ?? null)
+  const [modelOptions, setModelOptions] = useState<Record<string, string>>(initial?.modelOptions ?? {})
   const models = useAgentModels(backend)
   // Options belong to one model.
   const pickModel = (m: string | null) => {
     if (m !== model) setModelOptions({})
     setModel(m)
   }
+  // Back on the step's own agent, its model and login come back with it.
+  const pickAgent = (id: string) => {
+    const step = ownOf(id)
+    setBackend(id)
+    setPicked(step ? step.loginProfile ?? null : undefined)
+    setModel(step?.model ?? null)
+    setModelOptions(step?.modelOptions ?? {})
+  }
+  const save = () => onSave({ ...own, backend, loginProfile, model, modelOptions })
   return (
     <SheetPage>
-      <ModalHeader title={tr(`Add fallback`)} trailing={<IconButton title="Add" icon="checkmark" disabled={!backend} onClick={() => onAdd({ backend, loginProfile, model, modelOptions })} />} />
+      <ModalHeader title={tr(initial ? `Edit fallback` : `Add fallback`)} trailing={<IconButton title={initial ? 'Save' : 'Add'} icon="checkmark" disabled={!backend} onClick={save} />} />
       <CardForm>
         <CardSection>
-          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={(id) => { setBackend(id); setPicked(undefined); setModel(null); setModelOptions({}) }} collapsible={false} />
+          <AgentModelPicker backend={backend} models={models} selection={model} onChange={pickModel} options={modelOptions} onOptionsChange={setModelOptions} sessionNote={false} agents={choices.map(agentChoice)} onAgentChange={pickAgent} collapsible={false} />
           {agent?.loginProfiles ? <LoginProfileRow backend={agent} loginProfile={loginProfile} free={free} onChange={setPicked} /> : null}
         </CardSection>
       </CardForm>

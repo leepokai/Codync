@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { addAccount, api, attach, loginProfilesOf, openAgentSheet, standInAgent, typeMessage } from './sandbox.ts'
 
 // Both tests run on the stand-in Devin CLI of an e2e sandbox (`npm run dev -- --cdp`,
@@ -8,6 +8,30 @@ test.skip(process.platform === 'win32', 'The stand-in agent is a script: not on 
 
 const WORK = 'E2E work'
 const OWN = 'E2E default'
+
+/**
+ * Edit on the open bot's only fallback (#377): its sheet shows the step on `loginProfile`, the agent's default model
+ * is picked and saved. Returns the chain the host has then, as [agent, login profile, model].
+ */
+async function editFallbackModel(page: Page, botId: string, loginProfile: string) {
+  await page.locator('.details-panel .fallback-menu').click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
+  const editing = page.locator('.sheet-page', { hasText: 'Edit fallback' })
+  await expect(editing.locator('.value-row', { hasText: 'Login profile' }).locator('.choice-picker')).toHaveText(loginProfile)
+  const model = editing.locator('.agent-picker-choice').nth(1)
+  await model.click()
+  await editing.locator('.agent-picker-item').first().click()
+  await expect(model).not.toHaveText('e2e-model')
+  await editing.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(editing).toHaveCount(0)
+  let chain: (string | null)[][] = []
+  await expect.poll(async () => {
+    const { bot } = await api<{ bot: { fallbacks: { backend: string; loginProfile?: string | null; model?: string | null }[] } }>(page, 'updateBot', { id: botId })
+    chain = bot.fallbacks.map((f) => [f.backend, f.loginProfile ?? null, f.model ?? null])
+    return chain.some((step) => step[2] === 'e2e-model')
+  }).toBe(false)
+  return chain
+}
 
 test('an agent gets another login profile, it signs in, a bot runs on it, and it goes once no bot does', async () => {
   const { browser, page } = await attach()
@@ -87,9 +111,12 @@ test('an agent gets another login profile, it signs in, a bot runs on it, and it
 
     // A fallback on the other login profile shows which one: the chain has each login once, not each agent.
     const stepped = await api<{ bot: { fallbacks: { backend: string; loginProfile?: string }[] } }>(page, 'updateBot', {
-      id: botId, loginProfile: null, fallbacks: [{ backend: agent.id, loginProfile: profileId, model: null, modelOptions: {} }],
+      id: botId, loginProfile: null, fallbacks: [{ backend: agent.id, loginProfile: profileId, model: 'e2e-model', modelOptions: {} }],
     })
     expect(stepped.bot.fallbacks).toMatchObject([{ backend: agent.id, loginProfile: profileId }])
+    await expect(page.locator('.details-panel').getByText(`${agent.name} (${WORK}) · e2e-model`)).toBeVisible()
+    // Edit offers the step its own login again: another model, and it stays on its login profile.
+    expect(await editFallbackModel(page, botId, WORK)).toEqual([[agent.id, profileId, null]])
     await expect(page.locator('.details-panel').getByText(`${agent.name} (${WORK}) · Default`)).toBeVisible()
     await expect(api(page, 'updateBot', {
       id: botId, fallbacks: [{ backend: agent.id, loginProfile: null, model: null, modelOptions: {} }], // without `loginProfile` the step keeps its saved one
@@ -138,6 +165,19 @@ test('an API key login profile gets its keys from its sign-in card and its key f
     if (!profileId) return
     expect((await profilesOf()).find((p) => p.id === profileId)).toMatchObject({ kind: 'apiKey', vars: [] })
     await header.getByRole('button', { name: 'Back' }).click()
+
+    // A fallback on it keeps it through Edit, although a login profile that isn't signed in is no choice for a new step.
+    botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'kimi', connectors: [], skills: [], notify: false,
+      fallbacks: [{ backend: agent.id, loginProfile: profileId, model: 'e2e-model', modelOptions: {} }],
+    })).bot.id
+    await page.reload()
+    await page.locator('.roster-row', { hasText: name }).click()
+    await page.getByRole('button', { name: `${name}, view details` }).click()
+    await page.locator('.details-panel').getByRole('tab', { name: 'Settings' }).click()
+    expect(await editFallbackModel(page, botId, 'New login profile')).toEqual([[agent.id, profileId, null]])
+    await api(page, 'deleteBot', { botId })
+    botId = undefined
 
     // A bot on it is asked to sign in before its first message, since it has no key. The card opens the key form,
     // never a sign-in terminal.

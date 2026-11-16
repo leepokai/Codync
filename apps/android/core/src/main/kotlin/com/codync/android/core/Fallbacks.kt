@@ -42,9 +42,6 @@ fun Bot.stepBanner(name: (Login, own: Boolean) -> String, clock: (Long) -> Strin
 /** The login the draft is set to run on. */
 val BotDraft.login: Login get() = Login(backend, loginProfile)
 
-/** The logins the chain has, the bot's own first: each is in it once, so an agent comes again only on another of its login profiles. */
-val BotDraft.logins: List<Login> get() = listOf(login) + fallbacks.orEmpty().map { it.login }
-
 /** The logins of this agent a new step can still take: the computer's own (first, as null) and its signed-in login profiles, without the ones in [taken]. */
 fun AgentBackend.freeLogins(taken: List<Login>): List<String?> =
     (listOf<String?>(null) + loginProfiles.orEmpty().filter { it.signedIn }.map { it.id }).filter { Login(id, it) !in taken }

@@ -576,6 +576,7 @@
   "Fallbacks": "Agents de secours",
   "About fallbacks": "À propos des agents de secours",
   "Add fallback": "Ajouter un agent de secours",
+  "Edit fallback": "Modifier l’agent de secours",
   "In use": "En cours d’utilisation",
   "Add": "Ajouter",
   "When this bot's agent runs out of usage, is rate limited, signed out or won't start, the next agent here carries on in the same chat, with the same memory and workspace. The bot goes back to its own agent when it recovers. A fallback that uses an API key costs money. To fall back between one agent's models, set that in the agent itself (Claude Code's fallbackModel).": "Lorsque l’agent de ce bot épuise son quota, atteint une limite de requêtes, se déconnecte ou ne démarre pas, l’agent suivant poursuit dans la même discussion, avec la même mémoire et le même espace de travail. Le bot revient à son agent habituel lorsqu’il est rétabli. Un agent de secours utilisant une clé API est payant. Pour basculer entre les modèles d’un même agent, configurez-le dans l’agent lui-même (fallbackModel de Claude Code).",

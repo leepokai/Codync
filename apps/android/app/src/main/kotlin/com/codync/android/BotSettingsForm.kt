@@ -25,7 +25,6 @@ import com.codync.android.core.BotDraft
 import com.codync.android.core.LinkState
 import com.codync.android.core.MAX_AGENTS
 import com.codync.android.core.login
-import com.codync.android.core.logins
 import com.codync.android.core.restOf
 import com.codync.android.core.ScreenState
 import com.codync.android.design.*
@@ -45,7 +44,6 @@ import androidx.compose.ui.semantics.semantics
     // The Avatar row unfolds the picker (iOS `pickingAvatar`).
     var pickingAvatar by remember { mutableStateOf(false) }
     var viewingSkill by remember { mutableStateOf<SkillRef?>(null) }
-    var addingFallback by remember { mutableStateOf(false) }
     // Retry model list reloads Permissions too: its modes come from the same list.
     var modelReload by remember { mutableIntStateOf(0) }
     val online = state.actualConnection is LinkState.Ready
@@ -55,7 +53,7 @@ import androidx.compose.ui.semantics.semantics
         CardSection("Instructions") { instructionsRow(draft, change) }
         CardSection("Agent") {
             fallbackBanner(state, store, bot)
-            agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ }) { addingFallback = true }
+            agentRows(state, store, draft, change, bot, modelReload, reloadModels = { modelReload++ })
             compactionRow(bot, draft, change)
         }
         CardSection("Profile") {
@@ -80,9 +78,6 @@ import androidx.compose.ui.semantics.semantics
         }
     }
     CodyncSheet(viewingSkill, { viewingSkill = null }) { SkillSheet(it, state, store) }
-    CodyncSheet(addingFallback, { addingFallback = false }) {
-        AddFallbackSheet(state, store, draft.logins) { change(draft.copy(fallbacks = draft.fallbacks.orEmpty() + it)); addingFallback = false }
-    }
 }
 
 @Composable private fun OfflineNote() = Text(tr("Reconnect to this computer to save settings."), style = Type.caption, color = Palette.warning)
@@ -137,7 +132,7 @@ private fun CardRows.computerRow(state: AppState, online: Boolean) = row {
 
 /** The agent, its model and the fallbacks that carry on for it. */
 private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, bot: Bot?, modelReload: Int,
-    reloadModels: () -> Unit, addFallback: () -> Unit) {
+    reloadModels: () -> Unit) {
     row {
         AgentModelPicker(state, store::agentModels, draft.backend, draft.model, draft.modelOptions, draft.fastMode ?: false, bot,
             { model, options -> change(draft.copy(model = model, modelOptions = options)) }, { change(draft.copy(fastMode = it)) },
@@ -154,7 +149,7 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
     loginProfileRow(state, store, draft, change)
     // Only from a host that has fallbacks (its bots say).
     val list = draft.fallbacks ?: return
-    row { FallbackList(state, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }, addFallback) }
+    row { FallbackList(state, store, draft.login, list, bot, { change(draft.copy(fallbacks = it)) }) }
     row {
         SwitchRow("Let the bot change its fallbacks", "It can set this list itself, for example when you ask it to.", draft.selfFallbacks != false,
             { change(draft.copy(selfFallbacks = it)) })

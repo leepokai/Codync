@@ -67,7 +67,6 @@ class FallbacksTest {
         assertNotNull(bot.restOf(bot.login, now = 1000))
         assertNull("another login of the same agent isn't resting", bot.restOf(Login("claude"), now = 1000))
         val draft = BotDraft.from(bot)
-        assertEquals(listOf(Login("claude", "a1"), Login("claude", "a2"), Login("claude"), Login("codex")), draft.logins)
         val sent = draft.body().getValue("fallbacks").jsonArray.map { it.jsonObject["loginProfile"] }
         assertEquals(listOf(JsonPrimitive("a2"), JsonNull, JsonNull), sent)
     }

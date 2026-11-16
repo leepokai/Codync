@@ -17,6 +17,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 「同時幾個 agent」在 Bot 的「設定」。
 - 「每個 agent 一個 worktree」：同時在同一個 repository 工作的 agent 各有自己的分支。
 - 改用備援時，智慧體卡片會說明原因。
+- 備援的 ⋯ 選單新增「編輯」，順序不變。
 - 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
 - 網路規則新增「自動」與「詢問」等級，沒有符合規則的電腦預設為「自動」。
 
@@ -26,7 +27,8 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - The bot list's Work button shows all background work.
 - Background work can ask, or send a file, in the chat.
 - Details: Threads (running), Event box (waiting: First, Cut in, Drop).
-- Settings: Agents at once; Worktree per agent gives each its own branch.
+- Settings: Agents at once, Worktree per agent.
 - On a fallback, the Agent card says why.
+- Fallbacks: ⋯ has Edit.
 - `/` also lists the agent's own commands.
 - Network rules gain Auto and Ask levels.

@@ -108,6 +108,8 @@ pub struct Bot {
     pub task_worktrees: Option<bool>,
     /// Its folder is in a git repository: where `task_worktrees` matters.
     pub git_repo: bool,
+    /// The host can run git; true from a host that doesn't say.
+    pub git_installed: bool,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -277,6 +279,17 @@ impl Bot {
             max_agents: work::max_agents(&v["maxAgents"]),
             task_worktrees: v["taskWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
+            git_installed: v["gitInstalled"] != false,
+        })
+    }
+
+    /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
+    pub fn git_line(&self) -> Option<&'static str> {
+        self.task_worktrees?;
+        Some(match (self.git_installed, self.git_repo) {
+            (false, _) => "Git isn't installed on this computer",
+            (true, true) => "Git repository",
+            (true, false) => "Not a git repository",
         })
     }
 

@@ -12,6 +12,7 @@ class L10nTest {
         "Routine · {name}" to "Рутина · {name}",
         "Message from {bot}: {message}" to "Сообщение от {bot}: {message}",
         "Last run {status}" to "Последний запуск: {status}",
+        "{count} installed" to "Установлено: {count}",
     )
 
     private fun ru(text: String) = translate(text, AppLanguage.Ru, false, phrases)
@@ -21,6 +22,11 @@ class L10nTest {
         assertEquals("Рутина · Проверка почты", ru("Routine · Проверка почты"))
         assertEquals("Рутина · Settings", ru("Routine · Settings"))
         assertEquals("Сообщение от Reviewer: Settings", ru("Message from Reviewer: Settings"))
+    }
+
+    @Test fun `number slots only take numbers`() {
+        assertEquals("Установлено: 3", ru("3 installed"))
+        assertEquals("Error: the host service isn't installed", ru("Error: the host service isn't installed"))
     }
 
     @Test fun `app-owned slots still translate`() {

@@ -12,25 +12,25 @@ type Stage = 'closed' | 'settings' | 'agents' | 'models'
 type Choice = { id: string; label: string; leading?: ReactNode }
 
 /** One compact entry for the harness, model, model options and the bot's Fast mode. */
-export function AgentModelPicker({ backend, models, selection, onChange, options: chosen, onOptionsChange,
-  sessionNote = true, agents = [], onAgentChange, fastControl, fast = false, collapsible = true, children }: {
+export function AgentModelPicker({ backend, models, selection, onChange, options: chosen,
+  sessionNote = true, agents = [], onAgentChange, fastControl, fast = false, expanded = false, children }: {
   backend: string
   models: AgentModelsState
   selection: string | null | undefined
-  onChange: (model: string | null) => void
+  /** A model and its options: they belong to one model, so another model starts without any. */
+  onChange: (model: string | null, options: Record<string, string>) => void
   options: Record<string, string>
-  onOptionsChange: (options: Record<string, string>) => void
   sessionNote?: boolean
   agents?: Choice[]
   onAgentChange?: (id: string) => void
   fastControl?: ReactNode
   fast?: boolean
-  /** False where picking is the whole sheet (Add fallback): no summary line, the choices show at once. */
-  collapsible?: boolean
+  /** Starts open on its choices (a fallback just added). */
+  expanded?: boolean
   children?: ReactNode
 }) {
   const tr = useTr()
-  const [stage, setStage] = useState<Stage>(collapsible ? 'closed' : 'settings')
+  const [stage, setStage] = useState<Stage>(expanded ? 'settings' : 'closed')
   const [query, setQuery] = useState('')
   const { catalog, loading, failure } = models
   const agentDefault = catalog?.models.find((m) => m.name.toLowerCase().startsWith('default'))
@@ -52,7 +52,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
       if (id !== backend) onAgentChange?.(id)
       open('models')
     } else {
-      if (id !== value) onChange(id || null)
+      if (id !== value) onChange(id || null, {})
       open('settings')
     }
   }
@@ -60,17 +60,17 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
     const next = { ...chosen }
     if (value === undefined) delete next[id]
     else next[id] = value
-    onOptionsChange(next)
+    onChange(selection ?? null, next)
   }
   return (
     <VStack gap={8} className="agent-picker">
-      {collapsible && <button className="agent-picker-summary" title={[agent?.label ?? backend, modelName, summary, fast ? tr("Fast") : ""].filter(Boolean).join(" · ")} aria-expanded={stage !== 'closed'} onClick={() => open(stage === 'closed' ? 'models' : 'closed')}>
+      <button className="agent-picker-summary" title={[agent?.label ?? backend, modelName, summary, fast ? tr("Fast") : ""].filter(Boolean).join(" · ")} aria-expanded={stage !== 'closed'} onClick={() => open(stage === 'closed' ? 'models' : 'closed')}>
         <span className="agent-picker-identity">{agent?.leading}<Text key={backend} className="agent-picker-text-change">{agent?.label ?? backend}</Text></span>
         <span className="agent-picker-model" title={modelName}><span key={modelName} className="agent-picker-text-change">{modelName}</span></span>
         {summary && <span className="agent-picker-effort" title={summary}><span key={summary} className="agent-picker-text-change">{summary}</span></span>}
         {fast && <Icon name="bolt" size={12} title={tr('Fast mode')} />}
         <Icon name={stage === 'closed' ? 'chevron.down' : 'chevron.up'} size={10} />
-      </button>}
+      </button>
       {stage !== 'closed' && <VStack gap={10} className="agent-picker-panel fade-in">
         <div className="agent-picker-selectors">
           {onAgentChange && <button className="agent-picker-choice" title={agent?.label ?? backend} aria-expanded={stage === 'agents'} onClick={() => open(stage === 'agents' ? 'settings' : 'agents')}>{agent?.leading}<Text truncate>{agent?.label ?? backend}</Text><Icon name={stage === 'agents' ? 'chevron.up' : 'chevron.down'} size={10} /></button>}
@@ -88,7 +88,7 @@ export function AgentModelPicker({ backend, models, selection, onChange, options
               {o.leading}<Text className="agent-picker-result-name">{tr(o.label)}</Text><Spacer />{o.id === (stage === 'agents' ? backend : value) && <Icon name="checkmark" size={12} />}
             </button>)}
           </div> : <Text size="caption" tone="secondary">{tr('No results')}</Text>}
-          {stage === 'models' && (backend === 'custom' || (!loading && !catalog?.models.length)) && <input className="field-box" aria-label={tr('Model')} placeholder={tr('Default')} value={selection ?? ''} onChange={(e) => onChange(e.target.value || null)} />}
+          {stage === 'models' && (backend === 'custom' || (!loading && !catalog?.models.length)) && <input className="field-box" aria-label={tr('Model')} placeholder={tr('Default')} value={selection ?? ''} onChange={(e) => onChange(e.target.value || null, {})} />}
         </VStack>}
         {selected?.optionsError && <Text size="caption" tone="attention">{selected.optionsError}</Text>}
         {failure && <Text size="caption" tone="attention">{failure}</Text>}

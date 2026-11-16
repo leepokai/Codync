@@ -103,6 +103,8 @@ test('known chrome becomes Chinese and everything else stays', () => {
   assert.equal(translate('Apps', 'zh', false), '应用')
   assert.equal(translate('Agents', 'zh', false), '智能体')
   assert.equal(translate('Installed', 'zh', false), '已安装')
+  assert.equal(translate('3 installed', 'zh', false), '已安装 3 个')
+  assert.equal(translate("Error: the host service isn't installed", 'zh', false), "Error: the host service isn't installed")
   assert.equal(translate('Not installed', 'zh', false), '未安装')
   assert.equal(translate('Set up', 'zh', false), '设置')
   assert.equal(translate('Writing a reply…', 'zh', false), '正在写回复…')

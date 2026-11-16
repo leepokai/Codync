@@ -1,6 +1,6 @@
 [package]
 name = "codync-host"
-version = "2.49.0"
+version = "2.49.1"
 edition = "2024"
 # iroh (codync-network) needs 1.91.
 rust-version = "1.91"
@@ -82,6 +82,7 @@ dbus-secret-service = { version = "4.1.0", features = ["vendored"] }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
+windows-registry = "0.6.1"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_System_SystemInformation"] }
 
 # rust-skills lint-* rules: all default groups plus pedantic, with the

@@ -142,10 +142,12 @@ pub(super) fn places(hub: &Hub, cfg: &BotConfig, items: &[Item], over: Option<&s
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let coordinator_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
+    // The limit of the agent a new task starts on: past a resting one, its fallback's.
+    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
     Places {
         free: usize::from(cfg.max_agents).saturating_sub(running),
         running,
-        near_limit: crate::usage::near_limit(hub, cfg),
+        near_limit: crate::usage::near_limit(hub, &starts_on),
         coordinator_free,
     }
 }
@@ -198,7 +200,12 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     }
     for task in plan.end {
-        hub.stop_actor(&task);
+        // Looked at again under the box's lock: a message the user wrote to its thread since reopened its item
+        // (`thread::message`, which holds the lock from there to the actor).
+        let _g = hub.tasks.boxes.locked();
+        if items::of_task(&items::load(&hub.store, bot), &task).is_none() {
+            hub.stop_actor(&task);
+        }
     }
     for task in plan.delete {
         if let Err(error) = hub.delete_bot(&task) {

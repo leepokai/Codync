@@ -131,6 +131,23 @@ class FallbacksTest {
         assertEquals(emptyList<String?>(), codex.freeLogins(listOf(Login("codex"))))
     }
 
+    @Test fun `a step picked in place gets its own back on its own agent`() {
+        val claude = WireJson.decodeFromString<AgentBackend>("""{"id":"claude","name":"Claude Code",
+            "loginProfiles":[{"id":"a1","signedIn":true},{"id":"a2","signedIn":false}]}""")
+        val codex = WireJson.decodeFromString<AgentBackend>("""{"id":"codex","name":"Codex"}""")
+        val taken = listOf(Login("claude"), Login("codex"))
+        assertEquals(Fallback("claude", loginProfile = "a1"), claude.stepOn(taken))
+        val own = Fallback("claude", model = "opus", modelOptions = mapOf("effort" to "high"), loginProfile = "a2")
+        assertEquals(own, claude.stepOn(taken, own))
+        // Unless another step has its login now.
+        assertEquals("a1", claude.stepOn(taken + own.login, own).loginProfile)
+        // Its signed-out login stays a choice, and so does its agent.
+        assertEquals(listOf("a1", "a2"), claude.stepLogins(own.login, taken))
+        val full = taken + Login("claude", "a1")
+        assertEquals(emptyList<AgentBackend>(), listOf(claude, codex).usable(full))
+        assertEquals(listOf("claude"), listOf(claude, codex).usable(full, listOf(own.login)).map { it.id })
+    }
+
     @Test fun `switching agent drops only the step on that agent's own login`() {
         val draft = BotDraft(backend = "claude", loginProfile = "a1", fallbacks = listOf(Fallback("codex"), Fallback("codex", loginProfile = "c1"), Fallback("claude")))
         val switched = draft.withAgent("codex")

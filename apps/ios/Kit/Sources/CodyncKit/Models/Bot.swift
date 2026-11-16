@@ -105,6 +105,8 @@ public struct Bot: Codable, Identifiable, Hashable, Sendable {
     public var taskWorktrees: Bool?
     /// Its folder is in a git repository: where `taskWorktrees` matters.
     public var gitRepo: Bool = false
+    /// Whether the computer has git. Nil from an older host: it reads as installed.
+    public var gitInstalled: Bool?
     /// How it stands outside its chat (`Bot.Outside`). Nil from an older host: the chat's own status.
     public var outside: Outside?
     public var unread: Int
@@ -188,6 +190,7 @@ extension Bot {
         maxAgents = (try? c.decodeIfPresent(Int.self, forKey: .maxAgents)).map { min(max($0, Bot.maxAgentsRange.lowerBound), Bot.maxAgentsRange.upperBound) }
         taskWorktrees = try? c.decodeIfPresent(Bool.self, forKey: .taskWorktrees)
         gitRepo = (try? c.decodeIfPresent(Bool.self, forKey: .gitRepo)) ?? false
+        gitInstalled = try? c.decodeIfPresent(Bool.self, forKey: .gitInstalled)
         outside = try? c.decodeIfPresent(Outside.self, forKey: .outside)
         unread = try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0
         waiting = try c.decodeIfPresent(Int.self, forKey: .waiting) ?? 0

@@ -6,7 +6,7 @@
 //! Everything here is blocking (`std::fs`, `std::process`): async callers go
 //! through `spawn_blocking`.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -123,14 +123,6 @@ pub fn lock_host() -> Result<std::fs::File> {
     fs2::FileExt::try_lock_exclusive(&file)
         .context("another codync-host is already running for this data directory")?;
     Ok(file)
-}
-
-fn run(cmd: &str, args: &[&str]) -> Result<()> {
-    let ok = Command::new(cmd).args(args).status().with_context(|| format!("running {cmd}"))?.success();
-    if !ok {
-        bail!("{cmd} {} failed", args.join(" "));
-    }
-    Ok(())
 }
 
 /// Holds a sleep inhibitor while any bot is working.

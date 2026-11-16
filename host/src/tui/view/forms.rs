@@ -5,7 +5,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
-use super::super::app::{App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
+use super::super::app::{App, Bot, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, SHAPES, tilde};
 use super::super::l10n::tr;
 use super::super::manage::Page;
 use super::super::md::{truncate, width as w, wrap};
@@ -55,7 +55,7 @@ fn field_help(app: &App, f: &Form, agent_name: &str) -> Option<(String, Style)> 
             let using = app.bots.get(&f.bot_id).and_then(|b| super::fallbacks::using_line(app, b))?;
             return Some((format!("{using} · b switches back"), t.amber));
         }
-        Field::Fast => match app.bots.get(&f.bot_id).and_then(super::super::app::Bot::fast_refusal) {
+        Field::Fast => match app.bots.get(&f.bot_id).and_then(Bot::fast_refusal) {
             Some(why) => return Some((why, t.amber)),
             None => tr("Faster replies for more usage, on models that offer it (Claude Code, Codex)").into_owned(),
         },
@@ -209,7 +209,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                 // Known once the agent's model list loads, or once the bot's own sessions say.
                 let saved = app.bots.get(&f.bot_id).filter(|b| b.backend == f.backend);
                 let offered = match app.models.get(&f.backend) {
-                    _ if saved.is_some_and(super::super::app::Bot::fast_shown) => "",
+                    _ if saved.is_some_and(Bot::fast_shown) => "",
                     Some(Some(_)) if !app.fast_mode.contains(&f.backend) => "  · not offered by this agent",
                     _ => "",
                 };
@@ -311,6 +311,13 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     ),
                     t.text.patch(base),
                 );
+                // Of the folder the bot has: one picked here and not saved yet isn't known.
+                let saved = app.bots.get(&f.bot_id).filter(|b| f.cwd == if b.managed_workspace { "" } else { &b.cwd });
+                if let Some(line) = saved.and_then(Bot::git_line)
+                    && y + 1 < inner.bottom().saturating_sub(FOOTER)
+                {
+                    put(buf, vx, y + 1, vw, &tr(line), t.dim.patch(t.panel));
+                }
             }
             Field::MaxAgents => {
                 let n = f.max_agents.unwrap_or_default();

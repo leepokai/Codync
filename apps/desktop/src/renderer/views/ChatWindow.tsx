@@ -224,8 +224,8 @@ function ChatSplitView() {
   const openVoiceSettings = useCallback(() => setSettings('voice'), [])
   const [showAccount, setShowAccount] = useState(false)
   const [showWork, setShowWork] = useState(false)
-  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, or the card of `item`.
-  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; item?: string } | null>(null)
+  // What the view of all work asked a bot's chat to show, and which asking it was: its Details, the card of `item`, or the thread of the item `thread`.
+  const [shownRequest, setShownRequest] = useState<{ ref: string; count: number; item?: string; thread?: string } | null>(null)
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const newButton = useRef<HTMLButtonElement>(null)
   const railNewButton = useRef<HTMLButtonElement>(null)
@@ -253,10 +253,10 @@ function ChatSplitView() {
   const visibleRoster = roster.items
   const work = allWork(roster.ordered)
   const closeWork = useCallback(() => setShowWork(false), [])
-  /** From the view of all work: the bot's chat, at its Details or at the card of `item`. */
-  const showInChat = (ref: BotRef, item?: string) => {
+  /** From the view of all work: the bot's chat, at its Details, at the card of `item` or with the thread of `thread`. */
+  const showInChat = (ref: BotRef, show: { item?: string; thread?: string } = {}) => {
     app.select(ref)
-    setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, item }))
+    setShownRequest((last) => ({ ref: refKey(ref), count: (last?.count ?? 0) + 1, ...show }))
     setShowWork(false)
   }
   // Asked once: coming back to that bot later opens its chat as it was left.
@@ -495,7 +495,8 @@ function ChatSplitView() {
         bots={work.bots}
         many={app.computers.length > 1}
         openDetails={(ref) => showInChat(ref)}
-        openCard={showInChat}
+        openCard={(ref, item) => showInChat(ref, { item })}
+        openThread={(ref, thread) => showInChat(ref, { thread })}
         onClose={closeWork}
       />
       <SearchPalette open={searching} items={visibleRoster} onPick={(ref) => app.select(ref)} onClose={() => setSearching(false)} />

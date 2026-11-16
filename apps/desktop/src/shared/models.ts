@@ -101,6 +101,8 @@ export interface Bot {
   taskWorktrees: boolean | null
   /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
   gitRepo: boolean
+  /** Git is on the bot's computer; a host that doesn't say counts as having it. */
+  gitInstalled: boolean
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
   outside: OutsideStatus | null
   unread: number
@@ -175,6 +177,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     maxAgents: normalizeMaxAgents(raw.maxAgents),
     taskWorktrees: raw.taskWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
+    gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
     waiting: raw.waiting ?? 0,

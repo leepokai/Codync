@@ -32,6 +32,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod sign_in;
 mod steer;
 mod tool_entry;
 mod turn;
@@ -137,8 +138,10 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         perms: HashMap::new(),
         asked: HashMap::new(),
         stop_requested: false,
+        stopped_for_message: false,
         cancel_deadline: None,
         exit_tail: None,
+        agent_error: None,
         tools_changed: false,
         restart_after_turn: false,
         fast_support,
@@ -343,10 +346,15 @@ struct Actor {
     /// Decision card id -> the live tool call waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     stop_requested: bool,
+    /// Send now stopped the turn for a waiting message (`steer`): that message going out says so, not a `Stopped.`
+    /// line drawn under it.
+    stopped_for_message: bool,
     /// A cancelled turn still running past this stops its agent process.
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
+    /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
+    agent_error: Option<String>,
     /// Connectors changed: restart the agent before the next turn so the
     /// session is resumed with the new MCP servers.
     tools_changed: bool,
@@ -382,6 +390,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        let done = pi_tools::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -454,7 +463,8 @@ impl Actor {
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
         }
-        if self.cfg.is_task() {
+        // Unless the task runs again already: the user wrote to its thread as this actor was on its way out.
+        if self.cfg.is_task() && !self.hub.has_actor(&self.cfg.id) {
             self.hub.forget_runtime(&self.cfg.id);
         }
     }

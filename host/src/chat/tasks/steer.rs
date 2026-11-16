@@ -2,7 +2,7 @@
 //! brief, stop it, drop it, try it again.
 
 use super::dispatch::{Places, Standing};
-use super::items::{self, Item, Status};
+use super::items::{self, Item, Status, find};
 use super::{dispatch, ended, sources};
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
@@ -39,10 +39,6 @@ impl Steer {
     }
 }
 
-fn find<'a>(items: &'a mut [Item], id: &str) -> Result<&'a mut Item> {
-    items.iter_mut().find(|i| i.id == id).ok_or_else(|| anyhow!("no such work"))
-}
-
 fn waiting<'a>(items: &'a mut [Item], id: &str) -> Result<&'a mut Item> {
     let item = find(items, id)?;
     if item.status != Status::Waiting {
@@ -71,14 +67,24 @@ pub fn first(hub: &Arc<Hub>, bot: &str, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// `item` gives its task up to start again later. What the user wrote to its thread and no turn took yet goes with
+/// it, as what they said since (the closed task's Stop takes those messages back). The task, to close.
+fn release(hub: &Hub, item: &mut Item, front: i64) -> Option<String> {
+    let task = item.task.clone();
+    if let Some(task) = &task {
+        super::thread::carry(&hub.store, item, task);
+    }
+    item.set_aside(front);
+    task
+}
+
 /// Sets `gives_way` aside, if any, and puts `id` first. The task that gave its item up, to close.
-fn give_way(items: &mut [Item], id: &str, gives_way: Option<&str>) -> Result<Option<String>> {
+fn give_way(hub: &Hub, items: &mut [Item], id: &str, gives_way: Option<&str>) -> Result<Option<String>> {
     let mut released = None;
     if let Some(gives_way) = gives_way {
         let front = items::front(items);
         let item = find(items, gives_way)?;
-        released.clone_from(&item.task);
-        item.set_aside(front);
+        released = release(hub, item, front);
         item.cut_in = true;
     }
     let front = items::front(items);
@@ -115,12 +121,12 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
         let gives_way = gives_way.filter(|_| full);
         // Tried on a copy first: a session is only closed for an item that then starts.
         let mut freed = items.clone();
-        give_way(&mut freed, id, gives_way.as_deref())?;
+        give_way(hub, &mut freed, id, gives_way.as_deref())?;
         // The bot's own turn (it may be the one steering) only delays the start.
         let places = Places { coordinator_free: true, ..dispatch::places(hub, &cfg, &freed, None) };
         let standings = dispatch::standings(&freed, &places, |task| dispatch::task_state(hub, task, None));
         let starts = standings.iter().any(|(item, standing)| item == id && *standing == Standing::Start);
-        give_way(items, id, gives_way.as_deref().filter(|_| starts))
+        give_way(hub, items, id, gives_way.as_deref().filter(|_| starts))
     })?;
     settle(hub, bot, released);
     Ok(())
@@ -138,11 +144,7 @@ pub fn replace(hub: &Arc<Hub>, bot: &str, id: &str, brief: &str) -> Result<()> {
             bail!("\"{}\" is a routine run or another bot's request: its brief isn't yours to replace", item.title);
         }
         brief.clone_into(&mut item.brief);
-        let released = item.task.clone().filter(|_| item.status == Status::Working);
-        if released.is_some() {
-            item.set_aside(front);
-        }
-        Ok(released)
+        Ok(if item.status == Status::Working { release(hub, item, front) } else { None })
     })?;
     settle(hub, bot, released);
     Ok(())
@@ -163,16 +165,18 @@ pub fn stop(hub: &Arc<Hub>, bot: &str, id: Option<&str>) -> Result<()> {
                 let task = item.task.clone().filter(|_| item.status == Status::Working);
                 item.status = Status::Stopped;
                 item.ended_at = Some(now);
-                (task, item.clone())
+                // Under the box's lock, so it comes before any message the user writes to its thread from here,
+                // which reopens it: its Stop drops only what waited in the thread until now.
+                if let Some(task) = task {
+                    let _ = hub.send_cmd(&task, Cmd::Stop);
+                }
+                item.clone()
             })
             .collect::<Vec<_>>())
     })?;
-    for (task, item) in stopped {
+    for item in stopped {
         // A routine's run is cancelled; the bot that asked hears its request was stopped.
         ended(hub, bot, &item);
-        if let Some(task) = task {
-            let _ = hub.send_cmd(&task, Cmd::Stop);
-        }
     }
     settle(hub, bot, None);
     Ok(())

@@ -12,8 +12,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 fn agent(name: &str) -> String {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
-    format!("{} {name}", common::python_agent(&script))
+    common::fixture_command("relay_agent.py", name)
 }
 
 /// The newest entry of `bot`'s chat that `found` picks, within 30 s.
@@ -473,4 +472,35 @@ async fn a_process_with_a_replaced_sign_in_starts_again_before_asking_to_sign_in
     let card = wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
     assert_eq!(card["data"]["connectionRequest"]["entryIds"].as_array().map(Vec::len), Some(1), "{card}");
     assert_eq!(prompts(), 5, "tried once more on a new process, then no more");
+}
+
+/// #470: pi's model request fails (a 503 after a provider queue), and pi-acp ends the turn as `end_turn` with no
+/// reply; pi's error comes only as Codync's extension's notification. The turn still fails: the next agent takes it.
+#[tokio::test]
+async fn a_turn_pi_ended_in_an_error_moves_on_to_the_next_agent() {
+    let host = Host::start().await;
+    let bot = json!({"name": "Pi", "backend": "pi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": [{"backend": "codex", "command": agent("standin")}]})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.errored"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests", "clientNonce": "n-470"})).await;
+    let reply = wait_for(&host, &bot, "fallback reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+    wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+}
+
+/// #470 without a fallback: the turn pi ended in an error says so in the chat instead of going silent.
+#[tokio::test]
+async fn a_turn_pi_ended_in_an_error_says_so() {
+    let host = Host::start().await;
+    let bot = json!({"name": "Pi", "backend": "pi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.errored"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests", "clientNonce": "n-470"})).await;
+    let notice = wait_for(&host, &bot, "error notice", |e| e["data"]["style"] == "error").await;
+    assert!(notice["data"]["text"].as_str().unwrap().contains("upstream busy"), "{notice}");
 }

@@ -14,7 +14,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
 // The event box: what a bot works on away from its chat is an item in its box, and a bounded number of its agents
@@ -74,6 +76,10 @@ data class WorkItem(
     val source: WorkSource? = null,
     /** Null for a task that works in the bot's own folder. */
     val worktree: Worktree? = null,
+    /** It takes the user's messages ([canTalk]): the bot's own item whose task still exists. False from an older host. */
+    val talk: Boolean = false,
+    /** Where its task works (a worktree's folder for one in a worktree); null for one no task has taken, and from an older host. */
+    val folder: String? = null,
 )
 
 /** The most agents a bot may run at once. */
@@ -203,4 +209,118 @@ fun workActions(item: WorkItem, work: List<WorkItem>, maxAgents: Int?): List<Wor
     }
     WorkStatus.Failed, WorkStatus.Stopped -> if (canRetry(item)) listOf(WorkAction.Retry, WorkAction.Drop) else listOf(WorkAction.Drop)
     WorkStatus.Done -> listOf(WorkAction.Drop)
+}
+
+/** What an item's where line shows before its text. */
+enum class WhereKind(val symbol: String) { Folder("folder"), Branch("arrow.triangle.branch") }
+
+/** Where an item's task works, as its row and its thread's header say it: [text] after the symbol, and the full [path] a tap copies (null when the host didn't say). */
+data class WhereLine(val kind: WhereKind, val text: String, val path: String?)
+
+/** The branch of a task in a worktree of its own, else the folder it works in, the computer's [home] as `~` ([homeRelative]); null for an item no task has taken. */
+fun whereLine(item: WorkItem, home: String): WhereLine? {
+    val path = item.folder ?: item.worktree?.path?.takeIf(String::isNotEmpty)
+    item.worktree?.let { return WhereLine(WhereKind.Branch, it.branch, path) }
+    return item.folder?.let { WhereLine(WhereKind.Folder, homeRelative(it, home), it) }
+}
+
+/** [path] with the computer's [home] folder as `~`, on either kind of separator; unchanged outside the home folder or without one. */
+fun homeRelative(path: String, home: String): String {
+    val root = home.trimEnd('/', '\\')
+    if (root.isEmpty() || !path.startsWith(root)) return path
+    val rest = path.substring(root.length)
+    return if (rest.isEmpty() || rest[0] == '/' || rest[0] == '\\') "~$rest" else path
+}
+
+/** The key of the draft the user writes to [botId]'s item [itemId] in its thread (iOS `WorkThread.draftKey`): under the bot's, so it goes with the bot. */
+fun threadDraftKey(botId: String, itemId: String) = "$botId/item/$itemId"
+
+/** Whether a bot's folder is in a git repository, as Settings > Workspace says it: a phrase to look up. */
+enum class GitState(val title: String) {
+    Repo("Git repository"), None("Not a git repository"), Missing("Git isn't installed on this computer")
+}
+
+/** [bot]'s [GitState]; null from a host that doesn't say (one before worktrees). A host that doesn't say whether git is installed has it. */
+fun gitState(bot: Bot): GitState? = when {
+    bot.taskWorktrees == null -> null
+    bot.gitInstalled == false -> GitState.Missing
+    bot.gitRepo -> GitState.Repo
+    else -> GitState.None
+}
+
+/** A thread's transcript in two: what the host told the task first (the item's prompt, folded on top; null when the transcript doesn't reach back to it) and the [rest], oldest first. */
+data class ThreadEntries(val told: Entry?, val rest: List<Entry>)
+
+/** The host's own words to a task (`from: host`), never a message of the user's. */
+val Entry.isToldByHost: Boolean get() = kind == "user" && data.text("from") == "host"
+
+/** [entries] without the messages taken back: the first thing the host told the task, and the rest in order (what the host told it later stays in its place). */
+fun threadEntries(entries: List<Entry>): ThreadEntries {
+    val kept = entries.filterNot(Entry::isRemoved)
+    val told = kept.firstOrNull(Entry::isToldByHost)
+    return ThreadEntries(told, kept.filterNot { it === told })
+}
+
+/** One quiet line of a thread for what its task put in the bot's chat ([sharedLine]): an SF Symbol name and its words. */
+data class SharedLine(val symbol: String, val text: String)
+
+/**
+ * What the chat [entry] a task put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
+ * artifact) says in that task's thread (iOS `Entry.sharedLine`): one line with a symbol, where the entry itself stays in
+ * the chat, which the line opens. Null for anything else. [tr] looks a phrase up.
+ */
+fun sharedLine(entry: Entry, tr: (String) -> String): SharedLine? {
+    val data = entry.data
+    fun line(symbol: String, key: String, vararg values: Pair<String, String>) = SharedLine(symbol, fill(tr(key), *values))
+    // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
+    val request = data["connectionRequest"] as? JsonObject
+    if (request?.text("kind") == "agent") return when (request.text("status")) {
+        "pending" -> line("hand.raised", "Needs {agent} sign-in", "agent" to request.text("title").orEmpty())
+        "ready" -> line("checkmark", "Signed in")
+        else -> line("xmark", "Cancelled")
+    }
+    if (entry.kind == "permission") {
+        val title = data.text("title").orEmpty()
+        when (entry.status) {
+            "pending" -> return line("hand.raised", "Waiting for your approval: {title}", "title" to title)
+            "answered" -> {}
+            else -> return line("clock", "Not answered: {text}", "text" to title)
+        }
+        val selected = data.text("selected")
+        val chosen = (data["options"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.firstOrNull { it.text("optionId") == selected }
+        val kind = chosen?.text("kind").orEmpty()
+        return when {
+            kind.startsWith("allow") -> line("checkmark", "Approved: {title}", "title" to title)
+            kind.startsWith("reject") -> line("xmark", "Denied: {title}", "title" to title)
+            else -> line("checkmark", "Answered: {choice}", "choice" to (chosen?.text("name") ?: selected.orEmpty()))
+        }
+    }
+    if (entry.isDecision) {
+        val question = data.text("question").orEmpty()
+        return when (entry.status) {
+            "pending" -> line("hand.raised", "Asked: {question}", "question" to question)
+            "answered" -> line("checkmark", "Answered: {choice}", "choice" to data.text("selected").orEmpty())
+            else -> line("clock", "Not answered: {text}", "text" to question)
+        }
+    }
+    if (entry.kind != "agent") return null
+    entry.artifact?.let { return line("doc.richtext", "Made an artifact: {title}", "title" to it.title) }
+    if (data["voiceNote"]?.jsonPrimitive?.booleanOrNull == true) return line("waveform", "Sent a voice note")
+    val files = entry.files
+    return if (files.isEmpty()) null else line("doc", "Sent a file: {name}", "name" to files.joinToString(", ") { it.name })
+}
+
+/**
+ * A thread's [entries] with what its task [task] put in the bot's [chat] (a file, a voice note, an artifact, a card,
+ * answered or not; each a [sharedLine]) where it came (`createdAt`), each kept in its order; at the same moment the
+ * task's own first.
+ */
+fun sharing(entries: List<Entry>, chat: List<Entry>, task: String): List<Entry> {
+    val shared = ArrayDeque(chat.filter { (it.data["task"] as? JsonObject)?.text("id") == task })
+    val out = mutableListOf<Entry>()
+    for (entry in entries) {
+        while (shared.firstOrNull()?.let { it.createdAt < entry.createdAt } == true) out += shared.removeFirst()
+        out += entry
+    }
+    return out + shared
 }

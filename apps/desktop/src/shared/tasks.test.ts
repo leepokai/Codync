@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Entry } from './models.ts'
-import { isTold, mergeTaskEntries, parseTaskEntry } from './tasks.ts'
+import { isTold, localEntryId, mergeTaskEntries, parseTaskEntry } from './tasks.ts'
 
 const entry = (id: string, seq: number, rev: number, text = id): Entry => ({ id, seq, botId: 'task-1', rev, kind: 'agent', turn: 1, data: { text }, createdAt: 0, updatedAt: 0 })
 
@@ -26,4 +26,15 @@ test('what the host told a task is not the user\'s own message', () => {
   assert.equal(isTold({ ...entry('a', 1, 1), kind: 'user', data: { text: 'brief', from: 'host' } }), true)
   assert.equal(isTold({ ...entry('a', 1, 1), kind: 'user', data: { text: 'typed' } }), false)
   assert.equal(isTold(entry('a', 1, 1)), false)
+})
+
+test("a message sent to a thread shows until the host's entry for it is in", () => {
+  const local: Entry = { ...entry(localEntryId('n1'), Number.MAX_SAFE_INTEGER, 0, 'hello'), kind: 'user', data: { text: 'hello', status: 'sending', clientNonce: 'n1' } }
+  const held = mergeTaskEntries([entry('a', 1, 1)], [local])
+  assert.deepEqual(held.map((e) => e.id), ['a', 'local-n1'], 'last, whatever arrives meanwhile')
+  // It didn't arrive: the same message, now failed.
+  assert.equal(mergeTaskEntries(held, [{ ...local, data: { ...local.data, status: 'failed' } }]).at(-1)!.data.status, 'failed')
+  const arrived: Entry = { ...entry('e9', 2, 9, 'hello'), kind: 'user', data: { text: 'hello', status: 'queued', clientNonce: 'n1' } }
+  assert.deepEqual(mergeTaskEntries(held, [arrived]).map((e) => e.id), ['a', 'e9'])
+  assert.deepEqual(mergeTaskEntries(held, [entry('b', 2, 2)]).map((e) => e.id), ['a', 'b', 'local-n1'], 'another entry leaves it')
 })

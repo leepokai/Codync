@@ -49,9 +49,10 @@ const WIDE = 740
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
- * `request` is what something outside asks it to show, counted per asking: the card of `item`, else the bot's Details.
+ * `request` is what something outside asks it to show, counted per asking: the card of `item`, the thread of the
+ * item `thread`, else the bot's Details.
  */
-export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: { count: number; item?: string } | null }) {
+export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: { count: number; item?: string; thread?: string } | null }) {
   const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
@@ -65,6 +66,9 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [detailsTab, setDetailsTab] = useState<DetailsTab>('details')
+  // The item whose thread the inspector shows in place of its pages.
+  const [threadItem, setThreadItem] = useState<string | null>(null)
+  const closeThread = useCallback(() => setThreadItem(null), [])
   const [compactDetails, setCompactDetails] = useState(false)
   const [calling, setCalling] = useState(false)
   const [callSpeaking, setCallSpeaking] = useState(false)
@@ -142,6 +146,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
 
   const showDetails = useCallback((tab: DetailsTab) => {
     setDetailsTab(tab)
+    setThreadItem(null)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
   }, [wide])
@@ -163,11 +168,17 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
     // until it is found if cards ever wait that long.
     requestAnimationFrame(() => root.current?.querySelector(`[data-work-item="${CSS.escape(itemId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
   }, [])
+  // The chat at one of its entries, beside the panel: what an item's thread says its task put there.
+  const showInChat = useCallback((entryId: string) => {
+    setCompactDetails(false)
+    requestAnimationFrame(() => root.current?.querySelector(`.transcript [data-entry-id="${CSS.escape(entryId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+  }, [])
   // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
   useEffect(() => {
     if (!request) return
-    if (request.item) openCard(request.item)
-    else showDetails('details')
+    if (request.item) return openCard(request.item)
+    showDetails('details')
+    if (request.thread) setThreadItem(request.thread)
   }, [request?.count])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
@@ -178,9 +189,13 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       routineId={routineId}
       tab={detailsTab}
       setTab={setDetailsTab}
+      thread={threadItem}
+      openThread={setThreadItem}
+      closeThread={closeThread}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
+      showInChat={showInChat}
       share={() => {
         setCompactDetails(false)
         if (bot) setTemplateDraft(draftOf(bot))
@@ -188,6 +203,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       close={() => {
         setShowSettings(false)
         setCompactDetails(false)
+        setThreadItem(null)
       }}
     />
   )

@@ -24,6 +24,25 @@ export function freeLogins(backend: Backend, taken: Login[]): (string | null)[] 
   return all.filter((loginProfile) => !taken.some((t) => sameLogin(t, { backend: backend.id, loginProfile })))
 }
 
+/** The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on (a
+ * step keeps its own login, even one that has signed out since). */
+export const stepAgents = (backends: Backend[], taken: Login[], keep: (Login | null)[] = []): Backend[] =>
+  backends.filter((b) => keep.some((k) => k?.backend === b.id) || freeLogins(b, taken).length > 0)
+
+/** The logins `step` can pick on its agent: the free ones, and its own, even one that has signed out since. */
+export function stepLogins(agent: Backend, step: Login, taken: Login[]): (string | null)[] {
+  const free = freeLogins(agent, taken)
+  const own = step.loginProfile ?? null
+  return free.includes(own) ? free : [...free, own]
+}
+
+/** A step on `agent`: `own` (the step before it changed agent) when it's on that agent and its login isn't elsewhere in the
+ * chain (`taken`), else the agent's first free login with its default model. */
+export const stepOn = (agent: Backend, taken: Login[], own: Fallback | null = null): Fallback =>
+  own?.backend === agent.id && !taken.some((t) => sameLogin(t, own))
+    ? own
+    : { backend: agent.id, loginProfile: freeLogins(agent, taken)[0] ?? null, model: null, modelOptions: {} }
+
 /** The agent a bot runs on right now: its fallback's while it's on one. */
 export const runningAgent = (bot: Bot) => bot.agentStep?.agent ?? bot.backend
 

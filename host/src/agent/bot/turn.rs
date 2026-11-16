@@ -1,5 +1,6 @@
 //! Starting a turn and wrapping it up: final reply, notices, the reply to a requesting bot or room, alerts and memory.
 
+use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
@@ -9,7 +10,7 @@ use crate::chat::tasks::{self, Failure, Outcome, Source};
 use crate::chat::team::no_reply;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::json;
 use std::time::{Duration, Instant};
@@ -149,6 +150,7 @@ impl Actor {
         self.announce = None;
         self.first_prompt = None;
         self.stop_requested = false;
+        self.stopped_for_message = false;
         self.cancel_deadline = None;
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
@@ -157,6 +159,7 @@ impl Actor {
         };
         self.hub.team.start_turn(&self.cfg.id, team_turn);
         self.exit_tail = None;
+        self.agent_error = None;
         self.seg = Seg::None;
         self.tools.clear();
         self.plan_entry = None;
@@ -209,6 +212,8 @@ impl Actor {
         if !hidden {
             self.carry_in();
         }
+        let written = self.written_to_thread(entry_ids);
+        let picked_up = self.hear_thread(&written);
         let session = self.turn_session.clone();
         self.hub.set_runtime(&self.id(), |r| r.session.clone_from(&session));
         if let Some(sid) = session {
@@ -266,6 +271,9 @@ impl Actor {
             self.session_fresh = false;
             analytics::agent_command_sent(&self.hub, &self.cfg.backend);
         }
+        // What the user wrote to a task's thread says so, after the work itself where the session doesn't hold it.
+        let text =
+            &if written.is_empty() || agent_command { text.to_owned() } else { tasks::in_thread(text, picked_up) };
         let prompt = if std::mem::take(&mut self.raw_prompt) || agent_command {
             text.to_owned()
         } else {
@@ -282,8 +290,10 @@ impl Actor {
             self.set_inflight(true);
         }
         // From here what changes in its memory folders is the bot's, however it changed them: a task's too, as
-        // its own turn's, in its own session.
-        memory::turns::begin_turn(&self.cfg, &sid, self.hub.runtime(&self.cfg.id).message);
+        // its own turn's, in its own session. A task only adds to memory, also in a turn the user's message to its
+        // thread started: what the user wants forgotten, the bot does in the chat.
+        let asked = self.hub.runtime(&self.cfg.id).message.filter(|_| !self.cfg.is_task());
+        memory::turns::begin_turn(&self.cfg, &sid, asked);
         // Written before this returns, so a Stop right after is sent after the prompt.
         let answer = acp.send("session/prompt", params).await?;
         if !self.turn_memory_revision.is_empty()
@@ -299,6 +309,28 @@ impl Actor {
         Ok(())
     }
 
+    /// The user's own messages among `entry_ids`, when this is a task: what they wrote to its thread. Not what
+    /// the host wrote there (an item, as the task is told it).
+    fn written_to_thread(&self, entry_ids: &[String]) -> Vec<String> {
+        if !self.cfg.is_task() {
+            return Vec::new();
+        }
+        let entries = entry_ids.iter().filter_map(|id| self.hub.store.entry(id)).filter(|e| e.data["from"] != "host");
+        entries.filter_map(|e| e.data["text"].as_str().map(str::to_owned)).collect()
+    }
+
+    /// A task's turn for what the user wrote to its thread (`written`) begins: its item keeps their words for its
+    /// report. What goes before the message: the work itself, when the session that did it couldn't be picked up
+    /// and this one is new.
+    fn hear_thread(&mut self, written: &[String]) -> Option<String> {
+        if written.is_empty() {
+            return None;
+        }
+        let picked_up = self.session_fresh.then(|| tasks::picked_up(&self.hub.store, &self.cfg)).flatten();
+        tasks::heard(&self.hub, &self.cfg, written);
+        picked_up
+    }
+
     /// A task's first turn: when its item gets a git worktree (`tasks::worktree`), the task works there from here,
     /// and `text` says so. Otherwise `text` as it is.
     async fn enter_worktree(&mut self, text: &str) -> String {
@@ -308,10 +340,14 @@ impl Actor {
         let Some(worktree) = tasks::enter_worktree(&self.hub, &self.cfg).await else { return text.to_owned() };
         self.base.cwd.clone_from(&worktree.cwd);
         self.cfg.cwd.clone_from(&worktree.cwd);
-        // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it.
+        // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it. Only its
+        // folder: its bot's fallbacks may have reached the row meanwhile (`tasks::fallbacks_changed`).
         let saved = {
             let _g = crate::LockExt::locked(&self.hub.emit_lock);
-            self.hub.store.save_bot(&self.base)
+            self.hub.store.bot(&self.cfg.id).and_then(|row| {
+                let row = row.map_or_else(|| self.base.clone(), |row| row.config);
+                self.hub.store.save_bot(&BotConfig { cwd: worktree.cwd.clone(), ..row })
+            })
         };
         if let Err(error) = saved {
             tracing::warn!(task = %self.cfg.id, error = format!("{error:#}"), "couldn't save a task's worktree folder");
@@ -377,6 +413,11 @@ impl Actor {
                     self.failure_notice(e, &format!("The agent failed: {e}{detail}"), "error");
                 }
             }
+            // Stopped by Send now: the message going out next is what the user sees, not a line drawn under it (a
+            // Stop or Remove since took it back).
+            _ if self.stop_requested
+                && self.stopped_for_message
+                && self.queue.iter().any(|q| matches!(q, Queued::User { .. })) => {}
             // A stopped turn says so even when its agent still ended it normally: its reply is withheld above.
             (_, "cancelled") | (Err(_), _) => self.stop_notice("Stopped.", "cancelled"),
             (Ok(_), _) if self.stop_requested => self.stop_notice("Stopped.", "cancelled"),
@@ -420,15 +461,16 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
-        // A task's last message is its report to its bot.
-        self.turn_over(if stopped {
-            Outcome::Stopped
-        } else if let Some(error) = done.as_ref().err() {
-            Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
-        } else if stop_reason != "end_turn" {
-            Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
-        } else {
-            Outcome::Done(final_text.clone())
+        let goes_on = self.end_item(|| {
+            if stopped {
+                Outcome::Stopped
+            } else if let Some(error) = done.as_ref().err() {
+                Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
+            } else if stop_reason != "end_turn" {
+                Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+            } else {
+                Outcome::Done(final_text.clone())
+            }
         });
         self.turn = None;
         self.reply_hops = None;
@@ -451,14 +493,22 @@ impl Actor {
             let turn = crate::chat::naming::Turn { user, agent: agent.clone() };
             let _ = self.dreamer.send(memory::DreamEvent::Turn(turn));
         }
+        let needs = goes_on.as_ref().and_then(Held::needs);
         self.hub.set_runtime(&self.id(), |r| {
-            r.status = if failed { BotStatus::Error } else { BotStatus::Idle };
-            r.activity = String::new();
+            r.status = if needs.is_some() {
+                BotStatus::NeedsInput
+            } else if failed {
+                BotStatus::Error
+            } else {
+                BotStatus::Idle
+            };
+            r.activity = needs.unwrap_or_default();
             r.started_at = None;
             r.lane = None;
             r.message = None;
             r.session = None;
         });
+        self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));

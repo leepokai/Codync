@@ -349,10 +349,8 @@ private extension Dictation {
     #expect(await remote.calls.contains("localDictation"))
     #expect(await !remote.calls.contains("voiceStatus"))
     #expect(await until { await remote.calls.contains("voiceTranscribe") })
-    let calls = await remote.calls
-    let providers = await remote.bodies("provider"), models = await remote.bodies("model")
-    #expect(calls.enumerated().contains { calls[$0.offset] == "voiceTranscribe"
-        && providers[$0.offset] == "local" && models[$0.offset] == "" })
+    #expect(await remote.bodies["voiceTranscribe"]?["provider"] == "local")
+    #expect(await remote.bodies["voiceTranscribe"]?["model"] == "")
 
     let usage = UserDefaults.standard.dictionaryRepresentation().keys.filter { $0.hasPrefix("callUsage.") }
     defer { usage.forEach(UserDefaults.standard.removeObject(forKey:)) }

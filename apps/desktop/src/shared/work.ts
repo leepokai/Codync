@@ -2,7 +2,9 @@
 // number of its agents take items from it. The chat shows one capsule above the composer; the bot's Details lists
 // the items. A task is the agent session working an item (`tasks.ts` reads its transcript).
 
+import { fill } from './fill.ts'
 import type { Entry } from './models'
+import { isTold } from './tasks.ts'
 
 /** The six words for work, the same on the wire and in every client. */
 export type WorkStatus = 'waiting' | 'working' | 'needsYou' | 'done' | 'failed' | 'stopped'
@@ -50,6 +52,10 @@ export interface WorkItem {
   source: WorkSource | null
   /** The git worktree its task works in, while there is one: its branch and folder. */
   worktree: { branch: string; path: string } | null
+  /** The folder its task works in (the worktree's, for one in a worktree); null until a task took it. */
+  folder: string | null
+  /** Its thread takes the user's messages, as the host says: the bot's own item whose task still exists. */
+  talk: boolean
 }
 
 type Translate = (text: string) => string
@@ -76,6 +82,8 @@ export function normalizeWork(raw: unknown): WorkItem[] {
           // A source this app doesn't know reads as the bot's own.
           worktree: i.worktree?.branch ? { branch: i.worktree.branch, path: i.worktree.path ?? '' } : null,
           source: i.source?.kind === 'routine' || i.source?.kind === 'request' ? { kind: i.source.kind, id: i.source.id ?? null } : null,
+          folder: i.folder || null,
+          talk: i.talk ?? false,
         }]
       : [],
   )
@@ -234,7 +242,7 @@ export function waitText(item: WorkItem, tr: Translate): string {
     case 'after':
       return tr('Follows what it works on')
     case 'usage':
-      return tr('Waiting for usage')
+      return tr('Near the usage limit: one at a time')
     default:
       return tr('Waiting')
   }
@@ -271,9 +279,130 @@ export function canCutIn(work: WorkItem[], maxAgents: number | null): boolean {
   return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
 }
 
+/** A card of a task's waiting in the chat for the user: an approval, a choice, or a sign-in its agent needs. */
+function isPendingCard(e: Entry): boolean {
+  const request = e.data.connectionRequest
+  if (request) return request.kind === 'agent' && request.status === 'pending'
+  return (e.kind === 'permission' || !!e.data.decision) && e.data.status === 'pending'
+}
+
 /** What each item that needs the user is asked, by item id: what its task's card waiting in the chat says (an
- * approval's title, a choice's question). */
-export function pendingAsks(entries: Entry[]): Map<string, string> {
-  const isCard = (e: Entry) => e.kind === 'permission' || !!e.data.decision
-  return new Map(entries.flatMap((e) => (isCard(e) && e.data.status === 'pending' && e.data.item ? [[e.data.item, e.data.title ?? e.data.question ?? ''] as const] : [])))
+ * approval's title, a choice's question, which agent to sign in to). */
+export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string> {
+  const ask = (e: Entry) => {
+    const request = e.data.connectionRequest
+    return request ? fill(tr('Needs {agent} sign-in'), { agent: String(request.title ?? '') }) : (e.data.title ?? e.data.question ?? '')
+  }
+  return new Map(entries.flatMap((e) => (isPendingCard(e) && e.data.item ? [[e.data.item, ask(e)] as const] : [])))
+}
+
+/** A task's entry its thread shows as the chat's message bubble: a final reply (text, a file, an artifact card), as
+ * the chat tells them apart. What it says on the way is a step. */
+export const isThreadMessage = (e: Entry) => e.kind === 'agent' && e.data.final === true
+
+/** One quiet line of a thread for what its task put in the bot's chat. */
+export interface SharedLine {
+  symbol: string
+  text: string
+}
+
+/** What the chat entry `e` a task put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
+ * artifact) says in that task's thread: one line with a symbol, where the entry itself stays in the chat, which the
+ * line opens. Null for anything else. */
+export function sharedLine(e: Entry, tr: Translate): SharedLine | null {
+  const d = e.data
+  const line = (symbol: string, key: string, values: Record<string, string> = {}) => ({ symbol, text: fill(tr(key), values) })
+  // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
+  const request = d.connectionRequest
+  if (request?.kind === 'agent') {
+    if (request.status === 'pending') return line('hand.raised', 'Needs {agent} sign-in', { agent: String(request.title ?? '') })
+    return request.status === 'ready' ? line('checkmark', 'Signed in') : line('xmark', 'Cancelled')
+  }
+  if (e.kind === 'permission') {
+    const title = d.title ?? ''
+    if (d.status === 'pending') return line('hand.raised', 'Waiting for your approval: {title}', { title })
+    if (d.status !== 'answered') return line('clock', 'Not answered: {text}', { text: title })
+    const chosen = d.options?.find((o) => o.optionId === d.selected)
+    if (chosen?.kind.startsWith('allow')) return line('checkmark', 'Approved: {title}', { title })
+    if (chosen?.kind.startsWith('reject')) return line('xmark', 'Denied: {title}', { title })
+    return line('checkmark', 'Answered: {choice}', { choice: chosen?.name ?? d.selected ?? '' })
+  }
+  if (d.decision) {
+    const question = d.question ?? ''
+    if (d.status === 'pending') return line('hand.raised', 'Asked: {question}', { question })
+    if (d.status === 'answered') return line('checkmark', 'Answered: {choice}', { choice: d.selected ?? '' })
+    return line('clock', 'Not answered: {text}', { text: question })
+  }
+  if (e.kind !== 'agent') return null
+  if (d.artifact) return line('doc.richtext', 'Made an artifact: {title}', { title: d.artifact.title })
+  if (d.voiceNote) return line('waveform', 'Sent a voice note')
+  if (d.files?.length) return line('doc', 'Sent a file: {name}', { name: d.files.map((f) => f.name).join(', ') })
+  return null
+}
+
+/** Why a thread that takes no message is read only, as a catalog key: its result has an owner already. Null for an
+ * item that takes messages, and for the bot's own (nothing to explain). */
+export function readOnlyReason(item: Pick<WorkItem, 'talk' | 'source'>): string | null {
+  if (item.talk) return null
+  switch (item.source?.kind) {
+    case 'routine':
+      return "Read only: a routine's run"
+    case 'request':
+      return "Read only: another bot's request"
+    default:
+      return null
+  }
+}
+
+/** Where an item's task works, in one quiet line. */
+export interface WhereLine {
+  kind: 'folder' | 'branch'
+  text: string
+}
+
+/** The branch when the item has a worktree of its own, else its folder with the home folder as `~`. Null for an item
+ * no task has taken. */
+export function whereLine(item: Pick<WorkItem, 'folder' | 'worktree'>, home: string): WhereLine | null {
+  if (item.worktree) return { kind: 'branch', text: item.worktree.branch }
+  return item.folder ? { kind: 'folder', text: homeRelative(item.folder, home) } : null
+}
+
+/** The full path the where line copies: the task's folder, or its worktree's from a host that names no folder. */
+export const wherePath = (item: Pick<WorkItem, 'folder' | 'worktree'>): string | null => item.folder ?? (item.worktree?.path || null)
+
+/** `path` with the home folder as `~`, on either kind of separator; unchanged outside the home folder or without one. */
+function homeRelative(path: string, home: string): string {
+  const root = home.replace(/[\\/]+$/, '')
+  if (!root || !path.startsWith(root)) return path
+  const rest = path.slice(root.length)
+  return rest === '' || /^[\\/]/.test(rest) ? `~${rest}` : path
+}
+
+/** What Settings says of the bot's folder: git isn't on the computer, the folder is in a repository, or it isn't. */
+export type GitState = 'repo' | 'none' | 'missing'
+
+export function gitState(bot: { gitRepo: boolean; gitInstalled: boolean }): GitState {
+  if (!bot.gitInstalled) return 'missing'
+  return bot.gitRepo ? 'repo' : 'none'
+}
+
+/** A thread's transcript as its panel shows it: what the host told the task first (`told`, folded at the top), then
+ * the rest in order, without the messages the user took back. What the task `taskId` put in the bot's `chat` (a
+ * file, a voice note, an artifact, a card, answered or not) joins the rest where it came, each a `sharedLine`. */
+export function threadEntries(entries: Entry[], chat: Entry[] = [], taskId = ''): { told: Entry | null; rest: Entry[] } {
+  const shown = entries.filter((e) => !e.data.removed)
+  const told = shown.find(isTold) ?? null
+  const shared = chat.filter((e) => e.data.task?.id === taskId && !e.data.removed)
+  return { told, rest: byTime(shown.filter((e) => e !== told), shared) }
+}
+
+/** `own` and `shared`, each kept in its order, as one list in time order (`createdAt`); at the same moment `own` first. */
+function byTime(own: Entry[], shared: Entry[]): Entry[] {
+  const out: Entry[] = []
+  let next = 0
+  for (const e of own) {
+    while (next < shared.length && shared[next]!.createdAt < e.createdAt) out.push(shared[next++]!)
+    out.push(e)
+  }
+  return out.concat(shared.slice(next))
 }

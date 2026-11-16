@@ -37,6 +37,7 @@ pub use exchange::{ConversationRow, Exchange, Item, Outcome, conversation, group
 pub use find::{Find, match_ranges};
 pub(in crate::tui) use kofi::URL as KOFI_URL;
 pub use model::{After, Entry, Kind, Mark, Msg, Status};
+pub use queue::Queued;
 pub use roster::{RosterLine, cursor_line, rename_fold, roster_lines, stops};
 pub use slash::SlashAction;
 pub(super) use steps::{running_turn, working_steps};
@@ -46,7 +47,9 @@ pub use ui::{
     TraceMode, Width,
 };
 pub use whats_new::WhatsNew;
-pub use work::{Background, MAX_AGENTS, Sections, Source, WorkItem, WorkStatus, can_cut_in, counts, places, word};
+pub use work::{
+    Background, MAX_AGENTS, Sections, Source, WorkItem, WorkStatus, can_cut_in, counts, places, shared_line, word,
+};
 
 use crate::tui::l10n::tr;
 use serde_json::{Value, json};
@@ -516,9 +519,12 @@ pub fn fuzzy(query: &str, fields: &[&str]) -> bool {
     })
 }
 
+/// `path` with the computer's `home` folder as `~`, on either kind of separator; unchanged outside the home folder
+/// (`/Users/me2` isn't in `/Users/me`) or without one.
 pub fn tilde(path: &str, home: &str) -> String {
+    let home = home.trim_end_matches(['/', '\\']);
     match path.strip_prefix(home) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
+        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with(['/', '\\'])) => format!("~{rest}"),
         _ => path.to_owned(),
     }
 }

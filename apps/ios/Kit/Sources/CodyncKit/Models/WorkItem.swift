@@ -111,10 +111,14 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
     public var source: Source?
     /// The git worktree its task works in, while it is still there.
     public var worktree: Worktree?
+    /// Its thread takes the user's messages (`WorkThread.swift`). False from an older host.
+    public var talk: Bool
+    /// The folder its task works in on the computer; nil before a task took it, and from an older host.
+    public var folder: String?
 
     public init(id: String, title: String, status: Status, activity: String = "", task: String? = nil, wait: Wait? = nil,
                 cutIn: Bool = false, createdAt: Int64 = 0, startedAt: Int64? = nil, endedAt: Int64? = nil, result: String = "",
-                source: Source? = nil, worktree: Worktree? = nil) {
+                source: Source? = nil, worktree: Worktree? = nil, talk: Bool = false, folder: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -128,6 +132,8 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         self.result = result
         self.source = source
         self.worktree = worktree
+        self.talk = talk
+        self.folder = folder
     }
 
     /// Lenient, but for what says which item it is and where it stands: one without an id, or with a status this
@@ -147,6 +153,8 @@ public struct WorkItem: Codable, Identifiable, Hashable, Sendable {
         result = (try? c.decodeIfPresent(String.self, forKey: .result)) ?? ""
         source = try? c.decodeIfPresent(Source.self, forKey: .source)
         worktree = try? c.decodeIfPresent(Worktree.self, forKey: .worktree)
+        talk = (try? c.decodeIfPresent(Bool.self, forKey: .talk)) ?? false
+        folder = try? c.decodeIfPresent(String.self, forKey: .folder)
     }
 
     /// Try again is offered on an item that failed or was stopped, unless another bot asked for it: that bot has
@@ -186,7 +194,7 @@ public extension WorkItem {
         case .behind where (wait?.ahead ?? 0) > 0: return L10n.fill(tr("{count} ahead"), ["count": String(wait?.ahead ?? 0)])
         case .next, .behind: return tr("Next up")
         case .after: return tr("Follows what it works on")
-        case .usage: return tr("Waiting for usage")
+        case .usage: return tr("Near the usage limit: one at a time")
         case nil: return tr("Waiting")
         }
     }
@@ -420,27 +428,39 @@ public struct ItemRef: Codable, Hashable, Sendable {
 }
 
 public extension Entry {
-    /// What a card asks: an approval's title, a choice's question.
-    var ask: String? { data.title ?? data.question }
+    /// What a card asks: an approval's title, a choice's question, the agent a sign-in waits on.
+    var ask: String? {
+        if let request = data.connectionRequest {
+            return L10n.fill(L10n.tr("Needs {agent} sign-in"), ["agent": request.title])
+        }
+        return data.title ?? data.question
+    }
 
-    /// What a task was told (its item): the host wrote it, the user didn't type it.
-    var isToldToTask: Bool { kind == "user" && data.from == "host" }
+    /// A card waiting in the chat for the user: an approval, a choice, or a sign-in an agent needs.
+    fileprivate var isPendingCard: Bool {
+        if let request = data.connectionRequest { return request.kind == "agent" && request.status == "pending" }
+        return (kind == "permission" || data.decision == true) && data.status == "pending"
+    }
 }
 
 public extension Array where Element == Entry {
-    /// A task's transcript with more of its entries, oldest first: each entry once, the higher `rev` kept.
+    /// A task's transcript with more of its entries, oldest first: each entry once, the higher `rev` kept. The
+    /// computer's copy of a message sent from here (the same `clientNonce`) replaces the one shown at once.
     func mergingTaskEntries(_ incoming: [Entry]) -> [Entry] {
         var byId = Dictionary(map { ($0.id, $0) }, uniquingKeysWith: { a, b in b.rev >= a.rev ? b : a })
         for e in incoming where e.rev >= (byId[e.id]?.rev ?? .min) { byId[e.id] = e }
+        for e in byId.values where e.kind == "user" {
+            guard let nonce = e.data.clientNonce, !nonce.isEmpty, e.id != Entry.localId(nonce) else { continue }
+            byId[Entry.localId(nonce)] = nil
+        }
         return byId.values.sorted { ($0.seq, $0.id) < ($1.seq, $1.id) }
     }
 
-    /// The card in a bot's chat that an item waits on (an approval, or a choice its task asks): the newest pending
-    /// one that names it.
+    /// The card in a bot's chat that an item waits on (an approval, a choice its task asks, a sign-in its agent
+    /// needs): the newest pending one that names it.
     func card(for item: WorkItem) -> Entry? {
         last { e in
-            (e.kind == "permission" || e.data.decision == true) && e.data.status == "pending"
-                && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
+            e.isPendingCard && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
         }
     }
 }

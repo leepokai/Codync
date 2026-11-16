@@ -34,7 +34,8 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   entry: Entry
   groupStart: boolean
   chat: Bot | null
-  openTrace: () => void
+  /** Opens what the bot did for a message; absent where a card is shown outside the chat. */
+  openTrace?: () => void
   /** Quotes this message in the composer, or the part of it that is selected; absent where the computer can't take replies. */
   onReply?: (quote: ReplyQuote) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
@@ -223,14 +224,16 @@ function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
+/** `plain` is a message read outside its chat (a task's reply in its thread): only Copy and a file's own actions, no
+ * reactions, Reply or what it did. */
+export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = false }: { entry: Entry; openTrace?: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void; plain?: boolean }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const voiceNote = voiceNoteOf(entry.data)
-  const reactions = reactionPick(store, entry)
+  const reactions = plain ? undefined : reactionPick(store, entry)
   const rest = (): MenuItem[] => [
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-    { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
+    ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
   ]
   // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
   const menu: MessageMenu = { items: rest, reactions }
@@ -258,7 +261,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
             <MarkdownText text={entry.data.text ?? ''} findable />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />
+        {reactions ? <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} /> : null}
       </div>
       <TaskLine entry={entry} />
     </div>
@@ -283,6 +286,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
+            <TaskLine entry={entry} />
             {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>

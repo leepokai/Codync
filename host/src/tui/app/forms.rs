@@ -552,6 +552,26 @@ mod tests {
         assert_eq!(editor("d", json!({"gitRepo": true})), (false, json!({})), "a host before worktrees");
     }
 
+    #[test]
+    fn the_line_under_the_folder_says_which_of_the_three_it_is() {
+        let line = |more: Value| {
+            let mut bot = json!({"id": "a", "name": "B", "backend": "claude"});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            Bot::parse(&bot).expect("a bot").git_line()
+        };
+        let on = json!({"taskWorktrees": true, "gitRepo": true});
+        assert_eq!(line(on), Some("Git repository"), "a host that doesn't say has git");
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": false, "gitInstalled": true})),
+            Some("Not a git repository")
+        );
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": true, "gitInstalled": false})),
+            Some("Git isn't installed on this computer")
+        );
+        assert_eq!(line(json!({"gitRepo": true})), None, "a host before worktrees");
+    }
+
     #[tokio::test]
     async fn the_network_switches_need_a_host_that_has_them() {
         let mut app = test_app();

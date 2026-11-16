@@ -145,8 +145,7 @@ extension BotStore {
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .taskEntry(task, e):
-            // ponytail: re-sorts the task's transcript on every entry; insert in place if tasks grow past hundreds.
-            taskEntries[task] = (taskEntries[task] ?? []).mergingTaskEntries([e])
+            putTaskEntry(e, task: task)
             bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.

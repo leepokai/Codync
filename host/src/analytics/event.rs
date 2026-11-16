@@ -81,6 +81,10 @@ pub enum Event {
     WorkFinished,
     /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
+    /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
+    WorkNeedsSignIn,
+    /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
+    WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -234,6 +238,8 @@ impl Event {
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
             Self::WorkSteered => "work_steered",
+            Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",

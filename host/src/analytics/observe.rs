@@ -121,6 +121,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::SectionRenamed
         }
         "deleteBot" => Event::BotDeleted,
+        // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
+        "send" if b["itemId"].is_string() => Event::WorkMessaged,
+        // Send now and Remove on a message that waits in an item's thread.
+        "steer" | "unqueue" if b["itemId"].is_string() => {
+            p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
+            p.insert("by".into(), "user".into());
+            Event::WorkSteered
+        }
         "send" => {
             let reply = b["replyTo"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("reply".into(), reply.into());
@@ -339,6 +347,14 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
         Event::BotQuoted => {
             p.insert("outcome".into(), if answer["warning"].is_null() { "quoted" } else { "unquoted" }.into());
         }
+        // A message sent before (the same `clientNonce`) is not a new one.
+        Event::WorkMessaged if answer["reopened"].is_null() => return None,
+        Event::WorkMessaged => {
+            p.insert("outcome".into(), "sent".into());
+            for key in ["reopened", "queued"] {
+                p.insert(key.into(), answer[key].clone());
+            }
+        }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,
         // A login profile's check that still finds it signed out is no sign-in.
@@ -354,9 +370,9 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, a login profile, a connector edit, a voice
-/// server or a speech server reports its category and a credentials reset `other`, never the message;
-/// other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server, a
+/// speech server and a message to an item's thread report their category and a credentials reset `other`, never
+/// the message; other failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     let category = match event {
         Event::NetworkJoined | Event::NetworkChanged => {
@@ -375,6 +391,11 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         }
         Event::ConnectorUpdated => {
             error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category())
+        }
+        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no task to write to.
+        // `text_only`: files, a quote or a call.
+        Event::WorkMessaged => {
+            error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category)
         }
         Event::SettingChanged if p.get("setting").and_then(Value::as_str) == Some(VOICE_SERVER) => {
             error.downcast_ref::<crate::voice::ServerRefused>().map_or("other", |e| e.category)

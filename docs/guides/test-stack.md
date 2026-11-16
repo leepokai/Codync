@@ -28,6 +28,8 @@ Run them one at a time: never start a test binary several times in parallel, or 
 
 `tests/iphone_reconnect_e2e.rs` drives the iPhone's own store and channel (`HostRestartCatchUpTests.swift` in `apps/ios/Kit`, run with `xcodebuild` on a simulator) through `private-relay/` against a host it restarts, with 30 chats and five days of history, and checks the phone stays on the relay, its catch-up after each restart holds only what is new, and no relayed device link overflows. It needs macOS, Xcode and Node, so it runs only when asked, after `npm ci` in `private-relay`: `CODYNC_IOS_SIMULATOR=<udid> cargo test --test iphone_reconnect_e2e -- --ignored`.
 
+`tests/phone_performance_e2e.rs` starts a host and runs `PhonePerformanceDeliveryTests.swift` on a simulator, which lets the simulator send (the app skips delivery there unless a test asks) and checks that a cold app open's first milestones reach the host's `phone-performance.jsonl`. It needs macOS, Xcode and a simulator: `CODYNC_IOS_SIMULATOR=<udid> cargo test --test phone_performance_e2e -- --ignored`.
+
 ## Real agents
 
 Everyday tests use the fake agents, which only answer the way we expect. Run the real ones too, one short turn per agent on the cheapest model, with nothing in parallel (it uses your own plan), when:

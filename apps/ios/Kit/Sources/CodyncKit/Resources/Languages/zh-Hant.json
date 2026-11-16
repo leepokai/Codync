@@ -1820,7 +1820,7 @@
   "{paired} · seen {when}": "{paired} · 上次在線 {when}",
   "{shape} shape": "{shape} 形狀",
   "{tokens} tokens": "{tokens} 個 token",
-  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "“隨時隨地存取”已關閉，因此 iPhone 只能在同一網路中連線到 {name}。",
+  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "「隨時隨地連線」已關閉，因此 iPhone 只能在同一網路中連線到 {name}。",
   "≈ {minutes} min": "≈ {minutes} 分鐘",
   "Set up Composio in Extensions first.": "請先在「擴充功能」中設定 Composio。",
   "Composio didn't return a sign-in link": "Composio 未傳回登入連結",

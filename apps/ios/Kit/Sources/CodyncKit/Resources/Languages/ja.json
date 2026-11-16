@@ -1820,7 +1820,7 @@
   "{paired} · seen {when}": "{paired} · {when} に確認",
   "{shape} shape": "形状: {shape}",
   "{tokens} tokens": "{tokens} トークン",
-  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "「どこからでもアクセス」がオフのため、iPhone は同じネットワーク上の {name} にのみ接続できます。",
+  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "「どこからでもアクセス可能」がオフのため、iPhone は同じネットワーク上の {name} にのみ接続できます。",
   "≈ {minutes} min": "約 {minutes} 分",
   "Set up Composio in Extensions first.": "先に「拡張機能」で Composio を設定してください。",
   "Composio didn't return a sign-in link": "Composio からサインインリンクが返されませんでした",

@@ -1820,7 +1820,7 @@
   "{paired} · seen {when}": "{paired} · vu {when}",
   "{shape} shape": "Forme : {shape}",
   "{tokens} tokens": "{tokens} jetons",
-  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "« Accès depuis n'importe où » est désactivé, donc l'iPhone n'atteint {name} que sur le même réseau.",
+  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "« Accessible de partout » est désactivé, donc l'iPhone n'atteint {name} que sur le même réseau.",
   "≈ {minutes} min": "≈ {minutes} min",
   "Set up Composio in Extensions first.": "Configurez d’abord Composio dans Extensions.",
   "Composio didn't return a sign-in link": "Composio n’a pas renvoyé de lien de connexion",

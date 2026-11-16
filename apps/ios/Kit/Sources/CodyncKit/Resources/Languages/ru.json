@@ -1820,7 +1820,7 @@
   "{paired} · seen {when}": "{paired} · был в сети {when}",
   "{shape} shape": "Фигура: {shape}",
   "{tokens} tokens": "Токенов: {tokens}",
-  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "«Доступ из любого места» выключен, поэтому iPhone подключается к {name} только в той же сети.",
+  "“Reach from anywhere” is off, so the iPhone only reaches {name} on the same network.": "«Доступ из любой точки» выключен, поэтому iPhone подключается к {name} только в той же сети.",
   "≈ {minutes} min": "≈ {minutes} мин",
   "Set up Composio in Extensions first.": "Сначала настройте Composio в Расширениях: Расширения → Учётные данные → ключ API Composio.",
   "Composio didn't return a sign-in link": "Composio не прислал ссылку для входа",

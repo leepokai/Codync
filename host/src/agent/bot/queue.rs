@@ -74,11 +74,12 @@ impl Actor {
             Cmd::Permission { entry_id, option_id } => self.answer_permission(&entry_id, option_id).await,
             Cmd::Approve { title, detail, reply } => self.ask_approval(&title, &detail, reply),
             Cmd::NewSession => {
-                if self.turn.is_some() {
-                    self.stop().await;
-                }
+                // Only the running turn stops: queued messages and follow-ups run in the new session; queued
+                // routines still run, each in its own.
+                self.cancel_turn().await;
                 self.forget_session();
                 self.forget_parked();
+                self.drop_handoff();
                 // Retain and summarize completed exchanges even when the user starts afresh. The chat shows no line
                 // for it: the user just confirmed it.
                 let _ = self.dreamer.send(memory::DreamEvent::Flush);

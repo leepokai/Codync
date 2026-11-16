@@ -15,12 +15,18 @@ async function signedOutBot(page: Page, name: string): Promise<string> {
     name, backend: 'kimi', command: agent('primary'), connectors: [], skills: [], notify: false,
     fallbacks: [{ backend: 'codex', command: agent('standin'), model: null, modelOptions: {} }],
   })
-  writeFileSync(join(sandbox().home, 'bots', bot.id, 'workspace', 'primary.signedout'), '')
-  await api(page, 'send', { botId: bot.id, text: 'Hello', clientNonce: `n-${Date.now()}` })
-  const current = async () => (await api<{ bot: Bot }>(page, 'updateBot', { id: bot.id })).bot
-  await expect.poll(async () => (await current()).resting?.[0]?.reason, { timeout: 30_000 }).toBe('signedOut')
-  await expect.poll(async () => Boolean((await current()).agentStep), { timeout: 30_000 }).toBe(true)
-  return bot.id
+  try {
+    writeFileSync(join(sandbox().home, 'bots', bot.id, 'workspace', 'primary.signedout'), '')
+    await api(page, 'send', { botId: bot.id, text: 'Hello', clientNonce: `n-${Date.now()}` })
+    const current = async () => (await api<{ bot: Bot }>(page, 'updateBot', { id: bot.id })).bot
+    await expect.poll(async () => (await current()).resting?.[0]?.reason, { timeout: 30_000 }).toBe('signedOut')
+    await expect.poll(async () => Boolean((await current()).agentStep), { timeout: 30_000 }).toBe(true)
+    return bot.id
+  } catch (error) {
+    // The caller only learns the id on success, so a failed setup deletes its own bot.
+    await api(page, 'deleteBot', { botId: bot.id }).catch(() => {})
+    throw error
+  }
 }
 
 // #444: a bot whose own agent is signed out says so on its Agent card, not that it waits for a usage reset.

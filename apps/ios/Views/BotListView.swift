@@ -16,6 +16,8 @@ struct BotListView: View {
     @State private var confirmDelete: RosterItem?
     /// The view of all bots' work.
     @State private var showingWork = false
+    /// A bot whose agent starts over with a fresh context, once confirmed.
+    @State private var confirmNewSession: RosterItem?
     /// What the section name dialog names while it's open.
     @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
@@ -245,6 +247,14 @@ struct BotListView: View {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
+        .codyncDialog("Start a new session?",
+                      isPresented: Binding(get: { confirmNewSession != nil }, set: { if !$0 { confirmNewSession = nil } }),
+                      message: "The conversation stays here, but the agent starts with a fresh context.") {
+            let item = confirmNewSession
+            return [DialogAction("New session") {
+                if let item { accounts.store(for: item.ref.computerId)?.newSession(item.bot.id) }
+            }]
+        }
         .sectionNameDialog($naming)
     }
 
@@ -407,6 +417,10 @@ struct BotListView: View {
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
                 MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) },
             ]
+            // A group has no agent session of its own.
+            if !bot.isGroup {
+                items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = item })
+            }
             if !bot.lead && !bot.isGroup && store.supportsLeadChoice {
                 items.append(MenuItem("Make lead agent", icon: "star") { store.setLead(bot) })
             }

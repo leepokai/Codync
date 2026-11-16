@@ -157,6 +157,24 @@ async fn turning_summaries_off_withdraws_a_fresh_conversation_already_drafted() 
     assert!(!host.prompts(&bot).last().unwrap().contains("<handoff>"));
 }
 
+#[tokio::test]
+async fn a_new_session_carries_no_fresh_conversation_already_drafted() {
+    let host = Host::start().await;
+    let bot = early_bot(&host, "Fresh", "codex").await;
+    host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
+    notice(&host, &bot, "compaction").await;
+    host.reply(&bot, "USAGE 210000 SIZE 1000000").await;
+    let card = notice(&host, &bot, "handoff").await;
+    assert_eq!(card["data"]["handoff"]["status"], "draft");
+
+    host.call("newSession", json!({"botId": bot})).await;
+    host.reply(&bot, "something else").await;
+    assert_eq!(host.requests(&bot, "session/new").len(), 2, "a new conversation");
+    assert!(!host.prompts(&bot).last().unwrap().contains("<handoff>"), "the old one's summary stays behind");
+    let card = common::steer::entry(&host, &bot, card["id"].as_str().unwrap()).await;
+    assert_eq!(card["data"]["handoff"]["status"], "kept", "the card is settled without being sent");
+}
+
 /// Holds a turn that fills the conversation, queues "second" (held too) behind it and lets the first end: the
 /// compaction it called for waits in the queue while "second" runs.
 async fn compaction_queued_behind_a_turn(host: &Host, bot: &str) {

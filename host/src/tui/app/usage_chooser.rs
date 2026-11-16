@@ -83,45 +83,13 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::super::super::net::Client;
-    use super::super::{After, App, Msg, Overlay, test_app};
+    use super::super::{After, App, Msg, Overlay, next_request, recording_host, test_app};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use serde_json::json;
 
-    /// A host that hands each request it gets to `requests`, answering them all alike.
-    async fn host() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
-        let base = format!("http://{}", listener.local_addr().expect("its address"));
-        let (seen, requests) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(async move {
-            while let Ok((mut socket, _)) = listener.accept().await {
-                let mut request = Vec::new();
-                while !request.ends_with(b"}") {
-                    let mut chunk = [0; 4096];
-                    let read = socket.read(&mut chunk).await.expect("a request");
-                    if read == 0 {
-                        break;
-                    }
-                    request.extend_from_slice(&chunk[..read]);
-                }
-                let _ = seen.send(String::from_utf8_lossy(&request).into_owned());
-                let answer = b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}";
-                let _ = socket.write_all(answer).await;
-            }
-        });
-        (base, requests)
-    }
-
-    async fn next_request(requests: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> String {
-        tokio::time::timeout(std::time::Duration::from_secs(10), requests.recv())
-            .await
-            .expect("the host hears of it in time")
-            .expect("the host is up")
-    }
-
     #[tokio::test]
     async fn the_usage_sheet_opens_the_chooser_and_a_toggle_reaches_the_host() {
-        let (base, mut requests) = host().await;
+        let (base, mut requests) = recording_host().await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = App::new(Client::new(&base, Some("token")), tx, String::new());
         app.usage = json!({"providers": [], "services": [
@@ -145,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn j_and_k_move_the_selected_agent_as_the_host_answers() {
-        let (base, mut requests) = host().await;
+        let (base, mut requests) = recording_host().await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut app = App::new(Client::new(&base, Some("token")), tx, String::new());
         let usage = |ids: &[&str]| {

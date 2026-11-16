@@ -413,6 +413,11 @@ public extension HostClient {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
+    /// The bot's agent starts over with a fresh context; the chat stays.
+    func newSession(_ botId: String) async throws {
+        let _: Empty = try await call("newSession", ["botId": botId])
+    }
+
     /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
     func steer(botId: String, entryId: String) async throws {
         let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])

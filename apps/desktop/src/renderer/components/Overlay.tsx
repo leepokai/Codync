@@ -282,9 +282,6 @@ export function DialogField({ value, onChange, onSubmit, placeholder, label, inp
 
 export { AnchoredMenu, type MenuItem } from './Menu'
 
-  )
-}
-
 /** A sheet's content: a full-height column on the page color, usually a ModalHeader and a body. */
 export function SheetPage({ className, children }: { className?: string; children: ReactNode }) {
   return <div className={`sheet-page${className ? ` ${className}` : ''}`}>{children}</div>

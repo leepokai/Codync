@@ -44,18 +44,29 @@ import kotlinx.serialization.json.contentOrNull
 // its time.
 
 /**
- * The card a needs-you [item] waits on, among its bot's chat [entries]: the newest pending approval or choice card
- * that names it (`data.item`) or its task (`data.task.id`).
+ * The card a needs-you [item] waits on, among its bot's chat [entries]: the newest pending approval, choice or agent
+ * sign-in card that names it (`data.item`) or its task (`data.task.id`).
  */
 internal fun pendingCard(entries: List<Entry>, item: WorkItem): Entry? = entries.lastOrNull { entry ->
-    (entry.kind == "permission" || entry.isDecision) && entry.data.string("status") == "pending" &&
+    entry.waitsForUser &&
         (entry.data.string("item") == item.id || item.task != null && (entry.data["task"] as? JsonObject)?.string("id") == item.task)
+}
+
+/** A card waiting in the chat for the user: an approval, a choice, or a sign-in an agent needs. */
+private val Entry.waitsForUser: Boolean get() = when (val request = data["connectionRequest"] as? JsonObject) {
+    null -> (kind == "permission" || isDecision) && data.string("status") == "pending"
+    else -> request.string("kind") == "agent" && request.string("status") == "pending"
 }
 
 private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
-/** A needs-you item's second line: what its [card] asks (an approval's title, a choice's question). */
-internal fun cardLine(card: Entry?): String? = card?.data?.let { it.string("title") ?: it.string("question") }?.takeIf(String::isNotEmpty)
+/** A needs-you item's second line: what its [card] asks (an approval's title, a choice's question, the agent a sign-in waits on). */
+internal fun cardLine(card: Entry?, tr: (String) -> String): String? = card?.data?.let { data ->
+    when (val request = data["connectionRequest"] as? JsonObject) {
+        null -> data.string("title") ?: data.string("question")
+        else -> fill(tr("Needs {agent} sign-in"), "agent" to request.string("title").orEmpty())
+    }
+}?.takeIf(String::isNotEmpty)
 
 /**
  * A bot's work rows with what they need around them (the desktop's `LiveWork`): each row's actions, the transcript a
@@ -88,7 +99,7 @@ internal fun cardLine(card: Entry?): String? = card?.data?.let { it.string("titl
                 card != null -> { { openCard(card) } }
                 else -> item.task?.let { task -> { reading = item.id to task } }
             }
-            WorkRow(item, cardLine(card) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open,
+            WorkRow(item, cardLine(card, translator()) ?: itemLine(item, translator()), workActions(item, bot.work, bot.maxAgents), enabled, open,
                 number = (index + 1).takeIf { numbered }, source = { SourceMark(item, state.bots) }) { run(it, item) }
         }
     }

@@ -3,7 +3,9 @@
 # task's transcript. With the ceiling at 1, what is added next waits in the Event box, numbered in order; First moves a
 # waiting item to the front, Drop (touch and hold) takes one out, and Cut in asks which working item gives way: that
 # one returns to the box. Stop on the capsule asks once. An item's approval card is answered in the chat and says it
-# comes from the background, its Threads row leads to it, and its report comes back as the bot's message. A stopped
+# comes from the background, its Threads row leads to it, and its report comes back as the bot's message; so does the
+# sign-in card of an agent the task needs signing in to, whose row names the agent, and the item goes on once a turn
+# of that agent ends well (it is signed in). A stopped
 # item is tried again from Recent, and Agents at once in Settings moves the ceiling. A row reads as one element on iPhone
 # (its number, title and line together) and as separate texts on Android, hence the `.*` around titles. The phone must
 # already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
@@ -229,3 +231,28 @@ onFlowComplete:
 - extendedWaitUntil:
     visible: "Relayed: Report Pick a branch.*"
     timeout: 20000
+# A task whose agent needs signing in asks in the chat too, and its row says which agent and leads to the card.
+- runScript:
+    file: tasks.js
+    env:
+      SIGN_IN: "Log in"
+- extendedWaitUntil:
+    visible: "In the background · Log in"
+    timeout: 20000
+- assertVisible: "Kimi Code"
+- takeScreenshot: tasks-sign-in
+- tapOn: "In the background · (Needs you.*)?"
+- assertVisible: ".*Needs Kimi Code sign-in.*"
+- tapOn: ".*Log in.*"
+- extendedWaitUntil:
+    visible: "In the background · Log in"
+    timeout: 10000
+- assertNotVisible: "Threads"
+# A turn of the agent that ends well says it is signed in: the item goes on in its task and reports.
+- runScript:
+    file: tasks.js
+    env:
+      SAY: "hello"
+- extendedWaitUntil:
+    visible: "Relayed: Report Log in.*"
+    timeout: 30000

@@ -2165,5 +2165,7 @@
   "All data": "모든 데이터",
   "Every account, bot, conversation, key and setting on this computer.": "이 컴퓨터의 모든 계정, 봇, 대화, 키, 설정입니다.",
   "Delete all of Codync's data for good?": "Codync의 모든 데이터를 영구적으로 삭제할까요?",
-  "Delete everything": "모두 삭제"
+  "Delete everything": "모두 삭제",
+  "Needs {agent} sign-in": "{agent} 로그인 필요",
+  "Asked in the chat to sign in to {agent}.": "채팅에서 {agent} 로그인을 요청했습니다."
 }

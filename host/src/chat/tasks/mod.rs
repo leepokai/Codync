@@ -156,6 +156,27 @@ pub fn of(store: &Store, bot: &str) -> Vec<BotConfig> {
     tasks
 }
 
+/// `cfg`'s fallbacks changed: its tasks fall back the same way from their next agent on, as the bot does. Read,
+/// saved and sent under one lock, so nothing a task saves meanwhile is lost and a later change reaches it after this
+/// one.
+pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
+    let _g = hub.emit_lock.locked();
+    let mut tasks = of(&hub.store, &cfg.id);
+    for task in &mut tasks {
+        task.fallbacks.clone_from(&cfg.fallbacks);
+    }
+    if let Err(error) = hub.store.save_bots(&tasks) {
+        tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "couldn't give its tasks the bot's fallbacks");
+        return;
+    }
+    for task in tasks.into_iter().filter(|task| hub.has_actor(&task.id)) {
+        let id = task.id.clone();
+        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure(Box::new(task))) {
+            tracing::warn!(task = %id, error = format!("{error:#}"), "couldn't give a task its bot's fallbacks");
+        }
+    }
+}
+
 /// The bot `id` is to the user: a task's bot, else `id` itself.
 pub fn owner(store: &Store, id: &str) -> String {
     let task_of = store.bot(id).ok().flatten().and_then(|row| row.config.task_of);
@@ -187,9 +208,40 @@ fn update(hub: &Hub, cfg: &BotConfig, what: &str, change: impl FnOnce(&mut Item)
     })
 }
 
-/// The item task `cfg` works on, as its approval card names it: its id and title.
+/// The item task `cfg` works on, as the cards it puts in its bot's chat name it ([`mark`]): its id and title.
 pub fn card_item(store: &Store, cfg: &BotConfig) -> Option<(String, String)> {
     item_of(store, cfg).map(|item| (item.id, item.title))
+}
+
+/// What marks an entry a task puts in its bot's chat as its item's (`data.author`, `data.task`, `data.item`).
+pub struct ItemMark {
+    /// The task's bot, whose chat it is.
+    pub bot: String,
+    task: String,
+    title: String,
+    item: Option<String>,
+}
+
+impl ItemMark {
+    /// The task it marks as.
+    pub fn task(&self) -> &str {
+        &self.task
+    }
+
+    /// Marks `data`: to the user it is the bot's; an answer finds the task by `data.task.id` ([`card_actor`]).
+    pub fn apply(&self, data: &mut Value) {
+        data["author"] = self.bot.as_str().into();
+        data["task"] = json!({"id": self.task, "title": self.title});
+        data["item"] = self.item.clone().into();
+    }
+}
+
+/// From task `cfg`: what marks an entry in its bot's chat as its item's, named by what the user knows it by. None
+/// for a bot's own.
+pub fn mark(store: &Store, cfg: &BotConfig) -> Option<ItemMark> {
+    let bot = cfg.task_of.clone()?;
+    let (item, title) = card_item(store, cfg).unzip();
+    Some(ItemMark { bot, task: cfg.id.clone(), title: title.unwrap_or_default(), item })
 }
 
 /// The session a task's first session forks, if any; taken once.

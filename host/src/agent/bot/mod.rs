@@ -32,6 +32,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod sign_in;
 mod steer;
 mod tool_entry;
 mod turn;

@@ -234,6 +234,12 @@ impl Entry {
             && ["sourceBotId", "targetBotId", "text"].iter().all(|k| self.data["botMessage"][k].is_string())
     }
 
+    /// A sign-in card an agent's turn waits on (a background task's, in its bot's chat).
+    pub fn waits_for_sign_in(&self) -> bool {
+        let request = &self.data["connectionRequest"];
+        request["kind"] == "agent" && request["status"] == "pending"
+    }
+
     pub fn pending(&self) -> bool {
         match self.kind {
             Kind::Permission => self.data["status"] == "pending",

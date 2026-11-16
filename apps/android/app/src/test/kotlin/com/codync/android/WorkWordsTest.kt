@@ -145,17 +145,25 @@ class WorkWordsTest {
         })
         assertEquals("choice", pendingCard(entries + choice("choice"), asking)?.id)
         assertEquals("old", pendingCard(entries + choice("answered-choice", "answered"), asking)?.id)
-        assertEquals("Which branch?", cardLine(choice("choice")))
+        assertEquals("Which branch?", cardLine(choice("choice"), english))
+        // A sign-in the task's agent needs, in the chat: the row says which agent.
+        fun signIn(id: String, status: String = "pending") = Entry(id, 1, "b", 1, "notice", data = buildJsonObject {
+            put("item", asking.id)
+            putJsonObject("connectionRequest") { put("kind", "agent"); put("status", status); put("title", "Kimi Code") }
+        })
+        assertEquals("signIn", pendingCard(entries + signIn("signIn"), asking)?.id)
+        assertEquals("old", pendingCard(entries + signIn("signedIn", "ready"), asking)?.id)
+        assertEquals("Needs Kimi Code sign-in", cardLine(signIn("s"), english))
         assertTrue(choice("c").data.let { !Entry("x", 1, "b", 1, "agent", data = it).fromTask })
         assertTrue(card("t", task = "task-1").fromTask)
     }
 
     @Test fun `a needs-you row says what its card asks`() {
         fun card(title: String?) = Entry("c", 1, "b", 1, "permission", data = buildJsonObject { title?.let { put("title", it) } })
-        assertEquals("npm test", cardLine(card("npm test")))
-        assertNull(cardLine(card("")))
-        assertNull(cardLine(card(null)))
-        assertNull(cardLine(null))
+        assertEquals("npm test", cardLine(card("npm test"), english))
+        assertNull(cardLine(card(""), english))
+        assertNull(cardLine(card(null), english))
+        assertNull(cardLine(null, english))
     }
 
     @Test fun `the cut-in dialog names each live item, what it does and how long`() {

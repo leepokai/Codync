@@ -297,9 +297,7 @@ impl Actor {
             if self.conn.is_none() {
                 return Box::pin(self.ensure_session(slot)).await;
             }
-            if crate::chat::tasks::from_chat(&self.task_source) {
-                self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
-            }
+            self.handoff = self.told_chat();
             crate::chat::tasks::started(&self.hub, &self.cfg, crate::chat::tasks::Start::Brief);
         }
         let (revision, system) = {
@@ -356,7 +354,8 @@ impl Actor {
         let Some(source) = crate::chat::tasks::take_fork_source(&self.hub, &self.cfg) else {
             return Ok(false);
         };
-        if !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
+        // The chat's session is its own agent's: a task that starts on a fallback (that agent rests) can't fork it.
+        if self.step() != Some(0) || !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
             return Ok(false);
         }
         // The chat's frozen instructions, as its session holds them.

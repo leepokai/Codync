@@ -2,7 +2,8 @@
 
 A bot puts long work in its **box** as **items**. **Tasks** take them: other sessions of the same bot that work away
 from the chat, so the chat keeps answering. The chat shows only messages and what needs the user (a task's approval
-and choice cards, the files and artifacts it shares); the work shows as one capsule above the composer, and each
+and choice cards, the sign-in card its agent needs, its offer to add a fallback, the files and artifacts it shares);
+the work shows as one capsule above the composer, and each
 item's report comes back as the bot's own message. A run of one of the bot's routines and another bot's request are
 items too ([other sources](#other-sources)).
 
@@ -33,7 +34,7 @@ JSON list in kv `work.<bot>`; every change to a box is made under one lock (`ite
 | --- | --- |
 | `waiting` | In the box; no task works on it |
 | `working` | A task works on it |
-| `needsYou` | Its task waits on an approval or a choice (never saved: a working item reads so while its task's card is open) |
+| `needsYou` | Its task waits on an approval, a choice or its agent's [sign-in](#fallbacks-and-sign-in) (never saved: a working item reads so while its task's card is open) |
 | `done` | Finished; `result` is what its task reported |
 | `failed` | It could not be finished; `result` says why |
 | `stopped` | The user or the bot stopped it |
@@ -128,8 +129,9 @@ A task that gives its item up is told to stop; when its turn has ended, the disp
 
 - **Fork**: `session/fork` of the bot's main session, sent from the task's own process with the main session's
   frozen instructions, so the prompt cache is the chat's. Conditions: the agent advertises
-  `sessionCapabilities.fork`, the bot is on its own agent (not a fallback), and the main session has used under half
-  its window.
+  `sessionCapabilities.fork`, the bot is on its own agent (not a fallback), the main session has used under half
+  its window, and the task starts on the bot's own agent too (a task whose first agent rests starts on a
+  [fallback](#fallbacks-and-sign-in), which can't fork another agent's session).
 - **Brief**: `session/new`, with the chat so far before the task's first message (`handoff::build`: summary, last
   requests, last reply, plan). Used when a condition fails or the fork errors, and for a task that works in a
   [worktree](#worktrees) (a fork would be taken in another folder than its session's).
@@ -162,6 +164,35 @@ A task's permission request becomes a card in **its bot's chat**, with `data.tas
 its item's title), `data.item` (the item's id) and the bot as `data.author`, so `respondPermission` reaches the
 task's actor and a client can link the card to the item. The approval setting is the bot's (copied when the task
 starts). A waiting card stops only its task; the chat goes on.
+
+## Fallbacks and sign-in
+
+A task runs its bot's [fallback chain](agent-fallback.md) with the same actor code as the chat: when its agent runs
+out of usage, is rate limited, signed out or won't start, the same turn goes on with the next agent. Rests are the
+computer's, so the chat and every task skip a resting login together.
+
+- **The chain is the bot's.** A task copies it when it starts; a change to the bot's fallbacks reaches its tasks at
+  once (`tasks::fallbacks_changed`, from `Hub::update_bot`), for their next agent.
+- **A new session on another agent hears the chat.** A task forked from the chat, or told it, keeps that only in
+  the session it began; when it falls back to a new session elsewhere, that agent is told the chat so far
+  (`tasks::chat_so_far`) before the recap of the task's own transcript. Not for a routine's run.
+- **What the user must do is asked in the bot's chat** (`agent::bot::sign_in`). A task's agent sign-in card goes to
+  its bot's chat with `data.task`, `data.item` and the bot as `data.author`, and `connectionRequest.botId` the bot's
+  (the apps check it against the chat). The host keeps one card per login per task (`data.task.id`), apart from
+  the chat's own; the task's next item takes it over. The task's own transcript gets one line, `Asked in the chat to sign in to <agent>.`. A failure
+  that offers **Add a fallback** goes to the chat the same way; the transcript keeps the failure.
+- **An item waits for the sign-in.** When no agent of the chain can take the turn and the card holds the item's
+  message, the item doesn't fail: it stays working on its task, reads `needsYou` with the activity
+  `Needs <agent> sign-in`, and a needs-you alert goes to the bot's chat. Once that login is signed in, the held
+  message goes out again to the same task, however long it waited (`agent_sign_in::send_again` sends each held
+  message to the chat it was written in; only the chat's own expire after a day), and the item goes on in its
+  session. A message that went out again at once (a process older than the turn) keeps the item going too. A task
+  whose item was stopped or went back to the box gets nothing sent; its Stop ends the wait, and the task.
+- **The usage gate looks past a resting agent.** The dispatcher's "near its usage limit" reads the agent a new task
+  would start on (`fallback::starting`: the first step that isn't resting), not only the bot's own.
+
+The apps show the item line on the sign-in card and on the failure, and a needs-you row reads the card's ask
+(`Needs <agent> sign-in`) and opens the chat at the card, as for an approval.
 
 ## Asking and sharing from a task
 
@@ -309,7 +340,9 @@ An item's end sends no alert of its own: its report is a turn of the bot's, whos
   on an item the bot added, so a client that doesn't know it shows the row as before. `worktree` is
   `{branch, path}` while the item has a [worktree](#worktrees) that is still there, and absent otherwise. The bot's own `status` stays the chat's.
 - Cards and messages a task posts in the chat carry `data.task = {id, title}` and `data.item`: permission cards,
-  choice cards (`data.decision`), file messages (`data.files`) and artifact cards (`data.artifact`).
+  choice cards (`data.decision`), agent sign-in cards (`data.connectionRequest`, `kind: agent`), failure notices that
+  offer **Add a fallback** (`data.addFallback`, without the `stopReason` of the task's own), file messages
+  (`data.files`) and artifact cards (`data.artifact`).
 - Bot: `maxAgents`, set with `updateBot` (1 to 6).
 - Bot: `outside: {status, startedAt}`: how the bot stands [outside its chat](#outside-the-chat) (`idle`, `working`,
   `needsInput`, `error`), where `status` is the chat's alone. Absent on an older host: `status` then.
@@ -383,12 +416,16 @@ task's choice card answered by a press and not by a typed message, ended by stop
 Stop, its file and artifact in the chat and kept with the bot; a run that never forks nor sees the chat, a request's
 `(pass)`; a task's `edit_memory` adding and refused a removal while the user's own turn runs in the chat; a task
 beside another in a repository working in its worktree, an untouched one removed with its branch, a touched one
-kept and named in the report, the switch off and a folder that is no repository); `memory_files_e2e` (a line a
+kept and named in the report, the switch off and a folder that is no repository; a task's sign-in asked in the
+chat and its item going on in the same task once signed in, a task moving past a signed-out agent and its next
+agent told the chat, a task's offer to add a fallback in the chat and new fallbacks reaching a running task, a task
+that starts on a fallback never forking the chat's session); `memory_files_e2e` (a line a
 routine's run in a task takes out with a shell command is put back); unit tests of a worktree made, removed, kept
 and never touched when it isn't Codync's (`worktree.rs`), how a bot stands outside its chat (`items.rs`), unit tests of the dispatch order and the `wait` reasons
-(`dispatch.rs`), an item's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`items.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
+(`dispatch.rs`), the agent a new task starts on (`agent/fallback/mod.rs`), a task's held message sent again however
+old and not once its item ended (`market/agent_sign_in.rs`), an item's end and the restart rule, also for a run and a request (`mod.rs`), a source on the wire (`items.rs`), which bots keep runs in the chat (`sources.rs`), the 20 waiting items and the title and brief lengths (`tools.rs`), the prompts and the box's lines. Not
 covered by a test: a worktree reused by an item that starts again, one inherited by an item that follows, a
-stopped item's worktree looked over, a worktree's dev server and artifact, git failing, a real agent in a worktree,
+stopped item's worktree looked over, an item stopped while it waits for a sign-in ending its task, a worktree's dev server and artifact, git failing, a real agent in a worktree,
 the Live Activity push itself (the relay isn't in the tests), a routine's time limit in a task, a lost run or request at the hourly look, a run the box lost at host start, a request from another computer or the cloud assistant as an item, `message_bot` from a run's task, a task's voice note, a choice card's timeout and its end at a host restart, the usage and in-a-row limits, the desktop's Add a fallback opening Settings, `add_work` refused in a room or a bot's request (a routine run is: `routines/tests.rs`), a report turn that fails, a
 task's dev server, an item sent back to waiting by a restart end to end, the 7-day purge, and the box's lines in a
 known harness's prompt.

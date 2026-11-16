@@ -2,6 +2,7 @@
 // number of its agents take items from it. The chat shows one capsule above the composer; the bot's Details lists
 // the items. A task is the agent session working an item (`tasks.ts` reads its transcript).
 
+import { fill } from './fill.ts'
 import type { Entry } from './models'
 
 /** The six words for work, the same on the wire and in every client. */
@@ -271,9 +272,19 @@ export function canCutIn(work: WorkItem[], maxAgents: number | null): boolean {
   return !!first && !held && work.some(givesWay) && work.filter(isLive).length >= (maxAgents ?? DEFAULT_AGENTS)
 }
 
+/** A card of a task's waiting in the chat for the user: an approval, a choice, or a sign-in its agent needs. */
+function isPendingCard(e: Entry): boolean {
+  const request = e.data.connectionRequest
+  if (request) return request.kind === 'agent' && request.status === 'pending'
+  return (e.kind === 'permission' || !!e.data.decision) && e.data.status === 'pending'
+}
+
 /** What each item that needs the user is asked, by item id: what its task's card waiting in the chat says (an
- * approval's title, a choice's question). */
-export function pendingAsks(entries: Entry[]): Map<string, string> {
-  const isCard = (e: Entry) => e.kind === 'permission' || !!e.data.decision
-  return new Map(entries.flatMap((e) => (isCard(e) && e.data.status === 'pending' && e.data.item ? [[e.data.item, e.data.title ?? e.data.question ?? ''] as const] : [])))
+ * approval's title, a choice's question, which agent to sign in to). */
+export function pendingAsks(entries: Entry[], tr: Translate): Map<string, string> {
+  const ask = (e: Entry) => {
+    const request = e.data.connectionRequest
+    return request ? fill(tr('Needs {agent} sign-in'), { agent: String(request.title ?? '') }) : (e.data.title ?? e.data.question ?? '')
+  }
+  return new Map(entries.flatMap((e) => (isPendingCard(e) && e.data.item ? [[e.data.item, ask(e)] as const] : [])))
 }

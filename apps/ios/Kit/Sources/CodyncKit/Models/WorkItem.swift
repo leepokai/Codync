@@ -420,8 +420,19 @@ public struct ItemRef: Codable, Hashable, Sendable {
 }
 
 public extension Entry {
-    /// What a card asks: an approval's title, a choice's question.
-    var ask: String? { data.title ?? data.question }
+    /// What a card asks: an approval's title, a choice's question, the agent a sign-in waits on.
+    var ask: String? {
+        if let request = data.connectionRequest {
+            return L10n.fill(L10n.tr("Needs {agent} sign-in"), ["agent": request.title])
+        }
+        return data.title ?? data.question
+    }
+
+    /// A card waiting in the chat for the user: an approval, a choice, or a sign-in an agent needs.
+    fileprivate var isPendingCard: Bool {
+        if let request = data.connectionRequest { return request.kind == "agent" && request.status == "pending" }
+        return (kind == "permission" || data.decision == true) && data.status == "pending"
+    }
 
     /// What a task was told (its item): the host wrote it, the user didn't type it.
     var isToldToTask: Bool { kind == "user" && data.from == "host" }
@@ -435,12 +446,11 @@ public extension Array where Element == Entry {
         return byId.values.sorted { ($0.seq, $0.id) < ($1.seq, $1.id) }
     }
 
-    /// The card in a bot's chat that an item waits on (an approval, or a choice its task asks): the newest pending
-    /// one that names it.
+    /// The card in a bot's chat that an item waits on (an approval, a choice its task asks, a sign-in its agent
+    /// needs): the newest pending one that names it.
     func card(for item: WorkItem) -> Entry? {
         last { e in
-            (e.kind == "permission" || e.data.decision == true) && e.data.status == "pending"
-                && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
+            e.isPendingCard && (e.data.item?.id == item.id || (item.task != nil && e.data.task?.id == item.task))
         }
     }
 }

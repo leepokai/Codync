@@ -12,8 +12,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 fn agent(name: &str) -> String {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
-    format!("{} {name}", common::python_agent(&script))
+    common::fixture_command("relay_agent.py", name)
 }
 
 /// The newest entry of `bot`'s chat that `found` picks, within 30 s.

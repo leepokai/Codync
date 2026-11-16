@@ -264,6 +264,12 @@ test('an item that needs the user is asked what its card in the chat asks', () =
     { ...card('e5', { status: 'pending', decision: true, question: 'Which branch?', item: 'i5' }), kind: 'notice' },
     { ...card('e6', { status: 'answered', decision: true, question: 'Done already', item: 'i6' }), kind: 'notice' },
     { ...card('e4', { status: 'pending', title: 'not a card', item: 'i4' }), kind: 'notice' },
-  ])
-  assert.deepEqual([...asks], [['i1', 'npm test'], ['i5', 'Which branch?']], 'an approval\'s title, a choice\'s question')
+    { ...card('e7', { item: 'i7', connectionRequest: { kind: 'agent', status: 'pending', title: 'Kimi Code' } }), kind: 'notice' },
+    { ...card('e8', { item: 'i8', connectionRequest: { kind: 'agent', status: 'ready', title: 'Codex' } }), kind: 'notice' },
+  ], (text) => (text === 'Needs {agent} sign-in' ? '需要登入 {agent}' : text))
+  assert.deepEqual(
+    [...asks],
+    [['i1', 'npm test'], ['i5', 'Which branch?'], ['i7', '需要登入 Kimi Code']],
+    'an approval\'s title, a choice\'s question, the agent a sign-in waits on',
+  )
 })

@@ -60,7 +60,7 @@ fn id(item: &Value) -> &str {
 
 /// Lets the task holding on `HOLD:<name>` finish.
 fn release(host: &Host, bot: &str, name: &str) {
-    std::fs::write(host.home.join("bots").join(bot).join("workspace").join(format!("release-{name}")), "").unwrap();
+    std::fs::write(host.workspace(bot).join(format!("release-{name}")), "").unwrap();
 }
 
 /// A bot on `task_agent.py` that runs at most `agents` tasks at once.
@@ -962,4 +962,147 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     wait("its prompt in the bot's folder", async || task_prompts(&host, &other, "Two").pop()).await;
     assert!(work(&host, &other).await.iter().all(|i| i["worktree"].is_null()));
     assert_eq!(row(&host, &other).await["gitRepo"], false);
+}
+
+/// A bot on `task_agent.py` run as Kimi Code, a harness Codync knows (so a sign-in it needs gets a card) that no
+/// machine running the tests has installed, with `fallbacks`.
+async fn kimi_bot(host: &Host, name: &str, fallbacks: Value) -> String {
+    let bot = json!({"name": name, "backend": "kimi", "command": common::fixture_command("task_agent.py", ""),
+        "connectors": [], "notify": false, "fallbacks": fallbacks});
+    host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
+}
+
+/// The fixture agent `relay_agent.py <name>`: it answers "<name> answered" and logs its prompts to `<name>.jsonl`.
+fn relay_agent(name: &str) -> String {
+    common::fixture_command("relay_agent.py", name)
+}
+
+/// Writes the flag file `name` in `bot`'s folder (see `task_agent.py`).
+fn flag(host: &Host, bot: &str, name: &str) -> std::path::PathBuf {
+    let path = host.workspace(bot).join(name);
+    std::fs::write(&path, "").unwrap();
+    path
+}
+
+/// The newest entry of `bot`'s chat that `found` picks, once it is there.
+async fn entry(host: &Host, bot: &str, what: &str, found: impl Fn(&Value) -> bool) -> Value {
+    wait(what, async || history(host, bot).await.into_iter().rev().find(|e| found(e))).await
+}
+
+/// The transcript of `item`'s task.
+async fn transcript(host: &Host, bot: &str, item: &Value) -> Vec<Value> {
+    let entries = host.call("taskEntries", json!({"botId": bot, "taskId": item["task"]})).await;
+    entries["entries"].as_array().unwrap().clone()
+}
+
+#[tokio::test]
+async fn a_tasks_sign_in_is_asked_in_the_chat_and_its_item_goes_on_in_the_same_task_once_signed_in() {
+    let host = Host::start().await;
+    let bot = kimi_bot(&host, "Mika", json!([])).await;
+    host.reply(&bot, "hello").await;
+    let signed_out = flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    let waiting = item(&host, &bot, "Login", "needsYou").await;
+    assert_eq!(waiting["activity"], "Needs Kimi Code sign-in");
+    // The card is the user's to press, so it is in the chat, marked as the item's, holding its message.
+    let card = entry(&host, &bot, "the sign-in card", |e| e["data"]["item"] == waiting["id"]).await;
+    let request = &card["data"]["connectionRequest"];
+    assert_eq!((request["kind"].as_str(), request["status"].as_str()), (Some("agent"), Some("pending")), "{card}");
+    assert_eq!(request["botId"], bot, "the chat's bot, which the apps know");
+    assert_eq!(request["entryIds"].as_array().unwrap().len(), 1, "{card}");
+    assert_eq!(card["data"]["task"], json!({"id": waiting["task"], "title": "Login"}));
+    // The task's own transcript only says where the ask went.
+    let asked = transcript(&host, &bot, &waiting).await;
+    assert!(asked.iter().any(|e| e["data"]["text"] == "Asked in the chat to sign in to Kimi Code."), "{asked:?}");
+    assert!(!asked.iter().any(|e| e["data"]["connectionRequest"].is_object()), "{asked:?}");
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0], "the item isn't over: no report");
+
+    // Signed in (a turn of the agent that ends well says so: here the chat's own), the item's message goes out again
+    // to the same task.
+    std::fs::remove_file(signed_out).unwrap();
+    host.reply(&bot, "hello again").await;
+    let done = item(&host, &bot, "Login", "done").await;
+    assert_eq!(done["task"], waiting["task"], "the same task");
+    assert!(reply(&host, &bot, "Relayed:").await.contains("Login"));
+    let card = entry(&host, &bot, "the card", |e| e["id"] == card["id"]).await;
+    assert_eq!(card["data"]["connectionRequest"]["status"], "ready");
+}
+
+#[tokio::test]
+async fn a_task_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_the_chat() {
+    let host = Host::start().await;
+    let bot = kimi_bot(&host, "Mika", json!([{"backend": "codex", "command": relay_agent("standin")}])).await;
+    host.reply(&bot, "Remember the blue theme").await;
+    flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    let done = item(&host, &bot, "Login", "done").await;
+    assert_eq!(done["result"], "standin answered");
+    // Nothing waits on the sign-in, and still the user is asked where they are.
+    let card = entry(&host, &bot, "the sign-in card", |e| e["data"]["item"] == done["id"]).await;
+    assert_eq!(card["data"]["connectionRequest"]["entryIds"], json!([]), "{card}");
+    let moved = transcript(&host, &bot, &done).await;
+    let texts: Vec<&str> = moved.iter().filter_map(|e| e["data"]["text"].as_str()).collect();
+    assert!(texts.contains(&"Kimi Code is signed out. Codex carried on."), "{texts:?}");
+    assert!(texts.contains(&"Asked in the chat to sign in to Kimi Code."), "{texts:?}");
+    // The fork that carried the chat stays with the agent that failed: the next one is told the chat.
+    let log = host.log(&bot, "standin.jsonl");
+    let prompt = log.iter().rfind(|r| r["method"] == "session/prompt").unwrap()["params"]["prompt"][0]["text"].clone();
+    let prompt = prompt.as_str().unwrap();
+    assert!(prompt.contains("[The chat you come from, so far]") && prompt.contains("blue theme"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_tasks_offer_to_add_a_fallback_is_in_the_chat_and_new_fallbacks_reach_a_running_task() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    host.reply(&bot, "hello").await;
+    let limited = flag(&host, &bot, "task-limit");
+
+    host.reply(&bot, "ADD Big|anything").await;
+    let failed = item(&host, &bot, "Big", "failed").await;
+    let offer = entry(&host, &bot, "the offer", |e| e["data"]["addFallback"] == true).await;
+    assert_eq!((&offer["data"]["item"], &offer["data"]["author"]), (&failed["id"], &json!(bot)), "{offer}");
+    assert!(offer["data"]["text"].as_str().unwrap().contains("You've hit your limit"), "{offer}");
+    assert!(offer["data"]["stopReason"].is_null(), "it ends no turn of the bot's own: {offer}");
+    let kept = transcript(&host, &bot, &failed).await;
+    let error = kept.iter().find(|e| e["data"]["style"] == "error").unwrap();
+    assert!(error["data"]["addFallback"].is_null(), "the task's transcript keeps only the failure: {error}");
+
+    // Fallbacks set while a task works reach it: it falls back like the bot.
+    std::fs::remove_file(&limited).unwrap();
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    item(&host, &bot, "Slow", "working").await;
+    let fallbacks = json!([{"backend": "codex", "command": relay_agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    flag(&host, &bot, "task-limit");
+    release(&host, &bot, "slow");
+    assert_eq!(item(&host, &bot, "Slow", "done").await["result"], "standin answered");
+}
+
+#[tokio::test]
+async fn a_task_that_starts_on_a_fallback_never_forks_the_chats_own_agents_session() {
+    let host = Host::start().await;
+    // The fallback can fork too (it would fork any session it's given).
+    let fallbacks = json!([{"backend": "codex", "command": common::fixture_command("task_agent.py", "")}]);
+    let bot = kimi_bot(&host, "Mika", fallbacks).await;
+    host.reply(&bot, "hello").await;
+    // Another bot on the same login finds it signed out: it rests, for the whole computer.
+    let other = kimi_bot(&host, "Other", json!([])).await;
+    flag(&host, &other, "signedout");
+    host.call("send", json!({"botId": other, "text": "hi", "clientNonce": "n1"})).await;
+    wait("the login to rest", async || {
+        let snapshot = host.snapshot().await;
+        let row = snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap();
+        row["resting"].as_array().is_some_and(|r| !r.is_empty()).then_some(())
+    })
+    .await;
+
+    // A request starts an item with no turn of the chat's in between: the chat is still on its own agent.
+    let asker = host.fixture_bot("Ada", "task_agent.py", "").await;
+    host.reply(&asker, &format!("MESSAGE {bot}|Review the diff")).await;
+    item(&host, &bot, "Review the diff", "done").await;
+    let forks = host.workspace(&bot).join("forks.jsonl");
+    assert!(!forks.exists(), "{}", std::fs::read_to_string(&forks).unwrap_or_default());
 }

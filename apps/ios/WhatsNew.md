@@ -43,6 +43,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - 聽寫中直接按「傳送」，會等說的話轉成文字，再和打好的字一起送出，不會再丟掉。
 - 等待核准的卡片會一直算在 Bot 的未讀數字裡（顯示為琥珀色），打開聊天或「標示為已讀」都不會讓它消失，直到你回覆為止；收起的分組裡有 Bot 在等你時，分組的數字也會變成琥珀色。
 - 長按 Bot 選「新會話」，就能讓智慧體從新的上下文開始，聊天記錄會保留。
+- 背景工作也會用 Bot 的備援：一個智慧體額度用完或登出，下一個會接著做。需要你登入或新增備援時，會在聊天裡出現並標示「背景」和那件工作；要登入才能繼續的工作會等你，登入後就從原處接著做。
 
 ### en-US
 - Bots do long work in the background, several things at once, and keep answering in the chat. When it's done, the bot tells you the result, or why it couldn't finish.
@@ -76,3 +77,4 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 - Send while dictating waits for what you said and sends it with what you typed.
 - A waiting approval card stays in the bot's badge, in amber, until you answer it, even after you open the chat or mark it read; a folded section turns amber too.
 - Touch and hold a bot for New session: a fresh context for its agent; the chat stays.
+- Background work uses the bot's fallbacks too: when an agent runs out of usage or is signed out, the next one carries on. When you need to sign in or add a fallback, it shows in the chat with the background line and the item; work that can't go on until you sign in waits for you and carries on from where it was once you have.

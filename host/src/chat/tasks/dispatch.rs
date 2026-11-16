@@ -142,10 +142,12 @@ pub(super) fn places(hub: &Hub, cfg: &BotConfig, items: &[Item], over: Option<&s
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let coordinator_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
+    // The limit of the agent a new task starts on: past a resting one, its fallback's.
+    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
     Places {
         free: usize::from(cfg.max_agents).saturating_sub(running),
         running,
-        near_limit: crate::usage::near_limit(hub, cfg),
+        near_limit: crate::usage::near_limit(hub, &starts_on),
         coordinator_free,
     }
 }

@@ -1,5 +1,6 @@
 //! Starting a turn and wrapping it up: final reply, notices, the reply to a requesting bot or room, alerts and memory.
 
+use super::sign_in::Held;
 use super::{Actor, Conn, Done, HostTurn, Instructions, NoticeStyle, Queued, Reacted, Seg};
 use crate::agent::acp::{self, Incoming};
 use crate::analytics::{self, TurnOutcome, TurnSource};
@@ -9,7 +10,7 @@ use crate::chat::tasks::{self, Failure, Outcome, Source};
 use crate::chat::team::no_reply;
 use crate::hub::BotStatus;
 use crate::remote::push::{self, AlertKind};
-use crate::store::{EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, EntryKind, Lane, now_ms};
 use anyhow::{Result, anyhow};
 use serde_json::json;
 use std::time::{Duration, Instant};
@@ -309,10 +310,14 @@ impl Actor {
         let Some(worktree) = tasks::enter_worktree(&self.hub, &self.cfg).await else { return text.to_owned() };
         self.base.cwd.clone_from(&worktree.cwd);
         self.cfg.cwd.clone_from(&worktree.cwd);
-        // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it.
+        // Its row too: a host restart resumes it there, and its dev servers and artifacts start from it. Only its
+        // folder: its bot's fallbacks may have reached the row meanwhile (`tasks::fallbacks_changed`).
         let saved = {
             let _g = crate::LockExt::locked(&self.hub.emit_lock);
-            self.hub.store.save_bot(&self.base)
+            self.hub.store.bot(&self.cfg.id).and_then(|row| {
+                let row = row.map_or_else(|| self.base.clone(), |row| row.config);
+                self.hub.store.save_bot(&BotConfig { cwd: worktree.cwd.clone(), ..row })
+            })
         };
         if let Err(error) = saved {
             tracing::warn!(task = %self.cfg.id, error = format!("{error:#}"), "couldn't save a task's worktree folder");
@@ -421,15 +426,16 @@ impl Actor {
         } else {
             Ok(final_text.clone())
         });
-        // A task's last message is its report to its bot.
-        self.turn_over(if stopped {
-            Outcome::Stopped
-        } else if let Some(error) = done.as_ref().err() {
-            Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
-        } else if stop_reason != "end_turn" {
-            Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
-        } else {
-            Outcome::Done(final_text.clone())
+        let goes_on = self.end_item(|| {
+            if stopped {
+                Outcome::Stopped
+            } else if let Some(error) = done.as_ref().err() {
+                Outcome::Failed(Failure::Agent, format!("its agent failed: {error}"))
+            } else if stop_reason != "end_turn" {
+                Outcome::Failed(Failure::EndedEarly, format!("it ended early ({stop_reason})"))
+            } else {
+                Outcome::Done(final_text.clone())
+            }
         });
         self.turn = None;
         self.reply_hops = None;
@@ -452,14 +458,22 @@ impl Actor {
             let turn = crate::chat::naming::Turn { user, agent: agent.clone() };
             let _ = self.dreamer.send(memory::DreamEvent::Turn(turn));
         }
+        let needs = goes_on.as_ref().and_then(Held::needs);
         self.hub.set_runtime(&self.id(), |r| {
-            r.status = if failed { BotStatus::Error } else { BotStatus::Idle };
-            r.activity = String::new();
+            r.status = if needs.is_some() {
+                BotStatus::NeedsInput
+            } else if failed {
+                BotStatus::Error
+            } else {
+                BotStatus::Idle
+            };
+            r.activity = needs.unwrap_or_default();
             r.started_at = None;
             r.lane = None;
             r.message = None;
             r.session = None;
         });
+        self.wait_for_sign_in(goes_on.as_ref());
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));

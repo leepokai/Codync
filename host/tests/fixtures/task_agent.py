@@ -12,6 +12,10 @@ A routine run and another bot's request read the same words in the routine's ins
 `PASS` (nothing to tell).
 
 Argument `no-fork`: the agent doesn't advertise `session/fork`. A `no-start` file in its folder: it doesn't start.
+A `signedout` file: every prompt fails asking to sign in (ACP's -32000). `task-signedout` / `task-limit`: a task's
+turn does its work and then fails, asking to sign in or the way Claude's adapter reports a usage limit. A brief that
+says `SIGNIN` does that once: its turn leaves a `sign-in-asked` file and fails asking to sign in, and the message,
+sent again, goes through.
 """
 
 import json
@@ -29,6 +33,12 @@ if pathlib.Path("no-start").exists():
     sys.exit(1)
 
 CAN_FORK = "no-fork" not in sys.argv
+SIGNED_OUT = {"code": -32000, "message": "Authentication required"}
+LIMIT = {
+    "code": -32603,
+    "message": "Internal error: You've hit your limit · resets 3pm (Asia/Taipei)",
+    "data": {"errorKind": "rate_limit"},
+}
 output_lock = threading.Lock()
 cancel = threading.Event()
 permission = threading.Event()
@@ -208,9 +218,21 @@ def prompt(request):
     session = request["params"]["sessionId"]
     text = request["params"]["prompt"][0]["text"]
     log("prompts.jsonl", {"session": session, "text": text})
+    if pathlib.Path("signedout").exists():
+        send({"id": request["id"], "error": SIGNED_OUT})
+        return
     reply = answer(text, session)
     if cancel.is_set():
         send({"id": request["id"], "result": {"stopReason": "cancelled"}})
+        return
+    failure = {"task-signedout": SIGNED_OUT, "task-limit": LIMIT}
+    failed = [error for name, error in failure.items() if "[Task]" in text and pathlib.Path(name).exists()]
+    asked = pathlib.Path("sign-in-asked")
+    if "[Task]" in text and "SIGNIN" in text and not asked.exists():
+        asked.write_text("")
+        failed.append(SIGNED_OUT)
+    if failed:
+        send({"id": request["id"], "error": failed[0]})
         return
     send({"method": "session/update", "params": {"sessionId": session, "update": {
         "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}}}})

@@ -2165,5 +2165,7 @@
   "All data": "所有資料",
   "Every account, bot, conversation, key and setting on this computer.": "這台電腦上的所有帳號、bot、對話、金鑰和設定。",
   "Delete all of Codync's data for good?": "要永久刪除 Codync 的所有資料嗎？",
-  "Delete everything": "全部刪除"
+  "Delete everything": "全部刪除",
+  "Needs {agent} sign-in": "需要登入 {agent}",
+  "Asked in the chat to sign in to {agent}.": "已在對話中請你登入 {agent}。"
 }

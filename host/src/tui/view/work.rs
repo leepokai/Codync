@@ -74,10 +74,15 @@ fn standing(item: &WorkItem) -> String {
     if time.is_empty() { status.into_owned() } else { format!("{status} · {time}") }
 }
 
-/// What the card of `item`, waiting in `bot`'s chat, asks: an approval's title, a choice's question.
-fn asks<'a>(app: &'a App, bot: &str, item: &WorkItem) -> Option<&'a str> {
-    let card = app.entries.get(bot)?.values().rev().find(|e| e.pending() && e.data["item"] == item.id.as_str())?;
-    card.data["title"].as_str().or_else(|| card.data["question"].as_str())
+/// What the card of `item`, waiting in `bot`'s chat, asks: an approval's title, a choice's question, the agent a
+/// sign-in waits on.
+fn asks(app: &App, bot: &str, item: &WorkItem) -> Option<String> {
+    let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
+    let card = app.entries.get(bot)?.values().rev().find(waits)?;
+    if let Some(agent) = card.data["connectionRequest"]["title"].as_str() {
+        return Some(fill(&tr("Needs {agent} sign-in"), &[("agent", agent)]));
+    }
+    card.data["title"].as_str().or_else(|| card.data["question"].as_str()).map(str::to_owned)
 }
 
 /// Where an item came from, before its title: the routine mark for a routine's run, the asking bot's name for a
@@ -96,7 +101,7 @@ fn mark_and_line(app: &App, bot: &str, row: &DetailRow<'_>, item: &WorkItem) -> 
         (DetailRow::Waiting(place, _), _) => (place.to_string(), t.secondary, item.line(), t.secondary),
         (_, WorkStatus::NeedsYou) => {
             let ask = asks(app, bot, item).filter(|ask| !ask.is_empty());
-            ("◆".into(), t.amber, ask.map_or_else(|| item.line(), str::to_owned), t.amber)
+            ("◆".into(), t.amber, ask.unwrap_or_else(|| item.line()), t.amber)
         }
         (_, WorkStatus::Failed | WorkStatus::Stopped) => ("!".into(), t.red, item.line(), t.red),
         (_, WorkStatus::Done) => ("○".into(), t.dim, item.line(), t.secondary),
@@ -366,8 +371,12 @@ mod tests {
                 {"id": "e", "title": "Elsewhere", "status": "waiting", "source": {"kind": "request"}},
                 {"id": "g", "title": "Gone", "status": "waiting", "source": {"kind": "request", "id": "deleted"}},
                 {"id": "o", "title": "Own", "status": "working", "source": {"kind": "later"}},
+                {"id": "s", "title": "Login", "status": "needsYou"},
             ]),
         );
+        app.on_msg(Msg::Event(json!({"type": "entry", "entry": {"id": "sign-in", "botId": "a", "seq": 2,
+            "kind": "notice", "turn": 1, "data": {"text": "Needs you to sign in.", "item": "s",
+            "connectionRequest": {"kind": "agent", "status": "pending", "title": "Kimi Code", "botId": "a"}}}})));
         app.on_msg(Msg::Event(json!({"type": "entry", "entry": {"id": "card", "botId": "a", "seq": 1,
             "kind": "notice", "turn": 1, "data": {"decision": true, "status": "pending", "question": "Squash or merge?",
             "choices": ["Squash", "Merge"], "task": {"id": "task-m", "title": "Review the PR"}, "item": "m"}}})));
@@ -378,8 +387,9 @@ mod tests {
             DetailRow::Waiting(1, &work[2]),
             DetailRow::Waiting(2, &work[3]),
             DetailRow::Thread(&work[4]),
+            DetailRow::Thread(&work[5]),
         ];
-        let area = Rect::new(0, 0, 60, 5);
+        let area = Rect::new(0, 0, 60, 6);
         let lines = screen(area, |buf| {
             for (y, row) in rows.iter().enumerate() {
                 work_row(buf, area, u(y), (false, Style::new()), &app, "a", row);
@@ -391,6 +401,7 @@ mod tests {
         assert_eq!(lines[2], "1 Elsewhere · Waiting", "a bot on another computer: nothing");
         assert_eq!(lines[3], "2 Gone · Waiting", "a bot no longer here: nothing");
         assert_eq!(lines[4], "● Own · Working", "a source this terminal doesn't know reads as the bot's own");
+        assert_eq!(lines[5], "◆ Login · Needs Kimi Code sign-in", "the agent its sign-in card in the chat waits on");
     }
 
     #[tokio::test]

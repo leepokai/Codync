@@ -365,11 +365,14 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
             try card("e5", #"{"status":"pending","decision":true,"question":"Which branch?","item":"i5"}"#, kind: "notice"),
             try card("e6", #"{"status":"answered","decision":true,"question":"Done already","item":"i6"}"#, kind: "notice"),
             try card("e4", #"{"status":"pending","title":"not a card","item":"i4"}"#, kind: "notice"),
+            try card("e7", #"{"item":"i7","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b"}}"#, kind: "notice"),
+            try card("e8", #"{"item":"i8","connectionRequest":{"kind":"agent","status":"ready","title":"Codex","botId":"b"}}"#, kind: "notice"),
         ]
-        // An approval's title, a choice's question.
+        // An approval's title, a choice's question, the agent a sign-in waits on.
         #expect(chat.card(for: item("i1", .needsYou))?.ask == "npm test")
         #expect(chat.card(for: item("i5", .needsYou))?.ask == "Which branch?")
-        for id in ["i2", "i4", "i6"] { #expect(chat.card(for: item(id, .needsYou)) == nil) }
+        #expect(chat.card(for: item("i7", .needsYou))?.ask == "Needs Kimi Code sign-in")
+        for id in ["i2", "i4", "i6", "i8"] { #expect(chat.card(for: item(id, .needsYou)) == nil) }
     }
 
     @Test func whatATaskPutInTheChatSaysSo() throws {

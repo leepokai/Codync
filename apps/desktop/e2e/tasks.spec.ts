@@ -7,6 +7,7 @@ import { api, attach, taskBot, typeMessage } from './sandbox.ts'
 //   - The brief decides what the item's task does. `HOLD:<name>`: it works until it is stopped (or a file
 //     `release-<name>` appears in the bot's workspace). `PERMISSION`: it asks for approval (a card titled
 //     `Run the tests`, one option, shown as `Allow once`) and goes on once answered. Neither: it finishes at once.
+//   - `SIGNIN`: the task's turn fails once asking to sign in, and goes through when its message comes again.
 //   - A task's report comes back to the chat as `Relayed: …`.
 const HOLD = 'HOLD:e2e'
 const ASKS = 'Run the tests'
@@ -21,8 +22,8 @@ const botState = async (page: Page, botId: string) => (await api<{ bot: BotState
 const statuses = async (page: Page, botId: string) => Object.fromEntries((await botState(page, botId)).work.map((i) => [i.title, i.status]))
 
 /** A bot on the scripted agent with its chat open; `maxAgents` sets how many of its agents may run at once. */
-async function openBot(page: Page, name: string, maxAgents?: number) {
-  const bot = await taskBot(page, name)
+async function openBot(page: Page, name: string, maxAgents?: number, backend?: string) {
+  const bot = await taskBot(page, name, backend)
   if (maxAgents) await api(page, 'updateBot', { id: bot.id, maxAgents })
   await page.locator('.roster-row', { hasText: name }).click()
   return bot.id
@@ -234,6 +235,38 @@ test("an item's approval card in the chat says it comes from the background, and
     // An ended item is dropped like a waiting one.
     await hoverAction(done, 'Drop')
     await expect(section(details, 'Recent')).toHaveCount(0)
+  } finally {
+    await cleanUp(page, botId)
+    await browser.close()
+  }
+})
+
+test("a task's agent sign-in is asked in the chat, its row leads to the card, and the item goes on once signed in", async () => {
+  const { browser, page } = await attach()
+  const name = `Work sign-in e2e ${Date.now()}`
+  let botId: string | undefined
+  try {
+    // As Kimi Code, an agent the host knows by name, so the sign-in its task needs gets a card.
+    botId = await openBot(page, name, undefined, 'kimi')
+    await addWork(page, botId, 'Log in', 'SIGNIN')
+
+    const card = page.locator('.request-card', { hasText: 'In the background · Log in' })
+    await expect(card).toContainText('Kimi Code')
+    await expect(capsule(page)).toContainText(/In the background ·\s*Needs you/)
+
+    // On Details its row says which agent to sign in to, and opens the chat at the card.
+    const details = await openDetails(page)
+    const asking = row(details, 'Threads', 'Log in')
+    await expect(asking).toHaveAttribute('data-work-status', 'needsYou')
+    await expect(asking).toContainText('Needs Kimi Code sign-in')
+    await asking.locator('.work-row-open').click()
+    await expect(card).toBeInViewport()
+
+    // A turn of the agent that ends well says it's signed in: the item's message goes out again, to the same task.
+    await api(page, 'send', { botId, text: 'hello' })
+    await expect(card).toContainText('Signed in')
+    await expect(page.locator('.transcript')).toContainText('Relayed:')
+    await expect(row(details, 'Recent', 'Log in')).toHaveAttribute('data-work-status', 'done')
   } finally {
     await cleanUp(page, botId)
     await browser.close()

@@ -2165,5 +2165,7 @@
   "All data": "Todos los datos",
   "Every account, bot, conversation, key and setting on this computer.": "Cada cuenta, bot, conversación, clave y ajuste de este ordenador.",
   "Delete all of Codync's data for good?": "¿Eliminar para siempre todos los datos de Codync?",
-  "Delete everything": "Eliminar todo"
+  "Delete everything": "Eliminar todo",
+  "Needs {agent} sign-in": "Hay que iniciar sesión en {agent}",
+  "Asked in the chat to sign in to {agent}.": "Se pidió en el chat iniciar sesión en {agent}."
 }

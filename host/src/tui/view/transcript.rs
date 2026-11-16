@@ -347,6 +347,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::raw("   ")],
                 )),
             }
+            // What a background task asks of the user here (a sign-in, a fallback) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
+            }
             let folded = unfoldable(e);
             if app.unfolded.contains(&e.id) {
                 let full = folded.map_or_else(|| call_lines(app, b, e), |f| vec![f.to_owned()]);

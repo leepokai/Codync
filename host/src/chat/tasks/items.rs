@@ -393,7 +393,8 @@ fn summary(live: &[(Status, &str, &str)], most: u8, whose: &str) -> Option<Strin
     for (status, title, id) in live {
         let word = match status {
             Status::Waiting => "waiting",
-            Status::NeedsYou => "needs the user's approval",
+            // An approval, a choice or a sign-in: its card in the chat says which.
+            Status::NeedsYou => "needs the user (its card in the chat)",
             _ => "working",
         };
         let _ = write!(text, "\n- {word}: \"{title}\" ({id})");
@@ -419,7 +420,7 @@ mod tests {
             Some(
                 "Your work in the background: 2 working, 1 waiting; at most 2 run at once, the rest wait their \
                  turn.\n- working: \"Fix login\" (i1)\n\
-                 - needs the user's approval: \"Run the suite\" (i2)\n- waiting: \"Docs\" (i3)"
+                 - needs the user (its card in the chat): \"Run the suite\" (i2)\n- waiting: \"Docs\" (i3)"
             )
         );
         let about = summary(&live[..1], 1, "Its").expect("lines");

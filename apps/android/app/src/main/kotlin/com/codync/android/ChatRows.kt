@@ -403,6 +403,7 @@ internal val Entry.botReactions: Map<String, List<String>> get() =
             Symbol("exclamationmark.triangle.fill", size = 16.dp, tint = Palette.danger)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SelectionContainer { Text(tr(text), style = Type.footnote, color = Palette.text) }
+                TaskLine(entry)
                 if (addFallback != null && entry.data["addFallback"]?.jsonPrimitive?.booleanOrNull == true) SecondaryButton("Add a fallback", action = addFallback)
             }
         }

@@ -24,6 +24,7 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 等待核准的卡片會算在 Bot 的未讀數字裡（琥珀色），直到你回覆為止。
 - 長按 Bot 選「新會話」，讓智慧體從新的上下文開始，聊天記錄會保留。
 - Bot 也可以引用訊息，點一下引用會捲到那則訊息。
+- 背景工作也會用 Bot 的備援：一個智慧體額度用完或登出，下一個會接著做。需要你登入或新增備援時，會在聊天裡出現並標示「背景」和那件工作；要登入才能繼續的工作會等你，登入後就從原處接著做。
 
 ### en-US
 - Bots, routines and bot requests work in the background.
@@ -39,3 +40,4 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - Send while dictating keeps your words.
 - Hold a bot for New session.
 - Bots can quote messages.
+- Background work uses the bot's fallbacks too: when an agent runs out of usage or is signed out, the next one carries on. When you need to sign in or add a fallback, it shows in the chat with the background line and the item; work that can't go on until you sign in waits for you and carries on from where it was once you have.

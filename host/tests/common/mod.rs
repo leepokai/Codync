@@ -151,11 +151,16 @@ pub fn python_agent(script: &Path) -> String {
     }
 }
 
+/// The agent command that runs the Python fixture `fixture` (in `tests/fixtures`) with `args`.
+pub fn fixture_command(fixture: &str, args: &str) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
+    format!("{} {args}", python_agent(&script))
+}
+
 /// The command of a program that listens on `port` of this computer until it's stopped.
 #[allow(dead_code, reason = "only the tests of dev servers use it")]
 pub fn port_server(port: u16) -> String {
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/port_server.py");
-    format!("{} {port}", python_agent(&script))
+    fixture_command("port_server.py", &port.to_string())
 }
 
 /// What a client holds after the event stream's catch-up: `{"rev", "bots": [...], "entries": [...]}`,

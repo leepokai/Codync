@@ -144,8 +144,9 @@ builds PostHog frames itself (oldest first, the failing one last): generic `cust
 What leaves the device: the error's type (`Panic`, `TypeError`, `EXC_BAD_ACCESS`), how it was
 caught, function names, and file names and line numbers inside Codync's code (on the iPhone,
 code addresses and binary UUIDs instead); an absolute path keeps only its file name. Never the
-error's message: only a panic message written as a literal in the code, an Electron crash reason
-or a signal name. Release host builds are stripped, so a
+error's message: only a panic message written as a literal in the code, the fixed start of a
+runtime panic whose rest carries data (`OS can't spawn worker thread`, `index out of bounds`), an
+Electron crash reason or a signal name. Release host builds are stripped, so a
 host panic is its location only.
 
 Alerts email the owner, from insights on the *Codync users* dashboard (production only): *Any

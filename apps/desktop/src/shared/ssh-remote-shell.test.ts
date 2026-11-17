@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { REMOTE_PROBE, infoArguments, probeArguments, remoteInfoCommand, remoteShell, tunnelArguments } from '../main/ssh-command.ts'
+import { RemoteShells } from '../main/ssh-shells.ts'
 import { isWindowsShell, type RemoteShell, type SSHProfile } from './ssh.ts'
 
 const profile: SSHProfile = {
@@ -89,4 +90,29 @@ test('Codync installs the host itself only where it has an installer to run', ()
   assert.equal(isWindowsShell('posix'), false)
   // Before the probe answers, the card keeps the install it has always offered.
   assert.equal(isWindowsShell(undefined), false)
+})
+
+test('a probe cancelled by an edit or removal leaves no shell behind', async () => {
+  let answer = (_: { status: number; stdout: string }) => {}
+  const shells = new RemoteShells(() => new Promise((resolve) => (answer = resolve)))
+  const token = { cancelled: false }
+  const asked = shells.of(profile, token)
+  // save() and remove() cancel the attach and forget the shell while the probe is still out.
+  token.cancelled = true
+  shells.forget(profile.id)
+  answer({ status: 0, stdout: answers.powershell })
+  await asked
+  assert.equal(shells.get(profile.id), undefined)
+})
+
+test('the shell a profile answered with is probed once, until it is forgotten', async () => {
+  let probes = 0
+  const shells = new RemoteShells(async () => (probes++, { status: 0, stdout: answers.cmd }))
+  const token = { cancelled: false }
+  assert.equal(await shells.of(profile, token), 'cmd')
+  assert.equal(await shells.of(profile, token), 'cmd')
+  assert.equal(probes, 1)
+  shells.forget(profile.id)
+  await shells.of(profile, token)
+  assert.equal(probes, 2)
 })

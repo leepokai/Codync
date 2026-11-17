@@ -6,11 +6,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { dataDir } from './host-controller'
-import { isWindowsShell, type RemoteShell, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
-import { codyncKnownHosts, infoArguments, installArguments, installOutput, installSteps, keyscanArguments, knownHostsFiles, needsLinger, probeArguments, remoteShell, resolveArguments, tunnelArguments } from './ssh-command'
+import { isWindowsShell, type SSHAttachment, type SSHProfile, type SSHState, type SSHStatus } from '../shared/ssh'
+import { codyncKnownHosts, infoArguments, installArguments, installOutput, installSteps, keyscanArguments, knownHostsFiles, needsLinger, probeArguments, resolveArguments, tunnelArguments } from './ssh-command'
 import { authRefused, consistent, hostKeys, knownHostsLines, knownHostsName, parseConfig, parseInfo, usesProxy } from './ssh-parse'
 import { KEYGEN, KEYSCAN, SSH, killOrphanTunnels, lastLine, missingTools, run, scanHostKeys, sshListens } from './ssh-process'
 import { validate } from './ssh-profile'
+import { RemoteShells } from './ssh-shells'
 
 // SSH computers: profiles, host key checks and one
 // OpenSSH tunnel per connected profile. Arguments are always an argv array, never a shell string.
@@ -64,8 +65,7 @@ class SSHComputers {
   private pendingKeys = new Map<string, string[]>()
   /** Installed here, but the host stops at logout until the user enables linger with sudo. */
   private needsLinger = new Set<string>()
-  /** The shell each profile's computer answered with, learned once per address (`cmd` and PowerShell on Windows). */
-  private shells = new Map<string, RemoteShell>()
+  private shells = new RemoteShells((p) => run(SSH, probeArguments(p, home, dataDir)))
 
   constructor(private file: string, private emit: (s: SSHState) => void) {
     try {
@@ -100,7 +100,7 @@ class SSHComputers {
     if (problem) return problem
     if (old) {
       this.disconnect(p.id)
-      this.shells.delete(p.id)
+      this.shells.forget(p.id)
       this.profiles = this.profiles.map((x) => (x.id === p.id ? p : x))
     } else {
       this.profiles = [...this.profiles, p]
@@ -116,7 +116,7 @@ class SSHComputers {
     this.status.delete(id)
     this.backoff.delete(id)
     this.needsLinger.delete(id)
-    this.shells.delete(id)
+    this.shells.forget(id)
     this.persist()
     this.changed()
   }
@@ -175,7 +175,7 @@ class SSHComputers {
       if (token.cancelled) return
       if (result.status !== 0) {
         this.tasks.delete(id)
-        return this.setStatus(id, { kind: 'notInstalled', shell: this.shells.get(id), failure: { output: installOutput(result.stdout, result.stderr) } })
+        return this.setStatus(id, { kind: 'notInstalled', failure: { output: installOutput(result.stdout, result.stderr) } })
       }
       if (needsLinger(result.stdout)) this.needsLinger.add(id)
     }
@@ -240,7 +240,7 @@ class SSHComputers {
     }
 
     this.setStatus(id, { kind: 'connecting', step: 'Signing in…' })
-    const shell = await this.remoteShellOf(profile)
+    const shell = await this.shells.of(profile, token)
     if (token.cancelled) return idle
     const result = await run(SSH, infoArguments(profile, home, identity.dataFolder, dataDir, shell))
     if (token.cancelled) return idle
@@ -262,6 +262,8 @@ class SSHComputers {
     const info = parseInfo(result.stdout)
     if (!info) {
       if (result.status === 0) return stop({ kind: 'notInstalled', shell })
+      // The computer's default shell may have changed since the probe: ask again on the next attempt.
+      this.shells.forget(id)
       return stop({ kind: 'failed', message: `codync-host on ${profile.host} couldn't report its identity. Run \`codync-host install\` there. ${lastLine(result.stderr)}` })
     }
     if (!consistent(info.computerId, info.signKey)) return stop({ kind: 'failed', message: `${profile.host} reported an invalid identity.` })
@@ -329,20 +331,6 @@ class SSHComputers {
     }
     if (authRefused(lastProblem)) return stop({ kind: 'failed', message: signInRefused(profile) })
     return { kind: 'retry', message: `Couldn't open the tunnel to ${profile.host}. ${lastProblem}` }
-  }
-
-  /**
-   * Which shell that computer runs commands in, asked once per profile: Windows' `cmd.exe` and PowerShell
-   * need their own command lines. A probe that doesn't come back leaves the POSIX command to report why.
-   */
-  private async remoteShellOf(profile: SSHProfile): Promise<RemoteShell> {
-    const known = this.shells.get(profile.id)
-    if (known) return known
-    const probe = await run(SSH, probeArguments(profile, home, dataDir))
-    if (probe.status !== 0) return 'posix'
-    const shell = remoteShell(probe.stdout)
-    this.shells.set(profile.id, shell)
-    return shell
   }
 
   private async recordedKeys(name: string, certAuthorities = true) {

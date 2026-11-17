@@ -283,7 +283,8 @@ existing SSH config and agent.
 
 The remote shell decides the command lines. Before asking for the identity, the app sends one probe,
 `echo %OS% $env:OS`, that `cmd.exe`, PowerShell and a POSIX shell all accept and answer differently
-(`remoteShell` in `main/ssh-command.ts`), and keeps the answer per profile until the address changes.
+(`remoteShell` in `main/ssh-command.ts`), and keeps the answer per profile (`main/ssh-shells.ts`) until the
+profile is edited or the identity command fails, so a changed default shell is probed again.
 A Mac or Linux computer gets `sh -lc 'codync-host info …'`. A Windows computer (OpenSSH Server: `cmd.exe`
 by default, PowerShell when the admin changed it) gets the same `codync-host info --json --port N` with
 `%LOCALAPPDATA%\Programs\codync-desktop\resources` appended to its PATH, because the desktop app's

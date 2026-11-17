@@ -575,14 +575,29 @@ async fn stopping_clearing_or_replacing_during_versions_before_prevents_old_prom
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::create_dir_all(&gate).unwrap();
 
+        let current_path = std::env::var_os("PATH").unwrap_or_default();
+        let git_names: &[&str] = if cfg!(windows) { &["git.exe", "git.cmd", "git.bat"] } else { &["git"] };
+        let real_git = std::env::split_paths(&current_path)
+            .flat_map(|dir| git_names.iter().map(move |name| dir.join(name)))
+            .find(|candidate| candidate.is_file())
+            .expect("real git must be on PATH");
+        let mut entries: Vec<PathBuf> = vec![bin.clone()];
+        entries.extend(std::env::split_paths(&current_path));
+        let path_env = std::env::join_paths(entries).unwrap();
+        let gate_os = gate.as_os_str().to_os_string();
+        let real_git_os = real_git.as_os_str().to_os_string();
+
         let fake_git = bin.join("fake_git.py");
         std::fs::write(
             &fake_git,
             r#"import os, pathlib, shutil, subprocess, sys, time
 
-bin_dir = str(pathlib.Path(__file__).resolve().parent)
-paths = [p for p in os.environ.get("PATH", "").split(os.pathsep) if os.path.normcase(os.path.abspath(p)) != os.path.normcase(bin_dir)]
-real_git = shutil.which("git", path=os.pathsep.join(paths))
+bin_dir = os.path.realpath(pathlib.Path(__file__).resolve().parent)
+paths = [
+    p for p in os.environ.get("PATH", "").split(os.pathsep)
+    if os.path.normcase(os.path.realpath(p)) != os.path.normcase(bin_dir)
+]
+real_git = os.environ.get("CODYNC_TEST_REAL_GIT") or shutil.which("git", path=os.pathsep.join(paths))
 assert real_git, "real git must be on PATH"
 
 gate = pathlib.Path(os.environ["CODYNC_TEST_GIT_GATE"])
@@ -623,14 +638,12 @@ sys.exit(rc)
             std::fs::set_permissions(&shim, perms).unwrap();
         }
 
-        let current_path = std::env::var_os("PATH").unwrap_or_default();
-        let mut entries: Vec<PathBuf> = vec![bin.clone()];
-        entries.extend(std::env::split_paths(&current_path));
-        let path_env = std::env::join_paths(entries).unwrap();
-        let gate_os = gate.as_os_str().to_os_string();
-
-        let host =
-            Host::start_with(&[("PATH", path_env.as_os_str()), ("CODYNC_TEST_GIT_GATE", gate_os.as_os_str())]).await;
+        let host = Host::start_with(&[
+            ("PATH", path_env.as_os_str()),
+            ("CODYNC_TEST_GIT_GATE", gate_os.as_os_str()),
+            ("CODYNC_TEST_REAL_GIT", real_git_os.as_os_str()),
+        ])
+        .await;
         let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/team_agent.py");
         let bot = host
             .call(

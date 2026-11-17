@@ -170,6 +170,8 @@ struct SessionCaps {
     steering: bool,
     /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
     fork: bool,
+    /// `session/delete`: a background job's session leaves the agent's saved history (`chat::oneshot`).
+    delete: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -225,6 +227,10 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
+    pub(crate) fn deletes_sessions(&self) -> bool {
+        self.sessions.delete
+    }
+
     pub(crate) fn instructions(&self) -> Instructions {
         // Claude's adapter rebuilds the standard field without the `_meta` object's options, so Claude stays on it.
         if self.adapter == Adapter::Claude {

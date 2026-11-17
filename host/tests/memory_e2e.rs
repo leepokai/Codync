@@ -223,6 +223,9 @@ async fn dreaming_keeps_only_what_the_user_typed() {
     assert_eq!(entry["evidence"], json!([message]), "it cites the message it learned from");
     assert!(!view.to_string().contains("durian"), "pasted text isn't the user's own words");
     assert_eq!(view["dreams"][0]["added"][0]["text"], "Prefers concise Traditional Chinese explanations");
+    // The review's session is deleted, or it would show in the harness's own history (Codex, ChatGPT: #346).
+    let log = std::fs::read_to_string(host.home.join("background/dreams.log")).unwrap();
+    assert!(log.contains("dream\ndeleted "), "{log}");
 
     // The bot can go from a memory to the message it came from, and page back through the chat.
     let found = host.tool(&bot, "search_memory", json!({"query": "concise"})).await;
@@ -249,6 +252,20 @@ async fn dreaming_keeps_only_what_the_user_typed() {
             .await
             .contains("unknown method")
     );
+}
+
+#[tokio::test]
+async fn a_failed_dream_still_deletes_its_session() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Failing", "memory_agent.py", "failing").await;
+    host.reply(&bot, "Please always explain things to me concisely in Traditional Chinese.").await;
+    host.call("newSession", json!({"botId": bot})).await;
+    let log = host.home.join("background/dreams.log");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !std::fs::read_to_string(&log).unwrap_or_default().contains("dream\ndeleted ") {
+        assert!(Instant::now() < deadline, "the failed dream's session wasn't deleted");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 #[tokio::test]

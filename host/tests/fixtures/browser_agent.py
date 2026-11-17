@@ -46,6 +46,7 @@ def prompt(message):
     results = {
         'mode': 'concurrent' if 'browser-concurrent' in text
         else 'queued-takeover' if 'browser-queued-takeover' in text
+        else 'blocked-stop' if 'browser-blocked-stop' in text
         else 'start-stop' if 'browser-start-stop' in text
         else 'setup-fail' if 'browser-setup-fail' in text
         else 'closed-stop' if 'browser-closed-stop' in text
@@ -233,6 +234,24 @@ def prompt(message):
                 'params': {
                     'sessionId': params['sessionId'],
                     'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Queued click aborted on takeover.'}},
+                },
+            })
+            return {'stopReason': 'end_turn'}
+
+        if results['mode'] == 'blocked-stop':
+            (cwd / 'browser-active.json').write_text(json.dumps(bound))
+            ok, nav = tool('browser_navigate', dict(bound, url=url))
+            results['navigateOk'] = ok
+            results['navigateResult'] = nav
+            (cwd / 'browser-results.json').write_text(json.dumps(results, indent=2))
+            checkpoint('results-written')
+            mcp.stdin.close()
+            send({
+                'jsonrpc': '2.0',
+                'method': 'session/update',
+                'params': {
+                    'sessionId': params['sessionId'],
+                    'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Blocked navigate ended.'}},
                 },
             })
             return {'stopReason': 'end_turn'}

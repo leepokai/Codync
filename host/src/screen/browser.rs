@@ -755,8 +755,7 @@ impl Browsers {
                     }
                     Err(error) => {
                         tracing::warn!(%error, browser_id = %session.binding.browser_id, "could not close a browser tab after stopping its bot");
-                        self.state.lock().await.sessions.insert(session.binding.browser_id.clone(), session);
-                        continue;
+                        self.extension.revoke_session(&json!(&session.binding));
                     }
                 }
             }
@@ -979,5 +978,54 @@ mod tests {
                 assert!(tool["inputSchema"]["properties"][key].is_object(), "{tool}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn cancel_bot_with_timed_out_stop_drops_session_and_emits_revoke() {
+        let browsers = Browsers::default();
+        let mut output = browsers.extension.attach_test_connection(1);
+        let root = std::env::temp_dir().join(format!("codync-cancel-bot-{}", uuid::Uuid::new_v4()));
+        let profile = root.join("extension");
+        std::fs::create_dir_all(&profile).unwrap();
+        let binding = Binding {
+            host_id: "host-a".to_owned(),
+            bot_id: "bot-a".to_owned(),
+            message_id: "msg-1".to_owned(),
+            operation_id: "op-1".to_owned(),
+            browser_id: "browser-1".to_owned(),
+            tab_id: "100".to_owned(),
+            generation: "gen-1".to_owned(),
+            browser_pid: 0,
+            browser_executable: "chrome".to_owned(),
+            browser_version: "1".to_owned(),
+            initial_url: "https://example.com/".to_owned(),
+            current_url: "https://example.com/".to_owned(),
+        };
+        browsers.state.lock().await.sessions.insert(
+            "browser-1".to_owned(),
+            Session {
+                child: None,
+                port: 0,
+                profile,
+                binding,
+                screenshots: 0,
+                engine: Engine::Extension,
+                extension_version: "0.1.0".to_owned(),
+            },
+        );
+
+        browsers.cancel_bot("bot-a").await;
+
+        assert!(
+            browsers.state.lock().await.sessions.is_empty(),
+            "failed stop in cancel_bot must not retain the session against the bot quota"
+        );
+        assert!(!root.exists(), "browser evidence directory should be removed on close");
+        let stop_frame = output.recv().await.unwrap();
+        assert_eq!(stop_frame["method"], "stop");
+        let revoke_frame = output.recv().await.unwrap();
+        assert_eq!(revoke_frame["type"], "revoke");
+        assert_eq!(revoke_frame["params"]["target"]["browserId"], "browser-1");
+        assert_eq!(output.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty));
     }
 }

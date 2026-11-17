@@ -112,6 +112,23 @@ impl ExtensionBridge {
         }
     }
 
+    /// Best-effort one-way revoke notification when turn cleanup gives up waiting for `stop`.
+    pub(super) fn revoke_session(&self, target: &Value) {
+        if let Some(active) = &self.connections.locked().active {
+            let _ = active.out.send(json!({
+                "type": "revoke",
+                "params": {"target": target}
+            }));
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn attach_test_connection(&self, id: u64) -> mpsc::UnboundedReceiver<Value> {
+        let (out, receiver) = mpsc::unbounded_channel();
+        self.connections.locked().active = Some(Connection { id, out, pending: Arc::new(Mutex::new(HashMap::new())) });
+        receiver
+    }
+
     /// Runs one request in the extension. A missing connection is an explicit offline failure:
     /// callers must not fall back to another browser or computer.
     pub(super) fn call<'a>(&'a self, method: &'a str, params: Value) -> BoxFuture<'a, Result<Value>> {
@@ -120,7 +137,7 @@ impl ExtensionBridge {
 
     pub(super) async fn call_with_timeout(&self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
         let mut takeover_rx = self.takeover_epoch.subscribe();
-        let mut watch_takeover = !matches!(method, "stop" | "cancel");
+        let mut watch_takeover = !matches!(method, "stop" | "cancel" | "revoke");
         let connection = self.connections.locked().active.clone().ok_or_else(|| anyhow!(BridgeFailure::Offline))?;
         let id = uuid::Uuid::new_v4().to_string();
         let (reply, mut answer) = oneshot::channel();
@@ -155,14 +172,16 @@ impl ExtensionBridge {
                 }
                 () = &mut deadline => {
                     connection.pending.locked().remove(&id);
-                    // A timed-out start can leave a tab attached in Chrome. Ask the extension to cancel
-                    // the still-running request; if it already created a tab, its request guard removes it.
-                    let cancel_id = uuid::Uuid::new_v4().to_string();
-                    let _ = connection.out.send(json!({
-                        "id": cancel_id,
-                        "method": "cancel",
-                        "params": {"requestId": id}
-                    }));
+                    // A timed-out start or page action can leave a tab attached in Chrome. Ask the extension to
+                    // cancel the still-running request; never cancel an in-flight cleanup request (`stop`/`cancel`/`revoke`).
+                    if !matches!(method, "stop" | "cancel" | "revoke") {
+                        let cancel_id = uuid::Uuid::new_v4().to_string();
+                        let _ = connection.out.send(json!({
+                            "id": cancel_id,
+                            "method": "cancel",
+                            "params": {"requestId": id}
+                        }));
+                    }
                     bail!(BridgeFailure::Timeout);
                 }
             }
@@ -415,5 +434,36 @@ mod tests {
         let reply = pending.locked().remove(&stop_id).unwrap();
         let _ = reply.send(Ok(json!({"closed": true})));
         assert_eq!(stop_task.await.unwrap().unwrap()["closed"], true);
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_stop_does_not_emit_cancel() {
+        let bridge = Arc::new(ExtensionBridge::default());
+        let mut output = bridge.attach_test_connection(1);
+
+        let error = bridge
+            .call_with_timeout("stop", json!({"target": {"browserId": "b1"}}), Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(matches!(error.downcast_ref::<BridgeFailure>(), Some(BridgeFailure::Timeout)));
+
+        let sent = output.recv().await.unwrap();
+        assert_eq!(sent["method"], "stop");
+        assert_eq!(output.try_recv(), Err(mpsc::error::TryRecvError::Empty));
+    }
+
+    #[tokio::test]
+    async fn revoke_session_emits_one_way_target_revoke() {
+        let bridge = ExtensionBridge::default();
+        let mut output = bridge.attach_test_connection(1);
+        let target = json!({"hostId": "h1", "botId": "bot1", "browserId": "b1"});
+
+        bridge.revoke_session(&target);
+
+        let frame = output.recv().await.unwrap();
+        assert_eq!(frame["type"], "revoke");
+        assert!(frame.get("id").is_none(), "{frame}");
+        assert_eq!(frame["params"]["target"], target);
+        assert_eq!(output.try_recv(), Err(mpsc::error::TryRecvError::Empty));
     }
 }

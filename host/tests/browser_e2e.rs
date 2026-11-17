@@ -942,3 +942,202 @@ async fn queued_click_aborts_after_slow_action_on_phone_takeover() {
     extension.await.unwrap();
     writer.abort();
 }
+
+#[tokio::test]
+#[cfg(windows)]
+async fn timed_out_stop_frees_bot_quota_and_never_cancels_stop() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::{Notify, mpsc};
+
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let mut png = Vec::new();
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+
+    let holding_navigate = Arc::new(AtomicUsize::new(0));
+    let revoke_count = Arc::new(AtomicUsize::new(0));
+    let frames = Arc::new(StdMutex::new(Vec::<Value>::new()));
+    let release_navigate = Arc::new(Notify::new());
+
+    let url = host.base.replacen("http://", "ws://", 1) + "/browser-extension";
+    let mut request = url.into_client_request().unwrap();
+    request.headers_mut().insert(header::AUTHORIZATION, format!("Bearer {}", host.token).parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "hello",
+                "protocol": 1,
+                "extensionId": "dgejialhpalhoigbkmgeabgpphlipiek",
+                "version": "test",
+                "isolatedProfile": true
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let ready = socket.next().await.unwrap().unwrap();
+    assert!(ready.to_text().unwrap().contains("\"ready\""));
+
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
+    let (mut sink, mut stream) = socket.split();
+    let writer = tokio::spawn(async move {
+        while let Some(value) = out_rx.recv().await {
+            if sink.send(Message::Text(value.to_string().into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let extension = {
+        let holding_navigate = holding_navigate.clone();
+        let revoke_count = revoke_count.clone();
+        let frames = frames.clone();
+        let release_navigate = release_navigate.clone();
+        let png = png.clone();
+        tokio::spawn(async move {
+            let mut tab_seq = 0usize;
+            let mut stop_seq = 0usize;
+            let mut tasks = Vec::new();
+            while let Some(Ok(message)) = stream.next().await {
+                let frame: Value = match message {
+                    Message::Text(text) => serde_json::from_str(text.as_str()).unwrap(),
+                    Message::Binary(bytes) => serde_json::from_slice(&bytes).unwrap(),
+                    Message::Close(_) => break,
+                    Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
+                };
+                frames.lock().unwrap().push(frame.clone());
+                if frame["type"] == "revoke" {
+                    revoke_count.fetch_add(1, Ordering::SeqCst);
+                    release_navigate.notify_waiters();
+                    continue;
+                }
+                let Some(id) = frame["id"].as_str().map(str::to_owned) else {
+                    continue;
+                };
+                let method = frame["method"].as_str().unwrap_or_default().to_owned();
+                let state = json!({
+                    "url": "http://127.0.0.1/",
+                    "title": "Codync extension fixture",
+                    "text": if method == "click" { "Count: 1" } else { "name=Codync" }
+                });
+                match method.as_str() {
+                    "start" => {
+                        tab_seq += 1;
+                        let _ = out_tx.send(json!({
+                            "id": id,
+                            "ok": true,
+                            "result": {
+                                "tabId": (200 + tab_seq).to_string(),
+                                "browserVersion": "Chrome test",
+                                "browserExecutable": "chrome-extension://fixture",
+                                "extensionVersion": "0.1.0",
+                                "state": state
+                            }
+                        }));
+                    }
+                    "navigate" => {
+                        holding_navigate.fetch_add(1, Ordering::SeqCst);
+                        let out_tx = out_tx.clone();
+                        let release_navigate = release_navigate.clone();
+                        tasks.push(tokio::spawn(async move {
+                            release_navigate.notified().await;
+                            let _ = out_tx.send(json!({
+                                "id": id,
+                                "ok": false,
+                                "code": "browser_session_closed",
+                                "error": "Browser operation is no longer running in Codync Browser"
+                            }));
+                        }));
+                    }
+                    "stop" => {
+                        stop_seq += 1;
+                        if stop_seq <= 2 {
+                            // Deliberately withhold the reply past host `cancel_bot`'s 2s timeout.
+                            continue;
+                        }
+                        let _ = out_tx.send(json!({"id": id, "ok": true, "result": {"closed": true}}));
+                        break;
+                    }
+                    "state" | "click" | "type" => {
+                        let _ = out_tx.send(json!({"id": id, "ok": true, "result": state}));
+                    }
+                    "screenshot" => {
+                        let _ = out_tx.send(json!({
+                            "id": id,
+                            "ok": true,
+                            "result": {
+                                "data": base64::engine::general_purpose::STANDARD.encode(&png),
+                                "state": state
+                            }
+                        }));
+                    }
+                    "cancel" => {
+                        let _ = out_tx.send(json!({"id": id, "ok": true, "result": {"cancelled": true}}));
+                    }
+                    other => panic!("unexpected extension method {other}"),
+                }
+            }
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+    };
+
+    let bot = browser_bot(&host).await;
+    for expected_turn in 1..=2 {
+        let _ = send(&host, &bot, "browser-blocked-stop http://127.0.0.1/").await;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while holding_navigate.load(Ordering::SeqCst) < expected_turn {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for blocked navigate #{expected_turn}; preserved evidence at {}",
+                capture_failure(&host.home)
+                    .map_or_else(|error| format!("unavailable: {error}"), |path| path.display().to_string())
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        host.call("stop", json!({"botId": bot})).await;
+        common::eventually("stopped bot returns to idle", Duration::from_secs(30), || async {
+            let sync = host.snapshot().await;
+            common::bot(&sync, &bot)["status"] == "idle"
+        })
+        .await;
+        let _ = tokio::fs::remove_file(active_path(&host, &bot)).await;
+        let _ = tokio::fs::remove_file(results_path(&host, &bot)).await;
+    }
+
+    // Two timed-out stops must not exhaust the 2-tab per-bot limit on the third turn.
+    let happy_message_id = send(&host, &bot, "browser-happy http://127.0.0.1/").await;
+    let happy = wait_json(&host.home, &results_path(&host, &bot), Duration::from_secs(45)).await;
+    assert_eq!(happy["start"]["target"]["messageId"], happy_message_id, "{happy}");
+    assert_eq!(happy["start"]["target"]["tabId"], "203", "{happy}");
+    assert_eq!(happy["screenshot"]["postedToChat"], true, "{happy}");
+    assert_eq!(happy["stop"]["closed"], true, "{happy}");
+
+    extension.await.unwrap();
+    writer.abort();
+
+    let recorded = frames.lock().unwrap().clone();
+    let stop_ids = recorded
+        .iter()
+        .filter(|frame| frame["method"] == "stop")
+        .filter_map(|frame| frame["id"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    assert_eq!(stop_ids.len(), 3, "{recorded:?}");
+    let cancelled_ids = recorded
+        .iter()
+        .filter(|frame| frame["method"] == "cancel")
+        .filter_map(|frame| frame["params"]["requestId"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    assert!(
+        stop_ids.iter().all(|id| !cancelled_ids.contains(id)),
+        "timed-out stop must never be cancelled by host: stop_ids={stop_ids:?} cancelled_ids={cancelled_ids:?}"
+    );
+    assert!(revoke_count.load(Ordering::SeqCst) >= 2, "expected revoke frames after timed-out stops");
+}

@@ -129,12 +129,16 @@ function sessionFor(target, options = null) {
   return session
 }
 
+function isControlMethod(method) {
+  return method === 'stop' || method === 'cancel' || method === 'revoke'
+}
+
 function revokeSessionAndRequests(session) {
   if (!session) return
   session.revoked = true
   session.queueEpoch = (session.queueEpoch ?? 0) + 1
   for (const request of activeRequests.values()) {
-    if (request.method === 'stop') continue
+    if (isControlMethod(request.method)) continue
     if (request.browserId === session.browserId) {
       request.cancelled = true
     }
@@ -160,7 +164,7 @@ function revokeMatchingSessions(params, connection) {
       count += 1
     }
     for (const request of activeRequests.values()) {
-      if (request.method === 'stop') continue
+      if (isControlMethod(request.method)) continue
       if (request.connection === connection && request.browserId === target.browserId) {
         request.cancelled = true
       }
@@ -179,7 +183,7 @@ function revokeMatchingSessions(params, connection) {
     count += 1
   }
   for (const request of activeRequests.values()) {
-    if (request.method === 'stop' || request.connection !== connection) continue
+    if (isControlMethod(request.method) || request.connection !== connection) continue
     if (browserId && request.browserId === browserId) request.cancelled = true
     else if (botId && request.botId === botId) request.cancelled = true
     else if (!browserId && !botId && params?.allForHost === true) request.cancelled = true
@@ -450,6 +454,9 @@ async function closeSessionsForHost(hostName) {
   for (const [browserId, session] of sessions) {
     if (session.hostName === hostName || !session.hostName) {
       revokeSessionAndRequests(session)
+      const tabId = Number(session.tabId)
+      tabOperationQueues.delete(tabId)
+      pendingStartTabs.delete(tabId)
       stale.push(session)
       sessions.delete(browserId)
     }
@@ -836,18 +843,22 @@ async function screenshot(params, connection, state) {
   }, target, { expectedEpoch })
 }
 
-async function stop(params, connection, state) {
+async function stop(params, connection, _state) {
   const target = targetFrom(params, connection)
   const session = sessionFor(target, { allowRevoked: true })
   revokeSessionAndRequests(session)
   const tabId = Number(session.tabId)
-  return runInTabOrder(tabId, state, async () => {
-    const activeSession = ensureOperationActive(target, state, { allowRevoked: true })
-    await removeSessionTabs(activeSession)
+  tabOperationQueues.delete(tabId)
+  pendingStartTabs.delete(tabId)
+  try {
+    await removeSessionTabs(session)
+  } finally {
     sessions.delete(target.browserId)
+    tabOperationQueues.delete(tabId)
+    pendingStartTabs.delete(tabId)
     await persistSessions()
-    return { closed: true, tabId: activeSession.tabId }
-  }, target, { allowRevoked: true })
+  }
+  return { closed: true, tabId: session.tabId }
 }
 
 async function state(params, connection, requestState) {
@@ -883,6 +894,9 @@ async function handle(method, params, connection, requestState) {
       if (typeof params.requestId === 'string' && params.requestId.length > 0) {
         const request = activeRequests.get(params.requestId)
         if (request) {
+          if (isControlMethod(request.method)) {
+            return { cancelled: false }
+          }
           request.cancelled = true
           if (params.revokeSession && request.browserId) {
             revokeSessionAndRequests(sessions.get(request.browserId))

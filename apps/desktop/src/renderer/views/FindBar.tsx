@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { IconButton, SearchField } from '../components/Controls'
 import { Text } from '../components/Text'
+import { useEscapeLast } from '../lib/escape-last'
 import { findLabel } from '../lib/find-label'
 import { useTr } from '../lib/use-language'
 import { useConversationFind } from './use-conversation-find'
@@ -52,25 +53,4 @@ export function FindBar({ focusKey, onClose }: { focusKey: number; onClose: () =
       <IconButton title="Close" icon="xmark" size={24} onClick={onClose} />
     </div>
   )
-}
-
-/**
- * Escape closes the bar wherever focus is (its field, the composer, the chat), once nothing else took the key: a dialog
- * or menu opened over it (`useEscape` stops the key; the account panel and the composer's reply and `/` list prevent
- * its default), an input method's candidate, or a modal that made the page under the bar inert.
- */
-function useEscapeLast(bar: React.RefObject<HTMLElement | null>, onEscape: () => void) {
-  const handler = useRef(onEscape)
-  handler.current = onEscape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing) return
-      // Decided once the key has reached every listener: a menu that opened after the bar hears it after this one.
-      setTimeout(() => {
-        if (!e.defaultPrevented && !bar.current?.closest('[inert]')) handler.current()
-      })
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [bar])
 }

@@ -68,7 +68,9 @@ export function DetailsPanel({ botId, routineId, tab, setTab, thread, openThread
           {bot && !group ? <MacChatButton className="ringed" title="Create template" icon="square.and.arrow.up" onClick={share} /> : null}
           <MacChatButton className="ringed" title="Close details" icon="xmark" onClick={close} />
         </div>
-        <div className="details-scroll">
+        {/* The column is the scroller, so it takes the focus when the details open: the panel around it
+            never scrolls, and a first PageDown aimed at the panel would move nothing. */}
+        <div className="details-scroll" tabIndex={-1} data-autofocus>
           {bot ? <Identity bot={bot} /> : null}
           {bot && group ? (
             <GroupMembersList group={bot} editGroup={editGroup} />

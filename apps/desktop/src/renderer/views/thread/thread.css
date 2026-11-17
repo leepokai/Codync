@@ -433,6 +433,67 @@
   flex: none;
 }
 
+/* The compact details keep to the right at desktop widths too narrow to dock the panel beside the
+   chat: an aside over the conversation, with no dim and no inert, so the chat behind stays usable.
+   It starts below the title band: the pill that opens it is centred in the chat, and the aside
+   would otherwise cover the pill — at a 900-wide window its centre sits under the aside's edge.
+   It stops above the composer, whose height this view measures as `--composer-height`: reaching
+   the bottom edge put the right of the message box, send button included, under the aside, so a
+   click meant for the box landed on a control in the details. Reading a detail and answering a
+   message is the point of the aside; the box has to stay whole. */
+.details-aside {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  bottom: var(--composer-height, 0);
+  z-index: 7;
+  display: flex;
+  width: min(360px, 92%);
+  background: var(--background);
+  overflow: hidden;
+  /* The aside slides in from the edge it lives on, and slides back out while it stays mounted for
+     its exit; `prefers-reduced-motion` turns the slide off. */
+  opacity: 0;
+  transform: translateX(12px);
+  transition: opacity var(--morph), transform var(--morph);
+}
+.details-aside.shown {
+  opacity: 1;
+  transform: none;
+}
+/* The aside stays mounted while it leaves, so its exit can play: it must not take the clicks
+   meant for the chat underneath in the meantime. */
+.details-aside:not(.shown) {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .details-aside {
+    transition: none;
+  }
+}
+/* The lists the composer opens (`/` and `@`) are above the aside while it is open: they rise from
+   the box the aside stops above, and the dock's layer would otherwise keep them under it. The
+   raise lasts only while a list is mounted, so the box's fade never washes over the aside. */
+.thread-view[data-details-aside] .composer-dock:has(.composer-menu) {
+  z-index: 8;
+}
+.details-aside > * {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+/* The panel's top band moves the window; an aside inside the window must not. Measured at the OS
+   level, a drag region takes the press before the DOM sees it: with the band over a 360-wide aside,
+   its first 54px would move the whole window instead of clicking the detail under the pointer. */
+.details-aside .details-drag {
+  display: none;
+}
+/* The aside opens with the focus in this column, so the keys scroll it; it is a scroller, not a
+   control, and a ring here would trace the whole inset panel. */
+.details-aside .details-scroll:focus {
+  outline: none;
+}
+
 /* A message arriving while the list follows the newest pops in from its bubble's side (Grok Bot's). */
 .row-in {
   animation: row-in 0.24s var(--ease-out) both;

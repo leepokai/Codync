@@ -177,7 +177,10 @@ impl Store {
             tracing::warn!(error = format!("{error:#}"), "couldn't list bots for the unread total");
             Vec::new()
         });
-        rows.iter().filter(|b| !b.deleted && !b.config.hidden).map(|b| self.badge(&b.config.id, b.read_rev).unread).sum()
+        rows.iter()
+            .filter(|b| !b.deleted && !b.config.hidden)
+            .map(|b| self.badge(&b.config.id, b.read_rev).unread)
+            .sum()
     }
 
     /// Newest chat-visible line for the roster preview, with its author

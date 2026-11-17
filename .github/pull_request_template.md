@@ -5,13 +5,25 @@
 ## Validation
 
 <!--
-Required: run the change end to end locally (a real host plus every client it touches)
-and describe what you tried. Builds and unit tests alone aren't enough.
-If you made the change with Claude Code, also run the `after-change` workflow
-(`.claude/workflows/after-change.js`) from the change's worktree and paste its final report.
+Required, and checked by CI (the "PR validation" check fails until this is filled in).
+Tick every box. When one doesn't apply, tick it anyway and add "N/A: <why>" after it.
+Then describe what you ran under "What I tried": builds and unit tests alone aren't enough.
 A PR merges once CI passes and Greptile's confidence score on its latest commit is 4/5 or more.
 For a feature, reaching that score is part of the PR.
 -->
+
+- [ ] Ran the change end to end on a real host plus every client it touches (not only builds and unit tests), headless where the tool allows
+- [ ] Ran CI's checks for the parts touched (host: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`; desktop: `npm run typecheck && npm test`; Android: the Gradle checks; iOS: the Kit tests)
+- [ ] UI change: the same change lands in iOS, Android, desktop and the terminal UI (or says which client is unaffected and why), with screenshots
+- [ ] iPhone or Android change: lands in both apps and was checked on the iOS Simulator and the Android emulator
+- [ ] Platform code, packaging or the desktop main process: tested on macOS, Linux and Windows (say which ran)
+- [ ] New feature: PostHog events added, docs (`docs/`, `web/content/docs/`) updated
+- [ ] Made with Claude Code: ran the `after-change` workflow (`.claude/workflows/after-change.js`) from the change's worktree and pasted its final report below
+- [ ] Targets `dev`, not `main`
+
+### What I tried
+
+<!-- Commands, devices, flows walked and their results. Paste the after-change report here. -->
 
 ## What's New: iPhone
 

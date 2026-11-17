@@ -111,6 +111,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn digits_answer_a_choice_only_while_the_bot_waits_on_it() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = test_app();
+        let card = json!({"id": "choice", "botId": "a", "seq": 1, "kind": "notice", "turn": 1,
+            "data": {"decision": true, "choices": ["A", "B"], "status": "pending"}});
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "status": "idle"}})));
+        app.on_msg(Msg::Event(json!({"type": "entry", "entry": card})));
+        app.selected = Some("a".into());
+        app.on_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+        assert!(app.answering.is_empty(), "a card left open by an idle bot doesn't take a jump key");
+        app.on_msg(Msg::Event(json!({"type": "bot", "bot": {"id": "a", "name": "A", "status": "needsInput"}})));
+        app.on_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+        assert_eq!(app.answering.get("choice").map(String::as_str), Some("B"));
+    }
+
+    #[tokio::test]
     async fn s_and_d_act_on_a_waiting_message_on_a_host_that_takes_them() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let mut app = test_app();

@@ -296,8 +296,9 @@ A card that belongs to a task, case by case:
 | The user types a message | It answers the card, or ends it (`other_message`) | Nothing: in the chat the message is for the bot, and in the task's [thread](#talking-to-a-thread) it waits behind the card's turn. Only a press answers, so the card's text doesn't ask for a typed reply |
 | Stop in the chat | Ends it (`stopped`) | Nothing: the chat's Stop is the chat's turn. Stopping the item (`stopWork`, the bot's `steer_work stop`) ends it |
 | The item gives way or gets a new brief | | Ends it (`stopped`): its task is closed |
-| The turn ends | Ends it (`turn_ended`) | The task's turn, not the chat's: a card the task left open ends with the item |
-| Four and a half minutes | Ends it (`timeout`), the call returns | The same; the task goes on without an answer |
+| The turn ends | Ends it (`turn_ended`), unless its call already ran out (the card is open) | The task's turn, not the chat's: a card the task left open ends with the item |
+| Four and a half minutes | The call returns `answered: false` and the card stays open: a press or the user's next message answers it later as their next message ([choice cards](chat-messages.md)) | Ends it (`timeout`), the call returns an error; the task goes on without an answer, since a press there has no next message to become |
+| The bot asks again | Ends the open card (`asked_again`) | One card per task, as below |
 | Host restart | Ends it (`restart`) | The same: the resumed task has no call waiting |
 | One at a time | One card per bot | One card per task; two tasks may each have one open in the chat |
 | Alert | *needs you*, the bot's chat | The same, named for the bot |

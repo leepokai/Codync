@@ -23,10 +23,10 @@ impl Actor {
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,
             Cmd::TaskReport(report) => self.enqueue(Queued::TaskReport(report), done_tx).await,
-            Cmd::Send { lane, entry_id, text } => {
+            Cmd::Send { lane, entry_id, mut text } => {
                 // What the user writes to a task's thread waits behind the turn its card holds: only a press
                 // answers a task's card, and a message neither answers nor ends it.
-                if self.cfg.is_task() || !self.try_decision_message(&lane, &entry_id) {
+                if self.cfg.is_task() || !self.try_decision_message(&lane, &entry_id, &mut text) {
                     self.enqueue(Queued::User { lane, entry_id, text }, done_tx).await;
                 }
             }
@@ -58,7 +58,13 @@ impl Actor {
             Cmd::Ask { data, started_at, deadline, reply } => self.ask(data, started_at, deadline, reply),
             Cmd::Decision { entry_id, choice, reply } => {
                 if !reply.is_closed() {
-                    let answer = self.decided(&entry_id, &choice, None);
+                    // A call that just ran out leaves its card open: a press on it is the user's next message.
+                    self.expire_abandoned_decisions();
+                    let answer = if self.open_card.as_deref() == Some(&entry_id) {
+                        self.answer_open_card(&entry_id, &choice)
+                    } else {
+                        self.decided(&entry_id, &choice, None)
+                    };
                     let _ = reply.send(answer);
                 }
             }

@@ -12,3 +12,10 @@ import Testing
     let group = try JSONDecoder().decode(PushAlert.self, from: Data(#"{"title":"Bob in Team","body":"Done.","from":"b"}"#.utf8))
     #expect(group.from == "b")
 }
+
+@Test func pushContentCarriesTheComputersUnreadTotal() throws {
+    let current = try JSONDecoder().decode(PushAlert.self, from: Data(#"{"title":"Reviewer","body":"Done.","unread":2}"#.utf8))
+    #expect(current.unread == 2)
+    let olderHost = try JSONDecoder().decode(PushAlert.self, from: Data(#"{"title":"Reviewer","body":"Done."}"#.utf8))
+    #expect(olderHost.unread == nil)
+}

@@ -82,6 +82,19 @@ public struct AgentRest: Codable, Hashable, Sendable {
         let time = RelativeTime.clock(Date(milliseconds: until))
         return reason == "usageLimit" ? "Usage resets \(time)" : "Resting until \(time)"
     }
+
+    /// Why it rests, in the banner's words: "is signed out", "is rate limited"…
+    /// A usage limit says when it resets instead, and a missing model or mode never rests an agent (`rest::record`).
+    var phrase: String {
+        switch reason {
+        case "outOfCredits": "is out of credits"
+        case "rateLimited": "is rate limited"
+        case "overloaded": "is overloaded"
+        case "signedOut": "is signed out"
+        case "notStarting": "couldn't start"
+        default: "can't answer"
+        }
+    }
 }
 
 /// notice: the bot moved to another agent (`back`: to its own), with what the new one was told (`carried`).

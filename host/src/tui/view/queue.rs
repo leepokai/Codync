@@ -32,7 +32,7 @@ pub(super) fn queue_band(buf: &mut Buffer, r: Rect, app: &App, bot: &Bot, bottom
 
 /// Which keys the queue band names.
 #[derive(Clone, Copy)]
-enum QueueKeys {
+pub(super) enum QueueKeys {
     /// A host too old for them.
     Hidden,
     Ready,
@@ -42,7 +42,7 @@ enum QueueKeys {
 
 /// The queue band's rows, (text, keys): up to three messages, oldest first (more are counted), `S` beside the first
 /// (it goes next) and `D` beside the last.
-fn queued_rows(queued: &[&Entry], keys: QueueKeys) -> Vec<(String, String)> {
+pub(super) fn queued_rows(queued: &[&Entry], keys: QueueKeys) -> Vec<(String, String)> {
     let label = |e: &Entry| {
         let text = super::roster::plain(e.text().lines().next().unwrap_or_default());
         let files: Vec<String> = e.attachments().iter().map(|(name, _)| format!("▤ {name}")).collect();

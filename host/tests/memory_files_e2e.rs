@@ -148,7 +148,8 @@ async fn a_shell_edit_is_the_bots_and_outside_the_users_turn_only_adds() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    // A routine's turn isn't one the user started: a line its shell command takes out is put back.
+    // A routine's turn isn't one the user started: a line its shell command takes out is put back. The run is an
+    // item in the bot's box, so the turn is its task's.
     let instruction = format!("SHELL {}\n- Likes tea", main.display());
     let routine = json!({"botId": bot, "name": "Tidy", "instruction": instruction, "triggers": [{"type": "webhook"}]});
     let id = host.call("saveRoutine", routine).await["routine"]["id"].as_str().unwrap().to_owned();
@@ -167,6 +168,9 @@ async fn a_shell_edit_is_the_bots_and_outside_the_users_turn_only_adds() {
         assert!(Instant::now() < deadline, "the routine's cut stayed");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    let work =
+        host.snapshot().await["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).unwrap()["work"].clone();
+    assert_eq!(work[0]["source"]["kind"], "routine", "the run worked in a task: {work}");
     // The run's own session made that change; the chat, which didn't, isn't told it was put back.
     host.reply(&bot, "hello").await;
     let heard = host.prompts(&bot).last().unwrap().clone();

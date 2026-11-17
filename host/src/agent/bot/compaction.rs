@@ -302,6 +302,15 @@ impl Actor {
         }
     }
 
+    /// The user started a new session themselves: nothing of the old conversation is carried into it, neither a
+    /// card waiting in the chat nor a handoff taken for a turn that couldn't start.
+    pub(super) fn drop_handoff(&mut self) {
+        self.handoff = None;
+        if let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
     fn draft_handoff(&mut self, session: &str, reason: handoff::Reason) {
         if handoff::pending(&self.hub.store, &self.cfg.id).is_some() {
             return;

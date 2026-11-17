@@ -1,0 +1,40 @@
+# The Agent card's banner on the phones while a bot runs on a fallback (#444): with its own agent signed out it says
+# so, "Using Codex while Kimi Code is signed out", and names no reset time, which only a usage limit has. The phone
+# must already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes),
+# so run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags fallbacks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e FIXTURE_AGENT="$PWD/host/tests/fixtures/relay_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - fallbacks
+onFlowComplete:
+  - runScript:
+      file: fallback-banner.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: fallback-banner.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- tapOn: ${output.bot.name}
+- tapOn: "${output.bot.name}, view details"
+- tapOn: "Settings"
+# The Agent card, first on the page, opens with it.
+- extendedWaitUntil:
+    visible: "Using Codex while Kimi Code is signed out"
+    timeout: 10000
+- assertNotVisible: "Using Codex until .*"
+- takeScreenshot: fallback-banner

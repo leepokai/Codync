@@ -24,7 +24,7 @@ import { OpenAIRealtimeEngine } from './OpenAIRealtimeEngine'
 import { countVoiceUsage, fromBase64, onDeviceAvailable, onDeviceUnavailableReason, providerName, transcribeOnHost, VoiceEngine, VoiceSettings, voiceSettingsClosed, type VoicePhase, type VoiceProvider } from './voice'
 import { useTr } from '../../lib/use-language'
 import { trNow } from '../../lib/l10n.ts'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 import './call.css'
 
 /** What the call bar says for `phase`. */

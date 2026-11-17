@@ -39,6 +39,7 @@ pub enum After {
     Tracked,
     Analytics,
     AutoOrder,
+    CredentialsReset,
     History(String),
     Dirs(String),
     WorkspaceSelected(String),
@@ -196,6 +197,11 @@ impl Entry {
         self.kind == Kind::User || self.is_final() || self.data["connectionRequest"].is_object()
     }
 
+    /// The id of the message this one quotes (`replyTo`): `q` shows it.
+    pub fn quotes(&self) -> Option<&str> {
+        self.data["replyTo"]["id"].as_str()
+    }
+
     /// An artifact card's artifact id (`docs/features/artifacts.md`): `o` opens it, `f` saves it.
     pub fn artifact(&self) -> Option<&str> {
         if self.is_final() { self.data["artifact"]["id"].as_str() } else { None }
@@ -226,6 +232,17 @@ impl Entry {
         self.kind == Kind::Notice
             && self.data["botMessage"].is_object()
             && ["sourceBotId", "targetBotId", "text"].iter().all(|k| self.data["botMessage"][k].is_string())
+    }
+
+    /// A sign-in card an agent's turn waits on (a background task's, in its bot's chat).
+    pub fn waits_for_sign_in(&self) -> bool {
+        let request = &self.data["connectionRequest"];
+        request["kind"] == "agent" && request["status"] == "pending"
+    }
+
+    /// A sign-in card that holds messages: signing in there is what sends them again.
+    pub fn holds_messages(&self) -> bool {
+        self.data["connectionRequest"]["entryIds"].as_array().is_some_and(|ids| !ids.is_empty())
     }
 
     pub fn pending(&self) -> bool {

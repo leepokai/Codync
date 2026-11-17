@@ -9,6 +9,10 @@
 -keepclassmembers class * extends com.sun.jna.PointerType { public <init>(); }
 -dontwarn java.awt.**
 
+# libwebrtc's native code finds its Java classes, constructors and fields by name (JNI_OnLoad aborts without them):
+# OpenAI Realtime voice and the remote screen.
+-keep class org.webrtc.** { *; }
+
 # Crash reports (CrashReports.kt) send class, method, file and line names as they are and count
 # frames under com.codync as Codync's, with no mapping file: keep those readable, still shrunk and optimized.
 -keepattributes SourceFile,LineNumberTable

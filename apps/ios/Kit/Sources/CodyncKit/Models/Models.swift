@@ -61,6 +61,16 @@ public struct Entry: Codable, Identifiable, Hashable, Sendable {
                           artifact: data.artifact?.id)
     }
 
+    /// The quote of a part the user selected in this message. An empty part, or an artifact card, quotes the whole message.
+    public func replyQuote(part: String) -> ReplyQuote {
+        var quote = replyQuote
+        let part = part.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !part.isEmpty, quote.artifact == nil else { return quote }
+        quote.text = String(part.prefix(4000))
+        quote.part = true
+        return quote
+    }
+
     public var date: Date { Date(milliseconds: createdAt) }
 }
 
@@ -419,6 +429,10 @@ public struct BotDraft: Codable, Hashable, Sendable {
     public var harnessMemory: Bool?
     /// Nil where the host offers no setting (a new bot, an agent it can't ask), so it isn't sent.
     public var compaction: CompactionThreshold?
+    /// Nil where the host has no box (an older one, a new bot), so it isn't sent.
+    public var maxAgents: Int?
+    /// Nil where the host has no such setting, so it isn't sent.
+    public var taskWorktrees: Bool?
 
     public init(name: String = "", description: String = "", avatarColor: String = AvatarPalette.colors.randomElement()!.id,
                 avatarShape: String = AvatarPalette.shapes.randomElement()!, backend: String = "claude", cwd: String = "",
@@ -460,6 +474,8 @@ public struct BotDraft: Codable, Hashable, Sendable {
         offeredToNetwork = bot.offeredToNetwork
         reachableByAssistants = bot.reachableByAssistants
         compaction = bot.compaction
+        maxAgents = bot.maxAgents
+        taskWorktrees = bot.taskWorktrees
     }
 
     /// This draft with each field it hasn't changed from `base` (the bot as the form loaded it) taken from `fresh`
@@ -475,7 +491,7 @@ public struct BotDraft: Codable, Hashable, Sendable {
         follow(\.fastMode); follow(\.fallbacks); follow(\.selfFallbacks); follow(\.pinned); follow(\.hidden)
         follow(\.notify); follow(\.connectors); follow(\.skills); follow(\.computer); follow(\.manageTeam)
         follow(\.sharedMemory); follow(\.harnessMemory); follow(\.offeredToNetwork); follow(\.reachableByAssistants)
-        follow(\.compaction)
+        follow(\.compaction); follow(\.maxAgents); follow(\.taskWorktrees)
         return draft
     }
 }

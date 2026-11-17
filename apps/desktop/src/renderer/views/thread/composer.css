@@ -232,3 +232,7 @@
 .composer-menu .menu-panel {
   max-height: 300px;
 }
+/* Who a group of `/` commands comes from: Codync, or the bot's agent. */
+.composer-menu .menu-section {
+  padding: 8px 10px 2px;
+}

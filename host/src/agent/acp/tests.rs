@@ -110,7 +110,10 @@ async fn a_stopped_agent_that_exits_cleanly_does_not_hold_the_host_for_the_grace
     let (acp, mut rx) = Acp::spawn("cat", env!("CARGO_MANIFEST_DIR"), &[]).unwrap();
     let started = tokio::time::Instant::now();
     acp.kill().await;
-    stopped().await;
+    // Times this agent's own stop: its task takes the process once yielded to, and lets go when the agent has ended.
+    // `stopped()` would also wait for other tests' agents (#375).
+    tokio::task::yield_now().await;
+    drop(acp.child.lock().await);
     assert!(started.elapsed() < EXIT_GRACE / 2, "stopping waited out the grace period");
     assert!(matches!(rx.recv().await, Some(Incoming::Closed { .. })));
 }

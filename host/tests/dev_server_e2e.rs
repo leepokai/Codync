@@ -41,16 +41,6 @@ fn sleeper(seconds: u32) -> String {
     format!("{} -c \"import time; time.sleep({seconds})\"", common::python())
 }
 
-fn kill(pid: &str) {
-    let mut command = Command::new(if cfg!(windows) { "taskkill" } else { "kill" });
-    if cfg!(windows) {
-        command.args(["/F", "/PID", pid])
-    } else {
-        command.args(["-KILL", pid])
-    };
-    command.status().unwrap();
-}
-
 async fn start(host: &Host, bot: &str, command: &str, name: &str) -> Value {
     let arguments = json!({"command": command, "name": name});
     host.call("chatCall", json!({"botId": bot, "name": "start_dev_server", "arguments": arguments})).await
@@ -124,7 +114,7 @@ async fn a_server_outlives_its_agent_and_shows_its_port() {
     assert_eq!(listed[0]["managed"], true);
 
     let agent = std::fs::read_to_string(workspace(&host, &bot).await.join("agent.pid")).unwrap();
-    kill(agent.trim());
+    common::kill(agent.trim());
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(serves(port), "the server died with the agent");
     assert_eq!(servers(&host, &bot).await[0]["status"], "running");

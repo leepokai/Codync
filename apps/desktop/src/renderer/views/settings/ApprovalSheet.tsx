@@ -9,7 +9,7 @@ import { useApp } from '../../store/context'
 import { deviceIcon, errorText } from './parts'
 import { spacedCode } from '../../lib/account-copy'
 import { useTr } from '../../lib/use-language'
-import { fill } from '../../lib/fill.ts'
+import { fill } from '@shared/fill'
 
 
 /**

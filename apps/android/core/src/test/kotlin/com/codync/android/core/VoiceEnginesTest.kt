@@ -64,6 +64,34 @@ class VoiceEnginesTest {
         }
     }
 
+    /** On a device that never opened the settings too; the mode picked before comes back with OpenAI. */
+    @Test fun aServerOfTheUsersOwnLeavesSpeechAsItsEnginesOnlyMode() {
+        val choices = Prefs().choices
+        val status = { server: String -> WireJson.decodeFromString<VoiceStatus>(
+            "{\"providers\":[{\"provider\":\"openai\",\"configured\":true,\"server\":\"$server\"},{\"provider\":\"gemini\"}]}") }
+        choices.remember(status("http://127.0.0.1:8890"))
+        assertEquals("http://127.0.0.1:8890", choices.server(VoiceProvider.OpenAI))
+        assertNull(choices.server(VoiceProvider.Gemini))
+        assertTrue(choices.speechMode(VoiceProvider.OpenAI)); assertFalse(choices.speechMode(VoiceProvider.Gemini))
+        choices.remember(status(""))
+        assertEquals("", choices.server(VoiceProvider.OpenAI)); assertFalse(choices.speechMode(VoiceProvider.OpenAI))
+        assertEquals("api.openai.com", VoiceStatus.serverLabel(""))
+        assertEquals("http://127.0.0.1:8890", VoiceStatus.serverLabel("http://127.0.0.1:8890"))
+    }
+
+    /** Another server has other models: the ones picked for the server before go, and the same server keeps them. */
+    @Test fun anotherServerDropsTheModelsPickedForTheOneBefore() {
+        val choices = Prefs().choices; val openai = VoiceProvider.OpenAI
+        val status = { server: String -> WireJson.decodeFromString<VoiceStatus>("{\"providers\":[{\"provider\":\"openai\",\"server\":\"$server\"}]}") }
+        choices.remember(status(""))
+        choices.choose(openai, VoiceChoices.Model.Speech, "tts-9"); choices.cache(openai, VoiceModels(speech = listOf("tts-9")))
+        choices.remember(status(""))
+        assertEquals("tts-9", choices.model(openai, VoiceChoices.Model.Speech))
+        choices.remember(status("http://127.0.0.1:8890"))
+        assertEquals(choices.defaults(openai).speech, choices.model(openai, VoiceChoices.Model.Speech))
+        assertNull(choices.cachedModels(openai))
+    }
+
     @Test fun googleSearchOnlyChangesGeminiRealtimeEngineChoice() {
         val prefs = Prefs(); val choices = prefs.choices
         assertFalse(choices.googleSearch)

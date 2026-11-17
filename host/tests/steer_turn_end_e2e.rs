@@ -10,7 +10,6 @@ use common::host::Host;
 use common::steer::{entries, entry, idle, queue_behind_a_turn, status};
 use common::{eventually, python_missing};
 use serde_json::{Value, json};
-use std::path::PathBuf;
 use std::time::Duration;
 
 /// What a nameless bot's finished turns recorded, for it to learn from.
@@ -46,9 +45,7 @@ async fn it_goes_next(args: &str) {
 async fn it_goes_with_its_turn_to_the_next_agent(args: &str) {
     let host = Host::start().await;
     let bot = host.fixture_bot("Carries", "steer_agent.py", args).await;
-    let standin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
-    let standin = format!("{} standin", common::python_agent(&standin));
-    let fallbacks = json!([{"backend": "codex", "command": standin}]);
+    let fallbacks = json!([{"backend": "codex", "command": common::fixture_command("relay_agent.py", "standin")}]);
     host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
     let (_, second) = queue_behind_a_turn(&host, &bot).await;
     host.call("steer", json!({"botId": bot, "entryId": second})).await;

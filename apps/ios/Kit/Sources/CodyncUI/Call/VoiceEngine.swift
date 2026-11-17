@@ -131,15 +131,35 @@ enum VoiceSettings {
         UserDefaults.standard.set(data, forKey: defaultsKey(provider))
     }
 
+    /// Keeps what the computer says of each provider: its newest models become the defaults, and its server
+    /// decides the mode. Another server has other models: the ones picked, and the list, for the one before go.
     static func remember(_ status: VoiceStatus) {
-        for entry in status.providers { remember(entry.defaults, for: entry.provider) }
+        for entry in status.providers {
+            let p = entry.provider
+            if (UserDefaults.standard.string(forKey: serverKey(p)) ?? "") != (entry.server ?? "") {
+                for key in [modelKey(p), transcribeKey(p), speechKey(p), modelsKey(p)] {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
+            }
+            remember(entry.defaults, for: p)
+            UserDefaults.standard.set(entry.server, forKey: serverKey(p))
+        }
     }
+
+    /// The server the provider's Speech mode goes to, as the computer last said: `""` for the provider itself,
+    /// nothing where it has none to choose.
+    static func serverKey(_ provider: VoiceProvider) -> String { "callServer.\(provider.rawValue)" }
+
+    /// A server of the user's own holds no Realtime conversation, so Speech is its only mode; the picked mode
+    /// comes back with the provider.
+    static func speechOnly(_ server: String?) -> Bool { server?.isEmpty == false }
 
     /// `realtime` (a live conversation) or `speech` (speech to text, then the reply read aloud).
     static func modeKey(_ provider: VoiceProvider) -> String { "callMode.\(provider.rawValue)" }
 
     static func isSpeechMode(_ provider: VoiceProvider) -> Bool {
-        UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
+        speechOnly(UserDefaults.standard.string(forKey: serverKey(provider)))
+            || UserDefaults.standard.string(forKey: modeKey(provider)) == "speech"
     }
 
     static func transcribeKey(_ provider: VoiceProvider) -> String { "callSpeechToText.\(provider.rawValue)" }

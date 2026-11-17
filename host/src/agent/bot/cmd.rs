@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub enum Cmd {
+    /// A connector the bot has on was edited or set up: its agent starts again for its next turn (`restart_stale`).
     RefreshTools,
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,
@@ -47,6 +48,8 @@ pub enum Cmd {
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
+        /// The message it quotes (`reply_to`), as `chat::replies::quote` stores it.
+        quote: Option<Value>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },
     /// `react` from the bot's `chat` MCP server: an emoji on the message the turn answers.
@@ -61,6 +64,8 @@ pub enum Cmd {
         name: Option<String>,
         /// A voice note's message: the file plays at the top of this text's bubble.
         text: Option<String>,
+        /// The message it quotes (`reply_to`).
+        quote: Option<Value>,
         cancelled: Arc<std::sync::atomic::AtomicBool>,
         reply: tokio::sync::oneshot::Sender<Result<()>>,
     },

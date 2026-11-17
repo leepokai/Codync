@@ -28,14 +28,24 @@ impl App {
             .map_or_else(|| tr("New login profile").into_owned(), str::to_owned)
     }
 
-    /// The field `d` steps from the focused one, past the Login profile field of an agent without login profiles.
-    pub(super) fn step_field(&self, f: &Form, d: isize) -> usize {
-        let next = cycle(f.field, d, FIELDS.len());
-        if FIELDS[next] == Field::LoginProfile && self.login_profiles(&f.backend).is_none() {
-            cycle(next, d, FIELDS.len())
-        } else {
-            next
+    /// Whether the form has `field`: no Login profile for an agent without login profiles, no Agents at once on a
+    /// host without the event box, no Worktree per agent outside a git repository.
+    pub(in crate::tui) fn field_shown(&self, f: &Form, field: Field) -> bool {
+        match field {
+            Field::LoginProfile => self.login_profiles(&f.backend).is_some(),
+            Field::MaxAgents => f.max_agents.is_some(),
+            Field::TaskWorktrees => f.task_worktrees.is_some(),
+            _ => true,
         }
+    }
+
+    /// The field `d` steps from the focused one, past the fields the form doesn't have.
+    pub(super) fn step_field(&self, f: &Form, d: isize) -> usize {
+        let mut next = cycle(f.field, d, FIELDS.len());
+        while !self.field_shown(f, FIELDS[next]) {
+            next = cycle(next, d, FIELDS.len());
+        }
+        next
     }
 
     /// What the field steps through: the default login profile (`None`), then the login profiles a bot can run on. One

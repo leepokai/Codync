@@ -125,7 +125,7 @@ extension BotStore {
             bump(bot.rev)
             onBotUpdated?(bot)
             onRosterChanged?()
-            if bot.unread > 0 { acknowledgeVisibleConversations(bot.id) }
+            if bot.unseen > 0 { acknowledgeVisibleConversations(bot.id) }
         case let .botDeleted(id, r):
             removeComposerDrafts(for: id)
             bots[id] = nil
@@ -145,8 +145,7 @@ extension BotStore {
             bump(e.rev)
             acknowledgeVisibleConversations(e.botId, entry: e)
         case let .taskEntry(task, e):
-            // ponytail: re-sorts the task's transcript on every entry; insert in place if tasks grow past hundreds.
-            taskEntries[task] = (taskEntries[task] ?? []).mergingTaskEntries([e])
+            putTaskEntry(e, task: task)
             bump(e.rev)
         case let .call(cue):
             // The computer decides what the voice hears; this device hands each cue over once.
@@ -252,11 +251,11 @@ extension BotStore {
         return e.seq < floor
     }
 
-    /// A task that ended leaves its bot's `tasks`; its details read it back (`taskEntries`) from then on.
+    /// A task no item names any more is gone from the computer too; its transcript goes with it.
     private func dropEndedTasks() {
         guard !taskEntries.isEmpty else { return }
-        let live = Set(bots.values.flatMap(\.tasks).map(\.id))
-        taskEntries = taskEntries.filter { live.contains($0.key) }
+        let named = Set(bots.values.flatMap(\.work).compactMap(\.task))
+        taskEntries = taskEntries.filter { named.contains($0.key) }
     }
 
     func upsert(_ e: Entry) {

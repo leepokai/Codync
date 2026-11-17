@@ -5,14 +5,15 @@
 // Codync Dev from a worktree, --sandbox runs a sandbox from the main checkout, --name <name> runs
 // the sandbox of that name, --cloud lets the sandbox use the dev cloud, --local-cloud gives it its own
 // local cloud (the default on a branch that changes cloud/: local-cloud.mjs), --cdp opens the
-// DevTools protocol on the sandbox port + 10000, --onboarding shows the welcome flow (a sandbox
-// starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is gone
-// (and their Clerk test accounts and iPhone simulators).
+// DevTools protocol on the sandbox port + 10000, gives the host the stand-in agent CLIs and keeps
+// the app's windows off the screen (--headed shows them), --onboarding shows the welcome flow (a
+// sandbox starts past it), --list shows every sandbox, --prune deletes the ones whose worktree is
+// gone (and their Clerk test accounts and iPhone simulators).
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -26,7 +27,7 @@ const windows = process.platform === 'win32'
 const { values: flags } = parseArgs({
   options: {
     shared: { type: 'boolean' }, sandbox: { type: 'boolean' }, name: { type: 'string' },
-    cloud: { type: 'boolean' }, 'local-cloud': { type: 'boolean' }, onboarding: { type: 'boolean' }, cdp: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
+    cloud: { type: 'boolean' }, 'local-cloud': { type: 'boolean' }, onboarding: { type: 'boolean' }, cdp: { type: 'boolean' }, headed: { type: 'boolean' }, list: { type: 'boolean' }, prune: { type: 'boolean' },
   },
 })
 
@@ -169,7 +170,9 @@ async function sandbox() {
     fail(`Port ${port} of the sandbox ${name} is in use: another npm run dev runs this sandbox, or an earlier run left its host running. Stop that process, or run another sandbox with --name <name>.`)
   }
   mkdirSync(home, { recursive: true })
-  if (!record) writeFileSync(recordFile, `${JSON.stringify({ worktree: root, port }, null, 2)}\n`)
+  // Written at every start: `headless` tells the e2e specs whether this run keeps its windows off the screen.
+  const headless = Boolean(flags.cdp) && !flags.headed
+  writeFileSync(recordFile, `${JSON.stringify({ worktree: root, port, headless }, null, 2)}\n`)
 
   const host = buildHost()
   const log = join(home, 'host.log')
@@ -191,6 +194,9 @@ async function sandbox() {
   cloud = await sandboxCloud({ mode, root, home, port }).catch((e) => fail(`Local cloud: ${e.message}`))
   // CODYNC_VAULT: the credential key goes with the sandbox folder, so Keychain neither keeps it nor asks about it.
   const hostEnv = { ...childEnv(), CODYNC_HOME: home, CODYNC_VAULT: 'folder', ...cloud.hostEnv }
+  // --cdp: the stand-in agent CLIs come first on PATH, so the specs sign no real agent in
+  // (host/tests/fixtures/bin/README.md). They are scripts: not on Windows.
+  if (flags.cdp && !windows) hostEnv.PATH = [join(root, 'host/tests/fixtures/bin'), hostEnv.PATH].join(delimiter)
   const out = openSync(log, 'a')
   hostProcess = spawn(host, ['serve', '--port', String(port)], { env: hostEnv, stdio: ['ignore', out, out] })
   hostProcess.on('error', (e) => fail(`Couldn't start ${host}: ${e.message}`))
@@ -220,6 +226,8 @@ async function sandbox() {
   const appEnv = {
     ...childEnv(), CODYNC_HOME: home, CODYNC_PORT: String(port), ...cloud.appEnv,
     ...(cdp ? { CODYNC_REMOTE_DEBUG: String(cdp) } : {}),
+    // An e2e sandbox keeps its windows off the screen unless asked to show them (src/main/headless.ts).
+    ...(headless ? { CODYNC_HEADLESS: '1' } : {}),
     CODYNC_DEV_ONBOARDING: flags.onboarding ? 'reset' : 'skip',
   }
   // The app trades the token only while it has no active session, so a signed-out or expired sandbox signs in again.

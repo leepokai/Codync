@@ -201,17 +201,28 @@ public extension HostClient {
         return res.entries
     }
 
-    /// A background task of the bot's and its transcript (the newest 500 entries, oldest first), ended or not.
-    func taskEntries(botId: String, taskId: String) async throws -> (task: BotTask, entries: [Entry]) {
-        struct Res: Decodable { var task: BotTask; var entries: [Entry] }
+    /// A task's transcript (the newest 500 entries, oldest first), ended or not: by an item's `task`.
+    func taskEntries(botId: String, taskId: String) async throws -> [Entry] {
+        struct Res: Decodable { var entries: [Entry] }
         let res: Res = try await call("taskEntries", ["botId": botId, "taskId": taskId])
-        return (res.task, res.entries)
+        return res.entries
     }
 
-    /// Stops one background task of the bot's, or all of them.
-    func stopTask(botId: String, taskId: String?) async throws {
-        struct Body: Encodable { var botId: String; var taskId: String? }
-        let _: Empty = try await call("stopTask", Body(botId: botId, taskId: taskId))
+    /// One change to an item in a bot's box: `workFirst` (a waiting item moves to the front), `dropWork` (a waiting
+    /// or ended item goes), `retryWork` (a stopped or failed item waits again, last).
+    func work(_ method: String, botId: String, itemId: String) async throws {
+        let _: Empty = try await call(method, ["botId": botId, "itemId": itemId])
+    }
+
+    /// Starts a waiting item now: the working item `insteadOf` gives way, and starts again later.
+    func workCutIn(botId: String, itemId: String, insteadOf: String) async throws {
+        let _: Empty = try await call("workCutIn", ["botId": botId, "itemId": itemId, "insteadOf": insteadOf])
+    }
+
+    /// Stops one working item of the bot's, or all of them.
+    func stopWork(botId: String, itemId: String?) async throws {
+        struct Body: Encodable { var botId: String; var itemId: String? }
+        let _: Empty = try await call("stopWork", Body(botId: botId, itemId: itemId))
     }
 
     /// The newest 200 bot-to-bot notices between a bot's chat and a peer, oldest first.
@@ -280,18 +291,19 @@ public extension HostClient {
         return res.entry
     }
 
-    /// `replyTo`: the chat message this one quotes.
+    /// `replyTo`: the chat message this one quotes. `replyPart`: the part of it the user selected.
     /// `pasted`: what the user pasted rather than typed, which memory never takes as their own words.
     /// `call`: the voice call it was said in (on-device or speech to text).
-    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, attachments: [String]? = nil,
-              pasted: [String]? = nil, call: String? = nil) async throws -> Entry {
+    /// `itemId`: the bot's item whose thread it is for (text only); the entry that comes back is in its task's transcript.
+    func send(botId: String, text: String, clientNonce: String, replyTo: String? = nil, replyPart: String? = nil,
+              attachments: [String]? = nil, pasted: [String]? = nil, call: String? = nil, itemId: String? = nil) async throws -> Entry {
         struct Body: Encodable {
-            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var attachments: [String]?
-            var pasted: [String]?; var call: String?
+            var botId: String; var text: String; var clientNonce: String; var replyTo: String?; var replyPart: String?
+            var attachments: [String]?; var pasted: [String]?; var call: String?; var itemId: String?
         }
         struct Res: Decodable { var entry: Entry }
-        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, attachments: attachments,
-                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call)
+        let body = Body(botId: botId, text: text, clientNonce: clientNonce, replyTo: replyTo, replyPart: replyPart, attachments: attachments,
+                        pasted: pasted?.isEmpty == false ? pasted : nil, call: call, itemId: itemId)
         let res: Res = try await self.call("send", body)
         return res.entry
     }
@@ -402,14 +414,26 @@ public extension HostClient {
         let _: Empty = try await call("stop", ["botId": botId])
     }
 
+    /// The bot's agent starts over with a fresh context; the chat stays.
+    func newSession(_ botId: String) async throws {
+        let _: Empty = try await call("newSession", ["botId": botId])
+    }
+
     /// A queued message, now: into the running turn when the agent can take it, else as the next one (host 2.39.0).
-    func steer(botId: String, entryId: String) async throws {
-        let _: Empty = try await call("steer", ["botId": botId, "entryId": entryId])
+    /// `itemId`: the bot's item whose thread the message waits in.
+    func steer(botId: String, entryId: String, itemId: String? = nil) async throws {
+        let _: Empty = try await call("steer", QueuedMessage(botId: botId, entryId: entryId, itemId: itemId))
     }
 
     /// A queued message taken back: it never goes out (host 2.39.0).
-    func unqueue(botId: String, entryId: String) async throws {
-        let _: Empty = try await call("unqueue", ["botId": botId, "entryId": entryId])
+    func unqueue(botId: String, entryId: String, itemId: String? = nil) async throws {
+        let _: Empty = try await call("unqueue", QueuedMessage(botId: botId, entryId: entryId, itemId: itemId))
+    }
+
+    private struct QueuedMessage: Encodable {
+        var botId: String
+        var entryId: String
+        var itemId: String?
     }
 
     func devServer(_ action: DevServer.Action, botId: String, id: String) async throws {

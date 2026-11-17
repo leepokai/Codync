@@ -18,6 +18,8 @@ actor FakeRemote: RemoteTransport {
     private(set) var sent: [String] = []
     /// Each `send`'s quoted message, in order.
     private(set) var replyTos: [String?] = []
+    /// Each `send`'s selected part of the quoted message, in order.
+    private(set) var replyParts: [String?] = []
     private(set) var readReceipts: [Data] = []
     private var failReadReceipts = false
     private(set) var readAttempts = 0
@@ -46,6 +48,11 @@ actor FakeRemote: RemoteTransport {
 
     func setReadFailure(_ fail: Bool) { failReadReceipts = fail }
     private(set) var calls: [String] = []
+    /// What the newest call of each method carried, where it was all text.
+    private(set) var bodies: [String: [String: String]] = [:]
+    /// A method the computer refuses, with its sentence.
+    private var refusals: [String: String] = [:]
+    func refuse(_ method: String, _ sentence: String?) { refusals[method] = sentence }
     private var failures: [String: Int] = [:]
     /// The next `count` calls of `method` fail as if the link dropped under them.
     func fail(_ method: String, times count: Int) { failures[method] = count }
@@ -99,6 +106,8 @@ actor FakeRemote: RemoteTransport {
         guard !isShutdown else { throw HostError.unreachable }
         calls.append(method)
         record(.called(method))
+        bodies[method] = (try? JSONSerialization.jsonObject(with: body)) as? [String: String]
+        if let sentence = refusals[method] { throw HostError.http(400, sentence) }
         if let left = failures[method], left > 0 {
             failures[method] = left - 1
             throw HostError.unreachable
@@ -115,6 +124,7 @@ actor FakeRemote: RemoteTransport {
             let b = (try JSONSerialization.jsonObject(with: body) as? [String: String]) ?? [:]
             sent.append(b["text"] ?? "")
             replyTos.append(b["replyTo"])
+            replyParts.append(b["replyPart"])
             let entry = #"{"id":"e\#(sent.count)","seq":\#(sent.count),"botId":"\#(b["botId"] ?? "")","rev":\#(sent.count),"kind":"user","turn":1,"data":{"text":"\#(b["text"] ?? "")","clientNonce":"\#(b["clientNonce"] ?? "")"},"createdAt":1,"updatedAt":1}"#
             return Data(#"{"entry":\#(entry)}"#.utf8)
         case "startCall":
@@ -171,7 +181,7 @@ actor FakeRemote: RemoteTransport {
     /// Every later `enqueue` throws `error`.
     func failEnqueue(_ error: any Error) { enqueueError = error }
 
-    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, pasted: [String]?) async throws {
+    func enqueue(botId: String, text: String, clientNonce: String, replyTo: String?, replyPart: String?, pasted: [String]?) async throws {
         if let enqueueError { throw enqueueError }
         enqueued.append(clientNonce)
     }

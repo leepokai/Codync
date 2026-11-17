@@ -11,9 +11,9 @@ import {
   dictationEngine,
   callEngineChoice,
   googleSearch,
+  isSpeechMode,
   isVoiceProvider,
   language,
-  mode,
   pause,
   rate,
   voiceInfo,
@@ -51,7 +51,7 @@ export const VoiceSettings = {
   transcribeModel: (p: VoiceProvider) => chosenModel(p, 'transcribe'),
   speechModel: (p: VoiceProvider) => chosenModel(p, 'speech'),
   voice: chosenVoice,
-  isSpeechMode: (p: VoiceProvider) => mode(p).get() === 'speech',
+  isSpeechMode,
   /** A pause this long (seconds) ends what you're saying and sends it. */
   pause: () => (pause.get() > 0 ? pause.get() : 1.5),
   /** AVSpeechUtterance's rate (0…1, 0.5 normal), as the Mac stores it. */

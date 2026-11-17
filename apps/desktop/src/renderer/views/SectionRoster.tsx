@@ -59,7 +59,7 @@ export function SectionRoster({ computerId, items, compact, folded, order, save,
     if (!group) return null
     const props = preview ? {} : { drag: handlers(name), move: (offset: number) => move(name, offset) }
     return name === '' ? <RosterLabel compact={compact} {...props} /> : <RosterSection name={name} count={group.count}
-      unread={group.unread} compact={compact}
+      unread={group.unread} waiting={group.waiting} compact={compact}
       folded={drag !== null || folded.includes(name)} toggle={() => toggle(name)}
       onContext={(x, y) => onContext(name, x, y)} {...props}>
       {preview ? null : group.items.map(row)}

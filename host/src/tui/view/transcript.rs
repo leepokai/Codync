@@ -9,7 +9,7 @@ use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
-use super::permission::{chosen_line, decided_line, decision_card, permission_card};
+use super::permission::{background_line, chosen_line, decided_line, decision_card, permission_card};
 use super::roster::plain;
 use super::style::{FACE, bot_color, face_style, person, spin, theme};
 use super::time::clock;
@@ -19,7 +19,8 @@ pub(super) struct Built {
     pub(super) lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
-    /// Each message's (entry id, first line, end line), for picking one to reply to.
+    /// Each message's (entry id, first line, end line), for picking one to reply to; an answered card's too, which an
+    /// item's thread picks to show it here.
     pub(super) messages: Vec<(String, usize, usize)>,
     /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
     pub(super) texts: Vec<(usize, usize)>,
@@ -223,6 +224,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
+            // What a task shares through the chat (a file, a voice note, an artifact) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
+            }
+            out.lines.extend(quote_line(e, width));
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),
@@ -266,23 +273,28 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 )));
             }
         }
+        // Pickable waiting too: Work's `↵` on an item that needs you picks its card, which brings it on screen.
         Kind::Permission => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 // A card in a group is its asking bot's.
                 permission_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 decided_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // A choice card is laid out like an approval card, the bot asking one of its own options.
         Kind::Decision => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 decision_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 chosen_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
         // summary keeps the same conversation going, and a kept handoff changed nothing.
@@ -340,6 +352,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::styled(" · ", t.dim)],
                     &[Span::raw("   ")],
                 )),
+            }
+            // What a background task asks of the user here (a sign-in, a fallback) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
             }
             let folded = unfoldable(e);
             if app.unfolded.contains(&e.id) {

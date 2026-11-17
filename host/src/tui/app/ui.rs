@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use super::super::manage::{
-    AgentSetup, AnalyticsSheet, BotChatSheet, DevServersSheet, Fields, Gear, KeyImport, Library, Market, MemorySheet,
-    NetworkSheet, RoutineForm, RoutineList, SkillSheet, TaskList, TaskSheet,
+    AgentSetup, AllWork, AnalyticsSheet, BotChatSheet, CutIn, DetailsPage, DevServersSheet, Fields, Gear, KeyImport,
+    Library, Market, MemorySheet, NetworkSheet, RoutineForm, SkillSheet, TaskSheet,
 };
 use super::{Editor, Mark, WhatsNew};
 
@@ -53,6 +53,7 @@ pub enum Action {
     Memory,
     Details,
     Library,
+    NewSession,
     RefreshAgents,
     Pair,
     Network,
@@ -61,19 +62,21 @@ pub enum Action {
     Analytics,
     AboutAnalytics,
     AutoOrder,
+    ResetCredentials,
     Language,
     ThinkingDetails,
     Keys,
     Appearance(super::super::appearance::Appearance),
 }
 
-pub const ACTIONS: [(&str, &str, Action); 20] = [
+pub const ACTIONS: [(&str, &str, Action); 22] = [
     ("New bot…", "n", Action::NewBot),
     ("New group chat…", "m", Action::NewGroup),
     ("Extensions: agents, connectors, skills…", "A", Action::Market),
     ("Memory of this bot…", "M", Action::Memory),
     ("Details of this bot…", "R", Action::Details),
     ("Library of this bot: artifacts and files…", "L", Action::Library),
+    ("New session for this bot…", "", Action::NewSession),
     ("Refresh agents", "", Action::RefreshAgents),
     ("Move active bots to the top", "", Action::AutoOrder),
     ("Pair a phone…", "P", Action::Pair),
@@ -82,6 +85,7 @@ pub const ACTIONS: [(&str, &str, Action); 20] = [
     ("Check for updates", "", Action::CheckUpdate),
     ("Share usage analytics", "", Action::Analytics),
     ("About usage analytics…", "", Action::AboutAnalytics),
+    ("Reset saved credentials…", "", Action::ResetCredentials),
     ("Appearance: System", "", Action::Appearance(super::super::appearance::Appearance::System)),
     ("Appearance: Light", "", Action::Appearance(super::super::appearance::Appearance::Light)),
     ("Appearance: Dark", "", Action::Appearance(super::super::appearance::Appearance::Dark)),
@@ -105,16 +109,21 @@ pub struct Goto {
 
 pub enum ConfirmAct {
     Delete(String),
+    NewSession(String),
     /// Keeps a bot's harness's own memory on beside Codync's.
     KeepHarnessMemory(String),
     DeleteRoutine(String, String),
     RotateRoutineKey(String, String),
     RemoveConnector(String),
     RemoveSkill(String),
-    /// Stops a bot's background work: one task, or all of them.
-    StopTasks {
+    /// Asks again before deleting every credential saved on this computer: it's dangerous and final.
+    ResetCredentials,
+    /// Deletes them (`resetCredentials`).
+    DeleteCredentials,
+    /// Stops one item of a bot's box.
+    StopWork {
         bot: String,
-        task: Option<String>,
+        item: String,
     },
 }
 
@@ -187,6 +196,10 @@ pub enum Field {
     Fallbacks,
     SelfFallbacks,
     Folder,
+    /// The most agents it runs at once; only on a host that sends `maxAgents`.
+    MaxAgents,
+    /// A worktree per agent; only for a bot in a git repository, on a host that sends `taskWorktrees`.
+    TaskWorktrees,
     Approvals,
     Compaction,
     Notify,
@@ -200,7 +213,7 @@ pub enum Field {
     Skills,
 }
 
-pub const FIELDS: [Field; 21] = [
+pub const FIELDS: [Field; 23] = [
     Field::Name,
     Field::Instructions,
     Field::Agent,
@@ -212,6 +225,8 @@ pub const FIELDS: [Field; 21] = [
     Field::SelfFallbacks,
     Field::Compaction,
     Field::Folder,
+    Field::MaxAgents,
+    Field::TaskWorktrees,
     Field::Approvals,
     Field::Notify,
     Field::Computer,
@@ -246,6 +261,10 @@ pub struct Form {
     pub fallbacks: Vec<crate::store::Fallback>,
     pub self_fallbacks: bool,
     pub cwd: String,
+    /// The most agents it runs at once; `None`: the host has no event box.
+    pub max_agents: Option<u8>,
+    /// A worktree per agent; `None`: the host has no worktrees, or the bot's folder is in no git repository.
+    pub task_worktrees: Option<bool>,
     /// Approvals: Codync approves what still asks, and the agent mode (`agent::modes`).
     pub auto: bool,
     pub mode: Option<String>,
@@ -362,13 +381,15 @@ pub enum Overlay {
     Memory(MemorySheet),
     /// A read-only conversation between two bots.
     BotChat(BotChatSheet),
-    /// A bot's background tasks, when it has several: a row opens one.
-    Tasks(TaskList),
-    /// A background task's details: its own transcript, read-only.
+    /// The transcript of the task working an item, read-only.
     Task(TaskSheet),
+    /// Which working item gives way to the one that cuts in.
+    CutIn(CutIn),
+    /// Every bot's work on one page.
+    AllWork(AllWork),
     /// A bot's dev servers.
     DevServers(DevServersSheet),
-    Routines(RoutineList),
+    Details(DetailsPage),
     Routine(Box<RoutineForm>),
     /// A bot's Computer page, by the bot's id.
     Computer(String),

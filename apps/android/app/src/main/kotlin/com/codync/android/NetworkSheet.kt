@@ -48,7 +48,7 @@ import com.kyant.shapes.Capsule
                 CardSection(network.name) {
                     for (computer in network.computers) row { NetworkComputerRow(computer) }
                 }
-                if (network.rules.isNotEmpty()) CardSection("Who may message bots here", RULES_FOOTER) {
+                if (network.rules.isNotEmpty()) CardSection("Who may message bots here", network.rulesFooter) {
                     for (rule in network.rules) row { RuleRow(network, rule) }
                 }
             }
@@ -60,8 +60,6 @@ import com.kyant.shapes.Capsule
         }
     }
 }
-
-private const val RULES_FOOTER = "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
 
 /** One rule, read-only: rules are changed on the computer. */
 @Composable private fun RuleRow(network: NetworkInfo, rule: NetworkRule) {

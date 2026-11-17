@@ -177,7 +177,8 @@ export interface AccountState {
 }
 
 export type SpeechEvent =
-  | { type: 'partial' | 'final'; text: string }
+  /** `ends`: the recognizer marked the end of what was said, without a final result (it starts over after a pause). */
+  | { type: 'partial' | 'final'; text: string; ends?: boolean }
   | { type: 'level'; value: number }
   | { type: 'started' }
   | { type: 'stopped' }

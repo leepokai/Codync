@@ -39,6 +39,21 @@ private let work = #"{"id":"network-1a2b","name":"work","computer":"desk","role"
     ])
     let only = NetworkView.Rule(fromComputer: "*", fromAgent: "lead", toAgent: "*", access: .deny)
     #expect(network.text(of: only) == "Deny: lead on any computer → any bot here", "never wider than it is")
+    // The ceilings read as what they are.
+    let level = { (access: NetworkView.Rule.Access) in
+        network.text(of: NetworkView.Rule(fromComputer: "*", fromAgent: "*", toAgent: "*", access: access))
+    }
+    #expect(level(.auto) == "Auto: any bot on any computer → any bot here")
+    #expect(level(.ask) == "Ask: any bot on any computer → any bot here")
+    let ask = try JSONDecoder().decode(NetworkView.Rule.self, from: Data(#"{"fromComputer":"*","fromAgent":"*","toAgent":"*","access":"ask"}"#.utf8))
+    #expect(ask.access == .ask)
+}
+
+@Test func theRulesFooterSaysWhatAComputerNoRuleMatchesGets() throws {
+    let network = { (json: String) in try JSONDecoder().decode(NetworkView.Network.self, from: Data(json.utf8)) }
+    #expect(try network(#"{"id":"n","name":"home","defaultAccess":"auto"}"#).rulesFooter.contains("gets Auto"))
+    // A host before the default sends none, and lets such a computer in.
+    #expect(try network(#"{"id":"n","name":"home"}"#).rulesFooter.contains("every computer in the network may message"))
 }
 
 @Test func botsSayWhetherTheNetworkAndCloudAssistantsReachThem() throws {

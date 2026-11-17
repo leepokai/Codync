@@ -8,12 +8,12 @@ const agent = join(resolve(__dirname, '../../..'), 'host/tests/fixtures/instruct
 
 type Bot = { id: string; compaction: unknown }
 
-/** The bot's Summarize long chats row, in the Agent card on the Details tab of the details beside its chat. */
+/** The bot's Summarize long chats row, in the Agent card on the Settings tab of the details beside its chat. */
 async function summarizeRow(page: Page, name: string) {
   await page.locator('.roster-row', { hasText: name }).click()
   const details = page.locator('.details-panel')
   if (!(await details.isVisible())) await page.getByRole('button', { name: `${name}, view details` }).click()
-  await details.getByRole('tab', { name: 'Details' }).click()
+  await details.getByRole('tab', { name: 'Settings' }).click()
   return details.locator('.value-row', { hasText: 'Summarize long chats' })
 }
 
@@ -43,10 +43,10 @@ test('before its first reply a Claude Code bot offers only the three choices', a
     await expect(pill).toHaveText('Auto (default)')
     await expect.poll(() => stored(page, botId!)).toBe('off')
 
-    // It moved off the Settings tab.
+    // Settings holds how the bot is set up; Details, what it does.
     const details = page.locator('.details-panel')
-    await details.getByRole('tab', { name: 'Settings' }).click()
     await expect(details.locator('.value-row', { hasText: 'Workspace' })).toBeVisible()
+    await details.getByRole('tab', { name: 'Details' }).click()
     await expect(row).toHaveCount(0)
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})

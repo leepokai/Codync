@@ -36,6 +36,7 @@ the change.
 | `remote-access` | Relay, direct routes, pairing, accounts, reverse proxy, SSH computers | [remote protocol](../reference/remote-relay.md), [accounts and SSH](accounts-and-ssh.md) |
 | `codync-cloud` | Cloud computers on the user's own Boat or InstaBox account: keys and what Codync does with them, create, sleep and wake, rename, snapshots, delete | [Codync Cloud](../plans/codync-cloud.md), [cloud computer testing](cloud-computer-testing.md), `cloud/src/cloud-credentials.ts` |
 | `linux-servers` | Headless install, reaching it, firewall, approvals | [Linux servers](linux-servers.md) |
+| `windows-antivirus` | Security software stopping the Windows host or removing its startup entry: signs, what Codync installs and where, what to allow, the firewall prompt | `host/src/service/windows.rs`, `apps/desktop/electron-builder.yml`, [Windows testing](windows-testing.md) |
 | `updates` | App and host updates, version mismatch, uninstall | [updates](updates.md), [compatibility](../reference/compatibility.md) |
 | `privacy` | What stays on the computer, what Codync's services see, analytics | [analytics](../features/analytics.md), [remote protocol](../reference/remote-relay.md); keep it consistent with the policy page `web/app/privacy/page.tsx` |
 

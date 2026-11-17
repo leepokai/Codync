@@ -51,6 +51,7 @@ with tempfile.TemporaryDirectory() as tmp:
 # The App Store rejects emoji: v2.19.2's ❤️ and 🎉 failed the submission after 2.19.1 was pulled back.
 # A bullet that repeats another once they're gone is dropped.
 assert asc.app_store_text("- Bots react with a ❤️ or a 🎉") == "- Bots react with a  or a"
+assert asc.app_store_text("- 選一個會填入 `/<指令>`; Settings > Workspace") == "- 選一個會填入 `/指令`; Settings > Workspace"
 assert asc.app_store_text("- Routines use one form\n- Routines use one form 🚀\n\n- Next") == \
     "- Routines use one form\n\n- Next"
 print("ok")

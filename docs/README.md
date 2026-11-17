@@ -16,16 +16,19 @@ Source review, a passing build, local integration tests and production acceptanc
 | Change an iPhone or desktop screen or button | [UI conventions](design/ui-conventions.md) |
 | Change the composer | [Composer behavior and checks](guides/composer.md) |
 | Ship app and host updates | [Updates](guides/updates.md), [client and host compatibility](reference/compatibility.md) |
+| Add, rotate or remove a key or secret | [Secrets](reference/secrets.md) |
 | Plan and build Android | [Android plan](plans/android-app.md), [Android status](../apps/android/README.md) |
-| Test a phone over Cloudflare instead of LAN | [Cloudflare testing](guides/cloudflare-testing.md) |
+| Test a phone over Cloudflare instead of LAN, or a `cloud/` change on a local Worker | [Cloudflare testing](guides/cloudflare-testing.md) |
+| Test cloud computers (Codync Cloud), isolated per worktree or on the persistent Dev | [Cloud computer testing](guides/cloud-computer-testing.md) |
 | Configure dev/main or deploy the services | [Environments and deployment](guides/environments-and-deployment.md) |
 | Run the host on a Linux server or cloud VM | [Linux servers](guides/linux-servers.md) |
 | Reproduce or check something on Windows (UTM VM) | [Windows testing](guides/windows-testing.md) |
 | Set up accounts, approvals or desktop SSH | [Accounts and SSH](guides/accounts-and-ssh.md) |
 | Check connectors against live services | [Connector verification](guides/connector-verification.md) |
+| Change what bots on other computers may do here (codync-network rules) | [codync-network](features/codync-network.md#ceilings-auto-and-ask), [network request risks](reference/network-request-risks.md) |
 | Change transport or cryptography | [Remote protocol](reference/remote-relay.md) and [shared vectors](reference/fixtures/README.md) |
 | Review an issue or pull request | [Issue and PR review](guides/issue-pr-review.md) (the `review-issue-pr` workflow) and its [security check](guides/security-check.md) |
-| Patch around an agent adapter's bug, or check whether upstream fixed one | [ACP adapter workarounds](reference/acp-adapter-workarounds.md) |
+| Record or patch around an agent's bug, or check whether upstream fixed one | [Upstream agent bugs](upstream-agents/README.md) (one page per agent) |
 | Look into errors or failed turns users hit | [Usage analytics](features/analytics.md), [iPhone crash tracing](guides/iphone-crash-tracing.md), [investigations](#investigations) |
 
 ## Features
@@ -38,15 +41,21 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Cloud assistants](features/cloud-assistants.md) (ChatGPT, Claude and others message the bots through the Codync connector)
 - [codync-network and cloud assistants: design](design/codync-network.md) (why iroh, connectors and relays, trust, addresses, quiet letters, the connector's choices, next steps)
 - [Context and memory](features/context-and-memory.md)
+- [Usage limits](features/usage-limits.md) (which agents show, how each one is read, and which can't be)
 - [Bot memory and compaction](design/bot-memory.md) (design; storage, gate and dreaming built, compaction to come)
 - [Bot memory research](design/bot-memory-research.md) (files vs. database, embeddings, open-source systems, harness instructions)
 - [Bot workspaces](features/bot-workspaces.md)
 - [Bot import](features/bot-import.md) (agents from a Grok Bot export file become bots)
+- [Login profiles](features/login-profiles.md) (more than one login per agent, by account or API key; each bot picks its own)
 - [Agent fallbacks](features/agent-fallback.md) (the next agent carries a turn on when the bot's own runs out of usage)
 - [Routines](features/routines.md)
+- [Background tasks](features/background-tasks.md) (a bot puts long work in its event box as items, other sessions of itself take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
+- [Follow-ups](features/follow-ups.md) (a bot sets itself one later turn in its chat, to look at something again)
+- [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)
+- [Share to a bot](features/share-to-bot.md) (other apps' share sheets send text, links and files to a bot, on iPhone and Android)
 - [Artifacts and the Library](features/artifacts.md)
 - [Remote screen](features/remote-screen.md) and [computer use](features/computer-use.md)
 - [Computer identity and list ordering](features/computer-order.md)
@@ -54,15 +63,20 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Extensions and agent setup](features/marketplace.md)
 - [Connector setup and credentials](features/connector-credentials.md)
 - [Usage analytics and error tracking](features/analytics.md)
+- [What's new](features/whats-new.md) (an important release's highlights, once after updating to it)
 - [Widgets, Live Activities and onboarding](design/mobile-widgets.md)
 - [Notifications and background Live Activity updates](design/push-and-live-activity.md)
 
 ## Plans
 
+- [Optional sign-in](plans/optional-sign-in.md) (signed-out phones, computers in no account, the relay only within an account; built, the rollout steps remain)
+- [Windows remote screen](plans/windows-remote-screen.md) (a screen helper for Windows; planned)
 - [Android parity and acceptance](plans/android-app.md)
+- [Event box](plans/event-box.md) (a bot's long work as items in a box, taken by a bounded number of its agent sessions; the host and the apps being built, other sources and the rest in its stages)
 - [codync-network and cloud assistants: what's left](plans/codync-network-next.md) (network screens in every app, access rules, Codync's own relays, and the rest, in build order)
 - [Harness memory](plans/harness-memory.md) (the switch that keeps a harness's own memory on; a choice of it instead of Codync's, planned)
 - [Error tracking detail](plans/error-tracking-detail.md) (symbolicated iPhone crashes and sessions, built; consented problem reports, proposed)
+- [Codync Cloud](plans/codync-cloud.md) (a cloud computer Codync runs on the user's own cloud provider account, Boat or InstaBox, bring your own cloud; phase 1 built), its [provider survey](plans/codync-cloud-providers.md), [Boat trial log](plans/codync-cloud-boat-trial.md) and a not-adopted alternative for [updates](plans/codync-cloud-updates.md)
 
 ## Investigations
 

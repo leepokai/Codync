@@ -35,12 +35,52 @@ reason to lock someone out.
 | Update the host | Desktop on macOS and Windows, its own computer: the bundled host is reinstalled (**Update now**). Any computer whose `hello` has `canUpdate` (the Linux desktop's own too): **Update now** calls `installHostUpdate` ([updates](../guides/updates.md#standalone-hosts-on-linux-and-macos)), and the notice reads *Updating Codync on …* until the host comes back newer, or for 10 minutes; then it offers the update again with why. Otherwise: instructions for that computer. The phones also offer it, and any newer release (`hello.latestVersion`), on the Codync row of the computer's card in Computer management; the desktop on SSH computers' cards in Settings > Computers | `^k` → Check for updates |
 | Sync while mismatched | Stopped; `hello` is asked again every 30 s (5 s while an update asked from here runs) and on every reconnect | Continues; sending is blocked |
 
+Update notices name which side needs updating and its minimum version: this app, Codync on the named computer, or a cloud computer updating itself.
+
 Drafts are kept while sending is blocked. A host update restarts the host, so the reconnect
 reads the new `hello` and the notice goes away on its own.
+
+**Codync Cloud computers** never ask the user to update the host: every app sends
+`Codync-App: <platform>/<version>; minHost=<version>` to the cloud, and a cloud computer below an app's `minHost`
+installs exactly that version before the app talks to it ("Your cloud computer is updating…", seconds). The cloud
+also holds emergency floors that answer `426 appUpdateRequired` or `426 hostUpdateRequired`
+([Codync Cloud plan](../plans/codync-cloud.md#cloud-hard-update-雲端強更新-emergencies-only)).
 
 The iPhone and desktop apps also treat **undecodable data from a newer host** as *Update this app*: an event
 that stays undecodable after the one rewind, or a `hello` whose other fields can't be decoded
 (its `version` and `minApp` are still read). From an older or equal host it's only logged.
+
+**The cached conversation survives an update.** A client keeps a copy of each computer's bots and newest messages
+(its mirror), and an update of the app or the host never empties what a chat shows:
+
+- iPhone and desktop keep their event cursor across app and host updates, so a reconnect catches up only on what
+  is new: a catch-up from rev 0 would bring every chat again. Their copy records what it was synced under: a
+  mirror format the app raises when it starts to need a field cached rows may lack, and `hello.schema` (the
+  host's store schema; a host that sends no `schema` is judged by its version). When either changes, they fetch
+  everything again from rev 0 underneath what's shown and, once that catch-up has all arrived (`hello.catchUp`
+  events), keep exactly what the computer sent again; a refetch the link cut short starts over. A bot field a
+  host update adds shows once that bot next changes.
+- Android stores each row as the computer sent it, so a new app or host version keeps the whole conversation: it
+  only reads the bots again. Its event cursor stays where it was: a catch-up from rev 0 brings only each chat's
+  newest entries, and onto the rows held it could leave a gap paging never fills. The one exception is a change of `hello.schema` (the host's store
+  schema), since a migration may rewrite or delete rows in place; a host that sends no `schema` is judged by its
+  version. The conversation is dropped then and the chats are empty until the catch-up fills them: refetching
+  underneath, as the iPhone does, isn't built on Android
+  ([Android parity](../plans/android-app.md#different-from-the-iphone-on-purpose-or-by-platform)).
+
+Apps older than 2.41.0 on a computer in no account lose the relay: `hello.cloud` is null there, which they save, and they have no **Add to account** row. They reach it over Wi-Fi or Tailscale until the computer joins an account some other way, and `hello.joinAccount` stays `false` so they never call `joinAccount`, which takes a certificate now. It raises no floor: a computer in an account is unchanged for them.
+
+Apps older than 2.45.1 would show a voice note (`voiceNote: true`, a sound in `files` and the message in `text`) as its file card only, without the message, so 2.45.1 raises `minApp`.
+
+Apps older than 2.49.0 don't know a bot's box (`work`, `outside`), where its routine runs and other bots' requests now work: the chat's `status` stays idle while one runs, so they show no work and no Stop for it (the chat's Stop leaves the box alone), and a choice card a task raises in the chat still has their **Something else** field, whose text goes to the chat as a message and never answers the card. So 2.49.0 raises `minApp`.
+
+Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`, `work[].talk` and
+`work[].folder`, and the user's own entries in a task's transcript. An app from before it shows the transcript to
+read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
+host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
+
+Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
+chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 
 ## Changing what crosses the wire
 
@@ -141,6 +181,8 @@ Update this table in the release that changes a floor, with the reason.
 
 | Release | Host `minApp` | Client `minHost` | Why |
 |---|---|---|---|
+| 2.49.0 | 2.49.0 | 2.26.0 (unchanged) | Routine runs and other bots' requests work as items in the bot's box, away from its chat: the chat's `status` no longer says they run and its Stop no longer stops them, and a task's choice card in the chat isn't answered by a typed message. Older apps show a running routine as an idle bot with nothing to stop, and their **Something else** answer to a task's card becomes an unrelated message. |
+| 2.45.1 | 2.45.1 | 2.26.0 (unchanged) | A bot's voice note is one message: the player and, in `text`, what the bot wrote. Older apps show a message with `files` as the file card only and never its `text`, so they would drop the message. |
 | 2.36.0 | 2.36.0 | 2.26.0 (unchanged) | Pairing proves the phone's account with a cloud-signed device certificate; older apps send none, so the host rejects their `pair` with `unsupportedVersion`. |
 | 2.34.0 | 2.34.0 | 2.26.0 (iPhone, Android, desktop) | Custom icons are for bots only: `setIcon` rejects `agent:` targets, so older apps' agent icon editor would fail. |
 | 2.26.0 | 2.21.0 | 2.26.0 (iPhone, Android, desktop) | What a call's voice hears comes from the host as `call` events (replies, approvals, failures, progress); the apps no longer derive it from the chat, so on an older host a call would never hear the bot. |

@@ -21,6 +21,8 @@ pub enum Reason {
     NotStarting,
     /// The agent doesn't have the step's model.
     ModelMissing,
+    /// A fallback step lacks the mode the bot works in and any no freer than it, or won't switch to it.
+    ModeMissing,
 }
 
 impl Reason {
@@ -34,6 +36,7 @@ impl Reason {
             Self::SignedOut => "is signed out",
             Self::NotStarting => "couldn't start",
             Self::ModelMissing => "doesn't have this bot's model",
+            Self::ModeMissing => "doesn't have this bot's mode",
         }
     }
 }
@@ -62,6 +65,7 @@ pub fn of(error: &anyhow::Error) -> Option<Reason> {
             return Some(match f.kind {
                 FailureKind::NotSetUp | FailureKind::Timeout | FailureKind::Exited => Reason::NotStarting,
                 FailureKind::NoModel => Reason::ModelMissing,
+                FailureKind::ModeMissing => Reason::ModeMissing,
             });
         }
         if let Some(r) = cause.downcast_ref::<RpcError>() {
@@ -133,6 +137,8 @@ mod tests {
         assert_eq!(of(&gone.context("prompting")), Some(Reason::NotStarting));
         let no_model = Failure::error(FailureKind::NoModel, "Couldn't select model gpt-5.5: not supported");
         assert_eq!(of(&no_model), Some(Reason::ModelMissing));
+        let no_mode = Failure::error(FailureKind::ModeMissing, "OpenCode doesn't have bypassPermissions");
+        assert_eq!(of(&no_mode), Some(Reason::ModeMissing));
     }
 
     #[test]

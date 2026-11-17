@@ -91,15 +91,16 @@ import kotlinx.serialization.json.decodeFromJsonElement
             }
             if (pending) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (working) Spinner()
-                PrimaryButton(when (request.kind) { "agent" -> "Sign in"; "login" -> "Save"; else -> "Connect" },
+                PrimaryButton(tr(when (request.kind) { "agent" -> "Sign in"; "login" -> "Save"; else -> "Connect" }),
                     enabled = !working && request.canConnect && state.actualConnection is com.codync.android.core.LinkState.Ready &&
                         (request.kind !in listOf("secret", "login") || value.isNotEmpty()), action = ::connect)
             } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (request.status == "ready") Symbol("checkmark", size = 14.dp, tint = Palette.secondary)
-                Text(if (request.status != "ready") "Cancelled" else when (request.kind) { "agent" -> "Signed in"; "login" -> "Saved"; else -> "Connected" },
+                Text(tr(if (request.status != "ready") "Cancelled" else when (request.kind) { "agent" -> "Signed in"; "login" -> "Saved"; else -> "Connected" }),
                     style = Type.subheadline, color = Palette.secondary)
             }
         }
+        TaskLine(entry)
         if (pending && request.kind == "login") {
             Box(Modifier.pill(Palette.bubbleAgent)) { PlainInput(username, { username = it }, "Username or email") }
             Box(Modifier.pill(Palette.bubbleAgent)) { PlainInput(value, { value = it }, "Password or op:// reference", secret = true) }
@@ -111,7 +112,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
         }
         error?.let { Text(it, style = Type.footnote, color = Palette.danger) }
     }
-    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = true) }
+    CodyncSheet(agent, { agent = null }) { AgentSheet(it, state, store, recheck = request.loginProfile == null, openLoginProfile = request.loginProfile) }
 }
 
 /** The agent, website or service the request is for. */

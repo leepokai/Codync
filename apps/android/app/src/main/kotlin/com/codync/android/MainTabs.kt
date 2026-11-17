@@ -59,7 +59,8 @@ internal enum class AppTab { Bots, State, Settings }
             enter = fadeIn(Motion.fade()) + slideInVertically(Motion.layoutOffset) { it }, exit = fadeOut(Motion.fade()) + slideOutVertically(Motion.layoutOffset) { it }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (ticket in tickets) key(ticket.computerId) {
-                    AccessBanner(ticket, app.cloudComputers.firstOrNull { it.computerId == ticket.computerId }?.name ?: "Your computer") {
+                    AccessBanner(ticket, app.cloudComputers.firstOrNull { it.computerId == ticket.computerId }?.name ?: "Your computer",
+                        cloud = app.cloudOf(ticket.computerId) != null) {
                         accounts.cancelAccess(ticket.computerId)
                     }
                 }

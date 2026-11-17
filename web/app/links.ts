@@ -16,13 +16,15 @@ export const APP_STORE = "https://apps.apple.com/app/codync/id6760984418";
 export const ANDROID_TEST = "https://docs.google.com/forms/d/e/1FAIpQLScvtCO7edjgFHKozWbHQ-9dDIJturifAA8znvhLVfCtRzu8cg/viewform";
 export const GITHUB = "https://github.com/leepokai/Codync";
 export const DISCORD = "https://discord.gg/KBAX3Qznxh";
-export const WECHAT = "/wechat";
-export const WECHAT_QR = "/wechat-group.png";
+// The Telegram group for users in China; vercel.json sends the old /wechat page here.
+export const CHINA_COMMUNITY = "https://t.me/+e5egWrp5z4BlOWNl";
 // Donation page.
 export const KO_FI = "https://ko-fi.com/leepokai";
 export const EMAIL = "kevin@codync.dev";
 // YouTube id of the launch film.
 export const FILM = "QAhyZWpV70U";
+// The homepage card for Codync Cloud, which the hero's "New" link opens.
+export const CLOUD_SECTION = "/#cloud";
 export const PRODUCT_HUNT = "https://www.producthunt.com/products/codync?launch=codync-2";
 // codync-mem, the memory crate: its read-only mirror, crates.io and docs.rs pages.
 export const CODYNC_MEM_REPO = "https://github.com/leepokai/codync-mem";

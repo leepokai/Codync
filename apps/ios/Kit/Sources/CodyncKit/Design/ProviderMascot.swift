@@ -27,17 +27,20 @@ public extension UsageProvider {
     /// Claude keeps its orange; everyone else is ink, like the rest of the app.
     var tint: Color { id == "claude" ? Color(hex: 0xD97757) : Palette.accent }
 
-    /// ACP registry id of the provider's agent, for its logo (`AgentIcon`).
-    /// Claude and Codex run through ACP adapters (`claude-acp`, `codex-acp`); others by their own id.
-    var registry: String { ["claude", "codex"].contains(id) ? "\(id)-acp" : id }
+    /// The name of this agent's logo in this bundle, when it has one. A host or a saved widget that
+    /// doesn't name the registry id: Claude and Codex run through ACP adapters, others go by their own id.
+    var logoAsset: String? {
+        let name = "agent-\(registry ?? (["claude", "codex"].contains(id) ? "\(id)-acp" : id))"
+        return UIImage(named: name, in: .module, compatibleWith: nil) == nil ? nil : name
+    }
 
     /// The character that stands for this provider.
     var mascotShape: String { id == "codex" ? "hex" : "blob" }
 
-    /// Plan windows. A note (today's tokens, a dollar balance) is not a limit.
-    var limits: [UsageWindow] { windows.filter { $0.text == nil } }
+    /// Plan windows of the login closest to a limit.
+    var limits: [UsageWindow] { tightestLogin.limits }
 
-    var tightest: UsageWindow? { limits.max { $0.percent < $1.percent } }
+    var tightest: UsageWindow? { tightestLogin.tightest }
 }
 
 public extension UsageWindow {
@@ -78,8 +81,8 @@ public struct ProviderMascot: View {
     public var body: some View {
         let full = (provider.tightest?.percent ?? 0) >= 90
         Group {
-            if style == .original {
-                Image("agent-\(provider.registry)", bundle: .module)
+            if style == .original, let logo = provider.logoAsset {
+                Image(logo, bundle: .module)
                     .resizable().scaledToFit().padding(size * 0.08)
                     .foregroundStyle(provider.tint)
             } else {

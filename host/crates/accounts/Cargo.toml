@@ -1,0 +1,36 @@
+[package]
+name = "codync-accounts"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "More than one login per coding agent on a computer: a folder per account, what it shares with the user's setup, and who it signs in"
+license = "Apache-2.0"
+repository = "https://github.com/leepokai/Codync"
+readme = "README.md"
+keywords = ["agent", "accounts", "claude", "codex", "acp"]
+categories = ["development-tools"]
+
+[dependencies]
+base64 = "0.23.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+# Written out instead of inherited from the Codync workspace, so the crate also builds on its own.
+[lints.rust]
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"

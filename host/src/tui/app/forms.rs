@@ -1,11 +1,12 @@
 //! The bot settings form.
 
+use codync_mem::compaction::Threshold;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 use super::{
-    After, App, COLORS, Editor, FIELDS, Field, Form, GroupField, GroupForm, Overlay, SHAPES, Toggle, cycle,
+    After, App, COLORS, Editor, Field, Form, GroupField, GroupForm, MAX_AGENTS, Overlay, SHAPES, Toggle, cycle,
     merge_toggles,
 };
 use crate::tui::manage::Page;
@@ -38,12 +39,15 @@ impl App {
             name: Editor::with(&b.name),
             instructions: Editor::with(&b.description),
             backend: b.backend.clone(),
+            login_profile: b.login_profile.clone(),
             model: Editor::with(b.model.as_deref().unwrap_or_default()),
             model_options: (b.model.clone().unwrap_or_default(), b.model_options.clone()),
             fast: b.fast_mode,
             fallbacks: b.fallbacks.clone(),
             self_fallbacks: b.self_fallbacks,
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
+            max_agents: b.max_agents,
+            task_worktrees: b.task_worktrees.filter(|_| b.git_repo),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -51,6 +55,9 @@ impl App {
             manage_team: b.manage_team,
             offered_to_network: b.offered_to_network,
             reachable_by_assistants: b.reachable_by_assistants,
+            compaction: b.compaction,
+            compaction_sizes: b.compaction_sizes.clone(),
+            compaction_typed: String::new(),
             color: COLORS.iter().position(|c| *c == b.color).unwrap_or(7),
             shape: SHAPES.iter().position(|s| *s == b.shape).unwrap_or(0),
             connectors: b.connectors.iter().map(|id| Toggle { id: id.clone(), name: id.clone(), on: true }).collect(),
@@ -96,11 +103,11 @@ impl App {
                 self.save_form(&mut f);
             }
             KeyCode::Tab | KeyCode::Down => {
-                f.field = (f.field + 1) % FIELDS.len();
+                f.field = self.step_field(&f, 1);
                 f.sub = 0;
             }
             KeyCode::BackTab | KeyCode::Up => {
-                f.field = (f.field + FIELDS.len() - 1) % FIELDS.len();
+                f.field = self.step_field(&f, -1);
                 f.sub = 0;
             }
             KeyCode::Enter
@@ -116,11 +123,16 @@ impl App {
                 self.open_folder(&start);
                 return None;
             }
-            KeyCode::Enter if field == Field::Agent => {
+            // A login profile is added and signed in on the agent's own sheet.
+            KeyCode::Enter if matches!(field, Field::Agent | Field::LoginProfile) => {
                 let backend = f.backend.clone();
                 self.overlays.push(Overlay::Form(f));
                 self.open_agent(&backend, false);
                 return None;
+            }
+            // The bot's own agent again, while it runs on a fallback.
+            KeyCode::Char('b') if field == Field::Agent && self.on_fallback(&f.bot_id) => {
+                self.call("switchBack", json!({"botId": f.bot_id}), After::Nothing);
             }
             KeyCode::Char('i') if field == Field::Skills => {
                 let id = f.skills.get(f.sub).map(|t| t.id.clone());
@@ -138,14 +150,20 @@ impl App {
                     f.model = Editor::with(&m);
                 }
             }
+            KeyCode::Char(c) if field == Field::Compaction && c.is_ascii_digit() => f.type_compaction(Some(c)),
+            KeyCode::Backspace if field == Field::Compaction => f.type_compaction(None),
             KeyCode::Enter => self.save_form(&mut f),
             KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')
                 if matches!(
                     field,
                     Field::Agent
+                        | Field::LoginProfile
                         | Field::Fast
                         | Field::SelfFallbacks
+                        | Field::MaxAgents
+                        | Field::TaskWorktrees
                         | Field::Approvals
+                        | Field::Compaction
                         | Field::Notify
                         | Field::Computer
                         | Field::Team
@@ -166,19 +184,27 @@ impl App {
                         if !ids.is_empty() {
                             let i = ids.iter().position(|x| *x == f.backend).unwrap_or(0);
                             f.backend.clone_from(&ids[cycle(i, d, ids.len())]);
-                            // Another agent's model ids mean nothing here, and it can't be its own fallback.
+                            // Another agent's model ids mean nothing here, and a login is in the chain once.
                             f.model.clear();
                             f.model_options = Default::default();
+                            f.login_profile = None;
                             let own = f.backend.clone();
-                            f.fallbacks.retain(|x| x.backend != own);
+                            f.fallbacks.retain(|x| x.backend != own || x.login_profile.is_some());
                             // Nor its mode ids: a picked mode becomes the new agent's Auto mode (or, without one, asking).
                             f.mode = f.mode.take().map(|_| crate::agent::modes::AUTO.to_owned());
                             self.want_models(&f.backend);
                         }
                     }
+                    Field::LoginProfile if !space => self.cycle_login_profile(&mut f, d),
                     Field::Fast => f.fast = !f.fast,
                     Field::SelfFallbacks => f.self_fallbacks = !f.self_fallbacks,
+                    Field::TaskWorktrees => f.task_worktrees = f.task_worktrees.map(|on| !on),
+                    Field::MaxAgents if !space => {
+                        let step = |n: u8| if d < 0 { n.saturating_sub(1) } else { n + 1 };
+                        f.max_agents = f.max_agents.map(|n| step(n).clamp(1, MAX_AGENTS));
+                    }
                     Field::Approvals => self.cycle_approval(&mut f, d),
+                    Field::Compaction => f.cycle_compaction(d),
                     Field::Notify => f.notify = !f.notify,
                     Field::Computer => f.computer = !f.computer,
                     Field::Team => f.manage_team = f.manage_team.map(|on| !on),
@@ -250,6 +276,11 @@ impl App {
         self.call("updateBot", body, After::Saved);
     }
 
+    /// Whether bot `id` runs on a fallback now.
+    pub(in crate::tui) fn on_fallback(&self, id: &str) -> bool {
+        self.bots.get(id).is_some_and(|b| b.agent_step.is_some())
+    }
+
     /// Agents a bot can switch to: runnable ones on this computer first.
     pub(super) fn agent_choices(&self) -> Vec<String> {
         let mut v: Vec<&Value> = self
@@ -270,7 +301,10 @@ impl Form {
             "name": self.name.text.trim(),
             "description": self.instructions.text.trim(),
             "backend": self.backend,
+            "loginProfile": self.login_profile,
             "cwd": self.cwd,
+            "maxAgents": self.max_agents,
+            "taskWorktrees": self.task_worktrees,
             "permission": if self.auto { "auto" } else { "ask" },
             "mode": self.mode,
             "model": if model.is_empty() { Value::Null } else { model.into() },
@@ -283,11 +317,52 @@ impl Form {
             "manageTeam": self.manage_team.unwrap_or_default(),
             "offeredToNetwork": self.offered_to_network.unwrap_or(true),
             "reachableByAssistants": self.reachable_by_assistants.unwrap_or(true),
+            "compaction": self.compaction.map(|at| match (at, &self.compaction_sizes) {
+                (Threshold::Tokens(n), Some(sizes)) => Threshold::Tokens(sizes.fit(n)),
+                _ => at,
+            }),
             "avatarColor": COLORS[self.color],
             "avatarShape": SHAPES[self.shape],
             "connectors": self.connectors.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
             "skills": self.skills.iter().filter(|t| t.on).map(|t| t.id.clone()).collect::<Vec<_>>(),
         })
+    }
+
+    /// When Codync summarizes the chat, in the order ← → steps through: the three choices, then the sizes a menu lists.
+    pub fn compaction_choices(&self) -> Vec<Threshold> {
+        let presets = self.compaction_sizes.iter().flat_map(|s| s.presets.iter().map(|&n| Threshold::Tokens(n)));
+        [Threshold::Off, Threshold::Early, Threshold::NearLimit].into_iter().chain(presets).collect()
+    }
+
+    /// A digit typed into the size (thousands of tokens), or Backspace (`None`); held to the window's sizes on save.
+    fn type_compaction(&mut self, digit: Option<char>) {
+        if self.compaction.is_none() || self.compaction_sizes.is_none() {
+            return;
+        }
+        match digit {
+            Some(c) if self.compaction_typed.len() < 4 => self.compaction_typed.push(c),
+            Some(_) => return,
+            None => {
+                self.compaction_typed.pop();
+            }
+        }
+        if let Ok(k) = self.compaction_typed.parse::<u64>() {
+            self.compaction = Some(Threshold::Tokens(k * 1000));
+        }
+    }
+
+    fn cycle_compaction(&mut self, d: isize) {
+        let Some(now) = self.compaction else { return };
+        self.compaction_typed.clear();
+        let mut choices = self.compaction_choices();
+        // A size of one's own steps from its place among the presets.
+        if let Threshold::Tokens(n) = now
+            && !choices.contains(&now)
+        {
+            choices.insert(choices.partition_point(|c| !matches!(c, Threshold::Tokens(p) if *p > n)), now);
+        }
+        let i = choices.iter().position(|c| *c == now).unwrap_or(0);
+        self.compaction = Some(choices[cycle(i, d, choices.len())]);
     }
 
     /// Whether anything changed since the form opened.
@@ -308,7 +383,7 @@ impl Form {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AgentModel, Bot, test_app};
+    use super::super::{AgentModel, Bot, FIELDS, test_app};
     use super::*;
 
     #[tokio::test]
@@ -358,6 +433,143 @@ mod tests {
         assert_eq!(f.changes(), json!({}));
         f.notify = false;
         assert_eq!(f.changes(), json!({"notify": false}), "a model changed elsewhere meanwhile stays");
+    }
+
+    /// Feeds `keys` to the editor, which must stay open.
+    fn press(app: &mut App, mut f: Box<Form>, keys: impl IntoIterator<Item = KeyCode>) -> Box<Form> {
+        for key in keys {
+            let Some(Overlay::Form(next)) = app.form_key(f, KeyEvent::from(key)) else { panic!("the editor stays") };
+            f = next;
+        }
+        f
+    }
+
+    /// The editor of a Claude Code bot on `compaction`, at the compaction field, in a window of up to 260K.
+    fn compaction_editor(app: &mut App, compaction: &Value) -> Box<Form> {
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": compaction,
+            "compactionTokens": {"min": 50_000, "max": 260_000, "step": 10_000, "presets": [100_000, 200_000]}});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        f
+    }
+
+    #[tokio::test]
+    async fn the_compaction_threshold_steps_through_choices_then_sizes() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": "early"}), "auto first, then Codync's own");
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"compaction": 100_000}));
+        let f = press(&mut app, f, [KeyCode::Left, KeyCode::Left, KeyCode::Left]);
+        assert_eq!(f.changes(), json!({}));
+        assert_eq!(f.compaction_choices().len(), 5, "auto, early, near the limit, 100K, 200K");
+
+        for (key, next) in [(KeyCode::Right, 200_000), (KeyCode::Left, 100_000)] {
+            let f = compaction_editor(&mut app, &json!(150_000));
+            let f = press(&mut app, f, [key]);
+            assert_eq!(f.changes(), json!({"compaction": next}), "a size of one's own steps from its place");
+        }
+
+        let other = json!({"id": "g", "name": "G", "backend": "gemini", "compaction": null});
+        app.bots.insert("g".into(), Bot::parse(&other).expect("a bot"));
+        app.selected = Some("g".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+        let f = press(&mut app, f, [KeyCode::Right]);
+        assert_eq!(f.changes(), json!({}), "nothing to choose where Codync doesn't summarize");
+    }
+
+    #[tokio::test]
+    async fn a_typed_size_is_fitted_on_save() {
+        let mut app = test_app();
+        let f = compaction_editor(&mut app, &json!("off"));
+        let f = press(&mut app, f, "35490".chars().map(KeyCode::Char));
+        assert_eq!(f.compaction, Some(Threshold::Tokens(3_549_000)), "as typed, four digits at most");
+        let f = press(&mut app, f, [KeyCode::Backspace]);
+        assert_eq!(f.changes(), json!({"compaction": 260_000}), "held to the largest size the window takes");
+        let f = press(&mut app, f, [KeyCode::Backspace; 3].into_iter().chain("155".chars().map(KeyCode::Char)));
+        assert_eq!(f.changes(), json!({"compaction": 160_000}), "to the nearest 10K");
+    }
+
+    #[tokio::test]
+    async fn agents_at_once_steps_from_one_to_six_on_a_host_that_has_the_box() {
+        let mut app = test_app();
+        let at = FIELDS.iter().position(|x| *x == Field::MaxAgents).expect("an agents field");
+        let bot = json!({"id": "b", "name": "B", "backend": "claude", "maxAgents": 5});
+        app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot"));
+        app.selected = Some("b".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        assert!(app.field_shown(&f, Field::MaxAgents));
+        f.field = at;
+        let f = press(&mut app, f, [KeyCode::Right, KeyCode::Right, KeyCode::Right]);
+        assert_eq!(f.changes(), json!({"maxAgents": 6}), "six at most");
+        let f = press(&mut app, f, [KeyCode::Left; 9]);
+        assert_eq!(f.changes(), json!({"maxAgents": 1}), "one at least");
+
+        // A host from before the box: no field to step to, and nothing sent.
+        let old = json!({"id": "o", "name": "Old", "backend": "claude"});
+        app.bots.insert("o".into(), Bot::parse(&old).expect("a bot"));
+        app.selected = Some("o".into());
+        app.edit_bot();
+        let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+        f.field = at - 1;
+        let f = press(&mut app, f, [KeyCode::Tab]);
+        assert_eq!(f.field, at + 2, "past the fields it doesn't have: this one and Worktree per agent");
+        let f = press(&mut app, f, [KeyCode::BackTab]);
+        assert_eq!((f.field, f.changes()), (at - 1, json!({})));
+    }
+
+    #[tokio::test]
+    async fn worktree_per_agent_shows_only_for_a_git_repository_on_a_host_that_has_it() {
+        let mut app = test_app();
+        let at = FIELDS.iter().position(|x| *x == Field::TaskWorktrees).expect("a worktrees field");
+        let mut editor = |id: &str, more: Value| {
+            let mut bot = json!({"id": id, "name": "B", "backend": "claude", "maxAgents": 3});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            app.bots.insert(id.into(), Bot::parse(&bot).expect("a bot"));
+            app.selected = Some(id.into());
+            app.edit_bot();
+            let Some(Overlay::Form(mut f)) = app.overlays.pop() else { panic!("the editor opens") };
+            let shown = app.field_shown(&f, Field::TaskWorktrees);
+            f.field = at;
+            (shown, press(&mut app, f, [KeyCode::Right]).changes())
+        };
+        assert_eq!(
+            editor("a", json!({"gitRepo": true, "taskWorktrees": true})),
+            (true, json!({"taskWorktrees": false}))
+        );
+        assert_eq!(
+            editor("b", json!({"gitRepo": true, "taskWorktrees": false})),
+            (true, json!({"taskWorktrees": true}))
+        );
+        assert_eq!(editor("c", json!({"gitRepo": false, "taskWorktrees": true})), (false, json!({})), "no repository");
+        assert_eq!(editor("d", json!({"gitRepo": true})), (false, json!({})), "a host before worktrees");
+    }
+
+    #[test]
+    fn the_line_under_the_folder_says_which_of_the_three_it_is() {
+        let line = |more: Value| {
+            let mut bot = json!({"id": "a", "name": "B", "backend": "claude"});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            Bot::parse(&bot).expect("a bot").git_line()
+        };
+        let on = json!({"taskWorktrees": true, "gitRepo": true});
+        assert_eq!(line(on), Some("Git repository"), "a host that doesn't say has git");
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": false, "gitInstalled": true})),
+            Some("Not a git repository")
+        );
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": true, "gitInstalled": false})),
+            Some("Git isn't installed on this computer")
+        );
+        assert_eq!(line(json!({"gitRepo": true})), None, "a host before worktrees");
     }
 
     #[tokio::test]

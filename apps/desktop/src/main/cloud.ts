@@ -2,6 +2,7 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app, ipcMain, safeStorage } from 'electron'
+import { appHeader } from '../shared/compat'
 import type { AccountService } from './account'
 
 /**
@@ -11,7 +12,7 @@ import type { AccountService } from './account'
 
 const b64url = (b: Buffer) => b.toString('base64url')
 
-interface Identity {
+export interface Identity {
   key: KeyObject
   publicKey: string
 }
@@ -20,7 +21,8 @@ const identities = new Map<string, Identity>()
 
 const keyPath = (userId: string) => join(app.getPath('userData'), `device-key-${createHash('sha256').update(userId).digest('hex').slice(0, 16)}.bin`)
 
-async function identity(userId: string): Promise<Identity> {
+/** This install's device key for `userId`'s account, made on first use. */
+export async function identity(userId: string): Promise<Identity> {
   const cached = identities.get(userId)
   if (cached) return cached
   const path = keyPath(userId)
@@ -54,7 +56,7 @@ function publicFromSeed(seed: Buffer) {
 }
 
 /** `Codync-Sig: v=1,kid,ts,nonce,sig` over method, authority, path and the body's hash. */
-function signatureHeader(id: Identity, method: string, url: URL, body: Buffer) {
+export function signatureHeader(id: Identity, method: string, url: URL, body: Buffer) {
   const ts = Date.now()
   const nonce = b64url(randomBytes(16))
   const input = ['codync-sig-v1', method.toUpperCase(), url.host.toLowerCase(), `${url.pathname || '/'}${url.search}`, String(ts), nonce, b64url(createHash('sha256').update(body).digest())].join('\n')
@@ -68,13 +70,13 @@ export interface CloudFailure {
   message: string | null
 }
 
-type CloudResult = { ok: true; value: Record<string, unknown> } | { ok: false; error: CloudFailure }
+export type CloudResult = { ok: true; value: Record<string, unknown> } | { ok: false; error: CloudFailure }
 
 /** One `/v1` call with `token` (a session JWT), signed with `signer`'s device key when given. */
 async function cloudCall(base: string, token: string, method: string, path: string, body: unknown, signer: string | null, timeoutMs = 20_000): Promise<CloudResult> {
   const url = new URL(path.replace(/^\//, ''), `${base}/`)
   const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body))
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'Codync-App': appHeader(app.getVersion()) }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (signer) headers['Codync-Sig'] = signatureHeader(await identity(signer), method, url, payload)
   try {
@@ -110,17 +112,20 @@ export async function dropDeviceKey(userId: string) {
   await fs.rm(keyPath(userId), { force: true }).catch(() => {})
 }
 
+/** One `/v1` request as the signed-in user; `signed` adds this device's `Codync-Sig`. */
+export async function cloudRequest(account: AccountService, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> {
+  const base = account.state.cloudURL
+  const user = account.state.user
+  if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
+  let token: string
+  try {
+    token = await account.sessionToken()
+  } catch (error) {
+    return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
+  }
+  return cloudCall(base, token, method, path, body, signed ? user.userId : null)
+}
+
 export function registerCloud(account: AccountService) {
-  ipcMain.handle('cloud:request', async (_e, method: string, path: string, body: unknown, signed: boolean): Promise<CloudResult> => {
-    const base = account.state.cloudURL
-    const user = account.state.user
-    if (!base || !user) return { ok: false, error: { status: 0, code: 'signedOut', message: 'Sign in again to reach your account.' } }
-    let token: string
-    try {
-      token = await account.sessionToken()
-    } catch (error) {
-      return { ok: false, error: { status: 401, code: 'signedOut', message: error instanceof Error ? error.message : 'Sign in again.' } }
-    }
-    return cloudCall(base, token, method, path, body, signed ? user.userId : null)
-  })
+  ipcMain.handle('cloud:request', (_e, method: string, path: string, body: unknown, signed: boolean) => cloudRequest(account, method, path, body, signed))
 }

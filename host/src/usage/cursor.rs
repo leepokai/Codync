@@ -2,15 +2,13 @@
 //! Unified plans use the dashboard service's weekly allowance. The website's
 //! usage summary reports only the legacy monthly pools. The token is never logged.
 
-use base64::Engine as _;
-use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use super::Window;
+use super::{Window, iso_ms};
 
 /// Whether the dashboard last named a unified plan, so a failed poll keeps its weekly reading.
 static LAST_UNIFIED: AtomicBool = AtomicBool::new(false);
@@ -83,10 +81,17 @@ fn cli_auth_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("cursor/auth.json"))
 }
 
+fn app_db_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|dir| dir.join("Cursor/User/globalStorage/state.vscdb"))
+}
+
 fn read_token() -> Option<String> {
-    let cli_path = cli_auth_path();
-    let app_path = dirs::config_dir().map(|dir| dir.join("Cursor/User/globalStorage/state.vscdb"));
-    read_saved_token(cli_path.as_deref(), app_path.as_deref())
+    read_saved_token(cli_auth_path().as_deref(), app_db_path().as_deref())
+}
+
+/// The app or CLI left a login file here. Whether it's still valid only a reading tells.
+pub(super) fn login_saved() -> bool {
+    [cli_auth_path(), app_db_path()].into_iter().flatten().any(|path| path.is_file())
 }
 
 fn read_saved_token(cli_path: Option<&Path>, app_path: Option<&Path>) -> Option<String> {
@@ -125,10 +130,8 @@ fn token_text(raw: &str) -> String {
 }
 
 fn jwt_sub(token: &str) -> Option<String> {
-    let payload = token.split('.').nth(1)?;
-    let bytes = URL_SAFE_NO_PAD.decode(payload).or_else(|_| URL_SAFE.decode(payload)).ok()?;
-    let value: Value = serde_json::from_slice(&bytes).ok()?;
-    let sub = value["sub"].as_str().filter(|s| !s.is_empty())?;
+    let claims = codync_accounts::jwt_claims(token)?;
+    let sub = claims["sub"].as_str().filter(|s| !s.is_empty())?;
     Some(sub.to_owned())
 }
 
@@ -184,13 +187,11 @@ fn non_negative(value: Option<f64>) -> Option<f64> {
     value.filter(|n| n.is_finite() && *n >= 0.0).map(|n| n.clamp(0.0, 100.0))
 }
 
-fn iso_ms(text: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(text).ok().map(|t| t.timestamp_millis())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use serde_json::json;
 
     #[test]

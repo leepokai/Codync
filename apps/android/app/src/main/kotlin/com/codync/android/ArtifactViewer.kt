@@ -26,8 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,14 +70,16 @@ internal data class OpenArtifact(val botId: String, val id: String, val title: S
     val newest = artifacts.newest(open.id)
     val online = state.actualConnection is LinkState.Ready
     LaunchedEffect(open.id, newest, online) { store.loadArtifact(bot.id, open.id) }
-    var renaming by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf<Naming?>(null) }
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.Artifact))
     // The artifact crashed its renderer: this view is done; opening the artifact again starts a new one.
     var gone by remember(open.id) { mutableStateOf(false) }
     BackHandler(onBack = close)
     Column(Modifier.fillMaxSize().background(Palette.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
         ScreenHeader({ IconButton("Close artifact", "xmark", action = close) }, {
-            Text(title, Modifier.padding(horizontal = 56.dp).plainButton { renaming = true }, style = Type.body.semibold,
+            Text(title, Modifier.padding(horizontal = 56.dp).plainButton {
+                naming = Naming("Rename artifact", title) { store.renameArtifact(bot.id, open.id, it) }
+            }, style = Type.body.semibold,
                 color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }, { IconButton("Share artifact", "square.and.arrow.up") { store.shareArtifact(bot.id, open.id, title) } })
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -97,7 +97,7 @@ internal data class OpenArtifact(val botId: String, val id: String, val title: S
         val quote = (artifact?.entryId ?: open.entryId)?.let { artifactQuote(it, bot.id, open.id, title) }
         if (quote != null) MessageComposer(bot, state, store, onCall = null, replyTo = quote, about = title, draftKey = artifactDraftKey(bot.id, open.id))
     }
-    RenameArtifactDialog(title.takeIf { renaming }, { renaming = false }) { store.renameArtifact(bot.id, open.id, it) }
+    NameDialog(naming, "Artifact title", { naming = null })
 }
 
 @Composable private fun ArtifactFailure(detail: String?) {
@@ -105,16 +105,4 @@ internal data class OpenArtifact(val botId: String, val id: String, val title: S
         Text(tr("Couldn't open the artifact"), style = Type.headline, color = Palette.text, textAlign = TextAlign.Center)
         if (detail != null) Text(detail, style = Type.subheadline, color = Palette.secondary, textAlign = TextAlign.Center)
     }
-}
-
-/** "Rename artifact" for the artifact titled `current`, shown while it's set. */
-@Composable internal fun RenameArtifactDialog(current: String?, dismiss: () -> Unit, rename: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    // Set when it opens; kept while it fades away.
-    LaunchedEffect(current) { if (current != null) text = current }
-    CodyncDialog("Rename artifact", current != null, dismiss, field = {
-        val focus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { focus.requestFocus() }
-        PlainTextField(text, { text = it }, Modifier.fillMaxWidth().focusRequester(focus).pill(Palette.background), "Artifact title", singleLine = true)
-    }) { listOf(DialogAction("Save") { text.trim().takeIf { it.isNotEmpty() && it != current }?.let(rename) }) }
 }

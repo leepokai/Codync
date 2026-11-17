@@ -3,6 +3,7 @@ import type { CloudStatus, PairingInfo } from '@shared/models'
 import { LoopbackTransport } from '../client/host-client'
 import { useApp } from '../store/context'
 import { PairingCode } from './PairingCode'
+import { trNow } from '../lib/l10n.ts'
 
 /** The pairing window: this computer's code, without a mirror of its bots. */
 export function PairingWindow() {
@@ -18,7 +19,7 @@ export function PairingWindow() {
   }), [])
 
   const requestCode = useCallback(async () => {
-    if (!baseURL || !token) throw new Error("This computer's host isn't connected.")
+    if (!baseURL || !token) throw new Error(trNow("This computer's host isn't connected."))
     const transport = new LoopbackTransport(baseURL, token)
     const [pairing, status, hello] = await Promise.all([
       transport.call('pairing', {}, 20_000) as Promise<PairingInfo>,

@@ -1,0 +1,46 @@
+# The iPhone's rating request: no window after the fourth prompt, StoreKit's about a second after the fifth. Android has
+# no invitation until it is on Google Play (docs/features/ios-review-invitation.md), so nothing runs there. The launch
+# argument seeds the review history with three prompts and no requests (`-<key>` reaches UserDefaults, as hex JSON), so
+# every run starts from the same place. The phone must already be signed in and paired, as for `queue.yaml`, whose bot
+# it borrows:
+#   maestro --device "<simulator udid>" test --include-tags review-invitation \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e STEER_AGENT="$PWD/host/tests/fixtures/steer_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - review-invitation
+onFlowComplete:
+  - runScript:
+      file: queue.js
+      env:
+        CLEANUP: "true"
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runScript: queue.js
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitation.v1": "<7b2270726f6d707473223a332c227265717565737473223a5b5d2c2272657175657374656456657273696f6e73223a5b5d7d>"
+      - tapOn: ${output.bot.name}
+      - tapOn: "Queue a message for.*"
+      - inputText: "fourth"
+      - tapOn: "Send"
+      - assertVisible: "fourth"
+      # Past the invitation's one second: the window would have come by now.
+      - extendedWaitUntil:
+          visible: "Enjoying .*"
+          timeout: 4000
+          optional: true
+      - assertNotVisible: "Enjoying .*"
+      - tapOn: "Queue a message for.*"
+      - inputText: "fifth"
+      - tapOn: "Send"
+      - extendedWaitUntil:
+          visible: "Enjoying .*"
+          timeout: 10000
+      - takeScreenshot: review-invitation
+      - tapOn: "Not Now"
+      - assertNotVisible: "Enjoying .*"

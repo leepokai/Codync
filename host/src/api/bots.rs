@@ -3,6 +3,7 @@
 use super::devices::Caller;
 use super::str_arg;
 use crate::agent::bot::Cmd;
+use crate::chat::tasks::{self, Steer};
 use crate::hub::Hub;
 use crate::store::{EntryKind, Lane};
 use anyhow::{Context, Result, anyhow, bail};
@@ -10,18 +11,59 @@ use serde_json::{Value, json};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
+/// The methods a bot's MCP servers call the host's tools through.
+const BOT_TOOL_CALLS: [&str; 5] = ["routineCall", "memoryCall", "chatCall", "teamCall", "manageCall"];
+
+/// What the user does to an item of a bot's box.
+async fn steer_work(hub: &Arc<Hub>, steer: Steer, b: &Value) -> Result<Value> {
+    let (hub, bot) = (hub.clone(), str_arg(b, "botId")?.to_owned());
+    let item = b["itemId"].as_str().map(str::to_owned);
+    let instead_of = b["insteadOf"].as_str().map(str::to_owned);
+    tokio::task::spawn_blocking(move || {
+        let named = || item.as_deref().ok_or_else(|| anyhow!("itemId required"));
+        match steer {
+            Steer::First => tasks::first(&hub, &bot, named()?),
+            Steer::Now => tasks::cut_in(&hub, &bot, named()?, instead_of.as_deref()),
+            Steer::Drop => tasks::drop_item(&hub, &bot, named()?),
+            Steer::Retry => tasks::retry(&hub, &bot, named()?),
+            // One item, or every one that is working or waiting.
+            Steer::Stop => tasks::stop(&hub, &bot, item.as_deref()),
+            // No method asks for it.
+            Steer::Replace => bail!("only the bot replaces a brief"),
+        }
+    })
+    .await??;
+    Ok(json!({}))
+}
+
 pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+    if let Some(steer) = Steer::of_method(method) {
+        return Ok(ControlFlow::Break(steer_work(hub, steer, &b).await?));
+    }
+    // A turn a network rule holds to a ceiling calls only the host's tools that read or answer the user. `botId`
+    // is whoever's turn calls, a task included. The computer and connector servers are the agent's own tools, which
+    // its mode holds.
+    if BOT_TOOL_CALLS.contains(&method) {
+        hub.ceilings.check_tool(str_arg(&b, "botId")?, str_arg(&b, "name")?)?;
+    }
     Ok(ControlFlow::Break(match method {
         "routineSchedule" => crate::routines::schedule_preview(&b, crate::store::now_ms())?,
         "routines" => hub.routines.list(str_arg(&b, "botId")?),
-        "saveRoutine" => hub.routines.save(hub, str_arg(&b, "botId")?, &b)?,
-        "setRoutineEnabled" => hub.routines.set_enabled(
-            &hub.store,
-            str_arg(&b, "botId")?,
-            str_arg(&b, "id")?,
-            b["enabled"].as_bool().context("enabled is required")?,
-        )?,
-        "deleteRoutine" => hub.routines.remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?,
+        "saveRoutine" => {
+            let saved = hub.routines.save(hub, str_arg(&b, "botId")?, &b)?;
+            tasks::routines_changed(hub, str_arg(&b, "botId")?);
+            saved
+        }
+        "setRoutineEnabled" | "deleteRoutine" => {
+            let (bot, id) = (str_arg(&b, "botId")?, str_arg(&b, "id")?);
+            let answer = if method == "deleteRoutine" {
+                hub.routines.remove(hub, bot, id)?
+            } else {
+                hub.routines.set_enabled(&hub.store, bot, id, b["enabled"].as_bool().context("enabled is required")?)?
+            };
+            tasks::routines_changed(hub, bot);
+            answer
+        }
         "runRoutine" => hub.routines.enqueue(
             &hub.store,
             str_arg(&b, "botId")?,
@@ -37,20 +79,42 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             str_arg(&b, "id")?,
             b["rotate"].as_bool().unwrap_or(false),
         )?,
-        "routineCall" => crate::routines::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"])?,
+        "cancelFollowUp" => hub.routines.cancel_follow_up(
+            hub,
+            str_arg(&b, "botId")?,
+            str_arg(&b, "id")?,
+            crate::routines::Cancelled::User,
+        )?,
+        "routineCall" => {
+            let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            let bot = tasks::acting_as(hub, caller, name)?;
+            let answer = crate::routines::call(hub, &bot, caller, name, &b["arguments"])?;
+            if matches!(name, "save_routine" | "set_routine_enabled" | "delete_routine") {
+                tasks::routines_changed(hub, &bot);
+            }
+            answer
+        }
         "memoryCall" => {
             crate::chat::memory::tool_call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
         }
         "chatCall" => {
             let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
-            if crate::chat::profile::TOOLS.contains(&name) {
+            tasks::refuse_chat_only(hub, bot, name)?;
+            if tasks::TOOLS.contains(&name) {
+                let (hub, bot, name, args) = (hub.clone(), bot.to_owned(), name.to_owned(), b["arguments"].clone());
+                tokio::task::spawn_blocking(move || tasks::call(&hub, &bot, &name, &args)).await??
+            } else if crate::chat::profile::TOOLS.contains(&name) {
                 crate::chat::profile::call(hub, bot, name, &b["arguments"]).await?
+            } else if name == crate::chat::decision::TOOL {
+                crate::chat::decision::ask(hub, bot, &b["arguments"]).await?
             } else if name == crate::chat::skills::TOOL {
                 crate::chat::skills::call(hub, bot, &b["arguments"]).await?
             } else if crate::chat::fallbacks::TOOLS.contains(&name) {
                 crate::chat::fallbacks::call(hub, bot, name, &b["arguments"]).await?
             } else if crate::chat::artifacts::TOOLS.contains(&name) {
                 crate::chat::artifacts::call(hub, bot, name, &b["arguments"]).await?
+            } else if crate::dev_servers::TOOLS.contains(&name) {
+                crate::dev_servers::call(hub, bot, name, &b["arguments"]).await?
             } else {
                 crate::chat::outbox::call(hub, bot, name, &b["arguments"]).await?
             }
@@ -61,11 +125,17 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 .await?
         }
         "teamCall" => {
-            crate::chat::team::call_async(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+            let (caller, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            let bot = tasks::acting_as(hub, caller, name)?;
+            crate::chat::team::call_async(hub, &bot, caller, name, &b["arguments"]).await?
         }
         "manageCall" => {
-            crate::chat::manage::call(hub, str_arg(&b, "botId")?, str_arg(&b, "name")?, &b["arguments"]).await?
+            let (bot, name) = (str_arg(&b, "botId")?, str_arg(&b, "name")?);
+            tasks::refuse_in_task(hub, bot, name)?;
+            crate::chat::manage::call(hub, bot, name, &b["arguments"]).await?
         }
+        // A task's transcript, for its details: no chat an app holds has it.
+        "taskEntries" => tasks::entries(hub, str_arg(&b, "botId")?, str_arg(&b, "taskId")?, 500)?,
         "history" => {
             let bot = str_arg(&b, "botId")?;
             let before = b["beforeSeq"].as_i64().unwrap_or(i64::MAX);
@@ -90,7 +160,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "importSkill" => json!({"name": "codync-export", "text": crate::import::EXPORT_SKILL}),
         "updateBot" => {
             let hub = hub.clone();
-            json!({"bot": tokio::task::spawn_blocking(move || hub.update_bot(&b)).await??})
+            let updated = tokio::task::spawn_blocking(move || {
+                let bot = hub.update_bot(&b)?;
+                // Its `maxAgents` may have made room.
+                tasks::dispatch(&hub, b["id"].as_str().unwrap_or_default());
+                anyhow::Ok(bot)
+            });
+            json!({"bot": updated.await??})
         }
         // The roster as the user dragged it, top first.
         "reorderBots" => {
@@ -108,6 +184,22 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let hub = hub.clone();
             tokio::task::spawn_blocking(move || hub.rename_section(&from, to.as_deref())).await??;
             json!({})
+        }
+        // The apps name a dev server, and never send a command.
+        "devServerStop" => {
+            crate::dev_servers::stop(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?, "user").await?;
+            json!({})
+        }
+        "devServerRestart" => {
+            crate::dev_servers::restart(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?).await?;
+            json!({})
+        }
+        "devServerRemove" => {
+            crate::dev_servers::remove(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?)?;
+            json!({})
+        }
+        "devServerLogs" => {
+            json!({"text": crate::dev_servers::shown_logs(hub, str_arg(&b, "botId")?, str_arg(&b, "id")?).await?})
         }
         "deleteBot" => {
             hub.delete_bot(str_arg(&b, "botId")?)?;
@@ -158,15 +250,27 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 bail!("empty message");
             }
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
+            // `itemId`: to the thread of one of the bot's own items, where a running turn makes it wait as here.
+            if let Some(item) = b["itemId"].as_str() {
+                if text.is_empty() || !uploads.is_empty() || !b["replyTo"].is_null() || !b["call"].is_null() {
+                    return Err(tasks::ThreadRefused::error("text_only", "a thread takes text only".into()));
+                }
+                let hub = hub.clone();
+                let (bot, item, text, nonce) = (bot.to_owned(), item.to_owned(), text.to_owned(), nonce.to_owned());
+                let sent = tokio::task::spawn_blocking(move || tasks::message(&hub, &bot, &item, &text, &nonce));
+                return Ok(ControlFlow::Break(sent.await??));
+            }
             if !nonce.is_empty()
                 && let Some(e) = hub.store.find_by_nonce(bot, nonce)
             {
                 return Ok(ControlFlow::Break(json!({"entry": e})));
             }
-            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
-            // `replyTo`: the message of this chat it answers (`chat::replies`).
+            // A task is written to through its bot and item (`itemId`), never by its own id.
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted && !r.config.is_task());
+            let row = row.ok_or_else(|| anyhow!("unknown bot"))?;
+            // `replyTo`: the message of this chat it answers, and `replyPart` the text selected in it (`chat::replies`).
             let reply = match b["replyTo"].as_str().filter(|id| !id.is_empty()) {
-                Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id)?),
+                Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id, b["replyPart"].as_str())?),
                 None => None,
             };
             let mut attachments = Vec::new();
@@ -241,9 +345,30 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         "stop" => {
             let bot = str_arg(&b, "botId")?;
             match hub.store.bot(bot)? {
-                Some(row) if row.config.is_group() => hub.groups.stop(hub, bot),
+                Some(row) if row.config.is_group() => crate::chat::group::stop(hub, bot),
                 _ => hub.send_cmd(bot, Cmd::Stop)?,
             }
+            json!({})
+        }
+        // A message of the user's waiting for its turn: handled now (`steer`) or taken back (`unqueue`).
+        "steer" | "unqueue" => {
+            let (bot, entry_id) = (str_arg(&b, "botId")?, str_arg(&b, "entryId")?.to_owned());
+            // `itemId`: the message waits in the thread of one of the bot's own items. The caller names the item,
+            // never its task.
+            let thread = b["itemId"].as_str().map(|item| tasks::thread_task(hub, bot, item)).transpose()?;
+            if thread.is_none() && crate::store::is_task_id(bot) {
+                bail!("unknown bot");
+            }
+            let bot = thread.as_deref().unwrap_or(bot);
+            let queued = hub
+                .store
+                .entry(&entry_id)
+                .filter(|e| e.bot_id == bot && e.kind == EntryKind::User.as_str() && e.data["status"] == "queued");
+            if queued.is_none() {
+                bail!("that message isn't waiting any more");
+            }
+            let cmd = if method == "steer" { Cmd::Steer { entry_id } } else { Cmd::Unqueue { entry_id } };
+            hub.send_cmd(bot, cmd)?;
             json!({})
         }
         "switchBack" => {
@@ -262,13 +387,15 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let e = hub.react(str_arg(&b, "entryId")?, str_arg(&b, "emoji")?)?;
             json!({"entry": e})
         }
+        // A press on a decision card (`request_decision`): the choice is the bot's answer and the user's message.
+        "respondDecision" => {
+            crate::chat::decision::respond(hub, str_arg(&b, "entryId")?, str_arg(&b, "option")?).await?
+        }
         "respondPermission" => {
             let entry_id = str_arg(&b, "entryId")?;
             let e = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
             let option_id = b["optionId"].as_str().map(str::to_owned);
-            // A card in a group belongs to the bot that asked.
-            let bot = e.data["author"].as_str().unwrap_or(&e.bot_id);
-            hub.send_cmd(bot, Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;
+            hub.send_cmd(tasks::card_actor(&e), Cmd::Permission { entry_id: entry_id.to_owned(), option_id })?;
             json!({})
         }
         _ => return Ok(ControlFlow::Continue(b)),

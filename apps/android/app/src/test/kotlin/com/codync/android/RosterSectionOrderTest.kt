@@ -10,11 +10,11 @@ class RosterSectionOrderTest {
         fun shown(order: List<String>) = rosterLines(bots, emptySet(), order).filterIsInstance<RosterLine.Row>().map { it.bot.id }
         assertEquals(listOf("pin", "loose", "a", "b"), shown(listOf("", "Work")))
         assertEquals(listOf("pin", "a", "b", "loose"), shown(listOf("Work", "")))
-        assertEquals(listOf(RosterLine.Row(bots[0]), RosterLine.Label, RosterLine.Header("Work", 2, 0, true)),
+        assertEquals(listOf(RosterLine.Row(bots[0]), RosterLine.Label, RosterLine.Header("Work", 2, 0, waiting = false, folded = true)),
             rosterLines(bots, emptySet(), listOf("", "Work"), moving = true))
     }
     @Test fun aHeadingDragMovesBothWaysAcrossBots() {
-        val drag = SectionReorder()
+        val drag = ListReorder()
         drag.names = listOf("Work", "")
         drag.heights[""] = 40
         drag.heights["Work"] = 40
@@ -30,7 +30,7 @@ class RosterSectionOrderTest {
         assertEquals(null, drag.dragged)
     }
     @Test fun foldingKeepsTheHeadingUnderTheFingerAndCancellationDiscardsMoves() {
-        val drag = SectionReorder()
+        val drag = ListReorder()
         drag.names = listOf("Home", "Work", "")
         var top = 200f
         drag.position = { top }

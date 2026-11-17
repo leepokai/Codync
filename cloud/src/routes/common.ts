@@ -21,12 +21,16 @@ const STATUS: Record<string, number> = {
   badSignature: 401,
   forbidden: 403,
   accountDeleted: 403,
+  needsAccount: 403,
   notFound: 404,
   unknownComputer: 404,
   alreadyClaimed: 409,
   conflict: 409,
   claimExpired: 410,
   requestExpired: 410,
+  /** The user's own provider key was turned down: only they can fix it (`cloud-credentials.ts`). */
+  keyRefused: 422,
+  providerUnavailable: 503,
   upgradeRequired: 426,
   tooLarge: 413,
   rateLimited: 429,
@@ -58,7 +62,7 @@ export interface Ctx {
   now: number;
 }
 
-type Body = Record<string, unknown>;
+export type Body = Record<string, unknown>;
 
 export function body(c: Ctx): Body {
   if (c.raw.length > MAX_BODY) throw new ApiError("badRequest", "Body too large");
@@ -231,12 +235,21 @@ export async function revokeGrants(
 
 /** Tells a computer's DO: block these devices (closing their sockets), then `cloud.changed` to the host. */
 export async function notify(env: Env, computerId: string, blocked: Blocked[] = []): Promise<void> {
+  return tell(env, computerId, blocked, false);
+}
+
+/** `notify` for news the computer has to answer (an access request): a sleeping cloud computer is woken for it. */
+export async function notifyAwake(env: Env, computerId: string): Promise<void> {
+  return tell(env, computerId, [], true);
+}
+
+async function tell(env: Env, computerId: string, blocked: Blocked[], wake: boolean): Promise<void> {
   const path = blocked.length ? "/internal/block" : "/internal/changed";
   try {
     const res = await env.RELAY.get(env.RELAY.idFromName(computerId)).fetch(`https://do${path}`, {
       method: "POST",
       headers: { "X-Codync-Internal": "1", "Content-Type": "application/json" },
-      body: JSON.stringify(blocked.length ? { devices: blocked } : {}),
+      body: JSON.stringify(blocked.length ? { devices: blocked } : wake ? { wake: true } : {}),
     });
     if (!res.ok) console.error("relay notify failed", { computerId, path, status: res.status });
   } catch (e) {

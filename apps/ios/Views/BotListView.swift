@@ -14,6 +14,10 @@ struct BotListView: View {
     @State private var editing: EditTarget?
     @State private var editingGroup: GroupTarget?
     @State private var confirmDelete: RosterItem?
+    /// The view of all bots' work.
+    @State private var showingWork = false
+    /// A bot whose agent starts over with a fresh context, once confirmed.
+    @State private var confirmNewSession: RosterItem?
     /// What the section name dialog names while it's open.
     @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
@@ -113,6 +117,15 @@ struct BotListView: View {
         }
     }
 
+    /// Every shown computer's bots in the order the list has them, folded computers and sections included: what
+    /// the view of all bots' work lists.
+    private var onScreenRoster: [RosterItem] {
+        shownStores.flatMap { store -> [RosterItem] in
+            let id = store.computer.id
+            return RosterSection.onScreen(accounts.roster.filter { $0.ref.computerId == id }, order: sectionOrder.saved(on: id)) { $0.bot }
+        }
+    }
+
     /// A computer's bots: pinned ones, then each section's heading with its bots (none while
     /// folded), then the bots in no section (under the "Bots" label when there are sections).
     private func sectionLines(_ store: BotStore) -> [RosterLine] {
@@ -129,6 +142,7 @@ struct BotListView: View {
 
     var body: some View {
         let roster = accounts.roster.filter { shownIDs.contains($0.ref.computerId) }
+        let work = AllWork(onScreenRoster) { $0.bot.work }
         let lines = self.lines
         let movingComputer = lines.contains { $0.id == lifted && $0.computerId != nil }
         let movingSection = lines.first { $0.id == lifted }?.sectionComputer
@@ -173,8 +187,6 @@ struct BotListView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         }
-        .reviewInvitation(blocked: creating != nil || editing != nil || editingGroup != nil
-                          || confirmDelete != nil || lifted != nil)
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, 0)
@@ -182,29 +194,13 @@ struct BotListView: View {
         .navigationTitle(L10n.tr("Bots"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                AccountSwitcherButton()
-            }
-            ToolbarItem(placement: .principal) {
-                ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers) { app.showComputers = true }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
-                // so an anchored Codync menu can't find where the button is.
-                Menu(L10n.tr("New"), systemImage: "plus") {
-                    Button(L10n.tr("New bot"), systemImage: "plus", action: newBot)
-                    Button(L10n.tr("New group chat"), systemImage: "person.2", action: newGroup)
-                        .disabled(onlineStores.isEmpty)
-                }
-                // A computer that needs an update can't take a new bot.
-                .disabled(availableStores.isEmpty)
-            }
-        }
+        .toolbar { bar(work) }
         .refreshable {
             for computer in accounts.computers { accounts.store(for: computer.id)?.restartStream() }
             await accounts.refreshCloud()
         }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: work.bots.isEmpty)
+        .codyncSheet(isPresented: $showingWork) { workSheet(work.bots) }
         .codyncSheet(item: $creating) { target in
             if let store = accounts.store(for: target.computerId) {
                 Group {
@@ -251,7 +247,61 @@ struct BotListView: View {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
+        .codyncDialog("Start a new session?",
+                      isPresented: Binding(get: { confirmNewSession != nil }, set: { if !$0 { confirmNewSession = nil } }),
+                      message: "The conversation stays here, but the agent starts with a fresh context.") {
+            let item = confirmNewSession
+            return [DialogAction("New session") {
+                if let item { accounts.store(for: item.ref.computerId)?.newSession(item.bot.id) }
+            }]
+        }
         .sectionNameDialog($naming)
+    }
+
+    @ToolbarContentBuilder private func bar(_ work: AllWork<RosterItem>) -> some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            AccountSwitcherButton()
+        }
+        ToolbarItem(placement: .principal) {
+            ComputerFilterHeader(accounts: accounts, hidden: $hiddenComputers) { app.showComputers = true }
+        }
+        // All bots' work: only while some bot has a live or waiting item, counting what is worked on.
+        if !work.bots.isEmpty {
+            ToolbarItem(placement: .topBarTrailing) {
+                // No badge at zero.
+                Button(L10n.tr("Work"), systemImage: "tray.full") { showingWork = true }
+                    .badge(work.working)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            // A native menu: the bar hosts toolbar buttons outside SwiftUI's layout,
+            // so an anchored Codync menu can't find where the button is.
+            Menu(L10n.tr("New"), systemImage: "plus") {
+                Button(L10n.tr("New bot"), systemImage: "plus", action: newBot)
+                Button(L10n.tr("New group chat"), systemImage: "person.2", action: newGroup)
+                    .disabled(onlineStores.isEmpty)
+            }
+            // A computer that needs an update can't take a new bot.
+            .disabled(availableStores.isEmpty)
+        }
+    }
+
+    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat;
+    /// any other row, the details on its thread.
+    private func workSheet(_ bots: [RosterItem]) -> some View {
+        AllWorkView(bots: bots, many: grouped, store: { accounts.store(for: $0.ref.computerId) },
+                    openDetails: { item in
+                        accounts.store(for: item.ref.computerId)?.requestDetails(of: item.bot.id)
+                        accounts.selection = item.ref
+                    },
+                    openChat: { item, work in
+                        accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, item: work)
+                        accounts.selection = item.ref
+                    },
+                    openThread: { item, work in
+                        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, item: work)
+                        accounts.selection = item.ref
+                    })
     }
 
     /// A row the system's reordering dropped. A heading moves its computer and its bots (an order
@@ -355,6 +405,9 @@ struct BotListView: View {
         .padding(.horizontal, -8)
         .itemProvider { lift(line) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(name), on \(store.hostName)" : name)
+        // The badge, said (Android's `UnreadBadge` description), and that a card in it waits on the user.
+        .accessibilityValue([bot.unread > 0 ? "\(bot.unread) unread" : nil, bot.waiting > 0 ? L10n.tr("Needs approval") : nil]
+            .compactMap { $0 }.joined(separator: ", "))
         .accessibilityActions {
             Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
             Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
@@ -369,6 +422,10 @@ struct BotListView: View {
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
                 MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) },
             ]
+            // A group has no agent session of its own.
+            if !bot.isGroup {
+                items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = item })
+            }
             if !bot.lead && !bot.isGroup && store.supportsLeadChoice {
                 items.append(MenuItem("Make lead agent", icon: "star") { store.setLead(bot) })
             }

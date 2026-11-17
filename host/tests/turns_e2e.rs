@@ -8,7 +8,7 @@ mod common;
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::Child;
 use std::time::{Duration, Instant};
 
 struct Host {
@@ -91,33 +91,75 @@ impl Host {
     }
 }
 
-fn python_missing() -> bool {
-    let missing = Command::new(common::python()).arg("--version").output().is_err();
-    if missing {
-        eprintln!("skipping: Python not available");
-    }
-    missing
+/// Sends `go` to `bot`, whose agent then works forever and ignores the cancel, and stops it: after the grace period its
+/// process is stopped and the turn ends.
+async fn assert_stop_ends_the_turn(host: &Host, bot: &str) {
+    host.call("send", json!({"botId": bot, "text": "go"})).await;
+    host.wait_for(bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
+    host.call("stop", json!({"botId": bot})).await;
+    host.wait_for(bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, bot)["status"], "idle");
 }
 
 #[tokio::test]
 async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
     let bot = host.bot("Stuck", "tests/fixtures/stubborn_agent.py").await;
-    host.call("send", json!({"botId": bot, "text": "go"})).await;
-    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
-    host.call("stop", json!({"botId": bot})).await;
-    // The agent never answers: after the grace period its process is stopped and the turn ends.
-    host.wait_for(&bot, Duration::from_secs(40), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
+    assert_stop_ends_the_turn(&host, &bot).await;
+}
+
+/// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
+#[cfg(unix)]
+struct Escaped(PathBuf);
+
+#[cfg(unix)]
+impl Drop for Escaped {
+    fn drop(&mut self) {
+        if let Ok(pid) = std::fs::read_to_string(&self.0) {
+            common::kill(pid.trim());
+        }
+    }
+}
+
+/// #466: a Stop the agent ignores ends the turn even when something the agent started still holds its stdout open.
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_ends_a_turn_whose_agent_left_a_process_holding_its_output() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
+    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    assert_stop_ends_the_turn(&host, &bot).await;
+}
+
+/// #466: an agent that exits mid-turn fails its turn even when something it started still holds its stdout open.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_turn_ends_when_its_agent_exits_leaving_a_process_holding_its_output() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Escaped", "tests/fixtures/escaped_child_agent.py").await;
+    let _escaped = Escaped(host.home.join("Escaped").join("escaped.pid"));
+    host.call("send", json!({"botId": bot, "text": "leave"})).await;
+    host.wait_for(&bot, Duration::from_secs(20), |e| {
+        e["data"]["text"].as_str().is_some_and(|t| t.starts_with("The agent failed"))
+    })
+    .await;
     let sync = common::snapshot(&host.base, &host.token).await;
-    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
+    assert_eq!(common::bot(&sync, &bot)["status"], "error");
 }
 
 #[tokio::test]
 async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -156,7 +198,7 @@ async fn a_member_busy_elsewhere_answers_only_the_latest_room_turn() {
 
 #[tokio::test]
 async fn a_reaction_can_be_the_whole_reply() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -221,7 +263,7 @@ const FAST_OFF: &str = r#""configId": "fast", "value": "off""#;
 
 #[tokio::test]
 async fn fast_mode_switches_live_sessions_without_a_restart() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -250,7 +292,7 @@ async fn fast_mode_switches_live_sessions_without_a_restart() {
 
 #[tokio::test]
 async fn an_agent_without_config_options_has_no_fast_mode() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -267,7 +309,7 @@ async fn an_agent_without_config_options_has_no_fast_mode() {
 
 #[tokio::test]
 async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -299,7 +341,7 @@ async fn a_refused_fast_mode_is_reported_and_not_asked_for_again() {
 
 #[tokio::test]
 async fn a_new_bot_works_in_its_agents_auto_mode_until_the_user_picks_another() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -341,7 +383,7 @@ async fn a_new_bot_works_in_its_agents_auto_mode_until_the_user_picks_another() 
 
 #[tokio::test]
 async fn a_mode_switch_leaves_fast_mode_to_its_own() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -359,7 +401,7 @@ async fn a_mode_switch_leaves_fast_mode_to_its_own() {
 
 #[tokio::test]
 async fn a_bot_never_works_in_a_mode_its_agent_refused_to_switch_to() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -386,7 +428,7 @@ async fn a_bot_never_works_in_a_mode_its_agent_refused_to_switch_to() {
 
 #[tokio::test]
 async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let host = Host::start().await;
@@ -405,7 +447,7 @@ async fn a_session_that_ended_in_the_agent_is_closed_and_loaded_again() {
 
 #[tokio::test]
 async fn reasoning_is_per_bot_and_applies_with_default_and_legacy_models() {
-    if python_missing() {
+    if common::python_missing() {
         return;
     }
     let mut host = Host::start().await;

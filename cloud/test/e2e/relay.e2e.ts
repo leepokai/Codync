@@ -7,115 +7,25 @@
 // account's phone turned away → cloud revocation → injected grant ignored → direct /channel and loopback-only
 // bearer token.
 
-import { type ChildProcess, execFile, spawn, spawnSync } from "node:child_process";
-import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
-import { networkInterfaces, tmpdir } from "node:os";
+import { type ChildProcess, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import * as ref from "../ref.ts";
+import { check, freePort, LocalCloud, ROOT, step, stop } from "./harness.ts";
 import { exerciseIcons } from "./icons.ts";
 import { Channel, FakePhone, parsePairing, waitFor, type Json, type PairingInfo, type Wire } from "./phone.ts";
 
-const CLOUD_DIR = fileURLToPath(new URL("../..", import.meta.url));
-const ROOT = join(CLOUD_DIR, "..");
 const HOST_BIN = process.env.CODYNC_HOST_BIN ?? join(ROOT, "host/target/debug/codync-host");
 const FAKE_AGENT = join(ROOT, "host/tests/fake_agent.py");
-const CLOUD_PORT = Number(process.env.CODYNC_E2E_CLOUD_PORT ?? 8787);
-const CLOUD = `http://127.0.0.1:${CLOUD_PORT}`;
-const ISSUER = "https://clerk.test.local"; // [env.local] CLERK_ISSUER
-const WRANGLER = join(CLOUD_DIR, "node_modules/.bin/wrangler");
-
-const tmp = mkdtempSync(join(tmpdir(), "codync-e2e-"));
-const persist = join(tmp, "wrangler");
+const local = new LocalCloud(Number(process.env.CODYNC_E2E_CLOUD_PORT ?? (await freePort())));
+const CLOUD = local.url;
+const tmp = local.tmp;
 const home = join(tmp, "home");
-const children: ChildProcess[] = [];
-
-function step(name: string) {
-  console.log(`\n▶ ${name}`);
-}
-
-function check(cond: unknown, what: string): asserts cond {
-  if (!cond) throw new Error(`check failed: ${what}`);
-  console.log(`  ✓ ${what}`);
-}
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve) => {
-    const s = createServer();
-    s.listen(0, "127.0.0.1", () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => resolve(port));
-    });
-  });
-}
-
-function run(cmd: string, args: string[], env: Record<string, string> = {}): ChildProcess {
-  const child = spawn(cmd, args, { cwd: CLOUD_DIR, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
-  const tag = cmd.split("/").pop();
-  child.stdout?.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(`[${tag}] ${d}`));
-  child.stderr?.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(`[${tag}] ${d}`));
-  children.push(child);
-  return child;
-}
-
-async function stop(child: ChildProcess) {
-  if (child.exitCode !== null || child.signalCode) return;
-  const exited = new Promise((r) => child.once("exit", r));
-  child.kill("SIGTERM");
-  await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
-  if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL");
-}
-
-/// Async on purpose: a blocking spawn stalls the event loop past wrangler's keep-alive timeout, and
-/// the next `fetch` then reuses a socket the server already closed (ECONNRESET).
-function d1(sql: string): Promise<Json[]> {
-  const args = ["d1", "execute", "codync-local", "--local", "--env", "local", "--persist-to", persist, "--json", "--command", sql];
-  return new Promise((resolve, reject) =>
-    execFile(WRANGLER, args, { cwd: CLOUD_DIR, encoding: "utf8" }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`d1 failed: ${stderr}`));
-      resolve((JSON.parse(stdout) as { results: Json[] }[])[0]?.results ?? []);
-    }),
-  );
-}
-
-// ---- device certificates ----
-
-// The cloud signs device certificates with the private half (DEVICE_CERT_KEY); the host checks them with the public
-// half (CODYNC_DEVICE_CERT_KEY), as a self-hosted cloud's hosts do.
-const certKey = generateKeyPairSync("ed25519");
-const certJwk = JSON.stringify(certKey.privateKey.export({ format: "jwk" }));
-const certPub = certKey.publicKey.export({ format: "jwk" }).x!;
-
-// ---- Clerk test tokens ----
-
-const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-// @clerk/backend strips PEM armor itself; a single line survives `--var`.
-const jwtKey = publicKey
-  .export({ type: "spki", format: "pem" })
-  .toString()
-  .replace(/-----[A-Z ]+-----|\s/g, "");
-
-async function clerkToken(sub: string): Promise<string> {
-  const key = await crypto.subtle.importKey("jwk", privateKey.export({ format: "jwk" }), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-  const now = Math.floor(Date.now() / 1000);
-  const part = (v: unknown) => ref.b64url(ref.enc.encode(JSON.stringify(v)));
-  const head = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: ISSUER, sub, sid: `sess_${sub}`, iat: now - 5, nbf: now - 5, exp: now + 3600, email: `${sub}@example.com` })}`;
-  return `${head}.${ref.b64url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, ref.enc.encode(head))))}`;
-}
-
-async function cloud(method: string, path: string, o: { token?: string; key?: ref.SignKey; body?: unknown } = {}): Promise<{ status: number; body: Json }> {
-  const bytes = o.body === undefined ? new Uint8Array() : ref.enc.encode(JSON.stringify(o.body));
-  const headers: Record<string, string> = {};
-  if (o.token) headers.Authorization = `Bearer ${o.token}`;
-  if (o.body !== undefined) headers["Content-Type"] = "application/json";
-  if (o.key) headers["Codync-Sig"] = ref.signRequest(o.key, { method, authority: `127.0.0.1:${CLOUD_PORT}`, pathAndQuery: path, body: bytes });
-  const res = await fetch(CLOUD + path, { method, headers, body: bytes.length ? bytes : undefined });
-  return { status: res.status, body: await res.json() };
-}
+const run = local.run.bind(local);
+const d1 = local.d1.bind(local);
+const clerkToken = local.token.bind(local);
+const cloud = local.call.bind(local);
 
 // ---- the host ----
 
@@ -128,7 +38,8 @@ async function startHost() {
   host = run(HOST_BIN, ["serve", "--bind", "0.0.0.0", "--port", String(hostPort)], {
     CODYNC_HOME: home,
     CODYNC_CLOUD_URL: CLOUD,
-    CODYNC_DEVICE_CERT_KEY: certPub,
+    CODYNC_DEVICE_CERT_KEY: local.certPub,
+    CODYNC_AGENT_CHECKS: "off",
   });
   await waitFor("host /health", () => fetch(`http://127.0.0.1:${hostPort}/health`).then((r) => r.ok || undefined).catch(() => undefined), 30_000);
 }
@@ -165,17 +76,7 @@ const computerOnline = async (id: string) => (await d1(`SELECT online FROM compu
 
 async function main() {
   step("1. local D1 + wrangler dev");
-  const migrate = spawnSync(WRANGLER, ["d1", "migrations", "apply", "codync-local", "--local", "--env", "local", "--persist-to", persist], {
-    cwd: CLOUD_DIR,
-    encoding: "utf8",
-    env: { ...process.env, CI: "1" },
-  });
-  if (migrate.status !== 0) throw new Error(`migrations failed: ${migrate.stderr}`);
-  run(WRANGLER, [
-    "dev", "--env", "local", "--ip", "127.0.0.1", "--port", String(CLOUD_PORT), "--persist-to", persist,
-    "--var", `CLERK_JWT_KEY:${jwtKey}`, "--var", `DEVICE_CERT_KEY:${certJwk}`,
-  ]);
-  await waitFor("cloud /v1/health", () => fetch(`${CLOUD}/v1/health`).then((r) => r.ok || undefined).catch(() => undefined), 60_000);
+  await local.start();
 
   step("2–3. host registers and comes online");
   await startHost();
@@ -374,10 +275,7 @@ async function main() {
   console.log("\nE2E passed");
 }
 
-async function cleanup() {
-  await Promise.all(children.map(stop));
-  rmSync(tmp, { recursive: true, force: true });
-}
+const cleanup = () => local.cleanup();
 
 try {
   if (spawnSync(HOST_BIN, ["--version"]).error) {

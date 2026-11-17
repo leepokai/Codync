@@ -22,10 +22,15 @@ public actor ChannelTransport: RemoteTransport {
     private let watchesNetwork: Bool
 
     /// The screen follows the active signaling route; direct-only connections never request TURN.
-    public func screenRelayRequired() async throws -> Bool {
+    public func screenRelayRequired(failedAttempts: Int = 0) async throws -> Bool {
         try await ready(within: 20)
-        return link?.route == .relay
+        // A private relay has no TURN (`RelayCopy.host`), and a computer in no account gets no address.
+        return ScreenRoute.asksForTurn(channelOnRelay: link?.route == .relay, route: computer.route ?? .automatic,
+                                       hasTurn: computer.cloud != nil && RelayCopy.host(of: computer.cloud) == nil,
+                                       failedAttempts: failedAttempts)
     }
+
+    var prefersCloudflare: Bool { computer.route == .cloudflareFirst }
 
     var state: LinkState = .connecting
     var lastSeen: Date?
@@ -53,6 +58,10 @@ public actor ChannelTransport: RemoteTransport {
     var computerObservers: [UUID: AsyncStream<Computer>.Continuation] = [:]
     var mailboxObservers: [UUID: AsyncStream<MailboxEvent>.Continuation] = [:]
 
+    /// What the local network says about a computer's addresses, for one with no relay to learn them from.
+    typealias Discovered = @Sendable (ComputerID) async -> [String]
+    let discovered: Discovered
+
     /// One open socket and, once the handshake is done, its channel keys.
     struct Link {
         let socket: any ChannelSocket
@@ -77,11 +86,13 @@ public actor ChannelTransport: RemoteTransport {
     }
 
     public init(computer: Computer, identity: DeviceIdentity) {
-        self.init(computer: computer, identity: identity, pairingCode: nil)
+        self.init(computer: computer, identity: identity, pairingCode: nil, discovered: { await LocalDiscovery.shared.urls(for: $0) })
     }
 
     init(computer: Computer, identity: DeviceIdentity, pairingCode: String?, dial: @escaping Dialer = URLSessionSocket.dial,
-         directBudget: Duration = .milliseconds(1500), watchesNetwork: Bool = true) {
+         directBudget: Duration = .milliseconds(1500), watchesNetwork: Bool = true,
+         discovered: @escaping Discovered = { _ in [] }) {
+        self.discovered = discovered
         self.computer = computer
         self.identity = identity
         self.pairingCode = pairingCode

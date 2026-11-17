@@ -80,8 +80,9 @@ export function AuthorizedDevicesSection({ store }: { store: BotStore }) {
 
 function deviceDetail(device: AuthorizedDevice, tr: (text: string) => string) {
   const paired = device.source === 'account' ? 'Approved through the account' : 'Paired with a QR code'
-  if (device.connected) return tr(`${paired} · connected`)
+  // Two phrases, not a `{paired} · connected` key: as a template it would also match the routine notice `Routine · connected`.
+  if (device.connected) return `${tr(paired)} · ${tr('connected')}`
   if (!device.lastSeenAt) return tr(paired)
   const when = relativeDay(new Date(device.lastSeenAt))
-  return tr(`${paired} · seen {when}`).replaceAll('{when}', when === 'Yesterday' ? tr('Yesterday') : when)
+  return tr('{paired} · seen {when}').replaceAll('{paired}', () => tr(paired)).replaceAll('{when}', () => when === 'Yesterday' ? tr('Yesterday') : when)
 }

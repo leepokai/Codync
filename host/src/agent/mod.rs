@@ -8,6 +8,7 @@ pub mod bot;
 pub mod config;
 pub mod fallback;
 pub mod gear;
+pub mod login_profiles;
 pub mod modes;
 pub mod new_bot;
 pub mod node;
@@ -16,6 +17,8 @@ pub mod registry;
 pub mod term;
 pub mod workspace;
 
-mod process;
+pub(crate) mod process;
+#[cfg(unix)]
+mod process_unix;
 #[cfg(windows)]
 mod process_windows;

@@ -4,21 +4,26 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::super::app::{App, Bot, Click, Entry, Exchange, Item, Kind, Outcome, Status, group};
+use super::super::app::{App, Bot, Click, Entry, Exchange, Item, KOFI_URL, Kind, Outcome, Status, group};
+use super::super::l10n::tr;
 use super::super::md::{self, truncate, width as w};
 use super::buffer::u;
 use super::chat::with_bg;
-use super::permission::{decided_line, permission_card};
+use super::permission::{background_line, chosen_line, decided_line, decision_card, permission_card};
 use super::roster::plain;
 use super::style::{FACE, bot_color, face_style, person, spin, theme};
 use super::time::clock;
 
+#[derive(Default)]
 pub(super) struct Built {
     pub(super) lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
-    /// Each message's (entry id, first line, end line), for picking one to reply to.
+    /// Each message's (entry id, first line, end line), for picking one to reply to; an answered card's too, which an
+    /// item's thread picks to show it here.
     pub(super) messages: Vec<(String, usize, usize)>,
+    /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
+    pub(super) texts: Vec<(usize, usize)>,
 }
 
 struct TurnInfo {
@@ -62,8 +67,8 @@ pub(super) fn name_style(color: &str) -> Style {
 
 pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     let t = theme();
-    let mut out = Built { lines: vec![], buttons: vec![], messages: vec![] };
-    let entries = app.lane(&b.id);
+    let mut out = Built::default();
+    let entries = app.chat(&b.id);
     let info = turn_info(&entries);
     if entries.is_empty() {
         intro(&mut out, app, b, width);
@@ -75,7 +80,12 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
     // A bot's messages arrive whole (Grok Bot's `send_message`); what it writes along the way is trace.
     for item in group(&b.id, &entries) {
         match item {
-            Item::Entry(e) => entry_lines(&mut out, app, b, e, &info, width),
+            Item::Entry(e) => {
+                entry_lines(&mut out, app, b, e, &info, width);
+                if app.kofi_at() == Some(e.id.as_str()) {
+                    kofi_lines(&mut out, width);
+                }
+            }
             Item::Group(g) => {
                 let from = out.lines.len();
                 let lead = format!("{} messages with ", g.count);
@@ -99,6 +109,23 @@ pub(super) fn build_chat(app: &App, b: &Bot, width: usize) -> Built {
         out.lines.push(Line::from(line));
     }
     out
+}
+
+/// The Ko-fi invitation under its reply: one quiet sentence and the link (the terminal makes it clickable).
+fn kofi_lines(out: &mut Built, width: usize) {
+    let t = theme();
+    let text = tr("Codync is free and made by one person. If it helps you, you can support it on Ko-fi.");
+    gap(out);
+    out.lines.extend(md::wrap(
+        &[Span::styled(text.into_owned(), t.dim)],
+        width.saturating_sub(1),
+        &[Span::raw("   ")],
+        &[Span::raw("   ")],
+    ));
+    out.lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled(KOFI_URL, t.secondary.add_modifier(Modifier::UNDERLINED)),
+    ]));
 }
 
 /// An empty chat: who this is and how it works.
@@ -138,6 +165,13 @@ fn intro(out: &mut Built, app: &App, b: &Bot, width: usize) {
     out.lines.extend(md::wrap(&[Span::styled(hello, t.secondary)], width, &[Span::raw("  ")], &[Span::raw("  ")]));
 }
 
+/// A message's text, which find searches.
+fn message_text(out: &mut Built, e: &Entry, width: usize) {
+    let text_from = out.lines.len();
+    out.lines.extend(md::render(e.text(), width, 1));
+    out.texts.push((text_from, out.lines.len()));
+}
+
 /// One chat entry.
 fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i64, TurnInfo>, width: usize) {
     let t = theme();
@@ -151,10 +185,8 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(" you", t.secondary.add_modifier(Modifier::BOLD)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ];
-            match e.data["status"].as_str() {
-                Some("queued") => head.push(Span::styled(" · queued", t.dim)),
-                Some("cancelled") => head.push(Span::styled(" · not sent", t.red)),
-                _ => {}
+            if e.data["status"] == "cancelled" {
+                head.push(Span::styled(" · not sent", t.red));
             }
             out.lines.push(Line::from(head));
             out.lines.extend(quote_line(e, width));
@@ -175,7 +207,9 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     Span::styled(format!("  {}", file_size(size)), t.dim),
                 ]));
             }
+            let text_from = out.lines.len();
             out.lines.extend(with_bg(body, width, t.band));
+            out.texts.push((text_from, out.lines.len()));
             reactions(out, app, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));
         }
@@ -190,6 +224,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 Span::styled(format!(" {name}"), name_style(color)),
                 Span::styled(format!(" {}", clock(e.created_at)), t.dim),
             ]));
+            // What a task shares through the chat (a file, a voice note, an artifact) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!(" {}", truncate(&from, width.saturating_sub(2))), t.dim)));
+            }
+            out.lines.extend(quote_line(e, width));
             if let Some(title) = app.artifact_title(e) {
                 out.lines.push(Line::from(Span::styled(
                     format!(" ▤ Artifact: {}", truncate(&title, width.saturating_sub(10))),
@@ -212,8 +252,12 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                         t.dim,
                     )));
                 }
+                // A message's voice note: the terminal can't play it, so its line, then the message.
+                if e.data["voiceNote"] == true {
+                    message_text(out, e, width);
+                }
             } else {
-                out.lines.extend(md::render(e.text(), width, 1));
+                message_text(out, e, width);
             }
             reactions(out, app, e);
             out.messages.push((e.id.clone(), from, out.lines.len()));
@@ -229,14 +273,28 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 )));
             }
         }
+        // Pickable waiting too: Work's `↵` on an item that needs you picks its card, which brings it on screen.
         Kind::Permission => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 // A card in a group is its asking bot's.
                 permission_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 decided_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
+        }
+        // A choice card is laid out like an approval card, the bot asking one of its own options.
+        Kind::Decision => {
+            gap(out);
+            let from = out.lines.len();
+            if e.pending() {
+                decision_card(out, app, e, author.unwrap_or(b), width);
+            } else {
+                chosen_line(out, e);
+            }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
         // summary keeps the same conversation going, and a kept handoff changed nothing.
@@ -294,6 +352,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::styled(" · ", t.dim)],
                     &[Span::raw("   ")],
                 )),
+            }
+            // What a background task asks of the user here (a sign-in, a fallback) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
             }
             let folded = unfoldable(e);
             if app.unfolded.contains(&e.id) {

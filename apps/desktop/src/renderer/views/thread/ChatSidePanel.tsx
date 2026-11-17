@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import { ResizeHandle } from '../../components/Controls'
 import { usePresence } from '../../components/Overlay'
+import { useTr } from '../../lib/use-language'
 
 /**
  * The panel beside the conversation. The conversation takes its new width at once (one layout,
@@ -16,6 +17,7 @@ export function ChatSidePanel({ open, width, min, max, onResize, children }: {
   onResize: (width: number) => void
   children: ReactNode
 }) {
+  const tr = useTr()
   // Animate explicit open/close actions without animating the initial mount.
   const { mounted, shown } = usePresence(open, 300, false)
   const last = useRef({ width, children })
@@ -28,7 +30,7 @@ export function ChatSidePanel({ open, width, min, max, onResize, children }: {
       <div className="side-panel-slot" style={{ width: open ? panelWidth : 0 }} />
       {mounted ? (
         <div className="side-panel" inert={!open} style={{ width: panelWidth, right: shown ? 0 : -panelWidth }}>
-          <ResizeHandle label="Resize panel" width={content.width} min={min} max={max} edge="leading" onResize={onResize} />
+          <ResizeHandle label={tr('Resize panel')} width={content.width} min={min} max={max} edge="leading" onResize={onResize} />
           <div className="side-panel-content" style={{ width: content.width }}>{content.children}</div>
         </div>
       ) : null}

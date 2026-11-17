@@ -6,15 +6,8 @@ use std::time::Duration;
 use super::Window;
 
 pub(super) async fn collect() -> Option<Vec<Window>> {
-    let bin = super::command::program("kiro-cli")?;
-    let text = super::command::output(&bin, &[], Some("/usage\n/quit\n"), Duration::from_secs(30)).await?;
-    let windows = parse(&text, crate::store::now_ms());
-    if windows.is_empty() {
-        tracing::debug!("kiro-cli usage output had no credit lines");
-        None
-    } else {
-        Some(windows)
-    }
+    let parse = |text: &str| parse(text, crate::store::now_ms());
+    super::command::windows("kiro-cli", &[], Some("/usage\n/quit\n"), Duration::from_secs(30), parse).await
 }
 
 fn parse(text: &str, now_ms: i64) -> Vec<Window> {

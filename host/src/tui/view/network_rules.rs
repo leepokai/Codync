@@ -4,12 +4,20 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 use super::super::l10n::tr;
-use super::super::manage::{NetworkSheet, RuleField, RuleForm};
+use super::super::manage::{LEVELS, NetworkSheet, RuleField, RuleForm, level_detail, level_name};
 use super::buffer::{put, restyle};
 use super::network::{line, wrapped};
 use super::style::theme;
 
-const FOOTER: &str = "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.";
+const FOOTER: &str = "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in.";
+/// The footer where a computer no rule matches gets in as before (`defaultAccess` allow, or a host older than it).
+const FOOTER_ALLOW: &str = "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in.";
+
+/// The rules' footer: what decides, and what a computer no rule matches gets.
+fn footer(n: &NetworkSheet) -> &'static str {
+    let default = n.current().and_then(|net| net["defaultAccess"].as_str()).unwrap_or("allow");
+    if default == "allow" { FOOTER_ALLOW } else { FOOTER }
+}
 
 pub(super) fn rules(buf: &mut Buffer, body: Rect, n: &NetworkSheet, at: usize) -> &'static str {
     let t = theme();
@@ -39,7 +47,7 @@ pub(super) fn rules(buf: &mut Buffer, body: Rect, n: &NetworkSheet, at: usize) -
         y += 1;
     }
     y += 1;
-    wrapped(buf, body, &mut y, &tr(FOOTER), t.secondary);
+    wrapped(buf, body, &mut y, &tr(footer(n)), t.secondary);
     if n.rules().is_empty() { "n add rule · esc back" } else { "n add rule · x delete · K J move · esc back" }
 }
 
@@ -51,7 +59,7 @@ pub(super) fn rule_form(buf: &mut Buffer, body: Rect, n: &NetworkSheet, form: &R
     y += 1;
     let label = |c: &[(String, String)], i: usize| c.get(i).map_or_else(String::new, |c| c.1.clone());
     let rows = [
-        (RuleField::Access, "Access", tr(if form.deny { "Deny" } else { "Allow" }).into_owned()),
+        (RuleField::Access, "Access", tr(level_name(LEVELS[form.access])).into_owned()),
         (RuleField::FromComputer, "From computer", label(&choices.computers, form.from_computer)),
         (RuleField::FromAgent, "From bot", label(&choices.agents, form.from_agent)),
         (RuleField::ToAgent, "To bot", label(&choices.mine, form.to_agent)),
@@ -65,6 +73,22 @@ pub(super) fn rule_form(buf: &mut Buffer, body: Rect, n: &NetworkSheet, form: &R
         y += 1;
     }
     y += 1;
-    wrapped(buf, body, &mut y, &tr(FOOTER), t.secondary);
+    wrapped(buf, body, &mut y, &tr(level_detail(LEVELS[form.access])), t.secondary);
+    y += 1;
+    wrapped(buf, body, &mut y, &tr(footer(n)), t.secondary);
     "↵ add · tab next field · ←→ change · esc back"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn the_footer_says_what_a_computer_no_rule_matches_gets() {
+        let sheet = |net: Value| NetworkSheet { view: Some(json!({"networks": [net]})), ..NetworkSheet::default() };
+        assert_eq!(footer(&sheet(json!({"id": "n"}))), FOOTER_ALLOW, "a host before the default lets it in");
+        assert_eq!(footer(&sheet(json!({"id": "n", "defaultAccess": "allow"}))), FOOTER_ALLOW);
+        assert_eq!(footer(&sheet(json!({"id": "n", "defaultAccess": "auto"}))), FOOTER);
+    }
 }

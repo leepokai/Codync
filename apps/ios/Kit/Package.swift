@@ -27,6 +27,7 @@ let package = Package(
             .copy("Resources/Languages/es.json"),
             .copy("Resources/Languages/pt-BR.json"),
             .copy("Resources/Languages/ru.json"),
+            .copy("Resources/Languages/it.json"),
             .process("Resources/ProviderIcons.xcassets"),
         ]),
         .target(
@@ -36,7 +37,7 @@ let package = Package(
                 .product(name: "WebRTC", package: "WebRTC"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
-            resources: [.process("Resources")]
+            resources: [.process("Resources/AgentIcons.xcassets"), .copy("Resources/Announcements")]
         ),
         .testTarget(name: "CodyncKitTests", dependencies: ["CodyncKit"], resources: [.copy("Fixtures")]),
         .testTarget(name: "CodyncUITests", dependencies: ["CodyncUI", "CodyncKit"]),

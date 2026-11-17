@@ -9,9 +9,20 @@ import org.junit.Test
 
 class HostUpdateNoticeTest {
     private val behind = VersionMismatch.UpdateHost("2.23.1", "2.26.0")
-    private val needs = "Mini runs Codync 2.23.1; this app needs 2.26.0 or newer."
+    private val needs = "Codync on Mini is 2.23.1; that computer needs Codync 2.26.0 or newer."
     private val now = 1_000_000_000L
     private fun notice(canUpdate: Boolean, update: HostUpdate?, os: String? = "macos") = hostUpdateNotice("Mini", behind, os, canUpdate, update, now)
+
+    @Test fun updateNoticesNameTheSideThatNeedsUpdating() {
+        assertEquals("This app needs to be 2.46.3 or newer (Mini requires it).", appUpdateDetail("Mini", "2.46.3"))
+        assertEquals("Your cloud computer is updating to Codync 2.26.0 or newer; this app reconnects when it is done.",
+            cloudUpdateDetail("2.26.0"))
+        // Translate the template before filling it: names that look like placeholders stay verbatim.
+        assertEquals("{minimum} 需要 2.46.3", appUpdateDetail("{minimum}", "2.46.3") { "{host} 需要 {minimum}" })
+        assertEquals("主機 Mini 2.23.1 → 2.26.0", hostUpdateNotice("Mini", behind, "macos", true, null, now) {
+            "主機 {host} {version} → {minimum}"
+        }.detail)
+    }
 
     @Test fun aComputerThatCanUpdateOffersUpdateNow() {
         assertEquals(HostUpdateNotice(needs, true), notice(true, null))
@@ -53,12 +64,17 @@ class HostUpdateNoticeTest {
     }
 
     @Test fun aComputerTooOldOrAnUpdateThatDidntTakeIsAProblem() {
-        assertEquals(HostVersionLine("2.28.0", listOf("This app needs 2.26.0 or newer."), warns = true, accessory = update), line(null, behind))
+        assertEquals(HostVersionLine("2.28.0", listOf("Mini needs Codync 2.26.0 or newer."), warns = true, accessory = update), line(null, behind))
         val busy = "A bot is working on this computer. Update it once the bot is done."
         assertEquals(HostVersionLine("2.28.0", listOf(busy), warns = true, accessory = tryAgain), line("2.29.0", update = HostUpdate.Failed(busy)))
         // Asked, but the computer never came back updated.
         assertEquals(HostVersionLine("2.28.0", listOf("Mini didn't finish updating. Try again, or update Codync on that computer."), warns = true,
             accessory = tryAgain), line("2.29.0", update = HostUpdate.Requested(now - HOST_UPDATE_WAIT_MS)))
+    }
+
+    @Test fun aCodyncCloudComputerSaysTheCloudUpdatesIt() {
+        assertEquals(listOf("Cloud needs Codync 2.26.0 or newer.", "Codync Cloud updates it before it next sleeps."),
+            hostVersionLine("2.20.0", "2.29.0", behind, false, null, "Cloud", "linux", now, cloud = true).detail)
     }
 
     @Test fun theCodyncRowComparesWithTheLatestReleaseTheComputerFound() {

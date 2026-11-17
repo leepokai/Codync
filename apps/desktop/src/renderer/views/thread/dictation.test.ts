@@ -68,6 +68,18 @@ test('on-device words go after the draft, and finish waits for the last of them'
   assert.equal(s.dictation.busy, false)
 })
 
+test('a finish without a send keeps the send already waiting for the last on-device words', () => {
+  const s = setup()
+  s.dictation.start(s.box())
+  let sent = false
+  s.dictation.finish(() => (sent = true))
+  s.dictation.finish()
+  s.say({ type: 'final', text: 'today' })
+  s.say({ type: 'stopped' })
+  assert.equal(sent, true)
+  assert.equal(s.box(), 'Fix the bug today')
+})
+
 test('cancel drops words still on their way', () => {
   const s = setup()
   s.dictation.start(s.box())
@@ -161,17 +173,34 @@ test("a provider's transcript lands after what's in the box by then, in order, t
   assert.equal(s.dictation.transcribing, false)
 })
 
-test('cancel while transcribing drops the transcript', async () => {
+test('Send again while transcribing still waits for the transcript', async () => {
   const s = setup({ provider: () => 'openai' })
   s.dictation.start(s.box())
   await settle()
   s.hear(MIN_SAMPLES * 2)
-  s.dictation.finish()
+  const sent: string[] = []
+  s.dictation.finish(() => sent.push(s.box()))
+  s.dictation.finish(() => sent.push(s.box()))
+  await settle()
+  assert.deepEqual(sent, [])
+  s.pending[0]!.answer('and the follow-up')
+  await settle()
+  assert.deepEqual(sent, ['Fix the bug and the follow-up'])
+})
+
+test('cancel while transcribing drops the transcript and the send waiting for it', async () => {
+  const s = setup({ provider: () => 'openai' })
+  s.dictation.start(s.box())
+  await settle()
+  s.hear(MIN_SAMPLES * 2)
+  let sent = false
+  s.dictation.finish(() => (sent = true))
   await settle()
   s.dictation.cancel()
   s.pending[0]!.answer('too late')
   await settle()
   assert.equal(s.box(), 'Fix the bug')
+  assert.equal(sent, false)
   assert.equal(s.dictation.busy, false)
 })
 
@@ -201,4 +230,25 @@ test('a failed transcription reports it and sends nothing', async () => {
   assert.equal(s.dictation.error, 'Host error 500')
   assert.equal(sent, false)
   assert.equal(s.dictation.busy, false)
+})
+
+test('words after a pause go after the words before it (the recognizer starts over without a final)', (t) => {
+  t.mock.timers.enable({ apis: ['Date'] })
+  const s = setup()
+  s.dictation.start(s.box())
+  s.say({ type: 'partial', text: 'I fixed' })
+  s.say({ type: 'partial', text: 'I fixed the parser' })
+  // A pause: on-device recognition (macOS 15+, iOS 18+) restarts its transcript, still not final.
+  t.mock.timers.tick(3000)
+  s.say({ type: 'partial', text: 'now' })
+  s.say({ type: 'partial', text: 'now run the tests' })
+  assert.equal(s.box(), 'Fix the bug I fixed the parser now run the tests')
+})
+
+test('the end marker closes what was said, so the next words go after it even right away', () => {
+  const s = setup()
+  s.dictation.start(s.box())
+  s.say({ type: 'partial', text: 'I fixed the parser', ends: true })
+  s.say({ type: 'partial', text: 'now run all the tests' })
+  assert.equal(s.box(), 'Fix the bug I fixed the parser now run all the tests')
 })

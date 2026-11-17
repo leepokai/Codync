@@ -2,26 +2,144 @@ use super::*;
 
 #[tokio::test]
 async fn routines_keep_the_chat_draft_until_the_user_returns_to_chat() {
-    use crate::tui::manage::RoutineList;
+    use crate::tui::manage::DetailsPage;
     use crossterm::event::{KeyCode, KeyEvent};
 
     let mut app = test_app();
     app.selected = Some("b".into());
     app.drafts.insert("b".into(), Editor::with("My unfinished message"));
-    app.overlays.push(Overlay::Routines(RoutineList {
-        bot: "b".into(),
-        items: Some(Vec::new()),
-        runs: Vec::new(),
-        cursor: 0,
-    }));
+    app.overlays.push(Overlay::Details(DetailsPage { bot: "b".into(), items: Some(Vec::new()), ..Default::default() }));
 
     app.on_key(KeyEvent::from(KeyCode::Char('c')));
-    assert!(matches!(app.overlays.last(), Some(Overlay::Routines(_))));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Details(_))));
     assert_eq!(app.drafts["b"].text, "My unfinished message");
 
     app.on_key(KeyEvent::from(KeyCode::Char('n')));
     assert!(matches!(app.overlays.last(), Some(Overlay::Routine(_))));
     assert_eq!(app.drafts["b"].text, "My unfinished message");
+}
+
+#[tokio::test]
+async fn a_follow_up_sits_above_the_routines_and_x_cancels_it() {
+    use crate::tui::manage::{DetailsPage, Reply};
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    fn list(app: &App) -> &DetailsPage {
+        let Some(Overlay::Details(l)) = app.overlays.last() else { panic!("the routines are open") };
+        l
+    }
+
+    let mut app = test_app();
+    app.selected = Some("b".into());
+    app.overlays.push(Overlay::Details(DetailsPage {
+        bot: "b".into(),
+        items: Some(vec![json!({"id": "r", "name": "Morning", "enabled": true, "triggers": []})]),
+        follow_ups: vec![json!({"id": "f", "botId": "b", "at": 0, "note": "Check the build"})],
+        ..Default::default()
+    }));
+
+    // On the follow-up, a routine's keys leave it and the routine alone.
+    app.on_key(KeyEvent::from(KeyCode::Char(' ')));
+    assert_eq!(list(&app).follow_ups.len(), 1);
+    assert_eq!(list(&app).items.as_ref().unwrap()[0]["enabled"], true);
+
+    // x asks the host; the row stays until it answers, and a cancel that failed leaves it there.
+    app.on_key(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(list(&app).follow_ups.len(), 1);
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Err("the computer is unreachable".into()));
+    assert_eq!(list(&app).follow_ups.len(), 1, "it still waits on the host");
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("the computer is unreachable"));
+
+    // Dropped on the host: the list it answers has the routine alone, which is picked now.
+    app.on_sheet_reply(Reply::FollowUpCancelled("b".into()), Ok(json!({"ok": true})));
+    assert_eq!(app.hint.as_ref().map(|(text, _)| text.as_str()), Some("Follow-up cancelled"));
+    let listing = json!({"routines": [{"id": "r", "name": "Morning", "enabled": true, "triggers": []}], "followUps": [], "runs": []});
+    app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
+    assert_eq!(list(&app).follow_ups.len(), 0);
+    assert_eq!(list(&app).cursor, 0, "the routine below is picked now");
+
+    // On the routine, x asks before deleting it.
+    app.on_key(KeyEvent::from(KeyCode::Char('x')));
+    assert!(matches!(app.overlays.last(), Some(Overlay::Confirm(_))));
+}
+
+#[tokio::test]
+async fn a_reload_keeps_the_cursor_on_the_row_it_picked() {
+    use crate::tui::manage::{DetailsPage, Reply};
+
+    fn list(app: &mut App) -> &mut DetailsPage {
+        let Some(Overlay::Details(l)) = app.overlays.last_mut() else { panic!("the routines are open") };
+        l
+    }
+    /// The listing comes again with these follow-ups above the two routines: the id of the row then picked.
+    fn reload(app: &mut App, follow_ups: &[&str]) -> String {
+        let follow_ups: Vec<Value> = follow_ups.iter().map(|id| json!({"id": id, "note": "Check the build"})).collect();
+        let listing = json!({"routines": [{"id": "r1"}, {"id": "r2"}], "followUps": follow_ups, "runs": []});
+        app.on_sheet_reply(Reply::Routines("b".into()), Ok(listing));
+        list(app).picked(&[], None).map(|row| row.id().to_owned()).unwrap_or_default()
+    }
+
+    let mut app = test_app();
+    app.overlays.push(Overlay::Details(DetailsPage { bot: "b".into(), ..Default::default() }));
+    reload(&mut app, &["f"]);
+    list(&mut app).cursor = 1;
+    // The follow-up above began: `r` or space must not act on the next routine.
+    assert_eq!(reload(&mut app, &[]), "r1");
+    // The bot set two more, listed above the routines: `x` must not cancel one of them.
+    assert_eq!(reload(&mut app, &["g", "h"]), "r1");
+    // The picked follow-up itself began: the cursor stays where it was, on a row that exists.
+    list(&mut app).cursor = 0;
+    assert_eq!(reload(&mut app, &["h"]), "h");
+    assert_eq!(reload(&mut app, &[]), "r1");
+}
+
+#[tokio::test]
+async fn the_dev_servers_sheet_offers_what_each_server_allows() {
+    use crate::tui::manage::DevServersSheet;
+    use crossterm::event::{KeyCode, KeyEvent};
+
+    fn sheet(app: &App) -> &DevServersSheet {
+        let Some(Overlay::DevServers(sheet)) = app.overlays.last() else { panic!("the sheet is open") };
+        sheet
+    }
+
+    let failed = json!({"id": "a", "name": "web", "command": "npm run dev", "folder": "/site", "status": "failed",
+        "ports": [], "startedAt": null, "exitCode": 3, "managed": true});
+    let shell = json!({"id": "detected:9", "name": "node", "command": "node", "folder": null, "status": "running",
+        "ports": [{"port": 5173, "local": "http://localhost:5173", "remote": []}], "startedAt": null, "exitCode": null,
+        "managed": false});
+    let mut app = test_app();
+    let bot = json!({"id": "b", "name": "Bot", "devServers": [failed, shell]});
+    app.bots.insert("b".into(), Bot::parse(&bot).expect("a bot with servers parses"));
+    app.selected = Some("b".into());
+    assert_eq!(app.bots["b"].dev_servers.len(), 2, "what the host sends decodes");
+
+    app.open_dev_servers();
+    assert_eq!(sheet(&app).selected, 0);
+
+    // Enter on one that failed reads why, and its log says how it ended.
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    let logs = sheet(&app).logs.as_ref().expect("the log opened");
+    assert_eq!(logs.detail, "npm run dev · Exit code 3");
+    app.on_key(KeyEvent::from(KeyCode::Char('r')));
+    assert!(sheet(&app).logs.is_some(), "a refresh stays in the log");
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    assert!(sheet(&app).logs.is_none(), "esc goes back to the list");
+
+    // One started through the shell has no log to read.
+    app.on_key(KeyEvent::from(KeyCode::Down));
+    assert_eq!(sheet(&app).selected, 1);
+    app.on_key(KeyEvent::from(KeyCode::Char('l')));
+    assert!(sheet(&app).logs.is_none());
+
+    // Attached from elsewhere, its address shows instead of a browser opening here.
+    app.on_this_computer = false;
+    app.on_key(KeyEvent::from(KeyCode::Enter));
+    let (hint, _) = app.hint.as_ref().expect("a hint shows");
+    assert!(hint.starts_with("http://localhost:5173 · "), "{hint}");
+
+    app.on_key(KeyEvent::from(KeyCode::Esc));
+    assert!(app.overlays.is_empty());
 }
 
 #[test]
@@ -30,6 +148,15 @@ fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("", &["anything"]));
     assert!(!fuzzy("xr", &["Rex"]));
     assert!(fuzzy("web", &["Rex", "~/mycode/web"]));
+}
+
+#[test]
+fn a_path_starts_at_home_only_inside_the_home_folder() {
+    assert_eq!(tilde("/Users/me/code", "/Users/me"), "~/code");
+    assert_eq!(tilde("/Users/me", "/Users/me/"), "~");
+    assert_eq!(tilde(r"C:\Users\me\code", r"C:\Users\me"), r"~\code");
+    assert_eq!(tilde("/Users/me2/x", "/Users/me"), "/Users/me2/x", "another folder that only starts the same");
+    assert_eq!(tilde("/srv/app", ""), "/srv/app");
 }
 
 #[tokio::test]
@@ -62,6 +189,40 @@ async fn r_on_a_picked_message_replies_to_it() {
     assert_eq!(app.reply.as_deref(), Some("e1"));
     assert_eq!(app.replying_to().map(Entry::quoted).as_deref(), Some("hi"));
     assert!(app.typing && app.pick.is_none());
+}
+
+#[tokio::test]
+async fn q_on_a_picked_quote_picks_the_quoted_message() {
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "Bot"})).expect("a bot with an id parses"));
+    app.selected = Some("b".into());
+    let messages = [
+        (1, "user", json!({"text": "why?"})),
+        (
+            2,
+            "agent",
+            json!({"text": "Because.", "final": true, "replyTo": {"id": "e1", "author": "user", "text": "why?"}}),
+        ),
+        (
+            3,
+            "agent",
+            json!({"text": "Late.", "final": true, "replyTo": {"id": "gone", "author": "user", "text": "old"}}),
+        ),
+    ];
+    for (seq, kind, data) in messages {
+        let v = json!({"botId": "b", "id": format!("e{seq}"), "seq": seq, "turn": 1, "kind": kind, "data": data});
+        let (bot, e) = Entry::parse(&v).expect("a full entry parses");
+        app.entries.entry(bot).or_default().insert(e.seq, e);
+    }
+    let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
+    app.pick = Some("e2".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e1"), "the quoted message is picked, so it comes on screen");
+    assert!(app.pick_key(q), "q never quits while a message is picked");
+    assert_eq!(app.pick.as_deref(), Some("e1"), "a message that quotes nothing stays picked");
+    app.pick = Some("e3".into());
+    assert!(app.pick_key(q));
+    assert_eq!(app.pick.as_deref(), Some("e3"), "a quote of a message that isn't loaded stays put");
 }
 
 #[tokio::test]
@@ -114,4 +275,52 @@ async fn lead_role_opens_from_the_keyboard_and_badge_without_changing_selection(
     assert_eq!(app.selected.as_deref(), Some("other"));
     app.on_key(KeyEvent::from(KeyCode::Enter));
     assert!(app.overlays.is_empty());
+}
+
+#[tokio::test]
+async fn the_settings_form_scrolls_to_keep_the_focused_field_in_sight() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    app.bots.insert("b".into(), Bot::parse(&json!({"id": "b", "name": "B", "backend": "claude"})).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.edit_bot();
+    let mut drawn = |field: usize| {
+        let Some(Overlay::Form(f)) = app.overlays.last_mut() else { panic!("the editor opens") };
+        f.field = field;
+        let mut terminal = Terminal::new(TestBackend::new(100, 44)).expect("terminal");
+        terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
+        terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>()
+    };
+    assert!(!drawn(0).contains("Skills"), "more fields than the form has rows");
+    assert!(drawn(FIELDS.len() - 1).contains("Skills"), "scrolled to the focused one");
+}
+
+#[tokio::test]
+async fn a_long_field_help_wraps_to_a_second_row() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = test_app();
+    let bot = json!({"id": "b", "name": "B", "backend": "claude", "compaction": "early",
+        "compactionTokens": {"min": 50_000, "max": 960_000, "step": 10_000, "presets": [100_000]}});
+    app.bots.insert("b".into(), Bot::parse(&bot).expect("valid bot"));
+    app.selected = Some("b".into());
+    app.edit_bot();
+    let Some(Overlay::Form(f)) = app.overlays.last_mut() else { panic!("the editor opens") };
+    f.field = FIELDS.iter().position(|x| *x == Field::Compaction).expect("a compaction field");
+    let mut terminal = Terminal::new(TestBackend::new(100, 44)).expect("terminal");
+    terminal.draw(|frame| crate::tui::view::draw(frame, &mut app)).expect("draw the form");
+    let drawn = terminal.backend().buffer().content().iter().map(ratatui::buffer::Cell::symbol).collect::<String>();
+    assert!(drawn.contains("50K–960K"), "the sizes one can type, after a description longer than a row");
+}
+
+#[test]
+fn update_notices_name_the_side_that_needs_updating() {
+    use crate::compat::Mismatch;
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateApp { minimum: "2.46.3".into() }, "Office Mac"),
+        "Update this app: the app on this computer needs Codync 2.46.3 or newer (Office Mac requires it)."
+    );
+    assert_eq!(
+        mismatch_text(&Mismatch::UpdateHost { version: "2.20.0".into(), minimum: "2.46.3".into() }, "Office Mac"),
+        "Update Codync on Office Mac: it runs 2.20.0; that computer needs Codync 2.46.3 or newer. ^k → Check for updates."
+    );
 }

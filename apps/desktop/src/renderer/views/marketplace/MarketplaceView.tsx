@@ -61,6 +61,8 @@ export function MarketplaceView() {
   const agents = query ? allAgents.filter((b) => matches(b.name)) : allAgents
   const shownSkills = query ? skills.filter((s) => matches(s.name) || matches(s.description)) : skills
   const installedCount = plugins.installedConnectors.length + plugins.installedSkills.length
+  const installedConnectorPreview = plugins.installedConnectors.slice(0, 3)
+  const installedSkillPreview = plugins.installedSkills.slice(0, Math.max(0, 3 - installedConnectorPreview.length))
 
   useEffect(() => {
     void plugins.refresh()
@@ -107,11 +109,14 @@ export function MarketplaceView() {
       <Button kind="secondary" onClick={() => setShowCredentials(true)}><Icon name="lock.shield" size={12} />{tr('Credentials')}</Button>
       {installedCount > 0 ? (
         <button className="press market-installed" onClick={() => setShowInstalled(true)}>
-          <HStack as="span" align="stretch" className="market-installed-logos">
-            {plugins.installedConnectors.slice(0, 3).map((c) => (
-              <HStack as="span" align="stretch" key={c.id}>
-                <ServiceLogo name={c.name} registryName={c.registryName} size={26} />
-              </HStack>
+          <HStack as="span" align="center" className="market-installed-logos">
+            {installedConnectorPreview.map((c) => (
+              <ServiceLogo key={c.id} name={c.name} registryName={c.registryName} size={26} />
+            ))}
+            {installedSkillPreview.map((s) => (
+              <div key={s.id} className="market-logo market-installed-skill">
+                <SkillGlyph />
+              </div>
             ))}
           </HStack>
           <VStack as="span" align="flex-start" className="market-installed-text">

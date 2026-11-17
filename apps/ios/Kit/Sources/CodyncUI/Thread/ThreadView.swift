@@ -11,27 +11,42 @@ public struct ThreadView: View {
     public init(botId: String) { self.botId = botId }
     @Environment(BotStore.self) var model
     @State var showTrace = false
-    /// The message the composer's next send quotes.
-    @State var replyingTo: Entry?
+    /// What the composer's next send quotes: a message, or the part of it the user selected.
+    @State var replyingTo: ReplyQuote?
+    /// The message whose text is open for selecting a part to reply to.
+    @State var selectingText: Entry?
     @State var botChat: BotChatTarget?
     @State var openArtifact: ArtifactTarget?
     @State var openCall: Entry?
     @State var editingGroup = false
     @State var details: DetailsRequest?
+    /// A picture in the chat, full size.
+    @State var viewingImage: ImageViewing?
     @State var calling = false
     @State var callSpeaking = false
     @State var interruptCall: (() -> Void)?
     /// The chat stays on the newest message until the reader scrolls away.
     @State var following = true
     @State var loadingEarlier = false
+    /// Find in the conversation; nil while its bar is closed.
+    @State var find: ConversationFind?
+    /// Bumped to bring the shown match's message into view (a new text, a step).
+    @State var findReveal = 0
+    /// The card last brought into view from the bot's details, or the message a tapped quote quotes.
+    @State var revealed: ConversationReveal?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var bot: Bot? { model.bots[botId] }
+    /// The bot's work in the background, shown in its own chat only.
+    private var work: WorkSections { WorkSections(bot.flatMap { $0.isGroup ? nil : $0.work } ?? []) }
 
-    /// The messages (each platform's own `transcript`, in its `ThreadView+` file) and the
-    /// composer, without the platform's top chrome.
+    /// The messages, the composer and the find bar, without the platform's top chrome.
     private var chat: some View {
-        transcript
+        let items = chatItems
+        let matches = find.map { ConversationFind.matches(in: Self.findable(items), query: $0.query) } ?? []
+        // A card or quote brought into view since find's last step is what the chat shows, without find's match.
+        let shown = revealed?.step == findReveal ? nil : find?.index(in: matches).map { matches[$0] }
+        return transcript(items, shown: shown)
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 6) {
@@ -42,45 +57,117 @@ public struct ThreadView: View {
                         .padding(.bottom, 8)
                         .transition(.opacity)
                 } else {
+                    if !work.isIdle {
+                        WorkCapsule(botId: botId, work: work) { details = DetailsRequest() }
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                     Composer(botId: botId, replyingTo: $replyingTo,
+                             queued: model.chat(botId).hidingCalls().queue(working: busy),
                              onCall: !calling && bot != nil ? { calling = true } : nil,
                              onInterrupt: callSpeaking ? interruptCall : nil)
                 }
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: model.mismatch)
+            .animation(Motion.reduced(Motion.layout, reduceMotion), value: work.isIdle)
         }
         // Grok Bot's call: a bar floating over the chat, which stays readable and usable.
         .overlay(alignment: .top) {
-            if calling {
-                CallView(botId: botId, isSpeaking: $callSpeaking, interrupt: $interruptCall) {
-                    withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = false }
+            VStack(spacing: 8) {
+                if calling {
+                    CallView(botId: botId, isSpeaking: $callSpeaking, interrupt: $interruptCall) {
+                        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = false }
+                    }
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                    .padding(.top, 4)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                if let open = find {
+                    // Not `Binding($find)`: its force unwrap crashes when the closing bar's binding updates once more.
+                    let binding = Binding { find ?? open } set: { if find != nil { find = $0 } }
+                    FindBar(find: binding, matches: matches, step: { stepFind($0, in: matches) }, close: { closeFind(in: matches) })
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.top, 4)
         }
         .animation(Motion.reduced(Motion.layout, reduceMotion), value: calling)
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: find == nil)
+        // A new text shows its first match; it counts as searched once typing pauses.
+        .onChange(of: find?.query) { findReveal += 1 }
+        // The first match found is held, so earlier messages with matches loading above don't move it.
+        .onChange(of: find?.shown == nil && !matches.isEmpty) { find?.pin(matches) }
+        .task(id: find?.query) {
+            try? await Task.sleep(for: .milliseconds(700))
+            if !Task.isCancelled { reportFind(found: !matches.isEmpty) }
+        }
+    }
+
+    // MARK: find
+
+    /// The text find searches: each message's own words, not separators, notices or exchanges.
+    static func findable(_ items: [ChatItem]) -> [(id: String, text: String)] {
+        items.compactMap { item in
+            guard case let .entry(e, _) = item.kind, e.kind == "user" || e.kind == "agent", let text = e.data.text else { return nil }
+            return (item.id, text)
+        }
+    }
+
+    func openFind() {
+        guard find == nil else { return }
+        revealed = nil
+        Analytics.shared.capture(.conversationFindOpened)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = ConversationFind() }
+    }
+
+    private func stepFind(_ forward: Bool, in matches: [ConversationFind.Match]) {
+        find?.step(forward: forward, in: matches)
+        findReveal += 1
+        reportFind(found: !matches.isEmpty)
+    }
+
+    /// Closing clears the highlight with the bar.
+    private func closeFind(in matches: [ConversationFind.Match]) {
+        reportFind(found: !matches.isEmpty)
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = nil }
+    }
+
+    private func reportFind(found: Bool) {
+        if let event = find?.searched(found: found) { Analytics.shared.capture(event) }
     }
 
     var conversation: some View {
         chrome(chat)
             .readingConversation(botId)
-            .reviewReading(botId: botId, unobscured: following && !calling && !showTrace && botChat == nil
-                           && openArtifact == nil && openCall == nil && details == nil && !editingGroup
-                           && model.composerDraft(for: botId).isEmpty && model.fileDownloads.export == nil)
+            .onChange(of: model.detailsRequest, initial: true) { _, _ in
+                if model.takeDetailsRequest(for: botId) { details = DetailsRequest() }
+            }
+            .onChange(of: model.cardRequest?.item.id, initial: true) { _, _ in
+                if let item = model.takeCardRequest(for: botId) { showCard(item) }
+            }
+            .onChange(of: model.threadRequest?.item.id, initial: true) { _, _ in
+                if let item = model.takeThreadRequest(for: botId) { details = DetailsRequest(thread: item) }
+            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
-            // The details sheet's Library presents its own downloads.
-            .fileExportSheet(model, botId: botId, active: details == nil)
+            // The details sheet's Library and the picture viewer present their own downloads.
+            .fileExportSheet(model, botId: botId, active: details == nil && viewingImage == nil)
+            .imageViewer($viewingImage)
             .codyncSheet(isPresented: $showTrace) {
                 TraceView(botId: botId)
+            }
+            .codyncSheet(item: $selectingText) { e in
+                SelectTextSheet(text: e.data.text ?? "") { part in
+                    selectingText = nil
+                    reply(to: e.replyQuote(part: part))
+                }
             }
             .codyncSheet(item: $botChat) { BotConversationView(botId: botId, peerId: $0.id) }
             .codyncSheet(item: $openArtifact) { ArtifactView(target: $0) }
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
             .codyncSheet(item: $details) { request in
-                BotDetailsView(botId: request.botId ?? botId, request: request) { artifact in
+                // A card is in this chat: another bot's details (a group member's) have none to go to.
+                let own = (request.botId ?? botId) == botId
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil,
+                               openInChat: own ? { showInChat($0.id) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -90,6 +177,43 @@ public struct ThreadView: View {
             }
     }
 
+    /// Closes the details over the chat and brings the card `item` waits on into view, read from the computer first
+    /// when this device doesn't hold it. One that can't be found leaves the chat where it was.
+    private func showCard(_ item: WorkItem) {
+        details = nil
+        Task {
+            guard let card = await model.card(for: item, in: botId) else { return }
+            reveal(card.id)
+        }
+    }
+
+    /// Brings the row `id` into view, once.
+    private func reveal(_ id: String) {
+        findReveal += 1
+        revealed = ConversationReveal(id: id, step: findReveal)
+    }
+
+    /// A quote's tap: brings the quoted message into view (a user row is keyed by its nonce, not the entry id).
+    /// ponytail: only among the loaded messages, like a card; page back until it is found if `quote_opened`
+    /// shows `found: false` often.
+    private func showQuoted(_ id: String) {
+        let shown = rowId(of: id)
+        Analytics.shared.capture(.quoteOpened(found: shown != nil))
+        if let shown { reveal(shown) }
+    }
+
+    /// Closes the details over the chat and brings the entry `id` into view: what an item's thread says its task put
+    /// here. Only among the loaded messages, like a quote.
+    private func showInChat(_ id: String) {
+        details = nil
+        if let shown = rowId(of: id) { reveal(shown) }
+    }
+
+    /// The chat's row that shows the entry `id`.
+    private func rowId(of id: String) -> String? {
+        chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }?.id
+    }
+
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.
     private func startShortcutCall() {
         showTrace = false
@@ -97,6 +221,7 @@ public struct ThreadView: View {
         openArtifact = nil
         editingGroup = false
         details = nil
+        viewingImage = nil
         if model.fileDownloads.export?.botId == botId { model.fileDownloads.dismissExport() }
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { calling = true }
     }
@@ -115,18 +240,20 @@ public struct ThreadView: View {
             } else {
                 ChatRow(entry: e, groupStart: groupStart, chat: bot, openTrace: { showTrace = true },
                         // An update card takes the composer's place, so there's nothing to reply with.
-                        reply: e.isReplyable && model.mismatch == nil ? { reply(to: e) } : nil,
+                        reply: e.isReplyable && model.mismatch == nil ? { reply(to: e.replyQuote) } : nil,
+                        selectText: model.supportsReplyPart ? { selectingText = e } : nil,
                         // In a group, the bot whose agent failed.
-                        addFallback: { details = DetailsRequest(botId: e.data.author ?? e.botId) },
+                        addFallback: { details = .fallbacks(of: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
-                        openCall: { openCall = e })
+                        openCall: { openCall = e },
+                        openQuote: { showQuoted($0) })
                     .equatable()
             }
         }
     }
 
-    private func reply(to entry: Entry) {
-        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { replyingTo = entry }
+    private func reply(to quote: ReplyQuote) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { replyingTo = quote }
     }
 
     // MARK: chrome
@@ -142,15 +269,36 @@ public struct ThreadView: View {
             }
             .frame(width: 12)
             .accessibilityHidden(true)
-            Text(L10n.tr(model.connectionLabel))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 3) {
+                Text(L10n.tr(model.connectionLabel))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let devServerLabel {
+                    Text("·")
+                    if devServerSummary == .starting { Spinner(size: 8) }
+                    Text(devServerLabel)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .foregroundStyle(devServerSummary == .failed ? Palette.danger : Palette.secondary)
+                }
+            }
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(Palette.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(model.hostName), \(L10n.tr(connectionDescription))")
+        .accessibilityLabel([model.hostName, L10n.tr(connectionDescription), devServerLabel].compactMap(\.self).joined(separator: ", "))
         .help("\(model.hostName) · \(L10n.tr(connectionDescription))")
+    }
+
+    private var devServerSummary: DevServerSummary { DevServerSummary(bot?.devServers ?? []) }
+
+    private var devServerLabel: String? {
+        switch devServerSummary {
+        case .none: nil
+        case .starting: L10n.tr("Starting")
+        case .failed: L10n.tr("Failed to start")
+        case let .running(text): text
+        }
     }
 
     private var connectionSymbol: String {
@@ -163,6 +311,7 @@ public struct ThreadView: View {
     }
 
     private var connectionDescription: String {
+        if model.isAsleep { return "Sleeping · wakes when you message" }
         switch model.shownConnection {
         case .connecting: return "Connecting"
         case .computerOffline, .offline: return "Offline"
@@ -170,6 +319,7 @@ public struct ThreadView: View {
         case .unpaired: return "Not paired"
         case .online: break
         }
+        if model.isCloudUpdating { return "Updating…" }
         if model.mismatch != nil { return "Needs update" }
         switch model.hostRoute {
         case .relay: return RelayCopy.connected(cloud: model.computer.cloud)
@@ -291,9 +441,7 @@ struct IntroCard: View {
             Text(bot.name).font(.title2.weight(.semibold)).foregroundStyle(Palette.text)
             Text(bot.managedWorkspace
                  ? "\(model.backendName(bot.backend)) · \(L10n.tr("Personal workspace"))"
-                 : L10n.tr("{agent} in {path}")
-                    .replacingOccurrences(of: "{agent}", with: model.backendName(bot.backend))
-                    .replacingOccurrences(of: "{path}", with: bot.cwd))
+                 : L10n.fill(L10n.tr("{agent} in {path}"), ["agent": model.backendName(bot.backend), "path": bot.cwd]))
                 .font(.subheadline)
                 .foregroundStyle(Palette.secondary)
                 .multilineTextAlignment(.center)
@@ -321,13 +469,20 @@ extension ThreadView {
     }
 
     private var working: Bool { bot?.isWorking(in: botId) == true && !model.isOffline }
+    /// The bot works anywhere (a room, a routine): the user's messages here wait above the composer.
+    private var busy: Bool { bot?.isWorking == true }
 
     /// iPhone's messages: all this device has, earlier ones from the computer as the reader
     /// scrolls up; the chat follows the newest message until they scroll away, and a reply is
     /// revealed steadily as it's written.
-    var transcript: some View {
-        // What voice calls carried shows in each call's conversation, not in the chat.
-        let items = ChatItem.build(model.chat(botId).hidingCalls())
+    /// What voice calls carried shows in each call's conversation, not in the chat.
+    /// Messages waiting behind the bot's work show above the composer instead.
+    var chatItems: [ChatItem] {
+        ChatItem.build(model.chat(botId).hidingCalls().hidingQueue(working: busy))
+    }
+
+    /// `shown`: the find's current match, whose message is highlighted and brought into view.
+    func transcript(_ items: [ChatItem], shown: ConversationFind.Match?) -> some View {
         var rows: [ConversationRow] = []
         if moreOnComputer {
             rows.append(ConversationRow("earlier") {
@@ -344,7 +499,13 @@ extension ThreadView {
                 if bot.isGroup { GroupIntroCard(group: bot).padding(.top, 40) } else { IntroCard(bot: bot).padding(.top, 40) }
             })
         }
-        rows += items.map { item in ConversationRow(item.id, isUserMessage: item.isUserMessage) { row(item) } }
+        rows += items.map { item in
+            ConversationRow(item.id, isUserMessage: item.isUserMessage) {
+                row(item)
+                    .background(shown?.id == item.id ? Palette.attention.opacity(0.18) : .clear)
+                    .accessibilityAddTraits(shown?.id == item.id ? .isSelected : [])
+            }
+        }
         // Offline, "working" is only what the computer last said; don't show it as live.
         if let bot, working {
             rows.append(ConversationRow("working") {
@@ -355,7 +516,8 @@ extension ThreadView {
             })
         }
         // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
-        return ConversationList(rows: rows, following: $following, nearTop: { showEarlier() }, refresh: {
+        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? revealed
+        return ConversationList(rows: rows, following: $following, reveal: reveal, nearTop: { showEarlier() }, refresh: {
             model.restartStream()
             _ = try? await model.ready()
         })
@@ -384,8 +546,13 @@ extension ThreadView {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         header
-                        connectionSubtitle
+                        // The port shows here, so a tap on it opens the details too.
+                        Button(action: openDetails) { connectionSubtitle }
+                            .buttonStyle(.plain)
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L10n.tr("Find in conversation"), systemImage: "magnifyingglass", action: openFind)
                 }
                 if model.screen != nil {
                     ToolbarItem(placement: .topBarTrailing) { computerButton }

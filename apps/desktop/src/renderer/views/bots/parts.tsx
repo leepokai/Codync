@@ -2,7 +2,8 @@ import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObjec
 import { createPortal } from 'react-dom'
 import { CharacterAvatar } from '../../components/Avatar'
 import { RowLabel, Switch } from '../../components/Controls'
-import { anchorPlacement, useEscape, usePresence } from '../../components/Overlay'
+import { useEscape, usePresence } from '../../components/Overlay'
+import { anchorPlacement } from '../../components/Menu'
 import { VStack } from '../../components/Stack'
 import { useTr } from '../../lib/use-language'
 import { AVATAR_COLORS, AVATAR_SHAPES } from '../../lib/theme'
@@ -54,18 +55,19 @@ export function AutoTextArea({ value, onChange, placeholder, minRows, maxRows, c
 
 /** The avatar's shape and color: each a wrapping, centered row of choices, ringed when picked. */
 export function AvatarPicker({ shape, color, onShape, onColor }: { shape: string; color: string; onShape: (s: string) => void; onColor: (c: string) => void }) {
+  const tr = useTr()
   return (
     <VStack gap={12} className="avatar-picker">
       <div className="swatch-row">
         {AVATAR_SHAPES.map((s) => (
-          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={`${s} shape`} aria-pressed={s === shape} onClick={() => onShape(s)}>
+          <button key={s} className={`swatch ${s === shape ? 'on' : ''}`} aria-label={tr('{shape} shape').replaceAll('{shape}', () => s)} aria-pressed={s === shape} onClick={() => onShape(s)}>
             <CharacterAvatar shape={s} color={color} size={36} />
           </button>
         ))}
       </div>
       <div className="swatch-row">
         {AVATAR_COLORS.map((c) => (
-          <button key={c.id} className={`swatch ${c.id === color ? 'on' : ''}`} aria-label={c.label} aria-pressed={c.id === color} onClick={() => onColor(c.id)}>
+          <button key={c.id} className={`swatch ${c.id === color ? 'on' : ''}`} aria-label={tr(c.label)} aria-pressed={c.id === color} onClick={() => onColor(c.id)}>
             <span className="swatch-color" style={{ background: c.hex }} />
           </button>
         ))}

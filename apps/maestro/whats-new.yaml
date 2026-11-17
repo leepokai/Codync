@@ -1,0 +1,66 @@
+# What's new after an update (docs/features/whats-new.md): the window opens once with the version in its header, each
+# highlight's title and body under its clip, scrolls to the last one, closes, and stays away on the next launch. The
+# titles and bodies are the current announcement's (announcements.json): they change with it. Whether the clips play
+# and their corners are round is checked by eye. The phone must already be signed in and paired, so run it apart from
+# `welcome`. The iPhone gets its last seen version from the launch argument (`-<key>` reaches UserDefaults for that
+# launch only), Android from its preference file, written before the run:
+#   adb shell run-as com.pokai.Codync.android.dev sh -c 'mkdir -p shared_prefs && echo "<map><string name=\"whatsNewSeen\">0.0.0</string></map>" > shared_prefs/codync-whats-new.xml'
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags whats-new apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - whats-new
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+            "-whatsNewSeen": "0.0.0"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "What's new"
+    timeout: 30000
+- assertVisible: "\\d+\\.\\d+\\.\\d+"
+- assertVisible: "Codync Cloud"
+- assertVisible: "Beta"
+- scrollUntilVisible:
+    element: "Start a cloud computer on your own Boat or InstaBox account.*"
+    direction: DOWN
+- scrollUntilVisible:
+    element: "Login profiles"
+    direction: DOWN
+- scrollUntilVisible:
+    element: "Sign an agent in to several accounts or add API keys.*"
+    direction: DOWN
+- takeScreenshot: whats-new
+- tapOn: "Close"
+- assertNotVisible: "What's new"
+# The next launch, without the argument: this version is recorded, so the window stays away.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# Past the launch: the window would have come by now.
+- extendedWaitUntil:
+    visible: "What's new"
+    timeout: 5000
+    optional: true
+- assertNotVisible: "What's new"

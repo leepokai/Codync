@@ -5,6 +5,11 @@ import Testing
 @testable import CodyncKit
 
 struct AppLanguageTests {
+    @Test func whatFillPutsInStaysAsWritten() {
+        #expect(L10n.fill("{name} and {other}", ["name": "Build {other}", "other": "Reviewer"]) == "Build {other} and Reviewer")
+        #expect(L10n.fill("{name} and {missing}", ["name": "Build"]) == "Build and {missing}")
+    }
+
     @Test func theLanguageChoiceIsReadFromTheStoreItWasWrittenTo() {
         let name = "AppLanguageTests.\(UUID().uuidString)"
         let suite = UserDefaults(suiteName: name)!
@@ -106,6 +111,10 @@ struct AppLanguageTests {
         #expect(L10n.tr("Apps", preference: .zh, systemIsChinese: false) == "应用")
         #expect(L10n.tr("Agents", preference: .zh, systemIsChinese: false) == "智能体")
         #expect(L10n.tr("Installed", preference: .zh, systemIsChinese: false) == "已安装")
+        #expect(L10n.tr("3 installed", preference: .zh, systemIsChinese: false) == "已安装 3 个")
+        #expect(L10n.tr("Error: the host service isn't installed", preference: .zh, systemIsChinese: false) == "Error: the host service isn't installed")
+        #expect(L10n.tr("Codync 2.47.0 is available", preference: .zh, systemIsChinese: false) == "Codync 2.47.0 已推出")
+        #expect(L10n.tr("You have reached your limit.", preference: .zh, systemIsChinese: false) == "You have reached your limit.")
         #expect(L10n.tr("Not installed", preference: .zh, systemIsChinese: false) == "未安装")
         #expect(L10n.tr("Set up", preference: .zh, systemIsChinese: false) == "设置")
         #expect(L10n.tr("Writing a reply…", preference: .zh, systemIsChinese: false) == "正在写回复…")
@@ -126,7 +135,7 @@ struct AppLanguageTests {
 
 extension AppLanguageTests {
 @Test func additionalLanguagesResolveRegionsAndLoadBundledCatalogs() {
-    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru] {
+    for language in [AppLanguage.ja, .ko, .fr, .de, .es, .ru, .it] {
         #expect(AppLanguage.resolved(preference: .system, languages: [language.rawValue + "-XX"]) == language)
         #expect(AppLanguage.resolved(preference: language, languages: ["zh-TW"]) == language)
         let translated = L10n.tr("Settings", preference: language, systemIsChinese: false)
@@ -138,6 +147,8 @@ extension AppLanguageTests {
     #expect(AppLanguage.resolved(preference: .system, languages: ["nl-NL"]) == .en)
     #expect(AppLanguage.resolved(preference: .system, languages: ["ru_RU.UTF-8"]) == .ru)
     #expect(AppLanguage.menuTitle(.ru, preference: .en, systemIsChinese: true) == "Русский")
+    #expect(AppLanguage.resolved(preference: .system, languages: ["it_IT.UTF-8"]) == .it)
+    #expect(AppLanguage.menuTitle(.it, preference: .en, systemIsChinese: true) == "Italiano")
 }
 
 }
@@ -153,7 +164,7 @@ extension AppLanguageTests {
         #expect(AppLanguage.preference(in: suite) == .ptBR)
         #expect(AppLanguage(rawValue: "pt-BR") == .ptBR)
         #expect(AppLanguage.ptBR.catalogName == "pt-BR")
-        #expect(Array(AppLanguage.allCases.suffix(3)) == [.es, .ptBR, .ru])
+        #expect(Array(AppLanguage.allCases.suffix(4)) == [.es, .ptBR, .ru, .it])
         #expect(AppLanguage.menuTitle(.ptBR, preference: .en, systemIsChinese: true) == "Português (Brasil)")
         #expect(!AppLanguage.usesChinese(preference: .ptBR, systemIsChinese: true))
         let locale = AppLanguage.locale(preference: .ptBR, systemIsChinese: true)
@@ -184,5 +195,53 @@ extension AppLanguageTests {
         #expect(changed.withLock { $0 })
         #expect(AppLanguage.preference(in: store) == .ja)
         store.removeObject(forKey: AppLanguage.storageKey)
+    }
+
+    @Test func followUpNoticesTranslateAroundTheWaitAndKeepTheNote() {
+        func hant(_ text: String) -> String { L10n.tr(text, preference: .zhHant, systemIsChinese: false) }
+        #expect(hant("Follow-up in 1 minute: Settings") == "1 分鐘後跟進：Settings")
+        #expect(hant("Follow-up in 20 minutes: Settings") == "20 分鐘後跟進：Settings")
+        // A note that reads like another wait stays a note: the wait ends at the first colon.
+        #expect(hant("Follow-up in about 3 hours: look again in 5 minutes: maybe")
+            == "約 3 小時後跟進：look again in 5 minutes: maybe")
+        #expect(hant("Follow-up in 1 minute: wait 5 minutes: then check")
+            == "1 分鐘後跟進：wait 5 minutes: then check")
+        #expect(hant("Follow-up in about 2 days: rerun if 3 hours: passed")
+            == "約 2 天後跟進：rerun if 3 hours: passed")
+        #expect(hant("Follow-up in about 2 days: Plan") == "約 2 天後跟進：Plan")
+        #expect(hant("Follow-up · Plan") == "跟進 · Plan")
+        #expect(hant("Follow-up cancelled: Plan") == "已取消跟進：Plan")
+        // A waiting follow-up's row in the routines list.
+        #expect(hant("Follow-up at 15:42") == "15:42 跟進")
+        #expect(hant("Follow-up due now") == "即將跟進")
+    }
+
+    @Test func botRoutineAndMessageSlotsKeepWhatTheUserWrote() {
+        func ru(_ text: String) -> String { L10n.tr(text, preference: .ru, systemIsChinese: false) }
+        #expect(ru("Created bot connected") == "Создан бот connected")
+        #expect(ru("Created bot Reviewer").hasSuffix("Reviewer"))
+        #expect(ru("Routine · Проверка почты") == "Рутина · Проверка почты")
+        #expect(ru("Routine · Settings") == "Рутина · Settings")
+        #expect(ru("Message from Reviewer: Settings") == "Сообщение от Reviewer: Settings")
+    }
+}
+
+extension AppLanguageTests {
+    @Test func filledTemplatesPreserveNamesAndSubstituteValuesOnlyOnce() {
+        for language in AppLanguage.allCases where language != .system && language != .en {
+            for name in ["Plan", "connected", "Standby", "$&", "{hint}"] {
+                let expected = L10n.tr("Routine · {name}", preference: language)
+                    .replacingOccurrences(of: "{name}", with: name)
+                #expect(L10n.tr("Routine · \(name)", preference: language) == expected)
+                let title = L10n.tr("Message about “{title}”", preference: language)
+                    .replacingOccurrences(of: "{title}", with: name)
+                #expect(L10n.tr("Message about “\(name)”", preference: language) == title)
+            }
+            let hint = "Install Claude Code and run `claude auth login`."
+            let expected = L10n.tr("{name} isn't set up on this computer. {hint}", preference: language)
+                .replacingOccurrences(of: "{hint}", with: L10n.tr(hint, preference: language))
+                .replacingOccurrences(of: "{name}", with: "{hint}")
+            #expect(L10n.tr("{hint} isn't set up on this computer. \(hint)", preference: language) == expected)
+        }
     }
 }

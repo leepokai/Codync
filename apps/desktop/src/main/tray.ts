@@ -4,6 +4,7 @@ import type { TrayImage, TraySummary, TraySymbol, WindowCommand } from '../share
 import type { HostController } from './host-controller'
 import type { Updates } from './updates'
 import { updateAction } from '../shared/update-action'
+import { usageRows, type UsageRow } from '../shared/tray-usage'
 import { setShowInDock, showInDock } from './dock'
 import { identity } from './environment'
 import { islandSupported, type Island } from './island'
@@ -140,16 +141,7 @@ export class Tray {
         if (s?.screen || s?.networks) items.push({ type: 'separator' })
         if (s?.screen) items.push({ label: this.tr('Remote screen'), icon: this.symbol('display'), submenu: this.screenMenu(s.screen) })
         if (s?.networks) items.push({ label: this.tr('Network'), icon: this.image(s.networkIcon, process.platform === 'darwin'), submenu: this.networkMenu(s.networks) })
-        if (s && s.usage.length) {
-          items.push({ type: 'separator' })
-          for (const provider of s.usage) {
-            // Buttons, not text: the menu dims a disabled item's image. They open the app.
-            items.push({ label: provider.name, icon: this.image(provider.icon), click: () => this.deps.openChat() })
-            for (const line of provider.lines) {
-              items.push({ label: line.title, icon: this.image(line.bar), click: () => this.deps.openChat() })
-            }
-          }
-        }
+        if (s?.usage.length) items.push({ type: 'separator' }, ...this.usageItems(usageRows(s.usage, this.tr('Usage limits'))))
         break
     }
 
@@ -158,6 +150,17 @@ export class Tray {
     items.push({ label: this.tr('Settings'), icon: this.symbol('gearshape'), submenu: this.settingsMenu() })
     items.push({ label: this.tr('Quit {name}').replaceAll('{name}', app.getName()), icon: this.symbol('power'), accelerator: 'CmdOrCtrl+Q', click: () => app.quit() })
     this.tray.setContextMenu(Menu.buildFromTemplate(items))
+  }
+
+  /** Usage limits as menu items: a computer's or an agent's row opens its own as a submenu. */
+  private usageItems(rows: UsageRow[]): Electron.MenuItemConstructorOptions[] {
+    return rows.map((row) => {
+      if ('rule' in row) return { type: 'separator' }
+      if ('title' in row) return { label: row.title, enabled: false }
+      const icon = row.symbol ? this.symbol(row.symbol) : this.image(row.image ?? null)
+      // Buttons, not text: the menu dims a disabled item's image. They open the app.
+      return row.rows ? { label: row.label, icon, submenu: this.usageItems(row.rows) } : { label: row.label, icon, click: () => this.deps.openChat() }
+    })
   }
 
   private screenMenu(screen: NonNullable<TraySummary['screen']>): Electron.MenuItemConstructorOptions[] {

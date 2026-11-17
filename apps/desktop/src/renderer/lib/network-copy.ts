@@ -1,6 +1,7 @@
 /** What the Network section says about this computer's networks (codync-network). */
 
 import type { Network, NetworkComputer, NetworkRole, NetworkRule } from '@shared/network'
+import { fill } from '../../shared/fill.ts'
 
 /** How computers reach each other without a direct path. */
 export type ConnectorChoice = 'public' | 'private' | 'relay'
@@ -30,6 +31,23 @@ export const expiryTime = (expiresAt: number) => new Date(expiresAt).toLocaleTim
 
 export const ANY = '*'
 
+/** The rules' footer, untranslated: what decides, and what a computer no rule matches gets. */
+export const rulesFooter = (net: Network) =>
+  (net.defaultAccess ?? 'allow') === 'allow'
+    ? "The first rule that matches decides. Without rules, every computer in the network may message every bot here. Answers to this computer's own messages always get in."
+    : "The first rule that matches decides. A computer no rule matches gets Auto. Answers to this computer's own messages always get in."
+
+const RULE_LINES: Record<NetworkRule['access'], string> = {
+  allow: 'Allow: {from} → {to}',
+  auto: 'Auto: {from} → {to}',
+  ask: 'Ask: {from} → {to}',
+  deny: 'Deny: {from} → {to}',
+}
+
+/** Whether saving rules failed because the computer's Codync is from before `auto` and `ask`: it refuses the whole
+ *  list in its parser's words, which don't say that it needs updating. */
+export const beforeCeilings = (problem: string) => /unknown variant `(auto|ask)`/.test(problem)
+
 /** A computer of the network by name (names ignore case, like the host's). */
 const computerNamed = (net: Network, name: string) => net.computers.find((c) => c.name.toLowerCase() === name.toLowerCase())
 
@@ -44,14 +62,14 @@ export function ruleLine(rule: NetworkRule, net: Network, tr: (s: string) => str
     rule.fromComputer === ANY
       ? rule.fromAgent === ANY
         ? tr('any bot on any computer')
-        : tr('{bot} on any computer').replaceAll('{bot}', bot)
+        : fill(tr('{bot} on any computer'), { bot })
       : rule.fromAgent === ANY
-        ? tr('any bot on {computer}').replaceAll('{computer}', rule.fromComputer)
-        : tr('{bot} on {computer}').replaceAll('{bot}', bot).replaceAll('{computer}', rule.fromComputer)
+        ? fill(tr('any bot on {computer}'), { computer: rule.fromComputer })
+        : fill(tr('{bot} on {computer}'), { bot, computer: rule.fromComputer })
   const me = net.computers.find((c) => c.me)
   const to = rule.toAgent === ANY ? tr('any bot here') : agentName(me, rule.toAgent)
-  const template = rule.access === 'allow' ? 'Allow: {from} → {to}' : 'Deny: {from} → {to}'
-  return tr(template).replaceAll('{from}', from).replaceAll('{to}', to)
+  // An access this app doesn't know reads as deny, never wider than it is.
+  return fill(tr(RULE_LINES[rule.access] ?? RULE_LINES.deny), { from, to })
 }
 
 /** The rules with `i` moved by `by` (−1 up, +1 down); unchanged at either end. */

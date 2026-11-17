@@ -120,6 +120,7 @@ async fn a_run_that_hit_its_time_limit_waits_for_the_user() {
 async fn a_run_whose_agent_did_not_start_within_its_time_limit_waits_for_the_user() {
     let host = Host::start().await;
     let (bot, id) = routine(&host, "stuck", "--hang-new", "never starts", 1).await;
+    host.works_in_chat(&bot).await;
     deliver(&host, &bot, &id, "payload").await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("setup timed out"), "{failed}");
@@ -139,6 +140,7 @@ fn agent_events(host: &Host, bot: &str, kind: &str) -> usize {
 async fn a_session_cut_short_by_the_time_limit_is_not_left_open() {
     let host = Host::start().await;
     let (bot, id) = routine(&host, "slow", "--slow-new", "slow start", 2).await;
+    host.works_in_chat(&bot).await;
     deliver(&host, &bot, &id, "payload").await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("setup timed out"), "{failed}");
@@ -155,6 +157,7 @@ async fn a_session_cut_short_by_the_time_limit_is_not_left_open() {
 async fn an_agent_that_cannot_resume_keeps_running_after_a_session_cut_short() {
     let host = Host::start().await;
     let (bot, id) = routine(&host, "slow-kept", "--slow-new --no-load", "slow start", 2).await;
+    host.works_in_chat(&bot).await;
     deliver(&host, &bot, &id, "payload").await;
     let failed = run(&host, &bot, &id, "failed").await;
     assert!(failed["detail"].as_str().unwrap().contains("setup timed out"), "{failed}");

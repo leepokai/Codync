@@ -88,7 +88,7 @@ Open TCP 443 to the internet. Leave 8788 on loopback.
 
 ## Point a computer at it
 
-On the computer (not on the VPS), in Codync's Computers settings, turn on Reach from anywhere, set Relay address to `https://relay.example.com`, and paste the same value as `CODYNC_PRIVATE_RELAY_TOKEN` into Relay token. The token stays on that computer: it is sent only in the `Codync-Relay-Token` header when the computer enrolls, never in a URL, and phones never see it. Or:
+On the computer (not on the VPS), in Codync's Computers settings, turn on Reach from anywhere (choose Use your own relay if Codync asks you to add the computer to your account), set Relay address to `https://relay.example.com`, and paste the same value as `CODYNC_PRIVATE_RELAY_TOKEN` into Relay token. The token stays on that computer: it is sent only in the `Codync-Relay-Token` header when the computer enrolls, never in a URL, and phones never see it. Or:
 
 ```bash
 codync-host cloud --url https://relay.example.com --token

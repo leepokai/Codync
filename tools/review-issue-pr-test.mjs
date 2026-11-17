@@ -18,7 +18,7 @@ const run = async (args, answers) => {
     return typeof a === 'function' ? a(prompt, opts) : a
   }
   const parallel = (thunks) => Promise.all(thunks.map((t) => t().catch(() => null)))
-  const workflow = async (name, a) => { calls.push(`workflow:${name}:${a.dir}`); return answers.afterChange }
+  const workflow = async (name, a) => { calls.push(`workflow:${name}:${a.dir}`); prompts[`workflow:${name}`] = a.change; return answers.afterChange }
   const r = await body(args, agent, parallel, () => {}, () => {}, workflow)
   return { results: r.results, outcome: r.results.map((x) => x.outcome).join(','), calls, prompts, ran: (p) => calls.some((c) => c.startsWith(p)) }
 }
@@ -35,7 +35,8 @@ const real = { problem: 'real', evidence: 'e', test: 't', nothing_to_walk: false
 const ac = { review: { confirmed: [] }, e2e: { checks: [{ result: 'pass' }] }, fix: { applied: [], skipped: [] }, next: 'handoff' }
 const drafts = { drafts: [{ on: '#1', as: 'comment', text: 'x' }], cleanup: '' }
 const merged = { status: 'merged', commit: 'm', detail: '' }
-const pr = { 'security:': clean, 'judge:': bug, 'confirm:': real, afterChange: ac, 'ship:': merged, 'drafts:': drafts }
+const ours = { applied: ['bounded the retries'], skipped: [], tests: 'ok' }
+const pr = { 'security:': clean, 'judge:': bug, 'confirm:': real, 'fix:': ours, afterChange: ac, 'ship:': merged, 'drafts:': drafts }
 
 // A routine bug-fix PR: Greptile low at first, its findings fixed, merged on round 2 with the merge pinned to a sha.
 let ships = 0
@@ -43,6 +44,7 @@ let x = await run('pr 1', { ...pr, 'fix:gate:': { applied: ['f'], skipped: [], t
   'ship:': () => (++ships === 1 ? { status: 'not_ready', commit: 'c1', findings: ['f'], detail: '' } : merged) })
 check(x.outcome === 'merged' && x.ran('fix:gate:'), `bug-fix PR merges after a gate fix: ${x.outcome}`)
 check(x.prompts['ship:pr#1:2'].includes('--match-head-commit') && x.prompts['ship:pr#1:2'].includes('c1'), 'round 2 pins the merge and accepts our push')
+check(!x.ran('fix:pr#1'), 'a sound PR gets no fix pass before after-change')
 
 // Anything beyond a routine bug fix asks before any worktree or app run.
 x = await run('pr 2', { ...pr, 'judge:': feature })
@@ -79,9 +81,34 @@ check(x.outcome === 'changes' && x.prompts['drafts:pr#17'].includes('git worktre
 // A same-repo branch reports maintainerCanModify false but takes our pushes.
 const sameRepo = { ...clean, facts: { ...facts, cross_repository: false, maintainer_can_modify: false } }
 x = await run('pr 18', { ...pr, 'security:': sameRepo, 'judge:': { ...bug, approach: 'needs_changes' } })
-check(x.outcome === 'merged', `same-repo PR needing edits merges: ${x.outcome}`)
+check(x.outcome === 'merged' && x.ran('fix:pr#18'), `same-repo PR needing edits merges after our fix pass: ${x.outcome}`)
 x = await run('pr 19', { ...pr, 'security:': { ...clean, facts: { ...facts, maintainer_can_modify: false } }, 'judge:': { ...bug, approach: 'needs_changes' } })
 check(x.outcome === 'changes', `fork we can't push to asks for changes: ${x.outcome}`)
+x = await run('pr 31', { ...pr, 'confirm:': { ...real, pr_fixes_it: 'partly' } })
+check(x.outcome === 'merged' && x.calls.indexOf('fix:pr#31') > -1 && x.calls.indexOf('fix:pr#31') < x.calls.findIndex((c) => c.startsWith('workflow:')), `a partial fix is finished by us before after-change: ${x.outcome}`)
+x = await run({ items: 'pr 32', approved: [32] }, { ...pr, 'judge:': { ...feature, approach: 'needs_changes' }, 'confirm:': { ...real, greptile_ok: true } })
+check(x.outcome === 'changes' && !x.ran('fix:pr'), `approved feature needing edits goes back to its author: ${x.outcome}`)
+const deviation = [{ rule: 'docs kept current', where: 'docs/x.md', why: 'stale' }]
+x = await run('pr 34', { ...pr, 'judge:': { ...bug, deviations: deviation } })
+check(x.outcome === 'merged' && x.ran('fix:pr#34') && x.prompts['fix:pr#34'].includes('stale'), `a sound bug fix with rule breaks gets our fix pass: ${x.outcome}`)
+x = await run({ items: 'pr 35', approved: [35] }, { ...pr, 'judge:': { ...feature, deviations: deviation }, 'confirm:': { ...real, greptile_ok: true } })
+check(x.outcome === 'changes' && !x.ran('fix:pr'), `approved feature with rule breaks goes back to its author: ${x.outcome}`)
+
+// A routine bug fix's security concerns are defects we fix on its branch; anything bigger sends them to its author.
+const concerns = { ...clean, verdict: 'concerns', findings: [{ where: 'a.rs:1', severity: 'medium', summary: 'unbounded retries', evidence: 'loop {}' }] }
+x = await run('pr 27', { ...pr, 'security:': concerns })
+check(x.outcome === 'merged' && x.prompts['fix:pr#27'].includes('unbounded retries'), `bug fix with security concerns is finished by us: ${x.outcome}`)
+check(x.calls.indexOf('fix:pr#27') < x.calls.findIndex((c) => c.startsWith('workflow:')), 'its defects are fixed before after-change')
+check(x.prompts['drafts:pr#27'].includes('bounded the retries'), 'the thank-you lists our fixes')
+check(x.prompts['workflow:after-change'].includes('unbounded retries'), 'after-change checks each security finding is gone')
+x = await run('pr 33', { ...pr, 'security:': concerns, 'fix:': { ...ours, applied: [], skipped: [{ item: 'unbounded retries', why: 'does not hold' }] } })
+check(x.outcome === 'unfinished' && !x.ran('workflow:') && x.results[0].why.includes('unbounded retries'), `a skipped security finding stops for the maintainer: ${x.outcome}`)
+x = await run('pr 28', { ...pr, 'security:': { ...concerns, facts: { ...facts, maintainer_can_modify: false } } })
+check(x.outcome === 'changes' && !x.ran('fix:pr'), `security concerns on a fork we can't push to ask for changes: ${x.outcome}`)
+x = await run({ items: 'pr 29', approved: [29] }, { ...pr, 'security:': concerns, 'judge:': feature, 'confirm:': { ...real, greptile_ok: true } })
+check(x.outcome === 'changes' && !x.ran('fix:pr'), `approved feature with security concerns asks for changes: ${x.outcome}`)
+x = await run('pr 30', { ...pr, 'security:': concerns, 'fix:': null })
+check(x.outcome === 'unfinished' && !x.ran('workflow:'), `PR fix pass died → unfinished: ${x.outcome}`)
 
 // after-change must show the fix working; anything less leaves the item unfinished and unshipped.
 for (const [what, report, extra] of [

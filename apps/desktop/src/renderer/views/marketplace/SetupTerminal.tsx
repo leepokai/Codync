@@ -25,12 +25,14 @@ const openLink = (uri: string) => {
  * Installing or signing in to an agent, or adding Node.js, live: the command runs in a
  * terminal on the computer and this screen is that terminal (links open here).
  */
-export function SetupTerminalView({ backend, step, method, back }: {
+export function SetupTerminalView({ backend, step, method, loginProfile, back }: {
   /** Null only for the `node` step, which belongs to the computer. */
   backend: Backend | null
   step: SetupStep
   /** A terminal sign-in method the agent offered; null runs Codync's own command. */
   method?: AuthMethod | null
+  /** The login profile a sign-in is for; none signs in the computer's own login. */
+  loginProfile?: string
   /** Back to the agent's sheet (the terminal is a step inside it). */
   back: () => void
 }) {
@@ -138,7 +140,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
     void (async () => {
       try {
         const client = await store.ready()
-        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows)
+        const id = await market.agentSetup(client, backend?.id ?? '', step, method?.id ?? null, size.cols, size.rows, loginProfile)
         if (cancelled) {
           void market.termClose(client, id).catch(() => {})
           return
@@ -170,7 +172,7 @@ export function SetupTerminalView({ backend, step, method, back }: {
     }
   }, [store, backend?.id, step, method?.id])
 
-  const name = backend?.name ?? 'the agent'
+  const name = backend?.name ?? tr('the agent')
   const title = step === 'node' ? 'Add Node.js' : step === 'install' ? `Install ${name}` : (method?.name ?? `Sign in to ${name}`)
   return (
     <SheetPage>
@@ -184,12 +186,12 @@ export function SetupTerminalView({ backend, step, method, back }: {
         ) : exitCode !== null ? (
           <>
             <Icon name={exitCode === 0 ? 'checkmark.circle.fill' : 'exclamationmark.circle.fill'} size={10} color={exitCode === 0 ? 'var(--added)' : 'var(--warning)'} />
-            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr(`Finished.`) : `Ended with an error (${exitCode}).`}</Text>
+            <Text tone="secondary" lines={2}>{exitCode === 0 ? tr('Finished.') : tr('Ended with an error ({code}).').replaceAll('{code}', () => String(exitCode))}</Text>
           </>
         ) : (
           <>
             <ThinkingOrb size={14} color="var(--secondary)" />
-            <Text tone="secondary" lines={2}>Running on {store.hostName}. Links open on this device.</Text>
+            <Text tone="secondary" lines={2}>{tr('Running on {name}. Links open on this device.').replaceAll('{name}', () => store.hostName)}</Text>
           </>
         )}
         <Spacer />

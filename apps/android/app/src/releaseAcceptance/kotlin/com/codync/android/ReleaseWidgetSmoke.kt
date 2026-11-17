@@ -32,8 +32,8 @@ object ReleaseWidgetSmoke {
         try {
             local.saveComputers(listOf(computer))
             val owner = WidgetStore.activate(context, local.contextId)
-            WidgetStore.publish(context, owner, computer, listOf(Bot("r8-bot", "R8 bot", status = "needsInput")), UsageReport(listOf(
-                UsageProvider("codex", "Codex", listOf(UsageWindow("daily", "Daily", 24.0))))), true, true)
+            WidgetStore.publish(context, owner, listOf(WidgetComputer(computer, listOf(Bot("r8-bot", "R8 bot", status = "needsInput")), true)),
+                computer, UsageReport(listOf(UsageProvider("codex", "Codex", listOf(UsageWindow("daily", "Daily", 24.0))))), true)
             val widgetId = host.allocateAppWidgetId(); ids.add(widgetId)
             val botId = host.allocateAppWidgetId(); ids.add(botId)
             instrumentation.uiAutomation.adoptShellPermissionIdentity(android.Manifest.permission.BIND_APPWIDGET)

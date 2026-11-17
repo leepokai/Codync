@@ -27,7 +27,7 @@ To change what a bot remembers, tell it in its chat: "Remember that I'm vegetari
 What a bot may change depends on where it's working:
 
 - **In its own chat, answering you:** it can add, change or remove anything. Its MEMORY.md may grow to twice its limit there, so what you ask it to remember is never turned away for lack of room.
-- **Everywhere else** (routines, [group chats](/docs/groups), requests from [other bots](/docs/teamwork) and the turns where their answers come back): it can only add lines, within the limit. When MEMORY.md is full, it writes a note instead.
+- **Everywhere else** (routines, [background tasks](/docs/conversations#background-tasks), [group chats](/docs/groups), requests from [other bots](/docs/teamwork) and the turns where their answers come back): it can only add lines, within the limit. When MEMORY.md is full, it writes a note instead.
 
 Every change is checked first. Memory can't take in hidden characters, links that carry instructions, planted instructions, passwords, keys, or ID or card numbers. A change that breaks a rule is put back, and the bot is told why.
 
@@ -109,7 +109,7 @@ The bot's chat, its memory and the agent's session are separate things.
 
 - **New session** gives the agent a fresh context. The chat stays in the app, and memory carries over: every new session starts with MEMORY.md in full and the list of notes.
 - **During a session,** when memory changes (by this bot, another bot sharing About you, dreaming, or your own edit), the bot gets the new memory with its next message.
-- **Compaction:** when a conversation in the bot's own chat gets long, Codync has the agent summarize it to make room. Dreaming runs first, so what you said reaches memory before it's summarized. Afterwards the bot's instructions and memory are applied again. Sometimes Codync starts a fresh conversation with a summary card instead. See [Fresh conversations](/docs/conversations#fresh-conversations).
+- **Compaction:** on Auto, the default, the agent summarizes a full conversation itself, and the bot then gets its instructions and memory again. With another [Summarize long chats](/docs/bots#summarize-long-chats) choice, Codync has the agent summarize sooner: dreaming runs first, so what you said reaches memory before it's summarized, and afterwards the bot's instructions and memory are applied again. Sometimes Codync starts a fresh conversation with a summary card instead. See [Fresh conversations](/docs/conversations#fresh-conversations).
 - If the agent has deleted an old session, the bot starts fresh, and its memory is still there.
 
 ## Limits

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, type CSSProperties } from 'react'
-import { isGroup, isWorking, needsInput, type Bot } from '@shared/models'
-import { DOT_RADIUS, dotGrid } from '../lib/dot-grid'
+import { isGroup, type Bot } from '@shared/models'
+import { outsideStatus } from '@shared/work'
+import { dotGrid, dotRadius } from '../lib/dot-grid'
 import { avatarColor, palette, useDark, usePixelRatio, useReduceMotion } from '../lib/theme'
 import { Icon } from './Icon'
 import './avatar.css'
@@ -178,8 +179,8 @@ export function drawCharacter(
 ) {
   // The grid fits the context's device pixels (its scale).
   const { cells, pitch, first } = dotGrid(size, ctx.getTransform().a || 1)
-  const eyeColumns = cells === 7 ? [2, 4] : cells === 9 ? [3, 6] : [4, 8]
-  const eyeRowsAll = cells === 13 ? [4, 5, 6] : cells === 9 ? [3, 4] : [2, 3]
+  const eyeColumns = cells === 7 ? [2, 4] : [3, 6]
+  const eyeRowsAll = cells === 7 ? [2, 3] : [3, 4]
   const dots = grid(shape, size, cells)
   const [tr, tg, tb] = palette(dark).text
   const n = parseInt(fill.slice(1), 16)
@@ -195,18 +196,14 @@ export function drawCharacter(
   const ly = 0.55
   const lz = Math.cos(yaw) * 0.5 + 0.6 // never fully behind
   const ll = Math.hypot(lx, ly, lz)
-  const mouthCenter = Math.floor(cells / 2)
-  const closedEyeRow = eyeRowsAll[eyeRowsAll.length - 1]!
+  const centerCol = Math.floor(cells / 2)
+  const lowerEyeRow = eyeRowsAll[eyeRowsAll.length - 1]!
+  // Open eyes whose outer corners droop, like a sad face.
+  const isFailedEye = (d: Dot) => eyeColumns.some((col) => (d.col === col && eyeRowsAll.includes(d.row))
+    || (d.row === lowerEyeRow && d.col === col + Math.sign(col - centerCol)))
   for (const d of dots) {
-    // Closed eyes droop away from the nose, like a disappointed face.
-    const isEye = mood === 'failed'
-      ? eyeColumns.some((col) => Math.abs(d.col - col) <= 1
-        && d.row === closedEyeRow - (Math.abs(d.col - mouthCenter) < Math.abs(col - mouthCenter) ? 1 : 0))
-      : eyeCols.includes(d.col) && eyeRows.includes(d.row)
+    const isEye = mood === 'failed' ? isFailedEye(d) : eyeCols.includes(d.col) && eyeRows.includes(d.row)
     if (isEye) continue
-    // A downturned mouth, cut out of the same dot grid as the eyes.
-    const mouthOffset = Math.abs(d.col - mouthCenter)
-    if (mood === 'failed' && mouthOffset <= 1 && d.row === Math.floor(cells * 0.65) + mouthOffset) continue
     const u = (d.x - half) / half
     const v = (half - d.y) / half
     const z = Math.sqrt(Math.max(0.2, 1 - u * u - v * v))
@@ -216,10 +213,11 @@ export function drawCharacter(
       const ripple = 0.5 + 0.5 * Math.sin(Math.hypot(u, v) * 9 - t * 5)
       shade *= 0.6 + 0.4 * ripple
     }
-    const r = pitch * DOT_RADIUS * (0.55 + 0.45 * shade)
-    const ink = cells < 13 ? 0.4 + 0.4 * shade : 0.2 + 0.4 * Math.min(1, shade / 0.7)
+    const x = first + d.col * pitch
+    const y = first + d.row * pitch
+    const ink = 0.4 + 0.4 * shade
     ctx.beginPath()
-    ctx.arc(first + d.col * pitch, first + d.row * pitch, r, 0, Math.PI * 2)
+    ctx.arc(x, y, dotRadius(pitch, shade, x, y, size), 0, Math.PI * 2)
     ctx.fillStyle = `rgba(${tr},${tg},${tb},${ink})`
     ctx.fill()
     if (shade > 0.6) {
@@ -229,9 +227,11 @@ export function drawCharacter(
   }
 }
 
+/** A bot's face, as it stands outside its chat: its items at work and their cards count (iPhone `Bot.mood`). */
 export function moodOf(bot: Bot, animated = true): Mood {
   if (!animated) return 'idle'
-  return needsInput(bot) ? 'needsInput' : isWorking(bot) ? 'working' : 'idle'
+  const status = outsideStatus(bot)
+  return status === 'needsInput' ? 'needsInput' : status === 'working' ? 'working' : 'idle'
 }
 
 export function BotAvatar({ bot, size = 40, animated = true }: { bot: Bot; size?: number; animated?: boolean }) {
@@ -306,7 +306,7 @@ export function AvatarWithStatus({ bot, members = [], size = 44, agent = null }:
         </span>
       ) : null}
       {bot.lead ? <LeadAgentBadge size={Math.max(12, size * 0.34)} /> : null}
-      {needsInput(bot) ? (
+      {outsideStatus(bot) === 'needsInput' ? (
         <div className="avatar-badge needs-you" style={{ width: size * 0.36, height: size * 0.36 }}>
           <Icon name="exclamationmark" size={size * 0.2} weight="black" scaled={false} />
         </div>

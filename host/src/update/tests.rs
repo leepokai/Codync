@@ -20,11 +20,13 @@ impl Drop for Directory {
     }
 }
 
+const GITHUB: &str = "https://github.com/leepokai/Codync/releases";
+
 fn manifest() -> release::Release {
     release::Release {
         version: "3.0.0".into(),
         platform: "linux-arm64".into(),
-        url: format!("{}/download/v3.0.0/codync-host-linux-arm64.tar.gz", release::RELEASES),
+        url: format!("{GITHUB}/download/v3.0.0/codync-host-linux-arm64.tar.gz"),
         sha256: "a".repeat(64),
         size: 12,
     }
@@ -34,20 +36,38 @@ fn manifest() -> release::Release {
 fn only_signed_platform_matched_manifests_are_accepted() {
     let key = SigningKey::from_bytes(&[17; 32]);
     let public = B64.encode(key.verifying_key().as_bytes());
-    let bytes = serde_json::to_vec(&manifest()).unwrap();
-    let signature = B64.encode(key.sign(&bytes).to_bytes());
-    assert_eq!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64").unwrap().version, "3.0.0");
-    assert!(release::verify_manifest(&bytes, &signature, &public, "macos-arm64").is_err());
+    let signed = |release: &release::Release| {
+        let bytes = serde_json::to_vec(release).unwrap();
+        let signature = B64.encode(key.sign(&bytes).to_bytes());
+        (bytes, signature)
+    };
+    let (bytes, signature) = signed(&manifest());
+    assert_eq!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64", GITHUB).unwrap().version, "3.0.0");
+    assert!(release::verify_manifest(&bytes, &signature, &public, "macos-arm64", GITHUB).is_err());
     let mut altered = bytes.clone();
     altered[0] ^= 1;
-    assert!(release::verify_manifest(&altered, &signature, &public, "linux-arm64").is_err());
+    assert!(release::verify_manifest(&altered, &signature, &public, "linux-arm64", GITHUB).is_err());
     let other = B64.encode(SigningKey::from_bytes(&[18; 32]).verifying_key().as_bytes());
-    assert!(release::verify_manifest(&bytes, &signature, &other, "linux-arm64").is_err());
+    assert!(release::verify_manifest(&bytes, &signature, &other, "linux-arm64", GITHUB).is_err());
     let mut redirected = manifest();
     redirected.url = "https://example.com/host.tar.gz".into();
-    let redirected = serde_json::to_vec(&redirected).unwrap();
-    let signature = B64.encode(key.sign(&redirected).to_bytes());
-    assert!(release::verify_manifest(&redirected, &signature, &public, "linux-arm64").is_err());
+    let (redirected, redirected_signature) = signed(&redirected);
+    assert!(release::verify_manifest(&redirected, &redirected_signature, &public, "linux-arm64", GITHUB).is_err());
+    // A dev channel build, signed with the same key, never installs on a host that follows GitHub, nor the reverse.
+    let dev = "https://dev-releases.codync.dev";
+    let mut dev_build = manifest();
+    dev_build.url = format!("{dev}/download/v3.0.0/codync-host-linux-arm64.tar.gz");
+    let (dev_build, dev_signature) = signed(&dev_build);
+    assert!(release::verify_manifest(&dev_build, &dev_signature, &public, "linux-arm64", GITHUB).is_err());
+    assert!(release::verify_manifest(&dev_build, &dev_signature, &public, "linux-arm64", dev).is_ok());
+    assert!(release::verify_manifest(&bytes, &signature, &public, "linux-arm64", dev).is_err());
+}
+
+#[test]
+fn the_update_worker_follows_the_hosts_release_channel() {
+    let command = super::job_command(std::path::Path::new("/bin/codync-host"), &["update".to_owned()]);
+    let channel = format!("CODYNC_RELEASES_URL={}", release::releases());
+    assert!(command.get_args().any(|a| a.to_string_lossy().ends_with(&channel)));
 }
 
 fn archive(symlink: bool) -> Vec<u8> {

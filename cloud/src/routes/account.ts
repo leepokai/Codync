@@ -1,7 +1,10 @@
 // Clerk-authenticated account routes: devices, claims, computers, access requests and grants.
 
+import { parseApp, recordApp } from "../app-versions";
 import { computerIdFor, fromB64url, randomId, utf8, verifyEd25519 } from "../auth";
 import { CERT_TTL_MS, certify } from "../certificate";
+import { machineFor, newClaim, type CloudMachineRow } from "../cloud-machines";
+import { cloudView } from "./cloud-computers";
 import {
   ApiError,
   audit,
@@ -11,6 +14,7 @@ import {
   effectiveStatus,
   key,
   notify,
+  notifyAwake,
   oneOf,
   optStr,
   ownedComputer,
@@ -19,6 +23,7 @@ import {
   str,
   unclaim,
   user,
+  type Body,
   type ComputerRow,
   type Ctx,
   type RequestRow,
@@ -163,18 +168,18 @@ export async function revokeDevice(c: Ctx, [deviceId]: string[]) {
 
 export async function createClaim(c: Ctx) {
   const u = await user(c);
-  const claimId = randomId("clm_");
-  const nonce = randomId();
   const expiresAt = c.now + CLAIM_TTL_MS;
-  await c.env.DB.prepare("INSERT INTO claims(id, user_id, nonce, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(claimId, u.userId, nonce, expiresAt)
-    .run();
-  return { claimId, nonce, expiresAt };
+  return { ...(await newClaim(c.env, u.userId, expiresAt)), expiresAt };
 }
 
 export async function completeClaim(c: Ctx, [claimId]: string[]) {
   const u = await user(c);
-  const b = body(c);
+  return finishClaim(c, u.userId, claimId!, body(c));
+}
+
+/** Checks a claim the computer signed and puts the computer in `userId`'s account: from the
+ * signed-in desktop app, or from the computer itself with a ticket (`hostClaim`). */
+export async function finishClaim(c: Ctx, userId: string, claimId: string, b: Body) {
   const signKey = key(b, "signKey", 32);
   const boxKey = key(b, "boxKey", 32);
   const sig = fromB64url(b.sig, 64);
@@ -186,10 +191,10 @@ export async function completeClaim(c: Ctx, [claimId]: string[]) {
   if (!sig) throw new ApiError("badRequest", "Invalid sig");
   if (computerId !== (await computerIdFor(fromB64url(signKey, 32)!))) throw new ApiError("badRequest", "computerId doesn't match signKey");
   const claim = await c.env.DB.prepare("SELECT nonce FROM claims WHERE id = ? AND user_id = ?")
-    .bind(claimId, u.userId)
+    .bind(claimId, userId)
     .first<{ nonce: string }>();
   if (!claim) throw new ApiError("notFound");
-  const canonical = claimCanonical(claimId, claim.nonce, u.userId, computerId, boxKey);
+  const canonical = claimCanonical(claimId, claim.nonce, userId, computerId, boxKey);
   if (!(await verifyEd25519(fromB64url(signKey, 32)!, sig, utf8(canonical)))) throw new ApiError("badSignature");
   const existing = await c.env.DB.prepare("SELECT status FROM computers WHERE id = ?").bind(computerId).first<{ status: string }>();
   if (existing && existing.status !== "active") throw new ApiError("forbidden");
@@ -199,7 +204,7 @@ export async function completeClaim(c: Ctx, [claimId]: string[]) {
     c.env.DB.prepare(
       `UPDATE claims SET consumed_at = ?1, computer_id = ?2
        WHERE id = ?3 AND user_id = ?4 AND consumed_at IS NULL AND expires_at > ?1`,
-    ).bind(t, computerId, claimId, u.userId),
+    ).bind(t, computerId, claimId, userId),
     // box_pub always comes from the signed boxKey; the row is created only for a valid claim.
     c.env.DB.prepare(
       `INSERT INTO computers(id, sign_pub, box_pub, name, platform, device, version, created_at, updated_at)
@@ -209,15 +214,15 @@ export async function completeClaim(c: Ctx, [claimId]: string[]) {
     c.env.DB.prepare(
       `UPDATE computers SET owner_user_id = ?1, claimed_at = ?2, updated_at = ?2
        WHERE id = ?3 AND owner_user_id IS NULL AND EXISTS(SELECT 1 FROM claims WHERE id = ?4 AND consumed_at = ?2)`,
-    ).bind(u.userId, t, computerId, claimId),
+    ).bind(userId, t, computerId, claimId),
   ]);
   if (consumed!.meta.changes === 0) throw new ApiError("claimExpired");
   const row = await c.env.DB.prepare("SELECT * FROM computers WHERE id = ?").bind(computerId).first<ComputerRow>();
-  if (owned!.meta.changes === 0 && row?.owner_user_id !== u.userId) {
-    await audit(c.env, u.userId, "computer.claim", computerId, "alreadyClaimed", t).run();
+  if (owned!.meta.changes === 0 && row?.owner_user_id !== userId) {
+    await audit(c.env, userId, "computer.claim", computerId, "alreadyClaimed", t).run();
     throw new ApiError("alreadyClaimed");
   }
-  await audit(c.env, u.userId, "computer.claim", computerId, "ok", t).run();
+  await audit(c.env, userId, "computer.claim", computerId, "ok", t).run();
   await notify(c.env, computerId);
   return { computer: computerView(row!) };
 }
@@ -233,6 +238,7 @@ export async function listComputers(c: Ctx) {
       .bind(c.now, u.userId, s.kid)
       .first<{ id: string }>();
     deviceId = d?.id ?? null;
+    await recordApp(c.env, s.kid, parseApp(c.req.headers.get("Codync-App")), c.now);
   }
   const { results } = await c.env.DB.prepare(
     `SELECT c.*, CASE
@@ -240,12 +246,19 @@ export async function listComputers(c: Ctx) {
        WHEN EXISTS(SELECT 1 FROM grants g WHERE g.computer_id = c.id AND g.device_id = ?1 AND g.status = 'active') THEN 'granted'
        WHEN EXISTS(SELECT 1 FROM access_requests r WHERE r.computer_id = c.id AND r.device_id = ?1
                    AND r.status = 'pending' AND r.expires_at > ?3) THEN 'pending'
-       ELSE 'none' END AS access
-     FROM computers c WHERE c.owner_user_id = ?2 ORDER BY c.claimed_at`,
+       ELSE 'none' END AS access, m.provider AS cloud_provider, m.state AS cloud_state
+     FROM computers c LEFT JOIN cloud_machines m ON m.computer_id = c.id AND m.state != 'deleted'
+     WHERE c.owner_user_id = ?2 ORDER BY c.claimed_at`,
   )
     .bind(deviceId, u.userId, c.now)
-    .all<ComputerRow & { access: string | null }>();
-  return { computers: results.map(computerView) };
+    .all<ComputerRow & { access: string | null; cloud_provider: CloudMachineRow["provider"] | null; cloud_state: CloudMachineRow["state"] | null }>();
+  return {
+    computers: results.map((r) => ({
+      ...computerView(r),
+      // Codync Cloud: which provider runs it and whether it sleeps; `null` for the user's own computers.
+      cloud: r.cloud_provider && r.cloud_state ? cloudView({ provider: r.cloud_provider, state: r.cloud_state }) : null,
+    })),
+  };
 }
 
 export async function renameComputer(c: Ctx, [id]: string[]) {
@@ -259,6 +272,8 @@ export async function renameComputer(c: Ctx, [id]: string[]) {
 export async function removeComputer(c: Ctx, [id]: string[]) {
   const u = await user(c);
   await ownedComputer(c, id!, u.userId);
+  // Out of the account, a cloud computer would keep running with nobody to wake, use or delete it.
+  if (await machineFor(c.env, id!)) throw new ApiError("conflict", "Delete the cloud computer in Codync Cloud instead.");
   await unclaim(c.env, id!, u.userId, c.now);
   return {};
 }
@@ -290,7 +305,7 @@ export async function createAccessRequest(c: Ctx, [computerId]: string[]) {
        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
     ).bind(requestId, computerId, dev.id, u.userId, commit, c.now, expiresAt),
   ]);
-  await notify(c.env, computerId!);
+  await notifyAwake(c.env, computerId!);
   return { requestId, expiresAt };
 }
 

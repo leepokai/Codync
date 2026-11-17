@@ -109,13 +109,14 @@ export function Overview({ model }: { model: IslandModel }) {
 }
 
 export function Empty({ model }: { model: IslandModel }) {
+  const tr = useTr()
   const focus = model.focus
   return (
     <div className="island-card island-empty">
       {focus ? <BigCharacter bot={focus} size={62} mood="idle" badge={null} /> : null}
       <span className="island-empty-text">
         <span className="island-title">Nothing running right now.</span>
-        <span className="island-subtitle">{focus ? 'Your bots are idle. Message one from here, or open Codync.' : 'Create a bot in Codync to get started.'}</span>
+        <span className="island-subtitle">{focus ? tr('Your bots are idle. Message one from here, or open Codync.') : tr('Create a bot in Codync to get started.')}</span>
       </span>
       {focus ? <Button onClick={() => model.setTab('message')}>Message a bot</Button> : <Button onClick={() => model.newBot()}>New bot</Button>}
     </div>
@@ -155,6 +156,7 @@ export function Approval({ model, card }: { model: IslandModel; card: IslandPerm
 
 /** A bot that just finished (for a moment) or failed (until dismissed). */
 export function Notice({ model, bot, failed }: { model: IslandModel; bot: IslandBot; failed: boolean }) {
+  const tr = useTr()
   const swap = useSwap(`${failed}:${bot.ref}`)
   return (
     <div className="island-with-minis">
@@ -162,10 +164,10 @@ export function Notice({ model, bot, failed }: { model: IslandModel; bot: Island
         <div key={`${failed}:${bot.ref}`} className={`island-swap-slot ${swap}`}>
           <BigCharacter bot={bot} size={58} mood="idle" badge={failed ? 'failed' : 'finished'} onOpen={() => model.openBot(bot.ref)} />
           <div className="island-alert-text">
-            <AgentRow color={bot.color} name={bot.name} subtitle={failed ? bot.backend : `${bot.backend} is done`} />
+            <AgentRow color={bot.color} name={bot.name} subtitle={failed ? bot.backend : tr('{backend} is done').replaceAll('{backend}', () => bot.backend)} />
             {failed ? (
               <>
-                <div className="island-title">{`${bot.name} stopped.`}</div>
+                <div className="island-title">{tr('{name} stopped.').replaceAll('{name}', () => bot.name)}</div>
                 <div className="island-error">{bot.error ?? bot.detail}</div>
               </>
             ) : (
@@ -222,8 +224,8 @@ export function Message({ model }: { model: IslandModel }) {
           >
             <input
               autoFocus
-              aria-label={`Message ${bot.name}`}
-              placeholder={`Message ${bot.name}…`}
+              aria-label={tr('Message {name}').replaceAll('{name}', () => bot.name)}
+              placeholder={tr('Message {name}…').replaceAll('{name}', () => bot.name)}
               value={model.draft}
               onChange={(e) => model.setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -233,11 +235,11 @@ export function Message({ model }: { model: IslandModel }) {
             {dictation.listening ? (
               <RecordingPill startedAt={dictation.startedAt} sample={() => dictation} onStop={() => dictation.finish()} color="#ffffff" />
             ) : dictation.available ? (
-              <button type="button" className="island-mic" aria-label="Dictate" title="Dictate" onClick={() => dictation.start(model.draft)}>
+              <button type="button" className="island-mic" aria-label={tr('Dictate')} title={tr('Dictate')} onClick={() => dictation.start(model.draft)}>
                 <Icon name="mic" size={12} weight="medium" scaled={false} />
               </button>
             ) : null}
-            <button type="submit" className="island-send" aria-label="Send" title="Send" disabled={!model.draft.trim()}>
+            <button type="submit" className="island-send" aria-label={tr('Send')} title={tr('Send')} disabled={!model.draft.trim()}>
               <Icon name="arrow.up" size={12} weight="bold" scaled={false} />
             </button>
           </form>

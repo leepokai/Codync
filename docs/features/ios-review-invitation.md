@@ -1,65 +1,48 @@
 # iPhone rating invitations
 
-The iPhone asks StoreKit for a review at a natural pause: after a locally sent bot interaction
-finishes, its final result stays visible at the bottom of the conversation for three seconds,
-and the person returns to Bots. It waits two more seconds with no interaction. It never
-requests on launch, pairing, sign-in, or foregrounding. These are conservative initial
-thresholds, not measured conversion optima.
+The iPhone asks StoreKit for a review about a second after the fifth prompt it sent reaches the
+computer (or the relay mailbox, while the computer is offline), over whichever screen is open.
+It never requests on launch, pairing, sign-in, or foregrounding.
 
-## Eligibility and cancellation
+## Eligibility
 
-- At least seven elapsed days since this feature first ran, activity on three different local
-  calendar dates, and five completed, viewed interactions.
-- At least 60 seconds continuously active before returning to Bots.
+- Five prompts from this iPhone that reached the computer or the relay mailbox. Voice calls don't count.
+  A resend of a prompt that never got there counts once. The mailbox counts on arrival: one that then fails
+  or expires counts again when resent, and taking one back doesn't subtract, so the ask can come a prompt early.
 - At least 120 days between attempts, two attempts per rolling 365 days, one per version,
-  and five additional completed/viewed interactions since the previous attempt.
-- Navigation, touching the list, backgrounding, sheets, errors, incompatible versions,
-  disconnected computers, running agents, or pending approvals cancel the opportunity.
-  Cancellation does not consume the cooldown; it needs a new completed/viewed interaction.
-- StoreKit may suppress the prompt. Persist an attempt before calling it regardless; there
-  is no event claiming it appeared or that someone rated the app.
+  and five more prompts since the previous attempt.
+- A prompt sent while the app is in the background (a shortcut) doesn't ask, and neither does one the app can't ask on
+  within five seconds; the next prompt does.
+- StoreKit may suppress the prompt, and never shows it in TestFlight. Persist an attempt before
+  calling it regardless; there is no event claiming it appeared or that someone rated the app.
 
-The device retains first-use time, three activity-day markers, counts, request history, and
-up to 100 locally generated message nonces, valid for 30 days. Expired nonces are removed
-on the next launch, foreground transition, or send. This is device-only StoreKit
-presentation policy, using the host's existing turn IDs, statuses, and final-message flags.
-No host API or compatibility minimum changes. Pending sends survive a relaunch; presentation
-opportunities do not. Successful turns with notices are conservatively excluded, as are
-voice calls, routine results, historical messages without a locally recorded send, failures,
-and cancellations. Multiple messages in one turn count once. Reading means the result was
-visible, not that the user approved it; no sentiment analysis or rating pre-screen is used.
+The device retains the prompt count and request history; a history from before 2.39.1 keeps its requests and
+starts counting prompts at zero. This is device-only StoreKit presentation
+policy: no host API or compatibility minimum changes, and no sentiment analysis or rating pre-screen
+is used.
 
 Settings offers **Rate on the App Store** to everyone, opening Apple's write-review page,
 and an independent **Report an issue** link to GitHub. Neither is gated on satisfaction.
-Only StoreKit's own prompt appears automatically. All seven existing translations include
-the settings label.
+Only StoreKit's own prompt appears automatically.
 
 ## Analytics
 
 Use the existing iPhone PostHog client and opt-out switch. See the event contract in
-[analytics events](../reference/analytics-events.md). Compare `review_opportunity` to
-`review_requested`, grouped by `app_version`, and inspect cancellation reasons. For any
-rating-count trend use aggregate App Store Connect reports; individual review conversion
-is unavailable. Never treat a StoreKit attempt or a manual link tap as a submitted rating.
+[analytics events](../reference/analytics-events.md). For any rating-count trend use aggregate
+App Store Connect reports; individual review conversion is unavailable. Never treat a StoreKit
+attempt or a manual link tap as a submitted rating.
+
+## Testing
+
+E2E flows that send through the composer launch with the `-reviewInvitationOff` argument
+(`apps/maestro/queue.yaml`; the dash is what makes UserDefaults read it): the system's window would cover what they
+tap. `apps/maestro/review-invitation.yaml` checks the request itself: no window at the fourth prompt, StoreKit's after
+the fifth.
 
 ## Platform scope
 
 The iPhone uses StoreKit. The Android app has no invitation until it is on Google Play (the owner's call,
 2026-11-01): its Settings has **Rate on Google Play** and **Report an issue**, and the invitation comes with the
-Play release, through Play's in-app review API and this same policy. Desktop Settings and help menu and terminal
-settings have no store review capability and keep their behavior.
-
-## Validation (2026-10-26)
-
-- iOS package: 286 tests passed, including 13 invitation regression tests; iOS Dev simulator
-  build passed. The three-reviewer pass confirmed and fixed obscured reading, expired nonce
-  cleanup, and the missing independent issue-report link.
-- Device Hub on a dedicated iOS 26.5 simulator: fresh launch had no rating prompt; version
-  2.29.0 Settings exposed Rate on the App Store and Report an issue. UI testing was narrowed
-  to this smoke check at the owner's request. An eligible StoreKit display and live PostHog
-  ingestion were not verified; request semantics and analytics opt-out have unit coverage.
-- Desktop: typecheck and 258 tests passed. User documentation: 18 pages and 88 links passed.
-- Version-only host checks: formatting and Clippy passed; the broad suite progressed through
-  many suites but timed out at `stop_ends_a_turn_whose_agent_ignores_the_cancel` after the
-  hook's 300-second limit. Host source is unchanged. Android checks were not run; the owner
-  explicitly excluded Android review invitations because the app is not published yet.
+Play release, through Play's in-app review API and this same policy. The desktop app invites a GitHub star at the
+same fifth prompt instead (`apps/desktop/src/renderer/lib/star-ask.ts`); terminal settings have no store review
+capability and keep their behavior.

@@ -31,25 +31,37 @@ struct ReasoningSlider: View {
                 .font(.caption).foregroundStyle(Palette.secondary).buttonStyle(.plain)
             }
             GeometryReader { geometry in
-                let travel = max(0, geometry.size.width - 30)
+                let travel = max(0, geometry.size.width - 36)
                 let last = max(1, option.values.count - 1)
                 let x = CGFloat(index ?? 0) / CGFloat(last) * travel
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Palette.surface).frame(height: 30)
+                    Capsule().fill(Palette.surface).frame(height: 36)
                     if index != nil {
-                        Capsule().fill(Palette.text.opacity(0.14)).frame(width: x + 30, height: 30)
+                        Canvas { context, size in
+                            let columns = Int(size.width / 6)
+                            for column in 0...columns {
+                                let opacity = 0.5 * Double(column) / Double(max(1, columns))
+                                for row in 0..<6 {
+                                    let rect = CGRect(x: CGFloat(column) * 6, y: CGFloat(row) * 6 + 2, width: 2, height: 2)
+                                    context.fill(Path(ellipseIn: rect), with: .color(Palette.text.opacity(opacity)))
+                                }
+                            }
+                        }
+                        .frame(height: 36)
+                        .mask(alignment: .leading) { Capsule().frame(width: x + 36) }
+                        .accessibilityHidden(true)
                     }
                     ForEach(option.values.indices, id: \.self) { stop in
                         Circle().fill(Palette.secondary).frame(width: 4, height: 4)
-                            .offset(x: 13 + CGFloat(stop) / CGFloat(last) * travel)
+                            .offset(x: 16 + CGFloat(stop) / CGFloat(last) * travel)
                     }
-                    if index != nil { Circle().fill(Palette.text).frame(width: 30, height: 30).offset(x: x) }
+                    if index != nil { Circle().fill(Palette.text).frame(width: 30, height: 30).offset(x: 3 + x) }
                 }
                 .frame(height: 36)
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 0).onChanged { gesture in
                     guard travel > 0 else { return }
-                    let position = min(1, max(0, (gesture.location.x - 15) / travel))
+                    let position = min(1, max(0, (gesture.location.x - 18) / travel))
                     choose(Int((position * CGFloat(last)).rounded()))
                 })
                 .accessibilityElement(children: .ignore)

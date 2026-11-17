@@ -9,15 +9,7 @@ use std::time::Duration;
 use super::Window;
 
 pub(super) async fn collect() -> Option<Vec<Window>> {
-    let bin = super::command::program("omp")?;
-    let text = super::command::output(&bin, &["usage", "--json"], None, Duration::from_secs(30)).await?;
-    let windows = parse(&text);
-    if windows.is_empty() {
-        tracing::debug!("omp usage output had no limits");
-        None
-    } else {
-        Some(windows)
-    }
+    super::command::windows("omp", &["usage", "--json"], None, Duration::from_secs(30), parse).await
 }
 
 fn parse(text: &str) -> Vec<Window> {

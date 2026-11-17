@@ -30,27 +30,47 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
+import com.codync.android.core.Entry
 import com.codync.android.core.LinkState
-import com.codync.android.core.ScreenState
+import com.codync.android.core.WorkItem
 import com.codync.android.core.hasLibrary
 import com.codync.android.design.*
 import java.io.IOException
 import kotlinx.coroutines.delay
 
 /** The details sheet's pages, as on the desktop inspector (iOS `BotDetailsView.Tab`). */
-internal enum class DetailsTab(val title: String) { Details("Details"), Library("Library"), Memory("Memory"), Settings("Settings") }
+internal enum class DetailsTab(val title: String) {
+    Details("Details"), Computer("Computer"), Library("Library"), Memory("Memory"), Settings("Settings")
+}
 
 /**
- * What to open the details sheet on (iOS `DetailsRequest`): a page, a routine's editor on the Details page, or another bot's
- * details than the chat's (a group member's, from its notice).
+ * What to open the details sheet on (iOS `DetailsRequest`): a page (Details, the bot's timeline, unless said), a routine's
+ * editor on the Details page, another bot's details than the chat's (a group member's, from its notice), or the thread
+ * of one of the bot's items ([itemId]) pushed over the Details page.
  */
-internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null)
+internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val routineId: String? = null, val botId: String? = null,
+    val itemId: String? = null) {
+    companion object {
+        /** [botId]'s fallbacks, from a failure they could have carried: the Agent section of its Settings page. */
+        fun fallbacks(botId: String) = DetailsRequest(DetailsTab.Settings, botId = botId)
+    }
+}
+
+/** The sheet's pages: the details, and the thread of one of the bot's items pushed over them. */
+private sealed interface DetailsPage {
+    data object Root : DetailsPage
+    data class Thread(val itemId: String) : DetailsPage
+}
 
 /**
- * A bot's details (iOS `BotDetailsView`): who it is, then its details, library and settings. Settings save as you edit.
- * `openArtifact`: an artifact picked in the Library, for the chat's viewer.
+ * A bot's details (iOS `BotDetailsView`): who it is, then what it does (Details), its computer, library, memory and how it
+ * is set up (Settings). Settings save as you edit. A row of an item a task has or had pushes its thread inside the sheet
+ * ([WorkThreadView]); back returns to the details. `openInChat`: the chat at what a thread's task put there; `openCard`:
+ * the chat at the card an item that needs you waits on (null where that chat isn't under the details: its thread
+ * opens). `openArtifact`: an artifact picked in the Library, for the chat's viewer.
  */
-@Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openArtifact: (OpenArtifact) -> Unit) {
+@Composable internal fun BotDetailsView(bot: Bot, request: DetailsRequest, state: AppState, store: AppStore, openInChat: (Entry) -> Unit,
+    openCard: ((WorkItem) -> Unit)?, openArtifact: (OpenArtifact) -> Unit) {
     AnalyticsOnAppear(AnalyticsEvent.ScreenViewed(AnalyticsScreen.BotDetails))
     val dismiss = LocalDismissModal.current
     var tab by remember(request) { mutableStateOf(request.tab) }
@@ -72,32 +92,38 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
         delay(600)
         store.saveSettings(draft) { error -> if (shown.value) saveError = error else error?.let { store.showError(IOException(it)) } }
     }
-    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
-    Box(Modifier.fillMaxSize().background(Palette.background)) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Identity(bot, state)
-            TabChoice(tab, tabs.map { it to it.title }, { tab = it }, Modifier.padding(top = 18.dp))
-            CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) {
-                Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
-                    when (tab) {
-                        DetailsTab.Details -> Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
-                            BotSettingsForm(state, store, draft, { draft = it }, FormPart.Often, error = saveError)
-                            state.screen?.let { ComputerCard(it, draft.computer, online) { on -> draft = draft.copy(computer = on) } }
-                            RoutinesView(bot, state, store, routineId)
-                            LaunchedEffect(Unit) { routineId = null }
+    val tabs = listOfNotNull(DetailsTab.Details, DetailsTab.Computer, DetailsTab.Library.takeIf { hasLibrary(state.hello?.text("version")) }, DetailsTab.Memory, DetailsTab.Settings)
+    // The item whose thread is pushed over the details; the system back (and its gesture) returns to them.
+    var thread by remember(request) { mutableStateOf(request.itemId) }
+    NavStack(listOfNotNull(DetailsPage.Root, thread?.let(DetailsPage::Thread)), key = { (it as? DetailsPage.Thread)?.itemId.orEmpty() }, pop = { thread = null }) { page ->
+        when (page) {
+            is DetailsPage.Thread -> WorkThreadView(bot, page.itemId, state, store, openInChat = openInChat) { thread = null }
+            DetailsPage.Root -> Box(Modifier.fillMaxSize().background(Palette.background)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Identity(bot, state)
+                    TabChoice(tab, tabs.map { it to it.title }, { tab = it }, Modifier.padding(top = 18.dp))
+                    CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) {
+                        Box(Modifier.fillMaxWidth().padding(top = 20.dp)) {
+                            when (tab) {
+                                DetailsTab.Details -> {
+                                    WorkTimeline(bot, state, store, routineId, openCard) { thread = it.id }
+                                    LaunchedEffect(Unit) { routineId = null }
+                                }
+                                DetailsTab.Computer -> BotComputerTab(bot, state, store, draft.computer, online) { on -> draft = draft.copy(computer = on) }
+                                DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
+                                DetailsTab.Memory -> MemoryCard(bot.id, state, store)
+                                DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, inDetails = true, error = saveError)
+                            }
                         }
-                        DetailsTab.Library -> LibraryView(bot, state, store, openArtifact)
-                        DetailsTab.Memory -> MemoryCard(bot.id, state, store)
-                        DetailsTab.Settings -> BotSettingsForm(state, store, draft, { draft = it }, FormPart.Rarely, error = saveError)
                     }
                 }
+                Row(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // The bot as it's saved, as on the iPhone.
+                    CornerButton("Create template", "square.and.arrow.up") { template = saved }
+                    CornerButton("Close details", "xmark", dismiss)
+                }
             }
-        }
-        Row(Modifier.align(Alignment.TopEnd).padding(top = 14.dp, end = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // The bot as it's saved, as on the iPhone.
-            CornerButton("Create template", "square.and.arrow.up") { template = saved }
-            CornerButton("Close details", "xmark", dismiss)
         }
     }
     CodyncSheet(template, { template = null }) { BotTemplateView(it) }
@@ -117,14 +143,6 @@ internal data class DetailsRequest(val tab: DetailsTab = DetailsTab.Details, val
             AgentIcon(agentRegistry(state, bot.backend), 13.dp)
             Text(backendName(state, bot.backend) + bot.model?.let { " · $it" }.orEmpty(), style = Type.footnote, color = Palette.secondary)
         }
-    }
-}
-
-/** "Use the computer", saved with the rest of the draft, so a save of the other settings never sends it back. */
-@Composable private fun ComputerCard(screen: ScreenState, on: Boolean, online: Boolean, change: (Boolean) -> Unit) = CardSection("Computer") {
-    row {
-        SwitchRow("Use the computer", if (screen.controlReady) null else "On that computer, open Codync → Settings → Computer access to set it up first.",
-            on, change, enabled = online)
     }
 }
 

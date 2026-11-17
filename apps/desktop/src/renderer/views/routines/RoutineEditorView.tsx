@@ -5,13 +5,13 @@ import { Dialog, ModalHeader } from '../../components/Overlay'
 import { HStack, Spacer, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { useStore } from '../../store/context'
-import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
+import { durationText, emptyDraft, errorText, repeatChoice, sameDraft, scheduleLine, type Routine, type RoutineScheduleDraft, type RoutineSchedulePreview } from './routine'
 import { Field } from '../bots/parts'
 import { LabeledRow, RoutineScheduleFields } from './RoutineScheduleFields'
 import { RoutineWebhookPanel } from './RoutineWebhookPanel'
 import { currentZone } from './time-zones'
 import './routines.css'
-import { useTr } from '../../lib/use-language'
+import { useIntlLocale, useTr } from '../../lib/use-language'
 
 
 const saveShortcut = window.codync.platform === 'darwin' ? '⌘S' : 'Ctrl+S'
@@ -23,6 +23,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
   saved: (routine: Routine | null) => void
 }) {
   const tr = useTr()
+  const durationLocale = useIntlLocale()
   const store = useStore()
   const [name, setName] = useState(routine?.name ?? '')
   const [instruction, setInstruction] = useState(routine?.instruction ?? '')
@@ -44,8 +45,8 @@ export function RoutineEditorView({ botId, routine, saved }: {
   const keepsOriginal = routine ? (routine.triggers.length === 1 ? !['cron', 'webhook'].includes(routine.triggers[0]!.type) : routine.triggers.length > 0) : false
   const options = [
     ...(keepsOriginal ? [{ id: 'keep', label: 'Set by bot' }] : []),
-    { id: 'cron', label: 'Schedule' },
-    { id: 'webhook', label: 'Webhook' },
+    { id: 'cron', label: tr('Schedule') },
+    { id: 'webhook', label: tr('Webhook') },
   ]
   const canSave = !!name.trim() && !!instruction.trim() && !store.isOffline && !busy && loaded && sameDraft(checkedSchedule, schedule) && previewError === null
 
@@ -144,16 +145,16 @@ export function RoutineEditorView({ botId, routine, saved }: {
         return routine && routine.triggers.some((t) => t.type === 'webhook' || t.type === 'event') ? (
           <RoutineWebhookPanel botId={botId} routineId={routine.id} />
         ) : (
-          <Note icon="link" title="Runs each time something is posted to its URL." detail="Save to get the URL and key." />
+          <Note icon="link" title={tr('Runs each time something is posted to its URL.')} detail={tr('Save to get the URL and key.')} />
         )
       default:
-        return <Note icon="sparkles" title={routine?.triggerDescriptions.join(' · ') ?? ''} detail="Set up by the bot. Pick Schedule or Webhook to replace it." />
+        return <Note icon="sparkles" title={routine ? scheduleLine(routine, tr) : ''} detail={tr('Set up by the bot. Pick Schedule or Webhook to replace it.')} />
     }
   }
 
   return (
     <VStack className="routine-editor">
-      <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={routine ? 'Edit routine' : 'Set up a routine'} />
+      <ModalHeader icon={schedule.kind === 'webhook' ? 'link' : 'clock'} title={tr(routine ? 'Edit routine' : 'Set up a routine')} />
       {/* The card fits the form; it scrolls only when taller than the window allows. */}
       <fieldset className="routine-form" disabled={busy || !loaded}>
         <VStack gap={24} className="routine-form-body">
@@ -161,7 +162,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             <Field label="Name">
               <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Instruction">
+            <Field label={tr('Instruction')}>
               <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
             </Field>
           </VStack>
@@ -181,12 +182,12 @@ export function RoutineEditorView({ botId, routine, saved }: {
           </VStack>
           <VStack gap={10}>
             <button className="press routine-advanced" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
-              Run settings
+              {tr('Run settings')}
               <span className={`routine-chevron ${advanced ? 'open' : ''}`}>
                 <Icon name="chevron.down" size={10} weight="semibold" />
               </span>
               <Spacer />
-              {!advanced ? <Text tone="tertiary">Timeout {durationText(timeout)}</Text> : null}
+              {!advanced ? <Text tone="tertiary">{tr('Timeout {time}').replaceAll('{time}', () => durationText(timeout, durationLocale))}</Text> : null}
             </button>
             {advanced ? (
               <div className="routine-fade">
@@ -231,7 +232,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
             <>
               <IconButton title="Delete routine" icon="trash" onClick={() => setConfirmDelete(true)} />
               <IconButton
-                title={started ? 'Started' : 'Test run'}
+                title={tr(started ? 'Started' : 'Test run')}
                 icon={started ? 'checkmark' : 'play.circle'}
                 disabled={started || store.isOffline}
                 onClick={async () => {
@@ -246,9 +247,9 @@ export function RoutineEditorView({ botId, routine, saved }: {
             </>
           ) : null}
           <Spacer />
-          <Button disabled={!canSave} onClick={() => void save()} title={`Save (${saveShortcut})`}>
+          <Button disabled={!canSave} onClick={() => void save()} title={tr('Save ({shortcut})').replaceAll('{shortcut}', () => saveShortcut)}>
             {busy ? <Spinner size={12} /> : null}
-            {busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine'}
+            {tr(busy ? 'Saving…' : routine ? 'Save changes' : 'Create routine')}
             {busy ? null : <span className="button-shortcut">{saveShortcut}</span>}
           </Button>
         </HStack>

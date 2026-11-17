@@ -1,0 +1,298 @@
+# A bot's event box on the phones. One item working is a capsule over the composer, which opens the bot's details:
+# Threads says how many run of the most allowed (`1 / 3`) with a Free row per place not in use, and the row opens its
+# thread, where a message written while it works waits and can be taken back. With the ceiling at 1, what is added next waits in the Event box, numbered in order; First moves a
+# waiting item to the front, Drop (touch and hold) takes one out, and Cut in asks which working item gives way: that
+# one returns to the box. Stop on the capsule asks once. An item's approval card is answered in the chat and says it
+# comes from the background, its Threads row leads to it, and its report comes back as the bot's message; so does the
+# sign-in card of an agent the task needs signing in to, whose row names the agent, and the item goes on once a turn
+# of that agent ends well (it is signed in). A stopped
+# item is tried again from Recent, and Agents at once in Settings moves the ceiling. A row reads as one element on iPhone
+# (its number, title and line together) and as separate texts on Android, hence the `.*` around titles. The phone must
+# already be signed in and paired with the host (a worktree's sandbox, docs/guides/dev-app.md#worktree-sandboxes), so
+# run it apart from `welcome`, whose clearState undoes that; the flow makes its own bot there:
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags tasks \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e TASK_AGENT="$PWD/host/tests/fixtures/task_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - tasks
+onFlowComplete:
+  - runScript:
+      file: tasks.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: tasks.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 30000
+# All bots' work, from the bot list's header while any bot has an item: the bot as a heading over its rows, with no
+# section titles and no Free rows. (On iPhone the button's count reads after its name.) The heading opens that bot's
+# details, over its chat.
+- extendedWaitUntil:
+    visible: "Work(, .*)?"
+    timeout: 20000
+- tapOn: "Work(, .*)?"
+- assertVisible: "${output.bot.name}, view details"
+- assertVisible: ".*Audit the repo.*"
+- assertNotVisible: "Threads"
+- assertNotVisible: "Free"
+- takeScreenshot: tasks-all-work
+- tapOn: "${output.bot.name}, view details"
+- extendedWaitUntil:
+    visible: "Threads"
+    timeout: 10000
+- tapOn: "Close details"
+# One item working: the capsule.
+- extendedWaitUntil:
+    visible: "In the background · .*"
+    timeout: 20000
+- takeScreenshot: tasks-capsule
+# It opens the bot's details: one thread of three runs, and the places not in use show.
+- tapOn: "In the background · .*"
+- assertVisible: "Threads"
+- assertVisible: "1 / 3"
+- assertVisible: "Free"
+- assertVisible: ".*Audit the repo.*"
+- assertNotVisible: "Event box"
+- takeScreenshot: tasks-threads
+# The row opens its thread in the details' place: what the task was told is folded on top, and the composer writes
+# to it.
+- tapOn: ".*Audit the repo.*"
+- extendedWaitUntil:
+    visible: "Message this thread"
+    timeout: 10000
+- assertNotVisible: "Threads"
+- tapOn: "What it was told"
+- assertVisible: ".*HOLD:audit.*"
+# A message written while the task's turn runs waits over the composer, where Remove takes it back.
+- tapOn: "Message this thread"
+- inputText: "also the docs"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "also the docs"
+    timeout: 10000
+- assertVisible: "Send now"
+- takeScreenshot: tasks-thread
+- tapOn: "Remove"
+- extendedWaitUntil:
+    notVisible: "also the docs"
+    timeout: 10000
+# Back returns to Details, and on iPhone so does a swipe to the right anywhere on the thread.
+- tapOn: "Back to details"
+- extendedWaitUntil:
+    visible: "Threads"
+    timeout: 10000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: ".*Audit the repo.*"
+      - extendedWaitUntil:
+          visible: "Message this thread"
+          timeout: 10000
+      - swipe:
+          start: 10%, 50%
+          end: 90%, 50%
+      - extendedWaitUntil:
+          visible: "Threads"
+          timeout: 10000
+# With the ceiling at 1, what is added next waits in the Event box, numbered in the order it will be taken.
+- runScript:
+    file: tasks.js
+    env:
+      MAX: "1"
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Write the docs|HOLD:docs"
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Fix the build|HOLD:build"
+- extendedWaitUntil:
+    visible: "1 / 1"
+    timeout: 10000
+- assertNotVisible: "Free"
+- scrollUntilVisible:
+    element: ".*Fix the build.*"
+    centerElement: true
+- assertVisible: "Event box"
+- assertVisible: "1(, Write the docs.*)?"
+- assertVisible: "2(, Fix the build.*)?"
+- assertVisible:
+    text: ".*Write the docs.*"
+    above: ".*Fix the build.*"
+- takeScreenshot: tasks-event-box
+# First, on every waiting row but the first: the item moves to the front.
+- tapOn: "First"
+- extendedWaitUntil:
+    visible:
+      text: ".*Fix the build.*"
+      above: ".*Write the docs.*"
+    timeout: 10000
+# Drop is in a row's touch-and-hold menu.
+- longPressOn: ".*Write the docs.*"
+- tapOn: "Drop"
+- extendedWaitUntil:
+    notVisible: ".*Write the docs.*"
+    timeout: 10000
+# Cut in, on the first waiting row while every place is taken, asks which working item gives way.
+- tapOn: "Cut in"
+- assertVisible: "Let \"Fix the build\" cut in"
+- assertVisible: "Every place is taken\\. Pick what gives way: its session closes and it starts again later\\."
+- takeScreenshot: tasks-cut-in
+- tapOn: "Audit the repo · .*"
+# The one that gave way is back in the box, and says so.
+- extendedWaitUntil:
+    visible: ".*Was cut in on; starts again.*"
+    timeout: 10000
+- assertVisible: "1 / 1"
+- longPressOn: ".*Audit the repo.*"
+- tapOn: "Drop"
+- extendedWaitUntil:
+    notVisible: "Event box"
+    timeout: 10000
+- tapOn: "Close details"
+# Stop on the capsule asks once.
+- tapOn: "Stop"
+- assertVisible: "Stop the background work\\?"
+- assertVisible: "What it already changed stays."
+- tapOn: "Cancel"
+- assertVisible: "In the background · .*"
+- tapOn: "Stop"
+- tapOn:
+    text: "Stop"
+    below: "What it already changed stays."
+- extendedWaitUntil:
+    notVisible: "In the background · .*"
+    timeout: 10000
+# The stopped item is under Recent in the bot's details, where Try again takes it up again.
+- tapOn: "${output.bot.name}, view details"
+- scrollUntilVisible:
+    element: "Try again"
+    centerElement: true
+- assertVisible: "Recent"
+- tapOn: "Try again"
+- scrollUntilVisible:
+    element: "1 / 1"
+    direction: UP
+# Agents at once, in Settings, is the ceiling Threads counts against (the system stepper on iPhone, ours on Android).
+# The page is still settling after Try again moved the row. Each scroll here waits for the page to settle, which on a
+# busy emulator takes most of the default 20 s for the few it needs.
+- waitForAnimationToEnd
+- tapOn: "Settings"
+- scrollUntilVisible:
+    element: "Agents at once"
+    centerElement: true
+    timeout: 60000
+# The iPhone's stepper names its buttons by identifier (their text is the value); ours on Android by label.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: "Increment"
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn: "Increase"
+- scrollUntilVisible:
+    element: "Details"
+    direction: UP
+    timeout: 60000
+- tapOn: "Details"
+- extendedWaitUntil:
+    visible: "1 / 2"
+    timeout: 10000
+- assertVisible: "Free"
+- tapOn: "Close details"
+- tapOn: "Stop"
+- tapOn:
+    text: "Stop"
+    below: "What it already changed stays."
+- extendedWaitUntil:
+    notVisible: "In the background · .*"
+    timeout: 10000
+# An item's card is answered in the chat, and says where it comes from.
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Run the suite|PERMISSION"
+- extendedWaitUntil:
+    visible: "In the background · Run the suite"
+    timeout: 20000
+- assertVisible: "Run the tests"
+- takeScreenshot: tasks-card
+# Its Threads row leads back to the card.
+# The capsule reads as one element on iPhone; on Android its lead is a text of its own. Not the card's line.
+- tapOn: "In the background · (Needs you.*)?"
+- tapOn: ".*Run the suite.*"
+- extendedWaitUntil:
+    visible: "Allow once"
+    timeout: 10000
+- assertNotVisible: "Threads"
+- tapOn: "Allow once"
+# Its report comes back as the bot's message.
+- extendedWaitUntil:
+    visible: "Relayed: Report Run the suite.*"
+    timeout: 20000
+# The answered card keeps its line; the capsule, and its Stop, is what goes.
+- assertNotVisible: "Stop"
+# A task's choice card is in the chat too, saying where it comes from, without the row for the user's own words
+# (typing doesn't answer a task): an option answers it.
+- runScript:
+    file: tasks.js
+    env:
+      ADD: "Pick a branch|ASK"
+- extendedWaitUntil:
+    visible: "In the background · Pick a branch"
+    timeout: 20000
+- assertVisible: "Which\\?"
+- assertNotVisible: "Something else"
+- takeScreenshot: tasks-choice
+- tapOn:
+    id: decision-option-0
+- extendedWaitUntil:
+    visible: "Relayed: Report Pick a branch.*"
+    timeout: 20000
+# A task whose agent needs signing in asks in the chat too, and its row says which agent and leads to the card.
+- runScript:
+    file: tasks.js
+    env:
+      SIGN_IN: "Log in"
+- extendedWaitUntil:
+    visible: "In the background · Log in"
+    timeout: 20000
+- assertVisible: "Kimi Code"
+- takeScreenshot: tasks-sign-in
+- tapOn: "In the background · (Needs you.*)?"
+- assertVisible: ".*Needs Kimi Code sign-in.*"
+- tapOn: ".*Log in.*"
+- extendedWaitUntil:
+    visible: "In the background · Log in"
+    timeout: 10000
+- assertNotVisible: "Threads"
+# A turn of the agent that ends well says it is signed in: the item goes on in its task and reports.
+- runScript:
+    file: tasks.js
+    env:
+      SAY: "hello"
+- extendedWaitUntil:
+    visible: "Relayed: Report Log in.*"
+    timeout: 30000

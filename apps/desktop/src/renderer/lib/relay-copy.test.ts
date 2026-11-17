@@ -17,6 +17,10 @@ test('official clouds stay Cloudflare and any other host is named', () => {
     'Reachable from anywhere through Private relay (relay.example.com) (encrypted).',
   )
   assert.equal(
+    cloudStatusLine({ enabled: true, canJoinAccount: true }),
+    'Not in an account: only Wi-Fi and Tailscale reach it.',
+  )
+  assert.equal(
     cloudStatusLine({ enabled: false, url: 'https://relay.example.com' }),
     'Off: only Wi-Fi and Tailscale reach it, nothing goes through Cloudflare.',
   )

@@ -4,24 +4,65 @@
 
 use super::{Actor, Adapter, Done, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
-use crate::store::{EntryKind, Lane, now_ms};
-use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision};
+use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
+use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
 use serde_json::{Value, json};
 
 /// Context use below which a fall isn't read as a compaction: a short session has little to summarize.
 const COMPACTED_FROM: u64 = 20_000;
 
+/// Whether Codync summarizes the bot's chat ahead of time, so the apps offer the user a [`Threshold`] for it: its
+/// agent is Claude Code or Codex, or a custom command turned out to run one of their adapters.
+pub fn offers_threshold(store: &Store, cfg: &BotConfig) -> bool {
+    !cfg.is_group()
+        && match harness_adapter(&cfg.backend) {
+            Adapter::Other => cfg.backend == "custom" && context_window(store, &cfg.id).is_some(),
+            _ => true,
+        }
+}
+
+/// The adapter a backend runs, before its agent has answered.
+fn harness_adapter(backend: &str) -> Adapter {
+    match backend {
+        "claude" => Adapter::Claude,
+        "codex" => Adapter::Codex,
+        _ => Adapter::Other,
+    }
+}
+
+/// The user's threshold where Codync compacts the bot's chat: by the adapter running it, or with none running (a
+/// custom command released or not started yet) by what its agent last reported. Elsewhere the default: the agent's
+/// own compaction, and no rollovers.
+fn threshold(store: &Store, cfg: &BotConfig, running: Option<Adapter>) -> Threshold {
+    let compacts = running.map_or_else(|| offers_threshold(store, cfg), |adapter| adapter != Adapter::Other);
+    if compacts { cfg.compaction } else { Threshold::default() }
+}
+
+fn window_key(bot: &str) -> String {
+    format!("context.window.{bot}")
+}
+
+/// The context window of the bot's own chat, as its agent last reported it; kept only for an agent Codync compacts.
+pub fn context_window(store: &Store, bot: &str) -> Option<u64> {
+    store.kv_get(&window_key(bot)).and_then(|v| v.parse().ok())
+}
+
+fn conversation_key(bot: &str, session: &str) -> String {
+    format!("compaction.{bot}.{session}")
+}
+
+/// What is known of `bot`'s conversation in `session`: how full its window is, and its compactions.
+pub(crate) fn conversation(store: &Store, bot: &str, session: &str) -> Conversation {
+    store.kv_get(&conversation_key(bot, session)).and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default()
+}
+
 impl Actor {
     fn conversation_key(&self, session: &str) -> String {
-        format!("compaction.{}.{session}", self.cfg.id)
+        conversation_key(&self.cfg.id, session)
     }
 
     fn conversation(&self, session: &str) -> Conversation {
-        self.hub
-            .store
-            .kv_get(&self.conversation_key(session))
-            .and_then(|v| serde_json::from_str(&v).ok())
-            .unwrap_or_default()
+        conversation(&self.hub.store, &self.cfg.id, session)
     }
 
     fn save_conversation(&self, session: &str, c: &Conversation) {
@@ -43,13 +84,13 @@ impl Actor {
         if let Some(life) = self.hub.store.kv_get(&self.cache_life_key()).and_then(|v| serde_json::from_str(&v).ok()) {
             return life;
         }
-        let api_key = crate::agent::auth::env(&self.hub.store, &self.cfg.backend)
-            .unwrap_or_default()
-            .iter()
-            .any(|(k, _)| k == "ANTHROPIC_API_KEY")
-            || std::env::var_os("ANTHROPIC_API_KEY").is_some();
-        let claude = self.conn.as_ref().is_some_and(|c| c.adapter == Adapter::Claude) || self.cfg.backend == "claude";
-        if claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
+        // The key its process starts with (saved for the agent, or its login profile's), or the host's own it
+        // inherits: on the default login only, a login profile's process starts without that one.
+        let (store, backend) = (&self.hub.store, self.cfg.backend.as_str());
+        let profile = crate::agent::login_profiles::of_bot(store, backend, &self.cfg);
+        let api_key = crate::agent::auth::launch_sets(store, backend, profile, "ANTHROPIC_API_KEY")
+            || (profile.is_none() && std::env::var_os("ANTHROPIC_API_KEY").is_some());
+        if self.adapter() == Adapter::Claude && !api_key { CacheLife::OneHour } else { CacheLife::FiveMinutes }
     }
 
     /// The bot's own chat, not a room, a routine or another bot's request: the conversation the user comes
@@ -63,22 +104,48 @@ impl Actor {
             && self.turn_session == self.session_id
     }
 
-    /// The command that makes the agent compact, with the keep-list where it takes one. Before the agent runs, its
-    /// harness stands in for the adapter.
+    /// The adapter the bot's agent runs; before it runs, its harness's.
+    fn adapter(&self) -> Adapter {
+        self.conn.as_ref().map_or_else(|| harness_adapter(&self.cfg.backend), |c| c.adapter)
+    }
+
+    /// The command that makes the agent compact, with the keep-list where it takes one.
     fn compact_command(&self) -> Option<String> {
-        let adapter = self.conn.as_ref().map_or(
-            match self.cfg.backend.as_str() {
-                "claude" => Adapter::Claude,
-                "codex" => Adapter::Codex,
-                _ => Adapter::Other,
-            },
-            |c| c.adapter,
-        );
-        match adapter {
+        match self.adapter() {
             Adapter::Claude => Some(format!("/compact {}", rules::KEEP)),
             Adapter::Codex => Some("/compact".into()),
             Adapter::Other => None,
         }
+    }
+
+    fn threshold(&self) -> Threshold {
+        threshold(&self.hub.store, &self.cfg, self.conn.as_ref().map(|c| c.adapter))
+    }
+
+    /// Keeps the main chat's window for the apps, which offer sizes up to what it holds; none for an agent Codync
+    /// doesn't compact. Only the bot's own agent tells it: the sizes are for that agent's window, not a fallback's.
+    fn note_window(&self, size: u64) {
+        if self.cfg.backend != self.base.backend {
+            return;
+        }
+        let window = match (self.adapter(), size) {
+            (Adapter::Other, _) => None,
+            (_, 0) => return,
+            (_, size) => Some(size),
+        };
+        if context_window(&self.hub.store, &self.cfg.id) == window {
+            return;
+        }
+        let key = window_key(&self.cfg.id);
+        let saved = match window {
+            Some(size) => self.hub.store.kv_set(&key, &size.to_string()),
+            None => self.hub.store.kv_delete(&key),
+        };
+        if let Err(error) = saved {
+            tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the window");
+            return;
+        }
+        self.hub.emit_bot(&self.cfg.id);
     }
 
     /// The agent reported its context use.
@@ -95,7 +162,7 @@ impl Actor {
     /// `context`), a harness that got them in its first message gets them again, and the chat shows the summary.
     pub(super) fn compacted(&mut self, id: &str, summary: Option<String>) {
         let Some(sid) = self.turn_session.clone() else { return };
-        match context::bump_epoch(&self.hub.store, &self.cfg.id, &sid, id) {
+        match context::bump_epoch(&self.hub.store, self.cfg.owner(), &sid, id) {
             Ok(true) => {}
             // The same compaction reported again; Claude's adapter carries the summary on one of its reports.
             Ok(false) => {
@@ -109,7 +176,7 @@ impl Actor {
                 return;
             }
         }
-        if let Err(error) = memory::compacted(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = memory::compacted(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't record the compaction");
         }
         if self.conn.as_ref().is_some_and(|c| c.instructions() == Instructions::FirstMessage) {
@@ -169,6 +236,8 @@ impl Actor {
         let mut c = self.conversation(&sid);
         if let Some(&(used, size)) = self.conn.as_ref().and_then(|conn| conn.usage.get(&sid)) {
             c.usage(used, size);
+            self.note_window(size);
+            self.note_agent_window(size);
         }
         // The compaction turn itself is no turn of the conversation: it neither counts nor resets the idle clock.
         if compacting.is_some() {
@@ -183,7 +252,7 @@ impl Actor {
         }
         c.turn_ended(now);
         self.save_conversation(&sid, &c);
-        match rules::at_turn_end(&c, now) {
+        match rules::at_turn_end(&c, self.threshold(), now) {
             Decision::Compact if self.compact_command().is_some() => {
                 self.queue.push_back(Queued::Compact { idle: false });
             }
@@ -202,9 +271,10 @@ impl Actor {
         }
         let now = now_ms();
         let life = self.cache_life();
-        if rules::while_idle(&c, life, now) == Decision::Compact && self.compact_command().is_some() {
+        let at = self.threshold();
+        if rules::while_idle(&c, at, life, now) == Decision::Compact && self.compact_command().is_some() {
             self.queue.push_back(Queued::Compact { idle: true });
-        } else if rules::rollover_due(&c, life, now) && handoff::pending(&self.hub.store, &self.cfg.id).is_none() {
+        } else if rules::rollover_due(&c, at, life, now) && handoff::pending(&self.hub.store, &self.cfg.id).is_none() {
             let reason = if now - c.last_turn >= life.ms() { handoff::Reason::Cold } else { handoff::Reason::Away };
             self.draft_handoff(&sid, reason);
         }
@@ -220,6 +290,27 @@ impl Actor {
         c
     }
 
+    /// The user changed when the chat is summarized: a fresh conversation the new setting doesn't call for is
+    /// withdrawn, and the old one goes on.
+    pub(super) fn threshold_changed(&self) {
+        let Some(sid) = &self.session_id else { return };
+        let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) else { return };
+        let (c, at, now) = (self.conversation(sid), self.threshold(), now_ms());
+        if !rules::rollover_due(&c, at, self.cache_life(), now) && rules::at_turn_end(&c, at, now) != Decision::Rollover
+        {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
+    /// The user started a new session themselves: nothing of the old conversation is carried into it, neither a
+    /// card waiting in the chat nor a handoff taken for a turn that couldn't start.
+    pub(super) fn drop_handoff(&mut self) {
+        self.handoff = None;
+        if let Some((card, _)) = handoff::pending(&self.hub.store, &self.cfg.id) {
+            handoff::withdraw(&self.hub, &self.cfg.id, &card);
+        }
+    }
+
     fn draft_handoff(&mut self, session: &str, reason: handoff::Reason) {
         if handoff::pending(&self.hub.store, &self.cfg.id).is_some() {
             return;
@@ -233,8 +324,16 @@ impl Actor {
     /// opening is rendered again, so the compaction keeps current memory (render, load, compact).
     pub(super) async fn start_compaction(&mut self, idle: bool, done_tx: &tokio::sync::mpsc::UnboundedSender<Done>) {
         let (Some(sid), Some(command)) = (self.session_id.clone(), self.compact_command()) else { return };
+        // Decided when it was queued; another turn or a change of the setting may have come first.
+        let (c, at, now) = (self.conversation(&sid), self.threshold(), now_ms());
+        let due =
+            if idle { rules::while_idle(&c, at, self.cache_life(), now) } else { rules::at_turn_end(&c, at, now) };
+        if due != Decision::Compact {
+            return;
+        }
+        crate::analytics::context_compacted(&self.hub, &self.cfg.backend, idle, at);
         let _ = self.dreamer.send(memory::DreamEvent::Flush);
-        if let Err(error) = context::refresh(&self.hub.store, &self.cfg.id, &sid) {
+        if let Err(error) = context::refresh(&self.hub.store, self.cfg.owner(), &sid) {
             tracing::warn!(bot = %self.cfg.id, error = format!("{error:#}"), "couldn't refresh the opening");
         }
         self.compacting = Some(idle);
@@ -254,7 +353,7 @@ impl Actor {
         {
             let c = self.settle_kept(&sid);
             let life = self.cache_life();
-            if rules::rollover_due(&c, life, now_ms()) {
+            if rules::rollover_due(&c, self.threshold(), life, now_ms()) {
                 let reason =
                     if now_ms() - c.last_turn >= life.ms() { handoff::Reason::Cold } else { handoff::Reason::Away };
                 self.draft_handoff(&sid, reason);
@@ -290,6 +389,23 @@ mod tests {
         assert!(!compacted_by_usage(Some(90_000), 60_000), "ordinary churn");
         assert!(!compacted_by_usage(Some(8_000), 1_000), "too little to summarize");
         assert!(!compacted_by_usage(None, 1_000), "the session's first report");
+    }
+
+    #[test]
+    fn a_custom_command_keeps_its_threshold_while_no_agent_runs() {
+        let path = std::env::temp_dir().join(format!("codync-threshold-{}.db", uuid::Uuid::new_v4()));
+        let store = Store::open(&path).unwrap();
+        let cfg: BotConfig =
+            serde_json::from_value(json!({"id": "b", "name": "B", "backend": "custom", "compaction": "nearLimit"}))
+                .unwrap();
+        assert_eq!(threshold(&store, &cfg, None), Threshold::Off, "not known to run Claude's or Codex's adapter yet");
+        store.kv_set(&window_key("b"), "1000000").unwrap();
+        assert_eq!(threshold(&store, &cfg, None), Threshold::NearLimit, "released after it reported its window");
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Claude)), Threshold::NearLimit);
+        assert_eq!(threshold(&store, &cfg, Some(Adapter::Other)), Threshold::Off, "now running another adapter");
+        let cold = Conversation { used: 150_000, size: 1_000_000, last_turn: 1, ..Conversation::default() };
+        assert!(!rules::rollover_due(&cold, threshold(&store, &cfg, None), CacheLife::FiveMinutes, 2 * 3_600_000));
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]

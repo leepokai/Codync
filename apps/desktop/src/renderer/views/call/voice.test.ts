@@ -29,6 +29,18 @@ test('a call takes another engine only when what its engine is built from change
   assert.notEqual(VoiceSettings.engineChoice(null), device)
   assert.notEqual(VoiceSettings.engineChoice('gemini'), VoiceSettings.engineChoice('openai'))
 
+  assert.equal(settings.googleSearch.get(), false)
+  const gemini = VoiceSettings.engineChoice('gemini')
+  const openai = VoiceSettings.engineChoice('openai')
+  settings.googleSearch.set(true)
+  assert.notEqual(VoiceSettings.engineChoice('gemini'), gemini)
+  assert.equal(VoiceSettings.engineChoice('openai'), openai)
+  settings.mode('gemini').set('speech')
+  const speech = VoiceSettings.engineChoice('gemini')
+  settings.googleSearch.set(false)
+  assert.equal(VoiceSettings.engineChoice('gemini'), speech)
+  settings.mode('gemini').set('realtime')
+
   const seen = [VoiceSettings.engineChoice('gemini')]
   for (const change of [
     () => settings.saveModel('gemini', 'realtime', 'live-9'),
@@ -59,4 +71,17 @@ test('Windows and Linux retain automatic call fallback until a provider is expli
     assert.equal(VoiceSettings.provider(), 'gemini')
     assert.equal(settings.engine.get(), 'gemini')
   }
+})
+
+test("another server has other models: the ones picked for the server before go", async () => {
+  const settings = await import('../settings/voice-settings.ts')
+  const at = (server: string) => ({ call: async () => ({ providers: [{ provider: 'openai', configured: true, server }] }) }) as never
+  await settings.voiceStatus(at(''))
+  settings.saveModel('openai', 'speech', 'tts-9')
+  await settings.voiceStatus(at(''))
+  assert.equal(settings.chosenModel('openai', 'speech'), 'tts-9', 'the same server keeps them')
+  settings.modelsCache('openai').set({ models: [], transcribe: ['kokoro'], speech: ['kokoro'] })
+  await settings.voiceStatus(at('http://127.0.0.1:8890'))
+  assert.equal(settings.chosenModel('openai', 'speech'), settings.voiceDefaults('openai').speech)
+  assert.equal(settings.modelsCache('openai').get(), null)
 })

@@ -1,42 +1,41 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { groupFastMode } from '@shared/fast-mode'
 import { artifactDraftKey, artifactQuote, type Artifact } from '@shared/artifacts'
-import { isGroup, isWorkingIn, quoteOf, type Bot, type Entry } from '@shared/models'
+import { isGroup, isWorkingIn, type Bot, type ReplyQuote } from '@shared/models'
 import type { PickedFile } from '@shared/ipc'
-import { BotAvatar } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { IconButton } from '../../components/Controls'
 import { RecordingPill } from '../../components/RecordingPill'
 import { Sheet, usePresence } from '../../components/Overlay'
 import { VoiceChatSettingsView } from '../settings/VoiceChatSettingsView'
 import { HStack, VStack } from '../../components/Stack'
-import { Text } from '../../components/Text'
 import { useModel } from '../../lib/observable'
 import { useTr } from '../../lib/use-language'
 import { useStore } from '../../store/context'
-import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/bot-store'
+import { MAX_FILE_SIZE, type OutgoingFile } from '../../store/outgoing-files'
 import { pluginsFor } from '../marketplace/plugins'
 import { pastedFiles, readPicked } from './composer-files'
-import { composerEnter } from './composer-keyboard'
-import { CommandMenu, useCommandMenu } from './CommandMenu'
+import { ComposerField } from './ComposerField'
+import { CommandMenu, MentionMenu, useComposerMenu } from './ComposerMenu'
 import { ComposerAttachment } from './ComposerAttachment'
 import { QuoteRow } from './ChatRows'
 import { useDictation } from './dictation-platform'
 import { DictationEngineMenu } from './DictationEngineMenu'
-import { builtInCommand, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
-import { useVoiceShortcut } from './voice-shortcut-keys'
+import { mentionSuggestions, returnMentions, withMention } from './mentions'
+import { builtInCommand, returnRuns, slashCommands, slashQuery, type SlashCommand } from './slash-commands'
+import { useSubmitAfterRender, useVoiceShortcut } from './voice-shortcut-keys'
 
 type Trailing = 'interrupt' | 'stop' | 'call' | 'send'
 
 /**
  * The message box under a chat: send, or stop while the bot (or the group) is working there. A leading `/` lists
- * the commands (a group's are its bots'); in a group, typing `@` suggests its bots. While `reply` is set, the
+ * the commands (a group's are its bots'); in a group, typing `@` lists its bots. While `reply` is set, the
  * message it quotes sits at the top of the box and goes out with the next send. Under an artifact, `about` is the
  * artifact: the box keeps a draft of its own, and every message replies to the artifact's card.
  */
 export function Composer({ botId, reply = null, about = null, cancelReply, onCall, onInterrupt }: {
   botId: string
-  reply?: Entry | null
+  reply?: ReplyQuote | null
   about?: Artifact | null
   cancelReply?: () => void
   /** Starts a voice call; while the box is empty it takes the send button's place. */
@@ -51,7 +50,7 @@ export function Composer({ botId, reply = null, about = null, cancelReply, onCal
 }
 
 function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInterrupt }: {
-  botId: string; reply: Entry | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
+  botId: string; reply: ReplyQuote | null; about: Artifact | null; cancelReply?: () => void; onCall?: (() => void) | null; onInterrupt?: (() => void) | null
 }) {
   const store = useStore()
   const tr = useTr()
@@ -65,8 +64,6 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const [voiceSettings, setVoiceSettings] = useState(false)
   const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))), () => setVoiceSettings(true))
   const field = useRef<HTMLTextAreaElement>(null)
-  const measure = useRef<HTMLDivElement>(null)
-  const composing = useRef(false)
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = !!bot && isWorkingIn(bot, botId)
@@ -92,42 +89,12 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
     if (reply) field.current?.focus()
   }, [reply])
 
-  // Measure a separate, wrapping copy: collapsing the live textarea to zero breaks its
-  // height transition, caret scroll and IME composition. Observe font/width changes too.
-  useLayoutEffect(() => {
-    const el = field.current
-    const mirror = measure.current
-    if (!el || !mirror) return
-    const resize = () => {
-      const style = getComputedStyle(el)
-      const line = parseFloat(style.lineHeight)
-      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
-      const height = Math.min(mirror.getBoundingClientRect().height, line * 8 + padding)
-      el.style.height = `${height}px`
-    }
-    resize()
-    const observer = new ResizeObserver(resize)
-    observer.observe(mirror)
-    return () => observer.disconnect()
-  }, [])
-
-  const mentionQuery = (() => {
-    if (!bot || !isGroup(bot)) return null
-    const at = draft.lastIndexOf('@')
-    if (at < 0) return null
-    if (at > 0 && !/\s/.test(draft[at - 1]!)) return null
-    const query = draft.slice(at + 1)
-    return /\n/.test(query) || query.length > 24 ? null : query
-  })()
-  const suggestions: Bot[] =
-    mentionQuery !== null ? members.filter((m) => !mentionQuery || m.name.toLowerCase().includes(mentionQuery.toLowerCase())) : []
-
+  const suggestions = mentionSuggestions(draft, members)
   const mention = (member: Bot) => {
-    const at = draft.lastIndexOf('@')
-    if (at < 0) return
-    setDraft(`${draft.slice(0, at)}@${member.name} `)
+    setDraft(withMention(draft, member))
     field.current?.focus()
   }
+  const mentionMenu = useComposerMenu(draft, suggestions, mention, returnMentions)
 
   const slash = slashQuery(draft)
   const commands = slash === null ? [] : slashCommands(bot, slash, plugins.installedSkills, members)
@@ -148,17 +115,20 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
       case 'skill':
         setDraft(`/${command.action.id} `)
         break
+      case 'agent':
+        setDraft(`/${command.name} `)
+        break
     }
     field.current?.focus()
   }
-  const menu = useCommandMenu(draft, commands, run)
+  const commandMenu = useComposerMenu(draft, commands, run, returnRuns)
 
   const append = (incoming: PickedFile[]) => {
     if (!canAttach) return
     const accepted: OutgoingFile[] = []
     for (const f of incoming) {
       if (f.data.length > MAX_FILE_SIZE) {
-        store.setError(`${f.name} is larger than 100 MB.`)
+        store.setError(tr('{name} is larger than 100 MB.').replaceAll('{name}', () => f.name))
         continue
       }
       accepted.push({ id: crypto.randomUUID(), name: f.name, data: f.data })
@@ -169,39 +139,30 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const submit = () => {
     const command = files.length ? null : builtInCommand(bot, draft, members)
     if (!command && !canSend) return
-    // Words still on their way would land in the emptied box (and the shortcut's tap would send them again).
-    dictation.cancel()
+    // Sent once the words still on their way are in the box, with what was typed.
+    if (dictation.busy) return dictation.finish(submitLater)
     if (command) return run(command)
-    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ? quoteOf(reply) : about && artifactQuote(about) })
+    store.send(draft, botId, { files, pasted: pasted.current, replyTo: reply ?? (about && artifactQuote(about)) })
     cancelReply?.()
     pasted.current = []
     setDraft('')
     setFiles([])
     field.current?.focus()
   }
-  useVoiceShortcut(dictation, draft, submit, () => field.current?.focus())
+  const submitLater = useSubmitAfterRender(submit)
+  useVoiceShortcut(dictation, draft, submitLater, () => field.current?.focus())
 
   const trailing: Trailing = onInterrupt && !draft && !files.length ? 'interrupt' : working && !draft && !files.length ? 'stop' : onCall && !draft && !files.length ? 'call' : 'send'
   const [symbol, label] = ({
     interrupt: ['stop.fill', 'Interrupt'],
-    stop: ['stop.fill', 'Stop'],
-    call: ['waveform', 'Call'],
+    stop: ['stop.fill', tr('Stop')],
+    call: ['waveform', tr('Call')],
     send: ['arrow.up', 'Send'],
   } as const)[trailing]
   const enabled = trailing !== 'send' || canSend
 
   return (
     <VStack>
-      <ComposerReveal open={suggestions.length > 0}>
-        <div className="mentions">
-          {suggestions.map((m) => (
-            <button key={m.id} className="press mention" onClick={() => mention(m)}>
-              <BotAvatar bot={m} size={18} animated={false} />
-              <Text size="subheadline" tone="text">{m.name}</Text>
-            </button>
-          ))}
-        </div>
-      </ComposerReveal>
       <div
         className="composer"
         onDragOver={(e) => {
@@ -214,11 +175,12 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
         }}
       >
         <div className="composer-surface">
-          <CommandMenu commands={menu.shown} index={menu.index} hover={menu.hover} pick={run} />
+          <CommandMenu menu={commandMenu} agent={{ registry: (id) => store.agentRegistry(id), name: (id) => store.backendName(id) }} />
+          <MentionMenu menu={mentionMenu} />
           <ComposerReveal open={!!reply}>
             {reply ? (
               <HStack gap={4} className="composer-reply">
-                <QuoteRow quote={quoteOf(reply)} className="composer-reply-quote" />
+                <QuoteRow quote={reply} className="composer-reply-quote" />
                 <IconButton title="Cancel reply" icon="xmark" size={24} onClick={cancelReply} />
               </HStack>
             ) : null}
@@ -237,51 +199,36 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
                 <Icon name="plus" size={13} weight="medium" color="var(--text)" />
               </button>
             ) : null}
-            <div className="composer-field">
-              <div ref={measure} className="composer-measure" aria-hidden="true">{draft + '\u200b'}</div>
-              <textarea
-                ref={field}
-                rows={1}
-                value={draft}
-                placeholder={placeholder}
-                spellCheck
-                aria-label={reply ? 'Reply' : 'Message'}
-                aria-keyshortcuts="Enter Shift+Enter"
-                onCompositionStart={() => { composing.current = true }}
-                onCompositionEnd={() => { composing.current = false }}
-                onChange={(e) => {
-                  setDraft(e.target.value)
-                  // Starting a command: list the computer's skills again.
-                  if (bot && e.target.value === '/') void plugins.refresh()
-                }}
-                onKeyDown={(e) => {
-                  if (menu.onKey(e, composing.current || e.nativeEvent.isComposing || e.keyCode === 229)) return
-                  if (e.key === 'Escape' && reply) {
-                    e.preventDefault()
-                    cancelReply?.()
-                    return
-                  }
-                  // Return sends, Shift-Return adds a line; an input method's Return picks its candidate.
-                  const action = composerEnter({ key: e.key, shiftKey: e.shiftKey, altKey: e.altKey, repeat: e.repeat, isComposing: composing.current || e.nativeEvent.isComposing, keyCode: e.keyCode })
-                  if (e.key === 'Enter' && e.repeat && !e.shiftKey && !e.altKey) e.preventDefault()
-                  if (action === 'send') {
-                    e.preventDefault()
-                    submit()
-                  }
-                }}
-                onPaste={(e) => {
-                  const types = [...e.clipboardData.types]
-                  const hasFiles = types.includes('Files')
-                  // Pasted text is sent marked as pasted: memory never takes it as the user's own words.
-                  if (types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
-                  // ⌘V with a copied file or image: attach it (the field alone would paste a name).
-                  if (!canAttach) return
-                  if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
-                  e.preventDefault()
-                  void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
-                }}
-              />
-            </div>
+            <ComposerField
+              field={field}
+              value={draft}
+              placeholder={placeholder}
+              label={tr(reply ? 'Reply' : 'Message')}
+              onChange={(text) => {
+                setDraft(text)
+                // Starting a command: list the computer's skills again.
+                if (bot && text === '/') void plugins.refresh()
+              }}
+              onSend={submit}
+              onKey={(e, inInputMethod) => {
+                if (commandMenu.onKey(e, inInputMethod) || mentionMenu.onKey(e, inInputMethod)) return true
+                if (e.key !== 'Escape' || !reply) return false
+                e.preventDefault()
+                cancelReply?.()
+                return true
+              }}
+              onPaste={(e) => {
+                const types = [...e.clipboardData.types]
+                const hasFiles = types.includes('Files')
+                // Pasted text is sent marked as pasted: memory never takes it as the user's own words.
+                if (types.includes('text/plain') && !e.clipboardData.files.length) pasted.current.push(e.clipboardData.getData('text/plain'))
+                // ⌘V with a copied file or image: attach it (the field alone would paste a name).
+                if (!canAttach) return
+                if (!hasFiles || (types.includes('text/plain') && !e.clipboardData.files.length)) return
+                e.preventDefault()
+                void pastedFiles(window.codync.app.readClipboardFiles, [...e.clipboardData.files]).then(append)
+              }}
+            />
             {dictation.listening || dictation.transcribing ? (
               <RecordingPill
                 startedAt={dictation.startedAt}
@@ -327,7 +274,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
 }
 
 /** Keep the outgoing row until its height/fade transition finishes. */
-function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
+export function ComposerReveal({ open, children }: { open: boolean; children: ReactNode }) {
   const { mounted, shown } = usePresence(open)
   const last = useRef(children)
   if (open) last.current = children

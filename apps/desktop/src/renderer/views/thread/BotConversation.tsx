@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon'
 import { ModalHeader } from '../../components/Overlay'
 import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
+import { copyText } from '../../lib/image-clipboard'
 import { useStore } from '../../store/context'
 import { botConversation, buildBotConversation, groupSummary, peerNameIn, verbOf, type BotConversationRow, type BotExchange } from './bot-exchange'
 import { AuthorLabel, Bubble, TimeSeparator } from './ChatRows'
@@ -11,6 +12,7 @@ import { MarkdownText } from './Markdown'
 import './bot-conversation.css'
 import { useFetched } from '../../lib/use-fetched'
 import { useTr } from '../../lib/use-language'
+import { fill } from '@shared/fill'
 
 
 /** The compact chat row for bot-to-bot messages with one peer: who, never what. Opens the conversation. */
@@ -44,6 +46,7 @@ interface Peer {
 
 /** The pair a conversation is between, for its header: the chat's own bot, then its peer. */
 function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
+  const tr = useTr()
   const store = useStore()
   const name = (id: string) => store.authorName(id, id === peer.id ? peer.name : undefined)
   const label = (id: string) => (
@@ -53,7 +56,7 @@ function BotPair({ botId, peer }: { botId: string; peer: Peer }) {
     </HStack>
   )
   return (
-    <HStack as="span" gap={8} aria-label={`${name(botId)} and ${name(peer.id)}`}>
+    <HStack as="span" gap={8} aria-label={fill(tr('{name} and {other}'), { name: name(botId), other: name(peer.id) })}>
       {label(botId)}
       <Icon name="arrow.left.arrow.right" size={11} color="var(--tertiary)" />
       {label(peer.id)}
@@ -92,6 +95,7 @@ export function BotConversationView({ botId, peerId }: { botId: string; peerId: 
 }
 
 function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer }) {
+  const tr = useTr()
   const store = useStore()
   const name = (id: string) => store.authorName(id, id === peer.id ? peer.name : undefined)
   switch (row.kind) {
@@ -103,7 +107,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
           {row.showsAuthor ? <AuthorLabel botId={row.author} name={name(row.author)} /> : null}
           <div className="message agent">
             <div className="message-body">
-              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => window.codync.app.copy(row.text) }]}>
+              <Bubble className="bubble agent selectable" items={() => [{ title: 'Copy', icon: 'square.on.square', action: () => void copyText(row.text) }]}>
                 <MarkdownText text={row.text} />
               </Bubble>
             </div>
@@ -112,7 +116,7 @@ function ConversationRow({ row, peer }: { row: BotConversationRow; peer: Peer })
       )
     case 'status': {
       const failed = row.outcome.kind === 'failed'
-      const text = row.outcome.kind === 'failed' ? row.outcome.detail || "Didn't complete." : `Waiting for ${name(row.awaiting)}…`
+      const text = row.outcome.kind === 'failed' ? row.outcome.detail || tr("Didn't complete.") : tr('Waiting for {name}…').replaceAll('{name}', () => name(row.awaiting))
       return <Text as="div" size="footnote" tone={failed ? 'danger' : 'secondary'} className="selectable bot-conversation-status">{text}</Text>
     }
   }

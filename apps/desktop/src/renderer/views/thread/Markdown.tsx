@@ -76,13 +76,14 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
       const cols = Array.from({ length: columns }, (_, i) => i)
       return (
         <div className="md-table-scroll">
+          {/* Each cell is its own block to find in: a match never runs from one cell into the next. */}
           <div className="md-table md-body" style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}>
             {cols.map((i) => (
-              <Text key={`h${i}`} weight="semibold">{inline(block.header[i] ?? '', `h${i}`)}</Text>
+              <Text key={`h${i}`} weight="semibold" data-find-block>{inline(block.header[i] ?? '', `h${i}`)}</Text>
             ))}
             {block.rows.map((row, r) => [
               <Hairline key={`l${r}`} style={{ gridColumn: `1 / span ${columns}` }} />,
-              ...cols.map((i) => <span key={`${r}-${i}`}>{inline(row[i] ?? '', `${r}-${i}`)}</span>),
+              ...cols.map((i) => <span key={`${r}-${i}`} data-find-block>{inline(row[i] ?? '', `${r}-${i}`)}</span>),
             ])}
           </div>
         </div>
@@ -100,10 +101,11 @@ const MarkdownBlock = memo(function MarkdownBlock({ block }: { block: Block }) {
 }, (a, b) => JSON.stringify(a.block) === JSON.stringify(b.block))
 
 /** The desktop's Markdown for messages; a block that didn't change keeps its rendering. */
-export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+/** `findable`: a message's text, which find in the conversation searches. */
+export const MarkdownText = memo(function MarkdownText({ text, findable = false }: { text: string; findable?: boolean }) {
   const blocks = parseMarkdown(text)
   return (
-    <VStack gap={10} shrink className="markdown selectable">
+    <VStack gap={10} shrink className="markdown selectable" data-find-text={findable || undefined}>
       {blocks.map((b, i) => (
         <MarkdownBlock key={i} block={b} />
       ))}

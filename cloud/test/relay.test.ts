@@ -3,7 +3,8 @@
 import { runDurableObjectAlarm, runInDurableObject, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import V from "../../docs/reference/fixtures/remote-relay-vectors.json";
-import { PING, type ComputerRelay } from "../src/relay";
+import type { ComputerRelay } from "../src/relay";
+import { PING } from "../src/relay-wire";
 import { acl, call, devicePath, env, hostSocket, newHost, sleep, socket, upgrade, type TestHost } from "./helpers";
 import * as ref from "./ref";
 

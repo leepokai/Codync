@@ -8,9 +8,15 @@ struct RootView: View {
     @Environment(AccountStore.self) private var accounts
     @Environment(AccountSession.self) private var account
     @AppStorage("onboardingCompleted") private var onboardingCompleted = false
+    /// Chose to go on without signing in (docs/plans/optional-sign-in.md); signing in or starting over ends it.
+    @AppStorage("withoutAccount") private var withoutAccount = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// First launch only: past the welcome, on to setup.
     @State private var welcomed = false
+    /// In the pairing flow by choice: a computer turning up in the account doesn't pull it back to the choice.
+    @State private var pairingNew = false
+    /// The account computer the choice page is asking for access.
+    @State private var asking: CloudComputer?
 
     /// The open bot, as a NavigationStack path.
     private var path: Binding<[BotReference]> {
@@ -20,32 +26,27 @@ struct RootView: View {
     var body: some View {
         Group {
             if mustSignIn {
-                // Computers paired before sign-in was required wait in the signed-out context.
-                WelcomeView(signedOutComputers: accounts.computers.count) {}
-                    .transition(.opacity)
-            } else if !onboardingCompleted && accounts.computers.isEmpty && accounts.cloudComputers.isEmpty {
-                if !welcomed && !account.isSignedIn {
-                    WelcomeView { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = true } }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                } else {
-                    PairingView(onSkip: { completeOnboarding(via: .skipped) }) {
-                        if account.isSignedIn {
-                            AccountSwitcherButton()
-                        } else {
-                            BackButton { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { welcomed = false } }
-                        }
-                    }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                // Computers paired signed out wait in the signed-out context.
+                WelcomeView(signedOutComputers: accounts.computers.count) {
+                    Analytics.shared.capture(.continuedWithoutAccount)
+                    animateSetup { withoutAccount = true }
                 }
+                .transition(.opacity)
+            } else if !onboardingCompleted && accounts.computers.isEmpty {
+                setup
             } else {
                 tabs
             }
         }
         .background(Palette.background)
-        .onChange(of: accounts.computers.isEmpty && accounts.cloudComputers.isEmpty, initial: true) { _, empty in
-            // Pairing, signing in to an account that has computers, or explicitly skipping completes
+        .reviewInvitation()
+        .onChange(of: account.isSignedIn) { _, signedIn in
+            if signedIn { withoutAccount = false }
+        }
+        .onChange(of: accounts.computers.isEmpty, initial: true) { _, empty in
+            // Reaching a computer (paired, or approved through the account) or explicitly skipping completes
             // setup. Keep this device-level milestone across account changes and unpairing.
-            if !empty { completeOnboarding(via: accounts.cloudComputers.isEmpty ? .paired : .account) }
+            if !empty { completeOnboarding(via: accounts.approvedAccess.isEmpty ? .paired : .account) }
         }
         .codyncDialog("Something went wrong", isPresented: errorShown, message: errorMessage, cancel: "OK", inPlace: true) { [] }
         .codyncOverlay(isPresented: Binding(get: { screenTarget.wrappedValue != nil }, set: { if !$0 { screenTarget.wrappedValue = nil } })) { close in
@@ -56,12 +57,52 @@ struct RootView: View {
             }
         }
         .codyncSheet(isPresented: Bindable(app).showComputers) { ComputersView() }
+        // Here, not on the choice page: approval replaces that page while this sheet says so.
+        .codyncSheet(item: $asking) { computer in
+            AccessRequestView(computer: computer, pending: accounts.pendingAccess[computer.computerId])
+        }
         .codyncSheet(item: Binding(get: { app.marketplace.map(MarketplaceTarget.init) }, set: { app.marketplace = $0?.computerId })) { target in
             // Each computer has its own; it's opened from that computer's heading or row.
             if let store = accounts.store(for: target.computerId) {
                 MarketplaceView()
                     .environment(store)
             }
+        }
+    }
+
+    /// First run, until a computer is reached or setup is skipped.
+    @ViewBuilder
+    private var setup: some View {
+        if !welcomed && !account.isSignedIn && !withoutAccount {
+            WelcomeView { animateSetup { welcomed = true } }
+                .transition(.move(edge: .leading).combined(with: .opacity))
+        } else if account.isSignedIn && !accounts.cloudListLoaded {
+            // Whether the account has computers decides the first page: none flashes by before that's known.
+            Spinner(size: 28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+        } else if !pairingNew && !askableComputers.isEmpty {
+            ChooseComputerView(computers: askableComputers, ask: { asking = $0 },
+                               pairNew: { animateSetup { pairingNew = true } }, skip: { completeOnboarding(via: .skipped) }) {
+                AccountSwitcherButton()
+            }
+            .transition(.move(edge: .leading).combined(with: .opacity))
+        } else {
+            PairingView(onSkip: { completeOnboarding(via: .skipped) }, onContinue: { pairingNew = true }) {
+                if !askableComputers.isEmpty {
+                    BackButton { animateSetup { pairingNew = false } }
+                } else if account.isSignedIn {
+                    AccountSwitcherButton()
+                } else {
+                    BackButton {
+                        animateSetup {
+                            welcomed = false
+                            withoutAccount = false
+                        }
+                    }
+                }
+            }
+            .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
 
@@ -90,13 +131,14 @@ struct RootView: View {
         .tint(Palette.text)
         .tracked(.screenViewed(screen))
         // Opening a bot (notification, widget, link) always lands on the Bots tab.
-        .onChange(of: accounts.selection) { old, ref in
-            if ref != nil {
-                app.tab = .bots
-                ReviewInvitation.shared.cancel(.interaction)
-            } else if let old {
-                ReviewInvitation.shared.returned(from: "\(accounts.storage.id)/\(old.computerId)/\(old.botId)")
-            }
+        .onChange(of: accounts.selection) { _, ref in
+            if ref != nil { app.tab = .bots }
+        }
+        // Over the tabs once the launch splash is gone, never over welcome or setup.
+        .codyncSheet(isPresented: Binding(get: { app.whatsNew.isPresented && !app.launching },
+                                          set: { app.whatsNew.isPresented = $0 })) {
+            WhatsNewSheet(announcements: app.whatsNew.due)
+                .onAppear { app.whatsNew.shown() }
         }
     }
 
@@ -108,10 +150,19 @@ struct RootView: View {
         }
     }
 
-    /// Every build with accounts requires sign-in. While Clerk restores, the last signed-in account's context
-    /// stays on screen, so an offline launch still reaches its computers.
+    /// Signed out, a build with accounts offers signing in or going on without one. While Clerk restores, the last
+    /// signed-in account's context stays on screen, so an offline launch still reaches its computers.
     private var mustSignIn: Bool {
-        account.isConfigured && !account.isSignedIn && (account.isReady || accounts.accountId == nil)
+        account.isConfigured && !account.isSignedIn && !withoutAccount && (account.isReady || accounts.accountId == nil)
+    }
+
+    /// What the choice page offers: an older copy of a computer doesn't count as one more.
+    private var askableComputers: [CloudComputer] {
+        accounts.cloudComputers.filter { !accounts.isOlderCopy($0) }
+    }
+
+    private func animateSetup(_ change: () -> Void) {
+        withAnimation(Motion.reduced(Motion.layout, reduceMotion), change)
     }
 
     /// Once per setup (Start over begins a new one): the first computer reached, or Skip.
@@ -266,6 +317,11 @@ private struct UsageSheet: View {
             }
         }
         .background(Palette.background)
+        // What failed here (a switch, a drag) shows over this sheet, not under it at the root,
+        // where the same error clears with this one.
+        .codyncDialog("Something went wrong", isPresented: Binding(
+            get: { store?.lastError != nil }, set: { if !$0 { store?.lastError = nil } }
+        ), message: store?.lastError, cancel: "OK", inPlace: true) { [] }
         .tracked(.screenViewed(.usage))
     }
 }
@@ -365,13 +421,19 @@ private struct AccessBanners: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Array(accounts.pendingAccess.values).sorted { $0.requestId < $1.requestId }) { ticket in
-                let name = accounts.cloudComputers.first { $0.computerId == ticket.computerId }?.name ?? "Your computer"
+                let computer = accounts.cloudComputers.first { $0.computerId == ticket.computerId }
+                let name = computer?.name ?? "Your computer"
                 HStack(spacing: 12) {
                     Spinner(size: 16)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
-                        Text(L10n.tr("Code \(ticket.code.prefix(3)) \(ticket.code.suffix(3))"))
-                            .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        if computer?.cloud != nil {
+                            // A cloud computer approves this iPhone by itself: no code to check.
+                            Text(L10n.tr("Connecting to \(name)…")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                        } else {
+                            Text(L10n.tr("Approve on \(name)")).font(.subheadline.weight(.medium)).foregroundStyle(Palette.text)
+                            Text(verbatim: "\(L10n.tr("Code")) \(ticket.code.prefix(3)) \(ticket.code.suffix(3))")
+                                .font(.footnote.monospacedDigit()).foregroundStyle(Palette.secondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     IconButton("Cancel request", systemImage: "xmark") {

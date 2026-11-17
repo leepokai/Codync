@@ -17,7 +17,7 @@ fun systemScript(tag: String): ChineseScript? {
 enum class AppLanguage(val stored: String, val title: String) {
     // The menu's order, as on the iPhone: Chinese first, then English and the rest.
     System("system", "Follow system"), Zh("zh", "简体中文"), ZhHant("zh-Hant", "繁體中文"), En("en", "English"),
-    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"), PtBr("pt-BR", "Português (Brasil)"), Ru("ru", "Русский");
+    Ja("ja", "日本語"), Ko("ko", "한국어"), Fr("fr", "Français"), De("de", "Deutsch"), Es("es", "Español"), PtBr("pt-BR", "Português (Brasil)"), Ru("ru", "Русский"), It("it", "Italiano");
 
     fun resolved(systemTag: String): AppLanguage {
         if (this != System) return this
@@ -26,6 +26,9 @@ enum class AppLanguage(val stored: String, val title: String) {
         if (base == "pt") return PtBr
         return entries.firstOrNull { it != System && it.stored == base } ?: En
     }
+
+    /** The BCP 47 tag of this language's catalog and formats (`Zh` is Simplified). */
+    val tag: String get() = if (this == Zh) "zh-Hans" else stored
 
     fun usesChinese(systemIsChinese: Boolean): Boolean = this == Zh || this == ZhHant || (this == System && systemIsChinese)
 
@@ -48,7 +51,7 @@ private data class Piece(val literal: String?, val token: String?)
 
 /**
  * A sentence the host or a view already filled in, matched back to its `{token}` phrase.
- * A slot that is itself a known phrase (a setup hint) is translated too.
+ * Only app-owned hints recurse; names and free text stay as written.
  */
 private val templateLock = Any()
 private var cachedKey: Map<String, String>? = null
@@ -98,6 +101,14 @@ private fun parseTemplate(template: String): List<Piece>? {
     return if (pieces.any { it.token != null }) pieces else null
 }
 
+private val localizableSlots = setOf("{hint}", "{error}", "{setup}", "{kind}", "{when}", "{status}", "{reason}", "{shortcut}", "{changes}")
+/** Slots that only ever hold a number, so free text ("…the host service isn't installed") never fills "{count} installed". */
+private val numericSlots = setOf("{count}", "{unread}", "{cap}")
+private val number = Regex("[\\d,.]+")
+/** A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit." never fills "You have {version}.". */
+private val versionShape = Regex("\\d+(\\.\\d+)*(-[\\w.]+)?")
+private val placeholder = Regex("\\{[A-Za-z0-9]+\\}")
+
 private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map<String, String>, depth: Int): String? {
     var pos = 0
     val caps = linkedMapOf<String, String>()
@@ -112,16 +123,22 @@ private fun fill(text: String, pieces: List<Piece>, phrase: String, phrases: Map
         val next = pieces.getOrNull(index + 1)?.literal
         val end = if (next == null) text.length else text.indexOf(next, pos)
         if (end < 0 || end == pos) return null
-        caps[token] = text.substring(pos, end)
+        val value = text.substring(pos, end)
+        if (token in numericSlots && !number.matches(value)) return null
+        if (token == "{version}" && !versionShape.matches(value)) return null
+        caps[token] = value
         pos = end
     }
     if (pos != text.length) return null
-    var result = phrase
-    for ((token, value) in caps) {
-        val inner = phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
-        result = result.replace(token, inner ?: value)
+    val values = caps.mapValues { (token, value) ->
+        // Only app-owned UI slots translate recursively; names and free text stay verbatim.
+        val localizable = token in localizableSlots
+        val inner = if (localizable) {
+            phrases[value] ?: if (depth == 0) templated(value, phrases, 1) else null
+        } else null
+        inner ?: value
     }
-    return result
+    return placeholder.replace(phrase) { match -> values[match.value] ?: match.value }
 }
 
 fun translate(text: String, preference: AppLanguage, systemIsChinese: Boolean, phrases: Map<String, String>): String {
@@ -141,6 +158,16 @@ val LocalPhrases = staticCompositionLocalOf { emptyMap<String, String>() }
 val LocalSetAppLanguage = staticCompositionLocalOf<(AppLanguage) -> Unit> { {} }
 
 @Composable fun tr(text: String): String = translator()(text)
+
+/** The app language as a [java.util.Locale], for dates and units: the system's own (with its region) when the app shows that language. */
+@Composable fun appLocale(): java.util.Locale {
+    val system = LocalSystemTag.current
+    val language = LocalAppLanguage.current.resolved(system)
+    val systemLocale = java.util.Locale.forLanguageTag(system)
+    // Keep the system region only when the system really speaks the chosen language (a Dutch device that picked English gets "en").
+    val speaksIt = language == AppLanguage.System.resolved(system) && systemLocale.language == language.tag.substringBefore('-')
+    return if (speaksIt) systemLocale else java.util.Locale.forLanguageTag(language.tag)
+}
 
 /** [tr] as a function, for code that translates outside composition (a template filled in later). */
 @Composable fun translator(): (String) -> String {

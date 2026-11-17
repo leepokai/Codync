@@ -175,10 +175,9 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
     }
     if kind == RequestKind::Agent {
         let backend = text(request, "backend")?;
-        if crate::agent::auth::check(&hub.store, backend).await?["signedIn"] != true {
+        if !super::agent_sign_in::confirm(hub, backend, request["loginProfile"].as_str()).await? {
             bail!("{} isn't signed in yet.", request["title"].as_str().unwrap_or("The agent"));
         }
-        super::agent_sign_in::agent_signed_in(hub, backend)?;
         return Ok(json!({"entry": hub.store.entry(id)}));
     }
     if kind == RequestKind::Login {
@@ -208,7 +207,7 @@ pub async fn finish(hub: &Arc<Hub>, args: &Value) -> Result<Value> {
             }
             if kind == RequestKind::Secret {
                 let value = text(args, "value")?;
-                if value.len() > 64 * 1024 {
+                if value.len() > super::MAX_CREDENTIAL_BYTES {
                     bail!("Credential is too large");
                 }
                 let field = text(request, "field")?.to_owned();
@@ -319,7 +318,7 @@ pub(super) mod tests {
     fn remote_control_devices_cannot_retrieve_credentials_or_forge_requests() {
         let caller =
             crate::api::devices::Caller::Device { key: "test".into(), scopes: vec![crate::store::Scope::Control] };
-        for method in ["connectorRuntime", "connectorTarget", "connectorCall"] {
+        for method in ["connectorRuntime", "connectorTarget", "connectorCall", "updateConnector"] {
             assert!(crate::api::devices::permit(&caller, method).is_err());
         }
         assert!(crate::api::devices::permit(&caller, "connectorRequestFinish").is_ok());

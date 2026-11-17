@@ -129,6 +129,14 @@ class ChannelIntegrationTest {
         }))
     }
 
+    @Test fun `an address found on the network is dialed when none saved answers`() = runBlocking {
+        enqueueHost()
+        val saved = computer()
+        val channel = HostConnector.connect(saved.copy(urls = emptyList()), identity(), discovered = saved.urls)
+        try { assertEquals(cid, channel.call("probe").jsonObject.text("computerId")) }
+        finally { channel.close() }
+    }
+
     @Test fun `screen overflow cannot block unrelated RPC responses`() = runBlocking {
         enqueueHost(screenBurst = 300)
         val channel = HostConnector.connect(computer(), identity())

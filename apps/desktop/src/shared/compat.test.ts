@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { checkVersions, isBelow, parseVersion } from './compat.ts'
+import { appHeader, checkVersions, isBelow, MIN_HOST, parseVersion } from './compat.ts'
 
 test('versions parse like the host and the iPhone app', () => {
   assert.deepEqual(parseVersion('v2.6'), [2, 6, 0])
@@ -15,4 +15,8 @@ test('the side that must update', () => {
   assert.deepEqual(checkVersions('2.6.0', '2.7.0', '2.7.0'), { kind: 'updateApp', minimum: '2.7.0' })
   assert.deepEqual(checkVersions('2.26.0', '2.25.9', null), { kind: 'updateHost', version: '2.25.9', minimum: '2.26.0' })
   assert.equal(checkVersions('2.26.0', '2.26.0', '2.3.0'), null)
+})
+
+test('the cloud learns this app version and the host it needs', () => {
+  assert.equal(appHeader('2.25.0'), `desktop/2.25.0; minHost=${MIN_HOST}`)
 })

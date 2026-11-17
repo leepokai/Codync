@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +41,8 @@ import kotlinx.coroutines.launch
         CardForm {
             val provider = engine
             var speech by remember(provider) { mutableStateOf(provider?.let(choices::speechMode) == true) }
+            // The engine's Speech mode goes to a server of the user's own, which holds no Realtime conversation.
+            var speechOnly by remember(provider) { mutableStateOf(provider?.let(choices::speechOnly) == true) }
             CardSection("Voice", footer = provider?.let { "Your own ${it.title} key, billed by ${it.title}. During a call, applies when you close settings." }
                 ?: "Android speech, on this device. During a call, applies when you close settings.", Modifier.animateContentSize(Motion.layoutSize)) {
                 row {
@@ -49,7 +53,8 @@ import kotlinx.coroutines.launch
                 }
                 if (provider != null) {
                     row {
-                        ValueRow("Mode", detail = if (speech) "Sent when you pause, replies read aloud." else "A live conversation. Talk over replies.") {
+                        if (speechOnly) ValueRow("Mode", "Speech", detail = "Your own server works in Speech mode only.")
+                        else ValueRow("Mode", detail = if (speech) "Sent when you pause, replies read aloud." else "A live conversation. Talk over replies.") {
                             ChoicePicker(speech, listOf(false to "Realtime", true to "Speech"), { speech = it; choices.speechMode(provider, it) }, label = "Mode")
                         }
                     }
@@ -65,7 +70,9 @@ import kotlinx.coroutines.launch
                     row { PauseRow(settings, ::change) }
                 }
             }
-            if (provider != null) key(provider) { ProviderVoiceSettings(provider, speech, state, store, choices) }
+            if (provider != null) key(provider) {
+                ProviderVoiceSettings(provider, speech, state, store, choices) { speechOnly = choices.speechOnly(provider); speech = choices.speechMode(provider) }
+            }
             // Dictation on another provider than calls still needs that provider's key and speech-to-text model.
             val dictation = remember { choices.dictation }
             if (dictation != null && dictation != provider) key("dictation-${dictation.id}") {
@@ -96,17 +103,23 @@ import kotlinx.coroutines.launch
 }
 
 /**
- * One provider: the key the computer keeps, models, voice and this month's minutes; [dictationOnly] keeps the key and
- * the speech-to-text model. Keys are entered on the computer itself (the host takes `setVoiceKey` from loopback only).
+ * One provider: the key the computer keeps, the server its Speech mode goes to, models, voice and this month's minutes;
+ * [dictationOnly] keeps the key, the server and the speech-to-text model. The key and the server are entered on the
+ * computer itself (the host takes `setVoiceKey` and `setVoiceServer` from loopback only). [onStatus]: [choices] now
+ * hold what the computer said of the server.
  */
 @Composable private fun ProviderVoiceSettings(provider: VoiceProvider, speech: Boolean, state: AppState, store: AppStore, choices: VoiceChoices,
-    dictationOnly: Boolean = false) {
+    dictationOnly: Boolean = false, onStatus: () -> Unit = {}) {
     // Speech mode and dictation with this provider both use its speech-to-text model.
     val transcribes = dictationOnly || speech || choices.dictation == provider
+    var googleSearch by remember { mutableStateOf(choices.googleSearch) }
+    var supportsSearch by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val host = state.hostName
     /** null while the computer hasn't answered yet. */
     var saved by remember { mutableStateOf<Boolean?>(null) }
+    /** null where the computer has no server to choose; `""` is the provider itself. */
+    var server by remember { mutableStateOf(choices.server(provider)) }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     var voice by remember { mutableStateOf(choices.voice(provider)) }
@@ -130,7 +143,8 @@ import kotlinx.coroutines.launch
         if (state.actualConnection !is LinkState.Ready) { saved = false; result = false to "Not connected to $host."; return@LaunchedEffect }
         try {
             val status = store.voiceStatus()
-            choices.remember(status); saved = status.configured(provider)
+            choices.remember(status); saved = status.configured(provider); supportsSearch = status.googleSearch
+            server = choices.server(provider); onStatus()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { saved = false; result = false to (error.message ?: "Couldn't reach $host."); return@LaunchedEffect }
         if (saved == true) loadModels()
@@ -161,7 +175,7 @@ import kotlinx.coroutines.launch
         }
     }
 
-    CardSection(provider.title, footer = if (!hasKey) "Add a key to choose from ${provider.title}'s models." else if (dictationOnly) "For dictation in the message box." else null,
+    CardSection(provider.title, footer = if (!hasKey) tr("Add a key to choose from {name}'s models.").replace("{name}", provider.title) else if (dictationOnly) tr("For dictation in the message box.") else null,
         modifier = Modifier.animateContentSize(Motion.layoutSize)) {
         if (saved != null || result != null) row {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -184,11 +198,21 @@ import kotlinx.coroutines.launch
                 }
             }
         }
+        server?.let { saved ->
+            row { ValueRow("Server") { Text(VoiceStatus.serverLabel(saved), maxLines = 1, overflow = TextOverflow.MiddleEllipsis) } }
+        }
         if (transcribes) row { picker("Speech to text", transcribe, models.transcribe) { transcribe = it; choices.choose(provider, VoiceChoices.Model.Transcribe, it) } }
         if (!dictationOnly) {
             if (speech) row { picker("Text to speech", speechModel, models.speech) { speechModel = it; choices.choose(provider, VoiceChoices.Model.Speech, it) } }
             else row { picker("Model", model, models.models) { model = it; choices.choose(provider, VoiceChoices.Model.Realtime, it) } }
             row { picker("Voice", voice, provider.voices) { voice = it; choices.voice(provider, it) } }
+            if (provider == VoiceProvider.Gemini && !speech && supportsSearch) row {
+                val searchLabel = tr("Google Search")
+                ValueRow("Google Search", detail = "Let Gemini search the web during calls. Requires Google Search quota; charges may apply.") {
+                    CodyncSwitch(googleSearch, { googleSearch = it; choices.googleSearch = it },
+                        Modifier.width(34.dp).semantics { contentDescription = searchLabel }) {}
+                }
+            }
             row { ValueRow("This month", "≈ ${choices.minutes(provider)} min", Modifier.graphicsLayer { alpha = if (hasKey) 1f else .55f }) }
         }
     }

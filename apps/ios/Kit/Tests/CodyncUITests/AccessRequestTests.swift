@@ -36,6 +36,43 @@ private final class AccessCloudStub: URLProtocol {
     }
 }
 
+/// Answers everything with the status its host starts with: the store's first cloud call fails.
+private final class FailingCloudStub: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        let status = Int(request.url?.host?.prefix(3) ?? "") ?? 500
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+/// First-run setup waits on the account's answer: a failed one ends the wait too, or setup stays on its spinner.
+/// A busy cloud (503) passes quietly, an answer that stays (403) reaches the dialog; without a cloud there's nothing to wait for.
+@MainActor @Test(arguments: [(503, false), (403, true)])
+func aFailedRefreshEndsSetupsWait(status: Int, reported: Bool) async {
+    let suite = "CloudRefresh.\(UUID().uuidString)"
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [FailingCloudStub.self]
+    let cloud = CloudClient(baseURL: URL(string: "https://\(status).test")!, identity: DeviceIdentity(signing: .init(), push: .init()),
+                            session: URLSession(configuration: config)) { "token" }
+    let accounts = AccountStore(storage: SharedStore.Context(accountID: "account", suite: suite), cloud: cloud)
+    defer { accounts.retire() }
+    #expect(!accounts.cloudListLoaded)
+    await accounts.refreshCloud()
+    #expect(accounts.cloudListLoaded)
+    #expect(accounts.cloudComputers.isEmpty)
+    #expect((accounts.lastError != nil) == reported)
+
+    let offline = AccountStore(storage: SharedStore.Context(accountID: "account", suite: suite), cloud: nil)
+    defer { offline.retire() }
+    #expect(offline.cloudListLoaded)
+}
+
 /// Signed in with an online computer this device can't use, nothing is asked until the user taps.
 /// Closing the access sheet before the code arrives and opening it again makes one request, which
 /// goes on in the store and ends with the code in the banner, not pending on the computer unrevealed.
@@ -50,7 +87,9 @@ private final class AccessCloudStub: URLProtocol {
     let storage = SharedStore.Context(accountID: "account", suite: suite)
     let accounts = AccountStore(storage: storage, cloud: cloud)
     defer { accounts.retire() }
+    #expect(!accounts.cloudListLoaded)
     await accounts.refreshCloud()
+    #expect(accounts.cloudListLoaded)
     let id = RelayCrypto.computerId(signKey: hostKey)
     #expect(accounts.cloudComputers.map(\.computerId) == [id])
     #expect(accounts.pendingAccess.isEmpty)

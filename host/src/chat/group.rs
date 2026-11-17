@@ -9,21 +9,26 @@
 //! @-mentioned and who haven't spoken or been asked since. A member with nothing
 //! to add says `(pass)`, and a round where nobody speaks ends the turn. A newer
 //! message in the same lane (or Stop) moves the lane's epoch, which ends a running
-//! room turn before its next speaker.
+//! room turn before its next speaker. A member's answer the room turn didn't wait
+//! for (busy elsewhere, or overdue) gets a late room turn for who it @-mentions
+//! ([`rooms`]).
 
-use crate::LockExt;
+mod rooms;
+
 use crate::agent::bot::{Cmd, NoticeStyle};
 use crate::hub::{BotStatus, Hub};
 use crate::remote::push::{self, AlertKind};
 use crate::store::{BotConfig, BotKind, Entry, EntryKind, Lane, Store};
 use anyhow::{Result, anyhow, bail};
+pub use rooms::Rooms;
+use rooms::Turn;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
 
 const MAX_ROUNDS: usize = 3;
-/// A member's turn that runs longer counts as a pass.
+/// A member's turn that runs longer counts as a pass (a test shortens it: `Rooms::set_member_timeout`).
 const MEMBER_TIMEOUT: Duration = Duration::from_mins(10);
 /// Replies per room turn, across all rounds.
 const MAX_REPLIES: usize = 10;
@@ -41,43 +46,14 @@ pub struct GroupTurn {
     pub shown: i64,
     /// The room turn that asked; a member skips it once a newer one started (see [`Rooms::current`]), unless `late`.
     pub epoch: u64,
-    /// Queued while the member was busy elsewhere: it answers once free whatever the room did since, on a
-    /// prompt built when it starts ([`refresh`]). Only the group's Stop, the room asking the member again, or the
-    /// member leaving the group drops it (Stop in the member's own chat doesn't).
+    /// Queued while the member was busy elsewhere: it answers once free whatever the room did since. Only the
+    /// group's Stop, the room asking the member again, or the member leaving the group drops it (Stop in the
+    /// member's own chat doesn't).
     pub late: bool,
     /// The reply the room sees, or `None` for a pass.
     pub reply: oneshot::Sender<Result<Option<String>>>,
     /// The user's message the room turn answers: one a voice call carried makes the reply the call's (`chat::calls`).
     pub answers: Vec<String>,
-}
-
-/// Room turn epochs per group.
-#[derive(Default)]
-pub struct Rooms(Mutex<HashMap<String, u64>>);
-
-impl Rooms {
-    fn next(&self, lane: &Lane) -> u64 {
-        let mut map = self.0.locked();
-        let epoch = map.entry(lane.chat.clone()).or_default();
-        *epoch += 1;
-        *epoch
-    }
-
-    pub fn current(&self, lane: &Lane, epoch: u64) -> bool {
-        self.0.locked().get(&lane.chat).copied() == Some(epoch)
-    }
-
-    /// Stop: ends the room turn in `group` and the member turns in it.
-    pub fn stop(&self, hub: &Hub, group: &str) {
-        match self.0.locked().get_mut(group) {
-            Some(epoch) => *epoch += 1,
-            None => return,
-        }
-        let Ok(Some(row)) = hub.store.bot(group) else { return };
-        for member in &row.config.members {
-            let _ = hub.send_cmd(member, Cmd::CancelGroup { chat: group.to_owned() });
-        }
-    }
 }
 
 /// Existing, distinct agent bots (not groups, not the group itself).
@@ -112,36 +88,50 @@ pub fn with_members(store: &Store, members: &[String]) -> Result<Option<String>>
 
 /// The user wrote in a group lane: start a room turn there (ending one still running).
 pub fn start(hub: &Arc<Hub>, group: &BotConfig, lane: Lane) {
-    let epoch = hub.groups.next(&lane);
-    let (hub, group_id) = (hub.clone(), group.id.clone());
+    let turn = hub.groups.start(&lane);
+    spawn(hub, group.id.clone(), lane, turn);
+}
+
+/// Stop in `group`: ends its room turn and the member turns in it ([`Rooms::stop`]).
+pub fn stop(hub: &Hub, group: &str) {
+    if !hub.groups.stop(group) {
+        return;
+    }
+    let Ok(Some(row)) = hub.store.bot(group) else { return };
+    for member in &row.config.members {
+        let _ = hub.send_cmd(member, Cmd::CancelGroup { chat: group.to_owned() });
+    }
+}
+
+/// Runs `turn` in the background, then the late room turns that follow it up ([`Rooms::ended`]).
+fn spawn(hub: &Arc<Hub>, group_id: String, lane: Lane, turn: Turn) {
+    let hub = hub.clone();
     tokio::spawn(async move {
-        if let Err(error) = run(&hub, &group_id, &lane, epoch).await {
-            tracing::warn!(group = group_id, error = format!("{error:#}"), "room turn failed");
+        // The newest message each member was shown when last asked: what it passed on, it has seen.
+        let mut asked: HashMap<String, i64> = HashMap::new();
+        let mut turn = Some(turn);
+        while let Some(t) = turn {
+            if let Err(error) = run(&hub, &group_id, &lane, &t, &mut asked).await {
+                tracing::warn!(group = group_id, error = format!("{error:#}"), "room turn failed");
+            }
+            turn = hub.groups.ended(&lane, t.epoch);
         }
     });
 }
 
-async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<()> {
+async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, turn: &Turn, asked: &mut HashMap<String, i64>) -> Result<()> {
     let mut replies = 0;
     let mut last_reply: Option<(String, String, String)> = None;
     // Members busy elsewhere: their turn waits in their queue, and they answer on their own once free.
     let mut later: Vec<String> = vec![];
-    // The newest message each member was shown when last asked: what it passed on, it has seen.
-    let mut asked: HashMap<String, i64> = HashMap::new();
     'rounds: for round in 0..MAX_ROUNDS {
         let group = group(hub, group_id)?;
         let members = members(hub, &group);
         let since_user = since_last_user_message(hub, lane)?;
-        let mut speakers =
-            if round == 0 { responders(&members, &since_user) } else { cited(&members, &since_user, &asked) };
-        // Each round starts one member later, so the same bot doesn't always speak first.
-        if !speakers.is_empty() {
-            let offset = round % speakers.len();
-            speakers.rotate_left(offset);
-        }
+        let since_late = turn.late.map(|seq| hub.store.messages_after(lane, seq - 1, HISTORY_LINES)).transpose()?;
         let mut spoke = 0;
-        for member in &speakers {
-            if !hub.groups.current(lane, epoch) {
+        for member in speakers(&members, &since_user, since_late.as_deref(), round, asked) {
+            if !hub.groups.current(lane, turn.epoch) {
                 return Ok(());
             }
             // A full room turn still reports its last reply.
@@ -155,16 +145,16 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
             asked.insert(member.id.clone(), shown);
             let (reply, answer) = oneshot::channel();
             let busy = busy_elsewhere(hub, &member.id, lane);
-            let turn = GroupTurn {
+            let group_turn = GroupTurn {
                 lane: lane.clone(),
                 prompt,
                 shown,
-                epoch,
+                epoch: turn.epoch,
                 late: busy,
                 reply,
                 answers: answers(&since_user),
             };
-            if hub.send_cmd(&member.id, Cmd::Group(turn)).is_err() {
+            if hub.send_cmd(&member.id, Cmd::Group(group_turn)).is_err() {
                 continue;
             }
             // The room doesn't wait on a turn elsewhere (it can run for hours): it says so, and the member
@@ -174,14 +164,22 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
                 let data = serde_json::json!({"text": text, "style": NoticeStyle::Info});
                 hub.add_entry(lane, EntryKind::Notice, hub.store.max_turn(group_id), &data);
                 later.push(member.id.clone());
-                tokio::spawn(answer_later(hub.clone(), group_id.to_owned(), (*member).clone(), answer));
+                tokio::spawn(answered_late(hub.clone(), lane.clone(), member.clone(), answer, Push::Done));
                 continue;
             }
-            // A failed, cancelled or overdue member turn counts as a pass; its error shows in the room.
-            if let Ok(Ok(Ok(Some(text)))) = tokio::time::timeout(MEMBER_TIMEOUT, answer).await {
-                spoke += 1;
-                replies += 1;
-                last_reply = Some((member.id.clone(), member.name.clone(), text));
+            // A failed or cancelled member turn counts as a pass; its error shows in the room.
+            let mut answer = answer;
+            match tokio::time::timeout(hub.groups.member_timeout(), &mut answer).await {
+                Ok(Ok(Ok(Some(text)))) => {
+                    spoke += 1;
+                    replies += 1;
+                    last_reply = Some((member.id.clone(), member.name.clone(), text));
+                }
+                Ok(_) => {}
+                // Overdue: the room stops waiting, but the member's answer still lands in the lane.
+                Err(_) => {
+                    tokio::spawn(answered_late(hub.clone(), lane.clone(), member.clone(), answer, Push::Quiet));
+                }
             }
         }
         if spoke == 0 {
@@ -194,18 +192,36 @@ async fn run(hub: &Arc<Hub>, group_id: &str, lane: &Lane, epoch: u64) -> Result<
     Ok(())
 }
 
-/// A busy member's reply, after the room turn moved on: it alerts like the room's last reply. Dropping the member's
-/// queued turn (see [`GroupTurn::late`]) ends this wait.
-async fn answer_later(
+/// Whether a late answer gets its own "done" push.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Push {
+    /// A busy member's: it alerts like a room turn's last reply.
+    Done,
+    /// An overdue member's.
+    Quiet,
+}
+
+/// A member's answer the room turn didn't wait for: who it @-mentions gets a late room turn ([`Rooms::late`]).
+/// Dropping the member's turn (see [`GroupTurn::late`]) ends this wait.
+async fn answered_late(
     hub: Arc<Hub>,
-    group_id: String,
+    lane: Lane,
     member: BotConfig,
     answer: oneshot::Receiver<Result<Option<String>>>,
+    push: Push,
 ) {
-    if let Ok(Ok(Some(text))) = answer.await
-        && let Err(error) = alert(&hub, &group_id, &member.id, &member.name, &text)
+    let Ok(Ok(Some(text))) = answer.await else { return };
+    if push == Push::Done
+        && let Err(error) = alert(&hub, &lane.chat, &member.id, &member.name, &text)
     {
-        tracing::warn!(group = group_id, error = format!("{error:#}"), "late room reply not pushed");
+        tracing::warn!(group = lane.chat, error = format!("{error:#}"), "late room reply not pushed");
+    }
+    let Ok(group) = group(&hub, &lane.chat) else { return };
+    let named = named_by(&members(&hub, &group), &member.id, &text).next().is_some();
+    // ponytail: the answer is placed by its `seq`, taken when it began streaming; a teammate that spoke while it
+    // streamed counts as having seen it. Rare (an overdue answer's last few seconds); place by `rev` if it bites.
+    if named && let Some(turn) = hub.groups.late(&lane, hub.store.last_spoke(&lane, &member.id)) {
+        spawn(&hub, group.id, lane, turn);
     }
 }
 
@@ -223,13 +239,13 @@ fn busy_elsewhere(hub: &Hub, member: &str, lane: &Lane) -> bool {
     matches!(r.status, BotStatus::Working | BotStatus::NeedsInput) && r.lane.as_ref() != Some(lane)
 }
 
-/// A late turn starts: it shows the room as it is now, not as it was when the turn was queued.
-pub fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &BotConfig) -> Result<()> {
+/// A member's room turn starts: it shows the room as it is now, not as it was when the turn was queued (it may
+/// have waited behind another turn of the member's).
+pub fn refresh(hub: &Hub, turn: &mut GroupTurn, me: &str) -> Result<()> {
     let group = group(hub, &turn.lane.chat)?;
-    if !group.members.contains(&me.id) {
-        bail!("no longer in the group");
-    }
-    (turn.prompt, turn.shown) = ask(hub, &group, &members(hub, &group), me, &turn.lane)?;
+    let members = members(hub, &group);
+    let me = members.iter().find(|m| m.id == me).ok_or_else(|| anyhow!("no longer in the group"))?;
+    (turn.prompt, turn.shown) = ask(hub, &group, &members, me, &turn.lane)?;
     turn.answers = answers(&since_last_user_message(hub, &turn.lane)?);
     Ok(())
 }
@@ -266,6 +282,28 @@ fn answers(since: &[Entry]) -> Vec<String> {
     since.first().filter(|e| e.kind == EntryKind::User.as_str()).map(|e| e.id.clone()).into_iter().collect()
 }
 
+/// Who speaks in `round`, each round starting one member later so the same bot doesn't always speak first. The
+/// user's room turn asks who their message names (or everyone) first; a late one asks who the late answers name,
+/// looking only at messages from the oldest of them on (`since_late`).
+fn speakers<'a>(
+    members: &'a [BotConfig],
+    since_user: &[Entry],
+    since_late: Option<&[Entry]>,
+    round: usize,
+    asked: &HashMap<String, i64>,
+) -> Vec<&'a BotConfig> {
+    let mut out = match since_late {
+        Some(since) => cited(members, since, asked),
+        None if round == 0 => responders(members, since_user),
+        None => cited(members, since_user, asked),
+    };
+    if !out.is_empty() {
+        let offset = round % out.len();
+        out.rotate_left(offset);
+    }
+    out
+}
+
 /// Who answers the user: the members @-mentioned or replied to since the user's last message, or
 /// everyone when nobody (or `@all` / `@everyone`) is.
 fn responders<'a>(members: &'a [BotConfig], messages: &[Entry]) -> Vec<&'a BotConfig> {
@@ -287,18 +325,20 @@ fn cited<'a>(members: &'a [BotConfig], messages: &[Entry], asked: &HashMap<Strin
         let Some(author) = e.data["author"].as_str() else { continue };
         let at = seen.entry(author).or_default();
         *at = (*at).max(e.seq);
-        let text = e.data["text"].as_str().unwrap_or_default();
-        let everyone = names_everyone(text);
-        for member in members.iter().filter(|m| m.id != author) {
-            if everyone || names(text, member) {
-                cited_at.insert(&member.id, e.seq);
-            }
+        for member in named_by(members, author, e.data["text"].as_str().unwrap_or_default()) {
+            cited_at.insert(&member.id, e.seq);
         }
     }
     let pending = |m: &&BotConfig| {
         cited_at.get(m.id.as_str()).is_some_and(|cited| seen.get(m.id.as_str()).is_none_or(|seen| seen < cited))
     };
     members.iter().filter(pending).collect()
+}
+
+/// The members other than `author` that `text` @-mentions (all of them on `@all` / `@everyone`).
+fn named_by<'a>(members: &'a [BotConfig], author: &str, text: &str) -> impl Iterator<Item = &'a BotConfig> {
+    let everyone = names_everyone(text);
+    members.iter().filter(move |m| m.id != author && (everyone || names(text, m)))
 }
 
 /// `@all` or `@everyone` in `text`.

@@ -12,6 +12,11 @@ pub fn addresses(port: u16) -> Vec<String> {
     // Read once: every hello asks, and a bad entry warns once.
     static EXTERNAL: LazyLock<Vec<String>> =
         LazyLock::new(|| external_urls(&std::env::var("CODYNC_EXTERNAL_URL").unwrap_or_default()));
+    EXTERNAL.iter().cloned().chain(interface_addresses(port)).take(MAX_ADDRESSES).collect()
+}
+
+/// This computer's own addresses that other devices can reach, best first: Tailscale, then LAN.
+pub fn interface_addresses(port: u16) -> Vec<String> {
     let mut tailscale = vec![];
     let mut lan = vec![];
     for iface in if_addrs::get_if_addrs().unwrap_or_default() {
@@ -42,7 +47,23 @@ pub fn addresses(port: u16) -> Vec<String> {
     lan.sort_by_key(|ip| (lan_rank(*ip), *ip));
     lan.dedup();
     let lan = lan.into_iter().map(|ip| format!("http://{ip}:{port}"));
-    EXTERNAL.iter().cloned().chain(tailscale).chain(lan).take(MAX_ADDRESSES).collect()
+    tailscale.into_iter().chain(lan).collect()
+}
+
+/// This computer's other addresses, for a server with neither Tailscale nor a private network.
+pub fn public_addresses(port: u16) -> Vec<String> {
+    let mut public: Vec<std::net::Ipv4Addr> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .iter()
+        .filter(|iface| !iface.is_loopback() && !is_container_bridge(&iface.name))
+        .filter_map(|iface| match iface.ip() {
+            std::net::IpAddr::V4(ip) if !ip.is_private() && !ip.is_link_local() => Some(ip),
+            _ => None,
+        })
+        .collect();
+    public.sort();
+    public.dedup();
+    public.into_iter().map(|ip| format!("http://{ip}:{port}")).collect()
 }
 
 /// Home networks first, then office ones, so the cap drops the private ranges container and VM networks favor.

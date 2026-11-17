@@ -1,0 +1,64 @@
+# A computer's Network sheet on the phones (docs/features/codync-network.md, Ceilings): its rules read-only, one line
+# each, with the two levels between allow and deny by name, `Ask: …` and `Auto: …`. Rules are changed on a computer, so
+# the script sets them on the host. The phone must already be signed in and paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that. Phones in
+# one run share the host and its rules, which the first to complete puts back: run this flow on one phone at a time.
+#   maestro --device "<simulator udid or adb serial>" test --include-tags network \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - network
+onFlowComplete:
+  - runScript:
+      file: network-rules.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: network-rules.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+# `when` doesn't wait: first let the spinner give way to first-run setup or the tabs.
+- extendedWaitUntil:
+    visible: "(Connect a computer|Settings)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+# The bot list's header (Computers, or how many are connected) opens a menu that leads there.
+- runFlow:
+    when:
+      notVisible: "Manage computers"
+    commands:
+      - tapOn: "(Computers|\\d+ connected)"
+- runFlow:
+    when:
+      visible: "Manage computers"
+    commands:
+      - tapOn: "Manage computers"
+- scrollUntilVisible:
+    element: "Network"
+    centerElement: true
+- tapOn: "Network"
+- extendedWaitUntil:
+    visible: "Who may message bots here"
+    timeout: 20000
+- assertVisible: "Ask: any bot on any computer → any bot here"
+- assertVisible: "Auto: any bot on any computer → any bot here"
+- assertNotVisible: "Deny: .*"
+# A computer no rule matches gets Auto: the rules' footer says so.
+- assertVisible: ".*A computer no rule matches gets Auto.*"
+- takeScreenshot: network-rules

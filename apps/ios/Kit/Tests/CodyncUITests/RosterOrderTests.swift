@@ -85,6 +85,17 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(RosterSection.lines([roster[1]], folded: []) { $0 }.count == 2)
 }
 
+@Test func aSectionWaitsOnTheUserWhileOneOfItsBotsDoes() throws {
+    // Issue #366: its folded badge takes the needs-you colour.
+    var asking = try rosterBot("a", section: "Work", unread: 2)
+    asking.waiting = 1
+    let roster = try [asking, rosterBot("b", section: "Work"), rosterBot("c", section: "Home")]
+    let waiting = RosterSection.lines(roster, folded: []) { $0 }.compactMap { line -> String? in
+        if case let .header(section) = line { "\(section.name) \(section.waiting)" } else { nil }
+    }
+    #expect(waiting == ["Home false", "Work true"])
+}
+
 @MainActor @Test func theLeadSitsInItsSectionLikeAnyBot() throws {
     let (store, done) = try rosterStore([
         rosterBot("l", lead: true, section: "Work"), rosterBot("p", pinned: true, lastAt: 3),
@@ -162,6 +173,39 @@ private func rosterBot(_ id: String, pinned: Bool = false, lead: Bool = false, h
     #expect(store.supportsSections)
     store.hostVersion = HostVersion(version: "2.32.1-dev")
     #expect(store.supportsSections)
+}
+
+@MainActor @Test func queueActionsNeedAHostThatTakesThem() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    #expect(!store.supportsQueueActions) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.38.0")
+    #expect(!store.supportsQueueActions)
+    store.hostVersion = HostVersion(version: "2.39.0")
+    #expect(store.supportsQueueActions)
+}
+
+@MainActor @Test func aPartReplyNeedsAHostThatTakesIt() throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    #expect(!store.supportsReplyPart) // The host hasn't answered yet.
+    store.hostVersion = HostVersion(version: "2.48.0")
+    #expect(!store.supportsReplyPart, "it would quote the whole message")
+    store.hostVersion = HostVersion(version: "2.48.1")
+    #expect(store.supportsReplyPart)
+}
+
+@MainActor @Test func aQueuedMessageTakenBackGoesAtOnceAndComesBackWhenRefused() async throws {
+    let (store, done) = rosterStore([])
+    defer { done() }
+    let data = try JSONDecoder().decode(EntryData.self, from: Data(#"{"text":"later","status":"queued"}"#.utf8))
+    let entry = Entry(id: "q", seq: 1, botId: "b", rev: 1, kind: "user", turn: 1, data: data, createdAt: 1, updatedAt: 1)
+    store.entries["b"] = [entry]
+    store.connection = .unauthorized("No access") // Every call fails at once.
+    store.unqueue(entry)
+    #expect(store.chat("b").isEmpty)
+    #expect(await until { store.chat("b").first?.isQueued == true })
+    #expect(store.lastError != nil)
 }
 
 @MainActor @Test func sectionChangesShowAtOnceAndUndoWhenRefused() async throws {

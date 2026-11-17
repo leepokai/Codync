@@ -47,7 +47,7 @@ public struct BotRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     preview
                     Spacer(minLength: 4)
-                    if bot.unread > 0 { UnreadBadge(count: bot.unread) }
+                    if bot.unread > 0 { UnreadBadge(count: bot.unread, waiting: bot.waiting > 0) }
                 }
             }
         }
@@ -57,51 +57,63 @@ public struct BotRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Live activity while working, otherwise the last message (Grok Bot row behavior).
+    /// The most pressing thing (`Bot.rosterLine`): what needs the user, the chat's own activity, its work in the
+    /// background, otherwise the last message (Grok Bot row behavior).
     @ViewBuilder private var preview: some View {
-        if bot.needsInput {
+        switch bot.rosterLine {
+        case .needsYou:
             Label {
-                Text(L10n.tr(bot.activity.isEmpty ? "Needs your approval" : bot.activity))
+                Text(L10n.tr(bot.needsYouLine))
             } icon: {
                 ThinkingOrb(state: .listening, size: 16, color: Palette.warning)
             }
                 .font(.subheadline)
                 .foregroundStyle(Palette.warning)
                 .lineLimit(1)
-        } else if bot.isWorking {
-            HStack(spacing: 6) {
-                ThinkingOrb(size: 13, color: Palette.secondary)
-                Text(L10n.tr(bot.activity.isEmpty ? "Working…" : bot.activity))
-                    .lineLimit(1)
-            }
-            .font(.subheadline)
-            .foregroundStyle(Palette.secondary)
-        } else if bot.status == "error" {
-            Text(MessagePreview.text(bot.lastMessage ?? "Something went wrong"))
-                .font(.subheadline)
-                .foregroundStyle(Palette.danger)
-                .lineLimit(1)
-        } else {
-            Text(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")))
-                .font(.subheadline)
-                .foregroundStyle(Palette.secondary)
-                .lineLimit(1)
+        case .activity:
+            working(L10n.tr(bot.activity.isEmpty ? "Working…" : bot.activity))
+        case .work:
+            let work = WorkSections(bot.work)
+            if work.working.isEmpty { line(work.counts(), color: Palette.secondary) } else { working(work.counts()) }
+        case .lastMessage where bot.status == "error":
+            line(MessagePreview.text(bot.lastMessage ?? "Something went wrong"), color: Palette.danger)
+        case .lastMessage:
+            line(MessagePreview.text(bot.lastMessage ?? (bot.isGroup ? "\(bot.members.count) bots" : "\(model.backendName(bot.backend)) · \(bot.managedWorkspace ? L10n.tr("Personal workspace") : bot.folderName)")),
+                 color: Palette.secondary)
         }
+    }
+
+    private func working(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            ThinkingOrb(size: 13, color: Palette.secondary)
+            Text(text).lineLimit(1)
+        }
+        .font(.subheadline)
+        .foregroundStyle(Palette.secondary)
+    }
+
+    private func line(_ text: String, color: Color) -> some View {
+        Text(text).font(.subheadline).foregroundStyle(color).lineLimit(1)
     }
 }
 
-/// An unread count in an accent capsule: a bot's, or a folded section's.
+/// An unread count in an accent capsule: a bot's, or a folded section's. `waiting`: it counts a card waiting on
+/// the user, so it takes the needs-you colour of the avatar badge.
 public struct UnreadBadge: View {
     let count: Int
+    let waiting: Bool
 
-    public init(count: Int) { self.count = count }
+    public init(count: Int, waiting: Bool) {
+        self.count = count
+        self.waiting = waiting
+    }
 
     public var body: some View {
         Text("\(count)")
             .font(.caption2.bold())
-            .foregroundStyle(Palette.onAccent)
+            .foregroundStyle(waiting ? Palette.onWarning : Palette.onAccent)
             .padding(.horizontal, 6)
             .frame(minWidth: 18, minHeight: 18)
-            .background(Palette.accentFill, in: Capsule())
+            .background(waiting ? Palette.warning : Palette.accentFill, in: Capsule())
     }
 }

@@ -1,9 +1,9 @@
 "use client";
 
-import { CaretDown, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
+import { AndroidLogo, CaretDown, DeviceMobile, LinuxLogo, Terminal, WindowsLogo } from "@phosphor-icons/react";
 import { AppleLogo } from "./apple-logo";
 import { useOs, type Os } from "./use-os";
-import { APP_STORE, DMG, LINUX, LINUX_ARM, WINDOWS } from "../links";
+import { ANDROID_TEST, APP_STORE, DMG, LINUX, LINUX_ARM, WINDOWS } from "../links";
 
 type Icon = typeof DeviceMobile | typeof AppleLogo;
 type Target = { label: string; detail: string; href: string; Icon: Icon; button?: string };
@@ -15,10 +15,12 @@ const targets: Record<Os | "terminal", Target> = {
   linux: { label: "Linux", detail: "AppImage for x86_64", href: LINUX, Icon: LinuxLogo, button: "Download for Linux (x86_64)" },
   "linux-arm64": { label: "Linux (Arm)", detail: "AppImage for arm64", href: LINUX_ARM, Icon: LinuxLogo, button: "Download for Linux (arm64)" },
   ios: { label: "iPhone", detail: "App Store", href: APP_STORE, Icon: DeviceMobile, button: "Get the iPhone app" },
+  // Android is in closed testing: this opens the tester sign-up form.
+  android: { label: "Android", detail: "Join the test on Google Play", href: ANDROID_TEST, Icon: AndroidLogo, button: "Join the Android test" },
   terminal: { label: "Terminal", detail: "Over SSH, any machine", href: "/#install", Icon: Terminal },
 };
 
-const order = ["mac", "windows", "linux", "linux-arm64", "ios", "terminal"] as const;
+const order = ["mac", "windows", "linux", "linux-arm64", "ios", "android", "terminal"] as const;
 
 // "Download for <your OS>" with a split menu for the other platforms; a native <details>.
 export default function DownloadButton({ size = "lg" }: { size?: "sm" | "lg" }) {
@@ -41,7 +43,7 @@ export default function DownloadButton({ size = "lg" }: { size?: "sm" | "lg" }) 
         >
           <CaretDown size={14} weight="bold" className="transition-transform group-open:rotate-180" />
         </summary>
-        <ul className="absolute right-0 z-40 mt-2 w-64 rounded-2xl bg-neutral-900 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
+        <ul className="absolute right-0 z-40 mt-2 w-64 text-left rounded-2xl bg-neutral-900 p-2 shadow-[0_20px_40px_rgba(0,0,0,0.6)]">
           {order
             .filter((key) => key !== os)
             .map((key) => {

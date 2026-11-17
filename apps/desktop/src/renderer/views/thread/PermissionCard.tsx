@@ -6,24 +6,26 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import './permission-card.css'
 import { useTr } from '../../lib/use-language'
+import { trNow } from '../../lib/l10n.ts'
+import { fill } from '@shared/fill'
 
 
 /** What the agent wants, from the tool's kind (also the notch island's headline). */
 export const permissionHeadline = (toolKind?: string) => {
   switch (toolKind) {
     case 'execute':
-      return 'Wants to run a command'
+      return trNow('Wants to run a command')
     case 'edit':
     case 'delete':
     case 'move':
-      return 'Wants to change files'
+      return trNow('Wants to change files')
     case 'fetch':
-      return 'Wants to access the web'
+      return trNow('Wants to access the web')
     case 'read':
     case 'search':
-      return 'Wants to read files'
+      return trNow('Wants to read files')
     default:
-      return 'Wants to use a tool'
+      return trNow('Wants to use a tool')
   }
 }
 
@@ -35,16 +37,24 @@ export const sortedOptions = (options: PermissionOption[]) => [...options].sort(
 export function optionLabel(o: PermissionOption) {
   switch (o.kind) {
     case 'allow_once':
-      return 'Allow once'
+      return trNow('Allow once')
     case 'allow_always':
-      return 'Always allow'
+      return trNow('Always allow')
     case 'reject_once':
-      return 'Deny'
+      return trNow('Deny')
     case 'reject_always':
-      return 'Never'
+      return trNow('Never')
     default:
       return o.name
   }
+}
+
+/** Under what a task put in the chat (its approval or choice card, a file, an artifact): that it comes from the
+ * background, and which item. Nothing for the chat's own. */
+export function TaskLine({ entry }: { entry: Entry }) {
+  const tr = useTr()
+  const task = entry.data.task
+  return task ? <Text as="div" size="caption" tone="tertiary" truncate className="task-line">{tr('In the background')} · {task.title}</Text> : null
 }
 
 /** Approval card in Grok Bot's choice-card style: what the agent wants, where it runs, the answers. */
@@ -57,6 +67,7 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
   const options = sortedOptions(d.options ?? [])
   const cwd = d.cwd ? ` · ${d.cwd.split('/').filter(Boolean).pop() ?? d.cwd}` : ''
   return (
+    // The item's row on the bot's Details finds its card by this.
     <div className="agent-inset">
       <VStack gap={10} className="permission-card">
         <HStack gap={8}>
@@ -68,8 +79,9 @@ export function PermissionCard({ entry, hostName, answering, respond }: { entry:
         </Text>
         <HStack gap={6}>
           <Icon name="desktopcomputer" size={10} color="var(--tertiary)" />
-          <Text size="caption" tone="tertiary">{`Runs on ${hostName}${cwd}`}</Text>
+          <Text size="caption" tone="tertiary">{fill(tr('Runs on {name}{path}'), { name: hostName, path: cwd })}</Text>
         </HStack>
+        <TaskLine entry={entry} />
         {hasDetail ? (
           <Disclosure expanded={expanded} onToggle={() => setExpanded((e) => !e)} label={<Text size="caption" weight="medium" tone="secondary">{tr(`Details`)}</Text>}>
             <VStack gap={8} className="permission-card-details">
@@ -110,21 +122,21 @@ function outcome(entry: Entry) {
       const chosen = d.options?.find((o) => o.optionId === d.selected)
       switch (chosen?.kind) {
         case 'allow_once':
-          return 'Allowed once'
+          return trNow('Allowed once')
         case 'allow_always':
-          return 'Always allowed'
+          return trNow('Always allowed')
         case 'reject_once':
-          return 'Denied'
+          return trNow('Denied')
         case 'reject_always':
-          return 'Never allowed'
+          return trNow('Never allowed')
         default:
-          return chosen?.name ?? 'Answered'
+          return chosen?.name ?? trNow('Answered')
       }
     }
     case 'cancelled':
-      return 'Cancelled'
+      return trNow('Cancelled')
     default:
-      return 'Expired — the agent moved on'
+      return trNow('Expired — the agent moved on')
   }
 }
 

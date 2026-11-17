@@ -26,6 +26,14 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
   let botId: string | undefined
   try {
     botId = (await echoBot(page, name)).id
+    // Only what the bot has fills its Details page: Threads, Event box, Recent and Dev servers are left out while
+    // they are empty, and what is left fits inside the sheet, so its column would not scroll at all. Routines do
+    // show, and ten of their rows are taller than the card at 760x500.
+    for (let i = 1; i <= 10; i++) {
+      await api(page, 'saveRoutine', {
+        botId, name: `Routine ${i}`, instruction: 'Report once', triggers: [{ type: 'webhook' }], timeoutSeconds: 30,
+      })
+    }
     await expect(page.locator('.roster-row', { hasText: name })).toBeVisible()
     await page.locator('.roster-row', { hasText: name }).first().click()
     await setViewport(page, 760, 500)
@@ -38,6 +46,8 @@ test('the compact details sheet scrolls from the keyboard and keeps its clicks',
     // The column scrolls, not the card: focus lands in the scroller, and PageDown/End move it.
     await expect.poll(() => page.evaluate(() => document.activeElement?.className ?? '')).toContain('details-scroll')
     const scroll = sheet.locator('.details-scroll')
+    // The keys below scroll this column only if it overflows the card; a page that fits would leave them no work.
+    await expect.poll(() => scroll.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(120)
     await expect.poll(() => scroll.evaluate((el) => el.scrollTop)).toBe(0)
     await page.keyboard.press('PageDown')
     await expect.poll(() => scroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)

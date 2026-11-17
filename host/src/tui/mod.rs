@@ -57,6 +57,7 @@ pub async fn run(url: Option<String>, port: u16, token: Option<String>) -> Resul
     let mut app = app::App::new(client.clone(), tx.clone(), url);
     app.on_this_computer = on_this_computer;
     app.open_whats_new();
+    app.open_kofi();
     let mut drafts = match drafts::Drafts::load(&app.url).await {
         Ok(saved) => {
             app.drafts = saved.restore();

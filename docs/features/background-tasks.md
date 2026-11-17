@@ -328,7 +328,8 @@ prompt or the request as it is, not an item's brief, and **their result takes no
   `recipient finished without a text reply`, both as from a turn in the chat. Its title is the request's first line.
 
 What such a turn could and couldn't do in the chat holds in its task (`Actor::task_source`): `request_decision`,
-`send_message`, `send_file` and artifact cards are refused with the same words; the `routines` tools work, as the
+`send_message`, `send_file` and a request's artifact cards are refused with the same words (a run's artifact card
+goes into the bot's chat, as from a run there); the `routines` tools work, as the
 bot (a run saves its progress and sets follow-ups, an asked bot runs its own routine); `message_bot` works from a
 run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task. A
 request from another computer under a network rule's `auto` or `ask` holds its task to that

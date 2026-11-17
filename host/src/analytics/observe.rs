@@ -325,7 +325,7 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A routine run, a room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why).
         Event::ArtifactPublished => {
             p.insert("card".into(), answer["card"].is_null().into());
         }

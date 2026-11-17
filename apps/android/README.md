@@ -13,7 +13,7 @@ Use JDK 21, Android SDK 37 and Build Tools 37.0.0. Set `JAVA_HOME` and
 
 ```sh
 cd apps/android
-./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+./gradlew :core:test :design:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ./gradlew :app:assembleRelease
 adb install -r -d app/build/outputs/apk/debug/app-debug.apk
 ```

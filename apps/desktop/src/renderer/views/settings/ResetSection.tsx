@@ -44,7 +44,7 @@ export function ResetAllDataDialogs({ open, onClose }: { open: boolean; onClose:
   )
 }
 
-/** This computer's resets together, each a red button asked twice: its saved credentials, and all of Codync's data. */
+/** This computer's resets together, each asked twice (only the question's own button is red): its saved credentials, and all of Codync's data. */
 export function ResetSection({ store }: { store: BotStore }) {
   const tr = useTr()
   useModel(store)
@@ -67,7 +67,7 @@ export function ResetSection({ store }: { store: BotStore }) {
                 <Text>{tr('Saved credentials')}</Text>
                 <Text size="caption" tone="secondary">{tr('Keys and tokens saved in Codync for agents, connectors and voice chat.')}</Text>
               </VStack>
-              <Button kind="destructive" onClick={() => setAsking('credentials')} disabled={busy}>
+              <Button kind="secondary" onClick={() => setAsking('credentials')} disabled={busy}>
                 Reset
               </Button>
             </HStack>
@@ -77,7 +77,7 @@ export function ResetSection({ store }: { store: BotStore }) {
               <Text>{tr('All data')}</Text>
               <Text size="caption" tone="secondary">{tr('Every account, bot, conversation, key and setting on this computer.')}</Text>
             </VStack>
-            <Button kind="destructive" onClick={() => setAsking('everything')}>
+            <Button kind="secondary" onClick={() => setAsking('everything')}>
               Reset everything
             </Button>
           </HStack>,

@@ -227,13 +227,6 @@ pub fn launch_candidates(id: &str) -> anyhow::Result<Vec<registry::Candidate>> {
     Ok(out)
 }
 
-/// Starting `id` would first install a new registry build, which removes the one before it.
-pub fn update_pending(id: &str) -> bool {
-    launch_candidates(id).is_ok_and(|candidates| {
-        matches!(candidates.first(), Some(registry::Candidate::Build(agent)) if registry::update_pending(agent))
-    })
-}
-
 /// The registry build that *is* the harness's CLI (same npm package), so it can
 /// sign in without the CLI installed. Adapters (claude-acp…) don't count.
 fn registry_cli(h: &Harness) -> Option<Value> {

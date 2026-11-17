@@ -112,6 +112,32 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     assert_stop_ends_the_turn(&host, &bot).await;
 }
 
+/// #470: a turn whose agent ends it with `stopReason: "error"` and no error object behind it says so in the chat, and
+/// the bot is marked failed rather than idle, which is what the missing notice used to hide.
+#[tokio::test]
+async fn a_turn_that_ends_with_an_error_says_so() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Erring", "tests/fixtures/error_stop_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "fail"})).await;
+    let notice = host
+        .wait_for(&bot, Duration::from_mins(1), |e| {
+            e["kind"] == "notice" && e["data"]["text"] == "The agent failed: its turn ended with an error."
+        })
+        .await;
+    assert_eq!(notice["data"]["stopReason"], "error", "{notice}");
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, &bot)["status"], "error", "not idle: the turn failed");
+
+    // The bot stays usable: the next turn runs, and a normal end leaves it idle again.
+    host.call("send", json!({"botId": bot, "text": "again"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Fine: again").await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
+}
+
 /// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
 #[cfg(unix)]
 struct Escaped(PathBuf);

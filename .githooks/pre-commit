@@ -100,7 +100,8 @@ if touches "^(host/|packaging/updates/|docs/reference/fixtures/remote-relay-vect
         within 900 cargo nextest run --workspace "$@")
 fi
 
-if touches "^(apps/desktop/|$shared_text)"; then
+# The desktop tests also check the iPhone, Android and terminal tr() phrases against the catalogs (#488).
+if touches "^(apps/desktop/|$shared_text|apps/ios/.*\.swift$|apps/android/app/src/main/.*\.kt$|host/src/tui/)"; then
     staged_copy
     echo "Checking the desktop app (typecheck, test)..."
     ln -s "$repo/apps/desktop/node_modules" "$snapshot/apps/desktop/node_modules"

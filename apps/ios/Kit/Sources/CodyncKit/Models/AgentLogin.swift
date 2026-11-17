@@ -94,8 +94,10 @@ public extension Backend {
 
 public extension [Backend] {
     /// The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on
-    /// (a step keeps its own login, even one that has signed out since).
+    /// while no other step has that login (a step keeps its own login, even one that has signed out since).
     func usable(taken: [AgentLogin], keeping keep: [AgentLogin] = []) -> [Backend] {
-        filter { backend in keep.contains { $0.backend == backend.id } || !backend.freeLogins(taken: taken).isEmpty }
+        filter { backend in
+            keep.contains { $0.backend == backend.id && !taken.contains($0) } || !backend.freeLogins(taken: taken).isEmpty
+        }
     }
 }

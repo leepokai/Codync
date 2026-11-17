@@ -65,7 +65,7 @@ Read from the ACP answer: the JSON-RPC code, the adapter's category (Claude's `d
 |---|---|---|
 | `usageLimit` | Claude: `rate_limit`/`billing_error` with the Agent SDK's usage-limit text ("You've hit your…"). Codex: `usageLimitExceeded` | Until the reset the agent reported (`usage` windows at 100%); unknown: 1 h |
 | `outOfCredits` | Claude `billing_error`, `account_on_hold` | 6 h |
-| `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded` | 1, 5, 25, then 60 min for failures in a row |
+| `rateLimited`, `overloaded` | Claude `rate_limit`, `overloaded`, `server_error`; codex-acp `rateLimitExceeded`, `serverOverloaded`; pi's error starting with HTTP 429 or 5xx ([pi-acp](../upstream-agents/pi-acp.md)) | 1, 5, 25, then 60 min for failures in a row |
 | `signedOut` | ACP `-32000`, `authentication_failed`, CodeBuddy's `auth` category | Until it's signed in, looking again after 1 h; an agent Codync can't sign in to (no sign-in card): 10 min. The chat of each bot that moves past it gets the agent's sign-in card (holding no message: the fallback answers it), and signing in there brings the bot back |
 | `notStarting` | `FailureKind::NotSetUp`, `Timeout`, `Exited` | 5 min |
 | `modelMissing` | `model_not_found`, or the agent refusing the step's model (`FailureKind::NoModel`) | None: it's the bot's setup, not the agent's. The bot skips that step until its settings change |
@@ -160,6 +160,13 @@ only while `selfFallbacks` is on. Both name agents and models only: an agent alr
 command, its login profile, and its model options while the model stays. An agent that is in the list again on another
 login profile keeps them in order (the n-th step of an agent is the n-th saved one of it), and the notice names each
 step's login profile ("Fallbacks set: Claude Code (Work)").
+
+## Background tasks
+
+A bot's [background tasks](background-tasks.md#fallbacks-and-sign-in) run the same chain, and get a change to it at
+once. Their sign-in cards and offers to add a fallback go to the bot's chat, marked as the item's; an item whose
+agents can't take its turn until the user signs in waits for that (needs you) instead of failing, and goes on in
+the same task once they have.
 
 ## Apps
 

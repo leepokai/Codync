@@ -148,6 +148,7 @@ impl App {
         let old = self.bots.insert(new.id.clone(), new.clone());
         let Some(old) = old else { return };
         self.tasks_ended(&old.work, &new.work);
+        self.follow_tasks(&new.id);
         self.keep_details_cursor(&new.id, (&old.work, old.max_agents));
         let watching = self.selected.as_deref() == Some(new.id.as_str()) && self.chat_visible() && self.term_focused;
         // A member's turn in a group is the group's: it alone says done / needs you.
@@ -259,6 +260,7 @@ impl App {
                 self.backends = v["backends"].as_array().cloned().unwrap_or_default();
                 self.analytics_hello(&v);
                 self.auto_order = v["autoOrder"].as_bool();
+                self.credentials_reset = v["credentialsReset"].as_bool().unwrap_or(false);
                 self.screen = v["screen"].clone();
             }
             After::Analytics => self.analytics_set(&v),

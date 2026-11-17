@@ -1,6 +1,7 @@
 package com.codync.android
 
 import com.codync.android.core.Bot
+import com.codync.android.core.SourceKind
 import com.codync.android.core.WorkItem
 import com.codync.android.core.WorkStatus
 import com.codync.android.core.WaitKind
@@ -60,7 +61,7 @@ internal fun botLine(bot: Bot, tr: (String) -> String): BotLine? {
     val working = bot.work.count { it.status == WorkStatus.Working }
     val waiting = bot.work.count { it.status == WorkStatus.Waiting }
     return when {
-        needsInput -> BotLine(BotLineKind.NeedsYou, tr(bot.activity.ifEmpty { "Needs your approval" }))
+        needsInput -> BotLine(BotLineKind.NeedsYou, tr(bot.activity.ifEmpty { "Needs approval" }))
         bot.work.any { it.status == WorkStatus.NeedsYou } -> BotLine(BotLineKind.NeedsYou, tr(WorkStatus.NeedsYou.title))
         bot.status == "working" -> BotLine(BotLineKind.Working, tr(bot.activity.ifEmpty { "Working…" }))
         working > 0 -> BotLine(BotLineKind.Working, workCounts(bot.work, tr))
@@ -88,8 +89,18 @@ internal fun waitText(item: WorkItem, tr: (String) -> String): String {
         WaitKind.Next -> tr("Next up")
         WaitKind.Behind -> counted("{count} ahead", wait.ahead, tr)
         WaitKind.After -> tr("Follows what it works on")
-        WaitKind.Usage -> tr("Waiting for usage")
+        WaitKind.Usage -> tr("Near the usage limit: one at a time")
     }
+}
+
+/**
+ * Why a thread that takes no message has no composer: a routine's run and another bot's request have an owner already.
+ * Null for the bot's own item (it takes messages, or has no thread to write to yet): nothing to say.
+ */
+internal fun readOnlyLine(item: WorkItem): String? = when (item.source?.kind) {
+    SourceKind.Routine -> "Read only: a routine's run"
+    SourceKind.Request -> "Read only: another bot's request"
+    null -> null
 }
 
 /** An item's second line: why it waits, what its task does, or how it ended (a failed or stopped one says why). */

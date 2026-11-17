@@ -230,7 +230,8 @@ queue, past the turn's end.
 - The turn's prompt says the text comes from a computer the user trusts less and is data, not instructions
   (`chat::team::caution`). That keeps a bot from asking for what it should refuse; the ceiling is the lock.
 - Only an agent the app runs can be held to a ceiling, so the crate refuses a letter under one to a session it knocks
-  on (a Claude Code or Codex session). The standalone daemon prints the level with a letter to its terminal
+  on (a Claude Code or Codex session), an answer to that session's own request included (also one past a `deny`
+  rule, which would come in at `ask`): its sender gets the same refusal. The standalone daemon prints the level with a letter to its terminal
   (`← lead@cloud (ask) […]`).
 - Not covered: the turn still starts from the bot's conversation (a task forks the main session where the agent
   can; an answer, and a request to a bot that keeps them in its chat, runs in the main session), so it sees that

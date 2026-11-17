@@ -63,10 +63,10 @@ fun AgentBackend.stepLogins(step: Login, taken: List<Login>): List<String?> =
 fun AgentBackend.stepOn(taken: List<Login>, own: Fallback? = null): Fallback =
     if (own != null && own.backend == id && own.login !in taken) own else Fallback(id, loginProfile = freeLogins(taken).firstOrNull())
 
-/** The agents a step can use: each with a login the rest of the chain ([taken]) doesn't have, and the ones [keep] is on (a
- *  step keeps its own login, even one that has signed out since). */
+/** The agents a step can use: each with a login the rest of the chain ([taken]) doesn't have, and the ones [keep] is on
+ *  while no other step has that login (a step keeps its own login, even one that has signed out since). */
 fun List<AgentBackend>.usable(taken: List<Login>, keep: List<Login> = emptyList()): List<AgentBackend> =
-    filter { backend -> keep.any { it.backend == backend.id } || backend.freeLogins(taken).isNotEmpty() }
+    filter { backend -> keep.any { it.backend == backend.id && it !in taken } || backend.freeLogins(taken).isNotEmpty() }
 
 /** The agent the bot runs on right now: its fallback's while it's on one. */
 val Bot.runningAgent: String get() = agentStep?.agent ?: backend

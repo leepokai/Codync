@@ -60,7 +60,7 @@ fn id(item: &Value) -> &str {
 
 /// Lets the task holding on `HOLD:<name>` finish.
 fn release(host: &Host, bot: &str, name: &str) {
-    std::fs::write(host.home.join("bots").join(bot).join("workspace").join(format!("release-{name}")), "").unwrap();
+    std::fs::write(host.workspace(bot).join(format!("release-{name}")), "").unwrap();
 }
 
 /// A bot on `task_agent.py` that runs at most `agents` tasks at once.
@@ -962,4 +962,435 @@ async fn a_task_beside_another_in_one_repository_works_in_a_worktree_of_its_own(
     wait("its prompt in the bot's folder", async || task_prompts(&host, &other, "Two").pop()).await;
     assert!(work(&host, &other).await.iter().all(|i| i["worktree"].is_null()));
     assert_eq!(row(&host, &other).await["gitRepo"], false);
+}
+
+/// A bot on `task_agent.py` run as Kimi Code, a harness Codync knows (so a sign-in it needs gets a card) that no
+/// machine running the tests has installed, with `fallbacks`.
+async fn kimi_bot(host: &Host, name: &str, fallbacks: Value) -> String {
+    let bot = json!({"name": name, "backend": "kimi", "command": common::fixture_command("task_agent.py", ""),
+        "connectors": [], "notify": false, "fallbacks": fallbacks});
+    host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
+}
+
+/// The fixture agent `relay_agent.py <name>`: it answers "<name> answered" and logs its prompts to `<name>.jsonl`.
+fn relay_agent(name: &str) -> String {
+    common::fixture_command("relay_agent.py", name)
+}
+
+/// Writes the flag file `name` in `bot`'s folder (see `task_agent.py`).
+fn flag(host: &Host, bot: &str, name: &str) -> std::path::PathBuf {
+    let path = host.workspace(bot).join(name);
+    std::fs::write(&path, "").unwrap();
+    path
+}
+
+/// The newest entry of `bot`'s chat that `found` picks, once it is there.
+async fn entry(host: &Host, bot: &str, what: &str, found: impl Fn(&Value) -> bool) -> Value {
+    wait(what, async || history(host, bot).await.into_iter().rev().find(|e| found(e))).await
+}
+
+/// The transcript of `item`'s task.
+async fn transcript(host: &Host, bot: &str, item: &Value) -> Vec<Value> {
+    let entries = host.call("taskEntries", json!({"botId": bot, "taskId": item["task"]})).await;
+    entries["entries"].as_array().unwrap().clone()
+}
+
+#[tokio::test]
+async fn a_tasks_sign_in_is_asked_in_the_chat_and_its_item_goes_on_in_the_same_task_once_signed_in() {
+    let host = Host::start().await;
+    let bot = kimi_bot(&host, "Mika", json!([])).await;
+    host.reply(&bot, "hello").await;
+    let signed_out = flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    let waiting = item(&host, &bot, "Login", "needsYou").await;
+    assert_eq!(waiting["activity"], "Needs Kimi Code sign-in");
+    // The card is the user's to press, so it is in the chat, marked as the item's, holding its message.
+    let card = entry(&host, &bot, "the sign-in card", |e| e["data"]["item"] == waiting["id"]).await;
+    let request = &card["data"]["connectionRequest"];
+    assert_eq!((request["kind"].as_str(), request["status"].as_str()), (Some("agent"), Some("pending")), "{card}");
+    assert_eq!(request["botId"], bot, "the chat's bot, which the apps know");
+    assert_eq!(request["entryIds"].as_array().unwrap().len(), 1, "{card}");
+    assert_eq!(card["data"]["task"], json!({"id": waiting["task"], "title": "Login"}));
+    // The task's own transcript only says where the ask went.
+    let asked = transcript(&host, &bot, &waiting).await;
+    assert!(asked.iter().any(|e| e["data"]["text"] == "Asked in the chat to sign in to Kimi Code."), "{asked:?}");
+    assert!(!asked.iter().any(|e| e["data"]["connectionRequest"].is_object()), "{asked:?}");
+    assert_eq!(relayed(&host, &bot).await, [] as [String; 0], "the item isn't over: no report");
+
+    // Signed in (a turn of the agent that ends well says so: here the chat's own), the item's message goes out again
+    // to the same task.
+    std::fs::remove_file(signed_out).unwrap();
+    host.reply(&bot, "hello again").await;
+    let done = item(&host, &bot, "Login", "done").await;
+    assert_eq!(done["task"], waiting["task"], "the same task");
+    // A new agent process (the old one kept the old sign-in) goes on in the task's session: its fork of the chat
+    // and what it did are still there.
+    let tries = task_prompts(&host, &bot, "Login");
+    assert_eq!(tries.len(), 2, "{tries:?}");
+    assert_eq!(tries[0]["session"], tries[1]["session"], "{tries:?}");
+    assert!(reply(&host, &bot, "Relayed:").await.contains("Login"));
+    let card = entry(&host, &bot, "the card", |e| e["id"] == card["id"]).await;
+    assert_eq!(card["data"]["connectionRequest"]["status"], "ready");
+}
+
+#[tokio::test]
+async fn a_tasks_sign_in_on_an_agent_that_cant_reopen_a_session_tells_the_new_one_the_chat() {
+    let host = Host::start().await;
+    let command = common::fixture_command("task_agent.py", "no-load");
+    let bot = json!({"name": "Mika", "backend": "kimi", "command": command, "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.reply(&bot, "Remember the blue theme").await;
+    let signed_out = flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    item(&host, &bot, "Login", "needsYou").await;
+    std::fs::remove_file(signed_out).unwrap();
+    host.reply(&bot, "hello again").await;
+    item(&host, &bot, "Login", "done").await;
+    // A new agent process can't take the task's session up again: a new one is told the chat it comes from.
+    let tries = task_prompts(&host, &bot, "Login");
+    assert_eq!(tries.len(), 2, "{tries:?}");
+    assert_ne!(tries[0]["session"], tries[1]["session"], "{tries:?}");
+    let text = tries[1]["text"].as_str().unwrap();
+    assert!(text.contains("[The chat you come from, so far]") && text.contains("blue theme"), "{text}");
+}
+
+#[tokio::test]
+async fn a_task_moves_past_a_signed_out_agent_asks_in_the_chat_and_its_next_agent_hears_the_chat() {
+    let host = Host::start().await;
+    let bot = kimi_bot(&host, "Mika", json!([{"backend": "codex", "command": relay_agent("standin")}])).await;
+    host.reply(&bot, "Remember the blue theme").await;
+    flag(&host, &bot, "task-signedout");
+
+    host.reply(&bot, "ADD Login|anything").await;
+    let done = item(&host, &bot, "Login", "done").await;
+    assert_eq!(done["result"], "standin answered");
+    // Nothing waits on the sign-in, and still the user is asked where they are.
+    let card = entry(&host, &bot, "the sign-in card", |e| e["data"]["item"] == done["id"]).await;
+    assert_eq!(card["data"]["connectionRequest"]["entryIds"], json!([]), "{card}");
+    let moved = transcript(&host, &bot, &done).await;
+    let texts: Vec<&str> = moved.iter().filter_map(|e| e["data"]["text"].as_str()).collect();
+    assert!(texts.contains(&"Kimi Code is signed out. Codex carried on."), "{texts:?}");
+    assert!(texts.contains(&"Asked in the chat to sign in to Kimi Code."), "{texts:?}");
+    // The fork that carried the chat stays with the agent that failed: the next one is told the chat.
+    let log = host.log(&bot, "standin.jsonl");
+    let prompt = log.iter().rfind(|r| r["method"] == "session/prompt").unwrap()["params"]["prompt"][0]["text"].clone();
+    let prompt = prompt.as_str().unwrap();
+    assert!(prompt.contains("[The chat you come from, so far]") && prompt.contains("blue theme"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_tasks_offer_to_add_a_fallback_is_in_the_chat_and_new_fallbacks_reach_a_running_task() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    host.reply(&bot, "hello").await;
+    let limited = flag(&host, &bot, "task-limit");
+
+    host.reply(&bot, "ADD Big|anything").await;
+    let failed = item(&host, &bot, "Big", "failed").await;
+    let offer = entry(&host, &bot, "the offer", |e| e["data"]["addFallback"] == true).await;
+    assert_eq!((&offer["data"]["item"], &offer["data"]["author"]), (&failed["id"], &json!(bot)), "{offer}");
+    assert!(offer["data"]["text"].as_str().unwrap().contains("You've hit your limit"), "{offer}");
+    assert!(offer["data"]["stopReason"].is_null(), "it ends no turn of the bot's own: {offer}");
+    let kept = transcript(&host, &bot, &failed).await;
+    let error = kept.iter().find(|e| e["data"]["style"] == "error").unwrap();
+    assert!(error["data"]["addFallback"].is_null(), "the task's transcript keeps only the failure: {error}");
+
+    // Fallbacks set while a task works reach it: it falls back like the bot.
+    std::fs::remove_file(&limited).unwrap();
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    item(&host, &bot, "Slow", "working").await;
+    let fallbacks = json!([{"backend": "codex", "command": relay_agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    flag(&host, &bot, "task-limit");
+    release(&host, &bot, "slow");
+    assert_eq!(item(&host, &bot, "Slow", "done").await["result"], "standin answered");
+}
+
+#[tokio::test]
+async fn a_task_that_starts_on_a_fallback_never_forks_the_chats_own_agents_session() {
+    let host = Host::start().await;
+    // The fallback can fork too (it would fork any session it's given).
+    let fallbacks = json!([{"backend": "codex", "command": common::fixture_command("task_agent.py", "")}]);
+    let bot = kimi_bot(&host, "Mika", fallbacks).await;
+    host.reply(&bot, "hello").await;
+    // Another bot on the same login finds it signed out: it rests, for the whole computer.
+    let other = kimi_bot(&host, "Other", json!([])).await;
+    flag(&host, &other, "signedout");
+    host.call("send", json!({"botId": other, "text": "hi", "clientNonce": "n1"})).await;
+    wait("the login to rest", async || {
+        let snapshot = host.snapshot().await;
+        let row = snapshot["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot).cloned().unwrap();
+        row["resting"].as_array().is_some_and(|r| !r.is_empty()).then_some(())
+    })
+    .await;
+
+    // A request starts an item with no turn of the chat's in between: the chat is still on its own agent.
+    let asker = host.fixture_bot("Ada", "task_agent.py", "").await;
+    host.reply(&asker, &format!("MESSAGE {bot}|Review the diff")).await;
+    item(&host, &bot, "Review the diff", "done").await;
+    let forks = host.workspace(&bot).join("forks.jsonl");
+    assert!(!forks.exists(), "{}", std::fs::read_to_string(&forks).unwrap_or_default());
+}
+
+/// Writes `text` to the thread of `item`: what the host answers.
+async fn tell(host: &Host, bot: &str, item: &Value, text: &str) -> Value {
+    let nonce = uuid::Uuid::new_v4().to_string();
+    host.call("send", json!({"botId": bot, "itemId": item["id"], "text": text, "clientNonce": nonce})).await
+}
+
+/// The entry `id` of the thread of `item`, as its transcript holds it; none once the user took it back.
+async fn thread_entry(host: &Host, bot: &str, item: &Value, id: &Value) -> Option<Value> {
+    transcript(host, bot, item).await.into_iter().find(|e| e["id"] == *id)
+}
+
+/// The entry `id` of `item`'s thread, once it reads `status`.
+async fn thread_status(host: &Host, bot: &str, item: &Value, id: &Value, status: &str) -> Value {
+    wait(&format!("the message to be {status}"), async || {
+        thread_entry(host, bot, item, id).await.filter(|e| e["data"]["status"] == status)
+    })
+    .await
+}
+
+/// The prompts a task of `bot` got for what the user wrote to its thread, oldest first.
+fn thread_prompts(host: &Host, bot: &str) -> Vec<Value> {
+    let written = |p: &Value| p["text"].as_str().is_some_and(|t| t.contains("in this work's thread"));
+    host.log(bot, "prompts.jsonl").into_iter().filter(written).collect()
+}
+
+/// The bot's item called `title`, once its result starts with `prefix`.
+async fn result(host: &Host, bot: &str, title: &str, prefix: &str) -> Value {
+    wait(&format!("{title} to report {prefix}"), async || {
+        let found = work(host, bot).await.into_iter().find(|i| i["title"] == title);
+        found.filter(|i| i["result"].as_str().is_some_and(|r| r.starts_with(prefix)))
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_message_to_a_working_thread_waits_its_turn_and_the_item_reports_once_with_the_users_words() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = item(&host, &bot, "Slow", "working").await;
+    assert_eq!(slow["talk"], true, "the bot's own work, whose task is there");
+    assert!(slow["folder"].as_str().unwrap().ends_with("workspace"), "where its task works: {slow}");
+    let mut events = host.events().await;
+
+    // Its turn runs: the message waits in the thread, as one does in a chat.
+    let sent = tell(&host, &bot, &slow, "also the tests").await;
+    assert_eq!((&sent["reopened"], &sent["queued"]), (&json!(false), &json!(true)));
+    let entry = &sent["entry"];
+    assert_eq!((&entry["kind"], &entry["botId"]), (&json!("user"), &slow["task"]), "an entry of its transcript");
+    assert_eq!((&entry["data"]["text"], &entry["data"]["status"]), (&json!("also the tests"), &json!("queued")));
+    let nonce = &entry["data"]["clientNonce"];
+    let twice = json!({"botId": bot, "itemId": slow["id"], "text": "also the tests", "clientNonce": nonce});
+    assert_eq!(host.call("send", twice).await["entry"]["id"], entry["id"], "sent twice, it is one message");
+
+    // The caller names the bot and its item, never a task; text only.
+    let other = host.fixture_bot("Other", "task_agent.py", "").await;
+    let (thread, id) = (&slow["id"], &entry["id"]);
+    for (method, body, why) in [
+        ("send", json!({"botId": bot, "itemId": "nope", "text": "x"}), "no such work"),
+        ("send", json!({"botId": other, "itemId": thread, "text": "x"}), "no such work"),
+        ("send", json!({"botId": slow["task"], "text": "x"}), "unknown bot"),
+        ("send", json!({"botId": bot, "itemId": thread, "text": ""}), "empty message"),
+        ("send", json!({"botId": bot, "itemId": thread, "text": "x", "replyTo": id}), "a thread takes text only"),
+        ("steer", json!({"botId": other, "itemId": thread, "entryId": id}), "no such work"),
+        ("unqueue", json!({"botId": slow["task"], "entryId": id}), "unknown bot"),
+    ] {
+        assert_eq!(host.refused(method, body.clone()).await, why, "{method} {body}");
+    }
+
+    // Removed, a waiting message never goes out and leaves the transcript.
+    let second = tell(&host, &bot, &slow, "and the docs").await["entry"].clone();
+    host.call("unqueue", json!({"botId": bot, "itemId": thread, "entryId": second["id"]})).await;
+    wait("the removed message to go", async || {
+        thread_entry(&host, &bot, &slow, &second["id"]).await.is_none().then_some(())
+    })
+    .await;
+
+    // The item's own turn ends: the item isn't over while a message waits. That message's turn is its end, in the
+    // session that did the work, and its one report ends with the user's words.
+    release(&host, &bot, "slow");
+    let done = result(&host, &bot, "Slow", "Thread").await;
+    assert_eq!(done["result"], "Thread also the tests: same session");
+    assert_eq!((&done["status"], &done["task"]), (&json!("done"), &slow["task"]));
+    let relayed_once = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed_once.starts_with("Relayed: Thread also the tests: same session"), "{relayed_once}");
+    let words = "the user wrote to it directly. These are the user's own words, not the task's: «also the tests»]";
+    assert!(relayed_once.contains(words), "{relayed_once}");
+    assert!(!relayed_once.contains("and the docs"), "what was taken back was never said: {relayed_once}");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(relayed(&host, &bot).await.len(), 1, "the turn before the message reported nothing");
+
+    let prompts = thread_prompts(&host, &bot);
+    assert_eq!(prompts.len(), 1);
+    assert_eq!(prompts[0]["session"], task_prompts(&host, &bot, "Slow")[0]["session"]);
+    let text = prompts[0]["text"].as_str().unwrap();
+    assert!(text.contains("also the tests\n\n[Codync: the user wrote this to you directly"), "{text}");
+    assert_eq!(thread_status(&host, &bot, &slow, id, "sent").await["data"]["text"], "also the tests");
+    let tasks = no_task_bot_reached(&mut events).await;
+    assert!(tasks.iter().any(|task| slow["task"] == task.as_str()), "the thread's entries are taskEntry events");
+}
+
+#[tokio::test]
+async fn send_now_stops_the_threads_turn_for_the_message_or_joins_it_where_the_agent_can() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = item(&host, &bot, "Slow", "working").await;
+    let sent = tell(&host, &bot, &slow, "do this instead").await;
+    host.call("steer", json!({"botId": bot, "itemId": slow["id"], "entryId": sent["entry"]["id"]})).await;
+    // Never released: its turn was stopped for the message, whose turn ends the item.
+    let done = result(&host, &bot, "Slow", "Thread").await;
+    assert_eq!((&done["status"], &done["result"]), (&json!("done"), &json!("Thread do this instead: same session")));
+    let transcript = host.call("taskEntries", json!({"botId": bot, "taskId": slow["task"]})).await;
+    let stopped = transcript["entries"].as_array().unwrap().iter().any(|e| e["data"]["text"] == "Stopped.");
+    assert!(!stopped, "no Stopped. line under the message it stopped for: {transcript}");
+
+    // An agent that takes a message into its running turn: the turn goes on, with it.
+    let steers = host.fixture_bot("Tess", "task_agent.py", "steer").await;
+    host.reply(&steers, "ADD Slow|HOLD:slow").await;
+    let slow = item(&host, &steers, "Slow", "working").await;
+    let sent = tell(&host, &steers, &slow, "use tabs").await;
+    host.call("steer", json!({"botId": steers, "itemId": slow["id"], "entryId": sent["entry"]["id"]})).await;
+    thread_status(&host, &steers, &slow, &sent["entry"]["id"], "sent").await;
+    assert_eq!(item(&host, &steers, "Slow", "working").await["task"], slow["task"]);
+    release(&host, &steers, "slow");
+    let done = item(&host, &steers, "Slow", "done").await;
+    assert_eq!(done["result"], "Report Slow: forked; no chat; joined use tabs");
+    let relayed = reply(&host, &steers, "Relayed:").await;
+    assert!(relayed.contains("not the task's: «use tabs»]"), "{relayed}");
+}
+
+#[tokio::test]
+async fn a_message_to_an_ended_item_reopens_it_and_it_reports_again() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Quick|look around").await;
+    assert_eq!(reply(&host, &bot, "Relayed:").await, "Relayed: Report Quick: forked; no chat");
+    let done = item(&host, &bot, "Quick", "done").await;
+    assert_eq!(done["talk"], true, "its task is kept with it");
+
+    // It works again in the task it had, timed from now, and what a task may not do it still may not.
+    let sent = tell(&host, &bot, &done, "one more thing HOLD:again NEST").await;
+    assert_eq!((&sent["reopened"], &sent["queued"]), (&json!(true), &json!(false)));
+    let again = item(&host, &bot, "Quick", "working").await;
+    assert_eq!(again["task"], done["task"]);
+    assert!(again["startedAt"].as_i64() > done["startedAt"].as_i64(), "{again}");
+    assert!(again["endedAt"].is_null() && again["result"].is_null(), "{again}");
+    // The user asked, so it runs whatever the ceiling; nothing else starts while the bot is over it.
+    host.reply(&bot, "ADD Other|quick").await;
+    assert_eq!(item(&host, &bot, "Other", "waiting").await["wait"], json!({"kind": "next"}));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(item(&host, &bot, "Quick", "working").await["task"], done["task"], "nothing ended it meanwhile");
+
+    release(&host, &bot, "again");
+    let over = result(&host, &bot, "Quick", "Thread").await;
+    let said = over["result"].as_str().unwrap();
+    assert!(said.starts_with("Thread one more thing HOLD:again NEST: same session; Refused: add_work isn't"), "{said}");
+    assert_eq!(over["status"], "done");
+    item(&host, &bot, "Other", "done").await;
+    wait("every report", async || (relayed(&host, &bot).await.len() == 3).then_some(())).await;
+    let reports = relayed(&host, &bot).await;
+    let second = reports.iter().find(|r| r.starts_with("Relayed: Thread")).expect("it reported again");
+    assert!(second.contains("not the task's: «one more thing HOLD:again NEST»]"), "{second}");
+    assert_eq!(thread_prompts(&host, &bot)[0]["session"], task_prompts(&host, &bot, "Quick")[0]["session"]);
+
+    // An agent that can't pick a session up again: a new one, told the work and what it reported.
+    let fresh = host.fixture_bot("Nell", "task_agent.py", "no-load").await;
+    host.reply(&fresh, "ADD Quick|look around").await;
+    reply(&host, &fresh, "Relayed:").await;
+    let done = item(&host, &fresh, "Quick", "done").await;
+    assert_eq!(tell(&host, &fresh, &done, "and now?").await["reopened"], true);
+    assert_eq!(result(&host, &fresh, "Quick", "Thread").await["result"], "Thread and now?: picked up");
+    let prompt = thread_prompts(&host, &fresh).remove(0);
+    assert_ne!(prompt["session"], task_prompts(&host, &fresh, "Quick")[0]["session"]);
+    let text = prompt["text"].as_str().unwrap();
+    assert!(text.contains("You worked on \"Quick\" before") && text.contains("look around"), "{text}");
+    assert!(text.contains("[Codync: what you reported when it ended:]\nReport Quick: forked; no chat"), "{text}");
+    assert!(text.contains("and now?\n\n[Codync: the user wrote this to you directly"), "{text}");
+}
+
+#[tokio::test]
+async fn a_routines_run_takes_no_message_and_a_message_never_answers_a_threads_card() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    host.reply(&bot, "hello").await;
+    let digest = routine(&host, &bot, "Digest", "HOLD:digest").await;
+    host.call("runRoutine", json!({"botId": bot, "id": digest})).await;
+    let run = item(&host, &bot, "Digest", "working").await;
+    assert_eq!(run["talk"], false, "its result has an owner already");
+    let refused = host.refused("send", json!({"botId": bot, "itemId": run["id"], "text": "hi"})).await;
+    assert_eq!(refused, "\"Digest\" is a routine's run: it can be read and stopped, not written to");
+    release(&host, &bot, "digest");
+
+    // A thread that waits on a card: the message waits behind it, and only a press answers the card.
+    host.reply(&bot, "ADD Pick one|ASK").await;
+    let pending = async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.next_back()
+    };
+    let card = wait("the card", async || pending().await.filter(|e| e["data"]["status"] == "pending")).await;
+    let waits = item(&host, &bot, "Pick one", "needsYou").await;
+    let sent = tell(&host, &bot, &waits, "B").await;
+    assert_eq!(sent["queued"], true);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(pending().await.unwrap()["data"]["status"], "pending", "a message neither answers nor ends it");
+    assert_eq!(thread_status(&host, &bot, &waits, &sent["entry"]["id"], "queued").await["data"]["text"], "B");
+
+    host.call("respondDecision", json!({"entryId": card["id"], "option": "A"})).await;
+    assert_eq!(result(&host, &bot, "Pick one", "Thread").await["result"], "Thread B: same session");
+    assert_eq!(pending().await.unwrap()["data"]["selected"], "A");
+}
+
+#[tokio::test]
+async fn stopping_an_item_drops_what_waited_in_its_thread_and_a_host_restart_fails_it() {
+    let mut host = Host::start().await;
+    let bot = bot_with(&host, 2).await;
+    host.reply(&bot, "ADD One|HOLD:one").await;
+    let one = item(&host, &bot, "One", "working").await;
+    let waited = tell(&host, &bot, &one, "never mind").await;
+    host.call("stopWork", json!({"botId": bot, "itemId": one["id"]})).await;
+    item(&host, &bot, "One", "stopped").await;
+    thread_status(&host, &bot, &one, &waited["entry"]["id"], "cancelled").await;
+
+    // A restart: the cut-off turn is picked up, the message that waited is not (as in a chat), and the item's
+    // report holds none of it. The thread still takes a message afterwards.
+    host.reply(&bot, "ADD Long|HOLD:long").await;
+    let long = item(&host, &bot, "Long", "working").await;
+    let waited = tell(&host, &bot, &long, "after the restart?").await;
+    host.restart(|_| {}).await;
+    thread_status(&host, &bot, &long, &waited["entry"]["id"], "failed").await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("Codync restarted") && !relayed.contains("after the restart?"), "{relayed}");
+    let done = item(&host, &bot, "Long", "done").await;
+    assert_eq!(tell(&host, &bot, &done, "still there?").await["reopened"], true);
+    assert_eq!(result(&host, &bot, "Long", "Thread").await["result"], "Thread still there?: same session");
+}
+
+#[tokio::test]
+async fn what_waited_in_a_thread_goes_with_an_item_that_gives_way() {
+    let host = Host::start().await;
+    let bot = bot_with(&host, 1).await;
+    host.reply(&bot, "ADD Slow|HOLD:slow").await;
+    let slow = item(&host, &bot, "Slow", "working").await;
+    host.reply(&bot, "ADD Urgent|quick").await;
+    let urgent = item(&host, &bot, "Urgent", "waiting").await;
+    let refused = host.refused("send", json!({"botId": bot, "itemId": urgent["id"], "text": "x"})).await;
+    assert_eq!(refused, "\"Urgent\" hasn't started yet: there is nothing to write to");
+    assert_eq!(urgent["talk"], false);
+
+    tell(&host, &bot, &slow, "mind the cache").await;
+    host.call("workCutIn", json!({"botId": bot, "itemId": urgent["id"], "insteadOf": slow["id"]})).await;
+    item(&host, &bot, "Urgent", "done").await;
+    // It starts again in a new session, which reads what the user wrote and no turn had taken.
+    release(&host, &bot, "slow");
+    item(&host, &bot, "Slow", "done").await;
+    let prompts = task_prompts(&host, &bot, "Slow");
+    assert_eq!(prompts.len(), 2);
+    let again = prompts[1]["text"].as_str().unwrap();
+    assert!(again.contains("[The user said since: «mind the cache»]"), "{again}");
 }

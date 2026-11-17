@@ -103,6 +103,8 @@ function hit(key: string, primary: Record<string, string>, fallback: Record<stri
 const localizableSlots = new Set(['{hint}', '{error}', '{setup}', '{kind}', '{when}', '{status}', '{reason}', '{shortcut}', '{changes}'])
 /** Slots that only ever hold a number, so free text ("…the host service isn't installed") never fills "{count} installed". */
 const numericSlots = new Set(['{count}', '{unread}', '{cap}'])
+/** A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit." never fills "You have {version}.". */
+const versionShape = /^\d+(\.\d+)*(-[\w.]+)?$/
 
 function fill(text: string, pieces: Piece[], phrase: string, primary: Record<string, string>, fallback: Record<string, string>, depth: number): string | undefined {
   let pos = 0
@@ -120,6 +122,7 @@ function fill(text: string, pieces: Piece[], phrase: string, primary: Record<str
     if (end < 0 || end === pos) return undefined
     const value = text.slice(pos, end)
     if (numericSlots.has(token) && !/^[\d,.]+$/.test(value)) return undefined
+    if (token === '{version}' && !versionShape.test(value)) return undefined
     caps.set(token, value)
     pos = end
   }

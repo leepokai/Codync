@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from 'react'
+import { useRef, type FocusEvent, type SyntheticEvent } from 'react'
 import { isBelow } from '../../../shared/compat.ts'
 
 /** The first host that takes a reply to a part of a message (`send`'s `replyPart`). */
@@ -24,14 +24,20 @@ export function selectedPartIn(row: Element): string {
 
 /**
  * What is selected in a message when a press starts on it (`keep`, on the row's pointer-down capture): by the time Reply
- * runs, the press may have changed the selection. `part` is what the last such press found.
+ * runs, the press may have changed the selection. Tabbing to one of its buttons (`keepFocused`, on the row's focus) reads
+ * it there, as no press comes before a keyboard Reply. `part` is what the last of them found.
  */
 export function useSelectedPart() {
   const kept = useRef('')
+  const keep = (e: SyntheticEvent<HTMLElement>) => {
+    // A press in one of the row's menus (drawn elsewhere on the page) keeps what the press that opened it found.
+    if (e.currentTarget.contains(e.target as Node)) kept.current = selectedPartIn(e.currentTarget)
+  }
   return {
-    keep: (e: PointerEvent<HTMLElement>) => {
-      // A press in one of the row's menus (drawn elsewhere on the page) keeps what the press that opened it found.
-      if (e.currentTarget.contains(e.target as Node)) kept.current = selectedPartIn(e.currentTarget)
+    keep,
+    // Only the keyboard's: a press focuses its button after it may have changed the selection.
+    keepFocused: (e: FocusEvent<HTMLElement>) => {
+      if (e.target instanceof Element && e.target.matches(':focus-visible')) keep(e)
     },
     part: () => kept.current,
   }

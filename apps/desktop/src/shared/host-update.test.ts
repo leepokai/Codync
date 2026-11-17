@@ -117,6 +117,16 @@ test('idle detection distinguishes working, offline and idle hosts', async () =>
   assert.equal(await f.host.isIdleForUpdate(), false)
 })
 
+test('win32: a working host whose Run entry was dropped holds the update', async () => {
+  const f = hostUpdateFixture({ platform: 'win32', installed: false })
+  f.behavior.busy = true
+  assert.equal(await f.host.isIdleForUpdate(), false)
+  f.behavior.busy = false
+  assert.equal(await f.host.isIdleForUpdate(), true)
+  f.behavior.reachable = false
+  assert.equal(await f.host.isIdleForUpdate(), true, 'no service and no host: nothing to interrupt')
+})
+
 
 test('an update another device asks for reaches the updater once per request', async () => {
   const f = hostUpdateFixture()

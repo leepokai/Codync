@@ -5,6 +5,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::super::l10n::{fill, tr};
+use super::model::{Entry, Kind};
+use crate::chat::decision;
 pub use crate::chat::tasks::Status as WorkStatus;
 use crate::chat::tasks::Wait;
 use crate::store::DEFAULT_AGENTS;
@@ -53,6 +55,10 @@ pub struct WorkItem {
     pub source: Option<Source>,
     /// The branch of the git worktree its task works in, while there is one.
     pub branch: Option<String>,
+    /// Where its task works; none before a task took it, and from a host that doesn't say.
+    pub folder: Option<String>,
+    /// The user may write to its thread: the bot's own work, whose task is still there.
+    pub talk: bool,
 }
 
 impl WorkItem {
@@ -76,6 +82,8 @@ impl WorkItem {
                 _ => None,
             },
             branch: v["worktree"]["branch"].as_str().filter(|b| !b.is_empty()).map(str::to_owned),
+            folder: v["folder"].as_str().filter(|f| !f.is_empty()).map(str::to_owned),
+            talk: v["talk"] == true,
         })
     }
 
@@ -93,7 +101,7 @@ impl WorkItem {
             Some(Wait::Next) => tr("Next up").into_owned(),
             Some(Wait::Behind { ahead }) => fill(&tr("{count} ahead"), &[("count", &ahead.to_string())]),
             Some(Wait::After) => tr("Follows what it works on").into_owned(),
-            Some(Wait::Usage) => tr("Waiting for usage").into_owned(),
+            Some(Wait::Usage) => tr("Near the usage limit: one at a time").into_owned(),
             None => tr("Waiting").into_owned(),
         }
     }
@@ -219,6 +227,65 @@ impl Background {
     }
 }
 
+/// What the chat entry `e` a task put in the bot's chat (a card, its agent's sign-in card, a file, a voice note, an
+/// artifact) says in that task's thread: one dim line, its mark and its words, where the entry itself stays in the
+/// chat, which `↵` on the line opens. None for anything else. The apps' `sharedLine`.
+pub fn shared_line(e: &Entry) -> Option<(&'static str, String)> {
+    let line = |mark, key: &str, values: &[(&str, &str)]| Some((mark, fill(&tr(key), values)));
+    let text = |key: &str| e.data[key].as_str().unwrap_or_default();
+    // A sign-in reads as its card does: the needs-you row's words while it waits, then the card's own.
+    let request = &e.data["connectionRequest"];
+    if request["kind"] == "agent" {
+        let agent = request["title"].as_str().unwrap_or_default();
+        return match request["status"].as_str() {
+            Some("pending") => line("◆", "Needs {agent} sign-in", &[("agent", agent)]),
+            Some("ready") => line("✓", "Signed in", &[]),
+            _ => line("×", "Cancelled", &[]),
+        };
+    }
+    match e.kind {
+        Kind::Permission => {
+            let title = text("title");
+            match e.data["status"].as_str() {
+                Some("pending") => return line("◆", "Waiting for your approval: {title}", &[("title", title)]),
+                Some("answered") => {}
+                _ => return line("·", "Not answered: {text}", &[("text", title)]),
+            }
+            let chosen = e.options().into_iter().find(|(id, ..)| id == text("selected"));
+            match chosen {
+                Some((.., kind)) if kind.starts_with("allow") => line("✓", "Approved: {title}", &[("title", title)]),
+                Some((.., kind)) if kind.starts_with("reject") => line("×", "Denied: {title}", &[("title", title)]),
+                _ => {
+                    let name = chosen.map_or_else(|| text("selected").to_owned(), |(_, name, _)| name);
+                    line("✓", "Answered: {choice}", &[("choice", &name)])
+                }
+            }
+        }
+        Kind::Decision => {
+            let question = text("question");
+            match decision::Status::of(&e.data) {
+                Some(decision::Status::Pending) => line("◆", "Asked: {question}", &[("question", question)]),
+                Some(decision::Status::Answered) => line("✓", "Answered: {choice}", &[("choice", text("selected"))]),
+                _ => line("·", "Not answered: {text}", &[("text", question)]),
+            }
+        }
+        Kind::Agent => {
+            let files: Vec<&str> =
+                e.data["files"].as_array().into_iter().flatten().filter_map(|f| f["name"].as_str()).collect();
+            if let Some(title) = e.data["artifact"]["title"].as_str() {
+                line("▤", "Made an artifact: {title}", &[("title", title)])
+            } else if e.data["voiceNote"] == true {
+                line("♪", "Sent a voice note", &[])
+            } else if files.is_empty() {
+                None
+            } else {
+                line("▤", "Sent a file: {name}", &[("name", &files.join(", "))])
+            }
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,7 +396,7 @@ mod tests {
         assert_eq!(waits(json!({"kind": "next"}), false), "Next up");
         assert_eq!(waits(json!({"kind": "behind", "ahead": 3}), false), "3 ahead");
         assert_eq!(waits(json!({"kind": "after"}), false), "Follows what it works on");
-        assert_eq!(waits(json!({"kind": "usage"}), false), "Waiting for usage");
+        assert_eq!(waits(json!({"kind": "usage"}), false), "Near the usage limit: one at a time");
         assert_eq!(waits(Value::Null, false), "Waiting", "no reason");
         assert_eq!(waits(json!({"kind": "tomorrow"}), false), "Waiting", "a reason of a newer host");
         assert_eq!(waits(json!({"kind": "next"}), true), "Was cut in on; starts again");
@@ -373,6 +440,51 @@ mod tests {
         assert_eq!(stops(&["waiting", "needsYou"]).as_deref(), Some("1"), "the one item a task has");
         assert_eq!((stops(&["working", "working"]), stops(&["waiting"])), (None, None), "several, or none");
         assert_eq!(Background::of(&work(&["working", "waiting"])).and_then(|b| b.since), None, "counted: no time");
+    }
+
+    #[test]
+    fn what_a_task_put_in_the_chat_is_one_line_of_its_thread() {
+        let line = |kind: &str, data: Value| {
+            let e = Entry::parse(&json!({"id": "c", "botId": "b", "seq": 1, "kind": kind, "turn": 1, "data": data}));
+            shared_line(&e.expect("an entry").1)
+        };
+        let options = json!([{"optionId": "ok", "name": "Allow", "kind": "allow_once"},
+            {"optionId": "no", "name": "Deny", "kind": "reject_once"}, {"optionId": "x", "name": "Skip", "kind": "other"}]);
+        let approval = |status: &str, selected: &str| {
+            line("permission", json!({"status": status, "title": "npm test", "options": options, "selected": selected}))
+        };
+        let text = |l: Option<(&str, String)>| l.map(|(mark, text)| format!("{mark} {text}"));
+        assert_eq!(text(approval("pending", "")).as_deref(), Some("◆ Waiting for your approval: npm test"));
+        assert_eq!(text(approval("answered", "ok")).as_deref(), Some("✓ Approved: npm test"));
+        assert_eq!(text(approval("answered", "no")).as_deref(), Some("× Denied: npm test"));
+        assert_eq!(text(approval("answered", "x")).as_deref(), Some("✓ Answered: Skip"));
+        assert_eq!(text(approval("expired", "")).as_deref(), Some("· Not answered: npm test"));
+        let choice = |status: &str, selected: &str| {
+            let data = json!({"decision": true, "status": status, "question": "Squash?", "selected": selected});
+            line("notice", data)
+        };
+        assert_eq!(text(choice("pending", "")).as_deref(), Some("◆ Asked: Squash?"));
+        assert_eq!(text(choice("answered", "No")).as_deref(), Some("✓ Answered: No"));
+        assert_eq!(text(choice("expired", "")).as_deref(), Some("· Not answered: Squash?"));
+        let sign_in = |kind: &str, status: &str| {
+            let request = json!({"kind": kind, "status": status, "title": "Kimi Code"});
+            line("notice", json!({"text": "Needs you to sign in.", "connectionRequest": request}))
+        };
+        assert_eq!(text(sign_in("agent", "pending")).as_deref(), Some("◆ Needs Kimi Code sign-in"));
+        assert_eq!(text(sign_in("agent", "ready")).as_deref(), Some("✓ Signed in"));
+        assert_eq!(text(sign_in("agent", "cancelled")).as_deref(), Some("× Cancelled"));
+        assert_eq!(sign_in("oauth", "pending"), None, "a connector's card is not a task's");
+        let file = json!({"id": "f", "name": "log.txt", "size": 3});
+        assert_eq!(
+            text(line("agent", json!({"final": true, "files": [file]}))).as_deref(),
+            Some("▤ Sent a file: log.txt")
+        );
+        let voice = json!({"final": true, "files": [file], "voiceNote": true, "text": "Hi"});
+        assert_eq!(text(line("agent", voice)).as_deref(), Some("♪ Sent a voice note"));
+        let artifact = json!({"final": true, "artifact": {"id": "a", "title": "Plan"}});
+        assert_eq!(text(line("agent", artifact)).as_deref(), Some("▤ Made an artifact: Plan"));
+        assert_eq!(line("agent", json!({"text": "Just words", "final": true})), None);
+        assert_eq!(line("notice", json!({"text": "A notice"})), None);
     }
 
     #[test]

@@ -28,6 +28,8 @@ impl Hub {
             v["work"] = crate::chat::tasks::wire(self, cfg);
             // Its folder is in a git repository: where `taskWorktrees` matters, and a client shows its switch.
             v["gitRepo"] = crate::chat::tasks::in_repo(&cfg.cwd).into();
+            // Whether the host can run git at all: without it a repository gets no worktrees either.
+            v["gitInstalled"] = crate::git::installed().into();
         }
         let rt = if cfg.is_group() {
             // A group has no agent: Fast mode belongs to its members.

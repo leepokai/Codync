@@ -156,3 +156,42 @@ final class ConversationBackgroundTapDelegate: NSObject, UIGestureRecognizerDele
         touch.view === gestureRecognizer.view
     }
 }
+
+/// Holds the list inside the safe area and lets it reach past it by `outsets`, which become
+/// its content insets: rows scroll under the bars and the composer but never get a safe area
+/// of their own (a row taking one as padding near an edge would resize itself as it moves).
+final class ConversationContainer: UIView {
+    let list: ConversationCollectionView
+    /// The safe area's size as SwiftUI gives it, not this view's bounds: the keyboard changes it and `outsets`
+    /// in one update, which carries the animation, and resizes this view afterwards, with none.
+    var size = CGSize.zero {
+        didSet { if size != oldValue { setNeedsLayout() } }
+    }
+    var outsets = UIEdgeInsets.zero {
+        didSet { if outsets != oldValue { setNeedsLayout() } }
+    }
+    /// Extra room above the rows while a pull refreshes.
+    var hold: CGFloat = 0 {
+        didSet { if hold != oldValue { setNeedsLayout() } }
+    }
+
+    init(list: ConversationCollectionView) {
+        self.list = list
+        super.init(frame: .zero)
+        addSubview(list)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let frame = CGRect(origin: .zero, size: size).inset(by: UIEdgeInsets(top: -outsets.top, left: 0, bottom: -outsets.bottom, right: 0))
+        let insets = UIEdgeInsets(top: outsets.top + hold, left: 0, bottom: outsets.bottom, right: 0)
+        list.updateViewport(frame: frame, insets: insets, indicators: outsets)
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        list.frame.contains(point)
+    }
+}

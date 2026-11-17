@@ -73,9 +73,18 @@ class VoiceChoices(private val read: (String) -> String?, private val write: (St
     fun remember(defaults: VoiceDefaults?, provider: VoiceProvider) {
         if (defaults != null) write("callDefaults.${provider.id}", WireJson.encodeToString(VoiceDefaults.serializer(), defaults))
     }
-    /** Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the mode. */
+    /**
+     * Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the mode.
+     * Another server has other models: the ones picked, and the list, for the one before go.
+     */
     fun remember(status: VoiceStatus) {
-        for (entry in status.providers) VoiceProvider.of(entry.provider)?.let { remember(entry.defaults, it); write("callServer.${it.id}", entry.server) }
+        for (entry in status.providers) VoiceProvider.of(entry.provider)?.let {
+            if (server(it).orEmpty() != entry.server.orEmpty()) {
+                for (kind in Model.entries) write("${kind.prefix}.${it.id}", null)
+                write("callModels.${it.id}", null)
+            }
+            remember(entry.defaults, it); write("callServer.${it.id}", entry.server)
+        }
     }
 
     /** The server the provider's Speech mode goes to, as the computer last said: `""` for the provider itself, null where it has none to choose. */

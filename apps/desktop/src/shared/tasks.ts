@@ -10,9 +10,18 @@ export function parseTaskEntry(raw: Record<string, unknown>): { task: string; en
   return { task: raw.task, entry: { ...entry, data: entry.data ?? {} } }
 }
 
-/** A task's transcript with more of its entries, oldest first: each entry once, the higher `rev` kept. */
+/** The id of a message sent to a thread from here, shown until the host's own entry (same `clientNonce`) replaces it. */
+export const localEntryId = (nonce: string) => `local-${nonce}`
+
+/** A thread's messages sent from here that the host hasn't taken yet (on their way, or failed and waiting for Resend or
+ * Delete): what its transcript keeps while the thread is closed. */
+export const unsentEntries = (entries: Entry[]) => entries.filter((e) => e.data.clientNonce && e.id === localEntryId(e.data.clientNonce) && !e.data.removed)
+
+/** A task's transcript with more of its entries, oldest first: each entry once, the higher `rev` kept, and a message
+ * sent from here gone once the host's entry for it is in. */
 export function mergeTaskEntries(held: Entry[], incoming: Entry[]): Entry[] {
-  const byId = new Map(held.map((e) => [e.id, e]))
+  const arrived = new Set(incoming.flatMap((e) => (e.data.clientNonce && e.id !== localEntryId(e.data.clientNonce) ? [localEntryId(e.data.clientNonce)] : [])))
+  const byId = new Map(held.filter((e) => !arrived.has(e.id)).map((e) => [e.id, e]))
   for (const e of incoming) {
     const have = byId.get(e.id)
     if (!have || e.rev >= have.rev) byId.set(e.id, e)

@@ -13,7 +13,7 @@ use super::style::theme;
 /// The key of the page of every bot's work: listed only while some bot has a live or waiting item.
 const WORK_KEY: &str = "E";
 
-const HELP: [(&str, &str, &str); 84] = [
+const HELP: [(&str, &str, &str); 86] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -78,6 +78,8 @@ const HELP: [(&str, &str, &str); 84] = [
     ("BOTS", "R", "details: threads, event box, routines, recent"),
     ("BOTS", "↵ X", "details, on an item: its transcript / stop"),
     ("BOTS", "F C D A", "details, on an item: first / cut in / drop / try again"),
+    ("BOTS", "i S D", "an item's transcript: write to it / send now / take back"),
+    ("BOTS", "tab ↵", "an item's transcript: pick what it put in the chat / show it there"),
     ("BOTS", "b", "settings, on Agent: switch back to the bot's own agent"),
     ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),

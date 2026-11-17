@@ -13,7 +13,7 @@ const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
 // A scripted agent that puts items in its box and is the task that works them (host/tests/fixtures/task_agent.py).
-const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
+export const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 
@@ -91,10 +91,11 @@ export async function echoBot(page: Page, name: string, cwd?: string) {
   return bot
 }
 
-/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. */
-export async function taskBot(page: Page, name: string) {
+/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. As
+ * `backend` (an agent the host knows by name gets that agent's sign-in card when it needs one). */
+export async function taskBot(page: Page, name: string, backend = 'custom') {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+    name, backend, command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot
@@ -146,10 +147,11 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   return id
 }
 
-/** Sends `text` from the open chat's composer. */
+/** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
-  await page.locator('.composer textarea').fill(text)
-  await page.locator('.composer textarea').press('Enter')
+  const box = page.locator('.composer:not(.work-thread-composer) textarea')
+  await box.fill(text)
+  await box.press('Enter')
 }
 
 /** Opens Settings from the account panel, on its General page. */

@@ -3,7 +3,7 @@ import { BrowserWindow, globalShortcut, ipcMain, screen } from 'electron'
 import type { WindowCommand } from '../shared/ipc'
 import type { VoiceKey } from '../shared/voice-shortcut'
 import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
-import { present, webPreferences } from './headless'
+import { headless, present, webPreferences } from './headless'
 import { prefs } from './host-controller'
 
 // Every NSScreen's frame, safe-area top and the menu bar on each side of the notch. JXA reaches
@@ -193,7 +193,8 @@ export class Island {
 
   private setKeys(on: boolean) {
     for (const [accelerator, answer] of Object.entries(KEYS)) {
-      if (!on) {
+      // A headless run's island is never seen: keys typed in another app mustn't answer an approval there.
+      if (!on || headless) {
         globalShortcut.unregister(accelerator)
         continue
       }

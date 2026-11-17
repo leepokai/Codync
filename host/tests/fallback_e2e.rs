@@ -12,8 +12,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 fn agent(name: &str) -> String {
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/relay_agent.py");
-    format!("{} {name}", common::python_agent(&script))
+    common::fixture_command("relay_agent.py", name)
 }
 
 /// The newest entry of `bot`'s chat that `found` picks, within 30 s.
@@ -203,6 +202,30 @@ async fn the_bots_own_agent_without_its_mode_fails_the_turn() {
     let text = failed["data"]["text"].as_str().unwrap();
     assert!(text.contains("doesn't have plan, the mode this bot works in"), "{text}");
     assert!(!prompted(&host, &bot, "primary") && !prompted(&host, &bot, "standin"), "the chain doesn't move on");
+}
+
+#[tokio::test]
+async fn a_command_right_after_going_back_leaves_the_catch_up_for_the_next_message() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Relay", "backend": "custom", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let fallbacks = json!([{"backend": "codex", "command": agent("standin")}]);
+    host.call("updateBot", json!({"id": bot, "fallbacks": fallbacks})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.commands"), "").unwrap();
+    std::fs::write(folder.join("primary.limit"), "").unwrap();
+    host.reply(&bot, "Fix the login tests").await;
+    wait_for(&host, &bot, "reply", |e| e["data"]["text"] == "standin answered").await;
+
+    std::fs::remove_file(folder.join("primary.limit")).unwrap();
+    host.call("switchBack", json!({"botId": bot})).await;
+    wait_for(&host, &bot, "back line", |e| e["data"]["text"] == "Back on Custom command.").await;
+    host.reply(&bot, "/review the login tests").await;
+    assert_eq!(last_prompt(&host, &bot, "primary"), "/review the login tests", "the command goes as typed");
+    host.reply(&bot, "Thanks").await;
+    let last = last_prompt(&host, &bot, "primary");
+    assert!(last.contains("<catch_up>") && last.contains("\"standin answered\""), "{last}");
 }
 
 #[tokio::test]
@@ -464,6 +487,12 @@ async fn a_process_with_a_replaced_sign_in_starts_again_before_asking_to_sign_in
     }
     assert!(last_prompt(&host, &bot, "primary").contains("Fix the build"));
     assert_eq!(prompts(), 3, "the old process's try and the new one's");
+    let opened = |method: &str| host.log(&bot, "primary.jsonl").iter().filter(|r| r["method"] == method).count();
+    assert_eq!(
+        (opened("session/new"), opened("session/load")),
+        (1, 1),
+        "the new process goes on in the chat's session"
+    );
     let history = host.call("history", json!({"botId": bot})).await;
     assert!(!history["entries"].as_array().unwrap().iter().any(|e| e["data"]["connectionRequest"].is_object()));
 
@@ -473,4 +502,57 @@ async fn a_process_with_a_replaced_sign_in_starts_again_before_asking_to_sign_in
     let card = wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
     assert_eq!(card["data"]["connectionRequest"]["entryIds"].as_array().map(Vec::len), Some(1), "{card}");
     assert_eq!(prompts(), 5, "tried once more on a new process, then no more");
+}
+
+#[tokio::test]
+async fn a_new_process_that_cant_start_signed_out_keeps_the_chats_session() {
+    let host = Host::start().await;
+    let bot =
+        json!({"name": "Solo", "backend": "kimi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    host.reply(&bot, "Hello").await;
+
+    // The running process holds a sign-in replaced since, and the new one quits as it starts: no process is left.
+    std::fs::write(folder.join("primary.revoked"), "").unwrap();
+    std::fs::write(folder.join("primary.nostart"), "").unwrap();
+    host.call("send", json!({"botId": bot, "text": "Fix the build", "clientNonce": "n1"})).await;
+    wait_for(&host, &bot, "sign-in card", |e| e["data"]["connectionRequest"]["kind"] == "agent").await;
+
+    // Signed in, the next process goes on in the chat's session.
+    std::fs::remove_file(folder.join("primary.nostart")).unwrap();
+    host.reply(&bot, "Again").await;
+    let opened = |method: &str| host.log(&bot, "primary.jsonl").iter().filter(|r| r["method"] == method).count();
+    assert_eq!((opened("session/new"), opened("session/load")), (1, 1));
+}
+
+/// #470: pi's model request fails (a 503 after a provider queue), and pi-acp ends the turn as `end_turn` with no
+/// reply; pi's error comes only as Codync's extension's notification. The turn still fails: the next agent takes it.
+#[tokio::test]
+async fn a_turn_pi_ended_in_an_error_moves_on_to_the_next_agent() {
+    let host = Host::start().await;
+    let bot = json!({"name": "Pi", "backend": "pi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    host.call("updateBot", json!({"id": bot, "fallbacks": [{"backend": "codex", "command": agent("standin")}]})).await;
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.errored"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests", "clientNonce": "n-470"})).await;
+    let reply = wait_for(&host, &bot, "fallback reply", |e| e["kind"] == "agent" && e["data"]["final"] == true).await;
+    assert_eq!(reply["data"]["text"], "standin answered");
+    wait_for(&host, &bot, "switch line", |e| e["data"]["agentSwitch"].is_object()).await;
+}
+
+/// #470 without a fallback: the turn pi ended in an error says so in the chat instead of going silent.
+#[tokio::test]
+async fn a_turn_pi_ended_in_an_error_says_so() {
+    let host = Host::start().await;
+    let bot = json!({"name": "Pi", "backend": "pi", "command": agent("primary"), "connectors": [], "notify": false});
+    let bot = host.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned();
+    let folder = host.home.join("bots").join(&bot).join("workspace");
+    std::fs::write(folder.join("primary.errored"), "").unwrap();
+
+    host.call("send", json!({"botId": bot, "text": "Fix the login tests", "clientNonce": "n-470"})).await;
+    let notice = wait_for(&host, &bot, "error notice", |e| e["data"]["style"] == "error").await;
+    assert!(notice["data"]["text"].as_str().unwrap().contains("upstream busy"), "{notice}");
 }

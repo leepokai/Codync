@@ -39,7 +39,7 @@ it returns drafts, and the session reads them, checks each claim against the cod
    deviations and the part of the problem it misses are fixed on its branch first, each with a test. We may edit
    it as much as it needs, its tests included. Then the `after-change` workflow runs on the worktree (a PR's branch
    included): review, fixes and e2e.
-5. **Merge.** An issue's fix lands on `dev` by the after-change handoff (commit with `Refs #N`). A PR's fixes are
+5. **Merge.** An issue's fix lands on `dev` by the after-change handoff (commit with `Refs #N`), and the issue is closed as soon as it is on `dev`. A PR's fixes are
    pushed to its branch, and it merges into `dev` (squash) only when the **gate** passes on its head commit: CI
    green, no conflict with `dev`, and Greptile's confidence score **4/5 or more** (`python3 tools/pr-gate.py <n>`),
    and the squash is pinned to that commit (`gh pr merge --match-head-commit`). Up to two rounds fix the failing
@@ -74,7 +74,7 @@ while the PR's head is unchanged: after a push it would replay the old head's ch
 | `ask` | Excessive, not a bug fix, or a marginal or farming contribution | Ask the maintainer with the judge's summary and reasons. The draft for the author (for marginal or farming: a polite note closing it) is posted only if they agree. |
 | `reply` | Not reproduced, not a bug, already fixed, or the report lacks what's needed | Post the drafted reply. |
 | `changes` | A wrong approach, a PR that doesn't fix it, a conflict with `dev`, an approved feature below Greptile 4/5 or with defects of its own (security concerns, deviations, a partial fix), a gate still failing after two rounds, or a branch we can't push to | Post the drafted review requesting changes. |
-| `merged` / `landed` | The PR merged into `dev` / the issue's fix landed on `dev` | Post the thank-you or issue comment. Close linked issues only once the release carrying the fix is out. |
+| `merged` / `landed` | The PR merged into `dev` / the issue's fix landed on `dev` | Post the thank-you or issue comment, then close the linked issues: a fix merged into `dev` closes its issue. |
 | `unfinished` | The head moved (new commits nobody security-checked), an earlier worktree holds our unpushed work, e2e failing or not shown passing, a confirmed finding or a security concern left unfixed, or a step that didn't finish | Report it to the maintainer. The worktree is kept (stop its `npm run dev`). A moved head gets a fresh run, never a resumed one. |
 
 Fork CI runs are approved only for the head that was security-checked, or for a commit we pushed on top of it:

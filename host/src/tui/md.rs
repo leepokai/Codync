@@ -31,6 +31,16 @@ pub fn truncate(s: &str, max: usize) -> String {
     out
 }
 
+/// Cuts a path to at most `max` cells in its middle, so its last name stays whole (`/private/tmp/cl…/gitrepo`), as
+/// the apps cut a folder; a last name too long for `max` ends in `…` too.
+pub fn truncate_path(path: &str, max: usize) -> String {
+    let Some(cut) = path.rfind(['/', '\\']).filter(|&at| at > 0 && width(path) > max) else {
+        return truncate(path, max);
+    };
+    let (lead, last) = path.split_at(cut);
+    truncate(&format!("{}{last}", truncate(lead, max.saturating_sub(width(last)))), max)
+}
+
 /// Wraps styled text to `width` cells. Breaks after spaces when it can, anywhere
 /// otherwise (so CJK text wraps between characters). `first` / `rest` prefix each line.
 pub fn wrap(
@@ -289,5 +299,14 @@ mod tests {
         assert_eq!(truncate("abcdef", 4), "abc…");
         assert_eq!(truncate("你好世界", 5), "你好…");
         assert_eq!(truncate("ok", 5), "ok");
+    }
+
+    #[test]
+    fn a_path_is_cut_in_the_middle_keeping_its_last_name() {
+        assert_eq!(truncate_path("/private/tmp/claude-501/gitrepo", 20), "/private/tm…/gitrepo");
+        assert_eq!(truncate_path(r"C:\Users\me\code\app", 12), r"C:\User…\app");
+        assert_eq!(truncate_path("~/code/app", 20), "~/code/app");
+        assert_eq!(truncate_path("/a/a-very-long-last-name", 10), "…/a-very-…");
+        assert_eq!(truncate_path("no-separator-at-all", 8), "no-sepa…");
     }
 }

@@ -144,7 +144,7 @@ private fun CardRows.layerRows(view: BotMemory, bot: Bot?, shared: Boolean, stat
             "dream" -> tr("Dreaming")
             else -> tr("Moved from the old memory")
         }
-        Text("$author · ${relative(entry.updatedAt)}${if (entry.archived) " · " + tr("archived") else ""}", style = Type.caption, color = Palette.secondary)
+        Text("$author · ${relative(entry.updatedAt)}${if (entry.archived) tr(" · archived") else ""}", style = Type.caption, color = Palette.secondary)
     }
 }
 
@@ -183,7 +183,7 @@ private fun CardRows.dreamRows(runs: List<DreamRun>, lines: (String) -> Int, unf
     for (run in runs) row {
         val limit = lines("dream:${run.id}")
         Column(Modifier.fillMaxWidth().plainButton { unfold("dream:${run.id}") }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(relative(run.at) + if (run.undone) " · " + tr("undone") else "", style = Type.body.semibold, color = Palette.text)
+            Text(relative(run.at) + if (run.undone) tr(" · undone") else "", style = Type.body.semibold, color = Palette.text)
             for (change in run.added) Text("+ ${change.text}", style = Type.body, color = Palette.added, maxLines = limit, overflow = TextOverflow.Ellipsis)
             for (change in run.archived) Text("− ${change.text}", style = Type.body, color = Palette.removed, maxLines = limit, overflow = TextOverflow.Ellipsis)
             for (file in run.files.orEmpty()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

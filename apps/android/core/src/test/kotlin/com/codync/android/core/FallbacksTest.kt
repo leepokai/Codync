@@ -146,6 +146,8 @@ class FallbacksTest {
         val full = taken + Login("claude", "a1")
         assertEquals(emptyList<AgentBackend>(), listOf(claude, codex).usable(full))
         assertEquals(listOf("claude"), listOf(claude, codex).usable(full, listOf(own.login)).map { it.id })
+        // Its remembered login is gone once another step has it and no other is free: picking that agent would land on the bot's own login.
+        assertEquals(emptyList<AgentBackend>(), listOf(claude, codex).usable(full + own.login, listOf(own.login)))
     }
 
     @Test fun `switching agent drops only the step on that agent's own login`() {

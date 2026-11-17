@@ -42,17 +42,18 @@ fun AppStore.requestCall(botId: String) {
     }
 }
 
-/** Opens [botId]'s chat with its details over it; the chat takes the request (`takeDetailsRequest`). */
-internal fun AppStore.openDetails(botId: String) {
+/** Opens [botId]'s chat with its details over it, at the thread of its item [itemId] when one is named; the chat takes the request (`takeDetailsRequest`). */
+internal fun AppStore.openDetails(botId: String, itemId: String? = null) {
     openBot(botId)
-    mutableState.update { it.copy(detailsRequest = botId) }
+    mutableState.update { it.copy(detailsRequest = botId to itemId) }
 }
 
-/** Once. */
-internal fun AppStore.takeDetailsRequest(botId: String): Boolean {
-    if (state.value.detailsRequest != botId) return false
+/** Once: what [botId]'s details were asked to open on, or null when they weren't. */
+internal fun AppStore.takeDetailsRequest(botId: String): DetailsRequest? {
+    val (asked, itemId) = state.value.detailsRequest ?: return null
+    if (asked != botId) return null
     mutableState.update { it.copy(detailsRequest = null) }
-    return true
+    return DetailsRequest(itemId = itemId)
 }
 
 /** Opens [botId]'s chat at the card its [item] waits on (iOS `requestCard`); the chat takes the request (`takeCardRequest`). */
@@ -66,6 +67,31 @@ internal fun AppStore.takeCardRequest(botId: String): Boolean {
     if (state.value.cardRequest?.first != botId) return false
     mutableState.update { it.copy(cardRequest = null) }
     return true
+}
+
+/**
+ * Pages [botId]'s open chat back for the card its [item] waits on while the rows loaded don't hold it (iOS
+ * `card(for:in:)`); the chat takes the request once it holds the card. One it can't find drops the request, and the
+ * chat stays where it was.
+ */
+internal fun AppStore.pageToCard(botId: String, item: WorkItem) = action(historyKey(botId)) {
+    val found = { pendingCard(state.value.entries.filter { it.botId == botId }, item) != null }
+    try {
+        pageUntil(found, more = { state.value.selectedBot == botId && botId !in state.value.historyEnd }) { pageHistory(botId) }
+    } finally {
+        if (!found() && state.value.cardRequest == (botId to item)) takeCardRequest(botId)
+    }
+}
+
+/** How many older pages opening an item's card loads to find it, like the iPhone. */
+private const val CARD_PAGES = 5
+
+/** Pages back ([page]) until [found], while [more] can come, [CARD_PAGES] pages at most. */
+internal suspend fun pageUntil(found: () -> Boolean, more: () -> Boolean, page: suspend () -> Unit) {
+    repeat(CARD_PAGES) {
+        if (found() || !more()) return
+        page()
+    }
 }
 
 /** Once: a chat that already has a call takes it too, so it can't start one later. */

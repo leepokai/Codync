@@ -48,6 +48,20 @@ pub fn effective(cfg: &BotConfig, step: usize) -> BotConfig {
     out
 }
 
+/// The first step, in order, whose login `passed` doesn't pass over and that isn't resting at `now`.
+pub fn first_step(store: &Store, cfg: &BotConfig, now: i64, passed: impl Fn(&str) -> bool) -> Option<usize> {
+    (0..steps(cfg)).find(|&s| {
+        let login = login(cfg, s);
+        !passed(&login) && rest::get(store, &login, now).is_none()
+    })
+}
+
+/// The bot as a new turn of its starts at `now`: on the first step whose login isn't resting (its own agent when
+/// every one is).
+pub fn starting(store: &Store, cfg: &BotConfig, now: i64) -> BotConfig {
+    effective(cfg, first_step(store, cfg, now, |_| false).unwrap_or(0))
+}
+
 /// The step that runs on login `login`, if the chain has it.
 pub fn step_of(cfg: &BotConfig, login: &str) -> Option<usize> {
     (0..steps(cfg)).find(|&s| self::login(cfg, s) == login)
@@ -183,6 +197,20 @@ mod tests {
         cfg.login_profile = Some("a1".into());
         tidy(&mut cfg);
         assert_eq!(cfg.fallbacks.len(), 2, "the step on the bot's own login profile goes");
+    }
+
+    #[test]
+    fn a_new_turn_starts_on_the_first_agent_that_isnt_resting() {
+        let store = Store::open(std::path::Path::new(":memory:")).expect("a store");
+        let cfg = bot(&[("codex", Some("gpt")), ("gemini", None)]);
+        let now = crate::store::now_ms();
+        assert_eq!(starting(&store, &cfg, now).backend, "claude");
+        rest::record(&store, "claude", Reason::UsageLimit, now, None);
+        let next = starting(&store, &cfg, now);
+        assert_eq!((next.backend.as_str(), next.model.as_deref()), ("codex", Some("gpt")));
+        rest::record(&store, "codex", Reason::RateLimited, now, None);
+        rest::record(&store, "gemini", Reason::SignedOut, now, None);
+        assert_eq!(starting(&store, &cfg, now).backend, "claude", "every one rests: its own");
     }
 
     #[test]

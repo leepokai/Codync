@@ -75,8 +75,8 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 /**
  * Every bot that has live or waiting items, in one sheet (the desktop's `AllWorkSheet`): the bot as a heading, which
  * opens its details ([openDetails]), over the rows its details have for them, with the same actions. A row that needs
- * the user opens the bot's chat at its card ([openCard]). It closes when the last item ends. [grouped]:
- * several computers show, so a heading also names the bot's computer.
+ * the user opens the bot's chat at its card ([openCard]); any other row of an item a task has opens the bot's details at
+ * its thread. It closes when the last item ends. [grouped]: several computers show, so a heading also names the bot's computer.
  */
 @Composable internal fun AllWorkSheet(open: Boolean, bots: List<WorkingBot>, grouped: Boolean, accounts: AccountStore, close: () -> Unit) {
     LaunchedEffect(open, bots.isEmpty()) { if (open && bots.isEmpty()) close() }
@@ -87,7 +87,8 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
             Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 for (working in bots) {
                     val store = accounts.store(working.state.computer.id) ?: continue
-                    BotWork(working, store, grouped, openDetails = { close(); store.openDetails(working.bot.id) }, openCard = { close(); store.openCard(working.bot.id, it) })
+                    BotWork(working, store, grouped, openDetails = { close(); store.openDetails(working.bot.id) },
+                        openCard = { close(); store.openCard(working.bot.id, it) }, openThread = { close(); store.openDetails(working.bot.id, it.id) })
                 }
             }
         }
@@ -95,7 +96,8 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
 }
 
 /** One bot: its heading, then one card of its threads' rows and its event box's numbered rows. */
-@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openCard: (WorkItem) -> Unit) {
+@Composable private fun BotWork(working: WorkingBot, store: AppStore, grouped: Boolean, openDetails: () -> Unit, openCard: (WorkItem) -> Unit,
+    openThread: (WorkItem) -> Unit) {
     val (state, bot) = working.state to working.bot
     val work = workSections(bot.work, bot.maxAgents)
     val label = fill(tr("{name}, view details"), "name" to bot.name)
@@ -107,7 +109,7 @@ internal fun allWork(shown: List<AppState>, sectionOrder: (AppState) -> List<Str
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Symbol("chevron.right", size = 12.dp, tint = Palette.tertiary)
         }
-        WorkRowsHost(bot, state, store, openCard = {}, openCardOf = openCard) { rows ->
+        WorkRowsHost(bot, state, store, openCard, openThread) { rows ->
             CompositionLocalProvider(LocalCardStyle provides CardStyle.Outlined) { CardSection { rows(work.threads, false); rows(work.box, true) } }
         }
     }

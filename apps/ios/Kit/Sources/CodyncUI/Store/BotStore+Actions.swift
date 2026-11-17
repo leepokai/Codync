@@ -121,18 +121,29 @@ extension BotStore {
 
     /// Sends a queued message now: into the bot's running turn when its agent can take it, else as its next turn. It
     /// leaves the queue once the computer says so.
-    public func steer(_ entry: Entry) {
-        answer(entry, "steer") { try await $0.steer(botId: entry.botId, entryId: entry.id) }
+    /// `thread`: the item's thread the message waits in, not a chat.
+    public func steer(_ entry: Entry, in thread: WorkThread? = nil) {
+        answer(entry, "steer") { try await $0.steer(botId: thread?.botId ?? entry.botId, entryId: entry.id, itemId: thread?.itemId) }
     }
 
     /// Takes back a queued message, which never goes out: gone at once, back if the computer refuses.
-    public func unqueue(_ entry: Entry) {
+    public func unqueue(_ entry: Entry, in thread: WorkThread? = nil) {
         let mark = { (removed: Bool?) in
+            if let thread {
+                var taken = entry
+                taken.data.removed = removed
+                Motion.animate { self.putTaskEntry(taken, task: thread.task) }
+                return
+            }
             guard let i = self.entries[entry.botId]?.firstIndex(where: { $0.id == entry.id }) else { return }
             Motion.animate { self.entries[entry.botId]?[i].data.removed = removed }
         }
         mark(true)
-        Task { await attempt(undo: { mark(nil) }) { try await $0.unqueue(botId: entry.botId, entryId: entry.id) } }
+        Task {
+            await attempt(undo: { mark(nil) }) {
+                try await $0.unqueue(botId: thread?.botId ?? entry.botId, entryId: entry.id, itemId: thread?.itemId)
+            }
+        }
     }
 
     /// A card's button: `entry` shows `choice` as answering (its spinner) while `op` runs.

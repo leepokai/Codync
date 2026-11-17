@@ -1,9 +1,11 @@
 //! Running git for the host: one way to find it and to start it, with nothing inherited that could point it at
 //! another repository, and never through a shell.
 
+use crate::LockExt as _;
 use anyhow::{Context as _, Result, anyhow, bail};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// git, where running it can't open macOS's "install the command line tools" prompt.
 pub async fn program() -> Option<PathBuf> {
@@ -15,6 +17,28 @@ pub async fn program() -> Option<PathBuf> {
         }
     }
     Some(git)
+}
+
+/// How long an answer of [`installed`] stands before git is looked for again.
+const INSTALLED_FOR: Duration = Duration::from_mins(5);
+
+/// Whether the host can run git (`bot.gitInstalled`), without waiting for the look: the last answer, looked up
+/// again in the background once it is older than [`INSTALLED_FOR`]. Before the first look ends it says yes, as a
+/// host without the field does.
+pub fn installed() -> bool {
+    /// The last answer, and when the last look started.
+    static KNOWN: Mutex<(bool, Option<Instant>)> = Mutex::new((true, None));
+    let mut known = KNOWN.locked();
+    if known.1.is_none_or(|at| at.elapsed() > INSTALLED_FOR)
+        && let Ok(runtime) = tokio::runtime::Handle::try_current()
+    {
+        known.1 = Some(Instant::now());
+        runtime.spawn(async {
+            let found = program().await.is_some();
+            KNOWN.locked().0 = found;
+        });
+    }
+    known.0
 }
 
 /// `git` in `dir`, its arguments still to give.

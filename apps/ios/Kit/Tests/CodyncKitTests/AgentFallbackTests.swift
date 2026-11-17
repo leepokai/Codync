@@ -200,6 +200,9 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     let full = taken + [AgentLogin(backend: "claude", loginProfile: "a1"), AgentLogin(backend: "claude", loginProfile: "a3")]
     #expect([claude, codex].usable(taken: full).isEmpty)
     #expect([claude, codex].usable(taken: full, keeping: [own.login]).map(\.id) == ["claude"])
+    // Its remembered login is gone once another step has it and no other is free: picking that agent would land on the
+    // bot's own login.
+    #expect([claude, codex].usable(taken: full + [own.login], keeping: [own.login]).isEmpty)
 }
 
 @Test func switchingAgentKeepsItsStepsOnOtherLoginProfiles() {

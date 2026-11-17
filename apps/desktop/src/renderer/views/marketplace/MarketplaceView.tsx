@@ -333,9 +333,10 @@ function EmptyState({ icon, title, detail }: { icon: string; title: string; deta
 }
 
 function RemoveButton({ title, onClick }: { title: string; onClick: () => void }) {
+  const tr = useTr()
   return (
     <button
-      title="Remove"
+      title={tr('Remove')}
       aria-label={`Remove ${title}`}
       className="market-remove"
       onClick={(e) => {

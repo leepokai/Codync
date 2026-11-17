@@ -149,7 +149,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
         <SwitchRow title="Fast mode" detail={saved ? fastModeRefusal(saved) : null} on={draft.fastMode ?? false} onChange={(on) => set('fastMode', on)} /> : null}>
       {ownRest && <Text size="caption" tone="secondary">{tr(restLine(ownRest, Date.now()))}</Text>}
       {backend && !backend.available && <Text size="caption" tone="attention">{backend.installHint}</Text>}
-      {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder="ACP command, e.g. my-agent --acp" spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
+      {draft.backend === 'custom' && <input className="field-box bot-command" value={draft.command ?? ''} placeholder={tr('ACP command, e.g. my-agent --acp')} spellCheck={false} onChange={(e) => set('command', e.target.value || null)} />}
     </AgentModelPicker>
   )
   // Its own row under the picker, as on the phones. CardSection gives every child a row, so null when the host has none.
@@ -183,7 +183,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
         </CardSection>
         <CardSection title="Profile">
           <ValueRow label="Avatar">
-            <button ref={avatarRef} className="avatar-button small" title="Edit Bot avatar" aria-label="Edit Bot avatar" onClick={() => setPickingAvatar((p) => !p)}>
+            <button ref={avatarRef} className="avatar-button small" title={tr('Edit Bot avatar')} aria-label={tr('Edit Bot avatar')} onClick={() => setPickingAvatar((p) => !p)}>
               <CharacterAvatar shape={draft.avatarShape} color={draft.avatarColor} size={24} customIcon={draft.id ? store.icons[`bot:${draft.id}`] : undefined} />
             </button>
             <AnchoredPanel open={pickingAvatar} onClose={() => setPickingAvatar(false)} anchor={avatarRef}>
@@ -194,7 +194,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
             </AnchoredPanel>
           </ValueRow>
           <Field label="Name">
-            <input className="field-box" value={draft.name} placeholder="Name" onChange={(e) => set('name', e.target.value)} />
+            <input className="field-box" value={draft.name} placeholder={tr('Name')} onChange={(e) => set('name', e.target.value)} />
           </Field>
           {/* Only a row when a bot made it: CardSection gives every child a row. */}
           {saved?.createdBy ? <CreatedBy bot={saved} creator={saved.createdBy} /> : null}

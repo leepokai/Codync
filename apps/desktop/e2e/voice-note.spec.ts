@@ -117,10 +117,10 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     await expect(pause).toBeVisible()
     await pause.click()
     await expect(play).toBeVisible()
-    // On the bar itself, a click moves the playhead and leaves the note paused.
-    const before = Number(await bar.inputValue())
+    // On the bar itself, a click moves the playhead to where it landed and leaves the note paused.
+    // Compared with the destination, not the playhead before: playback may have moved it meanwhile.
     await bar.click({ position: { x: box.width * 0.75, y: box.height / 2 } })
-    await expect.poll(async () => Number(await bar.inputValue())).toBeGreaterThan(before + 1)
+    await expect.poll(async () => Number(await bar.inputValue())).toBeGreaterThan(2)
     await expect(play).toBeVisible()
   } finally {
     if (botId) await api(page, 'deleteBot', { botId })

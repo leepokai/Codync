@@ -28,14 +28,16 @@ class ReadingTest {
         assertEquals(emptyList<String>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 1, waiting = 1))), chats))
     }
 
-    @Test fun `a chat going from unread to nothing unread is read, by its last word in the batch`() {
-        fun changed(bot: String, unread: Int) = MirrorEvent.BotChanged(Bot(bot, unread = unread))
-        val before = mapOf("read" to 2, "unread" to 1, "bot" to 0)
-        assertEquals(listOf("read"), readChats(listOf(changed("read", 0), changed("unread", 1), message()), before))
-        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0), changed("bot", 1)), before))
-        assertEquals(listOf("bot"), readChats(listOf(changed("bot", 1), changed("bot", 0)), before))
-        // A chat that never counted unread (a question asked, a failure) keeps its alert.
-        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0)), before))
-        assertEquals(emptyList<String>(), readChats(listOf(changed("new", 0)), before))
+    @Test fun `an alert goes once its chat has dealt with it, here or elsewhere`() {
+        fun changed(bot: String, unread: Int, status: String = "idle") = MirrorEvent.BotChanged(Bot(bot, unread = unread, status = status))
+        val alerts = mapOf("reply" to "done", "question" to "needsInput", "failure" to "failed")
+        // A reply read on the computer: only the end state reaches the phone.
+        assertEquals(listOf("reply"), readChats(listOf(changed("reply", 0), message()), alerts))
+        assertEquals(emptyList<String>(), readChats(listOf(changed("reply", 0), changed("reply", 1)), alerts))
+        // A question stays while the bot waits on it, and goes once answered.
+        assertEquals(emptyList<String>(), readChats(listOf(changed("question", 0, "needsInput")), alerts))
+        assertEquals(listOf("question"), readChats(listOf(changed("question", 0, "working")), alerts))
+        // A failure never counted unread; a chat with no alert has nothing to clear.
+        assertEquals(emptyList<String>(), readChats(listOf(changed("failure", 0), changed("none", 0)), alerts))
     }
 }

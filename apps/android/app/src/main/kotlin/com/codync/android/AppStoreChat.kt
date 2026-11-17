@@ -115,12 +115,16 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
-/** The chats events take from unread (`unreadBefore`, or earlier in the batch) to nothing unread, read here or
- *  elsewhere: their alerts can go. A chat that never counted unread keeps its alert (a question still asked). */
-internal fun readChats(events: List<MirrorEvent>, unreadBefore: Map<String, Int>): List<String> =
-    events.filterIsInstance<MirrorEvent.BotChanged>().groupBy { it.bot.id }
-        .filter { (id, changes) -> changes.last().bot.unread == 0 && ((unreadBefore[id] ?: 0) > 0 || changes.any { it.bot.unread > 0 }) }
-        .keys.toList()
+/** The chats whose alert (`alerts`: bot → the alert's kind) events have dealt with, here or on another device: a reply
+ *  once nothing is unread, a question once the bot no longer waits. A failure never counted unread, so it stays. */
+internal fun readChats(events: List<MirrorEvent>, alerts: Map<String, String>): List<String> =
+    events.filterIsInstance<MirrorEvent.BotChanged>().associateBy { it.bot.id }.values.map { it.bot }.filter { bot ->
+        bot.unread == 0 && when (alerts[bot.id]) {
+            "done" -> true
+            "needsInput" -> bot.status != "needsInput"
+            else -> false
+        }
+    }.map { it.id }
 
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {

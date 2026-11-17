@@ -243,6 +243,7 @@ internal object NotificationDisplay {
         val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .addExtras(android.os.Bundle().apply { putString(ALERT_KIND, kind) })
         alert.copy(faces = alert.faces.withCustomIcons(notificationIcons(context, scope, computer))).conversation(bot)?.let { conversation ->
             // A system that refuses the conversation still shows the plain alert.
             try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, conversation) }
@@ -302,6 +303,14 @@ internal object NotificationDisplay {
     /** A chat's alert; the launcher badge follows the alerts showing. */
     fun cancelAlert(context: Context, scope: String, computer: String, bot: String) =
         context.getSystemService(NotificationManager::class.java).cancel(alertTag(scope, computer, bot), ALERT_ID)
+
+    /** The chats of one computer showing an alert: bot → the alert's kind (`done`, `needsInput`, `failed`). */
+    fun alertKinds(context: Context, scope: String, computer: String): Map<String, String> {
+        val prefix = alertTag(scope, computer, "")
+        return context.getSystemService(NotificationManager::class.java).activeNotifications
+            .filter { it.id == ALERT_ID && it.tag.orEmpty().startsWith(prefix) }
+            .associate { it.tag.removePrefix(prefix) to it.notification.extras.getString(ALERT_KIND).orEmpty() }
+    }
 
     private fun alertTag(scope: String, computer: String, bot: String) = "$scope/$computer/$bot"
 

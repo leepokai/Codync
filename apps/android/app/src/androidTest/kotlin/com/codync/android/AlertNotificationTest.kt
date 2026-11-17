@@ -89,6 +89,7 @@ class AlertNotificationTest {
     @Test fun aReadChatsAlertGoesAndTheOthersStay() {
         show("reviewer", """{"title":"Reviewer","subtitle":"Task complete","body":"Done."}""")
         show("builder", """{"title":"Builder","subtitle":"Task complete","body":"Done."}""")
+        assertEquals(mapOf("reviewer" to "done", "builder" to "done"), NotificationDisplay.alertKinds(context, scope, computer))
         NotificationDisplay.cancelAlert(context, scope, computer, "reviewer")
         val deadline = SystemClock.elapsedRealtime() + 3000
         while (manager.activeNotifications.any { it.tag == "$scope/$computer/reviewer" } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(10)

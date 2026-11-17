@@ -113,12 +113,14 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
 }
 
 /// The saved mark of the turn a bot is running (`turn.inflight.<id>`), read from this test's database: what a
-/// restarted host would resume.
+/// restarted host would resume. A read-write handle, not a read-only one: the host keeps the database in WAL mode, and a
+/// read-only connection cannot build the wal-index it would have to read through.
 fn inflight(host: &Host, bot: &str) -> Option<String> {
-    let db =
-        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .unwrap();
-    db.query_row("SELECT v FROM kv WHERE k = ?", [format!("turn.inflight.{bot}")], |r| r.get(0)).ok()
+    use rusqlite::OptionalExtension as _;
+    let db = rusqlite::Connection::open(host.home.join("codync.db")).expect("open the test database");
+    db.query_row("SELECT v FROM kv WHERE k = ?", [format!("turn.inflight.{bot}")], |r| r.get(0))
+        .optional()
+        .expect("read the turn mark")
 }
 
 /// #483: the agent closed its connection mid-turn and nothing is left to answer it; a Stop ends that turn (Idle, its

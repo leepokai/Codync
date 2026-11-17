@@ -130,6 +130,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
           "Run the Codync host on a headless Linux server or cloud VM, pair your phone with it, and reach it from anywhere.",
       },
       {
+        slug: "windows-antivirus",
+        title: "Windows and antivirus",
+        description:
+          "What to allow in Microsoft Defender or other security software when it stops the Codync host on Windows or removes its startup entry.",
+      },
+      {
         slug: "updates",
         title: "Updates",
         description:

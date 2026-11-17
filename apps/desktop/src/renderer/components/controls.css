@@ -18,6 +18,10 @@
   background: var(--bubble-user);
   color: var(--text);
 }
+.styled-button.destructive {
+  background: var(--danger-fill);
+  color: var(--on-danger);
+}
 .styled-button:active:not(:disabled) {
   transform: scale(0.98);
   opacity: 0.85;

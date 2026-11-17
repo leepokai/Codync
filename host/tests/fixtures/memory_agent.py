@@ -5,13 +5,15 @@ the first may survive the host's audit. It also appends a note to a long-form fi
 
 A run told to tidy a nearly full MEMORY.md instead moves each line starting "Allergic" into a note named after this
 process, summed up as "Has food allergies", so two runs working from the same copy would leave the line in two
-notes. Every dream run is logged to `dreams.log` in the working directory: `tidy` or `dream`.
+notes. Every dream run is logged to `dreams.log` in the working directory: `tidy` or `dream`, and so is every
+`session/delete`: `deleted <session>`. Run as `failing`, it answers a dream run with an error instead of a plan.
 """
 import json
 import os
 import sys
 import uuid
 
+failing = sys.argv[1:] == ["failing"]
 session = ""
 
 PLAN = {
@@ -46,7 +48,7 @@ for line in sys.stdin:
     method = request.get("method")
     params = request.get("params", {})
     if method == "initialize":
-        result = {"agentCapabilities": {"loadSession": True}}
+        result = {"agentCapabilities": {"loadSession": True, "sessionCapabilities": {"delete": {}}}}
     elif method in ("session/new", "session/load"):
         session = params.get("sessionId", str(uuid.uuid4()))
         result = {"sessionId": session}
@@ -54,8 +56,11 @@ for line in sys.stdin:
         text = params["prompt"][0]["text"]
         if "You keep the memory a personal assistant bot has" in text:
             tidy = '"moveOut"' in text
-            with open("dreams.log", "a", encoding="utf-8") as log:
+            with open("dreams.log", "a", encoding="utf-8", newline="\n") as log:
                 log.write("tidy\n" if tidy else "dream\n")
+            if failing:
+                send({"id": request["id"], "error": {"code": -32000, "message": "rate limited"}})
+                continue
             plan = PLAN
             if tidy:
                 note = f"health/allergies-{os.getpid()}.md"
@@ -71,6 +76,10 @@ for line in sys.stdin:
             "sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}
         }}})
         result = {"stopReason": "end_turn"}
+    elif method == "session/delete":
+        with open("dreams.log", "a", encoding="utf-8", newline="\n") as log:
+            log.write(f"deleted {params['sessionId']}\n")
+        result = {}
     else:
         result = {}
     if "id" in request:

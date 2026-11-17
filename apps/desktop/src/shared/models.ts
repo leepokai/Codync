@@ -101,14 +101,23 @@ export interface Bot {
   taskWorktrees: boolean | null
   /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
   gitRepo: boolean
+  /** Git is on the bot's computer; a host that doesn't say counts as having it. */
+  gitInstalled: boolean
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
   outside: OutsideStatus | null
   unread: number
+  /** How many of `unread` are cards waiting on the user: the badge turns amber. 0 from an older host. */
+  waiting: number
   lastMessage?: string | null
   lastAt: number
 }
 
 /** Lenient: a host that is a little newer or older than the app still yields a usable bot. */
+/** The messages in a bot's badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+export function unseen(bot: Pick<Bot, 'unread' | 'waiting'>): number {
+  return bot.unread - bot.waiting
+}
+
 export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
   const createdAt = raw.createdAt ?? 0
   return {
@@ -168,8 +177,10 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     maxAgents: normalizeMaxAgents(raw.maxAgents),
     taskWorktrees: raw.taskWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
+    gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
+    waiting: raw.waiting ?? 0,
     lastMessage: raw.lastMessage ?? null,
     lastAt: raw.lastAt ?? createdAt,
   }
@@ -661,6 +672,8 @@ export interface Hello {
   analytics?: boolean
   /** A bot with a new message moves to the top of the roster (`setAutoOrder`). Absent from older hosts. */
   autoOrder?: boolean
+  /** `resetCredentials` can be used on this computer (absent from older hosts, false on a Codync Cloud computer). */
+  credentialsReset?: boolean
 }
 
 export interface PairingInfo {

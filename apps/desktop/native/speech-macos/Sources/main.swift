@@ -18,7 +18,11 @@ final class Recognizer {
     private var lastLevel = Date.distantPast
 
     init(locale: String?) {
-        recognizer = locale.map { SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
+        // Else the system's first language the recognizer has; `SFSpeechRecognizer()` (`Locale.current`, whose region
+        // format can be another language) only when none is.
+        recognizer = locale.map { SFSpeechRecognizer(locale: Locale(identifier: $0)) }
+            ?? Locale.preferredLanguages.lazy.compactMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) }.first
+            ?? SFSpeechRecognizer()
     }
 
     func start() async {

@@ -250,12 +250,24 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 bail!("empty message");
             }
             let nonce = b["clientNonce"].as_str().unwrap_or_default();
+            // `itemId`: to the thread of one of the bot's own items, where a running turn makes it wait as here.
+            if let Some(item) = b["itemId"].as_str() {
+                if text.is_empty() || !uploads.is_empty() || !b["replyTo"].is_null() || !b["call"].is_null() {
+                    return Err(tasks::ThreadRefused::error("text_only", "a thread takes text only".into()));
+                }
+                let hub = hub.clone();
+                let (bot, item, text, nonce) = (bot.to_owned(), item.to_owned(), text.to_owned(), nonce.to_owned());
+                let sent = tokio::task::spawn_blocking(move || tasks::message(&hub, &bot, &item, &text, &nonce));
+                return Ok(ControlFlow::Break(sent.await??));
+            }
             if !nonce.is_empty()
                 && let Some(e) = hub.store.find_by_nonce(bot, nonce)
             {
                 return Ok(ControlFlow::Break(json!({"entry": e})));
             }
-            let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            // A task is written to through its bot and item (`itemId`), never by its own id.
+            let row = hub.store.bot(bot)?.filter(|r| !r.deleted && !r.config.is_task());
+            let row = row.ok_or_else(|| anyhow!("unknown bot"))?;
             // `replyTo`: the message of this chat it answers, and `replyPart` the text selected in it (`chat::replies`).
             let reply = match b["replyTo"].as_str().filter(|id| !id.is_empty()) {
                 Some(id) => Some(crate::chat::replies::quote(&hub.store, bot, id, b["replyPart"].as_str())?),
@@ -341,6 +353,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
         // A message of the user's waiting for its turn: handled now (`steer`) or taken back (`unqueue`).
         "steer" | "unqueue" => {
             let (bot, entry_id) = (str_arg(&b, "botId")?, str_arg(&b, "entryId")?.to_owned());
+            // `itemId`: the message waits in the thread of one of the bot's own items. The caller names the item,
+            // never its task.
+            let thread = b["itemId"].as_str().map(|item| tasks::thread_task(hub, bot, item)).transpose()?;
+            if thread.is_none() && crate::store::is_task_id(bot) {
+                bail!("unknown bot");
+            }
+            let bot = thread.as_deref().unwrap_or(bot);
             let queued = hub
                 .store
                 .entry(&entry_id)

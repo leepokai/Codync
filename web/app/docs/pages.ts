@@ -22,6 +22,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         description: "What a Codync bot is, how to set one up, and how to organize, reset and delete bots.",
       },
       {
+        slug: "working-folders",
+        title: "Working folders and git",
+        description:
+          "Where a bot and its background tasks work, what Git worktrees Codync makes and leaves, and what to do without a Git repository or without Git.",
+      },
+      {
         slug: "agents",
         title: "Agents",
         description: "Which coding agents Codync runs, how it finds them, and how to install, sign in and pick models.",
@@ -122,6 +128,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         title: "Linux servers",
         description:
           "Run the Codync host on a headless Linux server or cloud VM, pair your phone with it, and reach it from anywhere.",
+      },
+      {
+        slug: "windows-antivirus",
+        title: "Windows and antivirus",
+        description:
+          "What to allow in Microsoft Defender or other security software when it stops the Codync host on Windows or removes its startup entry.",
       },
       {
         slug: "updates",

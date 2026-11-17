@@ -163,8 +163,9 @@ impl Actor {
         {
             crate::market::vault::unlock(self.hub.clone()).await?;
         }
-        // An agent that can't resume keeps its session; its next new session gets the new tools.
-        if std::mem::take(&mut self.tools_changed)
+        // A stale process starts again and resumes its session. One that can't resume keeps its process and session:
+        // its next new session gets the new tools.
+        if std::mem::take(&mut self.restart_before_turn)
             && self.conn.as_ref().is_some_and(|c| c.sessions.reopen.is_some())
             && let Some(c) = self.conn.take()
         {
@@ -242,7 +243,7 @@ impl Actor {
             }
             let res = self.session_request(reopen, params).await;
             let Some(conn) = self.conn.as_mut() else { return res.map(drop) };
-            drop_replay(conn).await;
+            let about_agent = drop_replay(conn).await;
             match res {
                 Ok(res) => {
                     // A resumed session can come back on the agent's last-used model (Cursor
@@ -267,6 +268,9 @@ impl Actor {
                     conn.loaded.insert(sid.clone(), Instant::now());
                     conn.renamed.insert(sid.clone(), renamed);
                     self.note_options(&sid, &res, Listing::Session);
+                    for update in &about_agent {
+                        self.on_session_wide(update);
+                    }
                     if let Some(s) = snapshot {
                         // Its system prompt now names the bot and holds memory as rendered.
                         context::mark_announced(&self.hub.store, self.cfg.owner(), &s, s.system_identity.clone())?;
@@ -297,9 +301,7 @@ impl Actor {
             if self.conn.is_none() {
                 return Box::pin(self.ensure_session(slot)).await;
             }
-            if crate::chat::tasks::from_chat(&self.task_source) {
-                self.handoff = crate::chat::tasks::chat_so_far(&self.hub.store, self.cfg.owner());
-            }
+            self.handoff = self.told_chat();
             crate::chat::tasks::started(&self.hub, &self.cfg, crate::chat::tasks::Start::Brief);
         }
         let (revision, system) = {
@@ -356,7 +358,8 @@ impl Actor {
         let Some(source) = crate::chat::tasks::take_fork_source(&self.hub, &self.cfg) else {
             return Ok(false);
         };
-        if !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
+        // The chat's session is its own agent's: a task that starts on a fallback (that agent rests) can't fork it.
+        if self.step() != Some(0) || !self.conn.as_ref().is_some_and(|c| c.sessions.fork) {
             return Ok(false);
         }
         // The chat's frozen instructions, as its session holds them.
@@ -370,10 +373,14 @@ impl Actor {
         self.hub.set_runtime(&self.cfg.id, |r| r.activity = "Picking up from the chat…".into());
         let res = self.session_request("session/fork", params).await?;
         // A fork may replay the chat's history, as a reopened session does.
-        if let Some(conn) = self.conn.as_mut() {
-            drop_replay(conn).await;
-        }
+        let about_agent = match self.conn.as_mut() {
+            Some(conn) => drop_replay(conn).await,
+            None => Vec::new(),
+        };
         let sid = self.adopt_opened(&res, None, renamed.clone()).await?;
+        for update in &about_agent {
+            self.on_session_wide(update);
+        }
         // It already holds the instructions and memory as the chat's session had them: nothing to send again.
         let adopted = context::adopt(&self.hub.store, &owner, &sid, parent.system.clone(), parent.memory.clone())?;
         context::mark_prompted(&self.hub.store, &owner.id, &adopted)?;
@@ -430,11 +437,22 @@ impl Actor {
 const SESSION_TIMEOUT: Duration = Duration::from_mins(3);
 
 /// An agent replays a session's history as `session/update` before it answers a reopen or a fork: drops it, and
-/// refuses the requests in it.
-async fn drop_replay(conn: &mut Conn) {
+/// refuses the requests in it. What it says about itself meanwhile (its commands) isn't history: returned for
+/// `on_session_wide`.
+async fn drop_replay(conn: &mut Conn) -> Vec<Value> {
+    let mut about_agent = Vec::new();
     while let Ok(inc) = conn.rx.try_recv() {
-        if let Incoming::Request { id, .. } = inc {
-            let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+        match inc {
+            Incoming::Request { id, .. } => {
+                let _ = conn.acp.respond_error(id, -32601, "not supported").await;
+            }
+            Incoming::Notification { method, params }
+                if method == "session/update" && params["update"]["sessionUpdate"] == "available_commands_update" =>
+            {
+                about_agent.push(params);
+            }
+            _ => {}
         }
     }
+    about_agent
 }

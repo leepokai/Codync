@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// The message box under a chat: send, or stop while the bot (or the group) is working
 /// there. A leading `/` lists commands (a group's act on its bots); in a group, typing `@`
-/// lists its bots.
+/// lists its bots. Under an item's thread (`workThread`) it takes text alone: no files, dictation, commands or call.
 struct Composer: View {
     let botId: String
     /// The message the next send quotes, shown above the field until sent or cancelled.
@@ -19,6 +19,7 @@ struct Composer: View {
     /// An artifact's viewer: every message is about the artifact (a reply to its card), from a draft of its own.
     var artifact: Artifact?
     @Environment(BotStore.self) private var model
+    @Environment(\.workThread) private var thread
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The field owns its text; the store only keeps a copy. A field bound straight to the
     /// store loses a hardware keyboard's IME composition (Zhuyin, Pinyin, Kana) on iPad.
@@ -40,20 +41,24 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 22
 
     private var bot: Bot? { model.bots[botId] }
-    private var draftKey: String { artifact.map(BotStore.artifactDraftKey) ?? botId }
-    private var working: Bool { bot?.isWorking(in: botId) == true }
+    private var draftKey: String { thread?.draftKey ?? artifact.map(BotStore.artifactDraftKey) ?? botId }
+    /// The chat's own turn, which its Stop is for; a thread's Stop is in its header.
+    private var working: Bool { thread == nil && bot?.isWorking(in: botId) == true }
 
     private var isEmpty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
     private var canSend: Bool {
+        // A thread's message has no mailbox to wait in.
+        if thread != nil { return !isEmpty && !model.isOffline }
         // Offline computers still take text: the relay holds it for them, or with no relay this phone does.
-        !isEmpty && (model.connection == .online || ((model.canQueue || model.holdsOnPhone) && files.isEmpty))
+        return !isEmpty && (model.connection == .online || ((model.canQueue || model.holdsOnPhone) && files.isEmpty))
     }
 
-    private var canAttach: Bool { bot != nil }
+    private var canAttach: Bool { bot != nil && thread == nil }
 
     private var placeholder: String {
         let name = bot?.name ?? ""
+        if thread != nil { return L10n.tr("Message this thread") }
         if let artifact { return L10n.tr("Message about “{title}”").replacingOccurrences(of: "{title}", with: artifact.title) }
         if replyingTo != nil { return L10n.tr("Reply…") }
         if bot?.isGroup == true { return L10n.tr("Ask everyone · @ to ask one bot") }
@@ -72,7 +77,7 @@ struct Composer: View {
 
     /// The bot's `/` commands while the draft is `/partial`.
     private var commands: [SlashCommand] {
-        guard let query = SlashCommands.query(draft) else { return [] }
+        guard thread == nil, let query = SlashCommands.query(draft) else { return [] }
         return SlashCommands.list(for: bot, members: members, query: query, skills: model.installedSkills)
     }
 
@@ -214,7 +219,7 @@ struct Composer: View {
     /// listens or transcribes, the recording pill.
     private var micButton: some View {
         Group {
-            if dictation.listening || dictation.transcribing {
+            if dictation.busy {
                 RecordingPill(dictation: dictation, height: buttonSize)
                     .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
             } else {
@@ -240,7 +245,7 @@ struct Composer: View {
                 .transition(.opacity)
             }
         }
-        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.listening || dictation.transcribing)
+        .animation(Motion.reduced(Motion.morph, reduceMotion), value: dictation.busy)
         .codyncSheet(isPresented: $dictation.needsKey) { VoiceChatSettingsView() }
         .codyncDialog("Couldn't dictate", isPresented: Binding(get: { dictation.failure != nil }, set: { if !$0 { dictation.failure = nil } }),
                       message: dictation.failure, cancel: "OK") { [] }
@@ -256,8 +261,10 @@ struct Composer: View {
                 // A hardware keyboard's Return (⌘↩ too) submits the field and ends editing.
                 .onSubmit(newline)
                 .padding(.vertical, fieldPadding)
-            micButton
-                .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
+            if thread == nil {
+                micButton
+                    .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
+            }
             trailingButton
                 .padding(.bottom, max(0, (textLineHeight + 2 * fieldPadding - buttonSize) / 2))
                 .animation(Motion.layout, value: isEmpty)
@@ -393,13 +400,17 @@ struct Composer: View {
     }
 
     private func submit() {
-        // Words still on their way would land in the emptied box.
+        // Sent once the words still on their way are in the box, with what was typed.
+        if dictation.busy { return dictation.finish(then: submit) }
+        // A start still waiting (key check, permission) never opens the microphone after the send.
         dictation.stop()
-        if files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
+        if thread == nil, files.isEmpty, let command = SlashCommands.builtIn(for: bot, members: members, draft: draft) { return run(command) }
         guard canSend else { return }
+        // The store's copy follows the box a view update late: a transcript just put in is not in it yet.
+        model.setComposerDraft(draft, for: draftKey)
         withAnimation(Motion.reduced(Motion.conversation, reduceMotion)) {
             guard model.sendComposerDraft(to: botId, draft: draftKey, replyTo: artifact?.replyQuote ?? replyingTo,
-                                          files: files) else { return }
+                                          files: files, thread: thread) else { return }
             draft = ""
             files = []
             replyingTo = nil

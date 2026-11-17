@@ -42,6 +42,8 @@ const LOCAL_ONLY: &[&str] = &[
     // Voice keys, and the server a key is sent to, are entered on the computer itself; phones only use them.
     "setVoiceKey",
     "setVoiceServer",
+    // Deletes every saved credential: the computer's owner does it on the computer.
+    "resetCredentials",
     // An export file is a path on this computer.
     "previewImport",
     "importBots",

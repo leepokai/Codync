@@ -73,6 +73,7 @@ export type AnalyticsEvent =
   | { event: 'image_preview_action'; action: ImageAction; from: ImageFrom; outcome: 'done' | 'failed'; error?: ImageFailure }
   | { event: 'conversation_find_opened' }
   | { event: 'conversation_find_searched'; found: boolean }
+  | { event: 'quote_opened'; found: boolean }
   | { event: 'voice_call_started'; engine: VoiceCallEngine }
   | { event: 'voice_call_quality'; engine: VoiceCallEngine; ready_ms?: number; reconnects: number; stuck: VoiceStuck; failure: VoiceFailure
       /** Gemini's Google Search was on; `searches`: answers with its suggestions (never the query). */
@@ -88,8 +89,8 @@ export type AnalyticsEvent =
   | { event: 'cloud_computer_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
   | { event: 'cloud_snapshots_deleted'; outcome: 'deleted' | 'refused' | 'failed'; provider: string }
   | { event: 'cloud_key_removed'; outcome: 'removed' | 'refused' | 'failed'; provider: string }
-  | { event: 'kofi_invite_shown' }
-  | { event: 'kofi_invite_answered'; opened: boolean }
+  | { event: 'kofi_invite_shown'; ask: number }
+  | { event: 'kofi_invite_answered'; ask: number; opened: boolean }
   | { event: 'whats_new_shown' }
 
 /** `track`'s body: the event with its properties, from the desktop app. */

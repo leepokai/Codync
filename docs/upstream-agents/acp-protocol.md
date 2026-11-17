@@ -8,8 +8,8 @@ Not one agent's bug: the protocol leaves these open, and the host covers them fo
 - Agents that ignore `session/cancel` are killed after 15 s; a hung `session/new`, `session/load` or `session/resume` after 3 min;
   an old CLI that hangs on `initialize` gets 20 s when another way to start it is left (`host/src/agent/bot/mod.rs`,
   `host/src/agent/bot/session.rs`).
-- Agents that send no `compaction_update`: a drop in context use by more than half stands in for one
-  (`host/src/agent/bot/compaction.rs`).
+- Agents that send no `compaction_update`: a drop in context use by more than half stands in for one, and a stream's
+  provisional zero (reported before the model answers) is not a reading at all (`host/src/agent/bot/compaction.rs`).
 - Mode ids have no fixed meaning: Auto is found by id or name, and Goose's `auto` (approves everything) is hidden
   (`host/src/agent/modes.rs`).
 - No way in ACP v1 to hand a running turn another message: *Send now* uses the agents' own `_session/steering`

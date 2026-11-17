@@ -161,6 +161,27 @@ async fn steering_an_agent_that_cannot_stops_the_turn_for_the_message() {
 }
 
 #[tokio::test]
+async fn a_new_session_stops_the_running_turn_and_the_queued_message_opens_it() {
+    if python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Fresh", "steer_agent.py", "plain 30").await;
+    let (_, second) = queue_behind_a_turn(&host, &bot).await;
+    host.call("newSession", json!({"botId": bot})).await;
+    eventually("the queued message started its own turn", Duration::from_secs(20), async || {
+        host.requests(&bot, "session/prompt").len() == 2
+    })
+    .await;
+    assert_eq!(host.requests(&bot, "session/cancel").len(), 1);
+    assert_eq!(host.requests(&bot, "session/new").len(), 2, "the queued message runs in the new session");
+    let prompt = &host.requests(&bot, "session/prompt")[1]["params"]["prompt"][0]["text"];
+    assert!(prompt.as_str().unwrap().contains("second"), "{prompt}");
+    assert_eq!(status(&host, &bot, &second).await, "sent");
+    host.call("stop", json!({"botId": bot})).await;
+}
+
+#[tokio::test]
 async fn a_message_the_agent_leaves_for_later_is_the_next_turn() {
     if python_missing() {
         return;

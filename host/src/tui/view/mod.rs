@@ -17,6 +17,7 @@ mod fallbacks;
 mod forms;
 mod goto;
 mod help;
+mod kofi;
 mod lead_agent;
 mod network;
 mod network_rules;
@@ -28,6 +29,7 @@ mod queue;
 mod roster;
 mod skill;
 mod style;
+mod task;
 mod time;
 mod trace;
 mod transcript;
@@ -39,6 +41,8 @@ pub(super) use buffer::{centered, frame_box, hline, put, restyle, rput, u, windo
 pub(super) use chat::composer_lines;
 #[cfg(test)]
 pub(super) use fallbacks::{rest_note, step_item};
+#[cfg(test)]
+pub(in crate::tui) use fallbacks::{rest_phrase, using_phrase};
 pub(super) use lead_agent::lead_agent_scroll_max;
 pub(super) use overlay::{field_line, input_line};
 pub(super) use style::theme;

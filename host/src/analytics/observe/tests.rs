@@ -190,6 +190,20 @@ fn connectors_skills_and_agents() {
         Some((Event::VoiceNoteSent, json!({"client": "local"})))
     );
     assert_eq!(sent(json!({"path": "report.pdf"})), None, "a file card isn't a voice note");
+    let quoting =
+        |name: &str, arguments: Value| props("chatCall", &json!({"botId": "b", "name": name, "arguments": arguments}));
+    assert_eq!(
+        quoting("send_message", json!({"text": "secret", "reply_to": "e1"})),
+        Some((Event::BotQuoted, json!({"tool": "message", "client": "local"})))
+    );
+    let file = quoting("send_file", json!({"path": "/secret/report.pdf", "reply_to": "e1"}));
+    assert_eq!(file.map(|(_, p)| p["tool"].clone()), Some(json!("file")));
+    let (event, p) =
+        observe(&Caller::Local, "chatCall", &json!({"name": "send_message", "arguments": {"reply_to": "e1"}}))
+            .expect("a quote is tracked");
+    let outcome = |answer: Value| answered(event, p.clone(), &answer).map(|p| p["outcome"].clone());
+    assert_eq!(outcome(json!({"sent": true})), Some(json!("quoted")));
+    assert_eq!(outcome(json!({"sent": true, "warning": "x"})), Some(json!("unquoted")));
     let published = |arguments: Value| {
         observe(&Caller::Local, "chatCall", &json!({"botId": "b", "name": "publish_artifact", "arguments": arguments}))
             .expect("a publish is tracked")
@@ -202,7 +216,7 @@ fn connectors_skills_and_agents() {
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
-    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a routine's has no card");
+    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));

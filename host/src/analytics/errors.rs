@@ -1,7 +1,8 @@
 //! Error tracking: panics and uncaught client errors as `PostHog` `$exception` events, sent with
 //! usage analytics (same switch, same identity). Never content: an error's message is dropped
-//! (a panic keeps only a literal written in the code), and a file path keeps only what lies
-//! inside the code base. What is collected: docs/features/analytics.md.
+//! (a panic keeps only a literal written in the code, or a known runtime panic's fixed start),
+//! and a file path keeps only what lies inside the code base. What is collected:
+//! docs/features/analytics.md.
 
 use super::{Event, Msg, capture};
 use crate::hub::Hub;
@@ -51,12 +52,12 @@ pub struct Frame {
 }
 
 impl Report {
-    /// A panic at its location. Its message only when the code wrote it as a literal:
-    /// `unwrap` on an error or a formatted `expect` can carry runtime data.
+    /// A panic at its location, with [`panic_message`]: `unwrap` on an error or a formatted
+    /// `expect` can carry runtime data.
     // ponytail: no backtrace, release builds are stripped; upload debug symbols with
     // `posthog-cli` and send instruction addresses if the panic site isn't enough.
     pub fn panic(info: &std::panic::PanicHookInfo<'_>, process: Process) -> Self {
-        let value = info.payload().downcast_ref::<&'static str>().map(|s| (*s).to_owned()).unwrap_or_default();
+        let value = panic_message(info.payload());
         let frames = info
             .location()
             .map(|l| Frame {
@@ -136,6 +137,27 @@ pub(super) fn capture_report(hub: &Hub, report: Report) {
     capture(hub, Event::Exception, report.properties());
 }
 
+/// Panics the runtime formats with an OS error or a value: their fixed start says what failed.
+/// `tokio::task::spawn_blocking` panics with the first one at its caller when no thread can start.
+const RUNTIME_PANICS: [&str; 4] = [
+    "OS can't spawn worker thread",
+    "failed to spawn thread",
+    "called `Result::unwrap()` on an `Err` value",
+    "index out of bounds",
+];
+
+/// A literal panic message whole; a formatted one only as the fixed start of a [`RUNTIME_PANICS`] entry.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(literal) = payload.downcast_ref::<&'static str>() {
+        return (*literal).to_owned();
+    }
+    let formatted = payload.downcast_ref::<String>().map_or("", String::as_str);
+    RUNTIME_PANICS
+        .iter()
+        .find(|known| formatted.starts_with(**known))
+        .map_or_else(String::new, |known| (*known).to_owned())
+}
+
 /// A frame's file without anything outside the code base: an absolute path (a home folder,
 /// an install location) keeps only its file name.
 fn code_path(file: &str) -> &str {
@@ -209,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn a_panic_keeps_its_site_and_only_a_literal_message() {
+    fn a_panic_keeps_its_site_and_no_runtime_data() {
         let caught = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = caught.clone();
         let previous = std::panic::take_hook();
@@ -221,14 +243,17 @@ mod tests {
         let secret = "/Users/kevin/secret.txt";
         let _ = std::panic::catch_unwind(|| panic!("literal"));
         let _ = std::panic::catch_unwind(|| panic!("formatted {secret}"));
+        let (len, index) = (1, 2);
+        let _ = std::panic::catch_unwind(|| panic!("index out of bounds: the len is {len} but the index is {index}"));
         std::panic::set_hook(previous);
         let mut reports = std::mem::take(&mut *caught.lock().expect("not poisoned"));
         // Other tests panic in parallel; only this file's panics are ours.
         reports.retain(|r| r.frames.first().and_then(|f| f.file.as_deref()) == Some(file!()));
-        assert_eq!(reports.len(), 2);
+        assert_eq!(reports.len(), 3);
         assert_eq!(reports[0].value, "literal");
         assert_eq!(reports[1].value, "", "a formatted message can carry runtime data");
-        let p = reports.into_iter().nth(1).expect("two reports").properties();
+        assert_eq!(reports[2].value, "index out of bounds");
+        let p = reports.into_iter().nth(1).expect("three reports").properties();
         let frame = &p["$exception_list"][0]["stacktrace"]["frames"][0];
         assert_eq!(frame["filename"], file!());
         assert_eq!((frame["lang"].as_str(), frame["in_app"].as_bool()), (Some("rust"), Some(true)));

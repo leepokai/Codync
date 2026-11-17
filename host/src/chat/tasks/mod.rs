@@ -21,6 +21,7 @@ mod prompts;
 mod sources;
 mod steer;
 mod sweep;
+mod thread;
 mod tools;
 mod worktree;
 
@@ -28,9 +29,10 @@ pub use dispatch::{Wait, dispatch};
 #[cfg(test)]
 pub use items::put_working_for_test;
 pub use items::{Source, Status, doing, lines, outside, wire, working_tasks};
-pub use prompts::{BRIEF, reminder, report_notice, report_prompt};
+pub use prompts::{BRIEF, in_thread, reminder, report_notice, report_prompt};
 pub use sources::{access_of, add_request, add_routine, boxed, from_chat, routines_changed, source_of};
 pub use steer::{Steer, cut_in, drop_item, first, retry, stop};
+pub use thread::{Refused as ThreadRefused, heard, message, picked_up, task as thread_task};
 pub use tools::{TOOLS, acting_as, call, refuse_chat_only, refuse_in_task, tools};
 pub use worktree::{Worktree, enter as enter_worktree, in_repo};
 
@@ -81,6 +83,9 @@ pub struct Report {
     /// The git worktree it worked in, if it had one of its own: where its changes are.
     #[serde(default)]
     pub worktree: Option<Worktree>,
+    /// What the user wrote to its thread since its last report, word for word: not the task's words.
+    #[serde(default)]
+    pub told: Vec<String>,
 }
 
 /// How a task's turn ended (from its actor).
@@ -156,6 +161,27 @@ pub fn of(store: &Store, bot: &str) -> Vec<BotConfig> {
     tasks
 }
 
+/// `cfg`'s fallbacks changed: its tasks fall back the same way from their next agent on, as the bot does. Read,
+/// saved and sent under one lock, so nothing a task saves meanwhile is lost and a later change reaches it after this
+/// one.
+pub fn fallbacks_changed(hub: &Hub, cfg: &BotConfig) {
+    let _g = hub.emit_lock.locked();
+    let mut tasks = of(&hub.store, &cfg.id);
+    for task in &mut tasks {
+        task.fallbacks.clone_from(&cfg.fallbacks);
+    }
+    if let Err(error) = hub.store.save_bots(&tasks) {
+        tracing::warn!(bot = %cfg.id, error = format!("{error:#}"), "couldn't give its tasks the bot's fallbacks");
+        return;
+    }
+    for task in tasks.into_iter().filter(|task| hub.has_actor(&task.id)) {
+        let id = task.id.clone();
+        if let Err(error) = hub.send_cmd(&id, Cmd::Reconfigure(Box::new(task))) {
+            tracing::warn!(task = %id, error = format!("{error:#}"), "couldn't give a task its bot's fallbacks");
+        }
+    }
+}
+
 /// The bot `id` is to the user: a task's bot, else `id` itself.
 pub fn owner(store: &Store, id: &str) -> String {
     let task_of = store.bot(id).ok().flatten().and_then(|row| row.config.task_of);
@@ -187,9 +213,40 @@ fn update(hub: &Hub, cfg: &BotConfig, what: &str, change: impl FnOnce(&mut Item)
     })
 }
 
-/// The item task `cfg` works on, as its approval card names it: its id and title.
+/// The item task `cfg` works on, as the cards it puts in its bot's chat name it ([`mark`]): its id and title.
 pub fn card_item(store: &Store, cfg: &BotConfig) -> Option<(String, String)> {
     item_of(store, cfg).map(|item| (item.id, item.title))
+}
+
+/// What marks an entry a task puts in its bot's chat as its item's (`data.author`, `data.task`, `data.item`).
+pub struct ItemMark {
+    /// The task's bot, whose chat it is.
+    pub bot: String,
+    task: String,
+    title: String,
+    item: Option<String>,
+}
+
+impl ItemMark {
+    /// The task it marks as.
+    pub fn task(&self) -> &str {
+        &self.task
+    }
+
+    /// Marks `data`: to the user it is the bot's; an answer finds the task by `data.task.id` ([`card_actor`]).
+    pub fn apply(&self, data: &mut Value) {
+        data["author"] = self.bot.as_str().into();
+        data["task"] = json!({"id": self.task, "title": self.title});
+        data["item"] = self.item.clone().into();
+    }
+}
+
+/// From task `cfg`: what marks an entry in its bot's chat as its item's, named by what the user knows it by. None
+/// for a bot's own.
+pub fn mark(store: &Store, cfg: &BotConfig) -> Option<ItemMark> {
+    let bot = cfg.task_of.clone()?;
+    let (item, title) = card_item(store, cfg).unzip();
+    Some(ItemMark { bot, task: cfg.id.clone(), title: title.unwrap_or_default(), item })
 }
 
 /// The session a task's first session forks, if any; taken once.
@@ -240,12 +297,16 @@ pub fn turn_over(hub: &Arc<Hub>, bot: &str, stopped: bool) {
 
 /// Task `cfg`'s turn ended: its item says how, its result goes where its source reads it (the bot's own work: a
 /// report, as a turn in the chat), and the dispatcher decides what the task does next. An item the user stopped
-/// reports nothing: they know.
+/// reports nothing: they know. While a message the user wrote to its thread still waits for its turn the item isn't
+/// over: that turn's end is its end.
 pub fn finished(hub: &Arc<Hub>, cfg: &BotConfig, outcome: Outcome) {
     let Some(bot) = cfg.task_of.as_deref() else { return };
     let (owner, task) = (bot.to_owned(), cfg.id.clone());
     let next = move |hub: &Arc<Hub>| dispatch::run(hub, &owner, Some(&task));
-    match items::change(hub, bot, |items| Ok(end_claimed(items, &cfg.id, outcome))) {
+    let ended = items::change(hub, bot, |items| {
+        Ok(if thread::unheard(&hub.store, &cfg.id) { None } else { end_claimed(items, &cfg.id, outcome) })
+    });
+    match ended {
         Ok(Some(over)) => close(hub, bot, over, next),
         Ok(None) => next(hub),
         Err(error) => {
@@ -295,7 +356,10 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
             return None;
         }
         Outcome::Done(text) => {
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), MAX_REPORT)).filter(|t| !t.is_empty());
+            // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
+            // whole, as its message.
+            let most = if item.source.is_bot() { MAX_REPORT } else { usize::MAX };
+            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
@@ -316,6 +380,7 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
         outcome,
         hops: item.hops,
         worktree: None,
+        told: std::mem::take(&mut item.told),
     });
     Some(item.clone())
 }
@@ -416,6 +481,7 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
     let (resumed, failed, undelivered) = items::change(hub, bot, |items| {
         let now = now_ms();
         items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        worktree::unsettled(items);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         items.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
         // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
@@ -492,6 +558,17 @@ mod tests {
         assert!(stopped.status == Status::Stopped && stopped.report.is_none(), "the user knows");
         assert!(end(&mut items, "t3", Outcome::Stopped).is_none(), "its task has no item any more");
         assert_eq!(json!(Failure::EndedEarly), "ended_early");
+    }
+
+    #[test]
+    fn only_the_bots_own_report_is_cut() {
+        let long = "x".repeat(MAX_REPORT + 10);
+        let mut items = [working("a", "t1"), working("b", "t2")];
+        items[1].source = Source::Routine { id: "r".into(), run: "1".into() };
+        let report = end(&mut items, "t1", Outcome::Done(Some(long.clone()))).expect("ended");
+        assert!(report.result.expect("a result").len() < long.len());
+        let routine = end(&mut items, "t2", Outcome::Done(Some(long.clone()))).expect("ended");
+        assert_eq!(routine.result, Some(long), "a routine's message is posted whole");
     }
 
     #[test]

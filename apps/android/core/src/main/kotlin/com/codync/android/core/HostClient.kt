@@ -75,6 +75,8 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
+    /** How many of [unread] are cards waiting on the user: the badge turns amber. 0 from an older host. */
+    val waiting: Int = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
     /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */
@@ -99,11 +101,16 @@ data class Bot(
     val taskWorktrees: Boolean? = null,
     /** Its folder is in a git repository: where [taskWorktrees] matters. */
     val gitRepo: Boolean = false,
+    /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
+    val gitInstalled: Boolean? = null,
     /** How it stands outside its chat ([Outside]); null from an older host. */
     @Serializable(with = OutsideSerializer::class)
     val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+    val unseen: Int get() = unread - waiting
+
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1
 

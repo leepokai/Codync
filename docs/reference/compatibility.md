@@ -74,6 +74,11 @@ Apps older than 2.45.1 would show a voice note (`voiceNote: true`, a sound in `f
 
 Apps older than 2.49.0 don't know a bot's box (`work`, `outside`), where its routine runs and other bots' requests now work: the chat's `status` stays idle while one runs, so they show no work and no Stop for it (the chat's Stop leaves the box alone), and a choice card a task raises in the chat still has their **Something else** field, whose text goes to the chat as a message and never answers the card. So 2.49.0 raises `minApp`.
 
+Writing to an item's thread adds only: `itemId` on `send`, `steer` and `unqueue`, `work[].talk` and
+`work[].folder`, and the user's own entries in a task's transcript. An app from before it shows the transcript to
+read as before, with those entries among the steps, and an item the user reopened elsewhere as working again. A
+host from before it sends no `talk`, so a newer app shows no composer there. It raises no floor.
+
 Apps older than 2.39.0 don't read `removed`: a queued message taken back on a newer client (`unqueue`) stays in their
 chat as *Not sent — stopped*. Nothing breaks and the message never went out, so it raises no floor.
 

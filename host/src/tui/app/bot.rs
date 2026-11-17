@@ -87,6 +87,8 @@ pub struct Bot {
     pub activity: String,
     pub started_at: Option<i64>,
     pub unread: i64,
+    /// How many of `unread` are cards waiting on the user: the badge turns amber.
+    pub waiting: i64,
     pub last_message: String,
     pub last_at: i64,
     /// A group chat: several bots and the user, no agent of its own.
@@ -106,6 +108,8 @@ pub struct Bot {
     pub task_worktrees: Option<bool>,
     /// Its folder is in a git repository: where `task_worktrees` matters.
     pub git_repo: bool,
+    /// The host can run git; true from a host that doesn't say.
+    pub git_installed: bool,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -257,7 +261,9 @@ impl Bot {
                 .into_iter()
                 .flatten()
                 .filter_map(|c| {
-                    Some((c["name"].as_str()?.to_owned(), c["description"].as_str().unwrap_or_default().to_owned()))
+                    // What it says it does, else what it takes after its name, as the other apps show.
+                    let about = c["description"].as_str().filter(|d| !d.is_empty()).or(c["hint"].as_str());
+                    Some((c["name"].as_str()?.to_owned(), about.unwrap_or_default().to_owned()))
                 })
                 .collect(),
             status: status(&v["status"]).unwrap_or(Status::Idle),
@@ -265,6 +271,7 @@ impl Bot {
             activity: s("activity"),
             started_at: v["startedAt"].as_i64(),
             unread: v["unread"].as_i64().unwrap_or(0),
+            waiting: v["waiting"].as_i64().unwrap_or(0),
             last_message: s("lastMessage"),
             last_at: v["lastAt"].as_i64().unwrap_or(0),
             group: v["kind"] == "group",
@@ -274,6 +281,17 @@ impl Bot {
             max_agents: work::max_agents(&v["maxAgents"]),
             task_worktrees: v["taskWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
+            git_installed: v["gitInstalled"] != false,
+        })
+    }
+
+    /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
+    pub fn git_line(&self) -> Option<&'static str> {
+        self.task_worktrees?;
+        Some(match (self.git_installed, self.git_repo) {
+            (false, _) => "Git isn't installed on this computer",
+            (true, true) => "Git repository",
+            (true, false) => "Not a git repository",
         })
     }
 
@@ -311,6 +329,11 @@ impl Bot {
     /// an item works or waits, and needs you while one waits on a card). The chat's own on a host before `outside`.
     pub fn roster_mark(&self) -> Mark {
         self.mark_of(self.outside.unwrap_or(self.status))
+    }
+
+    /// The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted).
+    pub fn unseen(&self) -> i64 {
+        self.unread - self.waiting
     }
 
     fn mark_of(&self, status: Status) -> Mark {

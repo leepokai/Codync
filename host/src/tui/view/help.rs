@@ -13,7 +13,7 @@ use super::style::theme;
 /// The key of the page of every bot's work: listed only while some bot has a live or waiting item.
 const WORK_KEY: &str = "E";
 
-const HELP: [(&str, &str, &str); 82] = [
+const HELP: [(&str, &str, &str); 86] = [
     ("MOVE", "j k  ↑ ↓", "next / previous bot"),
     ("MOVE", "[ ]", "previous / next bot"),
     ("MOVE", "1…9", "jump to bot 1–9"),
@@ -46,6 +46,7 @@ const HELP: [(&str, &str, &str); 82] = [
     ("CHAT", "f", "picking: save its files or artifact"),
     ("CHAT", "o", "picking an artifact: open it in the browser"),
     ("CHAT", "o", "picking: show a summary, handoff or note change"),
+    ("CHAT", "q", "picking a quote: show the quoted message"),
     ("CHAT", "e K", "picking a handoff: edit / keep the chat"),
     ("CHAT", "A", "picking a failure: add a fallback agent"),
     ("CHAT", "↵", "picking a bot message: open its conversation"),
@@ -73,9 +74,12 @@ const HELP: [(&str, &str, &str); 82] = [
     ("BOTS", WORK_KEY, "work: every bot's items"),
     ("BOTS", "z", "fold / unfold section"),
     ("BOTS", "M", "memory"),
+    ("BOTS", "^k session", "new session: fresh agent context; the chat stays"),
     ("BOTS", "R", "details: threads, event box, routines, recent"),
     ("BOTS", "↵ X", "details, on an item: its transcript / stop"),
     ("BOTS", "F C D A", "details, on an item: first / cut in / drop / try again"),
+    ("BOTS", "i S D", "an item's transcript: write to it / send now / take back"),
+    ("BOTS", "tab ↵", "an item's transcript: pick what it put in the chat / show it there"),
     ("BOTS", "b", "settings, on Agent: switch back to the bot's own agent"),
     ("BOTS", "O", "computer: where it runs, use the computer"),
     ("BOTS", "L", "library: artifacts and files; open, save, rename"),

@@ -1,0 +1,63 @@
+# Send pressed while dictating after typed text (#446), on the phones: the recording is transcribed first and its words
+# go in the same message as what was typed (docs/features/voice-call.md). Dictation runs on the OpenAI engine against
+# `dictation-send-server.mjs`, started on the computer before the run and stopped after it; the microphone only has to
+# deliver audio, silence included. The phone must already be signed in or paired with the host (a worktree's sandbox,
+# docs/guides/dev-app.md#worktree-sandboxes); run it apart from `welcome`, whose clearState undoes the pairing, and
+# from `voice-server`, which needs the computer without an OpenAI key.
+#   node apps/maestro/dictation-send-server.mjs <sandbox port> "$(cat ~/.codync-dev-<sandbox name>/token)" &
+#   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags dictation \
+#     -e HOST_PORT=<sandbox port> -e HOST_TOKEN="$(cat ~/.codync-dev-<sandbox name>/token)" \
+#     -e ECHO_AGENT="$PWD/host/tests/fixtures/mode_agent.py" apps/maestro
+appId: com.pokai.Codync.ios.dev
+tags:
+  - dictation
+onFlowComplete:
+  - runScript:
+      file: dictation-send.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: dictation-send.js
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          permissions:
+            microphone: allow
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+          permissions:
+            microphone: allow
+# A phone can take longer to reconnect after its launch than a tap waits.
+- extendedWaitUntil:
+    visible: ${output.bot.name}
+    timeout: 60000
+- tapOn: ${output.bot.name}
+- tapOn: "Dictation engine"
+- tapOn: "OpenAI"
+- tapOn: "Ask ${output.bot.name}"
+- inputText: "A"
+- tapOn: "Dictate"
+- extendedWaitUntil:
+    visible: "Stop dictating"
+    timeout: 10000
+# Still recording two seconds on: past the half second a recording needs to be sent.
+- extendedWaitUntil:
+    notVisible: "Stop dictating"
+    timeout: 2000
+    optional: true
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "A and the follow-up"
+    timeout: 20000
+- assertNotVisible: "Stop dictating"
+- takeScreenshot: dictation-send
+# Back to the phone's own speech.
+- tapOn: "Dictation engine"
+- tapOn: "On device"

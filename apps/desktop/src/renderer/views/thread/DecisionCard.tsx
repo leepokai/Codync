@@ -30,7 +30,7 @@ export function DecisionCard({ entry, answering, respond, reply }: {
   const suggested = d.recommended ?? null
   return (
     // The item's row on the bot's Details finds its card by this.
-    <div className="agent-inset" data-work-item={d.item}>
+    <div className="agent-inset">
       <VStack gap={12} className="permission-card decision-card">
         <HStack gap={8} align="flex-start">
           <div className="decision-card-question-box" style={{ maxHeight: height ?? undefined }} onTransitionEnd={settle}>

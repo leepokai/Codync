@@ -16,6 +16,8 @@ struct BotListView: View {
     @State private var confirmDelete: RosterItem?
     /// The view of all bots' work.
     @State private var showingWork = false
+    /// A bot whose agent starts over with a fresh context, once confirmed.
+    @State private var confirmNewSession: RosterItem?
     /// What the section name dialog names while it's open.
     @State private var naming: SectionNaming?
     /// The row that's lifted (a `RosterLine` id): a bot to drag or for its menu, or a computer's heading.
@@ -245,6 +247,14 @@ struct BotListView: View {
                 if let item { accounts.store(for: item.ref.computerId)?.delete(item.bot) }
             }]
         }
+        .codyncDialog("Start a new session?",
+                      isPresented: Binding(get: { confirmNewSession != nil }, set: { if !$0 { confirmNewSession = nil } }),
+                      message: "The conversation stays here, but the agent starts with a fresh context.") {
+            let item = confirmNewSession
+            return [DialogAction("New session") {
+                if let item { accounts.store(for: item.ref.computerId)?.newSession(item.bot.id) }
+            }]
+        }
         .sectionNameDialog($naming)
     }
 
@@ -276,7 +286,8 @@ struct BotListView: View {
         }
     }
 
-    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat.
+    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat;
+    /// any other row, the details on its thread.
     private func workSheet(_ bots: [RosterItem]) -> some View {
         AllWorkView(bots: bots, many: grouped, store: { accounts.store(for: $0.ref.computerId) },
                     openDetails: { item in
@@ -285,6 +296,10 @@ struct BotListView: View {
                     },
                     openChat: { item, work in
                         accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, item: work)
+                        accounts.selection = item.ref
+                    },
+                    openThread: { item, work in
+                        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, item: work)
                         accounts.selection = item.ref
                     })
     }
@@ -390,6 +405,9 @@ struct BotListView: View {
         .padding(.horizontal, -8)
         .itemProvider { lift(line) }
         .accessibilityLabel(accounts.computers.count > 1 ? "\(name), on \(store.hostName)" : name)
+        // The badge, said (Android's `UnreadBadge` description), and that a card in it waits on the user.
+        .accessibilityValue([bot.unread > 0 ? "\(bot.unread) unread" : nil, bot.waiting > 0 ? L10n.tr("Needs approval") : nil]
+            .compactMap { $0 }.joined(separator: ", "))
         .accessibilityActions {
             Button(L10n.tr("Move up")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: -1) } }
             Button(L10n.tr("Move down")) { withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { store.move(bot.id, by: 1) } }
@@ -404,6 +422,10 @@ struct BotListView: View {
                     : MenuItem("Edit profile", icon: "pencil") { editing = EditTarget(computerId: item.ref.computerId, draft: BotDraft(bot)) },
                 MenuItem("Mark as read", icon: "checkmark.message") { store.markAllRead(bot.id) },
             ]
+            // A group has no agent session of its own.
+            if !bot.isGroup {
+                items.append(MenuItem("New session", icon: "arrow.counterclockwise") { confirmNewSession = item })
+            }
             if !bot.lead && !bot.isGroup && store.supportsLeadChoice {
                 items.append(MenuItem("Make lead agent", icon: "star") { store.setLead(bot) })
             }

@@ -13,22 +13,23 @@ const steerAgent = join(root, 'host/tests/fixtures/steer_agent.py')
 // A scripted agent that answers each message with its text (host/tests/fixtures/mode_agent.py).
 const echoAgent = join(root, 'host/tests/fixtures/mode_agent.py')
 // A scripted agent that puts items in its box and is the task that works them (host/tests/fixtures/task_agent.py).
-const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
+export const taskAgent = join(root, 'host/tests/fixtures/task_agent.py')
 // The stand-in agent CLIs a `--cdp` sandbox's host finds first on its PATH (host/tests/fixtures/bin/README.md).
 const standIns = join(root, 'host/tests/fixtures/bin')
 
-/** This worktree's sandbox: its name, data folder, host port and DevTools port (`npm run dev -- --cdp` opens port + 10000). */
+/** This worktree's sandbox: its name, data folder, host port, DevTools port (`npm run dev -- --cdp` opens port + 10000) and whether it runs headless. */
 export function sandbox() {
   const name = sandboxName(basename(root))
   const home = join(homedir(), SANDBOX_PREFIX + name)
   const record = join(home, 'sandbox.json')
   let port: number
+  let headless: boolean
   try {
-    port = (JSON.parse(readFileSync(record, 'utf8')) as { port: number }).port
+    ;({ port, headless = false } = JSON.parse(readFileSync(record, 'utf8')) as { port: number; headless?: boolean })
   } catch {
     throw new Error(`No sandbox for ${root}: run \`npm run dev -- --cdp\` in apps/desktop first.`)
   }
-  return { name, home, port, cdp: port + 10000 }
+  return { name, home, port, cdp: port + 10000, headless }
 }
 
 /** Freezes the sandbox host, still connected and answering nothing, until the function it returns. Not on Windows. */
@@ -36,6 +37,16 @@ export function freezeHost() {
   const pid = Number(execFileSync('lsof', ['-t', '-sTCP:LISTEN', `-iTCP:${sandbox().port}`], { encoding: 'utf8' }).trim())
   process.kill(pid, 'SIGSTOP')
   return () => process.kill(pid, 'SIGCONT')
+}
+
+/** The process ID of the app `browser` is attached to (its main process). */
+export async function appPid(browser: Browser) {
+  const session = await browser.newBrowserCDPSession()
+  const { processInfo } = await session.send('SystemInfo.getProcessInfo')
+  await session.detach()
+  const main = processInfo.find((p) => p.type === 'browser')
+  if (!main) throw new Error('The attached app reported no main process.')
+  return main.id
 }
 
 /** Attaches to the sandbox app's main window over the DevTools protocol. */
@@ -50,9 +61,12 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
-  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox.
-  const notNow = page.getByRole('alertdialog').getByRole('button', { name: 'Not now' })
-  if (await notNow.isVisible()) await notNow.click()
+  await setPref(page, 'kofiAsk', { asked: 3, day: 0 }) // So would the Ko-fi invitation's, on a sandbox used for days.
+  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox, and a Ko-fi invitation already up.
+  for (const sheet of [page.getByRole('alertdialog'), page.getByRole('dialog', { name: 'Support Codync' })]) {
+    const notNow = sheet.getByRole('button', { name: 'Not now' })
+    if (await notNow.isVisible()) await notNow.click()
+  }
   return { browser, page }
 }
 
@@ -72,18 +86,19 @@ export async function steerBot(page: Page, name: string, seconds: number) {
   return bot
 }
 
-/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`. */
-export async function echoBot(page: Page, name: string) {
+/** A bot on the scripted agent that answers each message with `mode read-only · <the message>`, in `cwd` when given (the agent logs its calls to calls.jsonl there). */
+export async function echoBot(page: Page, name: string, cwd?: string) {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, connectors: [], skills: [], notify: false,
+    name, backend: 'custom', command: `python3 -X utf8 -u '${echoAgent}'`, cwd, connectors: [], skills: [], notify: false,
   })
   return bot
 }
 
-/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. */
-export async function taskBot(page: Page, name: string) {
+/** A bot on the scripted agent that adds an item to its box for `ADD <title>|<brief>`; it asks before it acts. As
+ * `backend` (an agent the host knows by name gets that agent's sign-in card when it needs one). */
+export async function taskBot(page: Page, name: string, backend = 'custom') {
   const { bot } = await api<{ bot: { id: string } }>(page, 'createBot', {
-    name, backend: 'custom', command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
+    name, backend, command: `python3 -X utf8 -u '${taskAgent}'`, connectors: [], skills: [], notify: false,
   })
   await api(page, 'updateBot', { id: bot.id, permission: 'ask' })
   return bot
@@ -135,10 +150,11 @@ export async function addAccount(page: Page, agent: Agent, made: (id: string) =>
   return id
 }
 
-/** Sends `text` from the open chat's composer. */
+/** Sends `text` from the open chat's composer (not the box of a thread open in the inspector). */
 export async function typeMessage(page: Page, text: string) {
-  await page.locator('.composer textarea').fill(text)
-  await page.locator('.composer textarea').press('Enter')
+  const box = page.locator('.composer:not(.work-thread-composer) textarea')
+  await box.fill(text)
+  await box.press('Enter')
 }
 
 /** Opens Settings from the account panel, on its General page. */

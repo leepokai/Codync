@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterLines, rosterRows, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
+import { chainedMoves, foldsAfterRename, hostHasSections, limitSectionName, placedBots, restoredBots, rosterGroups, rosterLines, rosterRows, sameRosterGroup, sectionMembers, sectionName, sectionNames, sectionRename, shownRows, type RosterLine } from './roster-sections.ts'
 
-const item = (id: string, section?: string, { pinned = false, unread = 0 } = {}) => ({ id, bot: { pinned, section, unread } })
+const item = (id: string, section?: string, { pinned = false, unread = 0, waiting = 0 } = {}) => ({ id, bot: { pinned, section, unread, waiting } })
 type Item = ReturnType<typeof item>
 
 /** Each line as text: a row's id, the "Bots" label, or a header's name, count, unread and fold. */
 const outline = (lines: RosterLine<Item>[]) =>
   lines.map((line) => (line.kind === 'row' ? line.item.id : line.kind === 'label' ? 'BOTS'
     : `${line.name} ${line.count} ${line.unread}${line.folded ? ' folded' : ''}: ${line.items.map((i) => i.id).join(' ')}`))
+
+test('a section waits on the user while one of its bots does (#366)', () => {
+  const waiting = (roster: Item[]) => rosterGroups(roster, []).map((group) => `${group.name} ${group.waiting}`)
+  assert.deepEqual(waiting([item('a', 'Work', { unread: 2, waiting: 1 }), item('b', 'Work'), item('c', 'Home')]), ['Home false', 'Work true'])
+})
 
 test('pinned rows first, then sections by name, then rows without a section under the label', () => {
   const roster = [

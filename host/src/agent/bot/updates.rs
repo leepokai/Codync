@@ -78,6 +78,10 @@ impl Actor {
         match u["sessionUpdate"].as_str().unwrap_or_default() {
             "agent_message_chunk" => {
                 let t = acp::content_text(&u["content"]);
+                if let Some(error) = super::pi_tools::turn_error_text(&self.cfg.backend, u, &t) {
+                    self.agent_error = Some(error.to_owned());
+                    return;
+                }
                 self.append(SegKind::Text, &t);
                 self.set_activity("Writing a reply…");
             }
@@ -238,14 +242,11 @@ impl Actor {
     /// An entry the user must see or act on, in the running turn: in its lane, or, from a task, where the user is,
     /// its bot's chat, named by the item it works on.
     pub(super) fn add_for_user(&self, kind: EntryKind, mut data: Value) -> Option<Entry> {
-        let Some(bot) = self.cfg.task_of.clone() else { return self.add(kind, self.turn.unwrap_or(0), data) };
-        // To the user it is the bot's; an answer finds this actor by the task (`tasks::card_actor`).
-        data["author"] = bot.clone().into();
-        // The item it works on: what the user knows it by.
-        let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
-        data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
-        data["item"] = item.into();
-        self.hub.add_entry(&Lane::main(&bot), kind, self.hub.store.max_turn(&bot), &data)
+        let Some(mark) = crate::chat::tasks::mark(&self.hub.store, &self.cfg) else {
+            return self.add(kind, self.turn.unwrap_or(0), data);
+        };
+        mark.apply(&mut data);
+        self.hub.add_entry(&Lane::main(&mark.bot), kind, self.hub.store.max_turn(&mark.bot), &data)
     }
 
     /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a task.
@@ -319,9 +320,10 @@ impl Actor {
     }
 
     /// A `send_message`: the user's next bubble, in the turn's lane, right away. Only in the
-    /// bot's own chat; a room, a bot request or a routine reads the turn's reply.
-    pub(super) fn send_to_user(&mut self, text: String) -> anyhow::Result<()> {
-        let Some(turn) = self.turn else { return self.send_between_turns(&text) };
+    /// bot's own chat; a room, a bot request or a routine reads the turn's reply. `quote`: the message it answers.
+    pub(super) fn send_to_user(&mut self, text: String, quote: Option<Value>) -> anyhow::Result<()> {
+        let data = crate::chat::replies::with_quote(json!({"text": text, "final": true}), quote);
+        let Some(turn) = self.turn else { return self.send_between_turns(&text, data) };
         // A background result can't be told from this turn's own send (no session in the call): it may try again later.
         if self.in_request() {
             anyhow::bail!(
@@ -332,7 +334,7 @@ impl Actor {
             anyhow::bail!("send_message isn't available in this turn: write your answer as your reply {LATER}");
         }
         self.close_seg();
-        let saved = self.add(EntryKind::Agent, turn, json!({"text": text, "final": true}));
+        let saved = self.add(EntryKind::Agent, turn, data);
         self.record_sent(saved, text)?;
         self.set_activity("Working…");
         Ok(())
@@ -349,11 +351,11 @@ impl Actor {
 
     /// A `send_message` from work the agent goes on with after its turn ended (a background subagent's result): a
     /// message in the bot's own chat, with the alert a finished turn sends, unless the user stopped its last turn.
-    fn send_between_turns(&self, text: &str) -> anyhow::Result<()> {
+    fn send_between_turns(&self, text: &str, mut data: Value) -> anyhow::Result<()> {
         anyhow::ensure!(self.conn.is_some(), "no turn is running");
         anyhow::ensure!(!self.stop_requested, "the user stopped you: send nothing until they write again");
-        self.add_between_turns(EntryKind::Agent, &json!({"text": text, "final": true, "author": self.cfg.id}))
-            .ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
+        data["author"] = self.cfg.id.as_str().into();
+        self.add_between_turns(EntryKind::Agent, &data).ok_or_else(|| anyhow::anyhow!("couldn't save the message"))?;
         push::notify(&self.hub, &self.cfg, None, &self.cfg.name, text, AlertKind::Done);
         Ok(())
     }

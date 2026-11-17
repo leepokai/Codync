@@ -45,8 +45,8 @@ first, each with its own windows. An agent on one login looks as it always did.
   limit (`tightestLogin`), without its name. The Usage screens and the terminal UI's sheet show all.
 - **The menu bar, a level at a time** (`shared/tray-usage.ts`): an agent on one login lists its limits under its name,
   and one with several is a single row that opens every login's, a login with nothing read saying **No reading yet**.
-  With more than one computer in the app, a **Usage limits** title leads a row per computer that has limits to show,
-  and each opens its own agents.
+  With more than one computer in the app, a **Usage limits** title leads a row per connected computer that has limits
+  to show (a paused or offline one is left out rather than shown with old numbers), and each opens its own agents.
 
 ## Readers
 
@@ -72,7 +72,7 @@ The readers checked only against source fail closed: anything unexpected is no r
 - **Only when advertised.** The command is sent only after the session lists it in `available_commands_update`. Sent to an agent that doesn't know it, it would reach the model and spend the plan it was meant to read.
 - **One session per agent,** resumed for every reading (`usage.session.<id>` in the host's kv): each new Antigravity session leaves a conversation database behind, about 400 KB.
 - **Never a browser.** A signed-out Antigravity starts its browser sign-in as soon as a session opens, and it would do so at every poll. The reading runs with `BROWSER=true`, which its Python honors, then gives up after 30 seconds. Windows has no such command, so there it needs a saved login file first.
-- **A bot's build is left alone.** Installing a new registry build removes the one before it, so while a bot here runs that agent and its current version isn't installed, readings wait for that bot's next start to bring it (`backends::update_pending`). Installs run one at a time and check again once they get their turn.
+- **One install at a time.** A reading and a sign-in check can start the same registry agent at once: its installs run one at a time and check again once they get their turn.
 - **A download isn't cut short.** No timeout wraps a reader's start, or a slow connection would start over at every poll. The handshake has its own.
 
 The report is Markdown meant for people, so an update can change it; `parse` is how that surfaces.

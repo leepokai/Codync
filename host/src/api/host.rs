@@ -33,6 +33,13 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::set_key(&hub.store, provider, b["key"].as_str().unwrap_or_default()).await?
         }
+        // The agents come back checked again: a sign-in that used a deleted key is gone.
+        "resetCredentials" => {
+            let removed = crate::market::vault::reset(hub.clone()).await?;
+            crate::agent::login_profiles::keys::forget_all(&hub.store)?;
+            crate::market::agent_sign_in::refresh(hub).await;
+            json!({"removed": removed, "backends": agents(hub)})
+        }
         "setVoiceServer" => {
             let provider = crate::voice::Provider::parse(str_arg(&b, "provider")?)?;
             crate::voice::set_server(&hub.store, provider, b["url"].as_str().unwrap_or_default()).await?
@@ -89,6 +96,8 @@ pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value
                 "analytics": hub.analytics.state(),
                 // Whether a bot with a new message moves to the top of the roster (`setAutoOrder`).
                 "autoOrder": hub.auto_order(),
+                // `resetCredentials` can be used here (a Codync Cloud computer's keeper holds its credentials).
+                "credentialsReset": !crate::remote::managed::is_managed(&hub.store),
                 // Before 2.41.0, apps called `joinAccount` when this was true. It takes a certificate now, which they
                 // don't send, so they aren't told to.
                 "joinAccount": false,

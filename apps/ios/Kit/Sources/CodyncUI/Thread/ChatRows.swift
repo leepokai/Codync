@@ -21,6 +21,8 @@ struct ChatRow: View {
     var openArtifact: ((ArtifactRef) -> Void)?
     /// A voice call's line: the call's conversation.
     var openCall: (() -> Void)?
+    /// A tap on the message's quote: brings the quoted message (its id) into view.
+    var openQuote: ((String) -> Void)?
     @Environment(BotStore.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,7 +30,7 @@ struct ChatRow: View {
         switch entry.kind {
         case "user":
             VStack(alignment: .trailing, spacing: 4) {
-                UserBubble(entry: entry, reply: reply, selectText: selectText)
+                UserBubble(entry: entry, reply: reply, selectText: selectText, openQuote: openQuote)
                 ReactionsRow(entry: entry)
             }
             .animation(Motion.reduced(Motion.layout, reduceMotion), value: entry.data.reactions)
@@ -37,7 +39,7 @@ struct ChatRow: View {
         case "agent":
             VStack(alignment: .leading, spacing: 4) {
                 if chat?.isGroup == true, groupStart { AuthorLabel(botId: entry.data.author) }
-                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, selectText: selectText, openArtifact: openArtifact)
+                AgentBubble(entry: entry, openTrace: openTrace, reply: reply, selectText: selectText, openArtifact: openArtifact, openQuote: openQuote)
                 ReactionsRow(entry: entry)
                     .padding(.leading, chat?.isGroup == true ? 34 : 0)
             }
@@ -107,11 +109,23 @@ struct AuthorLabel: View {
     }
 }
 
-/// The message a reply quotes, as its first line without Markdown markers.
+/// The message a reply quotes, as its first line without Markdown markers. With `open`
+/// (in a bubble), a tap brings the quoted message into view.
 struct QuoteLine: View {
     let text: String
+    var open: (() -> Void)?
 
     var body: some View {
+        if let open {
+            Button(action: open) { line }
+                .buttonStyle(.plain)
+                .accessibilityHint(L10n.tr("Show the quoted message"))
+        } else {
+            line
+        }
+    }
+
+    private var line: some View {
         Label {
             Text(L10n.tr("“\(MessagePreview.text(text))”")).lineLimit(1)
         } icon: {
@@ -128,7 +142,10 @@ struct UserBubble: View {
     let entry: Entry
     var reply: (() -> Void)?
     var selectText: (() -> Void)?
+    var openQuote: ((String) -> Void)?
     @Environment(BotStore.self) private var model
+    /// The item's thread the message was written to: no reactions there, and Resend goes to the thread.
+    @Environment(\.workThread) private var thread
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 4) {
@@ -144,7 +161,7 @@ struct UserBubble: View {
 
     private var text: some View {
             VStack(alignment: .leading, spacing: 4) {
-                if let quote = entry.data.replyTo { QuoteLine(text: quote.text) }
+                if let quote = entry.data.replyTo { QuoteLine(text: quote.text, open: openQuote.map { open in { open(quote.id) } }) }
                 if let text = entry.data.text, !text.isEmpty {
                     Text(text)
                         .font(.body)
@@ -155,7 +172,7 @@ struct UserBubble: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(Palette.bubbleUser, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .contextActions(reactions: menu.reactions) { menu.textItems() }
+                .contextActions(reactions: thread == nil ? menu.reactions : nil) { menu.textItems() }
     }
 
     private var menu: MessageMenu {
@@ -169,8 +186,8 @@ struct UserBubble: View {
         case "failed":
             HStack(spacing: 10) {
                 Text(L10n.tr("Failed to send")).foregroundStyle(Palette.danger)
-                Button(L10n.tr("Resend"), systemImage: "arrow.clockwise") { model.retry(entry) }.labelStyle(.iconOnly).help("Resend")
-                Button(L10n.tr("Delete"), systemImage: "trash") { model.discard(entry) }.labelStyle(.iconOnly).help("Delete")
+                Button(L10n.tr("Resend"), systemImage: "arrow.clockwise") { model.retry(entry, in: thread) }.labelStyle(.iconOnly).help("Resend")
+                Button(L10n.tr("Delete"), systemImage: "trash") { model.discard(entry, in: thread) }.labelStyle(.iconOnly).help("Delete")
             }
             .buttonStyle(.plain)
             .font(.caption2.bold())
@@ -200,10 +217,15 @@ struct AgentBubble: View {
     var reply: (() -> Void)?
     var selectText: (() -> Void)?
     var openArtifact: ((ArtifactRef) -> Void)?
+    var openQuote: ((String) -> Void)?
     @Environment(BotStore.self) private var model
+    /// In an item's thread a message has Copy alone: reactions and "Show what it did" are the chat's.
+    @Environment(\.workThread) private var thread
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // The message the bot answers (`reply_to`), above its bubble.
+            if let quote = entry.data.replyTo { QuoteLine(text: quote.text, open: openQuote.map { open in { open(quote.id) } }).padding(.horizontal, 16) }
             if entry.data.artifact == nil, entry.data.voiceNoteFile == nil, let files = entry.data.files, !files.isEmpty {
                 // Each card has the menu, its picture's copy items in Copy's place.
                 ForEach(files) { file in FileDownloadCard(entry: entry, file: file, menu: menu) }
@@ -220,7 +242,7 @@ struct AgentBubble: View {
                             .background(Palette.bubbleAgent, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                 }
-                .contextActions(reactions: menu.reactions) {
+                .contextActions(reactions: thread == nil ? menu.reactions : nil) {
                     // A voice note's Download follows Copy and Select Text, as on Android.
                     menu.textItems(more: entry.data.voiceNoteFile.map { [downloadItem($0)] } ?? [])
                 }
@@ -241,7 +263,7 @@ struct AgentBubble: View {
 
     private var menu: MessageMenu {
         MessageMenu.of(entry, reactions: model.reactionPick(entry), reply: reply, selectText: selectText,
-                       more: [MenuItem("Show what it did", icon: "list.bullet", action: openTrace)])
+                       more: thread == nil ? [MenuItem("Show what it did", icon: "list.bullet", action: openTrace)] : [])
     }
 }
 
@@ -272,6 +294,7 @@ struct NoticeRow: View {
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.danger)
                 }
+                TaskLine(data: entry.data)
                 if entry.data.addFallback == true, let addFallback {
                     Button(L10n.tr("Add a fallback"), action: addFallback).buttonStyle(.secondary)
                 }

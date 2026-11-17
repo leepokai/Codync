@@ -95,6 +95,11 @@ pub enum Reported {
         /// Whether the search found anything; never the text searched for.
         found: bool,
     },
+    /// A quote in a bubble was opened (desktop click, terminal `q`).
+    QuoteOpened {
+        /// Whether the quoted message was among the loaded ones and came into view.
+        found: bool,
+    },
     VoiceCallStarted {
         engine: Engine,
     },
@@ -159,8 +164,14 @@ pub enum Reported {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<VoiceNoteFailure>,
     },
-    KofiInviteShown,
+    /// `ask`: which invitation (1 for the first); older clients don't say.
+    KofiInviteShown {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
+    },
     KofiInviteAnswered {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ask: Option<u8>,
         opened: bool,
     },
     WhatsNewShown,
@@ -594,6 +605,7 @@ mod tests {
                 json!({"event": "conversation_find_searched", "app": "desktop", "found": true}),
                 Event::ConversationFindSearched,
             ),
+            (json!({"event": "quote_opened", "app": "desktop", "found": false}), Event::QuoteOpened),
             (json!({"event": "voice_call_started", "app": "desktop", "engine": "on_device"}), Event::VoiceCallStarted),
             (
                 json!({"event": "voice_call_quality", "app": "desktop", "engine": "gemini", "ready_ms": 1200,
@@ -609,7 +621,12 @@ mod tests {
             (json!({"event": "window_recovery", "app": "desktop", "outcome": "gave_up"}), Event::WindowRecovery),
             (json!({"event": "continued_without_account", "app": "desktop"}), Event::ContinuedWithoutAccount),
             (json!({"event": "kofi_invite_shown", "app": "tui"}), Event::KofiInviteShown),
+            (json!({"event": "kofi_invite_shown", "app": "tui", "ask": 2}), Event::KofiInviteShown),
             (json!({"event": "kofi_invite_answered", "app": "desktop", "opened": true}), Event::KofiInviteAnswered),
+            (
+                json!({"event": "kofi_invite_answered", "app": "desktop", "ask": 1, "opened": false}),
+                Event::KofiInviteAnswered,
+            ),
             (json!({"event": "whats_new_shown", "app": "tui"}), Event::WhatsNewShown),
             (
                 json!({"event": "join_offer_answered", "app": "desktop", "outcome": "kept_out"}),

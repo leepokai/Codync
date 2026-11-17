@@ -189,6 +189,7 @@ final class AppStore {
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         if rescan { accounts.lastError = Self.scanAgain }
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -216,6 +217,7 @@ final class AppStore {
         (accounts, cloud) = Self.makeAccounts(storage, session: account)
         generation += 1
         BotsWidgetFeed.reset()
+        IconBadge.show(0)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
@@ -293,8 +295,13 @@ final class AppStore {
             store.onUsageChanged = { _, _ in WidgetCenter.shared.reloadTimelines(ofKind: "CodyncUsage") }
         }
         accounts.onBotUpdated = { ref, bot in LiveActivities.shared.update(ref, bot: bot) }
-        accounts.onRosterChanged = { roster in
-            BotsWidgetFeed.update(roster, storage: storage)
+        accounts.onRosterChanged = { [weak accounts] roster in
+            // The snapshot the widgets and the icon badge read: the active context's roster only.
+            if storage.id == SharedStore.activeContext.id {
+                storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
+                BotsWidgetFeed.update(roster, scope: storage.id)
+                IconBadge.show(IconBadge.settled(behind: accounts?.computersBehind ?? [], in: storage))
+            }
             if roster.isEmpty {
                 LiveActivities.shared.endAll()
                 WidgetCenter.shared.reloadAllTimelines()
@@ -414,7 +421,7 @@ private final class BackgroundTime {
     }
 }
 
-/// Keeps the Bots widget's snapshot current; asks WidgetKit to redraw only when
+/// Asks WidgetKit to redraw the Bots widget (from the snapshot in `SharedStore`) only when
 /// something the widget shows changes (who is working / needs you / unread).
 @MainActor
 enum BotsWidgetFeed {
@@ -440,10 +447,7 @@ enum BotsWidgetFeed {
 
     static func reset() { shown = nil; scope = nil }
 
-    static func update(_ roster: [RosterItem], storage: SharedStore.Context) {
-        guard storage.id == SharedStore.activeContext.id else { return }
-        storage.bots = roster.map { BotSnapshot(computerId: $0.ref.computerId, bot: $0.bot) }
-        let currentScope = storage.id
+    static func update(_ roster: [RosterItem], scope currentScope: String) {
         let signature = roster.filter { !$0.bot.hidden }.map { Snapshot($0.bot, computerId: $0.ref.computerId) }
         guard signature != shown || scope != currentScope else { return }
         shown = signature

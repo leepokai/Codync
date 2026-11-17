@@ -32,8 +32,8 @@ public struct ThreadView: View {
     @State var find: ConversationFind?
     /// Bumped to bring the shown match's message into view (a new text, a step).
     @State var findReveal = 0
-    /// The card last brought into view from the bot's details.
-    @State var cardReveal: ConversationReveal?
+    /// The card last brought into view from the bot's details, or the message a tapped quote quotes.
+    @State var revealed: ConversationReveal?
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     var bot: Bot? { model.bots[botId] }
@@ -44,7 +44,8 @@ public struct ThreadView: View {
     private var chat: some View {
         let items = chatItems
         let matches = find.map { ConversationFind.matches(in: Self.findable(items), query: $0.query) } ?? []
-        let shown = find?.index(in: matches).map { matches[$0] }
+        // A card or quote brought into view since find's last step is what the chat shows, without find's match.
+        let shown = revealed?.step == findReveal ? nil : find?.index(in: matches).map { matches[$0] }
         return transcript(items, shown: shown)
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {
@@ -111,7 +112,7 @@ public struct ThreadView: View {
 
     func openFind() {
         guard find == nil else { return }
-        cardReveal = nil
+        revealed = nil
         Analytics.shared.capture(.conversationFindOpened)
         withAnimation(Motion.reduced(Motion.layout, reduceMotion)) { find = ConversationFind() }
     }
@@ -141,6 +142,9 @@ public struct ThreadView: View {
             .onChange(of: model.cardRequest?.item.id, initial: true) { _, _ in
                 if let item = model.takeCardRequest(for: botId) { showCard(item) }
             }
+            .onChange(of: model.threadRequest?.item.id, initial: true) { _, _ in
+                if let item = model.takeThreadRequest(for: botId) { details = DetailsRequest(thread: item) }
+            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -161,7 +165,9 @@ public struct ThreadView: View {
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
             .codyncSheet(item: $details) { request in
                 // A card is in this chat: another bot's details (a group member's) have none to go to.
-                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: (request.botId ?? botId) == botId ? { showCard($0) } : nil) { artifact in
+                let own = (request.botId ?? botId) == botId
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil,
+                               openInChat: own ? { showInChat($0.id) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -177,9 +183,35 @@ public struct ThreadView: View {
         details = nil
         Task {
             guard let card = await model.card(for: item, in: botId) else { return }
-            findReveal += 1
-            cardReveal = ConversationReveal(id: card.id, step: findReveal)
+            reveal(card.id)
         }
+    }
+
+    /// Brings the row `id` into view, once.
+    private func reveal(_ id: String) {
+        findReveal += 1
+        revealed = ConversationReveal(id: id, step: findReveal)
+    }
+
+    /// A quote's tap: brings the quoted message into view (a user row is keyed by its nonce, not the entry id).
+    /// ponytail: only among the loaded messages, like a card; page back until it is found if `quote_opened`
+    /// shows `found: false` often.
+    private func showQuoted(_ id: String) {
+        let shown = rowId(of: id)
+        Analytics.shared.capture(.quoteOpened(found: shown != nil))
+        if let shown { reveal(shown) }
+    }
+
+    /// Closes the details over the chat and brings the entry `id` into view: what an item's thread says its task put
+    /// here. Only among the loaded messages, like a quote.
+    private func showInChat(_ id: String) {
+        details = nil
+        if let shown = rowId(of: id) { reveal(shown) }
+    }
+
+    /// The chat's row that shows the entry `id`.
+    private func rowId(of id: String) -> String? {
+        chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }?.id
     }
 
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.
@@ -213,7 +245,8 @@ public struct ThreadView: View {
                         // In a group, the bot whose agent failed.
                         addFallback: { details = .fallbacks(of: e.data.author ?? e.botId) },
                         openArtifact: { openArtifact = ArtifactTarget(botId: e.botId, id: $0.id, title: $0.title) },
-                        openCall: { openCall = e })
+                        openCall: { openCall = e },
+                        openQuote: { showQuoted($0) })
                     .equatable()
             }
         }
@@ -483,7 +516,7 @@ extension ThreadView {
             })
         }
         // Pull to refresh reconnects, like Reconnect in the computer menu, until the link is back.
-        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? cardReveal
+        let reveal = shown.map { ConversationReveal(id: $0.id, step: findReveal) } ?? revealed
         return ConversationList(rows: rows, following: $following, reveal: reveal, nearTop: { showEarlier() }, refresh: {
             model.restartStream()
             _ = try? await model.ready()

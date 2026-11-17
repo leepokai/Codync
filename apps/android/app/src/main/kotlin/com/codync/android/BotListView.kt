@@ -91,6 +91,8 @@ private class ComputerRoster(private val context: Context, val key: String) {
 @Composable internal fun BotListView(app: AccountContext, states: List<AppState>, accounts: AccountStore, account: () -> Unit, manage: () -> Unit,
     newBot: (String) -> Unit, newGroup: (String) -> Unit, edit: (String, Bot) -> Unit, extensions: (String) -> Unit, bottomInset: Dp) {
     var confirmDelete by remember { mutableStateOf<Pair<String, Bot>?>(null) }
+    // A bot whose agent starts over with a fresh context, once confirmed.
+    var confirmNewSession by remember { mutableStateOf<Pair<String, Bot>?>(null) }
     var naming by remember { mutableStateOf<Naming?>(null) }
     val context = LocalContext.current
     var folded by remember { mutableStateOf(FoldedSections.load(context)) }
@@ -178,7 +180,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
                     rename = { name -> naming = Naming("Rename section", name) { renameSection(roster, store, name, it) } },
                     remove = { name -> renameSection(roster, store, name, null) },
                     newSection = { bot -> naming = Naming("New section", "") { store.setSection(bot.id, it) } },
-                    edit = { bot -> edit(id, bot) }, delete = { bot -> confirmDelete = id to bot }))
+                    edit = { bot -> edit(id, bot) }, newSession = { bot -> confirmNewSession = id to bot }, delete = { bot -> confirmDelete = id to bot }))
             }
         }
         }
@@ -191,6 +193,11 @@ private class ComputerRoster(private val context: Context, val key: String) {
         })
     }
     AllWorkSheet(workOpen, work.bots, grouped, accounts) { workOpen = false }
+    CodyncDialog("Start a new session?", confirmNewSession != null, { confirmNewSession = null },
+        message = "The conversation stays here, but the agent starts with a fresh context.") {
+        // Taken now: the dialog dismisses (clearing it) before it runs the action.
+        listOfNotNull(confirmNewSession?.let { (id, bot) -> DialogAction("New session") { accounts.store(id)?.newSession(bot) } })
+    }
     NameDialog(naming, "Section name", { naming = null }, ::limitSectionName, ::sectionName)
 }
 
@@ -209,7 +216,7 @@ private class ComputerRoster(private val context: Context, val key: String) {
 
 /** What a computer's rows and section headings ask of the roster. */
 private class RosterActions(val toggleSection: (String) -> Unit, val rename: (String) -> Unit, val remove: (String) -> Unit,
-    val newSection: (Bot) -> Unit, val edit: (Bot) -> Unit, val delete: (Bot) -> Unit)
+    val newSection: (Bot) -> Unit, val edit: (Bot) -> Unit, val newSession: (Bot) -> Unit, val delete: (Bot) -> Unit)
 
 /** One computer's bots: pinned ones, then each section's heading with its bots (none while folded), then the bots in no section. */
 private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: ComputerRoster, folded: Set<String>, grouped: Boolean,
@@ -237,8 +244,7 @@ private fun LazyListScope.botLines(state: AppState, store: AppStore, roster: Com
                 Box(Modifier.onSizeChanged { reorder.heights[bot.id] = it.height }
                     .then(if (lifted) Modifier.zIndex(1f).graphicsLayer { translationY = reorder.offset; scaleX = 1.02f; scaleY = 1.02f }
                         else Modifier.animateItem())) {
-                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, edit = { actions.edit(bot) },
-                        delete = { actions.delete(bot) }, newSection = { actions.newSection(bot) })
+                    BotRowItem(bot, state, store, reorder.handle(bot.id) { store.reorder(it) }, sections, grouped, agent, actions)
                 }
             }
         }
@@ -305,7 +311,7 @@ internal fun moved(roster: List<Bot>, id: String, offset: Int): List<String>? {
 private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section == other.section)
 
 @Composable private fun BotRowItem(bot: Bot, state: AppState, store: AppStore, drag: ContextDrag, sections: List<String>, grouped: Boolean,
-    agent: AgentMark?, edit: () -> Unit, delete: () -> Unit, newSection: () -> Unit) {
+    agent: AgentMark?, actions: RosterActions) {
     Box(Modifier.fillMaxWidth().contextActions(onClick = { store.openBot(bot.id) }, reorder = drag, preview = {
         Box(Modifier.padding(horizontal = 8.dp)) { BotRow(bot, state, agent) }
     }) {
@@ -313,12 +319,14 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             MenuItem(if (bot.pinned) "Unpin" else "Pin", icon = if (bot.pinned) "pin.slash" else "pin") {
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("pinned", !bot.pinned) }, "roster:" + bot.id)
             },
-            if (state.supportsSections) sectionMenu(bot, sections, { store.setSection(bot.id, it) }, newSection) else null,
-            if (bot.kind == "group") MenuItem("Edit group", icon = "person.2", action = edit)
-            else MenuItem("Edit profile", icon = "pencil", action = edit),
+            if (state.supportsSections) sectionMenu(bot, sections, { store.setSection(bot.id, it) }, { actions.newSection(bot) }) else null,
+            if (bot.kind == "group") MenuItem("Edit group", icon = "person.2") { actions.edit(bot) }
+            else MenuItem("Edit profile", icon = "pencil") { actions.edit(bot) },
             MenuItem("Mark as read", icon = "checkmark.message") {
                 store.command("markRead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
             },
+            // A group has no agent session of its own.
+            MenuItem("New session", icon = "arrow.counterclockwise") { actions.newSession(bot) }.takeIf { bot.kind != "group" },
             MenuItem("Make lead agent", icon = "star") {
                 store.command("setLead", buildJsonObject { put("botId", bot.id) }, "roster:" + bot.id)
             }.takeIf { !bot.lead && bot.kind != "group" && state.supportsLeadChoice },
@@ -327,7 +335,7 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
                 store.command("updateBot", buildJsonObject { put("id", bot.id); put("hidden", true) }, "roster:" + bot.id)
             }.takeUnless { bot.lead },
             // An older computer keeps its lead.
-            MenuItem("Delete", icon = "trash", destructive = true, action = delete).takeIf { !bot.lead || state.supportsLeadChoice },
+            MenuItem("Delete", icon = "trash", destructive = true) { actions.delete(bot) }.takeIf { !bot.lead || state.supportsLeadChoice },
         )
     }.semantics {
         // With several computers, which one it's on.
@@ -361,17 +369,18 @@ private fun Bot.movesWith(other: Bot) = band == other.band && (pinned || section
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) { Preview(bot, state) }
-                if (bot.unread > 0) UnreadBadge(bot.unread)
+                if (bot.unread > 0) UnreadBadge(bot.unread, waiting = bot.waiting > 0)
             }
         }
     }
 }
 
-/** A count of unread messages in the accent capsule (a row, a folded section). */
-@Composable internal fun UnreadBadge(count: Int) {
-    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(Palette.accentFill)
+/** A count of unread messages in the accent capsule (a row, a folded section). [waiting]: it counts a card waiting on
+ *  the user, so it takes the needs-you colour of the avatar badge (iOS `UnreadBadge`). */
+@Composable internal fun UnreadBadge(count: Int, waiting: Boolean) {
+    Box(Modifier.height(18.dp).widthIn(min = 18.dp).clip(Capsule()).background(if (waiting) Palette.warning else Palette.accentFill)
         .padding(horizontal = 6.dp).semantics { contentDescription = "$count unread" }, contentAlignment = Alignment.Center) {
-        Text("$count", style = Type.caption2.bold, color = Palette.onAccent)
+        Text("$count", style = Type.caption2.bold, color = if (waiting) Palette.onWarning else Palette.onAccent)
     }
 }
 

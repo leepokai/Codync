@@ -4,6 +4,13 @@ import Testing
 
 private func bot(_ json: String) throws -> Bot { try JSONDecoder().decode(Bot.self, from: Data(json.utf8)) }
 
+private extension Bot {
+    /// The banner as English reads it: the phrase with its names put in.
+    func stepBanner(_ name: (AgentLogin, Bool) -> String) -> String? {
+        stepBannerPhrase(name: name).map { L10n.fill($0.key, $0.values) }
+    }
+}
+
 private func updateBody(_ draft: BotDraft) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(BotUpdate(draft: draft))) as? [String: Any])
 }
@@ -115,10 +122,10 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
         login.backend + (login.loginProfile.map { " (\($0))" } ?? (own ? " (Default login profile)" : ""))
     }
     let onProfile = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"claude","loginProfile":"Work","since":1}}"#)
-    #expect(onProfile.stepBanner(name: name) == "Using claude (Work) while claude (Default login profile) can't answer")
+    #expect(onProfile.stepBanner(name) == "Using claude (Work) while claude (Default login profile) can't answer")
     let onCodex = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}}"#)
-    #expect(onCodex.stepBanner(name: name) == "Using codex while claude can't answer")
-    #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name: name) == nil)
+    #expect(onCodex.stepBanner(name) == "Using codex while claude can't answer")
+    #expect(try bot(#"{"id":"b","backend":"claude"}"#).stepBanner(name) == nil)
 }
 
 @Test func onlyAUsageLimitGivesTheBannerAResetTime() throws {
@@ -128,11 +135,45 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
         try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1},"resting":[{"agent":"claude","until":\#(soon),"reason":"\#(reason)"}]}"#)
     }
     let clock = RelativeTime.clock(Date(milliseconds: soon))
-    #expect(try resting("usageLimit").stepBanner(name: name) == "Using codex until claude resets at \(clock)")
+    #expect(try resting("usageLimit").stepBanner(name) == "Using codex until claude resets at \(clock)")
     for reason in ["signedOut", "rateLimited", "outOfCredits", "overloaded", "notStarting"] {
-        #expect(try resting(reason).stepBanner(name: name)?.contains("resets") == false, "\(reason)")
+        #expect(try resting(reason).stepBanner(name)?.contains("resets") == false, "\(reason)")
     }
-    #expect(try resting("signedOut").stepBanner(name: name) == "Using codex while claude is signed out")
+    #expect(try resting("signedOut").stepBanner(name) == "Using codex while claude is signed out")
+}
+
+@Test func everyBannerTheHostCanCauseIsTranslated() throws {
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    // The reasons `rest::record` rests an agent for, and none; a missing model or mode never rests one.
+    for reason in [nil, "usageLimit", "outOfCredits", "rateLimited", "overloaded", "signedOut", "notStarting"] {
+        let rest = reason.map { #","resting":[{"agent":"claude","until":\#(soon),"reason":"\#($0)"}]"# } ?? ""
+        let b = try bot(#"{"id":"b","backend":"claude","agentStep":{"step":1,"agent":"codex","since":1}\#(rest)}"#)
+        let key = try #require(b.stepBannerPhrase { login, _ in login.backend }).key
+        #expect(L10n.tr(key, preference: .zhHant) != key, "\(reason ?? "none")")
+        // A rest line goes through the catalog's "{time}" templates: a reworded line or key falls back to English.
+        if reason != nil {
+            let line = try #require(b.rest(of: b.login)).line
+            #expect(L10n.tr(line, preference: .zhHant) != line, "\(reason ?? "")")
+        }
+    }
+    #expect(L10n.fill(L10n.tr("Using {to} while {own} is signed out", preference: .zhHant), ["to": "Codex", "own": "Kimi Code"])
+        == "正在使用 Codex，Kimi Code 已登出")
+}
+
+@Test func aLoginProfileNameHoldingWhileStaysOneName() throws {
+    let name: (AgentLogin, Bool) -> String = { login, own in
+        login.backend + (login.loginProfile.map { " (\($0))" } ?? (own ? " (Default login profile)" : ""))
+    }
+    let soon = Int64(Date.now.addingTimeInterval(3600).timeIntervalSince1970 * 1000)
+    let signingOut = try bot("""
+    {"id":"b","backend":"claude","loginProfile":"Work while traveling","agentStep":{"step":1,"agent":"codex","since":1},
+     "resting":[{"agent":"claude","loginProfile":"Work while traveling","until":\(soon),"reason":"signedOut"}]}
+    """)
+    let phrase = try #require(signingOut.stepBannerPhrase(name: name))
+    // The phrase keeps its slot, and the whole name is one value: translating the phrase never sees the name.
+    #expect(phrase.key == "Using {to} while {own} is signed out")
+    #expect(phrase.values == ["to": "codex", "own": "claude (Work while traveling)"])
+    #expect(L10n.fill(phrase.key, phrase.values) == "Using codex while claude (Work while traveling) is signed out")
 }
 
 @Test func freeLoginsAreTheDefaultAndSignedInLoginProfilesTheChainLacks() throws {
@@ -144,6 +185,24 @@ private let claudeJSON = #"{"id":"claude","name":"Claude Code","available":true,
     #expect(claude.freeLogins(taken: taken + [AgentLogin(backend: "claude", loginProfile: "a3")]).isEmpty)
     let plain = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
     #expect(plain.freeLogins(taken: []) == [nil] && plain.freeLogins(taken: [AgentLogin(backend: "codex")]).isEmpty)
+}
+
+@Test func aStepPickedInPlaceGetsItsOwnBackOnItsOwnAgent() throws {
+    let claude = try JSONDecoder().decode(Backend.self, from: Data(claudeJSON.utf8))
+    let codex = try JSONDecoder().decode(Backend.self, from: Data(#"{"id":"codex","name":"Codex","available":true,"command":"codex","installHint":""}"#.utf8))
+    let taken = [AgentLogin(backend: "claude"), AgentLogin(backend: "codex")]
+    #expect(BotFallback.on(claude, taken: taken) == BotFallback(backend: "claude", loginProfile: "a1"))
+    let own = BotFallback(backend: "claude", loginProfile: "a2", model: "opus", modelOptions: ["effort": "high"])
+    #expect(BotFallback.on(claude, taken: taken, own: own) == own, "back on its own agent, its model and login come back")
+    #expect(BotFallback.on(claude, taken: taken + [own.login], own: own).loginProfile == "a1", "unless another step has its login now")
+    // Its signed-out login stays a choice, and so does its agent.
+    #expect(claude.logins(for: own.login, taken: taken) == ["a1", "a3", "a2"])
+    let full = taken + [AgentLogin(backend: "claude", loginProfile: "a1"), AgentLogin(backend: "claude", loginProfile: "a3")]
+    #expect([claude, codex].usable(taken: full).isEmpty)
+    #expect([claude, codex].usable(taken: full, keeping: [own.login]).map(\.id) == ["claude"])
+    // Its remembered login is gone once another step has it and no other is free: picking that agent would land on the
+    // bot's own login.
+    #expect([claude, codex].usable(taken: full + [own.login], keeping: [own.login]).isEmpty)
 }
 
 @Test func switchingAgentKeepsItsStepsOnOtherLoginProfiles() {

@@ -165,6 +165,10 @@ internal sealed class AnalyticsEvent(val name: String) {
     data class ConversationFindSearched(val found: Boolean) : AnalyticsEvent("conversation_find_searched") {
         override val properties get() = mapOf("found" to JsonPrimitive(found))
     }
+    /** A quote at the top of a message was tapped: whether the quoted message was loaded and came into view (iOS `quoteOpened`). */
+    data class QuoteOpened(val found: Boolean) : AnalyticsEvent("quote_opened") {
+        override val properties get() = mapOf("found" to JsonPrimitive(found))
+    }
 }
 
 /** One of a property's catalog values, as sent. */
@@ -309,7 +313,7 @@ internal enum class PhoneSetting(override val wire: String) : CatalogValue { Pus
 /** What an outbound link leads to (`install_command`: an install command copied; `install_link`: the website link copied). */
 internal enum class OutboundLink(override val wire: String) : CatalogValue {
     Github("github"), Issues("issues"), AppStore("app_store"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
-    InstallLink("install_link"), WhatsNewFilm("whats_new_film"),
+    InstallLink("install_link"), WhatsNewFilm("whats_new_film"), Docs("docs"),
 }
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }

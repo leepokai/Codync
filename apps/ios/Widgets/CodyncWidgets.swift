@@ -734,8 +734,8 @@ struct WorkingBotFace: View {
     }
 }
 
-/// The thinking orb, orbiting in the Dynamic Island the same way: its faint orbit trails and
-/// its moving dots, one frame a second, in step with the working bot's face.
+/// The thinking orb, turning in the Dynamic Island the same way: its halftone grain and its
+/// inked dots, one frame a second, in step with the working bot's face.
 struct WorkingOrb: View {
     let since: Date
     let color: Color
@@ -743,7 +743,7 @@ struct WorkingOrb: View {
 
     var body: some View {
         ZStack {
-            TimerFrames(font: "CodyncOrb-Ghost", since: since, size: size).foregroundStyle(color.opacity(0.25))
+            TimerFrames(font: "CodyncOrb-Ghost", since: since, size: size).foregroundStyle(color.opacity(0.5))
             TimerFrames(font: "CodyncOrb-Dot", since: since, size: size).foregroundStyle(color)
         }
     }

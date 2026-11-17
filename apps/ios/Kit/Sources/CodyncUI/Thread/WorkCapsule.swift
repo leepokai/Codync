@@ -31,7 +31,8 @@ struct WorkCapsule: View {
                             .foregroundStyle(Palette.tertiary)
                     }
                 }
-                .frame(minHeight: 36)
+                // As wide as the composer under it: the words start at the left, Stop sits at the right.
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(PressScale())
@@ -46,7 +47,6 @@ struct WorkCapsule: View {
         .padding(.leading, 14)
         .padding(.trailing, work.stoppable == nil ? 14 : 2)
         .glass(in: Capsule())
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .stopWorkDialog(isPresented: $confirmingStop) {
             if let stopping { model.stopWork(botId, item: stopping) }

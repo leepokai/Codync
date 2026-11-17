@@ -131,7 +131,8 @@ impl Inner {
             None => return refuse(format!("{} has no agent called {}", name(&self.me()), envelope.to)),
         };
         // Only the app can hold an agent to a ceiling: a session the network knocks on acts as it likes.
-        if access.is_ceiling() && !answers && reach != Reach::App {
+        // An answer too: it is text from that computer like a request.
+        if access.is_ceiling() && reach != Reach::App {
             return refuse(format!(
                 "{} can't be held to asking its user, so it doesn't take messages from {}@{}",
                 envelope.to,

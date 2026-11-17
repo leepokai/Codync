@@ -5,7 +5,7 @@ import { orderedSections, renamedSectionOrder } from './roster-section-order.ts'
 import { rosterGroups, rosterLines, shownRows } from './roster-sections.ts'
 
 test('whole sections move both ways across Bots while pinned rows stay first and navigation follows', () => {
-  const item = (id: string, section?: string, pinned = false) => ({ bot: { id, section, pinned, unread: 0 } })
+  const item = (id: string, section?: string, pinned = false) => ({ bot: { id, section, pinned, unread: 0, waiting: 0 } })
   const items = [item('pin', 'Work', true), item('a', 'Work'), item('b', 'Work'), item('loose')]
   const order = moveInOrder(['Work', ''], 'Work', '')
   assert.deepEqual(shownRows(rosterLines(items, [], order)).map((i) => i.bot.id), ['pin', 'loose', 'a', 'b'])
@@ -25,7 +25,7 @@ test('renaming keeps position and merging keeps the destination position', () =>
 })
 
 test('merge into a newly created group keeps the destination in its displayed position', () => {
-  const bots = [{ section: 'Work' }, {}, { section: 'Home' }].map((bot) => ({ bot: { ...bot, pinned: false, unread: 0 } }))
+  const bots = [{ section: 'Work' }, {}, { section: 'Home' }].map((bot) => ({ bot: { ...bot, pinned: false, unread: 0, waiting: 0 } }))
   const displayed = rosterGroups(bots, [], ['Work', '']).map((group) => group.name)
   assert.deepEqual(renamedSectionOrder(displayed, 'Work', 'Home'), ['', 'Home'])
 })

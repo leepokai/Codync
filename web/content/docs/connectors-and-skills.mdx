@@ -75,8 +75,9 @@ The cards themselves hold no credentials. You can answer them in the iPhone app,
 - Your phone sends values to the computer over its end-to-end encrypted connection. Lists in the apps show only whether a value is set.
 - Bots reach connectors through Codync on the computer, which adds the saved values when the connector runs, so the values aren't handed to the agent. This isn't a sandbox: programs running as your user on that computer, including the agent's own shell commands, aren't kept away from them.
 - Credentials don't sync between computers. A copy of Codync's data moved to another machine can't decrypt them, so back up the system keychain along with it.
+- If they can't be read anymore (bots say *the key to this computer's saved credentials is missing*, as after moving to a new computer without the old keychain), open Codync's **Settings → Computers** on that computer and, under **Reset** at the bottom, choose **Reset** next to **Saved credentials** and confirm twice, or run **Reset saved credentials…** from the terminal app's command palette. It deletes the keys, connectors, connected apps, voice keys and saved logins Codync kept there; enter them again afterwards. Agents signed in on their own stay signed in.
 
-**Extensions → Credentials** shows where values are stored, lets you replace a connection's saved values (they stay hidden), and connects 1Password: paste a service account token and use `op://vault/item/field` references in any credential field. Give that service account access to one dedicated vault only. The 1Password CLI must be installed on the computer.
+**Extensions → Credentials** shows where values are stored, lets you replace a connection's saved values (they stay hidden; bots that use the connection switch to the new values on their next turn and carry on with the conversation), and connects 1Password: paste a service account token and use `op://vault/item/field` references in any credential field. Give that service account access to one dedicated vault only. The 1Password CLI must be installed on the computer.
 
 ## Turn connectors and skills on or off per bot
 

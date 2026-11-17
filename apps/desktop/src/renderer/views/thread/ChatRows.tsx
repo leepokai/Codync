@@ -10,6 +10,7 @@ import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { messagePreview } from '../../lib/message-preview'
 import { useTr } from '../../lib/use-language'
+import { analytics } from '../../store/analytics'
 import { avatarColor } from '../../lib/theme'
 import { useStore as useLiveStore, useStoreRef as useStore } from '../../store/context'
 import { QUICK_REACTIONS, type BotStore } from '../../store/bot-store'
@@ -33,7 +34,8 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   entry: Entry
   groupStart: boolean
   chat: Bot | null
-  openTrace: () => void
+  /** Opens what the bot did for a message; absent where a card is shown outside the chat. */
+  openTrace?: () => void
   /** Quotes this message in the composer, or the part of it that is selected; absent where the computer can't take replies. */
   onReply?: (quote: ReplyQuote) => void
   /** Opens a bot's Agent settings (a failure notice's "Add a fallback"). */
@@ -47,14 +49,14 @@ export const ChatRow = memo(function ChatRow({ entry, groupStart, chat, openTrac
   switch (entry.kind) {
     case 'user':
       return (
-        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-end" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           <UserBubble entry={entry} reply={reply} />
           <ReactionsRow entry={entry} />
         </VStack>
       )
     case 'agent':
       return (
-        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep}>
+        <VStack align="flex-start" gap={4} className={groupStart ? 'chat-row group-start' : 'chat-row'} onPointerDownCapture={selected.keep} onFocus={selected.keepFocused}>
           {chat && isGroup(chat) && groupStart ? <AuthorLabel botId={entry.data.author} /> : null}
           <AgentBubble entry={entry} openTrace={openTrace} reply={reply} openArtifact={openArtifact} />
           <VStack gap={4} className={chat && isGroup(chat) ? 'chat-row-indent' : undefined}>
@@ -109,14 +111,44 @@ export function AuthorLabel({ botId, name }: { botId?: string | null; name?: str
   )
 }
 
-/** The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying. */
-export function QuoteRow({ quote, className }: { quote: ReplyQuote; className?: string }) {
+/**
+ * The message a reply quotes, as its first line without Markdown markers: at the top of its bubble, and in the composer while replying.
+ * In a bubble (`jumps`) a click brings the quoted message into view.
+ */
+export function QuoteRow({ quote, className, jumps = false }: { quote: ReplyQuote; className?: string; jumps?: boolean }) {
+  const tr = useTr()
+  const jump = (from: HTMLElement) => analytics.track({ event: 'quote_opened', found: showMessage(from, quote.id) })
+  const press = jumps
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        title: tr('Show the quoted message'),
+        onClick: (e: React.MouseEvent<HTMLDivElement>) => jump(e.currentTarget),
+        onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          jump(e.currentTarget)
+        },
+      }
+    : {}
   return (
-    <HStack gap={6} className={className ?? 'bubble-quote'}>
+    <HStack gap={6} className={className ?? 'bubble-quote'} {...press}>
       <Icon name="text.bubble" size={12} color="var(--secondary)" />
       <Text size="footnote" tone="secondary" truncate grow>{`“${messagePreview(quote.text)}”`}</Text>
     </HStack>
   )
+}
+
+/**
+ * Scrolls the message `id` of the transcript around `from` to the middle; false when it isn't there.
+ * At once, like a find match: a smooth scroll stops short when it reaches the top, where earlier messages load.
+ * ponytail: only among the loaded messages, like a needs-you card; load older pages until it is found if
+ * quotes of long-gone messages turn out common (`quote_opened` with `found: false`).
+ */
+function showMessage(from: HTMLElement, id: string): boolean {
+  const row = from.closest('[data-find-root]')?.querySelector(`[data-entry-id="${CSS.escape(id)}"]`)
+  row?.scrollIntoView({ block: 'center' })
+  return !!row
 }
 
 /** A message's text with a right-click menu (with quick reactions on top). */
@@ -159,7 +191,7 @@ export function UserBubble({ entry, reply }: { entry: Entry; reply?: () => void 
               ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
             ]}
           >
-            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} /> : null}
+            {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} jumps /> : null}
             <span data-find-text>{entry.data.text}</span>
           </Bubble>
         ) : null}
@@ -192,20 +224,24 @@ function UserStatus({ entry, hovering }: { entry: Entry; hovering: boolean }) {
   }
 }
 
-export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: Entry; openTrace: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void }) {
+/** `plain` is a message read outside its chat (a task's reply in its thread): only Copy and a file's own actions, no
+ * reactions, Reply or what it did. */
+export function AgentBubble({ entry, openTrace, reply, openArtifact, plain = false }: { entry: Entry; openTrace?: () => void; reply?: () => void; openArtifact?: (artifactId: string) => void; plain?: boolean }) {
   const store = useStore()
   const [hovering, setHovering] = useState(false)
   const voiceNote = voiceNoteOf(entry.data)
-  const reactions = reactionPick(store, entry)
+  const reactions = plain ? undefined : reactionPick(store, entry)
   const rest = (): MenuItem[] => [
     ...(reply ? [{ title: 'Reply', icon: 'arrowshape.turn.up.left', action: reply }] : []),
-    { title: 'Show what it did', icon: 'list.bullet', action: openTrace },
+    ...(openTrace ? [{ title: 'Show what it did', icon: 'list.bullet', action: openTrace }] : []),
   ]
   // A shared picture or voice note has the same menu as the bubble: reactions, Reply and what it did, its own items in place of Copy.
   const menu: MessageMenu = { items: rest, reactions }
   const download = (file: SharedFile) => downloadItem(store.fileDownloads.states.get(file.id), () => store.fileDownloads.toggle(store.client, entry.id, file))
   return (
     <div className="message agent" title={fullDate.format(entry.createdAt)} onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      {/* The message the bot answers (`reply_to`), above its bubble. */}
+      {entry.data.replyTo ? <QuoteRow quote={entry.data.replyTo} className="bubble-quote agent-quote" jumps /> : null}
       <div className="message-body">
         <Bubble
           className={!voiceNote && (entry.data.files?.length || entry.data.artifact) ? 'file-message' : 'bubble agent'}
@@ -225,7 +261,7 @@ export function AgentBubble({ entry, openTrace, reply, openArtifact }: { entry: 
             <MarkdownText text={entry.data.text ?? ''} findable />
           )}
         </Bubble>
-        <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} />
+        {reactions ? <MessageActions className="trailing" visible={hovering} reactions={reactions} reply={reply} trace={openTrace} copy={messageCopyItems(store, entry)} /> : null}
       </div>
       <TaskLine entry={entry} />
     </div>
@@ -250,6 +286,7 @@ export function NoticeRow({ entry, addFallback }: { entry: Entry; addFallback?: 
           <Icon name="exclamationmark.triangle.fill" size={10} color="var(--danger)" />
           <VStack gap={10} align="flex-start">
             <Text size="footnote" tone="text" className="selectable">{text}</Text>
+            <TaskLine entry={entry} />
             {addFallback ? <Button kind="secondary" onClick={addFallback}>{tr('Add a fallback')}</Button> : null}
           </VStack>
         </HStack>

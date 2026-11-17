@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 /// Methods that stand for one event with one fixed property.
-const FIXED: [(&str, Event, &str, &str); 14] = [
+const FIXED: [(&str, Event, &str, &str); 15] = [
     ("editHandoff", Event::HandoffAnswered, "action", "edit"),
     ("keepConversation", Event::HandoffAnswered, "action", "keep"),
     ("credentialSaveLogin", Event::CredentialSaved, "kind", "login"),
@@ -20,6 +20,7 @@ const FIXED: [(&str, Event, &str, &str); 14] = [
     ("setComposioKey", Event::CredentialSaved, "kind", "composio"),
     ("setVoiceKey", Event::CredentialSaved, "kind", "voice"),
     ("setAgentEnv", Event::CredentialSaved, "kind", "agent_env"),
+    ("resetCredentials", Event::CredentialsReset, "outcome", "done"),
     // Never the computer's name, the invite or the recovery code.
     ("networkInvite", Event::NetworkChanged, "action", "invite"),
     ("networkPromote", Event::NetworkChanged, "action", "promote"),
@@ -120,6 +121,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
             Event::SectionRenamed
         }
         "deleteBot" => Event::BotDeleted,
+        // To an item's thread: what came of it is the answer's to say (`answered`). Never the text.
+        "send" if b["itemId"].is_string() => Event::WorkMessaged,
+        // Send now and Remove on a message that waits in an item's thread.
+        "steer" | "unqueue" if b["itemId"].is_string() => {
+            p.insert("how".into(), (if method == "steer" { "sendNow" } else { "remove" }).into());
+            p.insert("by".into(), "user".into());
+            Event::WorkSteered
+        }
         "send" => {
             let reply = b["replyTo"].as_str().is_some_and(|t| !t.is_empty());
             p.insert("reply".into(), reply.into());
@@ -196,6 +205,14 @@ fn call_event(method: &str, b: &Value, p: &mut Map<String, Value>) -> Option<Eve
         }
         // A bot's `send_file` with text: a voice note inside its message; never the file or the text.
         "chatCall" if b["name"] == "send_file" && b["arguments"]["text"].is_string() => Event::VoiceNoteSent,
+        // A bot's message quoting another (`reply_to`; a quoted voice note counts as the voice note); never the id.
+        "chatCall"
+            if matches!(b["name"].as_str(), Some("send_message" | "send_file"))
+                && crate::chat::outbox::reply_to(&b["arguments"]).is_some() =>
+        {
+            p.insert("tool".into(), (if b["name"] == "send_file" { "file" } else { "message" }).into());
+            Event::BotQuoted
+        }
         "agentSetup" | "agentAuthenticate" | "agentAuth" => {
             // Checking the computer's own login is no event; a login profile's check is its sign-in (`answered`).
             let on_profile = b["loginProfile"].is_string();
@@ -308,12 +325,24 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
                 p.insert(key.into(), answer[key].as_array().map_or(0, Vec::len).into());
             }
         }
-        // A routine run, a room or a bot request gets no card (`card` says why).
+        // A room or a bot request gets no card (`card` says why).
         Event::ArtifactPublished => {
             p.insert("card".into(), answer["card"].is_null().into());
         }
         Event::ConnectorUpdated => {
             p.insert("outcome".into(), if answer["verify"].is_null() { "saved" } else { "ready" }.into());
+        }
+        // An id it couldn't quote: the message went out without the quote.
+        Event::BotQuoted => {
+            p.insert("outcome".into(), if answer["warning"].is_null() { "quoted" } else { "unquoted" }.into());
+        }
+        // A message sent before (the same `clientNonce`) is not a new one.
+        Event::WorkMessaged if answer["reopened"].is_null() => return None,
+        Event::WorkMessaged => {
+            p.insert("outcome".into(), "sent".into());
+            for key in ["reopened", "queued"] {
+                p.insert(key.into(), answer[key].clone());
+            }
         }
         // A follow-up that began or was cancelled before the user's ✕ arrived: nothing was dropped.
         Event::FollowUpCancelled if answer["gone"] == true => return None,
@@ -330,13 +359,19 @@ pub fn answered(event: Event, mut p: Map<String, Value>, answer: &Value) -> Opti
 }
 
 /// What a failed call reports: a `network*` call's failure keeps what it was (`via` or
-/// `action`) as `network_failed` with `stage` `action`, and a connector edit, a login profile and a voice
-/// server report their category, never the message; other failures report nothing.
+/// `action`) as `network_failed` with `stage` `action`, a connector edit, a login profile, a voice server and a
+/// message to an item's thread report their category and a credentials reset `other`, never the message; other
+/// failures report nothing.
 pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) -> Option<(Event, Map<String, Value>)> {
     match event {
         Event::NetworkJoined | Event::NetworkChanged => {
             p.insert("stage".into(), "action".into());
             Some((Event::NetworkFailed, p))
+        }
+        Event::CredentialsReset => {
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), "other".into());
+            Some((event, p))
         }
         // `in_use`: removing a login profile bots still run on. `unsupported`: an account for an agent that keeps
         // one sign-in.
@@ -350,6 +385,14 @@ pub fn failed(event: Event, mut p: Map<String, Value>, error: &anyhow::Error) ->
         Event::ConnectorUpdated => {
             let category =
                 error.downcast_ref::<crate::market::connector_update::EditFailed>().map_or("other", |e| e.category());
+            p.insert("outcome".into(), "failed".into());
+            p.insert("error".into(), category.into());
+            Some((event, p))
+        }
+        // `read_only`: a routine's run or another bot's request. `not_started`, `gone`: no task to write to.
+        // `text_only`: files, a quote or a call.
+        Event::WorkMessaged => {
+            let category = error.downcast_ref::<crate::chat::tasks::ThreadRefused>().map_or("other", |e| e.category);
             p.insert("outcome".into(), "failed".into());
             p.insert("error".into(), category.into());
             Some((event, p))

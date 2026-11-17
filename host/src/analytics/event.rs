@@ -29,6 +29,7 @@ pub enum Event {
     ImagePreviewAction,
     ConversationFindOpened,
     ConversationFindSearched,
+    QuoteOpened,
     BotCreated,
     BotUpdated,
     BotsReordered,
@@ -80,6 +81,10 @@ pub enum Event {
     WorkFinished,
     /// An item was moved, cut in, replaced, stopped, dropped or tried again (`how`), by the bot or the user (`by`).
     WorkSteered,
+    /// An item's turn couldn't go on until the user signs in to its agent, so it waits for them (`agent`, `source`).
+    WorkNeedsSignIn,
+    /// The user wrote to an item's thread (`chat::tasks::thread`): whether it reopened the item, and whether it waits.
+    WorkMessaged,
     /// A bot's `start_dev_server` ended (`outcome`).
     DevServerStarted,
     /// A dev server ended (`by`).
@@ -113,7 +118,11 @@ pub enum Event {
     VoiceNoteSent,
     /// A voice note played from its start, or failed to (`outcome`).
     VoiceNotePlayed,
+    /// A bot's `send_message` or `send_file` with `reply_to` (`tool`), quoted or sent without it (`outcome`).
+    BotQuoted,
     CredentialSaved,
+    /// Every saved credential deleted, for a computer whose key is gone (`outcome`).
+    CredentialsReset,
     AgentSetupStarted,
     AgentSignedIn,
     /// A login profile was added, renamed or removed, or got its keys (`action`); never its name, who it signs in or
@@ -138,8 +147,8 @@ pub enum Event {
     CloudKeyRemoved,
     /// The user deleted a Codync Cloud computer's snapshots (desktop; phones send their own).
     CloudSnapshotsDeleted,
-    /// The Ko-fi invitation under the first reply (desktop and terminal UI only) was shown; on the desktop, then opened
-    /// or dismissed.
+    /// A Ko-fi invitation (desktop and terminal UI only; at 3, 30 and 90 active days) was shown; on the desktop, then
+    /// opened or dismissed.
     KofiInviteShown,
     KofiInviteAnswered,
     /// An important release's highlights were on screen (docs/features/whats-new.md; desktop and terminal UI here,
@@ -188,6 +197,7 @@ impl Event {
             Self::ImagePreviewAction => "image_preview_action",
             Self::ConversationFindOpened => "conversation_find_opened",
             Self::ConversationFindSearched => "conversation_find_searched",
+            Self::QuoteOpened => "quote_opened",
             Self::BotCreated => "bot_created",
             Self::BotUpdated => "bot_updated",
             Self::BotsReordered => "bots_reordered",
@@ -224,6 +234,8 @@ impl Event {
             Self::WorkAdded => "work_added",
             Self::WorkFinished => "work_finished",
             Self::WorkSteered => "work_steered",
+            Self::WorkNeedsSignIn => "work_needs_sign_in",
+            Self::WorkMessaged => "work_messaged",
             Self::DevServerStarted => "dev_server_started",
             Self::DevServerStopped => "dev_server_stopped",
             Self::DevServerAction => "dev_server_action",
@@ -247,7 +259,9 @@ impl Event {
             Self::ArtifactPublished => "artifact_published",
             Self::VoiceNoteSent => "voice_note_sent",
             Self::VoiceNotePlayed => "voice_note_played",
+            Self::BotQuoted => "bot_quoted",
             Self::CredentialSaved => "credential_saved",
+            Self::CredentialsReset => "credentials_reset",
             Self::AgentSetupStarted => "agent_setup_started",
             Self::AgentSignedIn => "agent_signed_in",
             Self::LoginProfileChanged => "login_profile_changed",

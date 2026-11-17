@@ -111,7 +111,7 @@ struct BotSettingsForm: View {
                          agents: (model.hello?.backends ?? []).map { ($0.id, model.agentLabel($0)) } + [("custom", "Custom command")],
                          onAgentChange: { draft.setAgent($0) }, command: $draft.command,
                          installHint: model.hello?.backends.first { $0.id == draft.backend && !$0.available }?.installHint,
-                         restLine: bot?.rest(of: draft.login)?.line, onReload: { modelReload += 1 })
+                         restLine: bot?.rest(of: draft.login).map { L10n.tr($0.line) }, onReload: { modelReload += 1 }) {}
     }
 
     /// Only when the host has login profiles (an older one sends none).
@@ -206,6 +206,10 @@ struct BotSettingsForm: View {
                         .outlinedPill()
                     }
                     .help(draft.cwd.isEmpty ? "A persistent workspace allocated for this bot" : draft.cwd)
+                }
+                // From a host that says, for any folder (one Codync made too).
+                if let bot, bot.taskWorktrees != nil {
+                    GitStateRow(state: bot.gitState)
                 }
                 ApprovalPicker(draft: $draft, reload: modelReload)
                 // Only from a host with a box (its bots say).

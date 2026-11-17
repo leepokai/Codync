@@ -2,6 +2,24 @@
 
 How the end-to-end (e2e) checks drive the apps: Playwright for the desktop app, Maestro for the iPhone and Android apps, and Computer Use only for the native steps neither can reach. Unit and component tests stay as they are (`npm run typecheck && npm test`, `cargo test`, the Swift tests in `apps/ios/Kit`, the Gradle checks).
 
+## Headless by default
+
+An e2e run never takes the screen, the Dock, the keyboard or the pointer from whoever is using the computer. Every tool runs without a window unless the maintainer asks, in that message, to watch it ("headed"); an agent never chooses headed by itself, not to debug a failure either (it reads the trace and screenshots instead).
+
+| What | Headless (the default) | Headed, only when asked |
+| --- | --- | --- |
+| Desktop app | `npm run dev -- --cdp`: the app starts with `CODYNC_HEADLESS=1`, so no window is ever shown, it has no Dock icon and it never becomes the front app. The pages render and run as usual and Playwright drives them over the DevTools protocol. | `npm run dev -- --cdp --headed` |
+| Playwright | It attaches to that app and opens no browser of its own. | The same |
+| iPhone simulator | `xcrun simctl boot <udid>`, driven by Maestro and `simctl`: a booted simulator has no window by itself. | Open the Simulator app on it |
+| Android emulator | `emulator -avd codync_worktree -no-window -no-snapshot-save -no-audio -no-boot-anim`, driven by Maestro and `adb`. | The same command without `-no-window` |
+| Computer Use | cua-driver in the background: it never brings an app to the front ([what it covers](#what-computer-use-covers)). | The same |
+
+**How the desktop app does it** (`apps/desktop/src/main/headless.ts`, development builds only: a packaged app ignores the variable). Every window is shown through `present()`, which does nothing in a headless run, so the chat window, the pairing window and the island stay hidden; `activate()`, the one place that brings the app to the front, does nothing either; the Dock icon is hidden, which also keeps the app from becoming the front one at launch; a hidden chat window counts as looked at, so cloud computers stay connected; and every window takes its `webPreferences` from `webPreferences()`, which turns `backgroundThrottling` off, so a page whose window was never shown still draws, animates and runs its timers at full speed. A new window must be shown through `present()` too, or it would appear in a headless run: `e2e/smoke.spec.ts` asks System Events that the app has no window and isn't the front one (`dev.mjs` writes `headless` into the sandbox's `sandbox.json`, so the check skips on a headed run).
+
+**What a headless run can't show.** Nothing that Playwright checks: the whole suite passes headless, the specs that pick app menu items through System Events (`e2e/find.spec.ts`) included. What needs a window on the screen is a native step no headless sandbox can run: how the chat window itself looks (its title bar, vibrancy, where macOS places it), the approval island, the pairing window's QR, and the windows the tray's items open (the tray icon and its menu are still there). When a change touches one, check it with Computer Use on the packaged `Codync Dev.app` (it ignores `CODYNC_HEADLESS`) or on a headed run the maintainer asked for; otherwise report the step as not run.
+
+Screenshots and traces work the same headless: `page.screenshot()` and `trace: 'retain-on-failure'` read the page, not the screen.
+
 ## Host tests
 
 `host/tests` drive real hosts against fake agents (the Python scripts in `tests/fixtures`). `tests/common` starts every test host with `CODYNC_AGENT_CHECKS=off`, as do `cloud/test/e2e/relay.e2e.ts` and `tools/check-connectors.py`, so it never runs the computer's agent CLIs for their sign-in and usage checks and never touches your logins. A test of those checks turns them back on (`tests/agent_checks_e2e.rs`). `tests/common` also sets `CODYNC_VAULT=folder`, so a test's credential key stays out of the system's credential store and goes with its data; `tools/check-connectors.py` keeps a real Keychain key on purpose.
@@ -83,8 +101,8 @@ Two things that look like failures but aren't the app's:
 
 Computer Use (cua-driver, in the background: never bring an app to the front) checks only these steps. Tag them `@native` in the change's e2e list. Everything else uses Playwright or Maestro. If cua-driver fails, stop and ask the user to reconnect it with `/mcp`.
 
-- **Desktop**: the tray or menu bar icon and its menu; the approval island's global shortcut; system notification banners; macOS privacy prompts (screen recording, notifications); Clerk sign-in in the system browser and the `codync-dev://` callback back into the app; anything that needs the packaged `Codync Dev.app` (Codync Screen, computer use, `SMAppService`).
-- **Phones**: how system alerts and notification banners look; the desktop QR pairing (Computer Use reads the QR on the Mac, Maestro finishes on the phone); widgets, Live Activity and the Dynamic Island.
+- **Desktop**: the tray or menu bar icon and its menu; the approval island's global shortcut (not in a headless sandbox, like every step that needs a window: [what a headless run can't show](#headless-by-default)); system notification banners; macOS privacy prompts (screen recording, notifications); Clerk sign-in in the system browser and the `codync-dev://` callback back into the app; anything that needs the packaged `Codync Dev.app` (Codync Screen, computer use, `SMAppService`).
+- **Phones**: how system alerts and notification banners look; the desktop QR pairing (Computer Use reads the QR on the Mac, Maestro finishes on the phone; the QR needs the packaged app or a headed run); widgets, Live Activity and the Dynamic Island.
 
 **Covered by none of them**, so check on a physical device and say so in the report: microphone and voice-call audio, and real APNs delivery (a simulator only simulates it with `xcrun simctl push`).
 

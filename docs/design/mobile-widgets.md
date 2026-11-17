@@ -61,7 +61,7 @@ State 分頁的 Live Activity 頁顯示鎖定畫面形式，Dynamic Island 頁�
 
 狀態色：待回應琥珀（`Palette.attention`）、失敗紅、完成綠；工作中的說明維持灰色，只有需要注意的狀態跳出來。經過時間用 `Text(startedAt, style: .timer)` 由系統自己往上數，不需要推播（`startedAt` 已在 remote content state 裡）。狀態切換時動的是 bot 本身：每個 mood 有固定的一幀姿勢（idle 光從左上、working 光掃到右側且眼睛往右看、needs you 正面光加漣漪），`still: true` 時每顆點是獨立的 view，系統會逐點插值大小與顏色，所以 halftone 的亮處會滑到新位置、眼睛移過去（`Motion.activityPhase`）。右側的 orb／勾號／警告只做淡入淡出。文字用 `.contentTransition(.interpolate)`，Review／時間列由下往上進場。全部在 iOS 給 activity 更新的 2 s 內，而且只用內建 transition，因為 Live Activity 不執行自訂 transition。展開島底部的時間是單一置中 Text（圖示內嵌），避免 timer Text 佔滿寬度後偏左。Review 只開啟對話，核准仍在 App 的 permission card。
 
-**動態島上工作中的 bot 會動**：Live Activity 只畫一幀，唯一會自己更新的是計時器文字，所以 Compact 與 Expanded 的頭像在 working 時是一個從 `startedAt` 起算的 timer `Text`，用自訂字型畫：字型裡 `0`–`9` 是 bot 工作迴圈的十格（光繞球一圈、眼睛右看→回正→左看、最後一格眨眼），只露出秒數最後一位，所以每秒換一格、十秒一輪。每種外型兩套字型疊起來（`Ink` 灰點、`Tint` 亮點上 bot 顏色），右側的 thinking orb 也用同一招（`CodyncOrb-Ghost` 淡軌跡、`CodyncOrb-Dot` 移動的點，來自 `ThinkingOrbGeometry.workingLoop`），和頭像同一個計時器所以同步換格；字型只畫計時器的最後一位（其他字元透過 contextual alternates 變成空白），整段文字剛好一格寬，不靠對齊或裁切。共 18 個 TTF 在 `apps/ios/Widgets/Resources/Fonts/`，由 widget 的 `UIAppFonts` 載入。格子來自 App 自己的繪圖（`DottedBody.workingLoop`），改了頭像畫法要重產：先跑 `exportBotFrames()` 測試輸出 JSON，再跑 `tools/timer-fonts.py`（步驟寫在檔頭）。展開島的計時器自成一行、置中（timer Text 會預留最寬寬度，跟圖示放一起就會偏）。這只用公開 API（自訂字型 + timer Text），不是 Apple 文件化的動畫方式，未來 iOS 改了 timer 的繪製可能失效；其他狀態與 Lock Screen 仍是靜態姿勢。
+**動態島上工作中的 bot 會動**：Live Activity 只畫一幀，唯一會自己更新的是計時器文字，所以 Compact 與 Expanded 的頭像在 working 時是一個從 `startedAt` 起算的 timer `Text`，用自訂字型畫：字型裡 `0`–`9` 是 bot 工作迴圈的十格（光繞球一圈、眼睛右看→回正→左看、最後一格眨眼），只露出秒數最後一位，所以每秒換一格、十秒一輪。每種外型兩套字型疊起來（`Ink` 灰點、`Tint` 亮點上 bot 顏色），右側的 thinking orb 也用同一招（`CodyncOrb-Ghost` 半透明的底紋點、`CodyncOrb-Dot` 上墨的點，來自 `ThinkingOrbGeometry.workingLoop`：光繞球一圈正好十格），和頭像同一個計時器所以同步換格；字型只畫計時器的最後一位（其他字元透過 contextual alternates 變成空白），整段文字剛好一格寬，不靠對齊或裁切。共 18 個 TTF 在 `apps/ios/Widgets/Resources/Fonts/`，由 widget 的 `UIAppFonts` 載入。格子來自 App 自己的繪圖（`DottedBody.workingLoop`），改了頭像畫法要重產：先跑 `exportBotFrames()` 測試輸出 JSON，再跑 `tools/timer-fonts.py`（步驟寫在檔頭）。展開島的計時器自成一行、置中（timer Text 會預留最寬寬度，跟圖示放一起就會偏）。這只用公開 API（自訂字型 + timer Text），不是 Apple 文件化的動畫方式，未來 iOS 改了 timer 的繪製可能失效；其他狀態與 Lock Screen 仍是靜態姿勢。iOS 26.5 模擬器的鎖定畫面把這個 timer 畫成「2 minutes」，看不到字型動畫：檢查字型改用 `ImageRenderer` 在 App 裡畫同一個 timer `Text`，真正的動態島要在真機上看。
 
 模擬器截圖看不到 Live Activity，所以 Live Activity、動態島（各狀態 × Lock Screen／Compact／Minimal／Expanded，淺色與深色）和 widget 卡片改用 render 測試輸出 PNG 檢查：
 
@@ -102,23 +102,22 @@ Dynamic Island 固定黑底，文字採淺色；Lock Screen 卡片配合系統�
 
 實機仍需分別確認加入 Home／Lock Screen widget、編輯 provider、跨帳號切換、背景刷新，以及 Live Activity／APNs 更新。共用圖片與 build 成功不等於這些系統整合已通過。[歷史檢查紀錄](../archive/mobile-widgets-verification-2026-09-26.md) 保留當時的測試範圍與操作限制。
 
-## Halftone 與 Thinking Orbs（2026-09-26）
+## Halftone 與 Thinking Orbs
 
 Bot 的角色頭像使用 `CharacterAvatar` 點陣；provider 圖示由 `ProviderMascot` 選擇，小尺寸可使用隨 app 打包的官方 provider 圖示。18 pt 以下用 7 × 7，18 pt 以上不論多大一律用 9 × 9 的大點網格（點大、點與點之間留明顯間距），保留鏤空眼睛。桌面另依裝置像素限制密度（9 格至少 27 px），1x 螢幕上的小頭像因此用 7 × 7；2x 以下還把點距對齊整數像素，讓點間距一致，點落在像素中心或角落以保持銳利，貼邊的點若會超出框就縮到框內（`apps/desktop/src/renderer/lib/dot-grid.ts`）。iPhone 螢幕至少 2x，維持原本網格；Android 目前仍只依 dp 選網格。iOS App 與 widgets 共用 provider 呈現邏輯；桌面 App 的對應實作在 `apps/desktop/src/renderer/views/usage/ProviderMascot.tsx`。
 
-狀態圖示以 [Jakub Antalik 的 thinking-orbs](https://github.com/Jakubantalik/thinking-orbs) 為來源，這次原生移植四種實際使用的造型：
+狀態圖示是 halftone 的 thinking orb：方格點陣裁成圓形，比頭像粗一號（18 pt 以下 5 × 5、18 pt 以上 7 × 7、30 pt 以上 9 × 9），放在文字旁邊才看得清。點的位置固定，每個狀態是一個決定每顆點有多滿的場，只改點的大小和深淺（空的點留成半透明的細點，所以圓形輪廓一直在），光在點陣上流動。一種墨色、不分前後；琥珀色只留給 Needs you。
 
-| 造型 | 使用位置 |
-| --- | --- |
-| Working／orbits | Bot 工作列、聊天工作提示、工具執行、一般安裝進度、Live Activity 工作狀態 |
-| Searching／globe | 搜尋工具執行中 |
-| Listening／wave | Bot 待回應列、聊天待回應、Live Activity／Dynamic Island Needs you |
-| Connecting／web | 電腦連線提示、帳號登入、agent 登入狀態查詢、fetch 工具、Activity 等待更新／更新延遲 |
+| 造型 | 動作 | 使用位置 |
+| --- | --- | --- |
+| Working | 被照亮的球，光每 2 s 繞一圈 | Bot 工作列、聊天工作提示、工具執行、一般安裝進度、Live Activity 工作狀態 |
+| Searching | 一道光帶左右掃過 | 搜尋工具執行中 |
+| Listening | 從中心一圈圈往外 | Bot 待回應列、聊天待回應、Live Activity／Dynamic Island Needs you |
+| Connecting | 對角兩端亮著，訊號在中間來回 | 電腦連線提示、帳號登入、agent 登入狀態查詢、fetch 工具、Activity 等待更新／更新延遲 |
+| Shaping | 實心的圓、三角、方輪流變形 | 編輯檔案的工具 |
 
 角色頭像識別「哪一個 bot」；orb 表達「現在做什麼」。完成、錯誤繼續保留明確的勾號／錯誤符號，導航及操作按鈕保留語意圖示。所有 orb 均附於可讀狀態文字或具備外層 accessibility label。
 
-實作採上游 0.3.1、commit `de85557ca220332586d070d8788c0e1d6e877a0d` 的幾何與 20／64 pt 預設值。小於 40 pt 使用精簡密度；其餘使用大尺寸密度。繪製端改用可套色的透明墨色，適配卡片、深淺色及 Dynamic Island。SwiftUI Canvas 不需要 WebView 或 JavaScript runtime。
+App 內動畫最多 30 fps；離開畫面、App 非 active 或啟用 Reduce Motion 時停在每個狀態固定的一格（`ThinkingOrbGeometry.rest`），五個狀態靜止時也分得開；動畫也從這一格開始，開始動時不會跳。Widget、Live Activity 與 Dynamic Island 明確傳入 `animated: false`，不依賴持續動畫計時。狀態仍隨既有資料更新。
 
-App 內動畫最多 30 fps；離開畫面、App 非 active 或啟用 Reduce Motion 時顯示靜態幀。Widget、Live Activity 與 Dynamic Island 明確傳入 `animated: false`，不依賴持續動畫計時。狀態仍隨既有資料更新。
-
-上游 MIT 授權全文隨 `CodyncKit` resource bundle 發佈，位於 `apps/ios/Kit/Sources/CodyncKit/Resources/ThirdPartyNotices/thinking-orbs-LICENSE.txt`。`ThinkingOrbGeometryTests` 使用上游獨立 golden vectors 的取樣，驗證四種造型 × 兩尺寸 × 四時間點的 dot／line 數量、位置、半徑、墨色及深度順序。其餘五種上游造型暫未移植；有對應產品狀態時再加入。
+三個 client 的幾何逐行一致：iPhone `ThinkingOrbGeometry.swift`、Android `ThinkingOrbGeometry.kt`、桌面 `lib/thinking-orb.ts`（1x 螢幕沿用頭像的 `dotGrid` 對齊整數像素）。桌面測試寫出 `apps/ios/Kit/Tests/CodyncKitTests/Fixtures/thinking-orb-frames.json`（`CODYNC_WRITE_ORB_FRAMES=1`），三邊的測試都拿它比對每顆點的位置、半徑和深淺，以及每個狀態靜止的那一格。改了畫法要重產這個檔案，再照上面的步驟重產動態島字型。

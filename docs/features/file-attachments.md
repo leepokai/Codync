@@ -59,8 +59,10 @@ Files travel in both directions: users attach inputs, and bots explicitly share 
 ## Files from a bot
 
 In its own chat, a bot calls the built-in chat MCP tool
-`send_file {path, name?}`. Paths may be absolute or relative to its working directory.
-The optional name is a display filename without folders. Any regular file type is
+`send_file {path, name?, text?, reply_to?}`. Paths may be absolute or relative to its working directory.
+The optional name is a display filename without folders; `text` makes the file
+[a voice note inside its message](#a-voice-note-inside-its-message), and `reply_to` quotes a message above the card
+([bots quote too](groups-and-replies.md#bots-quote-too)). Any regular file type is
 accepted, including binary, hidden, extensionless and empty files, up to 100 MiB.
 Directories and special files are refused. Group, routine and delegated turns cannot
 publish files.

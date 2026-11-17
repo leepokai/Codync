@@ -4,6 +4,7 @@ import com.codync.android.core.Bot
 import com.codync.android.core.Computer
 import com.codync.android.core.Entry
 import com.codync.android.core.MirrorEvent
+import com.codync.android.core.Outside
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -37,6 +38,8 @@ class ReadingTest {
         // A question stays while the bot waits on it, and goes once answered.
         assertEquals(emptyList<String>(), readChats(listOf(changed("question", 0, "needsInput")), alerts))
         assertEquals(listOf("question"), readChats(listOf(changed("question", 0, "working")), alerts))
+        val taskAsking = Bot("question", unread = 0, status = "idle", outside = Outside(status = "needsInput"))
+        assertEquals(emptyList<String>(), readChats(listOf(MirrorEvent.BotChanged(taskAsking)), alerts))
         // A failure never counted unread; a chat with no alert has nothing to clear.
         assertEquals(emptyList<String>(), readChats(listOf(changed("failure", 0), changed("none", 0)), alerts))
     }

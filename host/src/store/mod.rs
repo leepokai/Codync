@@ -71,6 +71,19 @@ impl Store {
         Ok(())
     }
 
+    /// Writes `k = v` atomically inside `db.locked()` unless `bot` is marked deleted.
+    pub fn kv_set_unless_bot_deleted(&self, bot: &str, k: &str, v: &str) -> Result<bool> {
+        let c = self.db.locked();
+        let rows = c.execute(
+            "INSERT INTO kv(k, v)
+             SELECT ?1, ?2
+             WHERE NOT EXISTS (SELECT 1 FROM bots WHERE id = ?3 AND deleted != 0)
+             ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            params![k, v, bot],
+        )?;
+        Ok(rows > 0)
+    }
+
     pub fn kv_delete(&self, k: &str) -> Result<()> {
         self.db.locked().execute("DELETE FROM kv WHERE k = ?1", [k])?;
         Ok(())

@@ -408,7 +408,7 @@ mod tests {
                 if report == 0 {
                     continue;
                 }
-                compactions += compacted_by_usage(last, report) as u32;
+                compactions += u32::from(compacted_by_usage(last, report));
                 last = Some(report);
             }
         }

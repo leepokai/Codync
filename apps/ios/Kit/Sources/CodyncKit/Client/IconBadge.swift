@@ -15,23 +15,20 @@ public enum IconBadge {
         let paired = Set(store.computers.map(\.id))
         guard paired.contains(computerId) else { return nil }
         store.setPushedUnread(unread, for: computerId)
-        var pushed = store.pushedUnread
-        for gone in pushed.keys where !paired.contains(gone) {
-            store.setPushedUnread(nil, for: gone)
-            pushed[gone] = nil
-        }
-        return count(pushed: pushed, snapshot: store.bots)
+        return count(pushed: pushed(keeping: paired.contains, in: store), snapshot: store.bots)
     }
 
     /// The app, when the roster changed: alerts' totals stay only for `behind`, the paired computers whose
     /// roster may still trail the host. Gives the badge.
     public static func settled(behind: Set<ComputerID>, in store: SharedStore.Context) -> Int {
-        var pushed = store.pushedUnread
-        for current in pushed.keys where !behind.contains(current) {
-            store.setPushedUnread(nil, for: current)
-            pushed[current] = nil
-        }
-        return count(pushed: pushed, snapshot: store.bots)
+        count(pushed: pushed(keeping: behind.contains, in: store), snapshot: store.bots)
+    }
+
+    /// The alerts' totals of the computers `keep` accepts; the others' are dropped from `store`.
+    private static func pushed(keeping keep: (ComputerID) -> Bool, in store: SharedStore.Context) -> [ComputerID: Int] {
+        let pushed = store.pushedUnread
+        for computerId in pushed.keys where !keep(computerId) { store.setPushedUnread(nil, for: computerId) }
+        return pushed.filter { keep($0.key) }
     }
 
     /// The alerts' totals, plus the other computers' unread from the snapshot (which holds no hidden bots).
@@ -41,16 +38,17 @@ public enum IconBadge {
     }
 
     /// iOS keeps the count but shows it only once the app may notify (the push switch asks for that).
-    public static func show(_ count: Int) {
-        UNUserNotificationCenter.current().setBadgeCount(count) { error in
-            guard let error else { return }
-            Logger(subsystem: "com.pokai.Codync.ios", category: "IconBadge")
-                .error("Couldn't set the app icon badge: \(error.localizedDescription)")
-            let reason: AnalyticsEvent.IconBadgeFailure = (error as? UNError)?.code == .notificationsNotAllowed ? .notAllowed : .other
-            Task { @MainActor in
+    @MainActor public static func show(_ count: Int) {
+        Task {
+            do {
+                try await UNUserNotificationCenter.current().setBadgeCount(count)
+            } catch {
+                Logger(subsystem: "com.pokai.Codync.ios", category: "IconBadge")
+                    .error("Couldn't set the app icon badge: \(error.localizedDescription)")
                 guard !failureReported else { return }
                 failureReported = true
-                Analytics.shared.capture(.iconBadgeFailed(reason))
+                let notAllowed = (error as? UNError)?.code == .notificationsNotAllowed
+                Analytics.shared.capture(.iconBadgeFailed(notAllowed ? .notAllowed : .other))
             }
         }
     }

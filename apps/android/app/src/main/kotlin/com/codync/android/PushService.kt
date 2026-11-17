@@ -216,6 +216,8 @@ internal object NotificationDisplay {
     const val TASKS = "codync-tasks"
     /** The tapped alert's kind (the host's `AlertKind`), for `notification_opened`. */
     const val ALERT_KIND = "codync:alertKind"
+    /** A chat's alert, under its [alertTag]; a task's notification uses 2. */
+    private const val ALERT_ID = 1
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
@@ -237,7 +239,7 @@ internal object NotificationDisplay {
     /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
     fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?) {
         channels(context)
-        val tag = "$scope/$computer/$bot"
+        val tag = alertTag(scope, computer, bot)
         val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty()).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -246,7 +248,7 @@ internal object NotificationDisplay {
             try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot), alert.body, conversation) }
             catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
         }
-        try { context.getSystemService(NotificationManager::class.java).notify(tag, 1, builder.build()) } catch (_: SecurityException) { }
+        try { context.getSystemService(NotificationManager::class.java).notify(tag, ALERT_ID, builder.build()) } catch (_: SecurityException) { }
     }
     /**
      * A delegated task: on Android 16 a Live update (promoted ongoing notification) with its
@@ -299,7 +301,9 @@ internal object NotificationDisplay {
 
     /** A chat's alert; the launcher badge follows the alerts showing. */
     fun cancelAlert(context: Context, scope: String, computer: String, bot: String) =
-        context.getSystemService(NotificationManager::class.java).cancel("$scope/$computer/$bot", 1)
+        context.getSystemService(NotificationManager::class.java).cancel(alertTag(scope, computer, bot), ALERT_ID)
+
+    private fun alertTag(scope: String, computer: String, bot: String) = "$scope/$computer/$bot"
 
     /** Notifications of one kind ([id]); with [prefix], only those whose tag starts with it (one computer's). */
     fun cancel(context: Context, id: Int, prefix: String = "") {

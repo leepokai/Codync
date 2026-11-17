@@ -96,7 +96,6 @@ extension BotStore {
         streamTask = nil
         eventsTask?.cancel()
         eventsTask = nil
-        streamCaughtUp = false
         dropTimer?.cancel()
         dropTimer = nil
         heldDrop = nil
@@ -207,7 +206,6 @@ extension BotStore {
     private func stopEvents() {
         eventsTask?.cancel()
         eventsTask = nil
-        streamCaughtUp = false
         setHostRoute(nil)
     }
 

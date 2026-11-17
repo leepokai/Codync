@@ -28,10 +28,14 @@ class ReadingTest {
         assertEquals(emptyList<String>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 1, waiting = 1))), chats))
     }
 
-    @Test fun `a chat left with nothing unread is read, by its last word in the batch`() {
+    @Test fun `a chat going from unread to nothing unread is read, by its last word in the batch`() {
         fun changed(bot: String, unread: Int) = MirrorEvent.BotChanged(Bot(bot, unread = unread))
-        assertEquals(listOf("read"), readChats(listOf(changed("read", 0), changed("unread", 1), message())))
-        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0), changed("bot", 1))))
-        assertEquals(listOf("bot"), readChats(listOf(changed("bot", 1), changed("bot", 0))))
+        val before = mapOf("read" to 2, "unread" to 1, "bot" to 0)
+        assertEquals(listOf("read"), readChats(listOf(changed("read", 0), changed("unread", 1), message()), before))
+        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0), changed("bot", 1)), before))
+        assertEquals(listOf("bot"), readChats(listOf(changed("bot", 1), changed("bot", 0)), before))
+        // A chat that never counted unread (a question asked, a failure) keeps its alert.
+        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0)), before))
+        assertEquals(emptyList<String>(), readChats(listOf(changed("new", 0)), before))
     }
 }

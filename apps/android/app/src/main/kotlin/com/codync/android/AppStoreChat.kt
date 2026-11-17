@@ -115,9 +115,12 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
-/** The chats events leave with nothing unread, read here or elsewhere: their alerts can go. */
-internal fun readChats(events: List<MirrorEvent>): List<String> =
-    events.filterIsInstance<MirrorEvent.BotChanged>().associateBy { it.bot.id }.values.filter { it.bot.unread == 0 }.map { it.bot.id }
+/** The chats events take from unread (`unreadBefore`, or earlier in the batch) to nothing unread, read here or
+ *  elsewhere: their alerts can go. A chat that never counted unread keeps its alert (a question still asked). */
+internal fun readChats(events: List<MirrorEvent>, unreadBefore: Map<String, Int>): List<String> =
+    events.filterIsInstance<MirrorEvent.BotChanged>().groupBy { it.bot.id }
+        .filter { (id, changes) -> changes.last().bot.unread == 0 && ((unreadBefore[id] ?: 0) > 0 || changes.any { it.bot.unread > 0 }) }
+        .keys.toList()
 
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {

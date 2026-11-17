@@ -226,7 +226,6 @@ extension BotStore {
     private func restartEvents() {
         guard let client, eventsTask != nil else { return }
         eventsTask?.cancel()
-        streamCaughtUp = false
         eventsTask = Task { [weak self] in await self?.runEvents(client) }
     }
 

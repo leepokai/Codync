@@ -42,7 +42,7 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
-    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops.
+    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops or is replaced.
     var streamCaughtUp = false
     /// Online and caught up on this stream: the roster matches the host, so the icon badge stops using
     /// the computer's alert counts.
@@ -140,7 +140,8 @@ public final class BotStore {
     var rev: Int64 = 0
     var hostId: String?
     var streamTask: Task<Void, Never>?
-    var eventsTask: Task<Void, Never>?
+    /// Replacing or dropping it clears `streamCaughtUp`: no new stream has caught up yet.
+    var eventsTask: Task<Void, Never>? { didSet { streamCaughtUp = false } }
     var isActive = true
     /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {

@@ -183,6 +183,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
                 }
                 next = if (batch.size < 64) source.tryReceive().getOrNull() else null
             }
+            val unreadBefore = state.value.bots.associate { it.id to it.unread }
             withContext(Dispatchers.IO) { requireNotNull(database).apply(batch) }
             refresh()
             receiveArtifacts(batch)
@@ -192,7 +193,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             batch.filterIsInstance<MirrorEvent.AutoOrder>().lastOrNull()?.let { showAutoOrder(it.enabled) }
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
-            readChats(batch).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }
+            readChats(batch, unreadBefore).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

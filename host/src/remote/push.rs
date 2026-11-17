@@ -192,19 +192,17 @@ fn activity_payload(rt: &Runtime) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote::identity::Identity;
-    use crate::store::{EntryKind, Lane, Store};
+    use crate::chat::calls::context::tests::{bot, hub};
+    use crate::store::{EntryKind, Lane};
 
     #[test]
     fn an_alert_seals_the_computers_unread_total() {
-        let dir = std::env::temp_dir().join(format!("codync-push-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let store = Store::open(&dir.join("t.db")).unwrap();
-        let bot: BotConfig =
-            serde_json::from_value(json!({"id": "b1", "name": "Bot", "backend": "codex", "cwd": "/tmp"})).unwrap();
-        store.save_bot(&bot).unwrap();
-        store.insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &json!({"text": "done", "final": true})).unwrap();
-        let hub = Hub::new(store, "host".into(), Identity::load_or_create(&dir).unwrap(), "t".into(), 0);
+        let hub = hub();
+        let bot = bot("b1", "Bot", "/tmp");
+        hub.store.save_bot(&bot).unwrap();
+        hub.store
+            .insert_entry(&Lane::main("b1"), EntryKind::Agent, 1, &json!({"text": "done", "final": true}))
+            .unwrap();
         let secret = sealed_alert(&hub, &bot, None, "Bot", "Task complete", "done");
         assert_eq!(secret["unread"], 1);
         assert_eq!(secret["title"], "Bot");

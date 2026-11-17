@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Native thinking-orbs states, using its tuned dot geometry and depth shading.
+/// The halftone thinking orb: what a bot is doing, as light flowing over a fixed dot grid.
 /// Supply an adjacent status label; this decorative view is hidden from VoiceOver.
 public struct ThinkingOrb: View {
     public enum State: String, CaseIterable, Sendable {
@@ -28,11 +28,10 @@ public struct ThinkingOrb: View {
         Group {
             if running {
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { timeline in
-                    drawing(time: 0.6 + timeline.date.timeIntervalSince(epoch)
-                        * ThinkingOrbGeometry.speed(state: state, size: size))
+                    drawing(time: ThinkingOrbGeometry.rest(state) + timeline.date.timeIntervalSince(epoch))
                 }
             } else {
-                drawing(time: 0.6)
+                drawing(time: ThinkingOrbGeometry.rest(state))
             }
         }
         .frame(width: size, height: size)
@@ -43,24 +42,13 @@ public struct ThinkingOrb: View {
     }
 
     private func drawing(time: Double) -> some View {
-        let frame = ThinkingOrbGeometry.frame(state: state, size: size, time: time)
+        let dots = ThinkingOrbGeometry.frame(state: state, size: size, time: time)
         return Canvas { context, _ in
-            // Tintable ink: preserves depth and blends with cards, wallpaper and
-            // accessory rendering instead of baking a paper/background color in.
-            for line in frame.lines {
-                var path = Path()
-                path.move(to: CGPoint(x: line.x1, y: line.y1))
-                path.addLine(to: CGPoint(x: line.x2, y: line.y2))
-                context.stroke(path, with: .color(color.opacity(ink(line.white, line.alpha))), lineWidth: line.width)
-            }
-            for dot in frame.dots {
+            // Tintable ink, so it blends with cards, wallpaper and accessory rendering.
+            for dot in dots {
                 let rect = CGRect(x: dot.x - dot.radius, y: dot.y - dot.radius, width: dot.radius * 2, height: dot.radius * 2)
-                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(ink(dot.white, dot.alpha))))
+                context.fill(Path(ellipseIn: rect), with: .color(color.opacity(dot.alpha)))
             }
         }
-    }
-
-    private func ink(_ white: Double, _ alpha: Double) -> Double {
-        (1 - min(1, max(0, white))) * alpha
     }
 }

@@ -38,8 +38,6 @@ import { FormSheet } from '../marketplace/pieces'
 import { CallView } from '../call/CallView'
 import { MacChatButton } from './MacChatButton'
 import { ArtifactView } from '../library/ArtifactView'
-import { KofiInviteCard } from './KofiInvite'
-import { useKofiInviteAt } from '../../lib/use-kofi-invite'
 import './thread.css'
 import './composer.css'
 import './chat-controls.css'
@@ -357,7 +355,6 @@ const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply,
   const chatOf = useCallback((list: Entry[]) => buildChat(outsideQueue(hidingCalls(list), working)), [working])
   const all = useMemo(() => chatOf(entries), [chatOf, entries])
   const steps = useMemo(() => workingSteps(entries), [entries])
-  const kofiAt = useKofiInviteAt(botId, all)
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
@@ -490,7 +487,6 @@ const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply,
             // `data-entry-id`: what a quote's click looks for (a user row's `item.id` is its nonce).
             <div key={item.id} className={arrivals.has(item.id) ? rowIn(item) : undefined} data-entry-id={item.kind === 'separator' ? undefined : item.entry.id}>
               <Row item={item} chat={bot} openTrace={openTrace} onReply={onReply} openRoutine={openRoutine} openAgent={openAgent} openBotChat={openBotChat} openArtifact={openArtifact} openCall={openCall} />
-              {item.id === kofiAt ? <KofiInviteCard /> : null}
             </div>
           ))}
           {bot ? <WorkingTransition bot={bot} visible={live} steps={steps} /> : null}

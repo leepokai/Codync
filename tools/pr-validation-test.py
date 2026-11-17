@@ -11,15 +11,12 @@ spec.loader.exec_module(mod)
 
 template = (ROOT / ".github/pull_request_template.md").read_text()
 ticked = template.replace("- [ ]", "- [x]")
-tried = "<!-- Commands, devices, flows walked and their results. Paste the after-change report here. -->"
-described = ticked.replace(tried, "cargo test: 1151 passed. Sent a message from the iOS Simulator, the reply arrived.")
 
 assert mod.problems(template), "the untouched template must fail"
 assert any("Unticked" in p for p in mod.problems(template))
-assert any("What I tried" in p for p in mod.problems(ticked)), "ticked boxes without a description must fail"
-assert mod.problems(described) == [], mod.problems(described)
-assert mod.problems(described.replace("\n", "\r\n")) == [], "CRLF bodies from the web editor must pass"
+assert mod.problems(ticked) == [], mod.problems(ticked)
+assert mod.problems(ticked.replace("\n", "\r\n")) == [], "CRLF bodies from the web editor must pass"
 assert mod.problems("") == ["The `## Validation` section of the PR template is missing."]
-one_unticked = described.replace("- [x] Targets", "- [ ] Targets", 1)
+one_unticked = ticked.replace("- [x] Targets", "- [ ] Targets", 1)
 assert len(mod.problems(one_unticked)) == 1
 print("ok")

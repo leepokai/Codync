@@ -1,15 +1,15 @@
-.star-prompt-symbol {
+.invite-sheet-star {
   color: var(--star);
   fill: currentColor;
   flex: none;
 }
-.star-prompt-body {
+.invite-sheet-body {
   padding: 0 20px 20px;
 }
-.star-prompt-message {
+.invite-sheet-message {
   line-height: 1.5;
 }
-.star-prompt-app-icon {
+.invite-sheet-app-icon {
   width: 32px;
   height: 32px;
   flex: none;

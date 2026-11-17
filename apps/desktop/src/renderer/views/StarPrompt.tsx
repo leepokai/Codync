@@ -1,16 +1,10 @@
 import { useState } from 'react'
-import appIcon from '../../../resources/icon.png'
-import { Button } from '../components/Controls'
 import { Icon } from '../components/Icon'
-import { ModalHeader, Sheet } from '../components/Overlay'
-import { HStack, VStack } from '../components/Stack'
-import { Text } from '../components/Text'
 import { useModel } from '../lib/observable'
 import { prefs, usePref } from '../lib/prefs'
-import { useStarAsk } from '../lib/use-star-ask'
+import { STAR_REPO, useStarAsk } from '../lib/use-star-ask'
 import { useApp } from '../store/context'
-import { useTr } from '../lib/use-language'
-import './star-prompt.css'
+import { InviteSheet } from './InviteSheet'
 
 const copy = {
   first: {
@@ -29,7 +23,6 @@ const copy = {
  * Starring ends it.
  */
 export function StarPrompt() {
-  const tr = useTr()
   const app = useApp()
   const local = useModel(app.local)
   const [onboarded] = usePref(prefs.onboardingDone)
@@ -46,29 +39,14 @@ export function StarPrompt() {
 
   const text = copy[due ?? 'first']
   return (
-    <Sheet open={open} onClose={() => finish(false)} width={400} dismissOnDim>
-      <VStack className="star-prompt">
-        <ModalHeader
-          icon={<Icon name="star.fill" size={22} className="star-prompt-symbol" />}
-          title={tr(text.title)}
-          onClose={null}
-        />
-        <VStack gap={16} className="star-prompt-body">
-          <Text as="div" size="body" tone="secondary" className="star-prompt-message">{tr(text.message)}</Text>
-          <HStack gap={10}>
-            <img src={appIcon} alt="" className="star-prompt-app-icon" draggable={false} />
-            <Text size="callout" tone="secondary">github.com/leepokai/Codync</Text>
-          </HStack>
-          <HStack gap={8} justify="flex-end" wrap>
-            <Button kind="secondary" onClick={() => finish(false)}>
-              Not now
-            </Button>
-            <Button onClick={() => finish(true)}>
-              Star on GitHub
-            </Button>
-          </HStack>
-        </VStack>
-      </VStack>
-    </Sheet>
+    <InviteSheet
+      open={open}
+      icon={<Icon name="star.fill" size={22} className="invite-sheet-star" />}
+      title={text.title}
+      message={text.message}
+      url={STAR_REPO}
+      action="Star on GitHub"
+      onAnswer={finish}
+    />
   )
 }

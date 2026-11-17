@@ -3,6 +3,17 @@ import { FIT, clampZoom, panBy, pinchFactor, pinchStep, toggleZoom, zoomBy, type
 
 const KEY_STEP = 1.25
 
+/** The box, the picture's fit size (its layout size: the zoom is a transform), and a screen point from the box's center. */
+function measure(el: HTMLElement) {
+  const picture = el.firstElementChild as HTMLElement | null
+  const rect = el.getBoundingClientRect()
+  return {
+    box: { width: el.clientWidth, height: el.clientHeight },
+    picture: { width: picture?.offsetWidth ?? 0, height: picture?.offsetHeight ?? 0 },
+    center: (x: number, y: number) => ({ x: x - rect.left - rect.width / 2, y: y - rect.top - rect.height / 2 }),
+  }
+}
+
 /**
  * The state and gestures of a zoomable picture: pinch on the trackpad (or ctrl + wheel), two fingers, double-click,
  * `+` / `-` / `0`, and dragging or scrolling to move it once zoomed in. The box it measures holds the picture as its first child.
@@ -22,43 +33,31 @@ export function useImageZoom(onZoom?: () => void) {
     if (changesScale && next.scale > 1) zoomed.current?.()
   }, [])
 
-  /** The box, the picture's fit size (its layout size: the zoom is a transform), and a screen point from the box's center. */
-  const measure = useCallback(() => {
-    const el = box.current!
-    const picture = el.firstElementChild as HTMLElement | null
-    const rect = el.getBoundingClientRect()
-    return {
-      box: { width: el.clientWidth, height: el.clientHeight },
-      picture: { width: picture?.offsetWidth ?? 0, height: picture?.offsetHeight ?? 0 },
-      center: (x: number, y: number) => ({ x: x - rect.left - rect.width / 2, y: y - rect.top - rect.height / 2 }),
-    }
-  }, [])
-
   // Not a React handler: pinch arrives as wheel events, and the page must not zoom with it.
   useEffect(() => {
     const el = box.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const m = measure()
+      const m = measure(el)
       if (e.ctrlKey) apply(zoomBy(current.current, pinchFactor(e.deltaY, e.deltaMode), m.center(e.clientX, e.clientY), m.box, m.picture), true)
       else if (current.current.scale > 1) apply(panBy(current.current, -e.deltaX, -e.deltaY, m.box, m.picture))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [apply, measure])
+  }, [apply])
 
   // The window resizing leaves the picture where it was: keep it inside the new box.
   useEffect(() => {
     const el = box.current
     if (!el) return
     const observer = new ResizeObserver(() => {
-      const m = measure()
+      const m = measure(el)
       apply(clampZoom(current.current, m.box, m.picture))
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [apply, measure])
+  }, [apply])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,13 +67,16 @@ export function useImageZoom(onZoom?: () => void) {
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
       const factor = e.key === '+' || e.key === '=' ? KEY_STEP : e.key === '-' ? 1 / KEY_STEP : null
       if (factor === null && e.key !== '0') return
+      // The box leaves the page before this listener is removed.
+      const el = box.current
+      if (!el) return
       e.preventDefault()
-      const m = measure()
+      const m = measure(el)
       apply(factor === null ? FIT : zoomBy(current.current, factor, { x: 0, y: 0 }, m.box, m.picture), true)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [apply, measure])
+  }, [apply])
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return
@@ -88,7 +90,7 @@ export function useImageZoom(onZoom?: () => void) {
     const before = [...touches.current.values()]
     touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     const after = [...touches.current.values()]
-    const m = measure()
+    const m = measure(e.currentTarget as HTMLElement)
     if (after.length === 2) {
       const step = pinchStep(before as [Touch, Touch], after as [Touch, Touch])
       apply(panBy(zoomBy(current.current, step.factor, m.center(step.origin.x, step.origin.y), m.box, m.picture), step.dx, step.dy, m.box, m.picture), true)
@@ -108,7 +110,7 @@ export function useImageZoom(onZoom?: () => void) {
       onPointerUp: onPointerEnd,
       onPointerCancel: onPointerEnd,
       onDoubleClick: (e: React.MouseEvent) => {
-        const m = measure()
+        const m = measure(e.currentTarget as HTMLElement)
         apply(toggleZoom(current.current, m.center(e.clientX, e.clientY), m.box, m.picture), true)
       },
     },

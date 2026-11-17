@@ -213,7 +213,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
           <div className="top-chrome-row">
             <Spacer />
             {(!showSettings || !wide) && !compactDetails ? (
-              <MacChatButton className="ringed" title="Conversation details" icon="chevron.left.2" direction={[-1, 0]} onClick={toggleDetails} />
+              <MacChatButton className="ringed" title={tr('Conversation details')} icon="chevron.left.2" direction={[-1, 0]} onClick={toggleDetails} />
             ) : null}
           </div>
           {/* The call bar takes the pill's place; its frosted glass would show the name blurred. */}

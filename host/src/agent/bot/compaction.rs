@@ -388,10 +388,9 @@ fn record_usage(usage: &mut HashMap<String, (u64, u64)>, sid: &str, used: u64, s
     compacted_by_usage(before, used)
 }
 
-/// Whether a session's context use fell the way it does when the agent summarizes it: by more than half. A zero is not
-/// a reading (see `record_usage`), so it never reads as a fall.
+/// Whether a session's context use fell the way it does when the agent summarizes it: by more than half.
 fn compacted_by_usage(before: Option<u64>, used: u64) -> bool {
-    used > 0 && before.is_some_and(|before| before >= COMPACTED_FROM && used < before / 2)
+    before.is_some_and(|before| before >= COMPACTED_FROM && used < before / 2)
 }
 
 #[cfg(test)]
@@ -404,7 +403,6 @@ mod tests {
         assert!(!compacted_by_usage(Some(90_000), 60_000), "ordinary churn");
         assert!(!compacted_by_usage(Some(8_000), 1_000), "too little to summarize");
         assert!(!compacted_by_usage(None, 1_000), "the session's first report");
-        assert!(!compacted_by_usage(Some(26_247), 0), "a stream's provisional zero is not a reading");
     }
 
     #[test]

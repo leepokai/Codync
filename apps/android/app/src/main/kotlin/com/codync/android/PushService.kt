@@ -297,6 +297,10 @@ internal object NotificationDisplay {
         return notification.build()
     }
 
+    /** A chat's alert; the launcher badge follows the alerts showing. */
+    fun cancelAlert(context: Context, scope: String, computer: String, bot: String) =
+        context.getSystemService(NotificationManager::class.java).cancel("$scope/$computer/$bot", 1)
+
     /** Notifications of one kind ([id]); with [prefix], only those whose tag starts with it (one computer's). */
     fun cancel(context: Context, id: Int, prefix: String = "") {
         val manager = context.getSystemService(NotificationManager::class.java)

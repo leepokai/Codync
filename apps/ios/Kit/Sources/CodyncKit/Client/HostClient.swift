@@ -2,8 +2,9 @@ import Foundation
 
 public enum HostEvent: Sendable {
     case icons([String: CustomIcon], revision: Int64)
-    /// The stream's first event; `network` is nil from hosts before the network view.
-    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?)
+    /// The stream's first event; `network` is nil from hosts before the network view, `catchUp` (how many
+    /// catch-up events follow) from hosts before that count.
+    case hello(hostId: String, rev: Int64, usage: Usage, screen: ScreenState?, network: NetworkView?, catchUp: Int?)
     case bot(Bot)
     case botDeleted(id: String, rev: Int64)
     case entry(Entry)
@@ -18,6 +19,8 @@ public enum HostEvent: Sendable {
     case resync
     /// An event this app version couldn't decode (host newer/older than the app).
     case undecodable(type: String)
+    /// An event this app passes over. It still counts towards the catch-up.
+    case skipped
 }
 
 /// A setup terminal's output stream.
@@ -60,7 +63,7 @@ public struct HostClient: Sendable {
 
     /// Catch-up since `since`, then live updates.
     public func events(since: Int64, client: String) -> AsyncThrowingStream<HostEvent, Error> {
-        map(transport.stream(.events(since: since, client: client)), Self.parseEvent)
+        map(transport.stream(.events(since: since, client: client))) { Self.parseEvent($0) ?? .skipped }
     }
 
     /// A setup terminal's output: everything so far, then live, finishing after `.exit`.
@@ -97,6 +100,7 @@ public struct HostClient: Sendable {
             var type: String
             var hostId: String?
             var rev: Int64?
+            var catchUp: Int?
         }
         struct BotWrap: Decodable { var bot: Bot }
         struct StubWrap: Decodable { var bot: BotStub }
@@ -115,7 +119,7 @@ public struct HostClient: Sendable {
             let usage = (try? d.decode(UsageWrap.self, from: data))?.usage ?? Usage()
             let screen = (try? d.decode(ScreenWrap.self, from: data))?.screen
             let network = (try? d.decode(NetworkWrap.self, from: data))?.network
-            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network)
+            return .hello(hostId: env.hostId ?? "", rev: env.rev ?? 0, usage: usage, screen: screen, network: network, catchUp: env.catchUp)
         case "bot":
             if let stub = try? d.decode(StubWrap.self, from: data), stub.bot.deleted == true {
                 return .botDeleted(id: stub.bot.id, rev: stub.bot.rev)

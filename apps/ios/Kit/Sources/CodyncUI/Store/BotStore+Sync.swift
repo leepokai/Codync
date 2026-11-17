@@ -26,6 +26,7 @@ extension BotStore {
                     setConnection(.online)
                     backoff = 1
                     apply(event)
+                    noteCatchUp(after: event)
                 }
             } catch is CancellationError {
                 return
@@ -37,6 +38,8 @@ extension BotStore {
                     return
                 }
             }
+            // Waiting for the next stream, the roster can fall behind. A cancelled task's stream is already replaced.
+            if !Task.isCancelled { streamCaughtUp = false }
             try? await Task.sleep(for: .seconds(backoff))
             backoff = min(backoff * 2, 20)
         }
@@ -87,7 +90,7 @@ extension BotStore {
         switch event {
         case let .icons(icons, revision):
             applyIcons(icons, revision: revision)
-        case let .hello(id, hostRev, newUsage, newScreen, newNetwork):
+        case let .hello(id, hostRev, newUsage, newScreen, newNetwork, catchUp):
             if let hostId, hostId != id {
                 // Different host database: start over.
                 resetMirror()
@@ -100,7 +103,8 @@ extension BotStore {
             if hostRewound { rev = 0 }
             windowFloors = requestedSince > 0 && !hostRewound ? loadedFloors() : [:]
             catchUpRev = hostRev
-            bump(rev, opening: true)
+            catchUpLeft = catchUp
+            bump(rev)
         case .bot(let received):
             let bot = putHostBot(received)
             bump(bot.rev)
@@ -137,6 +141,8 @@ extension BotStore {
             network = view
         case let .artifact(artifact):
             artifacts.upsert(artifact)
+        case .skipped:
+            break
         case .resync:
             restartEvents()
         case let .undecodable(type):
@@ -185,16 +191,25 @@ extension BotStore {
     private func restartEvents() {
         guard let client, eventsTask != nil else { return }
         eventsTask?.cancel()
+        streamCaughtUp = false
         eventsTask = Task { [weak self] in await self?.runEvents(client) }
     }
 
-    /// `opening`: this connection's `hello`, whose catch-up may already be complete.
-    private func bump(_ r: Int64, opening: Bool = false) {
-        let behind = opening || rev < catchUpRev
+    private func bump(_ r: Int64) {
         rev = max(rev, r)
         if !caughtUp && rev >= catchUpRev { caughtUp = true }
-        // Caught up: `rosterIsCurrent` turned true even if no bot changed.
-        if behind && rev >= catchUpRev { onRosterChanged?() }
+    }
+
+    /// An event of this stream was applied. Its catch-up is over at the host's rev, or at the last event its
+    /// `hello` counted: that rev can be ahead of all of them (a write no event carries).
+    private func noteCatchUp(after event: HostEvent) {
+        // `apply` may have just restarted the stream.
+        guard !streamCaughtUp, !Task.isCancelled else { return }
+        if case .hello = event {} else { catchUpLeft = catchUpLeft.map { $0 - 1 } }
+        guard rev >= catchUpRev || catchUpLeft == 0 else { return }
+        streamCaughtUp = true
+        // `rosterIsCurrent` turned true even if no bot changed.
+        onRosterChanged?()
     }
 
     /// Per bot, the lowest synced `seq` in the mirror (optimistic entries don't count).

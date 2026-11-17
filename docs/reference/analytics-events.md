@@ -57,6 +57,7 @@ host answers and sends it once the host is up.
 | `phone_connected` | host | A paired phone connects, at most once per phone per UTC day | `platform` |
 | `notifications_answered` | iOS, Android | The system notification prompt was answered | `granted`, `source` (`settings`/`widgets`/`automatic`) |
 | `notification_opened` | iOS, Android | A Codync notification was tapped | `kind` (`done`/`needs_input`/`failed`) |
+| `icon_badge_failed` | iOS | iOS refused the app icon's unread count, at most once per launch. Android has no such call: its launcher badge follows the alerts | `reason` (`not_allowed`/`other`) |
 | `star_prompt_answered` | host `track` (desktop) | The GitHub star setup invitation or the fifth-prompt invitation was answered or closed | `ask` (`first`/`second`), `starred` |
 | `link_opened` | host `track` (desktop), iOS, Android | An outbound link was opened (`install_command`: an install command copied; `install_link`: the phone's website link copied) | `link` (`github`/`docs`/`issues`/`discord`/`app_store`/`demo`/`tailscale`/`privacy`/`support`/`install_command`/`install_link`/`product_hunt`) |
 

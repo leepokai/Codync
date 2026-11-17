@@ -42,9 +42,13 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
-    /// Online and caught up with this connection's `hello`: the roster matches the host, so the icon badge
-    /// stops using the computer's alert counts.
-    public var rosterIsCurrent: Bool { connection == .online && rev >= catchUpRev }
+    /// Catch-up events this stream's `hello` said are still to come (`nil`: a host before that count).
+    var catchUpLeft: Int?
+    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops.
+    var streamCaughtUp = false
+    /// Online and caught up on this stream: the roster matches the host, so the icon badge stops using
+    /// the computer's alert counts.
+    var rosterIsCurrent: Bool { connection == .online && streamCaughtUp }
     /// The `since` this connection's events stream was opened with; the `hello` that opens its
     /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
     var requestedSince: Int64 = 0
@@ -102,7 +106,7 @@ public final class BotStore {
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
     /// A prompt reached the computer or its mailbox.
     var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
-    /// A bot appeared, changed or went away.
+    /// A bot appeared, changed or went away, or this stream's catch-up finished (`rosterIsCurrent`).
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?

@@ -86,6 +86,15 @@ class AlertNotificationTest {
         snapshot("plain")
     }
 
+    @Test fun aReadChatsAlertGoesAndTheOthersStay() {
+        show("reviewer", """{"title":"Reviewer","subtitle":"Task complete","body":"Done."}""")
+        show("builder", """{"title":"Builder","subtitle":"Task complete","body":"Done."}""")
+        NotificationDisplay.cancelAlert(context, scope, computer, "reviewer")
+        val deadline = SystemClock.elapsedRealtime() + 3000
+        while (manager.activeNotifications.any { it.tag == "$scope/$computer/reviewer" } && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(10)
+        assertEquals(listOf("$scope/$computer/builder"), manager.activeNotifications.map { it.tag }.filter { it.orEmpty().startsWith("$scope/") })
+    }
+
     /** `-e notificationSnapshots true`: the shade with the alert, saved in the app's cache. */
     private fun snapshot(name: String) {
         if (InstrumentationRegistry.getArguments().getString("notificationSnapshots") != "true") return

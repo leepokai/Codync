@@ -53,7 +53,7 @@ public final class AccountStore {
     public var onBotUpdated: (@MainActor (BotReference, Bot) -> Void)?
     public var onConnected: (@MainActor (BotStore) -> Void)?
     public var onSent: (@MainActor (BotReference, Bot, SendProgress) -> Void)?
-    /// The combined roster changed: a bot came, changed or went, or a computer did.
+    /// The combined roster changed: a bot came, changed or went, a computer did, or one's catch-up finished.
     public var onRosterChanged: (@MainActor ([RosterItem]) -> Void)?
 
     private let cloud: CloudClient?
@@ -103,6 +103,9 @@ public final class AccountStore {
             }
         }
     }
+
+    /// Computers whose roster may still trail the host: the icon badge goes by their latest alert instead.
+    public var computersBehind: Set<ComputerID> { Set(stores.filter { !$0.value.rosterIsCurrent }.keys) }
 
     public func store(for id: ComputerID) -> BotStore? { stores[id] }
 

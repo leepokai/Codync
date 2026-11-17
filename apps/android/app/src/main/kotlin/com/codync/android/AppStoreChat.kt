@@ -54,6 +54,10 @@ internal fun readAfter(events: List<MirrorEvent>, chats: List<String>): List<Str
     }
 }
 
+/** The chats events leave with nothing unread, read here or elsewhere: their alerts can go. */
+internal fun readChats(events: List<MirrorEvent>): List<String> =
+    events.filterIsInstance<MirrorEvent.BotChanged>().associateBy { it.bot.id }.values.filter { it.bot.unread == 0 }.map { it.bot.id }
+
 /** Marks the chats on screen read (`chats`: only these); the host ignores it when nothing there is unread. */
 internal fun AppStore.acknowledgeVisible(chats: List<String> = state.value.readingChats) {
     if (!foreground || channel?.state?.value !is LinkState.Ready) return

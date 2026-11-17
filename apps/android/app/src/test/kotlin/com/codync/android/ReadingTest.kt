@@ -25,4 +25,11 @@ class ReadingTest {
         assertEquals(chats, readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 2))), chats))
         assertEquals(emptyList<String>(), readAfter(listOf(MirrorEvent.BotChanged(Bot("bot", unread = 0))), chats))
     }
+
+    @Test fun `a chat left with nothing unread is read, by its last word in the batch`() {
+        fun changed(bot: String, unread: Int) = MirrorEvent.BotChanged(Bot(bot, unread = unread))
+        assertEquals(listOf("read"), readChats(listOf(changed("read", 0), changed("unread", 1), message())))
+        assertEquals(emptyList<String>(), readChats(listOf(changed("bot", 0), changed("bot", 1))))
+        assertEquals(listOf("bot"), readChats(listOf(changed("bot", 1), changed("bot", 0))))
+    }
 }

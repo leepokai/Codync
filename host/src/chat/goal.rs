@@ -126,6 +126,9 @@ pub fn finish(hub: &Hub, bot: &str, id: Option<&str>, why: Stopped) {
 
 fn try_finish(hub: &Hub, bot: &str, id: Option<&str>, why: Stopped) -> Result<()> {
     let lock = WRITE.locked();
+    if hub.store.bot(bot)?.is_some_and(|r| r.deleted) {
+        return Ok(());
+    }
     let Some(mut goal) = read(hub, bot)?.filter(|g| g.stopped.is_none() && id.is_none_or(|id| id == g.id)) else {
         return Ok(());
     };
@@ -159,6 +162,9 @@ fn reason(why: Stopped) -> &'static str {
 pub fn begin(hub: &Hub, agent: &BotConfig, id: &str) -> Result<Option<String>> {
     let bot = agent.id.as_str();
     let lock = WRITE.locked();
+    if hub.store.bot(bot)?.is_some_and(|r| r.deleted) {
+        return Ok(None);
+    }
     let Some(mut goal) = read(hub, bot)?.filter(|g| g.id == id && g.stopped.is_none()) else { return Ok(None) };
     let why = if goal.turns >= goal.max_turns
         || now_ms().saturating_sub(goal.started_at) >= i64::from(goal.max_minutes) * 60_000

@@ -12,6 +12,8 @@ struct ComputerSection: View {
     let move: (ComputerID, Int) -> Void
     /// This computer's own Extensions; nil while it can't be reached.
     let extensions: (() -> Void)?
+    /// This computer's workflows; nil while it is offline or the host has no workflows.
+    let workflows: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -38,6 +40,7 @@ struct ComputerSection: View {
         .accessibilityActions {
             Button(L10n.tr("Move up")) { move(store.computer.id, -1) }
             Button(L10n.tr("Move down")) { move(store.computer.id, 1) }
+            if let workflows { Button(L10n.tr("Workflows"), action: workflows) }
             if let extensions { Button(L10n.tr("Extensions"), action: extensions) }
         }
     }
@@ -67,6 +70,18 @@ struct ComputerSection: View {
                 .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
                 .accessibilityHidden(true)
+            if let workflows {
+                Button(action: workflows) {
+                    Image(systemName: "flowchart")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Palette.secondary)
+                        .frame(width: 44, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(L10n.tr("Workflows"))
+                .help(L10n.tr("Workflows"))
+            }
             if let extensions {
                 // After the chevron, as on the desktop; the glyph is light like it, the target finger-sized.
                 Button(action: extensions) {

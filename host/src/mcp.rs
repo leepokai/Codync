@@ -30,6 +30,7 @@ pub enum Server {
     Chat,
     Connectors,
     Routines,
+    Workflows,
     Computer,
     Team,
     Manage,
@@ -70,6 +71,9 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
         // Listed by the host: they depend on this computer's driver.
         Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
+        Server::Workflows => {
+            ("codync-workflows", crate::workflows::INSTRUCTIONS.to_owned(), crate::workflows::tool_list())
+        }
         Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),
         Server::Manage => ("codync-manage", crate::chat::manage::INSTRUCTIONS.to_owned(), crate::chat::manage::tools()),
@@ -167,6 +171,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
     let (method, timeout) = match server {
         Server::Connectors => ("connectorCall", Duration::from_secs(90)),
         Server::Routines => ("routineCall", Duration::from_secs(30)),
+        Server::Workflows => ("workflowCall", crate::chat::manage::APPROVAL_TIMEOUT + Duration::from_secs(30)),
         Server::Computer => ("computerCall", Duration::from_mins(1)),
         // Starting a dev server may wait on an approval card, then for its port.
         Server::Chat if params["name"] == crate::dev_servers::START => {
@@ -204,6 +209,7 @@ async fn call(port: u16, token: &str, bot: &str, params: &Value, server: Server)
                         | Server::Manage
                         | Server::Memory
                         | Server::Routines
+                        | Server::Workflows
                         | Server::Network
                         | Server::Connectors => {
                             json!({"content": [{"type": "text", "text": v.to_string()}]})

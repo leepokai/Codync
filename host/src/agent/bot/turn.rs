@@ -67,7 +67,7 @@ impl Actor {
             prompt = format!("{prompt}\n\n{update}");
             self.announce = Some((snapshot, identity));
         }
-        let own_chat = self.in_own_chat();
+        let own_chat = self.in_own_chat() && self.active_workflow.is_none();
         if remind_files && own_chat {
             prompt.push_str("\n\n[Codync: send_file(path, name?) shares any regular file up to 100 MiB as a downloadable card. Use it instead of sending a local path.]");
         }
@@ -184,7 +184,8 @@ impl Actor {
                 && !self.hub.ceilings.holds(&self.cfg.id)
                 && self.active_group.is_none()
                 && self.active_routine.is_none()
-                && self.host_turn.is_none_or(HostTurn::resumed),
+                && self.host_turn.is_none_or(HostTurn::resumed)
+                && self.active_workflow.is_none(),
         );
         // A message the host wrote in the user's place (`from: host`) isn't the user asking.
         let typed = |id: &&String| self.hub.store.entry(id).is_some_and(|e| e.data["from"] != "host");
@@ -371,7 +372,7 @@ impl Actor {
         self.close_attempt(stopped || done.is_err());
         let mut final_text = None;
         let routine = self.active_routine.is_some();
-        let grouped = self.active_group.is_some() || routine;
+        let grouped = self.active_group.is_some() || routine || self.active_workflow.is_some();
         let delegated = self.active_request.is_some();
         let sent = std::mem::take(&mut self.sent);
         let reacted = std::mem::take(&mut self.reacted);
@@ -442,6 +443,25 @@ impl Actor {
         } else {
             final_text.clone().filter(|s| !s.trim().is_empty()).ok_or_else(no_reply::no_text)
         };
+        if let Some(step) = self.active_workflow.clone() {
+            let timed_out = self.routine_timed_out;
+            let stopped_step = !timed_out && (stopped || self.stop_requested);
+            let failed_step = timed_out || (!stopped_step && (failed || stop_reason != "end_turn"));
+            let output = (!stopped_step && !failed_step).then(|| final_text.clone()).flatten();
+            let error = if timed_out {
+                Some("This step took too long".into())
+            } else {
+                failed_step.then(|| format!("The agent didn't finish ({stop_reason})"))
+            };
+            self.routine_deadline = None;
+            self.routine_timed_out = false;
+            self.active_workflow = None;
+            let keep = self.hub.workflows.finish(&self.hub, &step, output, error, stopped_step);
+            if !keep {
+                let slot = crate::workflows::session_slot(&step);
+                self.set_session(Some(&slot), None);
+            }
+        }
         if routine {
             let (status, detail) = if self.routine_timed_out {
                 (crate::routines::Status::Failed, Some(crate::routines::TIMED_OUT.into()))
@@ -527,7 +547,7 @@ impl Actor {
                 (AlertKind::Done, _) => "Finished.".into(),
                 _ => "The agent didn't finish.".into(),
             });
-            push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind);
+            push::notify(&self.hub, &self.cfg, None, &self.cfg.name, &body, kind, None);
         }
     }
 }
@@ -606,7 +626,7 @@ impl Actor {
 
     /// What started the turn that is starting or running. A task's turn is what its item came from.
     pub(super) fn source(&self) -> TurnSource {
-        if self.in_routine() {
+        if self.in_routine() || self.active_workflow.is_some() {
             TurnSource::Routine
         } else if self.active_group.is_some() {
             TurnSource::Group

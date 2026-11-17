@@ -52,6 +52,7 @@ Source review, a passing build, local integration tests and production acceptanc
 - [Background tasks](features/background-tasks.md) (a bot puts long work in its event box as items, other sessions of itself take them, and the chat stays free to answer; plan: [plans/event-box.md](plans/event-box.md))
 - [Follow-ups](features/follow-ups.md) (a bot sets itself one later turn in its chat, to look at something again)
 - [Dev servers](features/dev-servers.md) (programs a bot keeps running: the host runs them, every client shows their port)
+- [Workflows](features/workflows.md)
 - [Voice calls](features/voice-call.md)
 - [iOS Shortcuts](features/ios-shortcuts.md)
 - [File attachments](features/file-attachments.md)

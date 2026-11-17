@@ -9,8 +9,10 @@ import { Text } from './Text'
 /** What every row in a Codync menu has. */
 interface MenuRow {
   title: string
-  /** Secondary context below the main label. */
+  /** Secondary context below the main label, or beside it when `detailBeside` is set. */
   detail?: string
+  /** A shortcut or status on the same line as the title (a chord), rather than under it. */
+  detailBeside?: boolean
   icon?: string
   /** A picture in the icon's place (an agent's logo). */
   leading?: ReactNode
@@ -128,7 +130,7 @@ export function MenuPanel({ items, reactions, dismiss, maxHeight }: { items: Men
                 {item.leading ?? (item.icon ? <Icon name={item.icon} size={12} /> : null)}
               </span>
             ) : null}
-            <span className={`menu-title${item.detail ? ' with-detail' : ''}`}>
+            <span className={`menu-title${item.detail ? ' with-detail' : ''}${item.detailBeside ? ' beside' : ''}`}>
               <span>{item.verbatim ? item.title : tr(item.title)}</span>
               {item.detail && <span className="menu-detail">{tr(item.detail)}</span>}
             </span>
@@ -171,19 +173,21 @@ export function anchorPlacement(rect: DOMRect) {
  * Presents `MenuPanel` next to `anchor` (or at `point`, for right-clicks), flipping to stay on
  * screen; a click anywhere else closes it (`.codyncMenu` / `.contextActions`).
  */
-export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }: {
+export function AnchoredMenu({ open, onClose, anchor, point, items, reactions, children, className }: {
   open: boolean
   onClose: () => void
   anchor?: RefObject<HTMLElement | null>
   point?: { x: number; y: number } | null
-  items: () => MenuItem[]
+  items?: () => MenuItem[]
   reactions?: ReactionPick
+  children?: ReactNode
+  className?: string
 }) {
   const { mounted, shown } = usePresence(open, 120)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const frozen = useRef<MenuItem[]>([])
   const layer = useRef<HTMLDivElement>(null)
-  if (open) frozen.current = items()
+  if (open && items) frozen.current = items()
   useLayoutEffect(() => {
     if (!open) return
     if (point) setRect(new DOMRect(point.x, point.y, 0, 0))
@@ -194,8 +198,8 @@ export function AnchoredMenu({ open, onClose, anchor, point, items, reactions }:
   const { style, width, room } = anchorPlacement(rect)
   return createPortal(
     <div ref={layer} className={`anchored ${shown ? 'shown' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose() }}>
-      <div className="anchored-panel" style={{ ...style, maxWidth: width }}>
-        <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />
+      <div className={`anchored-panel ${className ?? ''}`} style={{ ...style, maxWidth: width }}>
+        {children ?? <MenuPanel items={frozen.current} reactions={reactions} dismiss={onClose} maxHeight={Math.min(420, room)} />}
       </div>
     </div>,
     document.body,

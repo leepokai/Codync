@@ -65,7 +65,7 @@ impl Actor {
         });
         // Tapping it opens where the card is: its bot's chat, for a task.
         let chat = self.chat_of(&card);
-        push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput);
+        push::notify(&self.hub, &chat, None, &chat.name, &acp::truncate(question, 120), AlertKind::NeedsInput, None);
         analytics::capture(
             &self.hub,
             Event::DecisionAsked,

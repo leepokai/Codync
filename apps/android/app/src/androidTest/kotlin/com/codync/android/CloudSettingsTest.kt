@@ -33,7 +33,7 @@ class CloudSettingsTest {
     @Before fun isolatedEmulatorOnly() { assumeTrue(Build.PRODUCT.startsWith("sdk")) }
 
     @Test fun aSleepingCloudComputerShowsItsProviderAndCanBeDeleted() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("stopped")), true), listOf(cloudComputer("stopped"))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("stopped")), true), listOf(cloudComputer("stopped"))), emptyList(), viewModel(), {}, {}, {}, {}) } }
         // Its account computer says where it runs.
         compose.onNodeWithText("Runs on Boat · EU").assertIsDisplayed()
         compose.onNodeWithText("Sleeping · wakes when you message").assertIsDisplayed()
@@ -50,7 +50,7 @@ class CloudSettingsTest {
 
     @Test fun aProviderThatKeepsNoSnapshotsOffersOnlyDeletingTheComputer() {
         val instabox = CloudMachine("cm_1", "Builds", "instabox", "InstaBox", "US", "stopped", "cloud", snapshots = false)
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(instabox), true)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(instabox), true)), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithText("Builds").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("InstaBox · US · Sleeping").assertIsDisplayed()
         compose.onNodeWithContentDescription("More").performClick()
@@ -59,7 +59,7 @@ class CloudSettingsTest {
     }
 
     @Test fun aNewCloudComputerIsPreparedUntilItJoinsTheAccount() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("starting", computerId = null)), true)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("starting", computerId = null)), true)), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithText("Boat · EU · Preparing your cloud computer…").performScrollTo().assertIsDisplayed()
         snapshot("preparing")
     }
@@ -68,7 +68,7 @@ class CloudSettingsTest {
     private fun boat(key: CloudCredential? = null) = CloudProvider("boat", "Boat", "EU", "boat_…", setup, key)
 
     @Test fun aProviderKeyComesFirst() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat()))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat()))), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("EU · Add a key first").assertIsDisplayed()
         // Only a usable key has its row's ⋯.
@@ -90,7 +90,7 @@ class CloudSettingsTest {
         val free = CloudProviderOffer("Get a free sandbox", "InstaBox's free plan includes one machine (4 vCPU, 8 GiB).", "https://instabox.sh/pricing")
         val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, offer = free)
         val offer = CloudOffer(listOf(machine("stopped")), available = true, providers = listOf(boat(key), instabox))
-        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Name your cloud computer").assertIsDisplayed()
         compose.onNodeWithText("Cloud computer 2", useUnmergedTree = true).assertIsDisplayed()
@@ -111,7 +111,7 @@ class CloudSettingsTest {
 
     @Test fun aSavedKeyOpensFromItsRowsMenu() {
         val offer = CloudOffer(emptyList(), available = true, providers = listOf(boat(CloudCredential("boat_…9abc"))))
-        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithTag("cloudProviderKey.boat").assertIsDisplayed().performClick()
         compose.onNodeWithText("Remove key").assertIsDisplayed()
@@ -126,7 +126,7 @@ class CloudSettingsTest {
         val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, CloudCredential("ibk_…0001"))
         val offer = CloudOffer(listOf(machine("stopped")), available = true, providers = listOf(boat(CloudCredential("boat_…9abc")), instabox))
         val failed = fixture(offer).copy(error = "Couldn't reach Codync Cloud.", failedAction = cloudKeyAction("instabox"))
-        compose.setContent { Hosted { ComputersView(failed, emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(failed, emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         // A removal asked from InstaBox's ⋯ fails in New cloud computer, where it was asked.
         compose.onNodeWithText("Couldn't reach Codync Cloud.").assertIsDisplayed()
@@ -139,7 +139,7 @@ class CloudSettingsTest {
     @Test fun aKeyTheProviderTurnsDownCantBePickedAndOpensItsKey() {
         val expired = CloudCredential("boat_…9abc", problem = "This key has expired. Make a new one.", blocking = true)
         val offer = CloudOffer(emptyList(), available = true, providers = listOf(boat(expired)))
-        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(offer), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
         compose.onNodeWithTag("cloudProviderKey.boat").assertDoesNotExist()
@@ -149,7 +149,7 @@ class CloudSettingsTest {
 
     @Test fun aPlanTheProviderTurnsDownCanBeTriedAgain() {
         val unpaid = CloudCredential("boat_…9abc", problem = "This account needs an active plan.")
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat(unpaid)))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = true, providers = listOf(boat(unpaid)))), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("This account needs an active plan.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Boat").assertIsSelected()
@@ -159,7 +159,7 @@ class CloudSettingsTest {
     @Test fun plusAtTheLimitSaysWhyAndKeepsTheKeys() {
         val three = (1..3).map { machine("running", name = "Cloud computer $it").copy(cloudComputerId = "cm_$it") }
         val instabox = CloudProvider("instabox", "InstaBox", "US", "ibk_…", setup, CloudCredential("ibk_…0001"))
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(three, true, limit = 3, providers = listOf(boat(CloudCredential("boat_…9abc")), instabox))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(three, true, limit = 3, providers = listOf(boat(CloudCredential("boat_…9abc")), instabox))), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").performScrollTo().performClick()
         compose.onNodeWithText("You can have up to 3 cloud computers. Delete one to make another.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Create").assertIsNotEnabled()
@@ -170,7 +170,7 @@ class CloudSettingsTest {
 
     @Test fun aKeyTheProviderTurnsDownSaysWhatToFix() {
         val key = CloudCredential("boat_…9abc", problem = "This key has expired. Make a new one.", blocking = true)
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("stopped")), true, providers = listOf(boat(key)))), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(listOf(machine("stopped")), true, providers = listOf(boat(key)))), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithText("Boat · EU · This key has expired. Make a new one.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("More").performClick()
         compose.onNodeWithText("Boat API key").performClick()
@@ -180,7 +180,7 @@ class CloudSettingsTest {
     }
 
     @Test fun aCloudOffForThisAccountIsHidden() {
-        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = false)), emptyList(), viewModel(), {}, {}, {}) } }
+        compose.setContent { Hosted { ComputersView(fixture(CloudOffer(emptyList(), available = false)), emptyList(), viewModel(), {}, {}, {}, {}) } }
         compose.onNodeWithContentDescription("New cloud computer").assertDoesNotExist()
         compose.onNodeWithText("Codync Cloud").assertDoesNotExist()
     }

@@ -87,6 +87,7 @@ impl Actor {
     fn can_send_file(&self) -> Result<()> {
         ensure!(!self.stop_requested, "turn is stopping");
         ensure!(self.in_own_chat(), "send_file and artifact cards are only available in the bot's own chat");
+        ensure!(self.active_workflow.is_none(), "send_file and artifact cards aren't available in a workflow step");
         ensure!(self.turn.is_some(), "no turn is running: between turns, tell the user with send_message");
         Ok(())
     }

@@ -23,6 +23,10 @@ export type Screen =
   | 'remote_screen'
   | 'task'
   | 'all_work'
+  | 'workflows'
+  | 'workflow'
+  | 'workflowRun'
+  | 'workflowEditor'
 
 /** Outbound links, by what they lead to. */
 export type Link = 'github' | 'docs' | 'issues' | 'discord' | 'app_store' | 'demo' | 'tailscale' | 'privacy' | 'support' | 'install_command' | 'whats_new_film'

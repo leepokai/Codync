@@ -127,6 +127,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", botComputer = "bot_computer", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
         case library, artifact, network, task, allWork = "all_work"
+        case workflows, workflow, workflowRun, workflowEditor
     }
 
     public enum NotificationKind: String, Sendable {

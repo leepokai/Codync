@@ -73,14 +73,26 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     const pause = player.getByTitle('Pause')
     await expect(player).toBeVisible()
     // The sound preloaded as the card came on screen: its bar and clock show before the first play.
-    await expect(player.locator('input.file-card-progress')).toBeVisible()
+    const bar = player.locator('input.file-card-progress')
+    await expect(bar).toBeVisible()
     await expect(player.locator('.file-card-detail')).toContainText(' / ')
+    // Dragged before the first play, the bar keeps its position: the note opens and starts there.
+    const seekBox = (await bar.boundingBox())!
+    await bar.click({ position: { x: seekBox.width * 0.25, y: seekBox.height / 2 } })
+    await expect.poll(async () => Number(await bar.inputValue())).toBeGreaterThan(0.5)
+    await expect(play).toBeVisible()
+    await play.click()
+    await expect(pause).toBeVisible()
+    await expect(player.locator('.file-card-detail')).toContainText(/0:0[1-2] \/ 0:04/)
+    await pause.click()
+    await expect(play).toBeVisible()
+    await page.mouse.move(0, 0)
     // Hovering lays a soft round chip behind the outline glyph over the app's hover time, never a sudden switch.
     const chip = async () => play.evaluate((el) => {
       const style = getComputedStyle(el, '::before')
       return { background: style.backgroundColor, radius: style.borderRadius, transition: style.transitionDuration }
     })
-    expect((await chip()).background).toBe('rgba(0, 0, 0, 0)')
+    await expect.poll(async () => (await chip()).background).toBe('rgba(0, 0, 0, 0)')
     await play.hover()
     await expect.poll(async () => (await chip()).background).not.toBe('rgba(0, 0, 0, 0)')
     expect(await chip()).toMatchObject({ radius: '50%', transition: '0.12s' })
@@ -99,7 +111,6 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     await player.locator('.file-card-detail').click()
     await expect(play).toBeVisible()
     // Beside the bar, above its 12 px box, the click still plays rather than seeking.
-    const bar = player.locator('input.file-card-progress')
     const box = (await bar.boundingBox())!
     const playerBox = (await player.boundingBox())!
     await page.mouse.click(box.x + box.width * 0.75, playerBox.y + 1)

@@ -195,6 +195,22 @@ class SharedAudioTest {
         assertEquals(12.0, audio.elapsed, 0.0)
     }
 
+    @Test fun `a seek before the first play starts the sound there`() = runBlocking {
+        val preloading = launch { audio.preload() }
+        yield()
+        fetch.complete(File("note.m4a"))
+        preloading.join()
+        assertEquals(9.4, audio.duration, 0.0)
+
+        audio.seek(5.0)
+        assertEquals(5.0, audio.elapsed, 0.0)
+        assertEquals("no sound opens before the tap", emptyList<String>(), speaker.log)
+        audio.toggle()
+        assertEquals(AudioPhase.Playing, audio.phase)
+        assertEquals(listOf("open", "seek 5.0", "start"), speaker.log)
+        assertEquals(5.0, audio.elapsed, 0.0)
+    }
+
     @Test fun `a preload has the next tap play the bytes it already fetched`() = runBlocking {
         val preloading = launch { audio.preload() }
         yield()

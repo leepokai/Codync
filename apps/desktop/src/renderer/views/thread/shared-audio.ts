@@ -49,6 +49,8 @@ export class SharedAudio {
   /** The length the preload read off the bytes (0 until then), shown before the first play and after a failure. */
   private known = 0
   private sound: Sound | null = null
+  /** Where a seek made before the player opened wants it to start (seconds), applied as it opens. */
+  private pending: number | null = null
   private disposed = false
   /** The step this tap is on, so a failure says which one broke. */
   failure: AudioFailure = 'load'
@@ -92,11 +94,13 @@ export class SharedAudio {
     this.phase = 'idle'
   }
 
-  /** Moves a loaded sound's playhead, held to its length; playing or paused, it stays so. */
+  /** Moves the playhead, held to the sound's length; playing or paused, it stays so. Before the first play, the
+   *  preloaded length shows the move and the sound opens there. */
   seek(seconds: number) {
-    if (!this.sound || this.duration <= 0) return
+    if (this.duration <= 0) return
     this.elapsed = Math.min(Math.max(seconds, 0), this.duration)
-    this.sound.seek(this.elapsed)
+    if (this.sound) this.sound.seek(this.elapsed)
+    else this.pending = this.elapsed
     this.changed(this.snapshot)
   }
 
@@ -114,13 +118,15 @@ export class SharedAudio {
     this.changed(this.snapshot)
   }
 
-  /** The shared fetch; one that fails or throws answers null and is forgotten. */
-  private data() {
-    this.bytes ??= this.platform.load().catch(() => null).then((data) => {
-      if (!data) this.bytes = null
-      return data
-    })
-    return this.bytes
+  /** The shared fetch, which one preload and a tap all wait on; it lets go of its bytes once they answer, so a card
+   *  holds none while it isn't playing (the store keeps them), and a failed fetch is forgotten, so the next call
+   *  fetches again. */
+  private async data(): Promise<Uint8Array | null> {
+    const running = this.bytes ?? this.platform.load().catch(() => null)
+    this.bytes = running
+    const data = await running
+    if (this.bytes === running) this.bytes = null
+    return data
   }
 
   private async play() {
@@ -152,6 +158,10 @@ export class SharedAudio {
         },
       })
       this.sound = sound
+      if (this.pending !== null) {
+        sound.seek(this.pending)
+        this.pending = null
+      }
     }
     this.failure = 'playback'
     await this.sound.play()
@@ -163,6 +173,7 @@ export class SharedAudio {
     const sound = this.sound
     this.bytes = null
     this.sound = null
+    this.pending = null
     this.elapsed = 0
     this.duration = this.known
     sound?.pause()

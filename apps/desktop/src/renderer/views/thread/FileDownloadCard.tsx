@@ -24,17 +24,17 @@ export function FileDownloadCard({ entry, file, menu }: { entry: Entry; file: Sh
 
 /** A voice note's card: its play state (and a spinner while it loads) in place of the file icon. */
 function AudioFileCard({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
-  const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
-  return <FileCard entry={entry} file={file} menu={menu} audio={snapshot} toggle={toggle} seek={seek} icon={<AudioIcon snapshot={snapshot} toggle={toggle} />} />
+  const { snapshot, toggle, seek, card } = useSharedAudio(file, entry.id)
+  return <FileCard entry={entry} file={file} menu={menu} audio={snapshot} toggle={toggle} seek={seek} card={card} icon={<AudioIcon snapshot={snapshot} toggle={toggle} />} />
 }
 
 /** A message's voice note, at the top of its bubble: the play button, the progress bar and the clock on one row. */
 export function VoiceNotePlayer({ entry, file, menu }: { entry: Entry; file: SharedFile; menu: MessageMenu }) {
   const tr = useTr()
-  const { snapshot, toggle, seek } = useSharedAudio(file, entry.id)
+  const { snapshot, toggle, seek, card } = useSharedAudio(file, entry.id)
   const stop = useFileStop(entry, file, menu, snapshot, toggle, seek)
   return <>
-    <div className="voice-note" {...stop.props} aria-label={`${tr('Voice note')}, ${stop.detail}`}>
+    <div className="voice-note" ref={card} {...stop.props} aria-label={`${tr('Voice note')}, ${stop.detail}`}>
       <HStack gap={10} aria-hidden>
         <AudioIcon snapshot={snapshot} toggle={toggle} />
         {stop.playFailed ? null : <AudioProgress snapshot={snapshot} seek={seek} />}
@@ -52,12 +52,12 @@ export function VoiceNotePlayer({ entry, file, menu }: { entry: Entry; file: Sha
  * VoiceOver's Show menu) offers all of them, then the message's own (Reply, Copy, reactions).
  * The buttons and bar inside are for the pointer only.
  */
-function FileCard({ entry, file, menu, audio, toggle, seek, icon }: {
-  entry: Entry; file: SharedFile; menu: MessageMenu; audio?: AudioSnapshot; toggle?: () => void; seek?: (seconds: number) => void; icon?: React.ReactNode
+function FileCard({ entry, file, menu, audio, toggle, seek, card, icon }: {
+  entry: Entry; file: SharedFile; menu: MessageMenu; audio?: AudioSnapshot; toggle?: () => void; seek?: (seconds: number) => void; card?: React.RefObject<HTMLDivElement | null>; icon?: React.ReactNode
 }) {
   const stop = useFileStop(entry, file, menu, audio, toggle, seek)
   return <>
-    <div className="file-card" {...stop.props} aria-label={`${file.name}, ${stop.detail}`}>
+    <div className="file-card" ref={card} {...stop.props} aria-label={`${file.name}, ${stop.detail}`}>
       <VStack gap={12} aria-hidden>
         {showsAsImage(file) ? <ImageContextMenu source={stop.image} menu={menu} className="file-card-image-menu">
           <button className="file-card-image" tabIndex={-1} onClick={stop.view}>

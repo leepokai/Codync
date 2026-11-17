@@ -221,6 +221,23 @@ private func silentWAV() -> Data {
         }
     }
 
+    @Test func aSeekBeforeTheFirstPlayStartsTheVoiceNoteThere() async {
+        await playing { audio, load, store, note in
+            let preloading = Task { await audio.preload(note, entryId: "entry", model: store) }
+            #expect(await load.asked())
+            load.answer(silentWAV())
+            await preloading.value
+            #expect(audio.duration == 1)
+
+            audio.seek(to: 0.4)
+            #expect(abs(audio.elapsed - 0.4) < 0.01, "the bar shows where the first play will start")
+            // The preload's fetch answered and is forgotten; the store hands the bytes back for the tap.
+            await audio.toggle(note, entryId: "entry", model: store)
+            #expect(audio.state == .playing)
+            #expect(abs(audio.elapsed - 0.4) < 0.01)
+        }
+    }
+
     @Test func aCallOrSiriTakingTheAudioPausesAPlayingVoiceNote() async {
         await playing { audio, load, store, note in
             let tap = Task { await audio.toggle(note, entryId: "entry", model: store) }

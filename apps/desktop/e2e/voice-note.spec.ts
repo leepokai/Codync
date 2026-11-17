@@ -72,6 +72,9 @@ test('a click on the voice note plays or pauses it; only its bar seeks', async (
     const play = player.getByTitle('Play')
     const pause = player.getByTitle('Pause')
     await expect(player).toBeVisible()
+    // The sound preloaded as the card came on screen: its bar and clock show before the first play.
+    await expect(player.locator('input.file-card-progress')).toBeVisible()
+    await expect(player.locator('.file-card-detail')).toContainText(' / ')
     // Hovering lays a soft round chip behind the outline glyph over the app's hover time, never a sudden switch.
     const chip = async () => play.evaluate((el) => {
       const style = getComputedStyle(el, '::before')

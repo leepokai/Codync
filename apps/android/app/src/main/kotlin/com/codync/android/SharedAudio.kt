@@ -84,6 +84,8 @@ internal class SharedAudio(
     var elapsed by mutableStateOf(0.0)
         private set
     private var sound: Sound? = null
+    /** Where a seek made before the sound opened wants it to start (seconds), applied as it opens. */
+    private var pendingSeek: Double? = null
     /** The step this tap is on, so a failure says which one broke. */
     var failure = VoiceNoteFailure.Load
         private set
@@ -120,6 +122,7 @@ internal class SharedAudio(
                     if (released) { it.release(); return }
                     sound = it
                     duration = it.duration
+                    pendingSeek?.let { seconds -> it.seek(seconds); pendingSeek = null }
                 }
             }
             failure = VoiceNoteFailure.Playback
@@ -155,12 +158,13 @@ internal class SharedAudio(
         return running.await().onFailure { if (fetching === running) fetching = null }.getOrThrow()
     }
 
-    /** Moves a loaded sound's playhead, held to its length; playing or paused, it stays so. */
+    /** Moves the playhead, held to the sound's length; playing or paused, it stays so. Before the first play, the
+     *  preloaded length shows the move and the sound opens there. */
     fun seek(seconds: Double) {
-        val current = sound ?: return
         if (duration <= 0.0) return
         elapsed = seconds.coerceIn(0.0, duration)
-        current.seek(elapsed)
+        val current = sound
+        if (current != null) current.seek(elapsed) else pendingSeek = elapsed
     }
 
     /** Played to the end: back to a replayable start, the duration kept. */
@@ -189,6 +193,7 @@ internal class SharedAudio(
     private fun drop() {
         sound?.release()
         sound = null
+        pendingSeek = null
         fetching = null
         duration = known
         elapsed = 0.0

@@ -21,6 +21,8 @@ final class SharedAudio {
     private(set) var elapsed: TimeInterval = 0
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private var done: PlayDone?
+    /// Where a seek made before the player opened wants it to start (seconds), applied as it opens.
+    @ObservationIgnored private var pendingSeek: TimeInterval?
     /// Whether this player turned the audio session on (a call or dictation keeps its own).
     @ObservationIgnored private var ownsSession = false
     /// Bumped by `stop()`: a load still running when the card went doesn't start playing.
@@ -122,6 +124,7 @@ final class SharedAudio {
 
     func stop() {
         generation += 1
+        pendingSeek = nil
         player?.stop()
         player?.currentTime = 0
         interruptions?.stop()
@@ -129,11 +132,13 @@ final class SharedAudio {
         finish()
     }
 
-    /// Moves a loaded sound's playhead, held to its length; playing or paused, it stays so.
+    /// Moves the playhead, held to the sound's length; playing or paused, it stays so. Before the first play, the
+    /// preloaded length shows the move and the player opens there.
     func seek(to seconds: TimeInterval) {
-        guard let player, let duration else { return }
-        player.currentTime = min(max(seconds, 0), duration)
-        elapsed = player.currentTime
+        guard let duration else { return }
+        let target = min(max(seconds, 0), duration)
+        elapsed = target
+        if let player { player.currentTime = target } else { pendingSeek = target }
     }
 
     private func pause() {
@@ -156,6 +161,7 @@ final class SharedAudio {
     /// The sound or the session failed: the player is dropped so the next tap fetches and decodes again.
     private func fail() {
         (player, done, fetched) = (nil, nil, nil)
+        pendingSeek = nil
         duration = known
         elapsed = 0
         stopClock()
@@ -183,6 +189,10 @@ final class SharedAudio {
         let done = PlayDone { [weak self] played in Task { @MainActor in played ? self?.finish() : self?.fail() } }
         player.delegate = done
         (self.player, self.done) = (player, done)
+        if let pendingSeek {
+            player.currentTime = pendingSeek
+            self.pendingSeek = nil
+        }
         return player
     }
 

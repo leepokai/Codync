@@ -375,6 +375,15 @@ fn substitute(phrase: &str, values: &HashMap<String, String>) -> String {
     result
 }
 
+/// A version slot holds only a version ("2.47.0", "2.47.0-dev"), so "You have reached your limit."
+/// never fills "You have {version}.".
+fn version_shaped(value: &str) -> bool {
+    let (core, suffix) = value.split_once('-').map_or((value, None), |(core, suffix)| (core, Some(suffix)));
+    core.split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        && suffix
+            .is_none_or(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.'))
+}
+
 fn captures(text: &str, pieces: &[Piece]) -> Option<Vec<(String, String)>> {
     let mut pos = 0;
     let mut caps = Vec::new();
@@ -398,6 +407,9 @@ fn captures(text: &str, pieces: &[Piece]) -> Option<Vec<(String, String)>> {
         } else {
             text.len()
         };
+        if token == "{version}" && !version_shaped(&text[pos..end]) {
+            return None;
+        }
         caps.push((token.to_owned(), text[pos..end].to_owned()));
         pos = end;
     }

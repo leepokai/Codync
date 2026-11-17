@@ -75,6 +75,8 @@ data class Bot(
     val position: Int = 0,
     val hidden: Boolean = false,
     val unread: Int = 0,
+    /** How many of [unread] are cards waiting on the user: the badge turns amber. 0 from an older host. */
+    val waiting: Int = 0,
     val rev: Long = 0,
     val deleted: Boolean = false,
     /** Agents that carry on, in order, when its own can't answer (out of usage, rate limited, signed out…); null from an older host. */
@@ -85,10 +87,30 @@ data class Bot(
     val agentStep: AgentStep? = null,
     /** Agents of its chain resting now. */
     val resting: List<Resting> = emptyList(),
+    /** The `/` commands of the agent it runs on now. Empty from an older host, and for a group. */
+    val agentCommands: List<AgentCommand> = emptyList(),
     /** What it keeps running on the computer. Empty from an older host, and for a group. */
     val devServers: List<DevServer> = emptyList(),
+    /** Its box ([WorkItem]): every live or waiting item in dispatch order, then the ones ended in the last day. Empty from a host before the box, and for a group. */
+    @Serializable(with = WorkSerializer::class)
+    val work: List<WorkItem> = emptyList(),
+    /** The most agents it runs at once; null from a host before the box. */
+    @Serializable(with = MaxAgentsSerializer::class)
+    val maxAgents: Int? = null,
+    /** A task that starts while another of its tasks works in the same repository gets a git worktree of its own; null from an older host. */
+    val taskWorktrees: Boolean? = null,
+    /** Its folder is in a git repository: where [taskWorktrees] matters. */
+    val gitRepo: Boolean = false,
+    /** Git is on the computer; null from an older host, which is counted as having it ([gitState]). */
+    val gitInstalled: Boolean? = null,
+    /** How it stands outside its chat ([Outside]); null from an older host. */
+    @Serializable(with = OutsideSerializer::class)
+    val outside: Outside? = null,
     val customIcon: CustomIcon? = null,
 ) {
+    /** The messages in the badge the user hasn't read: what `markRead` clears (waiting cards stay counted). */
+    val unseen: Int get() = unread - waiting
+
     /** Its band in the roster: pinned bots, then the rest. Reordering stays inside a band. */
     val band: Int get() = if (pinned) 0 else 1
 
@@ -101,6 +123,11 @@ data class Bot(
 
     /** A group's bots, in member order, from [bots]. */
     fun memberBots(bots: List<Bot>): List<Bot> = members.mapNotNull { id -> bots.firstOrNull { it.id == id } }
+
+    /** Its status outside its chat: the chat's own from a host that names none. */
+    val outsideStatus: String get() = outside?.status ?: status
+    /** When what it does outside its chat started. */
+    val outsideStartedAt: Long? get() = if (outside != null) outside.startedAt else startedAt
 
     /** Working anywhere: its own chat, a room or a routine. */
     val isWorking: Boolean get() = status in listOf("working", "needsInput")

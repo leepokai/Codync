@@ -35,10 +35,11 @@ internal class HostCallLink(private val store: AppStore, private val call: Voice
     /** The user's last words are still being written down (OpenAI transcribes them after the turn). */
     private var hearing = false
 
-    override suspend fun start(provider: VoiceProvider, model: String, voice: String): CallSession =
+    override suspend fun start(provider: VoiceProvider, model: String, voice: String, googleSearch: Boolean): CallSession =
         CallSession.decode(store.hostCall("startCall", buildJsonObject {
             put("botId", call.botId); put("callId", call.id); put("mode", "realtime"); put("provider", provider.id)
             put("model", model); put("voice", voice); put("language", java.util.Locale.getDefault().toLanguageTag())
+            put("googleSearch", googleSearch)
         }, 30_000).jsonObject)
 
     override suspend fun tool(name: String, arguments: JsonObject): JsonElement {

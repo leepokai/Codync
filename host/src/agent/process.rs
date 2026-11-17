@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Child;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 use tokio::time::Instant;
 
 const REAP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -137,7 +137,9 @@ impl Process {
         Ok(owned)
     }
 
-    pub(super) fn monitor(child: &Arc<Mutex<Self>>) {
+    /// Ends what is left of the tree once its leader exits by itself, then sends `ended`; dropped unsent when the tree
+    /// is being stopped instead.
+    pub(super) fn monitor(child: &Arc<Mutex<Self>>, ended: oneshot::Sender<()>) {
         let weak = Arc::downgrade(child);
         tokio::spawn(async move {
             loop {
@@ -149,12 +151,14 @@ impl Process {
                 match process.exited() {
                     Ok(true) => {
                         process.kill().await;
+                        let _ = ended.send(());
                         break;
                     }
                     Ok(false) => {}
                     Err(error) => {
                         tracing::warn!(%error, "couldn't observe agent process exit");
                         process.kill().await;
+                        let _ = ended.send(());
                         break;
                     }
                 }

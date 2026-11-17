@@ -45,7 +45,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case voiceCallStarted(VoiceEngine)
     /// How one engine of a call fared, when it's replaced or the call ends: milliseconds until it was ready (nil:
     /// never), reconnects, the first phase stuck too long, why it failed.
-    case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure)
+    /// `searches`: with Gemini's Google Search on, the answers that came with its suggestions (never the query); nil when off.
+    case voiceCallQuality(VoiceEngine, readyMs: Int?, reconnects: Int, stuck: VoiceStuck, failure: VoiceFailure, searches: Int? = nil)
     case screenViewed(Screen)
     /// A computer's screen stopped streaming after a while with nobody touching the app: the bot details' picture
     /// (`botComputer`) or the full viewer (`remoteScreen`).
@@ -67,6 +68,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     case conversationFindOpened
     /// A search in the find bar settled: whether it found anything, never the text.
     case conversationFindSearched(found: Bool)
+    /// A quote at the top of a message was tapped: whether the quoted message was loaded and came into view.
+    case quoteOpened(found: Bool)
     /// Something from another app's share sheet handed to a bot, or why it wasn't; never names or content.
     case shareSent(ShareSent)
 
@@ -81,7 +84,8 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum PromptSource: String, Sendable { case settings, widgets }
     public enum Setting: String, Sendable { case push, liveActivities = "live_activities" }
     public enum Link: String, Sendable {
-        case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link"
+        case github, issues, appStore = "app_store", demo, tailscale, privacy, installCommand = "install_command", installLink = "install_link",
+             whatsNewFilm = "whats_new_film", docs
     }
     public enum ImageAction: String, Sendable { case zoom, copyImage = "copy_image", copyName = "copy_name", download }
     /// Where it was done: inside the full-size viewer, or from a picture's menu in a chat while the viewer is closed.
@@ -120,7 +124,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
     public enum Screen: String, Sendable {
         case bots, state, chat, trace, botDetails = "bot_details", botComputer = "bot_computer", memory, routines, marketplace
         case settings, computers, usage, account, pairing, voiceSettings = "voice_settings", remoteScreen = "remote_screen"
-        case library, artifact, network
+        case library, artifact, network, task, allWork = "all_work"
     }
 
     public enum NotificationKind: String, Sendable {
@@ -269,6 +273,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case .voiceNotePlayed: "voice_note_played"
         case .conversationFindOpened: "conversation_find_opened"
         case .conversationFindSearched: "conversation_find_searched"
+        case .quoteOpened: "quote_opened"
         case .shareSent: "share_sent"
         }
     }
@@ -286,7 +291,7 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .signInFailed(provider, reason): return ["provider": .string(provider.rawValue), "reason": .string(reason.rawValue)]
         case .signedOut, .accessRequested, .continuedWithoutAccount, .computerFoundOnNetwork, .addToAccountAsked,
              .addToAccountCompleted, .imagePreviewOpened, .whatsNewShown, .conversationFindOpened: return [:]
-        case let .conversationFindSearched(found): return ["found": .bool(found)]
+        case let .conversationFindSearched(found), let .quoteOpened(found): return ["found": .bool(found)]
         case let .addToAccountFailed(reason): return ["reason": .string(reason.rawValue)]
         case let .imagePreviewAction(action, from, outcome):
             var p: [String: Analytics.Value] = ["action": .string(action.rawValue), "from": .string(from.rawValue)]
@@ -312,10 +317,11 @@ public enum AnalyticsEvent: Equatable, Sendable {
         case let .settingChanged(setting, on): return ["setting": .string(setting.rawValue), "on": .bool(on)]
         case let .linkOpened(link): return ["link": .string(link.rawValue)]
         case let .voiceCallStarted(engine): return ["engine": .string(engine.rawValue)]
-        case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure):
+        case let .voiceCallQuality(engine, readyMs, reconnects, stuck, failure, searches):
             var p: [String: Analytics.Value] = ["engine": .string(engine.rawValue), "reconnects": .int(reconnects),
                                                 "stuck": .string(stuck.rawValue), "failure": .string(failure.rawValue)]
             p["ready_ms"] = readyMs.map(Analytics.Value.int)
+            if let searches { p["google_search"] = .bool(true); p["searches"] = .int(searches) }
             return p
         case let .reviewRequested(prompts):
             return ["prompts": .int(prompts), "policy": .string("v2")]

@@ -1,6 +1,6 @@
 .chat-window {
   height: 100%;
-  min-width: 760px;
+  min-width: 680px; /* chatWindowMinWidth in src/shared/chat-layout.ts */
   min-height: 500px;
   background: var(--background);
   position: relative;
@@ -222,6 +222,11 @@ html[data-platform="darwin"] .sidebar-header {
   font-size: var(--text-caption);
   font-weight: 600;
 }
+/* Counts a card waiting on the user: the needs-you colour of the avatar badge. */
+.unread-badge.waiting {
+  background: var(--warning);
+  color: var(--on-warning);
+}
 /* A selected row's fill doesn't touch its hovered neighbour's. */
 .roster-row + .roster-row {
   margin-top: 4px;
@@ -295,7 +300,7 @@ html[data-platform="darwin"] .sidebar-header {
 
 .detail {
   flex: 1;
-  min-width: 420px;
+  min-width: 420px; /* detailMinWidth in src/shared/chat-layout.ts */
   height: 100%;
   position: relative;
   overflow: hidden;

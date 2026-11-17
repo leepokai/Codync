@@ -20,6 +20,8 @@ final class OnDeviceEngine: VoiceEngine {
     @ObservationIgnored var onActivityChanged: ((Bool) -> Void)?
     /// What you're saying right now (live caption).
     private(set) var heard = ""
+    /// The recognizer's results since listening started, as one transcript.
+    @ObservationIgnored private var segments = SpeechSegments()
     /// The reply being read aloud.
     private(set) var said = ""
     /// Microphone loudness, 0…1, while listening.
@@ -165,6 +167,7 @@ final class OnDeviceEngine: VoiceEngine {
     private func listen() {
         phase = .listening
         heard = ""
+        segments = SpeechSegments()
         guard !muted, !ended, let recognizer else { return }
         generation += 1
         let request = OnDeviceSpeech.request(for: recognizer)
@@ -204,9 +207,9 @@ final class OnDeviceEngine: VoiceEngine {
         level = 0
     }
 
-    fileprivate func recognized(_ text: String, final: Bool, generation: Int) {
+    fileprivate func recognized(_ text: String, final: Bool, ends: Bool, generation: Int) {
         guard generation == self.generation, phase == .listening else { return }
-        heard = text
+        heard = segments.heard(text, ends: ends)
         if !text.isEmpty { failures.reset() }
         silence?.cancel()
         if final { return submit() }
@@ -264,9 +267,10 @@ final class OnDeviceEngine: VoiceEngine {
         { result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
+            let ends = result?.endsSegment ?? false
             let failed = error != nil
             Task { @MainActor in
-                if let text { session.recognized(text, final: final, generation: generation) }
+                if let text { session.recognized(text, final: final, ends: ends, generation: generation) }
                 if failed { session.recognitionFailed(generation: generation) }
             }
         }

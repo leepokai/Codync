@@ -60,8 +60,12 @@ pub fn when(ms: i64) -> String {
 }
 
 pub fn elapsed(start: Option<i64>) -> String {
-    let Some(start) = start else { return String::new() };
-    let s = ((now_ms() - start) / 1000).max(0);
+    start.map_or_else(String::new, |start| span(start, now_ms()))
+}
+
+/// The time from `start` to `end` (epoch ms), as the working line counts it.
+pub fn span(start: i64, end: i64) -> String {
+    let s = ((end - start) / 1000).max(0);
     if s < 60 {
         format!("{s}s")
     } else if s < 3600 {

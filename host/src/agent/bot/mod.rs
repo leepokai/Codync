@@ -19,6 +19,7 @@
 mod background_work;
 mod cmd;
 mod codex_names;
+mod commands;
 mod compaction;
 mod decisions;
 mod fallback;
@@ -31,6 +32,7 @@ mod modes;
 mod pi_tools;
 mod queue;
 mod session;
+mod sign_in;
 mod steer;
 mod tool_entry;
 mod turn;
@@ -38,8 +40,11 @@ mod updates;
 
 pub use cmd::Cmd;
 use cmd::{HostTurn, Queued};
+pub use commands::listed as agent_commands;
+pub(crate) use compaction::conversation;
 pub use compaction::{context_window, offers_threshold};
 use inflight::Inflight;
+pub(crate) use inflight::resumable;
 pub(crate) use launch::{launch_commands, select_model, start_agent, start_first, system_prompt};
 
 use crate::agent::acp::{self, Acp, Incoming};
@@ -48,7 +53,7 @@ use crate::chat::context::{Identity, Snapshot};
 use crate::chat::group::GroupTurn;
 use crate::chat::memory;
 use crate::hub::{BotStatus, Hub};
-use crate::store::{BotConfig, Entry, EntryKind, Lane, now_ms};
+use crate::store::{BotConfig, Entry, EntryKind, Lane};
 use anyhow::{Result, anyhow};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -76,12 +81,10 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let session_id = hub.store.bot(&base.id).ok().flatten().and_then(|b| b.session_id);
     // The agent its main session runs on: one of its fallbacks, if it was on one when the host stopped.
     let cfg = fallback::resume_step(&hub, &base);
-    // A turn the previous host process never finished (crash, update, restart), unless
-    // it's stale: an hour-old task is more likely unwanted than awaited (gawkbot's rule).
-    let interrupted = Inflight::load(&hub.store, &cfg.id)
-        .filter(|turn| now_ms() - turn.started < STALE_RESUME_MS)
-        .map(|_| Lane::main(&cfg.id));
-    let dreamer = memory::spawn_dreamer(hub.clone(), cfg.id.clone());
+    let interrupted = resumable(&hub.store, &cfg.id).then(|| Lane::main(&cfg.id));
+    // A task's chat is its bot's own work, not the user's words: only the bot dreams, over its own chat.
+    let dreamer =
+        if cfg.is_task() { mpsc::unbounded_channel().0 } else { memory::spawn_dreamer(hub.clone(), cfg.id.clone()) };
     let lane = Lane::main(&cfg.id);
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
@@ -119,8 +122,10 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         steers_in_flight: HashMap::new(),
         held_done: None,
         active_request: None,
+        task_source: crate::chat::tasks::Source::Bot,
         reply_hops: None,
         host_turn: None,
+        reports: Vec::new(),
         prompt_call: None,
         seg: Seg::None,
         tools: HashMap::new(),
@@ -133,9 +138,11 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         perms: HashMap::new(),
         asked: HashMap::new(),
         stop_requested: false,
+        stopped_for_message: false,
         cancel_deadline: None,
         exit_tail: None,
-        tools_changed: false,
+        agent_error: None,
+        restart_before_turn: false,
         restart_after_turn: false,
         fast_support,
         idle_checked: Instant::now(),
@@ -161,6 +168,8 @@ struct SessionCaps {
     additional_directories: bool,
     /// `_session/steering` (not in ACP v1 yet): a message joins the running turn (see `steer`).
     steering: bool,
+    /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
+    fork: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -307,10 +316,15 @@ struct Actor {
     /// How the running turn ended, while the agent still owes an answer to a steer (`turn_ended`).
     held_done: Option<Done>,
     active_request: Option<crate::chat::team::BotRequest>,
+    /// A task's running turn works an item that came from here (`chat::tasks`): a routine's run and another bot's
+    /// request keep the rules those turns have in a chat. Anything else: the bot's own.
+    task_source: crate::chat::tasks::Source,
     /// During a turn that takes bot replies: the hops of their chain (see `chat::team::BotReply`).
     reply_hops: Option<u8>,
     /// The running turn is one the host started, with no message of the user's (`Cmd::Prompt`, `Cmd::FollowUp`).
     host_turn: Option<HostTurn>,
+    /// The reports the running turn answers (`HostTurn::TaskReport`), kept until it ends (`end_host_turn`).
+    reports: Vec<crate::chat::tasks::Report>,
     /// The call the next host-started turn opens (`Cmd::Prompt`), whose replies are that call's.
     prompt_call: Option<String>,
     seg: Seg,
@@ -332,13 +346,18 @@ struct Actor {
     /// Decision card id -> the live tool call waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
     stop_requested: bool,
+    /// Send now stopped the turn for a waiting message (`steer`): that message going out says so, not a `Stopped.`
+    /// line drawn under it.
+    stopped_for_message: bool,
     /// A cancelled turn still running past this stops its agent process.
     cancel_deadline: Option<Instant>,
     /// Last stderr lines of an agent process that just exited.
     exit_tail: Option<String>,
-    /// Connectors changed: restart the agent before the next turn so the
-    /// session is resumed with the new MCP servers.
-    tools_changed: bool,
+    /// The error the agent said its turn ended in while answering it as a success (pi, `pi_tools::turn_result`).
+    agent_error: Option<String>,
+    /// The agent's process is stale (its tools changed, or the grants or sign-in it started with are gone): a new one
+    /// starts before the next turn, which reopens its session. An agent that can't reopen one keeps its process.
+    restart_before_turn: bool,
     /// A change that restarts the agent (`restart_agent`) came during a turn: it restarts once the turn ends.
     restart_after_turn: bool,
     /// What the agent says about Fast mode; clients see it in the bot's runtime.
@@ -371,6 +390,7 @@ impl Actor {
                 inc => self.on_incoming(Some(inc)).await,
             }
         }
+        let done = pi_tools::turn_result(done, self.agent_error.take());
         if let Err(error) = &done
             && self.fall_back(error, done_tx).await
         {
@@ -380,7 +400,8 @@ impl Actor {
         let failed = done.as_ref().is_err_and(acp::may_end_session);
         self.finish_turn(&done);
         match session {
-            Some(sid) if routine => self.release_spent(&sid).await,
+            // A task's session is spent like a run's; an item that follows reopens it.
+            Some(sid) if routine || self.cfg.is_task() => self.release_spent(&sid).await,
             Some(sid) if failed => self.close_reopenable(&sid).await,
             _ => {}
         }
@@ -437,8 +458,14 @@ impl Actor {
         self.hub.team.end_turn(&self.cfg.id);
         self.complete_request(Err(anyhow!("recipient shut down")), true);
         self.complete_group(Err(anyhow!("bot shut down")));
+        // Its cards may sit in another chat (a group's, a task's parent's), which outlives it.
+        self.expire_perms();
         if let Some(c) = self.conn.take() {
             c.acp.kill().await;
+        }
+        // Unless the task runs again already: the user wrote to its thread as this actor was on its way out.
+        if self.cfg.is_task() && !self.hub.has_actor(&self.cfg.id) {
+            self.hub.forget_runtime(&self.cfg.id);
         }
     }
 
@@ -491,9 +518,6 @@ const RESUME_PROMPT: &str = "[Codync restarted on this computer and interrupted 
 
 /// How long a cancelled turn may take to wind down before its agent process is stopped.
 const CANCEL_GRACE: Duration = Duration::from_secs(15);
-
-/// An interrupted turn older than this isn't resumed.
-const STALE_RESUME_MS: i64 = 60 * 60 * 1000;
 
 async fn recv_incoming(conn: &mut Option<Conn>) -> Option<Incoming> {
     match conn {

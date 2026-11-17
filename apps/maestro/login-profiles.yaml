@@ -1,4 +1,4 @@
-# Login profiles on the phones (docs/features/login-profiles.md): a bot's details show the login profile it runs on
+# Login profiles on the phones (docs/features/login-profiles.md): a bot's settings show the login profile it runs on
 # under Agent, by the name the user gave it, and move it back to the default one; the agent's setup lists both under
 # Login profiles, the added account as "Not signed in", renames the default one with its pencil, and removes the
 # account once no bot uses it (before that the host refuses). Then an API key one: Add API key opens its key form, a
@@ -7,7 +7,9 @@
 # goes back when the flow completes). The phone must already be signed in and paired with the host (a worktree's
 # sandbox, docs/guides/dev-app.md#worktree-sandboxes), so run it apart from `welcome`, whose clearState undoes that.
 # The computer needs an agent that can have accounts installed (Claude Code, Codex, OpenCode, Pi…; two, for the two
-# phones in one run: see login-profiles.js); without, the flow does nothing.
+# phones in one run: see login-profiles.js); without, the flow does nothing. A `--cdp` sandbox also lists the stand-in
+# Devin CLI as installed (docs/guides/test-stack.md#stand-in-agents): being last, it is the agent Android gets, while
+# the iPhone stays on the first real one.
 # Not here: a fallback on a login profile, which needs a signed-in one (the desktop spec adds the default login as
 # one), and importing from the login shell (the desktop spec opens its list).
 #   maestro --device "<simulator udid>,<adb serial>" test --shard-all 2 --include-tags agents \
@@ -46,7 +48,7 @@ onFlowComplete:
                 appId: com.pokai.Codync.android.dev
       - tapOn: ${output.profiles.name}
       - tapOn: "${output.profiles.name}, view details"
-      - tapOn: "Details"
+      - tapOn: "Settings"
       # The Login profile row under Agent: the bot's own stays listed while it's signed out.
       - scrollUntilVisible:
           element: ${output.profiles.work}

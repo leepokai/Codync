@@ -1,5 +1,5 @@
-//! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (its agent and
-//! routines), Computer (the computer it lives on, and whether it may use it), Library (the artifacts it made
+//! A bot's pages of details, as in the desktop inspector and the iPhone's details: Details (what it does: its
+//! threads, event box and routines), Computer (the computer it lives on, and whether it may use it), Library (the artifacts it made
 //! and the files shared in its chat), Memory and Settings. Shift+←→ moves between them. What an agent brings
 //! is on its own sheet.
 
@@ -48,7 +48,7 @@ impl App {
     /// Opens `page` of the bot in view, in place of the page it came from.
     pub(in crate::tui) fn open_page(&mut self, page: Page) {
         match page {
-            Page::Details => self.open_routines(),
+            Page::Details => self.open_details(),
             Page::Computer => self.open_computer(),
             Page::Library => self.open_library(),
             Page::Memory => self.open_memory(),

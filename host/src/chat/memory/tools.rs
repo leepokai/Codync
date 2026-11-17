@@ -60,12 +60,14 @@ pub fn tools() -> Value {
     tools
 }
 
+/// A memory tool call of `bot_id`: a bot, or one of its tasks, which reads and writes its bot's memory.
 pub async fn call(hub: &Arc<Hub>, bot_id: &str, name: &str, args: &Value) -> Result<Value> {
-    let cfg = hub.store.bot(bot_id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
+    let actor = hub.store.bot(bot_id)?.filter(|b| !b.deleted).ok_or_else(|| anyhow!("unknown bot"))?.config;
+    let cfg = actor.as_owner();
     match name {
         "search_memory" => search_memory(hub, &cfg, args["query"].as_str().unwrap_or_default()).await,
         "search_history" => search_history(hub, &cfg, args).await,
-        "read_memory" | "edit_memory" => super::file_tools::call(hub, &cfg, name, args).await,
+        "read_memory" | "edit_memory" => super::file_tools::call(hub, &cfg, &actor.id, name, args).await,
         _ => bail!("unknown memory tool: {name}"),
     }
 }

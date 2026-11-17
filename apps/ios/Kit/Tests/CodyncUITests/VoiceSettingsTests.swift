@@ -35,7 +35,7 @@ import Testing
 
 /// A call takes another engine only when what its engine is built from changes: the engine, the mode,
 /// a model or the voice it uses, or the on-device language.
-@Test func engineChoiceChangesWithWhatTheCallIsBuiltFrom() {
+@Test @MainActor func engineChoiceChangesWithWhatTheCallIsBuiltFrom() {
     let p = VoiceProvider.openAI
     let keys = [OnDeviceEngine.languageKey, VoiceSettings.modelKey(p), VoiceSettings.voiceKey(p), VoiceSettings.modeKey(p),
                 VoiceSettings.transcribeKey(p), VoiceSettings.speechKey(p)]
@@ -57,4 +57,63 @@ import Testing
         #expect(!seen.contains(choice), "\(key)")
         seen.append(choice)
     }
+}
+
+@Test @MainActor func googleSearchOnlyChangesGeminiRealtimeEngineChoice() {
+    let keys = [VoiceSettings.googleSearchKey, VoiceSettings.modeKey(.gemini)]
+    keys.forEach(UserDefaults.standard.removeObject(forKey:))
+    defer { keys.forEach(UserDefaults.standard.removeObject(forKey:)) }
+    #expect(!VoiceSettings.googleSearch)
+    let gemini = VoiceSettings.engineChoice(.gemini)
+    let openai = VoiceSettings.engineChoice(.openAI)
+    UserDefaults.standard.set(true, forKey: VoiceSettings.googleSearchKey)
+    #expect(VoiceSettings.engineChoice(.gemini) != gemini)
+    #expect(VoiceSettings.engineChoice(.openAI) == openai)
+    UserDefaults.standard.set("speech", forKey: VoiceSettings.modeKey(.gemini))
+    let speech = VoiceSettings.engineChoice(.gemini)
+    UserDefaults.standard.set(false, forKey: VoiceSettings.googleSearchKey)
+    #expect(VoiceSettings.engineChoice(.gemini) == speech)
+}
+
+/// The computer says which server the OpenAI engine's Speech mode goes to (Gemini, a cloud computer and an older
+/// host have none to choose). One of the user's own leaves Speech as that engine's only mode, on a device that never
+/// opened the settings too, and the mode picked before comes back with OpenAI.
+@Test @MainActor func aServerOfTheUsersOwnLeavesSpeechAsItsEnginesOnlyMode() throws {
+    let keys = VoiceProvider.allCases.flatMap { [VoiceSettings.serverKey($0), VoiceSettings.modeKey($0)] }
+    let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+    defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+    for key in keys { UserDefaults.standard.removeObject(forKey: key) }
+    let status = { (server: String) in
+        try JSONDecoder().decode(VoiceStatus.self, from: Data("""
+        {"providers":[{"provider":"openai","configured":true,"server":"\(server)"},{"provider":"gemini","configured":false}]}
+        """.utf8))
+    }
+    VoiceSettings.remember(try status("http://127.0.0.1:8890"))
+    #expect(UserDefaults.standard.string(forKey: VoiceSettings.serverKey(.openAI)) == "http://127.0.0.1:8890")
+    #expect(UserDefaults.standard.string(forKey: VoiceSettings.serverKey(.gemini)) == nil)
+    #expect(VoiceSettings.isSpeechMode(.openAI))
+    #expect(!VoiceSettings.isSpeechMode(.gemini))
+    VoiceSettings.remember(try status(""))
+    #expect(!VoiceSettings.isSpeechMode(.openAI))
+    #expect(VoiceStatus.serverLabel("") == "api.openai.com")
+    #expect(VoiceStatus.serverLabel("http://127.0.0.1:8890") == "http://127.0.0.1:8890")
+}
+
+/// Another server has other models: the ones picked for the server before go, and the same server keeps them.
+@Test @MainActor func anotherServerDropsTheModelsPickedForTheOneBefore() throws {
+    let p = VoiceProvider.openAI
+    let keys = [VoiceSettings.serverKey(p), VoiceSettings.speechKey(p), VoiceSettings.modelsKey(p)]
+    let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+    defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+    let status = { (server: String) in
+        try JSONDecoder().decode(VoiceStatus.self, from: Data(#"{"providers":[{"provider":"openai","configured":true,"server":"\#(server)"}]}"#.utf8))
+    }
+    VoiceSettings.remember(try status(""))
+    UserDefaults.standard.set("tts-9", forKey: VoiceSettings.speechKey(p))
+    UserDefaults.standard.set(Data("{}".utf8), forKey: VoiceSettings.modelsKey(p))
+    VoiceSettings.remember(try status(""))
+    #expect(VoiceSettings.speechModel(p) == "tts-9")
+    VoiceSettings.remember(try status("http://127.0.0.1:8890"))
+    #expect(VoiceSettings.speechModel(p) == VoiceSettings.defaults(p).speech)
+    #expect(UserDefaults.standard.object(forKey: VoiceSettings.modelsKey(p)) == nil)
 }

@@ -1,6 +1,7 @@
 //! The values an app hands the network and gets back from it.
 
 use crate::roster::Role;
+use crate::rules::Access;
 use crate::wire::{self, Agent, Envelope};
 use anyhow::{Result, anyhow, bail};
 use iroh::EndpointId;
@@ -158,13 +159,16 @@ pub struct Message {
     pub reply_to: Option<String>,
     pub hops: u8,
     pub meta: Option<Value>,
+    /// What this computer's rules say of its sender: the ceiling the agent works on the letter
+    /// under, if any (never `Deny`: such a letter isn't taken).
+    pub access: Access,
 }
 
 impl Envelope {
     /// The letter as the agent gets it, from the computer that sent it.
-    pub(crate) fn open(self, computer: String) -> Message {
+    pub(crate) fn open(self, computer: String, access: Access) -> Message {
         let Self { id, from, to, body, wake, reply_to, hops, meta, sent_at: _ } = self;
-        Message { id, from: Address { agent: from, computer }, to, body, wake, reply_to, hops, meta }
+        Message { id, from: Address { agent: from, computer }, to, body, wake, reply_to, hops, meta, access }
     }
 }
 

@@ -9,7 +9,7 @@ conversation and compaction. The design, including what is still to come, is in
 | | Where | Owner | Lifetime |
 |---|---|---|---|
 | Transcript | SQLite `entries` | Codync | One persistent chat per bot; replies quote the message they answer |
-| Model context | ACP session (`bots.session_id`) | The harness | Until a rollover (Fresh conversations), a host-side `newSession`, a failed resume, or an agent/command/folder change (the apps offer no New session); each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
+| Model context | ACP session (`bots.session_id`) | The harness | Until *New session* (the bot's menu), a rollover (Fresh conversations), a failed resume, or an agent/command/folder change; each [fallback agent](agent-fallback.md) keeps its own, parked while another answers |
 | Long-term memory | Markdown files per layer (`MEMORY.md` and notes); versions and who wrote what in SQLite `memory_*` tables | Codync: the bots, through their tools or their own file tools, and dreaming | Forever, across sessions |
 
 Codync never replays the transcript into a session. Each turn sends only the new message(s); the harness keeps
@@ -18,18 +18,22 @@ its own context and compacts it itself.
 ## Instruction snapshot (`host/src/chat/context.rs`)
 
 - The bot's instructions are rendered once, in English and kept general: profile (name, description), how to
-  message the user, where the user is (Codync's apps, not the engine's own CLI; one conversation that goes on, so no starting over),
+  message the user, where the user is (Codync's apps, not the engine's own CLI; one conversation that goes on, with New session in the bot's menu to start over),
   other conversations, workspace, skills, plus the memory section. How to use each tool
   lives with the tool (MCP server instructions, tool descriptions), not here. They're stored as a snapshot in `kv` under `context.<bot>`, keyed by **session + compaction
   epoch**, and don't change until one of those changes. This keeps the prompt byte-identical so the prompt
   cache stays warm.
 - How the snapshot reaches the agent (`Instructions` in `agent/bot`):
   - **Claude** (`agentCapabilities._meta.claudeCode` present) receives it as a real system prompt:
-    `_meta.systemPrompt.append` on `session/new` and `session/load`. It survives compaction.
+    `_meta.systemPrompt.append` on `session/new`, `session/load` and `session/fork`. It survives compaction.
   - **An agent advertising ACP `sessionCapabilities.systemPrompt`** receives it as `systemPrompt`
     (`append`) on `session/new`, `session/load` and `session/fork`, and keeps it across compaction.
   - **Every other harness** receives it in the first message of each session (`<bot-profile>…</bot-profile>`; repeated with each message until one carrying it succeeds, the snapshot's `unprompted`, kept across a host restart),
     and once more, marked as replacing the earlier one, on the first message after a compaction.
+- A [background task](background-tasks.md)'s session is a fork of the bot's main one where the agent can
+  (`session/fork`): it is sent the main session's snapshot as it is, adopts it under its own session id
+  (`context.<bot>` is the bot's, a task has none of its own) and counts as already prompted, so nothing is sent
+  twice. A task that starts from a new session gets a fresh snapshot like any session.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
   never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k. The
@@ -194,7 +198,7 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   The iPhone and desktop show the draft card with *Keep this conversation* and a pencil that opens the editor
   sheet; once sent it folds to "Started a fresh conversation with this summary.", which unfolds to what it
   carried, and once kept it leaves no line. In the terminal, pick the line (`v`, `j`/`k`), then `o` unfolds it,
-  `e` edits and `K` keeps the chat. The user starts a new session from the bot's menu (terminal: `S`), not with a
+  `e` edits and `K` keeps the chat. The user starts a new session from the bot's menu (terminal: ^k *New session for this bot…*), not with a
   `/` command.
 
 ## Turns
@@ -204,14 +208,19 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
   memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
   still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
-  and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
+  with no `Stopped.` line (drawn under the message it would read as the message's), and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
   never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
   the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
-  that can't keeps its session, and its next new session gets them.
+  that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
+  that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).
+- *New session* (`newSession`) cancels the running turn as Stop does (a routine's run in the chat too; items that
+  turn added to the event box are dropped) but keeps the queue: waiting messages and follow-ups run in the new
+  session, waiting routines each in their own, and running tasks report into it. A handoff card still in draft is
+  withdrawn, so no summary of the old conversation is carried in.
 - `turn.inflight.<bot>` records when the running turn in the bot's chat started. If the host stops mid-turn (update, crash, restart), the next
   start resumes that session with a hidden "you were interrupted, don't repeat finished steps" prompt. If the
   session can't be resumed, or the turn started over an hour ago, it does nothing.

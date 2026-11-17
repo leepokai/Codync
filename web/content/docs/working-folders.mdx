@@ -1,0 +1,86 @@
+A bot works in a folder on your computer. When it runs several [background tasks](/docs/conversations#background-tasks) at once, Git decides whether they can stay out of each other's way. This page says where each one works, what Codync leaves behind, and what to do when the folder isn't a Git repository or Git isn't installed.
+
+## A bot's working folder
+
+Every bot has one folder it starts in. You choose it under **Workspace** in the bot's **Settings**:
+
+- **Personal workspace** (the default): a folder Codync makes for the bot, inside `~/.codync/bots/`.
+- **Choose project folder…**: a folder of yours, such as a project's Git repository.
+
+How to pick one is in [Workspace: its own folder or a project](/docs/bots#workspace-its-own-folder-or-a-project).
+
+## Where background tasks work
+
+A background task (a thread) is another session of the same bot that works away from the chat.
+
+- **The first one works in the bot's folder**, as the chat does.
+- **Each further one that starts while another is still working gets its own copy**, when the folder is in a Git repository and **Worktree per agent** is on. The copy is a Git worktree: a separate checkout under `~/.codync/worktrees`, on a new branch named `codync/` and the item's title (for example `codync/fix-login`), started from the commit your folder is on. The tasks never overwrite each other, and none of them touches your folder.
+
+A copy holds what is committed. Changes in your folder that aren't committed aren't in it, and neither is what Git ignores there, such as installed packages.
+
+**Worktree per agent** is under **Workspace** in the bot's **Settings**. It shows only when the folder is in a Git repository, and is on unless you turn it off. With it off, every task works in the bot's folder.
+
+Routine runs and other bots' requests always work in the bot's folder.
+
+## What happens to the copies
+
+When an item ends, Codync looks at its copy:
+
+- **Nothing changed:** no changed or new files and no commits. The copy is removed, with its branch.
+- **Something changed:** the copy and its branch stay, and the bot tells you the branch and where the copy is.
+
+Codync never merges, rebases or deletes a branch that has work on it. Bringing the work in is yours to do, or the bot's when you ask it.
+
+### Bring the work in yourself
+
+In your own folder, merge the branch, then remove the copy and the branch:
+
+```sh
+cd ~/projects/my-app
+git merge codync/fix-login
+git worktree list                       # shows where each copy is
+git worktree remove ~/.codync/worktrees/…/…
+git branch -d codync/fix-login
+```
+
+`git merge` brings in commits only. If the task left changes it didn't commit, commit them in the copy first. Git refuses to remove a copy that still has uncommitted changes, and `git branch -d` refuses a branch that isn't merged, so nothing is lost by accident.
+
+## Without git
+
+Codync can give tasks their own copies only with Git. In both cases below, every task of the bot writes in the same folder, and two that work at the same time can overwrite each other's files.
+
+### The folder isn't a Git repository
+
+A bot's personal workspace isn't a repository, and a project folder may not be one either. Choose one of these:
+
+- **Keep to one at a time.** Set **Agents at once**, under **Workspace** in the bot's **Settings**, to 1. Further items wait their turn.
+- **Make the folder a repository.** A copy starts from a commit, so the folder needs at least one:
+
+```sh
+cd ~/projects/my-folder
+git init
+git add -A
+git commit -m "First commit"
+```
+
+Be careful with that first commit: `git add -A` takes every file in the folder. List what should stay out (passwords, keys, large files, installed packages) in a `.gitignore` file before you run it.
+
+### Git isn't installed
+
+Without Git on the computer the bot runs on, a repository gives no copies either: tasks work as in a folder that isn't one. Install Git there:
+
+| Computer | Command |
+| --- | --- |
+| macOS | `xcode-select --install`, or `brew install git` with Homebrew |
+| Debian, Ubuntu | `sudo apt install git` |
+| Fedora | `sudo dnf install git` |
+| Windows | `winget install Git.Git`, or the installer from git-scm.com |
+
+Then restart Codync on that computer, so it finds Git.
+
+## Where the apps show it
+
+- **Under each item that is or was worked on**, in the bot's **Details** and in **Work**, a line says where its task works: the folder when it works in the bot's folder, the branch when it has a copy of its own. Your home folder is written as `~`. On the desktop, hold the pointer over the line to see the full path.
+- **At the top of an item's thread** (tap or click its row), the same line is a button: tap or click it to copy the full path. It reads **Path copied** for a moment.
+- **Settings > Workspace** says under the folder which case the bot is in: **Git repository**, **Not a git repository** or **Git isn't installed on this computer**. On iPhone, Android and the desktop, the information button beside it opens this page. It describes the folder the bot has saved.
+- **Terminal UI:** the same words are in dim text under **Workspace** in the bot's settings, with no button. An item's row has no such line; the heading of its steps shows its branch or folder, and doesn't copy.

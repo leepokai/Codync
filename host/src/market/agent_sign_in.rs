@@ -10,6 +10,7 @@ use crate::{
         bot::Cmd,
         login_profiles::{self, Login},
     },
+    chat::tasks::ItemMark,
     hub::Hub,
     store::{BotConfig, EntryKind, Lane, now_ms},
 };
@@ -29,7 +30,9 @@ const HOLDING: &str = "Needs you to sign in. Your message goes out again once yo
 /// before writing instead of after the first message fails. The agent's own check runs in the
 /// background.
 pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
-    let Some(h) = backends::harness(&cfg.backend) else { return };
+    if backends::harness(&cfg.backend).is_none() {
+        return;
+    }
     let login = Login::of(&hub.store, cfg);
     if login.profile.is_none() && backends::signed_in(&cfg.backend) == Some(true) {
         return;
@@ -37,7 +40,7 @@ pub fn ask_before_first_message(hub: &Arc<Hub>, cfg: &BotConfig) {
     let (hub, bot, backend) = (hub.clone(), cfg.id.clone(), cfg.backend.clone());
     tokio::spawn(async move {
         let asked = match check(&hub, &backend, login.profile.as_deref()).await {
-            Ok(Some(false)) => invite_saying(&hub, &bot, &Lane::main(&bot), &login, h.name, &[], BEFORE_FIRST),
+            Ok(Some(false)) => invite_saying(&hub, &bot, &Lane::main(&bot), &login, &[], None, BEFORE_FIRST),
             // Other chats waiting on this login go on.
             Ok(Some(true)) => signed_in(&hub, &backend, login.profile.as_deref()),
             Ok(None) => Ok(()),
@@ -78,23 +81,31 @@ pub async fn refresh(hub: &Hub) {
     }
 }
 
-/// `bot`'s turn failed because `login` (its agent is `name`) needs signing in: a card in `lane` asks
-/// the user to, and `entries` (the user messages it couldn't answer) go out again once they have.
-/// A bot keeps one such card per login in each chat; messages that fail later join it.
-pub fn invite(hub: &Hub, bot: &str, lane: &Lane, login: &Login, name: &str, entries: &[String]) -> Result<()> {
+/// `bot`'s turn failed because `login` needs signing in: a card in `lane` asks the user to, and `entries` (the messages
+/// it couldn't answer) go out again once they have, each to the chat it was written in. A bot keeps one such card per
+/// login in each chat; messages that fail later join it. A background task's card is in its bot's chat, marked as its
+/// item's (`item`), and kept apart from the bot's own.
+pub fn invite(
+    hub: &Hub,
+    bot: &str,
+    lane: &Lane,
+    login: &Login,
+    entries: &[String],
+    item: Option<&ItemMark>,
+) -> Result<()> {
     // A routine's, a room's or another bot's turn has no message of the user's to send again.
     let text = if entries.is_empty() { NEEDED } else { HOLDING };
-    invite_saying(hub, bot, lane, login, name, entries, text)
+    invite_saying(hub, bot, lane, login, entries, item, text)
 }
 
-/// The card, saying `text` when it's new.
+/// The card, saying `text` when it's new. Its title names the agent.
 fn invite_saying(
     hub: &Hub,
     bot: &str,
     lane: &Lane,
     login: &Login,
-    name: &str,
     entries: &[String],
+    item: Option<&ItemMark>,
     text: &str,
 ) -> Result<()> {
     let _guard = SIGN_IN.locked();
@@ -105,9 +116,10 @@ fn invite_saying(
         card.bot_id == lane.chat
             && request["botId"] == bot
             && request["loginProfile"].as_str() == login.profile.as_deref()
+            && card.data["task"]["id"].as_str() == item.map(ItemMark::task)
     };
     if let Some(card) = hub.store.pending_sign_ins(backend)?.into_iter().find(mine) {
-        let mut data = card.data;
+        let mut data = card.data.clone();
         let mut ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
         let held = ids.len();
         for id in entries {
@@ -115,27 +127,32 @@ fn invite_saying(
                 ids.push(json!(id));
             }
         }
-        if ids.len() == held {
-            return Ok(());
+        if ids.len() > held {
+            data["text"] = HOLDING.into();
+            data["connectionRequest"]["entryIds"] = Value::Array(ids);
         }
-        data["text"] = HOLDING.into();
-        data["connectionRequest"]["entryIds"] = Value::Array(ids);
-        hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not update the sign-in request"))?;
+        // A task's card is the item's it works on now (the next item joins the task).
+        if let Some(item) = item {
+            item.apply(&mut data);
+        }
+        if data != card.data {
+            hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not update the sign-in request"))?;
+        }
         return Ok(());
     }
+    let name = backends::harness(backend).map_or(backend, |h| h.name);
     let mut request = json!({"kind": RequestKind::Agent, "status": RequestStatus::Pending, "title": name,
         "botId": bot, "backend": backend, "entryIds": entries});
     // A login profile's: the apps open that sign-in, not the computer's own.
     if let Some(profile) = &login.profile {
         request["loginProfile"] = profile.as_str().into();
     }
-    hub.add_entry(
-        lane,
-        EntryKind::Notice,
-        hub.store.max_turn(bot),
-        &json!({"text": text, "connectionRequest": request}),
-    )
-    .ok_or_else(|| anyhow!("Could not save the sign-in request"))?;
+    let mut data = json!({"text": text, "connectionRequest": request});
+    if let Some(item) = item {
+        item.apply(&mut data);
+    }
+    hub.add_entry(lane, EntryKind::Notice, hub.store.max_turn(bot), &data)
+        .ok_or_else(|| anyhow!("Could not save the sign-in request"))?;
     Ok(())
 }
 
@@ -217,7 +234,10 @@ pub fn signed_in(hub: &Hub, backend: &str, login_profile: Option<&str>) -> Resul
         data["connectionRequest"]["status"] = serde_json::to_value(RequestStatus::Ready)?;
         hub.set_entry(&card.id, &data).ok_or_else(|| anyhow!("Could not complete the sign-in request"))?;
         let ids = data["connectionRequest"]["entryIds"].as_array().cloned().unwrap_or_default();
-        send_again(hub, &card.bot_id, ids.iter().filter_map(Value::as_str))?;
+        // One card's messages that can't go out don't keep the next card's from going.
+        if let Err(error) = send_again(hub, ids.iter().filter_map(Value::as_str)) {
+            tracing::warn!(card = card.id, error = format!("{error:#}"), "couldn't send held messages again");
+        }
     }
     Ok(())
 }
@@ -234,12 +254,22 @@ pub async fn sign_in_account(hub: &Hub, id: &str) -> Result<Value> {
     check_login_profile(hub, id).await
 }
 
-/// `bot` answers the user messages `ids` it couldn't answer (a message older than a day doesn't go out).
-pub fn send_again<'a>(hub: &Hub, bot: &str, ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
-    let Some(bot) = hub.store.bot(bot)?.filter(|b| !b.deleted) else { return Ok(()) };
-    let held = ids.into_iter().filter_map(|id| hub.store.entry(id));
-    for mut entry in held.filter(|entry| now_ms() - entry.created_at <= MAX_AGE) {
-        let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry.data);
+/// The messages `ids` that couldn't be answered go out again, each to the chat it was written in: a bot's own, or
+/// a background task's (its item's message, while the task still works on that item, however long it waited). A
+/// bot's own message older than a day doesn't, and nor does one whose chat is gone.
+pub fn send_again<'a>(hub: &Hub, ids: impl IntoIterator<Item = &'a str>) -> Result<()> {
+    for mut entry in ids.into_iter().filter_map(|id| hub.store.entry(id)) {
+        let Some(bot) = hub.store.bot(&entry.bot_id)?.filter(|b| !b.deleted) else { continue };
+        let goes = if bot.config.is_task() {
+            // A task whose item was stopped, or went back to the box, has nothing to answer it in.
+            crate::chat::tasks::card_item(&hub.store, &bot.config).is_some()
+        } else {
+            now_ms() - entry.created_at <= MAX_AGE
+        };
+        if !goes {
+            continue;
+        }
+        let prompt = crate::chat::prompt::of_entry(hub, &bot.config, &entry);
         entry.data["status"] = "queued".into();
         hub.set_entry(&entry.id, &entry.data);
         let lane = Lane::main(&entry.bot_id);
@@ -330,14 +360,14 @@ mod tests {
     async fn the_first_card_holds_the_messages_that_fail_later() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite_saying(&hub, "bot", &lane, &own("fixture-first"), "Fixture", &[], BEFORE_FIRST).unwrap();
+        invite_saying(&hub, "bot", &lane, &own("fixture-first"), &[], None, BEFORE_FIRST).unwrap();
         let sent = message(&hub, &lane, "hi");
-        invite(&hub, "bot", &lane, &own("fixture-first"), "Fixture", std::slice::from_ref(&sent)).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture-first"), std::slice::from_ref(&sent), None).unwrap();
         let cards = cards(&hub, "fixture-first", "bot");
         assert_eq!(cards.len(), 1, "the failed message joins the first card");
         assert_eq!(cards[0].data["connectionRequest"]["entryIds"], json!([sent]));
         assert_eq!(cards[0].data["text"], HOLDING);
-        invite(&hub, "other", &Lane::main("other"), &own("fixture-first"), "Fixture", &[]).unwrap();
+        invite(&hub, "other", &Lane::main("other"), &own("fixture-first"), &[], None).unwrap();
         let routine = &hub.store.pending_sign_ins("fixture-first").unwrap()[1];
         assert_eq!(routine.data["text"], NEEDED, "a turn without the user's message promises none");
         hub.shutdown().await;
@@ -349,8 +379,8 @@ mod tests {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
         let (first, second) = (message(&hub, &lane, "alpha-7"), message(&hub, &lane, "bravo-9"));
-        invite(&hub, "bot", &lane, &own("fixture"), "Fixture", std::slice::from_ref(&first)).unwrap();
-        invite(&hub, "bot", &lane, &own("fixture"), "Fixture", &[second.clone(), first.clone()]).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture"), std::slice::from_ref(&first), None).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture"), &[second.clone(), first.clone()], None).unwrap();
         let cards = hub.store.pending_sign_ins("fixture").unwrap();
         assert_eq!(cards.len(), 1, "a bot keeps one sign-in card");
         assert_eq!(cards[0].data["connectionRequest"]["entryIds"], json!([first, second]));
@@ -367,16 +397,48 @@ mod tests {
     async fn only_messages_younger_than_a_day_go_out_again_whatever_the_cards_age() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite_saying(&hub, "bot", &lane, &own("fixture-old"), "Fixture", &[], BEFORE_FIRST).unwrap();
+        invite_saying(&hub, "bot", &lane, &own("fixture-old"), &[], None, BEFORE_FIRST).unwrap();
         let card = cards(&hub, "fixture-old", "bot")[0].id.clone();
         let day_ago = now_ms() - MAX_AGE - 1;
         hub.store.backdate_entry(&card, day_ago);
         let (stale, fresh) = (message(&hub, &lane, "stale"), message(&hub, &lane, "fresh"));
         hub.store.backdate_entry(&stale, day_ago);
-        invite(&hub, "bot", &lane, &own("fixture-old"), "Fixture", &[stale.clone(), fresh.clone()]).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture-old"), &[stale.clone(), fresh.clone()], None).unwrap();
         agent_signed_in(&hub, "fixture-old").unwrap();
         assert_eq!(hub.store.entry(&fresh).unwrap().data["status"], "queued", "a day-old card still sends");
         assert_eq!(hub.store.entry(&stale).unwrap().data["status"], "sent", "a day-old message doesn't");
+        hub.shutdown().await;
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_tasks_message_goes_out_again_while_its_item_works_and_one_card_doesnt_hold_up_the_next() {
+        let (hub, dir) = fixture();
+        // Two tasks of `bot`, neither running: `task-1` still works on its item, `task-2`'s item ended.
+        for task in ["task-1", "task-2"] {
+            let cfg = json!({"id": task, "name": "bot", "backend": "fixture-task", "cwd": dir, "taskOf": "bot"});
+            hub.store.save_bot(&serde_json::from_value(cfg).unwrap()).unwrap();
+        }
+        crate::chat::tasks::put_working_for_test(&hub.store, "bot", "task-1");
+        let held = |chat: &str, text: &str| {
+            let lane = Lane::main(chat);
+            let sent = message(&hub, &lane, text);
+            invite(&hub, chat, &lane, &own("fixture-task"), std::slice::from_ref(&sent), None).unwrap();
+            sent
+        };
+        let (waited, stopped) = (held("task-1", "waited"), held("task-2", "stopped"));
+        held("bot", "own-7");
+        hub.store.backdate_entry(&waited, now_ms() - MAX_AGE - 1);
+        agent_signed_in(&hub, "fixture-task").unwrap();
+        let status = |id: &str| hub.store.entry(id).unwrap().data["status"].clone();
+        assert_eq!(status(&waited), "queued", "an item waits for its sign-in however long");
+        assert_eq!(status(&stopped), "sent", "a task whose item ended has nothing to answer it in");
+        // `task-1` has no actor to take its message: the bot's own card still sends.
+        let prompts = dir.join("prompts.jsonl");
+        until("the bot's message to go out again", || {
+            std::fs::read_to_string(&prompts).is_ok_and(|p| p.contains("own-7"))
+        })
+        .await;
         hub.shutdown().await;
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -393,7 +455,7 @@ mod tests {
         let (own, other) = (bot(Value::Null), bot(json!("a1")));
         for id in [&own, &other] {
             let login = Login::of(&hub.store, &hub.store.bot(id).unwrap().unwrap().config);
-            invite(&hub, id, &Lane::main(id), &login, "Claude Code", &[]).unwrap();
+            invite(&hub, id, &Lane::main(id), &login, &[], None).unwrap();
         }
         let request = |bot: &str| cards(&hub, "claude", bot)[0].data["connectionRequest"].clone();
         assert_eq!(request(&other)["loginProfile"], "a1", "the card says which login to sign in");
@@ -429,7 +491,7 @@ mod tests {
     async fn a_finished_turn_completes_the_card_of_an_agent_signed_in_elsewhere() {
         let (hub, dir) = fixture();
         let lane = Lane::main("bot");
-        invite(&hub, "bot", &lane, &own("fixture-known"), "Fixture", &[]).unwrap();
+        invite(&hub, "bot", &lane, &own("fixture-known"), &[], None).unwrap();
         let on = |backend: &str| {
             serde_json::from_value::<BotConfig>(json!({"id": "bot", "name": "bot", "backend": backend})).unwrap()
         };
@@ -443,7 +505,7 @@ mod tests {
         // After a host restart nothing says signed out any more.
         backends::set_signed_in("junie", None);
         let lane = Lane::main(&bot);
-        invite(&hub, &bot, &lane, &own("junie"), "Junie", &[]).unwrap();
+        invite(&hub, &bot, &lane, &own("junie"), &[], None).unwrap();
         let hi = message(&hub, &lane, "hi");
         hub.send_cmd(&bot, Cmd::Send { lane, entry_id: hi, text: "hi".into() }).unwrap();
         until("the answered turn to complete the card", || cards(&hub, "junie", &bot).is_empty()).await;

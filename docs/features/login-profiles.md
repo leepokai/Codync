@@ -146,6 +146,21 @@ API: `addLoginProfile` (with `kind`), `renameLoginProfile`, `removeLoginProfile`
 `defaultLoginProfile`, `loginProfileSignIn` and `loginKeys` in `hello.backends`; `loginProfile` on a bot, on each of
 its fallbacks, on `agentStep`, on each `resting` entry and on a sign-in card. All additive, so no `minApp` change.
 
+## Tests
+
+- **Host**: `host/src/agent/login_profiles/tests.rs` and the `codync-accounts` crate's own tests, on scratch folders.
+- **Desktop, every time**: `apps/desktop/e2e/login-profiles.spec.ts` walks the screens on a stand-in Devin CLI, so
+  it starts no real agent and touches no real account: what it walks and how the stand-in works is in
+  [stand-in agents](../guides/test-stack.md#stand-in-agents). `e2e/usage-logins.spec.ts` checks the limits per login
+  on the computer's real Claude Code (`claude -p /usage` on the default login, the CLI's checks on an empty throwaway
+  login profile); it never signs in, and skips itself without Claude Code.
+- **Phones**: `apps/maestro/login-profiles.yaml` (tag `agents`) adds its login profiles through the host API and
+  never opens a sign-in. Paired with a `--cdp` sandbox, Android's half runs on the stand-in Devin and the iPhone's on
+  the first real agent.
+- **A real agent's sign-in, only when the maintainer asks**: `e2e/login-profiles-real.spec.ts` with
+  `CODYNC_E2E_REAL_LOGINS=1` ([real login tests](../guides/test-stack.md#real-login-tests)). Repeated automated
+  sign-ins can get an account banned by its provider.
+
 ## Not built
 
 - **Limits of an account** of an agent other than Claude Code and Codex: its row says **No reading yet**.

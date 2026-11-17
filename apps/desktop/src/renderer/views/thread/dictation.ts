@@ -3,6 +3,7 @@ import { VoiceKeyRouter, type VoiceKey } from '../../../shared/voice-shortcut.ts
 import { Observable } from '../../lib/observable.ts'
 import type { VoiceProvider } from '../settings/voice-settings.ts'
 import { inOrder, joinDictated, MIN_SAMPLES, pieces } from './dictation-pieces.ts'
+import { SpeechSegments } from './speech-segments.ts'
 import { trNow } from '../../lib/l10n.ts'
 
 /** The running dictation: one recognizer at a time, and a call stops dictation first. */
@@ -63,8 +64,10 @@ export class Dictation extends Observable {
   level = 0
   /** Why the last dictation ended early (no microphone, speech recognition not allowed), until the next. */
   error: string | null = null
-  /** The box up to the words still being recognized. */
+  /** The box when dictation started. */
   private before = ''
+  /** What the on-device recognizer heard since then. */
+  private segments = new SpeechSegments()
   private off: (() => void) | null = null
   private recording: Recording | null = null
   private done: (() => void) | null = null
@@ -99,6 +102,7 @@ export class Dictation extends Observable {
     this.byShortcut = byShortcut
     this.error = null
     this.before = draft
+    this.segments = new SpeechSegments()
     const { speech } = this.platform
     const provider = this.platform.host ? this.platform.provider() : null
     if (provider) {
@@ -115,8 +119,14 @@ export class Dictation extends Observable {
   finish(done?: () => void) {
     this.byShortcut = false
     if (this.recording) return void this.transcribe(this.recording, done)
+    // Still transcribing: `done` waits for it too, so a second Send doesn't go before the words.
+    if (this.transcribing) {
+      if (done) this.done = done
+      return
+    }
     if (!this.off) return done?.()
-    this.done = done ?? null
+    // A finish without `done` (another tab, the pill's stop) keeps a Send already waiting for the last words.
+    if (done) this.done = done
     this.listening = false
     this.level = 0
     this.changed()
@@ -146,8 +156,10 @@ export class Dictation extends Observable {
 
   private event(e: SpeechEvent) {
     if (e.type === 'level') this.level = e.value
-    if (e.type === 'partial' || e.type === 'final') this.edit(() => joinDictated(this.before, e.text))
-    if (e.type === 'final') this.before = joinDictated(this.before, e.text)
+    if (e.type === 'partial' || e.type === 'final') {
+      const said = this.segments.heard(e)
+      this.edit(() => joinDictated(this.before, said))
+    }
     if (e.type === 'error') {
       // Nothing to send, and the helper (which may still hold the microphone) goes too.
       this.byShortcut = false

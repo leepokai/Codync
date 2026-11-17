@@ -15,3 +15,5 @@ pub mod pairing_requests;
 pub mod push;
 pub mod relay;
 pub mod short_code;
+
+pub(crate) use cloud_url::parse_url;

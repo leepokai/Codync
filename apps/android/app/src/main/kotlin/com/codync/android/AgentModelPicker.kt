@@ -43,7 +43,7 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
 @Composable internal fun AgentModelPicker(state: AppState, load: suspend (String) -> AgentModels, backend: String, selection: String?,
     options: Map<String, String>, fastMode: Boolean, bot: Bot?, choose: (String?, Map<String, String>) -> Unit, setFast: ((Boolean) -> Unit)?,
     agents: List<Pair<String, String>> = emptyList(), chooseAgent: ((String) -> Unit)? = null,
-    onReload: () -> Unit = {}, collapsible: Boolean = true, agentDetails: @Composable () -> Unit = {}) {
+    onReload: () -> Unit = {}, expanded: Boolean = false, agentDetails: @Composable () -> Unit = {}) {
     val online = state.actualConnection is LinkState.Ready
     var catalog by remember(backend) { mutableStateOf<AgentModels?>(null) }
     var loading by remember(backend) { mutableStateOf(false) }
@@ -59,7 +59,8 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
         catch (error: Exception) { failure = "Couldn't load models: ${error.message ?: "Try again."}" }
         finally { loading = false }
     }
-    var stage by remember { mutableStateOf(PickerStage.Closed) }
+    // expanded: a fallback just added starts open on its choices.
+    var stage by remember { mutableStateOf(if (expanded) PickerStage.Settings else PickerStage.Closed) }
     var query by remember { mutableStateOf("") }
     fun open(next: PickerStage) { query = ""; stage = next }
     // The agent's own "Default" entry is the same choice as no model.
@@ -74,18 +75,15 @@ private enum class PickerStage { Closed, Agents, Models, Settings }
     val summary = (listOf(agentName, modelName) + levels + if (fastMode) listOf("Fast") else emptyList()).joinToString(" · ")
     val unfold = tr(if (stage == PickerStage.Closed) "Collapsed" else "Expanded")
     Column(Modifier.fillMaxWidth().animateContentSize(Motion.layoutSize), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // collapsible = false: picking is the whole sheet (Add fallback), so no summary line; the choices show at once.
-        if (collapsible) {
-            Row(Modifier.fillMaxWidth().clickable { open(if (stage == PickerStage.Closed) PickerStage.Models else PickerStage.Closed) }
-                .semantics { stateDescription = unfold }.padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Crossfade(summary, Modifier.weight(1f), animationSpec = Motion.fade(), label = "Agent summary") { text ->
-                    Text(text, style = Type.subheadline, color = Palette.text)
-                }
-                Symbol(if (stage == PickerStage.Closed) "chevron.down" else "chevron.up", size = 12.dp, tint = Palette.secondary)
+        Row(Modifier.fillMaxWidth().clickable { open(if (stage == PickerStage.Closed) PickerStage.Models else PickerStage.Closed) }
+            .semantics { stateDescription = unfold }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Crossfade(summary, Modifier.weight(1f), animationSpec = Motion.fade(), label = "Agent summary") { text ->
+                Text(text, style = Type.subheadline, color = Palette.text)
             }
+            Symbol(if (stage == PickerStage.Closed) "chevron.down" else "chevron.up", size = 12.dp, tint = Palette.secondary)
         }
-        if (stage != PickerStage.Closed || !collapsible) {
+        if (stage != PickerStage.Closed) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (chooseAgent != null) LinkButton(agentName, Modifier.weight(1f)) { open(if (stage == PickerStage.Agents) PickerStage.Settings else PickerStage.Agents) }
                 LinkButton(modelName, Modifier.weight(1f)) { open(if (stage == PickerStage.Models) PickerStage.Settings else PickerStage.Models) }

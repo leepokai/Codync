@@ -58,14 +58,15 @@ pub(super) struct Following {
 }
 
 impl Routines {
-    /// `follow_up`: `bot` gets a turn in its own chat in `minutes`, opened with its `note`.
-    pub fn follow_up(&self, hub: &Hub, bot: &str, args: &Value) -> Result<Value> {
+    /// `follow_up`: `bot` gets a turn in its own chat in `minutes`, opened with its `note`. `caller`: the actor
+    /// whose running turn sets it (`bot`, or a task of its on a routine run).
+    pub fn follow_up(&self, hub: &Hub, bot: &str, caller: &str, args: &Value) -> Result<Value> {
         let minutes = args["minutes"].as_i64().unwrap_or_default();
         let note = args["note"].as_str().unwrap_or_default().trim();
         // A follow-up set in a follow-up's own turn continues its chain; any other turn starts one.
         let chain = self.following.running.locked().get(bot).map_or(0, |chain| chain + 1);
         let set = agent_bot(hub, bot)
-            .and_then(|_| own_chat(hub, bot))
+            .and_then(|_| own_chat(hub, caller))
             .and_then(|()| self.add_follow_up(&hub.store, bot, minutes, note, chain));
         let properties =
             json!({"outcome": kept::outcome(&set, "set"), "minutes": minutes.clamp(0, MAX_MINUTES), "chain": chain});

@@ -10,6 +10,7 @@ mod cloud_cli;
 mod compat;
 mod dev_servers;
 mod environment;
+mod git;
 mod hub;
 mod icons;
 mod import;
@@ -175,11 +176,15 @@ enum Sub {
         port: u16,
     },
     /// Claude Code statusLine command: forwards usage limits to the host, then prints
-    /// the wrapped command's status line (`statusline -- <command>`) or a short default.
+    /// the wrapped command's status line or a short default.
     Statusline {
         #[arg(long, default_value_t = service::DEFAULT_PORT)]
         port: u16,
-        #[arg(last = true)]
+        /// The status line command to wrap, as one shell-quoted word (`--command='<command>'`).
+        #[arg(long)]
+        command: Option<String>,
+        /// An older wrap's words (`-- <command>`), until the next install or host start rewrites it.
+        #[arg(last = true, hide = true)]
         wrapped: Vec<String>,
     },
     /// Rotate the local API token used by this computer's own apps and helpers.
@@ -395,13 +400,8 @@ async fn main() -> Result<()> {
             if let Some(addr) = bind {
                 service::bind::save(addr)?;
             }
-            // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so
-            // the line stays the user's; usage still comes from `claude -p /usage` and ACP.
-            if cfg!(unix)
-                && environment::Environment::current() == environment::Environment::Main
-                && let Some(home) = dirs::home_dir()
-            {
-                match service::ensure_statusline(&home.join(".claude/settings.json")) {
+            if let Some(settings) = statusline_settings() {
+                match service::ensure_statusline(&settings) {
                     Ok(true) => println!(
                         "Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."
                     ),
@@ -485,8 +485,8 @@ async fn main() -> Result<()> {
         Sub::Node => agent::node::add().await,
         Sub::Keeper => keeper::run().await,
         Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
-        Sub::Statusline { port, wrapped } => {
-            statusline(port, wrapped.join(" ")).await;
+        Sub::Statusline { port, command, wrapped } => {
+            statusline(port, command.unwrap_or_else(|| wrapped.join(" "))).await;
             Ok(())
         }
         Sub::ResetToken => {
@@ -541,10 +541,18 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
         // too (a closed terminal, a full disk): a log line must never take a task down.
         .log_internal_errors(false)
         .init();
+    // An update swaps the binary without `install`: bring a status line we wrap to the current form.
+    if let Some(settings) = statusline_settings()
+        && let Err(e) = tokio::task::spawn_blocking(move || service::refresh_statusline(&settings)).await?
+    {
+        tracing::warn!(error = format!("{e:#}"), "couldn't refresh Claude Code's status line");
+    }
     let (store, host_id, token) = open_store()?;
     write_token_file(&token)?;
     let identity = identity::Identity::load_or_create(&service::data_dir())?;
     tokio::task::spawn_blocking(backends::hydrate_path).await?;
+    // Looked up now, so the first client already reads the real answer.
+    git::installed();
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
     network::start(&hub).await;
@@ -632,6 +640,16 @@ async fn info(port: u16, as_json: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Claude Code's settings, when its status line reports usage to this host: production on Unix.
+/// Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so the
+/// line stays the user's; usage still comes from `claude -p /usage` and ACP.
+fn statusline_settings() -> Option<std::path::PathBuf> {
+    (cfg!(unix) && environment::Environment::current() == environment::Environment::Main)
+        .then(dirs::home_dir)
+        .flatten()
+        .map(|home| home.join(".claude/settings.json"))
 }
 
 /// Never blocks Claude Code: 1 s budget, all errors ignored.

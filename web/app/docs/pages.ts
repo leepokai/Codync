@@ -22,6 +22,12 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         description: "What a Codync bot is, how to set one up, and how to organize, reset and delete bots.",
       },
       {
+        slug: "working-folders",
+        title: "Working folders and git",
+        description:
+          "Where a bot and its background tasks work, what Git worktrees Codync makes and leaves, and what to do without a Git repository or without Git.",
+      },
+      {
         slug: "agents",
         title: "Agents",
         description: "Which coding agents Codync runs, how it finds them, and how to install, sign in and pick models.",
@@ -30,7 +36,7 @@ export const docSections: { title: string; pages: DocPage[] }[] = [
         slug: "conversations",
         title: "Conversations",
         description:
-          "Chatting with a bot: messages and files, approval cards, stopping, replies, reactions, commands, fresh conversations and notifications.",
+          "Chatting with a bot: messages and files, approval cards, background tasks, stopping, replies, reactions, commands, fresh conversations and notifications.",
       },
       {
         slug: "groups",

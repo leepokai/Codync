@@ -7,7 +7,8 @@ on:
   push:
     tags: ["v*"]
   pull_request:
-    paths: ["apps/desktop/**", ".github/workflows/release-desktop.yml"]
+    # The desktop tests also check the iPhone, Android and terminal tr() phrases against the catalogs (#488).
+    paths: ["apps/desktop/**", "apps/ios/**/*.swift", "apps/ios/Kit/Sources/CodyncKit/Resources/Languages/**", "apps/android/app/src/main/**/*.kt", "host/src/tui/**", ".github/workflows/release-desktop.yml"]
   workflow_dispatch:
     inputs:
       windows_only:

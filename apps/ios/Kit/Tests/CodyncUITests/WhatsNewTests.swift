@@ -1,6 +1,7 @@
+@testable import CodyncKit
 import Foundation
 import Testing
-@testable import CodyncKit
+@testable import CodyncUI
 
 private let announcements = [
     Announcement(version: "2.46.0", notes: ["C"]),
@@ -25,8 +26,19 @@ private func due(seen: String?, current: String, usedBefore: Bool = true) -> [St
     #expect(due(seen: "2.43.0", current: "", usedBefore: true) == [], "a bundle without a version")
 }
 
-@Test func theBundledAnnouncementsLoadAndEveryNoteIsInEveryCatalog() throws {
-    let notes = try Announcement.load().flatMap(\.notes)
+@Test func anAnnouncementReadsItsFeaturesAndNotes() throws {
+    let text = #"[{"version": "2.44.0", "features": [{"title": "T", "body": "B", "beta": true, "media": "m", "film": "https://example.com/f"}, {"title": "U", "body": "C"}]}, {"version": "2.43.0", "notes": ["N"]}]"#
+    let film = try #require(URL(string: "https://example.com/f"))
+    #expect(try JSONDecoder().decode([Announcement].self, from: Data(text.utf8)) == [
+        Announcement(version: "2.44.0", features: [.init(title: "T", body: "B", beta: true, media: "m", film: film), .init(title: "U", body: "C")]),
+        Announcement(version: "2.43.0", notes: ["N"]),
+    ])
+}
+
+@Test func theBundledAnnouncementsLoadWithTheirClipsAndEveryPhraseIsInEveryCatalog() throws {
+    let all = try Announcement.load()
+    for feature in all.flatMap(\.features) where feature.media != nil { #expect(feature.clip != nil, "\(feature.title)") }
+    let notes = all.flatMap(\.phrases)
     let languages = URL(filePath: #filePath).deletingLastPathComponent()
         .appending(path: "../../Sources/CodyncKit/Resources/Languages").standardized
     let catalogs = try FileManager.default.contentsOfDirectory(at: languages, includingPropertiesForKeys: nil)

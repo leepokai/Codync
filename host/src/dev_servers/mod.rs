@@ -22,13 +22,13 @@ use crate::agent::acp::Acp;
 use crate::agent::process::{Process, UNWIND};
 use crate::analytics::{self, Event};
 use crate::hub::Hub;
-use crate::store::Store;
+use crate::store::{BotConfig, Store};
 use anyhow::{Result, anyhow};
 use detected::Detected;
 use ports::Port;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -197,6 +197,8 @@ impl Live {
 
 /// An agent that was started, and the programs it runs under.
 struct Agent {
+    /// Whose list what it leaves running shows in: a task's agent, its bot's.
+    bot: String,
     acp: Weak<Acp>,
     programs: Vec<String>,
 }
@@ -205,7 +207,8 @@ struct Agent {
 pub struct DevServers {
     live: Mutex<HashMap<String, Live>>,
     detected: Mutex<HashMap<String, Vec<Detected>>>,
-    agents: Mutex<HashMap<String, Agent>>,
+    /// By the bot or task whose agent it is; in one order from scan to scan, so a list several agents share is too.
+    agents: Mutex<BTreeMap<String, Agent>>,
     /// Wakes the port scan for a server that just started.
     wake: Notify,
 }
@@ -242,10 +245,11 @@ impl DevServers {
         own.into_iter().map(|(_, name, ports)| (name, ports)).collect()
     }
 
-    /// `command`: the line it was started with, on `backend`'s harness.
-    pub fn agent_started(&self, bot: &str, acp: &Arc<Acp>, backend: &str, command: &str) {
-        let agent = Agent { acp: Arc::downgrade(acp), programs: detected::agent_programs(backend, command) };
-        self.agents.locked().insert(bot.to_owned(), agent);
+    /// `cfg`'s agent started. `command`: the line it was started with.
+    pub fn agent_started(&self, cfg: &BotConfig, acp: &Arc<Acp>, command: &str) {
+        let programs = detected::agent_programs(&cfg.backend, command);
+        let agent = Agent { bot: cfg.owner().to_owned(), acp: Arc::downgrade(acp), programs };
+        self.agents.locked().insert(cfg.id.clone(), agent);
     }
 
     /// A deleted bot's servers end with it: dropping a server's run makes it stop.

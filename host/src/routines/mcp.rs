@@ -1,7 +1,9 @@
 //! The built-in `routines` MCP server, scoped to one bot: its tools and instructions.
 use super::{Arc, Cancelled, Context, Hub, Result, Value, bail, json, required};
 
-pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value> {
+/// A routine tool call for `bot`. `caller`: the actor whose running turn made it, `bot` itself or a task of its on a
+/// routine run or another bot's request (`chat::tasks::acting_as`).
+pub fn call(hub: &Arc<Hub>, bot: &str, caller: &str, name: &str, args: &Value) -> Result<Value> {
     match name {
         "list_routines" => Ok(hub.routines.list(bot)),
         "save_routine" => hub.routines.save(hub, bot, args),
@@ -27,7 +29,7 @@ pub fn call(hub: &Arc<Hub>, bot: &str, name: &str, args: &Value) -> Result<Value
         }
         "save_progress" => hub.routines.save_progress(hub, bot, required(args, "id")?, required(args, "content")?),
         "read_progress" => hub.routines.progress(bot, required(args, "id")?),
-        "follow_up" => hub.routines.follow_up(hub, bot, args),
+        "follow_up" => hub.routines.follow_up(hub, bot, caller, args),
         "cancel_follow_up" => hub.routines.cancel_follow_up(hub, bot, required(args, "id")?, Cancelled::Bot),
         _ => bail!("unknown routine tool"),
     }

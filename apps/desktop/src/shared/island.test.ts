@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { BotStatus } from './models.ts'
 import {
-  focusOf, hitRect, hits, islandFrame, islandMode, islandRect, notchOf, othersOf, stopsDictation, transitions,
+  focusOf, hitRect, hits, inTurn, isActive, islandFrame, islandMode, islandRect, notchOf, othersOf, stopsDictation, transitions,
   type IslandBot, type IslandNotice, type IslandPermission, type IslandSummary, type IslandTab,
 } from './island.ts'
 
-const bot = (ref: string, status: BotStatus): IslandBot => ({
-  ref, name: ref, shape: 'blob', color: 'blue', status, backend: 'Claude Code', folder: 'site', detail: '', steps: [], error: null,
+/** `status` is the chat's; `background`: its box holds work, so outside its chat it works. */
+const bot = (ref: string, status: BotStatus, background = false): IslandBot => ({
+  ref, name: ref, shape: 'blob', color: 'blue', status: background && !inTurn(status) ? 'working' : status, chat: status, backend: 'Claude Code', folder: 'site', detail: '', steps: [], error: null,
 })
 const card = (entryId: string): IslandPermission => ({
   ref: 'c/a', entryId, bot: { name: 'a', shape: 'blob', color: 'blue', backend: 'Claude Code' }, headline: 'Wants to run a command', title: 'ls', options: [], answering: null,
@@ -46,6 +47,19 @@ test('a bot that stops working is done, or failed when it ended in an error', ()
   const before = new Map<string, string>([['a', 'working'], ['b', 'idle'], ['c', 'needsInput'], ['d', 'working']])
   const after = [bot('a', 'idle'), bot('b', 'idle'), bot('c', 'error'), bot('d', 'working'), bot('e', 'idle')]
   assert.deepEqual(transitions(before, after), [{ kind: 'finished', ref: 'a' }, { kind: 'failed', ref: 'c' }])
+})
+
+test('a bot whose chat is idle while an item works counts as working, and its item ending is not a done', () => {
+  const background = bot('a', 'idle', true)
+  assert.equal(isActive(background), true)
+  assert.equal(islandMode(summary([background]), state()), 'compact')
+  assert.equal(islandMode(summary([background]), state({ open: true })), 'overview')
+  assert.equal(focusOf([bot('b', 'idle'), background])?.ref, 'a')
+  // Chat idle + 1 working item → chat idle + no items: the report's own turn is what ends in a done.
+  assert.deepEqual(transitions(new Map([['a', 'idle']]), [bot('a', 'idle')]), [])
+  assert.equal(islandMode(summary([bot('a', 'idle')]), state()), 'hidden')
+  // The chat's turn ending is a done as before, whether or not an item still works.
+  assert.deepEqual(transitions(new Map([['a', 'working']]), [background]), [{ kind: 'finished', ref: 'a' }])
 })
 
 test('the big slot goes to the bot that needs you, the rest to the side', () => {

@@ -1,6 +1,6 @@
 //! The project a call's bot works in, from git: what the voice knows of it before it speaks.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -11,22 +11,13 @@ pub async fn now(cwd: &str) -> String {
     if cwd.is_empty() || !dir.ancestors().any(|d| d.join(".git").exists()) {
         return String::new();
     }
-    let Some(git) = git_program().await else { return String::new() };
+    let Some(git) = crate::git::program().await else { return String::new() };
     let run = |args: &'static [&'static str]| {
         let (git, dir) = (git.clone(), dir.to_owned());
         async move {
-            let mut cmd = tokio::process::Command::new(git);
-            // The bot's folder only: a `GIT_DIR`, `GIT_INDEX_FILE`… this process inherited (from a git hook, say)
-            // would point git at another repository.
-            for (key, _) in std::env::vars_os().filter(|(k, _)| k.to_string_lossy().starts_with("GIT_")) {
-                cmd.env_remove(key);
-            }
+            let mut cmd = crate::git::command(&git, &dir);
             // No optional locks: a status killed at the timeout can't leave `.git/index.lock` behind.
-            cmd.args(args)
-                .current_dir(dir)
-                .env("GIT_OPTIONAL_LOCKS", "0")
-                .stdin(std::process::Stdio::null())
-                .kill_on_drop(true);
+            cmd.args(args).env("GIT_OPTIONAL_LOCKS", "0");
             let out = tokio::time::timeout(GIT_TIMEOUT, cmd.output()).await.ok()?.ok()?;
             // Only the end: a porcelain line starts with its status column, a space when the change is unstaged.
             out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim_end().to_owned())
@@ -55,16 +46,4 @@ pub async fn now(cwd: &str) -> String {
         lines.push(format!("Last commits: {}", commits.lines().collect::<Vec<_>>().join(" · ")));
     }
     lines.join("\n")
-}
-
-/// git, where running it can't open macOS's "install the command line tools" prompt.
-async fn git_program() -> Option<PathBuf> {
-    let git = crate::agent::backends::which("git")?;
-    if cfg!(target_os = "macos") && git == Path::new("/usr/bin/git") {
-        let tools = tokio::process::Command::new("/usr/bin/xcode-select").arg("-p").output().await.ok()?;
-        if !tools.status.success() {
-            return None;
-        }
-    }
-    Some(git)
 }

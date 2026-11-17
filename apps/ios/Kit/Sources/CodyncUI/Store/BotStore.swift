@@ -67,6 +67,8 @@ public final class BotStore {
     public internal(set) var cloudHosting: CloudHosting?
     public internal(set) var bots: [String: Bot] = [:]
     public internal(set) var entries: [String: [Entry]] = [:]
+    /// Background tasks' transcripts as they come in, by task id: never part of a chat, and gone with the task.
+    public internal(set) var taskEntries: [String: [Entry]] = [:]
     public internal(set) var usage: Usage
     /// The newest order still to send, and the task sending them (`setUsageOrder`).
     @ObservationIgnored var usageOrderWaiting: [String]?
@@ -90,6 +92,15 @@ public final class BotStore {
     public var selection: String?
     /// The remote screen viewer (iPhone); `codync://screen` opens it.
     public var screenRequest: ScreenRequest?
+
+    /// A bot whose details its conversation should open (from the view of all bots' work), consumed by it.
+    public internal(set) var detailsRequest: String?
+
+    /// An item whose card its bot's conversation should bring into view, consumed by it.
+    public internal(set) var cardRequest: (botId: String, item: WorkItem)?
+
+    /// An item whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, item: WorkItem)?
 
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
@@ -271,6 +282,14 @@ public final class BotStore {
     }
 
     static let queueActionsHost = "2.39.0"
+
+    /// From host 2.48.1 a reply can quote a part of a message (`send`'s `replyPart`); an older host drops the part
+    /// and quotes the whole message, so its messages offer no Select Text.
+    public var supportsReplyPart: Bool {
+        hostVersion.map { !AppVersion.isBelow($0.version, Self.replyPartHost) } ?? false
+    }
+
+    static let replyPartHost = "2.48.1"
 
     static let sectionsHost = "2.32.0"
 

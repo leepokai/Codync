@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnnouncementTest {
-    private val all = listOf(Announcement("2.46.0", listOf("C")), Announcement("2.45.0", listOf("B")), Announcement("2.44.0", listOf("A")))
+    private val all = listOf(Announcement("2.46.0", notes = listOf("C")), Announcement("2.45.0", notes = listOf("B")), Announcement("2.44.0", notes = listOf("A")))
 
     private fun due(seen: String?, current: String, usedBefore: Boolean = true) =
         Announcement.due(all, seen, current, usedBefore).map { it.version }
@@ -24,8 +24,11 @@ class AnnouncementTest {
     }
 
     @Test fun `reads the shared file`() {
-        val text = """[{"version": "2.44.0", "notes": ["A", "B"]}]"""
-        assertEquals(listOf(Announcement("2.44.0", listOf("A", "B"))), Announcement.parse(text))
+        val text = """[{"version": "2.44.0", "features": [{"title": "T", "body": "B", "beta": true, "media": "m", "film": "https://example.com/f"}, {"title": "U", "body": "C"}]}, {"version": "2.43.0", "notes": ["N"]}]"""
+        assertEquals(listOf(
+            Announcement("2.44.0", listOf(Announcement.Feature("T", "B", beta = true, media = "m", film = "https://example.com/f"), Announcement.Feature("U", "C"))),
+            Announcement("2.43.0", notes = listOf("N")),
+        ), Announcement.parse(text))
     }
 
     @Test fun `records at once when nothing is due, else once shown`() {

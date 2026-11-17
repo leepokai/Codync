@@ -120,11 +120,17 @@ fn peer_name(hub: &Hub, network: &str, address: &Address) -> String {
 }
 
 /// One of this computer's bots asks a bot on another computer.
-pub(super) async fn message(hub: &Arc<Hub>, source: &BotConfig, to: &Target, message: &str) -> Result<Value> {
-    check_request(hub, source, message)?;
+pub(super) async fn message(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    turn: &str,
+    to: &Target,
+    message: &str,
+) -> Result<Value> {
+    check_request(hub, turn, message)?;
     let node = hub.network.slot(Some(&to.network))?.node;
     let from = hub.network.handle_of(&source.id).ok_or_else(|| anyhow!("this bot isn't on the network"))?;
-    let hops = hub.team.reserve_message(&source.id)?;
+    let hops = hub.team.reserve_message_in(&source.id, turn)?;
     // ponytail: the slot covers sending only; the other computer bounds the work it takes on.
     let letter = Letter::new(from, to.address.clone(), message).hops(hops);
     let result = send(hub, &node, source, to, letter).await;
@@ -224,7 +230,7 @@ fn requested(hub: &Arc<Hub>, network: &str, target: &BotConfig, m: &Message, bac
         Exchange { request: &m.id, source: &from, target: &target.id, text: &m.body, peer_name: Some(&peer) };
     lifetime.entries.push(exchange.notice(hub, &target.id, &format!("Message from {peer}: {}", m.body), true)?);
     let who = format!("{peer}, an agent on another of the user's computers,");
-    lifetime.deliver(&target.id, m.hops, request_prompt(&who, &peer, &m.body))
+    lifetime.deliver(&target.id, m.hops, m.access, request_prompt(&who, &peer, m.access, &m.body))
 }
 
 /// A letter that starts no turn: the bot's chat shows it.
@@ -300,7 +306,13 @@ fn replied(hub: &Hub, id: &str, waiter: Waiter, m: &Message) {
             Ok(truncate(&m.body, MAX_MESSAGE_BYTES))
         }
     };
-    let reply =
-        BotReply { request_id: id.to_owned(), quote: waiter.quote, from_name: peer.clone(), outcome, hops: m.hops };
+    let reply = BotReply {
+        request_id: id.to_owned(),
+        quote: waiter.quote,
+        from_name: peer.clone(),
+        outcome,
+        hops: m.hops,
+        access: m.access,
+    };
     let _ = hub.send_cmd(&sender, Cmd::BotReply(reply));
 }

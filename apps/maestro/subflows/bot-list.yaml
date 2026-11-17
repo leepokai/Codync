@@ -1,0 +1,21 @@
+# Starts the Dev app again, which lands on the bot list: the way back from a chat that works the same on both phones.
+# Waits for the bot a flow's helper script left in `output.bot`.
+appId: com.pokai.Codync.ios.dev
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.ios.dev
+          arguments:
+            "-reviewInvitationOff": true
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - launchApp:
+          appId: com.pokai.Codync.android.dev
+- extendedWaitUntil:
+    visible: "${output.bot.name}.*"
+    timeout: 20000

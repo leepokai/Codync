@@ -1,7 +1,7 @@
 import CodyncKit
 import SwiftUI
 
-/// A bot's routines; a row opens its editor.
+/// What a bot does later (the follow-ups it set) and its routines; a routine's row opens its editor.
 struct RoutinesView: View {
     let botId: String
     var initialId: String?
@@ -19,20 +19,29 @@ struct RoutinesView: View {
     @State private var loadError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(L10n.tr("Routines"))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.text)
-                    .padding(.leading, 2)
-                Spacer(minLength: 0)
-                IconButton("Set up a routine", systemImage: "plus") { open(nil) }
-                    .disabled(model.isOffline)
+        VStack(alignment: .leading, spacing: 28) {
+            if !followUps.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    heading("Later")
+                    ForEach(followUps) { followUp in
+                        row(followUp).outlinedCard(vertical: 0, dashed: true)
+                    }
+                }
+                .transition(.opacity)
             }
-            if let loadError { Text(loadError).font(.caption).foregroundStyle(Palette.danger) }
-            if let error { Text(L10n.tr(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-            listing
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    heading("Routines")
+                    Spacer(minLength: 0)
+                    IconButton("Set up a routine", systemImage: "plus") { open(nil) }
+                        .disabled(model.isOffline)
+                }
+                if let loadError { Text(loadError).font(.caption).foregroundStyle(Palette.danger) }
+                if let error { Text(L10n.tr(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                listing
+            }
         }
+        .animation(Motion.reduced(Motion.layout, reduceMotion), value: followUps.isEmpty)
         .foregroundStyle(Palette.text)
         .font(.system(size: 13))
         .onChange(of: initialId) { _, id in
@@ -63,11 +72,16 @@ struct RoutinesView: View {
         }
     }
 
+    private func heading(_ title: String) -> some View {
+        Text(L10n.tr(title))
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Palette.text)
+            .padding(.leading, 2)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private var listing: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(followUps) { followUp in
-                row(followUp).outlinedCard(vertical: 0, dashed: true)
-            }
             if routines.isEmpty {
                 Text(L10n.tr(loaded ? "No routines yet. Ask the bot for one, or set it up yourself with +." : "Loading routines…"))
                     .font(.system(size: 12))

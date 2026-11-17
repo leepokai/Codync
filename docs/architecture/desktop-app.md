@@ -66,7 +66,7 @@ The TUI connects to one host at a time, so it keeps its single roster.
 
 - **Ko-fi invitation** (`views/thread/KofiInvite.tsx`, `lib/use-kofi-invite.ts`, rule in `lib/kofi-invite.ts`): once per computer, a quiet card under the first finished reply to the first prompt sent from it, until *Support on Ko-fi* or dismiss; never while a GitHub star ask is due or in a session that answered one (setup's panel or the invitation), so it waits for a later session. Prompts are counted from 2.39.1, so an installation whose prompts all came before then gets it on its next one. The terminal UI shows the same sentence and link under that reply for the run in which that chat is on screen (`host/src/tui/app/kofi.rs`, state in `tui-kofi-invite`); it keeps no record of older messages, so an existing terminal gets it on its next message. Each client keeps its own state, like the star ask: it's a client's invitation, not host state, so someone using both sees it once in each. iOS and Android don't show it: App Store and Google Play rules on external tip links outside the US.
 - **Local host recovery** uses the Codync character: looking around and bobbing while starting,
-  resting for setup, and a still disappointed expression with lowered eyelids and a downturned mouth if the host is missing or
+  resting for setup, and a still sad expression, open eyes whose outer corners droop and no mouth, if the host is missing or
   failed. Error text and install/retry actions remain available in both full-window and compact
   recovery layouts. Reduced motion removes the animation. This screen belongs to the desktop
   service manager; iOS, Android and the TUI connect to hosts but do not install or start that service.
@@ -149,7 +149,8 @@ CODYNC_PORT=19333 CODYNC_HOME=/path/to/home npm run dev   # against a manually r
 npm run typecheck && npm test
 ```
 
-UI checks: `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
+UI checks: `CODYNC_HEADLESS=1` keeps every window off the screen (what `npm run dev -- --cdp` sets:
+[headless by default](../guides/test-stack.md#headless-by-default)), `CODYNC_SHOW_INACTIVE=1` opens the window without taking focus,
 `CODYNC_DEBUG_OPEN=newBot|newGroup|plugins|computers|<bot name>` opens a screen, and
 `CODYNC_REMOTE_DEBUG=<port>` lets a script drive the renderer over the DevTools protocol.
 Each packaging script names its environment:

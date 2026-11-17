@@ -8,12 +8,14 @@ import {
   type Entry,
   type Hello,
   type PairingRequest,
+  type ReplyQuote,
   type ScreenState,
   type Usage,
 } from '@shared/models'
 import type { Artifact, ArtifactChunk, LibraryItem } from '@shared/artifacts'
 import { parseCallCue, type CallCue } from '@shared/calls'
 import type { NetworkView } from '@shared/network'
+import { parseTaskEntry } from '@shared/tasks'
 import { trNow } from '../lib/l10n.ts'
 
 /** How a client reaches a host API: loopback (the computer's own host or an SSH tunnel) or the relay (a cloud computer). */
@@ -102,6 +104,8 @@ export type HostEvent =
   | { type: 'bot'; bot: Bot }
   | { type: 'botDeleted'; id: string; rev: number }
   | { type: 'entry'; entry: Entry }
+  /** One entry of a background task's transcript (never a chat's); the catch-up has none. */
+  | { type: 'taskEntry'; task: string; entry: Entry }
   | { type: 'usage'; usage: Usage }
   /** An artifact was published, updated or renamed (the catch-up replays it too). */
   | { type: 'artifact'; artifact: Artifact }
@@ -155,6 +159,10 @@ export function parseEvent(line: string): HostEvent | null {
       const entry = raw.entry as Entry | undefined
       if (!entry || typeof entry.id !== 'string' || typeof entry.botId !== 'string') return { type: 'undecodable', kind: 'entry' }
       return { type, entry: { ...entry, data: entry.data ?? {} } }
+    }
+    case 'taskEntry': {
+      const parsed = parseTaskEntry(raw)
+      return parsed ? { type, ...parsed } : null
     }
     case 'usage':
       return raw.usage ? { type, usage: raw.usage as Usage } : null
@@ -235,10 +243,11 @@ export class HostClient {
   }
 
   /** `pasted`: what the user pasted rather than typed, which memory never takes as their own words. `replyTo`: the
-   * chat message this one replies to. */
+   * chat message this one replies to, or the part of it the user selected (`replyPart`). */
   /** `call`: the voice call it was said in (on-device or speech to text). */
-  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: string | null = null, call: string | null = null) {
-    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...(replyTo ? { replyTo } : {}), ...(call ? { call } : {}) })).entry
+  async send(botId: string, text: string, clientNonce: string, attachments: string[] | null, pasted: string[] = [], replyTo: ReplyQuote | null = null, call: string | null = null) {
+    const reply = replyTo ? { replyTo: replyTo.id, ...(replyTo.part ? { replyPart: replyTo.text } : {}) } : {}
+    return (await this.call<{ entry: Entry }>('send', { botId, text, clientNonce, attachments, ...(pasted.length ? { pasted } : {}), ...reply, ...(call ? { call } : {}) })).entry
   }
 
   /** Bytes per `upload` call: base64 of it stays well under the channel's 1 MiB message. */

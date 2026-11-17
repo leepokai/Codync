@@ -88,6 +88,9 @@ import Testing
     // An engine that was never ready leaves `ready_ms` out.
     #expect(try json(.voiceCallQuality(.onDevice, readyMs: nil, reconnects: 0, stuck: .connecting, failure: .none))
         == #"{"engine":"on_device","failure":"none","reconnects":0,"stuck":"connecting"}"#)
+    // Google Search adds whether it was on and how many answers used it, never the query.
+    #expect(try json(.voiceCallQuality(.gemini, readyMs: 900, reconnects: 0, stuck: .none, failure: .none, searches: 2))
+        == #"{"engine":"gemini","failure":"none","google_search":true,"ready_ms":900,"reconnects":0,"searches":2,"stuck":"none"}"#)
     #expect(try json(.linkOpened(.installCommand)) == #"{"link":"install_command"}"#)
     #expect(try json(.linkOpened(.installLink)) == #"{"link":"install_link"}"#)
     #expect(try json(.onboardingStepViewed(.choose)) == #"{"step":"choose"}"#)

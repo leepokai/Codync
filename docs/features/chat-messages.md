@@ -25,7 +25,7 @@ it has no pointer tooltip or link-opening action.
 ## Messages are sent, not streamed
 
 - Every bot gets the built-in `chat` MCP server (`codync-host mcp chat`,
-  `host/src/chat/outbox.rs`) with `send_message {text}` and `send_file {path, name?, text?}` (`text`: the message a voice note plays in, [file attachments](file-attachments.md#a-voice-note-inside-its-message)). In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
+  `host/src/chat/outbox.rs`) with `send_message {text, reply_to?}` and `send_file {path, name?, text?, reply_to?}` (`text`: the message a voice note plays in, [file attachments](file-attachments.md#a-voice-note-inside-its-message); `reply_to`: a message the bubble quotes, [bots quote too](groups-and-replies.md#bots-quote-too)). In the bot's own chat, each call is one chat bubble, added to the turn's lane at once as an `agent` entry with
   `final: true`. A turn can send several.
 - The agent's own reply text (`agent_message_chunk`) stays in the trace when the turn sent
   text through `send_message`. A turn that sent nothing (an agent that ignores the tool, or has no MCP) falls back to
@@ -79,6 +79,20 @@ it has no pointer tooltip or link-opening action.
 - Clients show each bot emoji as a chip with the avatars of the bots that chose it (up to three), after the
   user's own chips; it isn't tappable, and a bot that was deleted drops out. The terminal UI lists
   `❤️ Ann, Ben` after the user's reactions.
+
+## Background tasks in the chat
+
+A [background task](background-tasks.md)'s own transcript never enters the chat. Three things of it do:
+
+- **Its approval cards**: a permission entry in the bot's chat with `data.task = {id, title}` (the title is its
+  item's) and `data.item`, the item's id, shown with the line
+  `In the background · <title>` and answered like any card (`respondPermission` reaches the task's actor).
+- **Its report**: a host-started turn (`HostTurn::TaskReport`) whose reply is the bot's ordinary message. The prompt
+  is `from: host`, shows no bubble, and isn't the user's words to memory.
+- **A report the bot didn't answer** (its turn was stopped, failed or never started): an info notice,
+  `"<title>" finished in the background: …` or `"<title>" did not finish: …`.
+
+The capsule above the composer isn't an entry: it is the bot's `work`.
 
 ## While it works
 

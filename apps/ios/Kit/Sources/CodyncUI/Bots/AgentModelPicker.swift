@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Models come from the selected computer's agent, never a bundled provider list.
 /// The summary expands into one searchable agent/model picker and its settings.
-struct AgentModelPicker: View {
+struct AgentModelPicker<Details: View>: View {
     let backend: String
     @Binding var selection: String?
     /// The selected model's settings (effort, fast…); they belong to one model.
@@ -19,8 +19,10 @@ struct AgentModelPicker: View {
     var restLine: String?
     /// Retry model list, for the rows that read the same list (Permissions).
     var onReload: (() -> Void)?
-    /// False where picking is the whole sheet (Add fallback): no summary line, the choices show at once.
-    var collapsible = true
+    /// Starts open on its choices (a fallback just added).
+    var expanded = false
+    /// Under the agent and model while open: a fallback's login profile.
+    @ViewBuilder var details: Details
     private enum Stage { case closed, agents, models, settings }
     @State private var stage = Stage.closed
     @State private var query = ""
@@ -97,22 +99,20 @@ struct AgentModelPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if collapsible {
-                Button { open(stage == .closed ? .models : .closed) } label: {
-                    HStack(spacing: 6) {
-                        Text(summary).font(.subheadline).lineLimit(2)
-                            .contentTransition(.opacity)
-                            .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
-                        Spacer(minLength: 0)
-                        Image(systemName: stage == .closed ? "chevron.down" : "chevron.up").font(.caption)
-                    }
-                    .foregroundStyle(Palette.text)
-                    .contentShape(Rectangle())
+            Button { open(stage == .closed ? .models : .closed) } label: {
+                HStack(spacing: 6) {
+                    Text(summary).font(.subheadline).lineLimit(2)
+                        .contentTransition(.opacity)
+                        .animation(Motion.reduced(Motion.fade, reduceMotion), value: summary)
+                    Spacer(minLength: 0)
+                    Image(systemName: stage == .closed ? "chevron.down" : "chevron.up").font(.caption)
                 }
-                .buttonStyle(.plain)
-                .accessibilityValue(stage == .closed ? "Collapsed" : "Expanded")
+                .foregroundStyle(Palette.text)
+                .contentShape(Rectangle())
             }
-            if stage != .closed || !collapsible {
+            .buttonStyle(.plain)
+            .accessibilityValue(stage == .closed ? "Collapsed" : "Expanded")
+            if stage != .closed {
                 HStack {
                     if onAgentChange != nil {
                         Button { open(stage == .agents ? .settings : .agents) } label: { Text(agentName).lineLimit(1); Image(systemName: "chevron.down") }
@@ -123,6 +123,7 @@ struct AgentModelPicker: View {
                 .font(.subheadline)
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.text)
+                details
                 if let restLine { Text(restLine).font(.caption).foregroundStyle(Palette.secondary) }
                 if let installHint { Text(installHint).font(.caption).foregroundStyle(Palette.warning) }
                 if backend == "custom", let command {
@@ -166,6 +167,7 @@ struct AgentModelPicker: View {
             }
         }
         .task(id: requestKey) { await load() }
+        .onAppear { if expanded, stage == .closed { stage = .settings } }
     }
 
     private var searchResults: some View {

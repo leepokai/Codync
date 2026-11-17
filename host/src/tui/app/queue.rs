@@ -2,7 +2,16 @@
 //! one (`unqueue`).
 
 use super::{After, App, Entry};
-use serde_json::json;
+use serde_json::{Value, json};
+
+/// What `S` and `D` do to a waiting message.
+#[derive(Clone, Copy)]
+pub enum Queued {
+    /// `S`: the next one goes now.
+    SendNow,
+    /// `D`: the last one is taken back.
+    Remove,
+}
 
 /// The first host that sends a queued message now and takes one back.
 const STEER_SINCE: &str = "2.39.0";
@@ -27,19 +36,20 @@ impl App {
 
     /// `S`: the next queued message goes out now, into the running turn when the agent can take it.
     pub(super) fn steer_next(&mut self) {
-        let next = self.selected.as_deref().and_then(|bot| self.queued(bot).first().map(|e| e.id.clone()));
-        self.on_queued("steer", next, "Sending now…");
+        let Some(bot) = self.selected.clone() else { return };
+        let next = self.queued(&bot).first().map(|e| e.id.clone());
+        self.on_queued(Queued::SendNow, json!({"botId": bot}), next);
     }
 
     /// `D`: the last queued message never goes out.
     pub(super) fn unqueue_last(&mut self) {
-        let last = self.selected.as_deref().and_then(|bot| self.queued(bot).last().map(|e| e.id.clone()));
-        self.on_queued("unqueue", last, "Removed");
+        let Some(bot) = self.selected.clone() else { return };
+        let last = self.queued(&bot).last().map(|e| e.id.clone());
+        self.on_queued(Queued::Remove, json!({"botId": bot}), last);
     }
 
-    /// `method` on the selected bot's queued message `id`, saying `done`.
-    fn on_queued(&mut self, method: &'static str, id: Option<String>, done: &str) {
-        let Some(bot) = self.selected.clone() else { return };
+    /// `act` on the queued message `id` of the chat or thread `to` names (`botId`, and an `itemId` for a thread).
+    pub(in crate::tui) fn on_queued(&mut self, act: Queued, mut to: Value, id: Option<String>) {
         let Some(id) = id else {
             self.flash("No message waiting");
             return;
@@ -47,7 +57,12 @@ impl App {
         if self
             .host_supports(STEER_SINCE, "Update Codync on {host}: sending now and taking back need {version} or newer.")
         {
-            self.call(method, json!({"botId": bot, "entryId": id}), After::Nothing);
+            to["entryId"] = id.into();
+            let (method, done) = match act {
+                Queued::SendNow => ("steer", "Sending now…"),
+                Queued::Remove => ("unqueue", "Removed"),
+            };
+            self.call(method, to, After::Nothing);
             self.flash(done);
         }
     }

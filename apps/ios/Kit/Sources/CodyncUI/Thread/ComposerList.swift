@@ -54,20 +54,43 @@ private struct ComposerListRow<Icon: View>: View {
     }
 }
 
-/// The `/` list: each command's icon, name and what it does; a tap runs it.
+/// The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does; a tap runs it.
+/// While any of the agent's own commands is listed, headings set Codync's (Fast mode, skills) apart from the agent's.
 struct CommandList: View {
     let commands: [SlashCommand]
+    /// The logo an agent's commands are drawn with (`BotStore.agentRegistry`).
+    let agentRegistry: (String) -> String
+    /// What the user calls an agent (`BotStore.backendName`), for its heading.
+    let agentName: (String) -> String
     let pick: (SlashCommand) -> Void
 
     var body: some View {
+        let groups = SlashCommands.groups(commands)
         ComposerList {
-            ForEach(commands) { command in
-                ComposerListRow(title: command.title, detail: command.detail, warning: command.warning) {
-                    pick(command)
-                } icon: {
-                    Image(systemName: command.icon)
-                        .font(.subheadline)
+            ForEach(groups, id: \.agent) { group in
+                if groups.count > 1 || group.agent != nil {
+                    Text(group.agent.map(agentName) ?? "Codync")
+                        .font(.footnote)
                         .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ForEach(group.commands) { command in
+                    ComposerListRow(title: command.title, detail: command.detail, warning: command.warning) {
+                        pick(command)
+                    } icon: {
+                        if let agent = group.agent {
+                            AgentIcon(registry: agentRegistry(agent), size: 15)
+                        } else {
+                            Image(systemName: command.icon)
+                                .font(.subheadline)
+                                .foregroundStyle(Palette.secondary)
+                        }
+                    }
                 }
             }
         }

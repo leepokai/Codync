@@ -219,6 +219,10 @@ impl Screen {
         let _ = self.events.send(json!({"type": "screen", "screen": self.state()}));
     }
 
+    pub(super) fn user_control(&self) -> bool {
+        self.control.locked().user.is_some()
+    }
+
     pub(super) async fn browser(
         &self,
         hub: &Arc<crate::hub::Hub>,

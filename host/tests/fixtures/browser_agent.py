@@ -45,6 +45,7 @@ def prompt(message):
     tool = next(server for server in session['mcpServers'] if server['name'] == 'computer')
     results = {
         'mode': 'concurrent' if 'browser-concurrent' in text
+        else 'queued-takeover' if 'browser-queued-takeover' in text
         else 'start-stop' if 'browser-start-stop' in text
         else 'setup-fail' if 'browser-setup-fail' in text
         else 'closed-stop' if 'browser-closed-stop' in text
@@ -186,6 +187,55 @@ def prompt(message):
         bound = binding(start)
         results['start'] = start
         checkpoint('start-complete', {'mode': results['mode']})
+
+        if results['mode'] == 'queued-takeover':
+            def send_tool(name, arguments):
+                nonlocal sequence
+                sequence += 1
+                request_id = sequence
+                mcp.stdin.write(json.dumps({
+                    'jsonrpc': '2.0',
+                    'id': request_id,
+                    'method': 'tools/call',
+                    'params': {'name': name, 'arguments': arguments},
+                }) + '\n')
+                mcp.stdin.flush()
+                return request_id
+
+            nav_id = send_tool('browser_navigate', dict(bound, url=url))
+            time.sleep(0.25)
+            click_id = send_tool('browser_click', dict(bound, selector='#count'))
+            pending_ids = {nav_id, click_id}
+            replies = {}
+            while pending_ids:
+                line = mcp.stdout.readline()
+                assert line, 'MCP exited before replying to queued takeover requests'
+                message = json.loads(line)
+                if message.get('id') in pending_ids:
+                    pending_ids.remove(message['id'])
+                    replies[message['id']] = message['result']
+            nav_reply = replies[nav_id]
+            click_reply = replies[click_id]
+            results['slowNavigateIsError'] = bool(nav_reply.get('isError', False))
+            results['slowNavigateText'] = nav_reply['content'][0]['text']
+            results['queuedClickIsError'] = bool(click_reply.get('isError', False))
+            results['queuedClickText'] = click_reply['content'][0]['text']
+            assert results['queuedClickIsError'] is True, click_reply
+            ok, closed = tool('browser_stop', bound)
+            assert ok, closed
+            results['stop'] = closed
+            (cwd / 'browser-results.json').write_text(json.dumps(results, indent=2))
+            checkpoint('results-written')
+            mcp.stdin.close()
+            send({
+                'jsonrpc': '2.0',
+                'method': 'session/update',
+                'params': {
+                    'sessionId': params['sessionId'],
+                    'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': 'Queued click aborted on takeover.'}},
+                },
+            })
+            return {'stopReason': 'end_turn'}
 
         if results['mode'] == 'closed-stop':
             ok, closed = tool('browser_stop', bound)

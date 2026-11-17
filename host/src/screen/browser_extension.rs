@@ -3,20 +3,24 @@
 //! A small native-messaging helper connects Chrome's extension process to this authenticated,
 //! loopback-only socket. The extension never receives the host bearer token.
 
+use crate::LockExt;
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
 use axum::extract::ws::{Message, WebSocket};
 use futures::{SinkExt as _, StreamExt as _, future::BoxFuture};
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 /// The public key in `apps/browser-extension/manifest.json` fixes this ID.
 pub(super) const EXTENSION_ID: &str = "dgejialhpalhoigbkmgeabgpphlipiek";
+pub(super) const TAKEOVER_ERROR: &str =
+    "The user has taken over the screen from their phone. Wait until they hand it back, or ask them what to do.";
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
-type PendingReplies = std::sync::Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>>;
+type PendingReplies = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>>;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum BridgeFailure {
@@ -77,10 +81,17 @@ struct Connection {
 }
 
 /// One extension connection and the requests waiting for its replies.
-#[derive(Default)]
 pub(super) struct ExtensionBridge {
     connections: Mutex<Connections>,
     next_connection: AtomicU64,
+    takeover_epoch: watch::Sender<u64>,
+}
+
+impl Default for ExtensionBridge {
+    fn default() -> Self {
+        let (takeover_epoch, _) = watch::channel(0);
+        Self { connections: Mutex::default(), next_connection: AtomicU64::new(0), takeover_epoch }
+    }
 }
 
 #[derive(Default)]
@@ -90,6 +101,17 @@ struct Connections {
 }
 
 impl ExtensionBridge {
+    /// Synchronously revokes the active extension session when the user takes over the screen.
+    pub(super) fn revoke_for_takeover(&self) {
+        self.takeover_epoch.send_modify(|epoch| *epoch = epoch.saturating_add(1));
+        if let Some(active) = &self.connections.locked().active {
+            let _ = active.out.send(json!({
+                "type": "takeover",
+                "params": {"allForHost": true}
+            }));
+        }
+    }
+
     /// Runs one request in the extension. A missing connection is an explicit offline failure:
     /// callers must not fall back to another browser or computer.
     pub(super) fn call<'a>(&'a self, method: &'a str, params: Value) -> BoxFuture<'a, Result<Value>> {
@@ -97,29 +119,52 @@ impl ExtensionBridge {
     }
 
     pub(super) async fn call_with_timeout(&self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
-        let connection = self.connections.lock().await.active.clone().ok_or_else(|| anyhow!(BridgeFailure::Offline))?;
+        let mut takeover_rx = self.takeover_epoch.subscribe();
+        let mut watch_takeover = !matches!(method, "stop" | "cancel");
+        let connection = self.connections.locked().active.clone().ok_or_else(|| anyhow!(BridgeFailure::Offline))?;
         let id = uuid::Uuid::new_v4().to_string();
-        let (reply, answer) = oneshot::channel();
-        connection.pending.lock().await.insert(id.clone(), reply);
+        let (reply, mut answer) = oneshot::channel();
+        connection.pending.locked().insert(id.clone(), reply);
         if connection.out.send(json!({"id": id, "method": method, "params": params})).is_err() {
-            connection.pending.lock().await.remove(&id);
+            connection.pending.locked().remove(&id);
             bail!(BridgeFailure::Send);
         }
-        match tokio::time::timeout(timeout, answer).await {
-            Ok(Ok(Ok(value))) => Ok(value),
-            Ok(Ok(Err(message))) => bail!("{message}"),
-            Ok(Err(_)) => bail!(BridgeFailure::Disconnected),
-            Err(_) => {
-                connection.pending.lock().await.remove(&id);
-                // A timed-out start can leave a tab attached in Chrome. Ask the extension to cancel
-                // the still-running request; if it already created a tab, its request guard removes it.
-                let cancel_id = uuid::Uuid::new_v4().to_string();
-                let _ = connection.out.send(json!({
-                    "id": cancel_id,
-                    "method": "cancel",
-                    "params": {"requestId": id}
-                }));
-                bail!(BridgeFailure::Timeout);
+        let deadline = tokio::time::sleep(timeout);
+        tokio::pin!(deadline);
+        loop {
+            tokio::select! {
+                reply = &mut answer => {
+                    return match reply {
+                        Ok(Ok(value)) => Ok(value),
+                        Ok(Err(message)) => bail!("{message}"),
+                        Err(_) => bail!(BridgeFailure::Disconnected),
+                    };
+                }
+                changed = takeover_rx.changed(), if watch_takeover => {
+                    if changed.is_ok() {
+                        connection.pending.locked().remove(&id);
+                        let cancel_id = uuid::Uuid::new_v4().to_string();
+                        let _ = connection.out.send(json!({
+                            "id": cancel_id,
+                            "method": "cancel",
+                            "params": {"requestId": id, "revokeSession": true}
+                        }));
+                        bail!(TAKEOVER_ERROR);
+                    }
+                    watch_takeover = false;
+                }
+                () = &mut deadline => {
+                    connection.pending.locked().remove(&id);
+                    // A timed-out start can leave a tab attached in Chrome. Ask the extension to cancel
+                    // the still-running request; if it already created a tab, its request guard removes it.
+                    let cancel_id = uuid::Uuid::new_v4().to_string();
+                    let _ = connection.out.send(json!({
+                        "id": cancel_id,
+                        "method": "cancel",
+                        "params": {"requestId": id}
+                    }));
+                    bail!(BridgeFailure::Timeout);
+                }
             }
         }
     }
@@ -145,10 +190,10 @@ impl ExtensionBridge {
         let connection = Connection {
             id: self.next_connection.fetch_add(1, Ordering::Relaxed) + 1,
             out,
-            pending: std::sync::Arc::new(Mutex::new(HashMap::new())),
+            pending: Arc::new(Mutex::new(HashMap::new())),
         };
         let became_active = {
-            let mut connections = self.connections.lock().await;
+            let mut connections = self.connections.locked();
             if connections.active.is_none() {
                 connections.active = Some(connection.clone());
                 true
@@ -171,7 +216,7 @@ impl ExtensionBridge {
             })
         };
         if connection.out.send(message).is_err() {
-            self.remove_and_promote(connection.id, host_id).await;
+            self.remove_and_promote(connection.id, host_id);
             bail!("the browser extension disconnected while joining the bridge");
         }
 
@@ -192,7 +237,7 @@ impl ExtensionBridge {
                 let Some(id) = value["id"].as_str() else {
                     continue;
                 };
-                if let Some(reply) = connection.pending.lock().await.remove(id) {
+                if let Some(reply) = connection.pending.locked().remove(id) {
                     let answer = if value["ok"] == true {
                         Ok(value.get("result").cloned().unwrap_or(Value::Null))
                     } else {
@@ -210,14 +255,14 @@ impl ExtensionBridge {
         }
         .await;
 
-        let _ = self.remove_and_promote(connection.id, host_id).await;
-        fail_pending(connection.pending, "the browser extension disconnected").await;
+        let _ = self.remove_and_promote(connection.id, host_id);
+        fail_pending(&connection.pending, "the browser extension disconnected");
         writer.abort();
         result
     }
 
-    async fn remove_and_promote(&self, id: u64, host_id: &str) -> Option<Connection> {
-        let mut connections = self.connections.lock().await;
+    fn remove_and_promote(&self, id: u64, host_id: &str) -> Option<Connection> {
+        let mut connections = self.connections.locked();
         if connections.active.as_ref().is_some_and(|active| active.id == id) {
             connections.active.take();
         } else {
@@ -264,8 +309,8 @@ fn message_json(message: &Message) -> Result<Value> {
     }
 }
 
-async fn fail_pending(pending: PendingReplies, message: &str) {
-    let waiting = pending.lock().await.drain().map(|(_, reply)| reply).collect::<Vec<_>>();
+fn fail_pending(pending: &PendingReplies, message: &str) {
+    let waiting = pending.locked().drain().map(|(_, reply)| reply).collect::<Vec<_>>();
     for reply in waiting {
         let _ = reply.send(Err(message.to_owned()));
     }
@@ -277,7 +322,7 @@ mod tests {
 
     fn connection(id: u64) -> (Connection, mpsc::UnboundedReceiver<Value>) {
         let (out, receiver) = mpsc::unbounded_channel();
-        (Connection { id, out, pending: std::sync::Arc::new(Mutex::new(HashMap::new())) }, receiver)
+        (Connection { id, out, pending: Arc::new(Mutex::new(HashMap::new())) }, receiver)
     }
 
     #[test]
@@ -292,25 +337,25 @@ mod tests {
         let (first, mut first_out) = connection(1);
         let (second, mut second_out) = connection(2);
         {
-            let mut connections = bridge.connections.lock().await;
+            let mut connections = bridge.connections.locked();
             connections.active = Some(first.clone());
             connections.waiting.push_back(second.clone());
         }
 
         assert_eq!(first_out.try_recv(), Err(mpsc::error::TryRecvError::Empty));
-        let promoted = bridge.remove_and_promote(1, "host-a").await.unwrap();
+        let promoted = bridge.remove_and_promote(1, "host-a").unwrap();
         assert_eq!(promoted.id, 2);
-        assert_eq!(bridge.connections.lock().await.active.as_ref().unwrap().id, 2);
+        assert_eq!(bridge.connections.locked().active.as_ref().unwrap().id, 2);
         assert_eq!(first_out.try_recv(), Err(mpsc::error::TryRecvError::Empty));
         assert_eq!(second_out.recv().await.unwrap()["type"], "ready");
     }
 
     #[tokio::test]
     async fn a_timed_out_command_is_sent_once_and_never_replayed() {
-        let bridge = std::sync::Arc::new(ExtensionBridge::default());
+        let bridge = Arc::new(ExtensionBridge::default());
         let (active, mut output) = connection(1);
         let pending = active.pending.clone();
-        bridge.connections.lock().await.active = Some(active);
+        bridge.connections.locked().active = Some(active);
 
         let task = {
             let bridge = bridge.clone();
@@ -326,6 +371,49 @@ mod tests {
         assert_eq!(cancelled["method"], "cancel");
         assert_eq!(cancelled["params"]["requestId"], sent["id"]);
         assert_eq!(output.try_recv(), Err(mpsc::error::TryRecvError::Empty));
-        assert!(pending.lock().await.is_empty());
+        assert!(pending.locked().is_empty());
+    }
+
+    #[tokio::test]
+    async fn takeover_revokes_active_extension_session_and_aborts_waiting_call() {
+        let bridge = Arc::new(ExtensionBridge::default());
+        let (active, mut output) = connection(1);
+        let pending = active.pending.clone();
+        bridge.connections.locked().active = Some(active);
+
+        let task = {
+            let bridge = bridge.clone();
+            tokio::spawn(async move {
+                bridge.call_with_timeout("click", json!({"selector": "#queued"}), Duration::from_secs(5)).await
+            })
+        };
+        let sent = output.recv().await.unwrap();
+        assert_eq!(sent["method"], "click");
+
+        bridge.revoke_for_takeover();
+
+        let takeover = output.recv().await.unwrap();
+        assert_eq!(takeover["type"], "takeover");
+        assert_eq!(takeover["params"]["allForHost"], true);
+
+        let cancelled = output.recv().await.unwrap();
+        assert_eq!(cancelled["method"], "cancel");
+        assert_eq!(cancelled["params"]["requestId"], sent["id"]);
+        assert_eq!(cancelled["params"]["revokeSession"], true);
+
+        let error = task.await.unwrap().unwrap_err();
+        assert!(error.to_string().contains("taken over the screen"));
+        assert!(pending.locked().is_empty());
+
+        let stop_task = {
+            let bridge = bridge.clone();
+            tokio::spawn(async move { bridge.call_with_timeout("stop", json!({}), Duration::from_secs(5)).await })
+        };
+        let stop_sent = output.recv().await.unwrap();
+        assert_eq!(stop_sent["method"], "stop");
+        let stop_id = stop_sent["id"].as_str().unwrap().to_owned();
+        let reply = pending.locked().remove(&stop_id).unwrap();
+        let _ = reply.send(Ok(json!({"closed": true})));
+        assert_eq!(stop_task.await.unwrap().unwrap()["closed"], true);
     }
 }

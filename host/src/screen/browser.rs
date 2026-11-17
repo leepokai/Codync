@@ -5,7 +5,9 @@
 //! single-agent claim, and user-takeover guards. Each browser belongs to the user message that started
 //! the turn. Screenshots are published through `send_file`, which puts the picture in that same chat.
 
-use super::browser_extension::{EXTENSION_ID, ExtensionBridge, failure_category as extension_failure_category};
+use super::browser_extension::{
+    EXTENSION_ID, ExtensionBridge, TAKEOVER_ERROR, failure_category as extension_failure_category,
+};
 use super::browser_headless;
 use crate::hub::{BotStatus, Hub};
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
@@ -17,6 +19,7 @@ use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::process::Child;
 use tokio::sync::Mutex;
@@ -150,6 +153,7 @@ pub(super) struct Browsers {
     state: Mutex<State>,
     start_lock: Mutex<()>,
     extension: ExtensionBridge,
+    takeover_epoch: AtomicU64,
 }
 
 #[derive(Default)]
@@ -242,6 +246,16 @@ impl BoundArgs {
 }
 
 impl Browsers {
+    pub(super) fn revoke_for_takeover(&self) {
+        self.takeover_epoch.fetch_add(1, Ordering::Release);
+        self.extension.revoke_for_takeover();
+    }
+
+    fn takeover_guard(&self, hub: &Hub, epoch: u64) -> Result<()> {
+        ensure!(self.takeover_epoch.load(Ordering::Acquire) == epoch && !hub.screen.user_control(), "{TAKEOVER_ERROR}");
+        Ok(())
+    }
+
     pub(super) async fn serve_extension(&self, host_id: &str, socket: axum::extract::ws::WebSocket) -> Result<()> {
         self.extension.serve(socket, host_id).await
     }
@@ -290,6 +304,8 @@ impl Browsers {
         // Starting involves a browser round trip. Serialize starts so concurrent calls for the
         // same user message cannot create duplicate tabs before either one is registered.
         let _start_guard = self.start_lock.lock().await;
+        let takeover_epoch = self.takeover_epoch.load(Ordering::Acquire);
+        self.takeover_guard(hub, takeover_epoch)?;
         let StartArgs { url } = serde_json::from_value(args).map_err(|e| anyhow!("invalid browser_start call: {e}"))?;
         let url = checked_url(&url)?;
         let (message_id, cancelled_epoch) = {
@@ -314,6 +330,7 @@ impl Browsers {
                 .transpose()?
         };
         if let Some((binding, engine, extension_version)) = existing {
+            self.takeover_guard(hub, takeover_epoch)?;
             let page = if engine == Engine::Extension {
                 self.extension
                     .call("state", json!({"target": binding}))
@@ -322,6 +339,7 @@ impl Browsers {
             } else {
                 public_state(&binding.current_url, "", "")
             };
+            self.takeover_guard(hub, takeover_epoch)?;
             let mut state = self.state.lock().await;
             let session = bound_session(&mut state, hub, bot, &BoundArgs::from_binding(&binding), true)?;
             session.binding.current_url = string_field(&page, "url", &session.binding.current_url);
@@ -375,9 +393,9 @@ impl Browsers {
                 engine: Engine::Headless,
                 extension_version: String::new(),
             };
-            if self.ensure_start_active(hub, bot, &message_id, cancelled_epoch).await.is_err() {
+            if let Err(error) = self.ensure_start_active(hub, bot, &message_id, cancelled_epoch, takeover_epoch).await {
                 close(session).await;
-                bail!("the browser start no longer belongs to the user's current turn");
+                return Err(error);
             }
             let rejected = {
                 let mut state = self.state.lock().await;
@@ -394,7 +412,7 @@ impl Browsers {
             return Ok(json!({"target": binding, "state": page, "reused": false}));
         }
 
-        self.ensure_start_active(hub, bot, &message_id, cancelled_epoch).await?;
+        self.ensure_start_active(hub, bot, &message_id, cancelled_epoch, takeover_epoch).await?;
         let target = json!({
             "hostId": hub.host_id,
             "botId": bot,
@@ -454,10 +472,10 @@ impl Browsers {
             engine: Engine::Extension,
             extension_version: extension_version.clone(),
         };
-        if self.ensure_start_active(hub, bot, &message_id, cancelled_epoch).await.is_err() {
+        if let Err(error) = self.ensure_start_active(hub, bot, &message_id, cancelled_epoch, takeover_epoch).await {
             fail_extension_start(&self.extension, &binding, "the browser start was cancelled before it completed")
                 .await;
-            bail!("the browser start was cancelled by the user");
+            return Err(error);
         }
         let rejected = {
             let mut state = self.state.lock().await;
@@ -485,7 +503,15 @@ impl Browsers {
         }))
     }
 
-    async fn ensure_start_active(&self, hub: &Hub, bot: &str, message_id: &str, cancelled_epoch: u64) -> Result<()> {
+    async fn ensure_start_active(
+        &self,
+        hub: &Hub,
+        bot: &str,
+        message_id: &str,
+        cancelled_epoch: u64,
+        takeover_epoch: u64,
+    ) -> Result<()> {
+        self.takeover_guard(hub, takeover_epoch)?;
         ensure!(
             current_message(hub, bot).ok().as_deref() == Some(message_id),
             "the browser start no longer belongs to the user's current turn"
@@ -499,6 +525,8 @@ impl Browsers {
     }
 
     async fn navigate(&self, hub: &Arc<Hub>, bot: &str, args: Value) -> Result<Value> {
+        let takeover_epoch = self.takeover_epoch.load(Ordering::Acquire);
+        self.takeover_guard(hub, takeover_epoch)?;
         let NavigateArgs { bound, url } =
             serde_json::from_value(args).map_err(|e| anyhow!("invalid browser_navigate call: {e}"))?;
         let url = checked_url(&url)?;
@@ -508,6 +536,7 @@ impl Browsers {
         };
         if let Some(binding) = extension {
             let page = self.extension.call("navigate", json!({"target": binding, "url": url})).await?;
+            self.takeover_guard(hub, takeover_epoch)?;
             let mut state = self.state.lock().await;
             let session = bound_session(&mut state, hub, bot, &bound, true)?;
             session.binding.current_url = string_field(&page, "url", &url);
@@ -520,6 +549,7 @@ impl Browsers {
         };
         let tab_ws = browser_headless::page_ws(port, &tab_id, &generation).await?;
         let page = browser_headless::navigate_tab(&tab_ws, &url).await?;
+        self.takeover_guard(hub, takeover_epoch)?;
         let mut state = self.state.lock().await;
         let session = bound_session(&mut state, hub, bot, &bound, true)?;
         session.binding.current_url = url;
@@ -527,6 +557,8 @@ impl Browsers {
     }
 
     async fn click(&self, hub: &Arc<Hub>, bot: &str, args: Value) -> Result<Value> {
+        let takeover_epoch = self.takeover_epoch.load(Ordering::Acquire);
+        self.takeover_guard(hub, takeover_epoch)?;
         let ClickArgs { bound, selector } =
             serde_json::from_value(args).map_err(|e| anyhow!("invalid browser_click call: {e}"))?;
         checked_selector(&selector)?;
@@ -536,6 +568,7 @@ impl Browsers {
         };
         if let Some(binding) = extension {
             let page = self.extension.call("click", json!({"target": binding, "selector": selector})).await?;
+            self.takeover_guard(hub, takeover_epoch)?;
             let mut state = self.state.lock().await;
             let session = bound_session(&mut state, hub, bot, &bound, true)?;
             session.binding.current_url = string_field(&page, "url", &session.binding.current_url);
@@ -548,6 +581,7 @@ impl Browsers {
         };
         let tab_ws = browser_headless::page_ws(port, &tab_id, &generation).await?;
         let page = browser_headless::click(&tab_ws, &selector).await?;
+        self.takeover_guard(hub, takeover_epoch)?;
         let mut state = self.state.lock().await;
         let session = bound_session(&mut state, hub, bot, &bound, true)?;
         session.binding.current_url = string_field(&page, "url", &session.binding.current_url);
@@ -555,6 +589,8 @@ impl Browsers {
     }
 
     async fn r#type(&self, hub: &Arc<Hub>, bot: &str, args: Value) -> Result<Value> {
+        let takeover_epoch = self.takeover_epoch.load(Ordering::Acquire);
+        self.takeover_guard(hub, takeover_epoch)?;
         let TypeArgs { bound, selector, text } =
             serde_json::from_value(args).map_err(|e| anyhow!("invalid browser_type call: {e}"))?;
         checked_selector(&selector)?;
@@ -566,6 +602,7 @@ impl Browsers {
         if let Some(binding) = extension {
             let page =
                 self.extension.call("type", json!({"target": binding, "selector": selector, "text": text})).await?;
+            self.takeover_guard(hub, takeover_epoch)?;
             let mut state = self.state.lock().await;
             let session = bound_session(&mut state, hub, bot, &bound, true)?;
             session.binding.current_url = string_field(&page, "url", &session.binding.current_url);
@@ -578,6 +615,7 @@ impl Browsers {
         };
         let tab_ws = browser_headless::page_ws(port, &tab_id, &generation).await?;
         let page = browser_headless::type_text(&tab_ws, &selector, &text).await?;
+        self.takeover_guard(hub, takeover_epoch)?;
         let mut state = self.state.lock().await;
         let session = bound_session(&mut state, hub, bot, &bound, true)?;
         session.binding.current_url = string_field(&page, "url", &session.binding.current_url);
@@ -585,6 +623,8 @@ impl Browsers {
     }
 
     async fn screenshot(&self, hub: &Arc<Hub>, bot: &str, args: Value) -> Result<Value> {
+        let takeover_epoch = self.takeover_epoch.load(Ordering::Acquire);
+        self.takeover_guard(hub, takeover_epoch)?;
         let BoundArgs { operation_id, browser_id, tab_id, generation } =
             serde_json::from_value(args).map_err(|e| anyhow!("invalid browser_screenshot call: {e}"))?;
         let bound = BoundArgs { operation_id, browser_id, tab_id, generation };
@@ -608,6 +648,7 @@ impl Browsers {
             let (encoded, page) = browser_headless::screenshot(&tab_ws).await?;
             (encoded, page)
         };
+        self.takeover_guard(hub, takeover_epoch)?;
         let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).context("invalid screenshot data")?;
         ensure!(!bytes.is_empty() && bytes.len() <= MAX_SCREENSHOT, "screenshot is empty or too large");
         let image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
@@ -628,7 +669,9 @@ impl Browsers {
             .await
             .context("the screenshot writer task failed")??;
         let current_url = string_field(&page, "url", &binding.current_url);
-        let still_bound = {
+        let still_bound = if let Err(error) = self.takeover_guard(hub, takeover_epoch) {
+            Err(error)
+        } else {
             let mut state = self.state.lock().await;
             bound_session(&mut state, hub, bot, &bound, true).map(|session| {
                 session.binding.current_url = current_url;

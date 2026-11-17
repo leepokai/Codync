@@ -723,3 +723,222 @@ async fn missing_extension_fails_instead_of_switching_browser_or_computer() {
     let failure = wait_json(&host.home, &path, Duration::from_secs(30)).await;
     assert!(failure["message"].as_str().unwrap().contains("Codync Browser extension isn't connected"), "{failure}");
 }
+
+#[tokio::test]
+#[cfg(windows)]
+async fn queued_click_aborts_after_slow_action_on_phone_takeover() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
+
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+
+    let holding_navigate = Arc::new(AtomicBool::new(false));
+    let saw_queued_click = Arc::new(AtomicBool::new(false));
+    let saw_takeover = Arc::new(AtomicBool::new(false));
+    let revoked = Arc::new(AtomicBool::new(false));
+    let page_clicks = Arc::new(AtomicUsize::new(0));
+    let release_slow_navigate = Arc::new(Notify::new());
+
+    let url = host.base.replacen("http://", "ws://", 1) + "/browser-extension";
+    let mut request = url.into_client_request().unwrap();
+    request.headers_mut().insert(header::AUTHORIZATION, format!("Bearer {}", host.token).parse().unwrap());
+    let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    socket
+        .send(Message::Text(
+            json!({
+                "type": "hello",
+                "protocol": 1,
+                "extensionId": "dgejialhpalhoigbkmgeabgpphlipiek",
+                "version": "test",
+                "isolatedProfile": true
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    let ready = socket.next().await.unwrap().unwrap();
+    assert!(ready.to_text().unwrap().contains("\"ready\""));
+
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Value>();
+    let (mut sink, mut stream) = socket.split();
+    let writer = tokio::spawn(async move {
+        while let Some(value) = out_rx.recv().await {
+            if sink.send(Message::Text(value.to_string().into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let extension = {
+        let holding_navigate = holding_navigate.clone();
+        let saw_queued_click = saw_queued_click.clone();
+        let saw_takeover = saw_takeover.clone();
+        let revoked = revoked.clone();
+        let page_clicks = page_clicks.clone();
+        let release_slow_navigate = release_slow_navigate.clone();
+        let tab_queue = Arc::new(AsyncMutex::new(()));
+        tokio::spawn(async move {
+            let mut tasks = Vec::new();
+            while let Some(Ok(message)) = stream.next().await {
+                let frame: Value = match message {
+                    Message::Text(text) => serde_json::from_str(text.as_str()).unwrap(),
+                    Message::Binary(bytes) => serde_json::from_slice(&bytes).unwrap(),
+                    Message::Close(_) => break,
+                    Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
+                };
+                if matches!(frame["type"].as_str(), Some("takeover" | "revoke")) {
+                    revoked.store(true, Ordering::SeqCst);
+                    saw_takeover.store(true, Ordering::SeqCst);
+                    continue;
+                }
+                let Some(id) = frame["id"].as_str().map(str::to_owned) else {
+                    continue;
+                };
+                let method = frame["method"].as_str().unwrap_or_default().to_owned();
+                if method == "cancel" {
+                    if frame["params"]["revokeSession"] == true {
+                        revoked.store(true, Ordering::SeqCst);
+                    }
+                    let _ = out_tx.send(json!({"id": id, "ok": true, "result": {"cancelled": true}}));
+                    continue;
+                }
+                if method == "click" {
+                    saw_queued_click.store(true, Ordering::SeqCst);
+                }
+                let out_tx = out_tx.clone();
+                let tab_queue = tab_queue.clone();
+                let holding_navigate = holding_navigate.clone();
+                let revoked = revoked.clone();
+                let page_clicks = page_clicks.clone();
+                let release_slow_navigate = release_slow_navigate.clone();
+                let is_stop = method == "stop";
+                tasks.push(tokio::spawn(async move {
+                    let state = json!({
+                        "url": "http://127.0.0.1/",
+                        "title": "Codync extension fixture",
+                        "text": "Count: 0"
+                    });
+                    let reply = match method.as_str() {
+                        "start" => json!({
+                            "id": id,
+                            "ok": true,
+                            "result": {
+                                "tabId": "123",
+                                "browserVersion": "Chrome test",
+                                "browserExecutable": "chrome-extension://fixture",
+                                "extensionVersion": "0.1.0",
+                                "state": state
+                            }
+                        }),
+                        "navigate" => {
+                            let _guard = tab_queue.lock().await;
+                            holding_navigate.store(true, Ordering::SeqCst);
+                            release_slow_navigate.notified().await;
+                            json!({"id": id, "ok": true, "result": state})
+                        }
+                        "click" => {
+                            let _guard = tab_queue.lock().await;
+                            if revoked.load(Ordering::SeqCst) {
+                                json!({
+                                    "id": id,
+                                    "ok": false,
+                                    "code": "browser_session_closed",
+                                    "error": "Browser operation is no longer running in Codync Browser"
+                                })
+                            } else {
+                                page_clicks.fetch_add(1, Ordering::SeqCst);
+                                json!({"id": id, "ok": true, "result": state})
+                            }
+                        }
+                        "stop" => {
+                            let _guard = tab_queue.lock().await;
+                            json!({"id": id, "ok": true, "result": {"closed": true}})
+                        }
+                        other => panic!("unexpected queued-takeover method {other}"),
+                    };
+                    let _ = out_tx.send(reply);
+                }));
+                if is_stop {
+                    break;
+                }
+            }
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+    };
+
+    // Pair an iPhone to issue a real phone takeover while the click is queued in the extension.
+    let pairing = host.call("pairing", json!({})).await;
+    let pairing_url = pairing["pairingUrl"].as_str().unwrap();
+    let host_key: [u8; 32] = crypto::unb64_n(&phone::query_param(pairing_url, "sk")).unwrap();
+    let device_key = SigningKey::from_bytes(&crypto::random());
+    let mut pairing_phone = phone::Phone::connect(&host.base, &device_key, &host_key, true).await;
+    let certificate = phone::test_certificate(&crypto::b64(device_key.verifying_key().as_bytes()), "browser-user");
+    pairing_phone
+        .send(json!({
+            "id": 1,
+            "m": "pair",
+            "b": {
+                "code": phone::query_param(pairing_url, "code"),
+                "name": "Takeover Test iPhone",
+                "platform": "ios",
+                "certificate": certificate,
+            }
+        }))
+        .await;
+    let request = loop {
+        let requests = host.call("pairingRequests", json!({})).await;
+        if let Some(request) = requests["requests"].as_array().and_then(|items| items.first()) {
+            break request.clone();
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    host.call("decidePairing", json!({"requestId": request["requestId"], "approve": true})).await;
+    assert_eq!(pairing_phone.inner().await["ok"]["computerId"], crypto::computer_id(&host_key));
+    assert!(matches!(pairing_phone.recv().await, phone::Frame::Closed(4100)));
+
+    let mut iphone = phone::Phone::connect(&host.base, &device_key, &host_key, false).await;
+    let _ = iphone.call(1, "hello", json!({})).await;
+
+    let bot = browser_bot(&host).await;
+    let _ = send(&host, &bot, "browser-queued-takeover http://127.0.0.1/").await;
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !(holding_navigate.load(Ordering::SeqCst) && saw_queued_click.load(Ordering::SeqCst)) {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for slow navigate and queued click; preserved evidence at {}",
+            capture_failure(&host.home)
+                .map_or_else(|error| format!("unavailable: {error}"), |path| path.display().to_string())
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    let takeover_reply = iphone.call(2, "screenTakeover", json!({"on": true})).await;
+    assert_eq!(takeover_reply["userControl"], true, "{takeover_reply}");
+
+    let takeover_deadline = Instant::now() + Duration::from_secs(10);
+    while !saw_takeover.load(Ordering::SeqCst) {
+        assert!(Instant::now() < takeover_deadline, "extension never received host takeover signal");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    release_slow_navigate.notify_waiters();
+
+    let result = wait_json(&host.home, &results_path(&host, &bot), Duration::from_secs(45)).await;
+    assert_eq!(result["queuedClickIsError"], true, "{result}");
+    assert!(
+        result["queuedClickText"].as_str().unwrap().contains("taken over the screen")
+            || result["queuedClickText"].as_str().unwrap().contains("no longer running"),
+        "{result}"
+    );
+    assert_eq!(result["stop"]["closed"], true, "{result}");
+    assert_eq!(page_clicks.load(Ordering::SeqCst), 0, "queued click executed page input after phone takeover");
+
+    extension.await.unwrap();
+    writer.abort();
+}

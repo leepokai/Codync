@@ -200,6 +200,9 @@ impl Screen {
     /// `owner` (a device key) takes the screen from the bots, or hands it back.
     pub fn takeover(&self, owner: &str, on: bool) {
         self.control.locked().user = on.then(|| owner.to_owned());
+        if on {
+            self.browsers.revoke_for_takeover();
+        }
         self.emit();
     }
 

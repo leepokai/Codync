@@ -296,20 +296,89 @@ fn extension_candidates(parent: &Path) -> Vec<PathBuf> {
 
 #[cfg(windows)]
 fn browser_executable() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("CODYNC_BROWSER_BIN") {
-        let path = PathBuf::from(path);
-        ensure!(path.is_file(), "CODYNC_BROWSER_BIN does not name a file: {}", path.display());
-        return Ok(path);
+    let override_bin = std::env::var_os("CODYNC_BROWSER_BIN").map(PathBuf::from);
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).or_else(dirs::data_local_dir);
+    let program_files =
+        Some(std::env::var_os("ProgramFiles").map_or_else(|| PathBuf::from(r"C:\Program Files"), PathBuf::from));
+    let program_files_x86 = Some(
+        std::env::var_os("ProgramFiles(x86)").map_or_else(|| PathBuf::from(r"C:\Program Files (x86)"), PathBuf::from),
+    );
+    let registry_paths = registered_browser_paths();
+    resolve_browser_executable(
+        override_bin.as_deref(),
+        local_app_data.as_deref(),
+        program_files.as_deref(),
+        program_files_x86.as_deref(),
+        &registry_paths,
+        Path::is_file,
+    )
+}
+
+#[cfg(windows)]
+fn registered_browser_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for exe in ["chrome.exe", "msedge.exe", "brave.exe"] {
+        let subkey = format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}");
+        for root in [windows_registry::CURRENT_USER, windows_registry::LOCAL_MACHINE] {
+            if let Ok(key) = root.open(&subkey)
+                && let Ok(raw) = key.get_string("")
+                && let Some(parsed) = parse_registry_executable(&raw)
+            {
+                paths.push(parsed);
+            }
+        }
     }
-    for candidate in [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    ] {
-        let path = Path::new(candidate);
-        if path.is_file() {
-            return Ok(path.to_owned());
+    paths
+}
+
+#[cfg(any(windows, test))]
+fn parse_registry_executable(raw: &str) -> Option<PathBuf> {
+    let trimmed = raw.trim().trim_matches('"');
+    (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+}
+
+#[cfg(any(windows, test))]
+fn browser_executable_candidates(
+    local_app_data: Option<&Path>,
+    program_files: Option<&Path>,
+    program_files_x86: Option<&Path>,
+    registry_paths: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    for root in [program_files, program_files_x86].into_iter().flatten() {
+        candidates.push(root.join(r"Google\Chrome\Application\chrome.exe"));
+    }
+    for root in [program_files, program_files_x86].into_iter().flatten() {
+        candidates.push(root.join(r"Microsoft\Edge\Application\msedge.exe"));
+    }
+    if let Some(local) = local_app_data {
+        candidates.push(local.join(r"Google\Chrome\Application\chrome.exe"));
+        candidates.push(local.join(r"Microsoft\Edge\Application\msedge.exe"));
+        candidates.push(local.join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
+    }
+    for root in [program_files, program_files_x86].into_iter().flatten() {
+        candidates.push(root.join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
+    }
+    candidates.extend(registry_paths.iter().cloned());
+    candidates
+}
+
+#[cfg(any(windows, test))]
+fn resolve_browser_executable(
+    override_bin: Option<&Path>,
+    local_app_data: Option<&Path>,
+    program_files: Option<&Path>,
+    program_files_x86: Option<&Path>,
+    registry_paths: &[PathBuf],
+    is_file: impl Fn(&Path) -> bool,
+) -> Result<PathBuf> {
+    if let Some(path) = override_bin {
+        ensure!(is_file(path), "CODYNC_BROWSER_BIN does not name a file: {}", path.display());
+        return Ok(path.to_owned());
+    }
+    for candidate in browser_executable_candidates(local_app_data, program_files, program_files_x86, registry_paths) {
+        if is_file(&candidate) {
+            return Ok(candidate);
         }
     }
     bail!("Chrome or Edge was not found for Codync Browser")
@@ -628,5 +697,72 @@ mod tests {
             extension_candidates(release).contains(&release.join("../../../apps/browser-extension")),
             "the documented development layout must be searched"
         );
+    }
+
+    #[test]
+    fn discovers_per_user_chrome_in_local_app_data() {
+        let local = Path::new(r"C:\Users\Alice\AppData\Local");
+        let per_user = local.join(r"Google\Chrome\Application\chrome.exe");
+        let found = resolve_browser_executable(
+            None,
+            Some(local),
+            Some(Path::new(r"C:\Program Files")),
+            Some(Path::new(r"C:\Program Files (x86)")),
+            &[],
+            |path| path == per_user,
+        )
+        .unwrap();
+        assert_eq!(found, per_user);
+    }
+
+    #[test]
+    fn discovers_browser_from_app_paths_registry_and_strips_quotes() {
+        let registered = parse_registry_executable(r#"  "D:\Custom\Chrome\chrome.exe"  "#).unwrap();
+        assert_eq!(registered, PathBuf::from(r"D:\Custom\Chrome\chrome.exe"));
+        assert!(parse_registry_executable(r#"   ""   "#).is_none());
+
+        let found = resolve_browser_executable(
+            None,
+            Some(Path::new(r"C:\Users\Alice\AppData\Local")),
+            Some(Path::new(r"C:\Program Files")),
+            None,
+            std::slice::from_ref(&registered),
+            |path| path == registered,
+        )
+        .unwrap();
+        assert_eq!(found, registered);
+    }
+
+    #[test]
+    fn explicit_override_wins_and_missing_override_fails() {
+        let override_bin = Path::new(r"D:\Portable\chrome.exe");
+        let per_user = Path::new(r"C:\Users\Alice\AppData\Local").join(r"Google\Chrome\Application\chrome.exe");
+        let found = resolve_browser_executable(
+            Some(override_bin),
+            Some(Path::new(r"C:\Users\Alice\AppData\Local")),
+            None,
+            None,
+            &[],
+            |path| path == override_bin || path == per_user,
+        )
+        .unwrap();
+        assert_eq!(found, override_bin);
+
+        let err = resolve_browser_executable(
+            Some(Path::new(r"D:\Missing\chrome.exe")),
+            Some(Path::new(r"C:\Users\Alice\AppData\Local")),
+            None,
+            None,
+            &[],
+            |path| path == per_user,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("CODYNC_BROWSER_BIN"));
+    }
+
+    #[test]
+    fn missing_browser_returns_explicit_error() {
+        let err = resolve_browser_executable(None, None, None, None, &[], |_| false).unwrap_err();
+        assert!(err.to_string().contains("Chrome or Edge was not found"));
     }
 }

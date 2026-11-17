@@ -427,7 +427,7 @@
   "Loading…": "Wird geladen…",
   "Switch back": "Zurückwechseln",
   "No fallbacks yet.": "Noch keine Ersatzagenten.",
-  "Personal workspace": "Persönlicher Arbeitsbereich",
+  "Own folder": "Eigener Ordner",
   "Fast mode": "Schnellmodus",
   "Faster replies for more usage, on models that offer it.": "Schnellere Antworten bei höherem Verbrauch, sofern das Modell es unterstützt.",
   "Faster replies for more usage, on models that offer it (Claude Code, Codex)": "Schnellere Antworten bei höherem Verbrauch, sofern das Modell es unterstützt (Claude Code, Codex)",

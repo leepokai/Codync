@@ -543,7 +543,7 @@ function IntroCard({ bot }: { bot: Bot }) {
   const store = useStore()
   const tr = useTr()
   const where = bot.managedWorkspace
-    ? `${store.backendName(bot.backend)} · ${tr('Personal workspace')}`
+    ? `${store.backendName(bot.backend)} · ${tr('Own folder')}`
     : fill(tr('{agent} in {path}'), { agent: store.backendName(bot.backend), path: bot.cwd })
   return (
     <div className="intro-card">

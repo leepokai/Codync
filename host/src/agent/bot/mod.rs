@@ -89,6 +89,8 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
     let fast_support = FastModeSupport::from_stored(hub.store.kv_get(&fast_mode::stored_key(&cfg.id)).as_deref());
     let support = fast_support.clone();
     hub.set_runtime(&cfg.id, |r| r.fast_mode = support);
+    let mut versions = crate::agent::versions::Saves::default();
+    versions.ready(&hub, &base);
     let actor = Actor {
         hub,
         base,
@@ -112,6 +114,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         applied_system: HashMap::new(),
         dreamer,
         turn_text: None,
+        versions,
         turn_entries: Vec::new(),
         turn_call: None,
         turn_memory_revision: String::new(),
@@ -307,6 +310,8 @@ struct Actor {
     dreamer: mpsc::UnboundedSender<memory::DreamEvent>,
     /// The user's words for this turn (None for a hidden turn or one not from the user); feeds memory.
     turn_text: Option<String>,
+    /// The versions its turns save in the bot's own folder (`agent::versions`).
+    versions: crate::agent::versions::Saves,
     /// The user messages this turn answers (none when it isn't the user's).
     turn_entries: Vec<String>,
     /// The voice call this turn answers while it lasts: its replies carry it (`chat::calls`).

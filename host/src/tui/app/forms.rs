@@ -47,7 +47,8 @@ impl App {
             self_fallbacks: b.self_fallbacks,
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             max_agents: b.max_agents,
-            task_worktrees: b.task_worktrees.filter(|_| b.git_repo),
+            // A bot's own folder keeps all its work in one place: no switch there.
+            task_worktrees: b.task_worktrees.filter(|_| b.git_repo && !b.managed_workspace),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -526,7 +527,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn worktree_per_agent_shows_only_for_a_git_repository_on_a_host_that_has_it() {
+    async fn worktree_per_agent_shows_only_for_a_project_in_a_git_repository_on_a_host_that_has_it() {
         let mut app = test_app();
         let at = FIELDS.iter().position(|x| *x == Field::TaskWorktrees).expect("a worktrees field");
         let mut editor = |id: &str, more: Value| {
@@ -550,6 +551,11 @@ mod tests {
         );
         assert_eq!(editor("c", json!({"gitRepo": false, "taskWorktrees": true})), (false, json!({})), "no repository");
         assert_eq!(editor("d", json!({"gitRepo": true})), (false, json!({})), "a host before worktrees");
+        assert_eq!(
+            editor("e", json!({"gitRepo": true, "taskWorktrees": true, "managedWorkspace": true})),
+            (false, json!({})),
+            "the bot's own folder"
+        );
     }
 
     #[test]

@@ -473,15 +473,16 @@ pub fn restore(hub: &Arc<Hub>) {
         }
     }
     sources::settle_runs(hub);
+    worktree::tidy(hub);
 }
 
 /// `bot`'s box at host start: its tasks resume the turns the last process cut off, an item whose task can't ends,
 /// and the reports that never arrived are sent again.
 fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
-    let (resumed, failed, undelivered) = items::change(hub, bot, |items| {
+    let (resumed, failed, undelivered, recheck) = items::change(hub, bot, |items| {
         let now = now_ms();
         items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
-        worktree::unsettled(items);
+        let recheck = worktree::recheck(items);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         items.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
         // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
@@ -496,8 +497,12 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
             .iter()
             .filter_map(|task| end_claimed(items, task, Outcome::Failed(Failure::Restart, CUT_OFF.into())))
             .collect();
-        Ok((resumed, failed, undelivered))
+        Ok((resumed, failed, undelivered, recheck))
     })?;
+    for (item, kept) in recheck {
+        let owner = bot.to_owned();
+        worktree::settle_then(hub, bot, &item, kept, move |hub| dispatch(hub, &owner));
+    }
     for task in resumed {
         if let Ok(Some(row)) = hub.store.bot(&task) {
             sources::resumed(hub, &row.config);

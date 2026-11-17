@@ -216,12 +216,12 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               <DropdownMenu
                 title={draft.cwd || tr('A persistent workspace allocated for this bot')}
                 items={() => [
-                  { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
+                  { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
                   { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
                 ]}
               >
                 <Pill outlined className="workspace-pill">
-                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
+                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
                   <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
                 </Pill>
               </DropdownMenu>
@@ -236,8 +236,9 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               <Stepper label="Agents at once" value={draft.maxAgents ?? saved.maxAgents} min={1} max={MAX_AGENTS} onChange={(count) => set('maxAgents', count)} />
             </ValueRow>
           ) : null}
-          {/* Only where it matters (the bot's folder is in a git repository), from a host that has it. */}
-          {saved?.gitRepo && saved.taskWorktrees !== null ? (
+          {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
+              one place), from a host that has it. */}
+          {saved?.gitRepo && !saved.managedWorkspace && saved.taskWorktrees !== null ? (
             <SwitchRow
               title="Worktree per agent"
               detail="Agents that work at once in this repository each get their own branch."

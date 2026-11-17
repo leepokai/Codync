@@ -301,11 +301,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
                     &format!(
                         "{}  ▸",
                         truncate(
-                            &if f.cwd.is_empty() {
-                                tr("Personal workspace").into_owned()
-                            } else {
-                                tilde(&f.cwd, &app.home)
-                            },
+                            &if f.cwd.is_empty() { tr("Own folder").into_owned() } else { tilde(&f.cwd, &app.home) },
                             usize::from(vw.saturating_sub(4))
                         )
                     ),
@@ -421,7 +417,7 @@ pub(super) fn form_view(buf: &mut Buffer, area: Rect, app: &App, f: &Form) {
     let x = put(buf, inner.x, by, 14, save, t.btn_primary) + 1;
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = match f.current() {
-        Field::Folder => "↵ project folder · backspace personal · tab next field",
+        Field::Folder => "↵ project folder · backspace own folder · tab next field",
         Field::Connectors => "←→ move · space toggle · tab next",
         Field::ModelOptions => "←→ move · space change · tab next",
         Field::Skills => "←→ move · space toggle · i details · tab next",
@@ -508,7 +504,7 @@ pub(super) fn group_view(buf: &mut Buffer, area: Rect, app: &App, g: &GroupForm)
         put_line(buf, inner.x + 2, y, 2, &avatar(app, b));
         put(buf, inner.x + 5, y, inner.width / 2, &b.name, if sel { t.bold } else { t.text }.patch(base));
         let folder = if b.managed_workspace {
-            "personal".to_owned()
+            "own folder".to_owned()
         } else {
             std::path::Path::new(&b.cwd).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()
         };

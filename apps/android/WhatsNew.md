@@ -7,6 +7,17 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.49.3
+### zh-Hant
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原成之前的樣子。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 agent 一個 worktree」開關。
+
+### en-US
+- A bot's default workspace is now called Own folder.
+- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back as it was. Settings show Git repository under Workspace.
+- In its own folder, a bot's background tasks all work in that one folder, so Settings no longer show Worktree per agent there.
+
 ## 2.49.2
 ### zh-Hant
 - 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。

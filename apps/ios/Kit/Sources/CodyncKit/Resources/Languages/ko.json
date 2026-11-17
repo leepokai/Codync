@@ -427,7 +427,7 @@
   "Loading…": "로드 중…",
   "Switch back": "다시 전환",
   "No fallbacks yet.": "아직 대체가 없습니다.",
-  "Personal workspace": "개인 작업 공간",
+  "Own folder": "전용 폴더",
   "Fast mode": "빠른 모드",
   "Faster replies for more usage, on models that offer it.": "이를 제공하는 모델에서는 사용량이 많을수록 응답 속도가 빨라집니다.",
   "Faster replies for more usage, on models that offer it (Claude Code, Codex)": "이를 제공하는 모델에서 더 많은 사용량에 대한 더 빠른 응답(Claude Code, Codex)",

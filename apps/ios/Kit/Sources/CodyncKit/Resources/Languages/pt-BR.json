@@ -427,7 +427,7 @@
   "Loading…": "Carregando…",
   "Switch back": "Voltar ao anterior",
   "No fallbacks yet.": "Ainda não há agentes de reserva.",
-  "Personal workspace": "Espaço de trabalho pessoal",
+  "Own folder": "Pasta própria",
   "Fast mode": "Modo rápido",
   "Faster replies for more usage, on models that offer it.": "Respostas mais rápidas, com maior consumo da cota de uso, nos modelos que oferecem essa opção.",
   "Faster replies for more usage, on models that offer it (Claude Code, Codex)": "Respostas mais rápidas, com maior consumo da cota de uso, nos modelos que oferecem essa opção (Claude Code, Codex)",

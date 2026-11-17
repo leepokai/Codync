@@ -72,7 +72,7 @@ function avatarIcon(bot: Bot) {
 
 /** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
  * with nothing to say, where it works. */
-export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot)
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot, tr)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {

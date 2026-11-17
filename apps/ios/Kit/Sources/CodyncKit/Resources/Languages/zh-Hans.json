@@ -427,7 +427,7 @@
   "Loading…": "正在加载…",
   "Switch back": "换回来",
   "No fallbacks yet.": "还没有备用 agent。",
-  "Personal workspace": "个人工作区",
+  "Own folder": "专属文件夹",
   "Fast mode": "快速模式",
   "Faster replies for more usage, on models that offer it.": "回复更快，用量也更高。仅部分模型支持。",
   "Faster replies for more usage, on models that offer it (Claude Code, Codex)": "回复更快，用量也更高。仅部分模型支持（Claude Code、Codex）。",

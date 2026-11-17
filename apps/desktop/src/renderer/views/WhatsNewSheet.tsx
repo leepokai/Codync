@@ -5,7 +5,7 @@ import { HStack, VStack } from '../components/Stack'
 import { Text } from '../components/Text'
 import { useReduceMotion } from '../lib/theme'
 import { useTr } from '../lib/use-language'
-import { useWhatsNew } from '../lib/use-whats-new'
+import type { useWhatsNew } from '../lib/use-whats-new'
 import type { Feature } from '../lib/whats-new'
 import { clipFailed, clipUrl } from '../lib/whats-new-clips'
 import { openLink } from '../store/analytics'
@@ -16,9 +16,8 @@ import './whats-new.css'
  * The highlights of the releases this device hasn't seen, once, over the chat window: each one's clip over its name
  * and a sentence about it, then the smaller changes (docs/features/whats-new.md).
  */
-export function WhatsNewSheet({ ready }: { ready: boolean }) {
+export function WhatsNewSheet({ open, due, close }: ReturnType<typeof useWhatsNew>) {
   const tr = useTr()
-  const { open, due, close } = useWhatsNew(ready)
   return (
     <FormSheet open={open} onClose={close}>
       <SheetPage>

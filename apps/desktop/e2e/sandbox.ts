@@ -61,9 +61,12 @@ export async function attach(): Promise<{ browser: Browser; page: Page }> {
     .find((p) => !p.url().startsWith('devtools://'))
   if (!page) throw new Error('The sandbox app has no window open.')
   await setPref(page, 'githubStarAsk', { kind: 'done' }) // Its sheet would cover what a test clicks.
-  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox.
-  const notNow = page.getByRole('alertdialog').getByRole('button', { name: 'Not now' })
-  if (await notNow.isVisible()) await notNow.click()
+  await setPref(page, 'kofiAsk', { asked: 3, day: 0 }) // So would the Ko-fi invitation's, on a sandbox used for days.
+  // So would the ask to add a computer in no account, on a signed-in `--cloud` sandbox, and a Ko-fi invitation already up.
+  for (const sheet of [page.getByRole('alertdialog'), page.getByRole('dialog', { name: 'Support Codync' })]) {
+    const notNow = sheet.getByRole('button', { name: 'Not now' })
+    if (await notNow.isVisible()) await notNow.click()
+  }
   return { browser, page }
 }
 

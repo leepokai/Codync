@@ -56,7 +56,7 @@ for line in sys.stdin:
         text = params["prompt"][0]["text"]
         if "You keep the memory a personal assistant bot has" in text:
             tidy = '"moveOut"' in text
-            with open("dreams.log", "a", encoding="utf-8") as log:
+            with open("dreams.log", "a", encoding="utf-8", newline="\n") as log:
                 log.write("tidy\n" if tidy else "dream\n")
             if failing:
                 send({"id": request["id"], "error": {"code": -32000, "message": "rate limited"}})
@@ -77,7 +77,7 @@ for line in sys.stdin:
         }}})
         result = {"stopReason": "end_turn"}
     elif method == "session/delete":
-        with open("dreams.log", "a", encoding="utf-8") as log:
+        with open("dreams.log", "a", encoding="utf-8", newline="\n") as log:
             log.write(f"deleted {params['sessionId']}\n")
         result = {}
     else:

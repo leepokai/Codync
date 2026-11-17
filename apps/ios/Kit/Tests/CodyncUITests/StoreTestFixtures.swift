@@ -239,3 +239,11 @@ func botEvent(_ id: String, name: String, rev: Int) -> String {
 extension FakeRemote {
     func setCancelResult(_ result: MailboxCancel) { cancelResult = result }
 }
+
+extension FakeRemote {
+    /// The events stream ends with the link still up.
+    func endEvents() {
+        for s in eventSinks { s.finish() }
+        eventSinks = []
+    }
+}

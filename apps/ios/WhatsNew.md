@@ -6,6 +6,13 @@ any left). tools/asc-submit.py reads the released version's section;
 a version without one gets a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
+## 2.49.2
+### zh-Hant
+- 主畫面的 Codync 圖示會顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完就會消失。
+
+### en-US
+- The Codync icon on the Home Screen shows your unread count, the same number your chats' badges add up to, and clears as you read them.
+
 ## 2.49.1
 ### zh-Hant
 - Bot 會把比較久的工作交給背景進行，而且可以同時做好幾件：聊天不會被占住，你可以繼續傳訊息，它也會照常回答。

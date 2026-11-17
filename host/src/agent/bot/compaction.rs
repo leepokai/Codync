@@ -7,6 +7,7 @@ use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 
 /// Context use below which a fall isn't read as a compaction: a short session has little to summarize.
 const COMPACTED_FROM: u64 = 20_000;
@@ -150,15 +151,10 @@ impl Actor {
 
     /// The agent reported its context use.
     pub(super) fn track_usage(&mut self, used: u64, size: u64) {
-        // A stream's first report can carry no usage yet (a gateway's `message_start` before the final counts);
-        // that's no context size, so it neither replaces the last real reading nor reads as a compaction.
-        if used == 0 {
-            return;
-        }
         let Some(sid) = self.turn_session.clone() else { return };
         let Some(conn) = self.conn.as_mut() else { return };
-        let before = conn.usage.insert(sid, (used, size)).map(|(used, _)| used);
-        if !conn.reports_compaction && compacted_by_usage(before, used) {
+        let fell = record_usage(&mut conn.usage, sid, used, size);
+        if !conn.reports_compaction && fell {
             self.compacted(&format!("usage-{}", now_ms()), None);
         }
     }
@@ -379,6 +375,17 @@ fn learned_life(answer: &Value, gap_ms: i64) -> Option<CacheLife> {
     CacheLife::observed(gap_ms, read, input)
 }
 
+/// Keeps a session's reported context use and says whether it fell the way a compaction does. A stream's first report
+/// can carry no usage yet (a gateway's `message_start` before the final counts): that's no context size, so it neither
+/// replaces the last real reading nor reads as a compaction.
+fn record_usage(usage: &mut HashMap<String, (u64, u64)>, session: String, used: u64, size: u64) -> bool {
+    if used == 0 {
+        return false;
+    }
+    let before = usage.insert(session, (used, size)).map(|(used, _)| used);
+    compacted_by_usage(before, used)
+}
+
 /// Whether a session's context use fell the way it does when the agent summarizes it: by more than half.
 fn compacted_by_usage(before: Option<u64>, used: u64) -> bool {
     before.is_some_and(|before| before >= COMPACTED_FROM && used < before / 2)
@@ -400,20 +407,18 @@ mod tests {
     fn a_provisional_zero_is_not_a_compaction() {
         // Gateway streams open with zero usage, then settle on the real, growing figure (issue #496).
         let finals = [26_228u64, 27_466, 27_885, 32_537, 33_299, 33_447, 33_933, 34_189, 34_292];
-        let mut last = None;
+        let mut usage = HashMap::new();
         let mut compactions = 0;
         for used in finals {
             for report in [0, used] {
-                // Mirrors `track_usage`: a zero is skipped, a real reading is compared then kept.
-                if report == 0 {
-                    continue;
-                }
-                compactions += u32::from(compacted_by_usage(last, report));
-                last = Some(report);
+                compactions += u32::from(record_usage(&mut usage, "s".into(), report, 200_000));
             }
         }
         assert_eq!(compactions, 0);
-        assert!(compacted_by_usage(Some(90_000), 12_000), "a genuine drop still counts");
+        assert_eq!(usage["s"], (34_292, 200_000), "a zero never replaces the last real reading");
+
+        let mut big = HashMap::from([("s".to_string(), (90_000, 200_000))]);
+        assert!(record_usage(&mut big, "s".into(), 12_000, 200_000), "a genuine drop still counts");
     }
 
     #[test]

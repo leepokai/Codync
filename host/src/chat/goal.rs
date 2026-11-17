@@ -59,21 +59,21 @@ fn read(hub: &Hub, bot: &str) -> Result<Option<Goal>> {
     hub.store.kv_read(&key(bot))?.map(|s| serde_json::from_str(&s).map_err(Into::into)).transpose()
 }
 
-fn save(hub: &Hub, bot: &str, goal: &Goal) -> Result<()> {
-    hub.store.kv_set(&key(bot), &serde_json::to_string(goal)?)
+fn save(hub: &Hub, bot: &str, goal: &Goal) -> Result<bool> {
+    hub.store.kv_set_unless_bot_deleted(bot, &key(bot), &serde_json::to_string(goal)?)
 }
 
 /// Setting a goal authorizes its first step. Empty text clears it.
 pub fn set(hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
-    let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow::anyhow!("unknown bot"))?;
-    if row.config.is_group() {
-        bail!("goals are only available in a bot's own conversation");
-    }
     let text = body["goal"].as_str().ok_or_else(|| anyhow::anyhow!("goal is required"))?.trim();
     if text.chars().count() > 2000 {
         bail!("goal must be at most 2000 characters");
     }
     let lock = WRITE.locked();
+    let row = hub.store.bot(bot)?.filter(|r| !r.deleted).ok_or_else(|| anyhow::anyhow!("unknown bot"))?;
+    if row.config.is_group() {
+        bail!("goals are only available in a bot's own conversation");
+    }
     if text.is_empty() {
         hub.store.kv_delete(&key(bot))?;
         drop(lock);
@@ -89,7 +89,9 @@ pub fn set(hub: &Hub, bot: &str, body: &Value) -> Result<Value> {
         turns: 0,
         stopped: None,
     };
-    save(hub, bot, &goal)?;
+    if !save(hub, bot, &goal)? {
+        bail!("unknown bot");
+    }
     drop(lock);
     hub.emit_bot(bot);
     if let Err(error) = hub.send_cmd(bot, crate::agent::bot::Cmd::Goal(goal.id.clone())) {
@@ -133,7 +135,9 @@ fn try_finish(hub: &Hub, bot: &str, id: Option<&str>, why: Stopped) -> Result<()
         return Ok(());
     };
     goal.stopped = Some(why);
-    save(hub, bot, &goal)?;
+    if !save(hub, bot, &goal)? {
+        return Ok(());
+    }
     drop(lock);
     hub.emit_bot(bot);
     crate::analytics::capture(
@@ -181,7 +185,9 @@ pub fn begin(hub: &Hub, agent: &BotConfig, id: &str) -> Result<Option<String>> {
         return Ok(None);
     }
     goal.turns += 1;
-    save(hub, bot, &goal)?;
+    if !save(hub, bot, &goal)? {
+        return Ok(None);
+    }
     drop(lock);
     hub.emit_bot(bot);
     let text = format!(

@@ -167,6 +167,8 @@ fn deleting_a_bot_clears_its_goal_and_blocks_late_saves() {
     let goal = seed(&hub);
     hub.store.delete_bot("b").unwrap();
     assert!(get(&hub, "b").is_none());
+    assert!(!save(&hub, "b", &goal).unwrap());
+    assert!(set(&hub, "b", &json!({"goal": "late"})).is_err());
     finish(&hub, "b", Some(&goal.id), Stopped::Done);
     assert!(begin(&hub, &bot, &goal.id).unwrap().is_none());
     assert!(get(&hub, "b").is_none());

@@ -49,7 +49,7 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ### en-US
 - Bots do long work in the background, several things at once, and keep answering in the chat.
 - A capsule above the message box says how many are working and waiting (one alone: what it's doing, with Stop). Tap it for the bot's Details.
-- Details lists the bot's work. Threads: work running now and the free places; tap one to open it as a page and write to it like a chat (a waiting message has Send now and Remove; a finished thread takes messages again). Each shows the folder or branch it works in. Event box: what waits, in order, with First, Cut in (when every place is taken) and Drop (touch and hold). Recent: what ended in the last day; a stopped or failed one says why and has Try again.
+- Details lists the bot's work. Threads: what runs now; tap one to write to it like a chat, even once it's done. Each shows its folder or branch. Event box: what waits, with First, Cut in and Drop. Recent: what ended, with Try again.
 - Agents at once, in the bot's Settings, sets how many work at a time (1 to 6). Instructions and Agent (model, fast mode, fallbacks) moved there from Details.
 - Background work can ask for approval or a choice and send files or voice notes in the chat, marked "In the background".
 - Routines and other bots' requests run in the background too.

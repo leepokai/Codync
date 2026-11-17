@@ -1,13 +1,14 @@
 import { test, expect, type CDPSession, type Page } from '@playwright/test'
-import { api, attach } from './sandbox.ts'
+import { resolve } from 'node:path'
+import { api, attach, setPref } from './sandbox.ts'
 
 // The window widths this view treats as compact / able to dock the panel (ThreadView's WIDE).
 const COMPACT = 900
 const DOCKED = 1084
 
-async function resize(page: Page, width: number, cdp: CDPSession) {
-  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 733, deviceScaleFactor: 0, mobile: false })
-  await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width)
+async function resize(page: Page, width: number, cdp: CDPSession, height = 733) {
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 0, mobile: false })
+  await expect.poll(() => page.evaluate(() => [window.innerWidth, window.innerHeight])).toEqual([width, height])
 }
 
 /** A bot nothing runs, whose chat opens for the details. */
@@ -149,6 +150,110 @@ test('the details dock beside the chat once the window is wide enough', async ()
   } finally {
     await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {})
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    await browser.close()
+  }
+})
+
+test('the aside stays open, scrollable and closable at 680x500 with 18 px text, a long draft, an attachment and a queue', async () => {
+  const { browser, page } = await attach()
+  const cdp = await page.context().newCDPSession(page)
+  const name = `Aside floor ${Date.now()}`
+  let botId: string | undefined
+  try {
+    await setPref(page, 'conversationFontSize', 18)
+    await resize(page, 680, cdp, 500)
+    await awaitHost(page)
+    await dismissReleaseSheet(page)
+
+    const steerAgent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
+    botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
+      name, backend: 'custom', command: `python3 -X utf8 -u "${steerAgent}" steer 60`, connectors: [], skills: [], notify: false,
+    })).bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+
+    const field = page.locator('.composer textarea')
+    await expect(field).toBeVisible()
+
+    // Start a turn and queue six waiting messages so the queue tray reaches its full height.
+    await api(page, 'send', { botId, text: 'first' })
+    await expect.poll(async () => {
+      const { entries } = await api<{ entries: { kind: string; data: { text?: string; status?: string } }[] }>(page, 'history', { botId })
+      return entries.some((e) => e.kind === 'user' && e.data.text === 'first' && e.data.status === 'sent')
+    }).toBe(true)
+    for (let i = 1; i <= 6; i++) await api(page, 'send', { botId, text: `Waiting ${i}` })
+    await expect(page.locator('.queued-row')).toHaveCount(6)
+
+    // Drop a synthetic PNG onto the composer so the attachment tile adds its 88 px.
+    await page.evaluate(() => {
+      const bytes = Uint8Array.from([
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
+        0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84,
+        120, 156, 99, 248, 255, 255, 63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0,
+        0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+      ])
+      const dt = new DataTransfer()
+      dt.items.add(new File([bytes], 'shot.png', { type: 'image/png' }))
+      document.querySelector('.composer')!.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+    })
+    await expect(page.locator('.attachment-tile')).toBeVisible()
+
+    // Eight-line draft at 18 px font so the dock exceeds 500 px - chromeHeight.
+    const eightLines = Array.from({ length: 8 }, (_, i) => `Line ${i + 1} draft`).join('\n')
+    await field.fill(eightLines)
+    await expect.poll(async () => {
+      const raw = await page.locator('.thread-view').evaluate((el) => getComputedStyle(el).getPropertyValue('--composer-height'))
+      return parseFloat(raw)
+    }).toBeGreaterThan(380)
+
+    const pill = page.locator('.title-pill')
+    const aside = page.locator('.details-aside')
+    await pill.click()
+    await expect(aside).toBeVisible()
+
+    // The aside keeps its usable minimum height below the title band instead of collapsing to 0.
+    const band = (await page.locator('.top-chrome').boundingBox())!
+    const box = (await aside.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(band.y + band.height - 0.5)
+    expect(box.height).toBeGreaterThanOrEqual(179.5)
+
+    // Its close button stays inside the viewport, unobstructed, and reachable by pointer.
+    const close = aside.getByRole('button', { name: /Close details|关闭详情/ })
+    await expect(close).toBeVisible()
+    const closeBox = (await close.boundingBox())!
+    expect(closeBox.y).toBeGreaterThanOrEqual(box.y)
+    expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(500)
+    expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(680)
+    expect(await page.evaluate(([x, y]) => {
+      const hit = document.elementFromPoint(x, y)
+      return !!hit?.closest('.details-actions button')
+    }, [closeBox.x + closeBox.width / 2, closeBox.y + closeBox.height / 2] as const)).toBe(true)
+
+    // The details column scrolls inside its clamped height.
+    const scroller = aside.locator('.details-scroll')
+    await expect(scroller).toBeFocused()
+    const beforeScroll = await scroller.evaluate((el) => ({ top: el.scrollTop, client: el.clientHeight, scroll: el.scrollHeight }))
+    expect(beforeScroll.scroll).toBeGreaterThan(beforeScroll.client)
+    await page.keyboard.press('PageDown')
+    await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+
+    // The 8-line textarea sits below the aside and stays editable without closing the details.
+    const fieldBox = (await field.boundingBox())!
+    expect(fieldBox.y).toBeGreaterThanOrEqual(box.y + box.height - 1)
+    await field.click()
+    await field.fill(`${eightLines}\nedited`)
+    await expect(field).toHaveValue(`${eightLines}\nedited`)
+    await expect(aside).toBeVisible()
+
+    // Clicking the close button closes the aside even with the full dock in place.
+    await close.click()
+    await expect(aside).toHaveCount(0)
+  } finally {
+    await setPref(page, 'conversationFontSize', 14).catch(() => {})
+    await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {})
+    if (botId) {
+      await api(page, 'stop', { botId }).catch(() => {})
+      await api(page, 'deleteBot', { botId }).catch(() => {})
+    }
     await browser.close()
   }
 })

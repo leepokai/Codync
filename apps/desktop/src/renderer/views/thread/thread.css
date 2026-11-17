@@ -447,7 +447,10 @@
      measured band, so the aside never covers the pill's last row. 60 px is the no-subtitle case. */
   top: var(--chrome-height, 60px);
   right: 0;
-  bottom: var(--composer-height, 0);
+  /* Stop above the composer when there is room so the whole box stays uncovered; at the 500 px
+     window floor with a multi-line draft, attachment and queue, keep at least 180 px so the
+     close button and scrollable details never vanish. */
+  bottom: min(var(--composer-height, 0px), max(0px, calc(100% - var(--chrome-height, 60px) - 180px)));
   z-index: 7;
   display: flex;
   width: min(360px, 92%);

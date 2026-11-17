@@ -4,6 +4,7 @@ import { CONNECT_PATIENCE_MS, type CallResult, type WindowCommand } from '../sha
 import type { VoiceKey } from '../shared/voice-shortcut'
 import { hitRect, hits, notchOf, PANEL, type IslandRect, type IslandScreen, type IslandSummary, type NotchScreen } from '../shared/island'
 import { headless, present, webPreferences } from './headless'
+import { holdChannel } from './channel'
 import { prefs } from './host-controller'
 
 // Every NSScreen's frame, safe-area top and the menu bar on each side of the notch. JXA reaches
@@ -124,11 +125,16 @@ export class Island {
   /** Hands the island's host call to the chat window and waits for its answer (`island:answer`). */
   private call(ref: string, method: string, body: unknown, timeoutMs: number) {
     const id = String(++this.callId)
+    // The island's own window has no connection: the chat window makes the call, so its computer's
+    // channel stays open for it even while nobody looks at the chat window.
+    const at = ref.indexOf('/')
+    const release = holdChannel(at < 0 ? ref : ref.slice(0, at))
     return new Promise<CallResult>((resolve) => {
       const timer = setTimeout(() => settle(noChatWindow), CONNECT_PATIENCE_MS + timeoutMs + ANSWER_GRACE_MS)
       const settle = (result: CallResult) => {
         clearTimeout(timer)
         this.calls.delete(id)
+        release()
         resolve(result)
       }
       this.calls.set(id, settle)

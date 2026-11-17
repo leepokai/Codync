@@ -86,8 +86,10 @@ and dictated text as one message once the transcript is in; a failed transcripti
 leaves the box. (On device, the desktop's Send waits for the helper's last words; the phones send
 what was recognized so far, as the pill's stop does.)
 Starting a call or switching chats drops a dictation still recording or transcribing. The
-recording's length counts toward the provider's minutes this month. The island's mic stays
-on-device (its window doesn't reach the host).
+recording's length counts toward the provider's minutes this month. The island's mic has every
+engine the composer's has: its window has no host connection of its own, so the chat window makes
+the call on the computer of the bot the field was for when recording started, and keeps that
+computer's connection open for it even while the chat window is hidden (a cloud computer wakes for it).
 
 The computer's speech server records the same way, and `voiceTranscribe` with `provider: "local"` has the host
 send each piece to a speech server the user runs and links (`host/src/voice/local.rs`): any server

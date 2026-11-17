@@ -159,15 +159,20 @@ test('the aside stays open, scrollable and closable at 680x500 with 18 px text, 
   const cdp = await page.context().newCDPSession(page)
   const name = `Aside floor ${Date.now()}`
   let botId: string | undefined
+  let skillId: string | undefined
   try {
     await setPref(page, 'conversationFontSize', 18)
     await resize(page, 680, cdp, 500)
     await awaitHost(page)
     await dismissReleaseSheet(page)
 
+    const { skill } = await api<{ skill: { id: string } }>(page, 'installSkill', {
+      name: `Aside Skill ${Date.now()}`, description: 'Checks the menu', instructions: 'Say hi.',
+    })
+    skillId = skill.id
     const steerAgent = resolve(__dirname, '../../../host/tests/fixtures/steer_agent.py')
     botId = (await api<{ bot: { id: string } }>(page, 'createBot', {
-      name, backend: 'custom', command: `python3 -X utf8 -u "${steerAgent}" steer 60`, connectors: [], skills: [], notify: false,
+      name, backend: 'custom', command: `python3 -X utf8 -u "${steerAgent}" steer 60`, connectors: [], skills: [skill.id], notify: false,
     })).bot.id
     await page.locator('.roster-row', { hasText: name }).click()
 
@@ -210,11 +215,13 @@ test('the aside stays open, scrollable and closable at 680x500 with 18 px text, 
     await pill.click()
     await expect(aside).toBeVisible()
 
-    // The aside keeps its usable minimum height below the title band instead of collapsing to 0.
+    // The aside keeps its usable minimum height below the title band and stops above the dock with 0 px overlap.
     const band = (await page.locator('.top-chrome').boundingBox())!
     const box = (await aside.boundingBox())!
+    const dockBox = (await page.locator('.composer-dock').boundingBox())!
     expect(box.y).toBeGreaterThanOrEqual(band.y + band.height - 0.5)
     expect(box.height).toBeGreaterThanOrEqual(179.5)
+    expect(box.y + box.height).toBeLessThanOrEqual(dockBox.y + 1)
 
     // Its close button stays inside the viewport, unobstructed, and reachable by pointer.
     const close = aside.getByRole('button', { name: /Close details|关闭详情/ })
@@ -236,12 +243,50 @@ test('the aside stays open, scrollable and closable at 680x500 with 18 px text, 
     await page.keyboard.press('PageDown')
     await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
 
+    // Scrolling up inside the dock exposes Send now and Remove completely below the aside,
+    // unobstructed and working without closing the details.
+    await page.locator('.composer-dock-scroll').evaluate((el) => { el.scrollTop = 0 })
+    const firstQueueRow = page.locator('.queued-row').first()
+    const sendNow = firstQueueRow.getByRole('button', { name: /Send now|立即发送/ })
+    const removeQueued = firstQueueRow.getByRole('button', { name: /Remove|移除/ })
+    await expect(sendNow).toBeVisible()
+    await expect(removeQueued).toBeVisible()
+    const sendNowBox = (await sendNow.boundingBox())!
+    const removeBox = (await removeQueued.boundingBox())!
+    expect(sendNowBox.y).toBeGreaterThanOrEqual(box.y + box.height - 1)
+    expect(removeBox.y).toBeGreaterThanOrEqual(box.y + box.height - 1)
+    expect(removeBox.y + removeBox.height).toBeLessThanOrEqual(500)
+    for (const btnBox of [sendNowBox, removeBox]) {
+      expect(await page.evaluate(([x, y]) => {
+        const hit = document.elementFromPoint(x, y)
+        return !!hit?.closest('.queued-row button')
+      }, [btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2] as const)).toBe(true)
+    }
+    await removeQueued.click()
+    await expect(page.locator('.queued-row')).toHaveCount(5)
+    await expect(aside).toBeVisible()
+
     // The 8-line textarea sits below the aside and stays editable without closing the details.
+    await field.click()
     const fieldBox = (await field.boundingBox())!
     expect(fieldBox.y).toBeGreaterThanOrEqual(box.y + box.height - 1)
-    await field.click()
     await field.fill(`${eightLines}\nedited`)
     await expect(field).toHaveValue(`${eightLines}\nedited`)
+    await expect(aside).toBeVisible()
+
+    // Opening `/` inside the scrolled dock portals `.composer-menu` unclipped above the dock.
+    await field.fill('/')
+    const menu = page.locator('.composer-menu')
+    await expect(menu).toBeVisible()
+    const menuBox = (await menu.boundingBox())!
+    expect(menuBox.y).toBeGreaterThanOrEqual(0)
+    expect(menuBox.height).toBeGreaterThan(20)
+    const optionBox = (await menu.getByRole('option').first().boundingBox())!
+    expect(optionBox.y).toBeGreaterThanOrEqual(menuBox.y)
+    expect(optionBox.y + optionBox.height).toBeLessThanOrEqual(menuBox.y + menuBox.height + 0.5)
+    expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('.composer-menu'), [optionBox.x + optionBox.width / 2, optionBox.y + optionBox.height / 2] as const)).toBe(true)
+    await field.press('Escape')
+    await expect(menu).toHaveCount(0)
     await expect(aside).toBeVisible()
 
     // Clicking the close button closes the aside even with the full dock in place.
@@ -254,6 +299,7 @@ test('the aside stays open, scrollable and closable at 680x500 with 18 px text, 
       await api(page, 'stop', { botId }).catch(() => {})
       await api(page, 'deleteBot', { botId }).catch(() => {})
     }
+    if (skillId) await api(page, 'removeSkill', { id: skillId }).catch(() => {})
     await browser.close()
   }
 })

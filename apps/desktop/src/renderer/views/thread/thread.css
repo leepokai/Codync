@@ -447,10 +447,7 @@
      measured band, so the aside never covers the pill's last row. 60 px is the no-subtitle case. */
   top: var(--chrome-height, 60px);
   right: 0;
-  /* Stop above the composer when there is room so the whole box stays uncovered; at the 500 px
-     window floor with a multi-line draft, attachment and queue, keep at least 180 px so the
-     close button and scrollable details never vanish. */
-  bottom: min(var(--composer-height, 0px), max(0px, calc(100% - var(--chrome-height, 60px) - 180px)));
+  bottom: var(--composer-height, 0);
   z-index: 7;
   display: flex;
   width: min(360px, 92%);
@@ -476,11 +473,12 @@
     transition: none;
   }
 }
-/* The lists the composer opens (`/` and `@`) are above the aside while it is open: they rise from
-   the box the aside stops above, and the dock's layer would otherwise keep them under it. The
-   raise lasts only while a list is mounted, so the box's fade never washes over the aside. */
-.thread-view[data-details-aside] .composer-dock:has(.composer-menu) {
-  z-index: 8;
+/* While the compact aside is open, cap the dock to the room below the title band and a 180 px
+   minimum aside and scroll its contents inside `.composer-dock-scroll`: the aside keeps its
+   details and close button reachable while leaving every queue and composer control uncovered. */
+.thread-view[data-details-aside] .composer-dock-scroll {
+  max-height: max(120px, calc(var(--thread-height, 100vh) - var(--chrome-height, 60px) - 180px));
+  overflow-y: auto;
 }
 .details-aside > * {
   flex: 1;

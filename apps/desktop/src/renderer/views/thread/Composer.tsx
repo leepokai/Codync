@@ -64,6 +64,7 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
   const [voiceSettings, setVoiceSettings] = useState(false)
   const dictation = useDictation((change) => drafts.set(draftKey, change(drafts.get(draftKey))), () => setVoiceSettings(true))
   const field = useRef<HTMLTextAreaElement>(null)
+  const surface = useRef<HTMLDivElement>(null)
   /** Text pasted into this draft since the last send. */
   const pasted = useRef<string[]>([])
   const working = !!bot && isWorkingIn(bot, botId)
@@ -174,9 +175,9 @@ function DestinationComposer({ botId, reply, about, cancelReply, onCall, onInter
           void readPicked([...e.dataTransfer.files]).then(append)
         }}
       >
-        <div className="composer-surface">
-          <CommandMenu menu={commandMenu} agent={{ registry: (id) => store.agentRegistry(id), name: (id) => store.backendName(id) }} />
-          <MentionMenu menu={mentionMenu} />
+        <div className="composer-surface" ref={surface}>
+          <CommandMenu menu={commandMenu} anchor={surface} agent={{ registry: (id) => store.agentRegistry(id), name: (id) => store.backendName(id) }} />
+          <MentionMenu menu={mentionMenu} anchor={surface} />
           <ComposerReveal open={!!reply}>
             {reply ? (
               <HStack gap={4} className="composer-reply">

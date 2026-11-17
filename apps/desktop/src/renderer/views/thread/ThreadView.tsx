@@ -109,6 +109,8 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       // CSS pixels can be fractional under DPI scaling and zoom: 739.6 is a 740-wide layout, and
       // comparing the fraction would drop a desktop window into the compact sheet a hair early.
       const w = Math.round(e!.contentRect.width)
+      const h = Math.round(e!.contentRect.height)
+      el.style.setProperty('--thread-height', `${h}px`)
       width.current = w
       wideNow.current = w >= WIDE
       setWide(wideNow.current)
@@ -149,7 +151,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       // make that click reopen them. Menus and other sheets are portalled out of the aside, so a
       // pointer still inside one belongs to the aside's own surface. The message box is where one
       // answers, not somewhere that dismisses: the aside ends above it so both work at once.
-      if (target?.closest('.details-aside, .title-pill, .composer-dock, .composer, .anchored, .modal-card, .dialog')) return
+      if (target?.closest('.details-aside, .title-pill, .composer-dock, .composer, .composer-menu, .anchored, .modal-card, .dialog')) return
       giveFocusBack.current = false
       setDetailsOpen(false)
     }
@@ -316,24 +318,26 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
         <Transcript botId={botId} reveal={reveal} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
-          {store.mismatch ? (
-            <div className="composer-update-needed">
-              <UpdateNeededCard />
-            </div>
-          ) : artifactId ? null : (
-            // The artifact over the chat has its own box (two would both take the voice shortcut).
-            <>
-              <WorkCapsule botId={botId} open={openWork} />
-              <QueuedMessages botId={botId} />
-              <Composer
-                botId={botId}
-                reply={replyTo}
-                cancelReply={cancelReply}
-                onCall={!calling && bot ? () => setCalling(true) : null}
-                onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
-              />
-            </>
-          )}
+          <div className="composer-dock-scroll">
+            {store.mismatch ? (
+              <div className="composer-update-needed">
+                <UpdateNeededCard />
+              </div>
+            ) : artifactId ? null : (
+              // The artifact over the chat has its own box (two would both take the voice shortcut).
+              <>
+                <WorkCapsule botId={botId} open={openWork} />
+                <QueuedMessages botId={botId} />
+                <Composer
+                  botId={botId}
+                  reply={replyTo}
+                  cancelReply={cancelReply}
+                  onCall={!calling && bot ? () => setCalling(true) : null}
+                  onInterrupt={callSpeaking ? () => interruptCall.current?.() : null}
+                />
+              </>
+            )}
+          </div>
         </div>
         {calling ? (
           <div className="call-overlay">

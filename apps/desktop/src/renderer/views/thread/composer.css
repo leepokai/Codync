@@ -210,13 +210,11 @@
   color: var(--tertiary);
 }
 
-/* The `/` and `@` lists, floating over the transcript above the box. */
+/* The `/` and `@` lists, portalled to body and anchored over the box. */
 .composer-menu {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 8px);
+  position: fixed;
   z-index: 20;
+  -webkit-app-region: no-drag;
   background: var(--bubble-agent);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-m);
@@ -229,8 +227,11 @@
   opacity: 1;
   transform: none;
 }
+.composer-menu:not(.shown) {
+  pointer-events: none;
+}
 .composer-menu .menu-panel {
-  max-height: 300px;
+  max-height: var(--composer-menu-max, 300px);
 }
 /* Who a group of `/` commands comes from: Codync, or the bot's agent. */
 .composer-menu .menu-section {

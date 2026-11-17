@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import type { Bot } from '@shared/models'
 import { AgentIcon } from '../../components/AgentIcon'
 import { BotAvatar } from '../../components/Avatar'
@@ -52,8 +53,9 @@ export function useComposerMenu<T>(draft: string, items: T[], pick: (item: T) =>
  * A list over the transcript, above the box: each row's icon, name and what it is. `section` names the group a row
  * comes from, null for the list's own (`ownSection`); while any row comes from elsewhere, a heading starts each group.
  */
-function ComposerMenu<T>({ menu, label, row, section, ownSection = '' }: {
+function ComposerMenu<T>({ menu, anchor, label, row, section, ownSection = '' }: {
   menu: ComposerMenuState<T>
+  anchor: RefObject<HTMLElement | null>
   label: string
   row: (item: T) => { key: string; icon: ReactNode; title: string; detail: string; warning?: boolean }
   section?: (item: T) => string | null
@@ -65,15 +67,59 @@ function ComposerMenu<T>({ menu, label, row, section, ownSection = '' }: {
   if (open) last.current = menu.shown
   const list = open ? menu.shown : last.current
   const rows = useRef<(HTMLButtonElement | null)[]>([])
+  const [pos, setPos] = useState<{ left: number; width: number; bottom: number; maxHeight: number } | null>(null)
   const groupOf = (item: T) => section?.(item) ?? ownSection
   const grouped = section !== undefined && list.some((item) => section(item) !== null)
+
+  // Measure the composer surface against the viewport and any scrolling dock wrapper so the menu
+  // stays anchored above it without being clipped by overflow or the top of a short window.
+  useLayoutEffect(() => {
+    if (!mounted) {
+      setPos(null)
+      return
+    }
+    const target = anchor.current
+    if (!target) return
+    const scroller = target.closest('.composer-dock-scroll')
+    const dock = target.closest('.composer-dock')
+    const measure = () => {
+      const rect = target.getBoundingClientRect()
+      const scrollRect = scroller?.getBoundingClientRect()
+      const anchorTop = scrollRect ? Math.min(Math.max(rect.top, scrollRect.top), scrollRect.bottom) : rect.top
+      const bottom = Math.max(8, window.innerHeight - anchorTop + 8)
+      const maxHeight = Math.min(300, Math.max(80, anchorTop - 16))
+      setPos({ left: rect.left, width: rect.width, bottom, maxHeight })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(target)
+    if (scroller) observer.observe(scroller)
+    if (dock && dock !== scroller) observer.observe(dock)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [mounted, anchor])
+
   // Braces: newer Chromium returns a promise from `scrollIntoView`, which an effect mustn't return.
   useEffect(() => {
     void rows.current[menu.index]?.scrollIntoView({ block: 'nearest' })
   }, [menu.index, list])
-  if (!mounted) return null
-  return (
-    <div className={`composer-menu ${shown ? 'shown' : ''}`} inert={!open}>
+  if (!mounted || !pos) return null
+  return createPortal(
+    <div
+      className={`composer-menu ${shown ? 'shown' : ''}`}
+      inert={!open}
+      style={{
+        left: pos.left,
+        width: pos.width,
+        bottom: pos.bottom,
+        '--composer-menu-max': `${pos.maxHeight}px`,
+      } as CSSProperties}
+    >
       <div className="menu-panel" role="listbox" aria-label={label}>
         {list.map((item, i) => {
           const { key, icon, title, detail, warning } = row(item)
@@ -102,7 +148,8 @@ function ComposerMenu<T>({ menu, label, row, section, ownSection = '' }: {
           )
         })}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -110,10 +157,14 @@ function ComposerMenu<T>({ menu, label, row, section, ownSection = '' }: {
  * The `/` list: each command's icon (an agent's own command: that agent's logo), name and what it does. While any
  * of the agent's own commands is listed, headings set Codync's (Fast mode, skills) apart from the agent's (its name).
  */
-export function CommandMenu({ menu, agent }: { menu: ComposerMenuState<SlashCommand>; agent: { registry: (id: string) => string; name: (id: string) => string } }) {
+export function CommandMenu({ menu, anchor, agent }: {
+  menu: ComposerMenuState<SlashCommand>
+  anchor: RefObject<HTMLElement | null>
+  agent: { registry: (id: string) => string; name: (id: string) => string }
+}) {
   const tr = useTr()
   const section = (c: SlashCommand) => c.action.kind === 'agent' ? agent.name(c.action.agent) : null
-  return <ComposerMenu menu={menu} label={tr('Commands')} section={section} ownSection="Codync" row={(c) => c.action.kind === 'agent' ? {
+  return <ComposerMenu menu={menu} anchor={anchor} label={tr('Commands')} section={section} ownSection="Codync" row={(c) => c.action.kind === 'agent' ? {
     key: `agent:${c.name}`,
     icon: <AgentIcon registry={agent.registry(c.action.agent)} size={12} color="var(--secondary)" />,
     title: c.title,
@@ -128,9 +179,9 @@ export function CommandMenu({ menu, agent }: { menu: ComposerMenuState<SlashComm
 }
 
 /** The `@` list in a group: each member's face, name and description. */
-export function MentionMenu({ menu }: { menu: ComposerMenuState<Bot> }) {
+export function MentionMenu({ menu, anchor }: { menu: ComposerMenuState<Bot>; anchor: RefObject<HTMLElement | null> }) {
   const tr = useTr()
-  return <ComposerMenu menu={menu} label={tr('Members')} row={(m) => ({
+  return <ComposerMenu menu={menu} anchor={anchor} label={tr('Members')} row={(m) => ({
     key: m.id,
     icon: <BotAvatar bot={m} size={18} animated={false} />,
     title: m.name,

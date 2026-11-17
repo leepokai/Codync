@@ -45,6 +45,13 @@ pub enum Cmd {
         text: String,
         call: Option<String>,
     },
+    /// A hop-limit lift the host starts: a clarification, an explanation or answer for the lead, or a reset.
+    /// `control` is a clarification (or other hop-limit turn) where `message_bot` stays unavailable.
+    HopLift {
+        text: String,
+        refusal_id: u64,
+        control: bool,
+    },
     /// `send_message` from the bot's `chat` MCP server: a message for the user, now.
     SendToUser {
         text: String,
@@ -132,6 +139,12 @@ pub(super) enum Queued {
         text: String,
         call: Option<String>,
     },
+    /// A hop-limit lift (`Cmd::HopLift`).
+    HopLift {
+        text: String,
+        refusal_id: u64,
+        control: bool,
+    },
     /// A compaction the host decided on (see `compaction`); `idle` while the user is away.
     Compact {
         idle: bool,
@@ -151,13 +164,15 @@ pub(super) enum HostTurn {
     /// The reports of the bot's tasks (`Cmd::TaskReport`): the bot tells the user what they found, which alerts like
     /// a reply. A restart doesn't resume it: the reports it didn't answer come again (`tasks::restore`).
     TaskReport,
+    /// A hop-limit lift (`Cmd::HopLift`): alerts no one and isn't resumed after a restart.
+    HopLift,
 }
 
 impl HostTurn {
     /// Whether a host restart in the middle of it resumes it.
     pub(super) fn resumed(self) -> bool {
         match self {
-            Self::Opening | Self::TaskReport => false,
+            Self::Opening | Self::TaskReport | Self::HopLift => false,
             Self::FollowUp => true,
         }
     }
@@ -165,7 +180,7 @@ impl HostTurn {
     /// Whether its end alerts the user, as a reply's does.
     pub(super) fn alerts(self) -> bool {
         match self {
-            Self::Opening => false,
+            Self::Opening | Self::HopLift => false,
             Self::FollowUp | Self::TaskReport => true,
         }
     }
@@ -173,7 +188,7 @@ impl HostTurn {
     /// What `turn_finished` reports as its source.
     pub(super) fn source(self) -> TurnSource {
         match self {
-            Self::Opening | Self::TaskReport => TurnSource::Host,
+            Self::Opening | Self::TaskReport | Self::HopLift => TurnSource::Host,
             Self::FollowUp => TurnSource::FollowUp,
         }
     }

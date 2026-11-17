@@ -152,8 +152,11 @@ impl Actor {
         self.stop_requested = false;
         self.stopped_for_message = false;
         self.cancel_deadline = None;
+        // A hop-limit control turn is still a chat at hop 0. reply_hops stays as it is.
         let team_turn = if self.in_request() {
             crate::chat::team::Turn::Request
+        } else if self.hub.team.in_control(&self.cfg.id) {
+            crate::chat::team::Turn::Chat(0)
         } else {
             crate::chat::team::Turn::Chat(self.reply_hops.unwrap_or(0))
         };
@@ -232,6 +235,7 @@ impl Actor {
             if self.routine_completion.is_none() {
                 self.set_inflight(false);
             }
+            self.hub.team.control(&self.cfg.id, false);
             self.hub.team.end_turn(&self.cfg.id);
             self.hub.set_runtime(&self.id(), |r| {
                 r.status = BotStatus::Idle;
@@ -509,6 +513,7 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
+        self.hub.team.control(&self.cfg.id, false);
         self.hub.team.end_turn(&self.cfg.id);
         // A room turn's news comes from the group once the room is done (see `group`).
         let more = self.queue.iter().any(|q| matches!(q, Queued::User { .. }));

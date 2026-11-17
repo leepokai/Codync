@@ -46,12 +46,16 @@ impl Actor {
                 }
             }
             // An item in its box, so the chat stays free; a bot that needs its chat's tools for it takes it here.
-            Cmd::BotRequest(request) if tasks::boxed(&self.base) => {
+            // A hop-limit notice stays a request turn in this chat, including when other requests wait in the box.
+            Cmd::BotRequest(request) if tasks::boxed(&self.base) && !request.hop_notice() => {
                 tasks::add_request(&self.hub, &self.cfg.id, request);
             }
             Cmd::BotRequest(request) => self.enqueue(Queued::BotRequest(request), done_tx).await,
             Cmd::BotReply(reply) => self.enqueue(Queued::BotReply(reply), done_tx).await,
             Cmd::Prompt { text, call } => self.enqueue(Queued::Prompt { text, call }, done_tx).await,
+            Cmd::HopLift { text, refusal_id, control } => {
+                self.enqueue(Queued::HopLift { text, refusal_id, control }, done_tx).await;
+            }
             Cmd::SendToUser { text, quote, reply } => {
                 let _ = reply.send(self.send_to_user(text, quote));
             }
@@ -170,6 +174,7 @@ impl Actor {
     }
 
     pub(super) async fn stop(&mut self) {
+        self.hub.team.control(&self.cfg.id, false);
         self.hub.team.end_turn(&self.cfg.id);
         if let Err(error) = self.hub.routines.cancel_queued(&self.hub.store, &self.cfg.id) {
             tracing::error!(error = format!("{error:#}"), "couldn't cancel queued routines");
@@ -301,6 +306,10 @@ impl Actor {
                     let access = replies.first().map_or(Access::Allow, crate::chat::team::BotReply::access);
                     self.hub.ceilings.set(&self.cfg.id, access);
                     self.reply_hops = replies.iter().map(crate::chat::team::BotReply::hops).max();
+                    let generation = self.hub.team.generation(&self.cfg.id);
+                    if self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, None) {
+                        self.reply_hops = Some(0);
+                    }
                     let prompt = crate::chat::team::reply_prompt(&replies, access);
                     if let Err(e) = self.start_turn(main.clone(), &[], &prompt, false, done_tx).await {
                         self.start_error(e, done_tx).await;
@@ -332,6 +341,27 @@ impl Actor {
                     };
                     self.host_turn = Some(HostTurn::Opening);
                     self.prompt_call = call;
+                    if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
+                        self.start_error(e, done_tx).await;
+                    }
+                    continue;
+                }
+                Some(Queued::HopLift { .. }) => {
+                    let Some(Queued::HopLift { text, refusal_id, control }) = self.queue.pop_front() else {
+                        unreachable!("front is a hop-limit lift")
+                    };
+                    if control {
+                        self.hub.team.control(&self.cfg.id, true);
+                    } else {
+                        let generation = self.hub.team.generation(&self.cfg.id);
+                        if !self.hub.team.take_grant_for_chat_start(&self.cfg.id, generation, Some(refusal_id)) {
+                            tracing::info!(bot = %self.cfg.id, refusal_id, "hop-limit approval wake dropped");
+                            continue;
+                        }
+                        self.reply_hops = Some(0);
+                    }
+                    self.host_turn = Some(HostTurn::HopLift);
+                    tracing::info!(bot = %self.cfg.id, refusal_id, control, "hop-limit lift turn");
                     if let Err(e) = self.start_turn(main.clone(), &[], &text, false, done_tx).await {
                         self.start_error(e, done_tx).await;
                     }
@@ -405,6 +435,8 @@ impl Actor {
             if lane == main {
                 self.handoff = self.take_handoff().or_else(|| self.handoff.take());
             }
+            // The user's own message closes an open hop-limit lift and any unused grant for this actor.
+            self.hub.team.user_message_started(&self.cfg.id);
             if let Err(e) = self.start_turn(lane, &ids, &text, false, done_tx).await {
                 self.start_error(e, done_tx).await;
             }
@@ -443,6 +475,7 @@ impl Actor {
             r.session = None;
         });
         self.wait_for_sign_in(goes_on.as_ref());
+        self.hub.team.control(&self.cfg.id, false);
         self.hub.team.end_turn(&self.cfg.id);
     }
 
@@ -453,7 +486,7 @@ impl Actor {
         match ended {
             Some(HostTurn::FollowUp) => self.hub.routines.end_follow_up(&self.cfg.id),
             Some(HostTurn::TaskReport) => self.reports_over(answered),
-            Some(HostTurn::Opening) | None => {}
+            Some(HostTurn::Opening | HostTurn::HopLift) | None => {}
         }
         ended
     }

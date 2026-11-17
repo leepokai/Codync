@@ -75,6 +75,72 @@ pub fn tools() -> Value {
                 "required": ["botId", "message"],
             },
             "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "explain_hop_block",
+            "description": "Only for a hop-limit lift, and only for the bot that was blocked. Tell the lead, once, why this send should go through. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit error."},
+                    "text": {"type": "string", "description": "Why the lead should allow another chain."},
+                },
+                "required": ["refusalId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "ask_hop_clarification",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Ask the blocked bot one question. That question wakes the blocked bot on a hop-limit turn, where message_bot stays unavailable.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                    "text": {"type": "string", "description": "The question for the blocked bot."},
+                },
+                "required": ["refusalId", "botId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "answer_hop_clarification",
+            "description": "Only for a hop-limit lift, and only for the bot that was blocked, after the lead has asked. Answer that question once. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit turn."},
+                    "text": {"type": "string", "description": "The answer for the lead."},
+                },
+                "required": ["refusalId", "text"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "reset_hop_count",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Let the blocked bot start another chain. At most 3 successful resets since that bot's last user message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                },
+                "required": ["refusalId", "botId"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
+        },
+        {
+            "name": "deny_hop_reset",
+            "description": "Only for a hop-limit lift, and only for the lead bot. Deny another chain. The result does not include the refused message.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "refusalId": {"type": "integer", "description": "The refusal id from the hop-limit notice."},
+                    "botId": {"type": "string", "description": "botId from the hop-limit notice: the blocked bot."},
+                },
+                "required": ["refusalId", "botId"],
+            },
+            "annotations": {"readOnlyHint": false, "idempotentHint": false},
         }
     ])
 }
@@ -126,13 +192,18 @@ impl BotRequest {
     pub fn sender(&self) -> Option<&str> {
         match &self.lifetime.back {
             Back::Local { sender } => Some(sender),
-            Back::Remote(_) | Back::Assistant { .. } => None,
+            Back::Remote(_) | Back::Assistant { .. } | Back::Lift => None,
         }
     }
 
     /// The start of the request, as it was written.
     pub fn quote(&self) -> &str {
         &self.lifetime.quote
+    }
+
+    /// A hop-limit notice for the lead. It stays a request turn in the lead's chat.
+    pub fn hop_notice(&self) -> bool {
+        matches!(self.lifetime.back, Back::Lift)
     }
 
     /// Finishes the notices and, unless the user stopped the recipient, wakes the sender with the outcome.
@@ -171,6 +242,8 @@ impl BotRequest {
             }
             Back::Remote(to) => remote::answer(&message.hub, to, &outcome, self.hops),
             Back::Assistant { request } => message.hub.assistant.answered(request, outcome),
+            // The lead judges with the hop-limit tools. The blocked bot is not woken with this text.
+            Back::Lift => {}
         }
     }
 }
@@ -230,9 +303,15 @@ pub(crate) enum RequestStatus {
 /// Where a request's outcome goes: a bot on this computer, an agent on another one, or the
 /// user's cloud assistant.
 enum Back {
-    Local { sender: String },
+    Local {
+        sender: String,
+    },
     Remote(remote::Return),
-    Assistant { request: String },
+    Assistant {
+        request: String,
+    },
+    /// A hop-limit notice for the lead: no message reservation and no reply turn.
+    Lift,
 }
 
 impl Back {
@@ -240,7 +319,7 @@ impl Back {
     /// or the cloud assistant hears so, without a reply turn.
     fn cancelled(&self, hub: &Arc<Hub>, hops: u8) {
         match self {
-            Self::Local { .. } => {}
+            Self::Local { .. } | Self::Lift => {}
             Self::Remote(to) => remote::cancelled(hub, to, hops),
             Self::Assistant { request } => hub.assistant.cancelled(request),
         }
@@ -443,6 +522,11 @@ fn call(hub: &Arc<Hub>, from: &str, turn: &str, name: &str, args: &Value) -> Res
                 Recipient::There(target) => bail!("{} is on another computer", target.address),
             }
         }
+        "explain_hop_block" => explain_hop_block(hub, turn, args),
+        "ask_hop_clarification" => ask_hop_clarification(hub, &source, args),
+        "answer_hop_clarification" => answer_hop_clarification(hub, turn, args),
+        "reset_hop_count" => reset_hop_count(hub, &source, args),
+        "deny_hop_reset" => deny_hop_reset(hub, &source, args),
         _ => bail!("unknown team tool: {name}"),
     }
 }
@@ -476,7 +560,11 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         bail!("a bot cannot message itself");
     }
     let target = visible_bot(hub, to)?;
-    let hops = hub.team.reserve_message_in(&source.id, turn)?;
+    let hops = match hub.team.reserve_message_in(&source.id, turn) {
+        Ok(hops) => hops,
+        Err(error) if hop_limit_error(&error) => return on_hop_limit(hub, source, turn, &target, message, error),
+        Err(error) => return Err(error),
+    };
     let id = uuid::Uuid::new_v4().to_string();
     // From here on the lifetime gives the reservation back, also when a notice can't be saved.
     let mut lifetime = MessageLifetime::new(hub, &id, message, Back::Local { sender: source.id.clone() }, &target.name);
@@ -491,6 +579,156 @@ fn message_bot(hub: &Arc<Hub>, source: &BotConfig, turn: &str, to: &str, message
         "requestId": id, "botId": target.id, "name": target.name, "status": RequestStatus::Queued,
         "note": "Queued. The reply comes back to you as a new turn in your chat: don't wait or poll for it.",
     }))
+}
+
+fn hop_limit_error(error: &anyhow::Error) -> bool {
+    error.to_string().contains("hop limit (")
+}
+
+fn refusal_arg(args: &Value) -> Result<u64> {
+    let value = if args["refusalId"].is_null() { &args["refusal"] } else { &args["refusalId"] };
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().and_then(|n| u64::try_from(n).ok()))
+        .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+        .ok_or_else(|| anyhow!("refusalId is required"))
+}
+
+fn local_lead(hub: &Hub) -> Option<BotConfig> {
+    hub.store.bots().ok()?.into_iter().find(|row| !row.deleted && row.config.lead).map(|row| row.config)
+}
+
+fn explain_hop_block(hub: &Arc<Hub>, turn: &str, args: &Value) -> Result<Value> {
+    let refusal = refusal_arg(args)?;
+    let explanation = args["text"].as_str().unwrap_or("").trim();
+    if explanation.is_empty() || explanation.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    hub.team.explain(turn, refusal)?;
+    tracing::info!(actor = %turn, refusal, "hop-limit explanation recorded");
+    Ok(json!({ "refusal": refusal, "status": "recorded" }))
+}
+
+fn ask_hop_clarification(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !source.lead {
+        bail!("only the lead bot can ask about a hop-limit block");
+    }
+    let refusal = refusal_arg(args)?;
+    let question = args["text"].as_str().unwrap_or("").trim();
+    if question.is_empty() || question.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str() {
+        if named != actor {
+            bail!("botId does not match this hop-limit block");
+        }
+    }
+    hub.team.ask(refusal)?;
+    let shown = truncate(question, 400);
+    hub.send_cmd(
+        &actor,
+        Cmd::HopLift {
+            text: format!(
+                "The lead asked for more about hop-limit refusal {refusal}. Answer with answer_hop_clarification. Do not use message_bot.\n{shown}"
+            ),
+            refusal_id: refusal,
+            control: true,
+        },
+    )?;
+    tracing::info!(lead = %source.id, refusal, "hop-limit clarification asked");
+    Ok(json!({ "refusal": refusal, "status": "asked" }))
+}
+
+fn answer_hop_clarification(hub: &Arc<Hub>, turn: &str, args: &Value) -> Result<Value> {
+    let refusal = refusal_arg(args)?;
+    let answer = args["text"].as_str().unwrap_or("").trim();
+    if answer.is_empty() || answer.len() > MAX_MESSAGE_BYTES {
+        bail!("text must be nonempty and at most {MAX_MESSAGE_BYTES} bytes");
+    }
+    hub.team.answer(turn, refusal)?;
+    tracing::info!(actor = %turn, refusal, "hop-limit clarification answered");
+    Ok(json!({ "refusal": refusal, "status": "answered" }))
+}
+
+fn reset_hop_count(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !source.lead {
+        bail!("only the lead bot can reset a hop count");
+    }
+    let refusal = refusal_arg(args)?;
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str() {
+        if named != actor {
+            bail!("botId does not match this hop-limit block");
+        }
+    }
+    hub.team.approve(refusal)?;
+    if hub.team.grant_is_pending(&actor) {
+        hub.send_cmd(
+            &actor,
+            Cmd::HopLift {
+                text: format!(
+                    "Hop-limit refusal {refusal} was approved. Your next send starts at 0. This is not a message from the user."
+                ),
+                refusal_id: refusal,
+                control: false,
+            },
+        )?;
+    }
+    tracing::info!(lead = %source.id, actor = %actor, refusal, "hop count reset");
+    Ok(json!({ "refusal": refusal, "status": "reset" }))
+}
+
+fn deny_hop_reset(hub: &Arc<Hub>, source: &BotConfig, args: &Value) -> Result<Value> {
+    if !source.lead {
+        bail!("only the lead bot can deny a hop reset");
+    }
+    let refusal = refusal_arg(args)?;
+    let actor = hub.team.lift_actor(refusal)?;
+    if let Some(named) = args["botId"].as_str() {
+        if named != actor {
+            bail!("botId does not match this hop-limit block");
+        }
+    }
+    hub.team.deny(refusal)?;
+    tracing::info!(lead = %source.id, refusal, "hop reset denied");
+    Ok(json!({ "refusal": refusal, "status": "denied" }))
+}
+
+fn on_hop_limit(
+    hub: &Arc<Hub>,
+    source: &BotConfig,
+    turn: &str,
+    target: &BotConfig,
+    message: &str,
+    error: anyhow::Error,
+) -> Result<Value> {
+    if source.lead {
+        return Err(error);
+    }
+    let Some(lead) = local_lead(hub) else { return Err(error) };
+    if lead.id == source.id {
+        return Err(error);
+    }
+    let generation = hub.team.generation(turn);
+    let Some(refusal) = hub.team.open_lift(&source.id, turn, generation) else { return Err(error) };
+    let shown = truncate(message, 400);
+    let id = uuid::Uuid::new_v4().to_string();
+    let prompt = format!(
+        "Hop limit reached. Refusal {refusal}. Blocked bot: {}. It tried to message {}. Use only the hop-limit tools. Do not use message_bot.\nRefused text:\n{shown}",
+        source.name, target.name
+    );
+    let mut lifetime = MessageLifetime::new(hub, &id, &shown, Back::Lift, &lead.name);
+    let exchange = Exchange { request: &id, source: &source.id, target: &lead.id, text: &shown, peer_name: None };
+    lifetime.entries.push(exchange.notice(
+        hub,
+        &lead.id,
+        &format!("Hop limit refusal {refusal} from {}.", source.name),
+        true,
+    )?);
+    lifetime.deliver(&lead.id, 0, Access::Allow, prompt)?;
+    tracing::info!(actor = %turn, refusal, "hop-limit notice queued");
+    bail!("bot request hop limit ({}) reached; the lead was notified (refusal {refusal})", hub.team.hop_limit())
 }
 
 #[cfg(test)]

@@ -14,6 +14,12 @@ Codex (or a person) follows the same steps by hand. Each item ends in one outcom
 pushes to a PR's branch, approves its fork CI runs, asks Greptile for a review and merges, but it posts no comment:
 it returns drafts, and the session reads them, checks each claim against the code, and then posts them.
 
+A contributor's PR must fill in the template's *Validation* section: every checklist box ticked (an item that doesn't
+apply is ticked with "N/A: <why>") and *What I tried* describing what was run. The *PR validation* check
+(`.github/workflows/pr-validation.yml` → `tools/pr-validation.py`, `python3 tools/pr-validation-test.py`) fails until
+it is; the maintainer's own PRs and bots are skipped. A ticked box is the author's claim, not proof: the review still
+checks it against the diff and our own end-to-end run.
+
 ## Steps
 
 1. **Security** (read-only, every item at once). Follow the [security check](security-check.md). A PR gets two

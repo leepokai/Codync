@@ -246,7 +246,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(try bot("").rosterLine == .lastMessage)
         // The chat's own request says what it asks; an item's only that it needs the user, as on every client.
         #expect(try bot(#","status":"needsInput","activity":"Run the tests""# + asking).needsYouLine == "Run the tests")
-        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs your approval")
+        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs approval")
         #expect(try bot(asking).needsYouLine == "Needs you")
     }
 

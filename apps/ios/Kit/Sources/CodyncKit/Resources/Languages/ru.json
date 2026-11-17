@@ -1542,6 +1542,7 @@
   "Starting codync-host…": "Запускаем codync-host…",
   "Couldn't install codync-host on {name}.": "Не удалось установить codync-host на {name}.",
   "codync-host isn't installed on {name}.": "codync-host не установлен на {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Установите приложение Codync на {name} и откройте его один раз: codync-host входит в него.",
   "To keep codync-host running on {name} after you log out, run this there:": "Чтобы codync-host продолжал работать на {name} после выхода из системы, выполните там:",
   "Copy command": "Скопировать команду",
   "Delete account": "Удалить аккаунт",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud обновит его перед следующим переходом в сон.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync бесплатный, и его делает один человек. Если он вам помогает, его можно поддержать на Ko-fi.",
   "Support on Ko-fi": "Поддержать на Ko-fi",
+  "Support Codync": "Поддержать Codync",
   "What's new": "Что нового",
   "seconds": "секунд",
   "Timeout (seconds)": "Тайм-аут (секунды)",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "Ваши боты появятся после подключения. Ход подключения можно посмотреть в разделе «Управление компьютерами».",
   "Your cloud computer is updating…": "Ваш облачный компьютер обновляется…",
   "Your remote computers": "Ваши удалённые компьютеры",
-  "ssh-agent / SSH config": "ssh-agent / конфигурация SSH"
+  "ssh-agent / SSH config": "ssh-agent / конфигурация SSH",
+  "{name} remembered it": "Запомнил(а) {name}",
+  "Codync {version} is available": "Доступен Codync {version}",
+  "You have {version}.": "У вас версия {version}.",
+  "Couldn't restore sign-in. Check your connection and retry.": "Не удалось восстановить вход. Проверьте подключение и попробуйте снова."
 }

@@ -809,6 +809,25 @@ async fn a_tasks_choice_card_ends_with_its_item() {
 }
 
 #[tokio::test]
+async fn a_tasks_choice_card_expires_with_its_270_second_call() {
+    let host = Host::start().await;
+    let bot = host.fixture_bot("Mika", "task_agent.py", "").await;
+    host.reply(&bot, "ADD Pick one|ASK").await;
+    let card = wait("the card", async || {
+        let mut cards = history(&host, &bot).await.into_iter().filter(|e| e["data"]["decision"] == true);
+        cards.rfind(|e| e["data"]["status"] == "pending")
+    })
+    .await;
+    // Unlike a chat's card it doesn't stay open: a press there has no next message to become.
+    common::eventually("the task's card to expire at its deadline", Duration::from_secs(290), async || {
+        history(&host, &bot).await.iter().any(|e| e["id"] == card["id"] && e["data"]["status"] == "expired")
+    })
+    .await;
+    let relayed = reply(&host, &bot, "Relayed:").await;
+    assert!(relayed.contains("Refused: the card expired after four and a half minutes"), "{relayed}");
+}
+
+#[tokio::test]
 async fn a_tasks_edit_memory_is_its_own_turns_so_it_adds_and_never_takes_out() {
     let host = Host::start().await;
     let bot = bot_with(&host, 1).await;

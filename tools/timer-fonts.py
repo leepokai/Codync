@@ -4,7 +4,7 @@
 Live Activities draw one frame and only a timer Text keeps updating, so each animation is a
 timer whose last digit is drawn in a font where `0`–`9` are the ten frames of a loop (every
 other character the timer prints shapes to nothing). One font per layer, stacked and tinted in
-the widget: the working bot (`CodyncBot-<shape>-Ink` / `-Tint`) and the thinking orb
+the widget: the working bot (`CodyncBot-<shape>-Ink` / `-Tint`) and the halftone thinking orb
 (`CodyncOrb-Ghost` / `-Dot`).
 
 The frames come from the app's own drawing code (`DottedBody.workingLoop`,

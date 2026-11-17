@@ -56,3 +56,16 @@ import Testing
     // The result that closes a segment, after the pause, is its last revision.
     #expect(heard([("Three hundred", false, 0.1), ("300", true, 1.5), ("now", false, 0.1)]) == "300 now")
 }
+
+/// Issue #321: with the call language on System, recognition follows the phone's language. The app ships only an
+/// English bundle localization, so `Locale.current` (and `SFSpeechRecognizer()`) is English on a Russian or German
+/// phone; the recognizer must come from the phone's preferred languages instead. A language picked in settings wins.
+@Test func theSystemCallLanguageIsThePhonesLanguageNotTheAppBundles() {
+    #expect(OnDeviceSpeech.recognizer(setting: "", languages: ["ru-RU", "en-US"])?.locale.language.languageCode == "ru")
+    #expect(OnDeviceSpeech.recognizer(setting: nil, languages: ["de-DE"])?.locale.language.languageCode == "de")
+    #expect(OnDeviceSpeech.recognizer(setting: "fr-FR", languages: ["ru-RU"])?.locale.language.languageCode == "fr")
+    // A phone language the recognizer lacks gives way to the next one, not to English.
+    #expect(OnDeviceSpeech.recognizer(setting: nil, languages: ["xx-YY", "ja-JP"])?.locale.language.languageCode == "ja")
+    // With none of them, the default recognizer still listens.
+    #expect(OnDeviceSpeech.recognizer(setting: nil, languages: ["xx-YY"]) != nil)
+}

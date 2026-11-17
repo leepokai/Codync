@@ -215,8 +215,13 @@ impl App {
             KeyCode::Char('J') => self.reorder_bot(1),
             KeyCode::Char(c @ '1'..='9') => {
                 let i = (c as usize) - ('1' as usize);
-                let pending =
-                    if roster_page { None } else { self.pending().map(|e| (e.id.clone(), e.answer_options())) };
+                // Only a card the bot waits on, or the picked one: a choice card left open by an idle bot keeps its
+                // F-keys, so 1–9 still jump to a bot.
+                let waits = self.bot().is_some_and(|b| b.status == Status::NeedsInput);
+                let pending = self
+                    .pending()
+                    .filter(|e| !roster_page && (waits || self.pick.as_ref() == Some(&e.id)))
+                    .map(|e| (e.id.clone(), e.answer_options()));
                 match pending {
                     Some((entry, opts)) if !opts.is_empty() => {
                         if let Some(option) = opts.get(i) {

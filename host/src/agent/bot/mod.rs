@@ -137,6 +137,7 @@ pub fn spawn(hub: Arc<Hub>, base: BotConfig) -> BotHandle {
         files: files::FileShares::default(),
         perms: HashMap::new(),
         asked: HashMap::new(),
+        open_card: None,
         stop_requested: false,
         stopped_for_message: false,
         cancel_deadline: None,
@@ -170,6 +171,8 @@ struct SessionCaps {
     steering: bool,
     /// `session/fork`: a new session that starts as a copy of another, which a task's does (`chat::tasks`).
     fork: bool,
+    /// `session/delete`: a background job's session leaves the agent's saved history (`chat::oneshot`).
+    delete: bool,
 }
 
 /// How the bot's instructions (identity and memory) reach the agent.
@@ -225,6 +228,10 @@ pub(crate) struct Conn {
 }
 
 impl Conn {
+    pub(crate) fn deletes_sessions(&self) -> bool {
+        self.sessions.delete
+    }
+
     pub(crate) fn instructions(&self) -> Instructions {
         // Claude's adapter rebuilds the standard field without the `_meta` object's options, so Claude stays on it.
         if self.adapter == Adapter::Claude {
@@ -345,6 +352,8 @@ struct Actor {
     perms: HashMap<String, updates::Answer>,
     /// Decision card id -> the live tool call waiting for this turn's choice.
     asked: HashMap<String, decisions::Asked>,
+    /// The chat's choice card whose call stopped waiting: the user's press or next message still answers it.
+    open_card: Option<String>,
     stop_requested: bool,
     /// Send now stopped the turn for a waiting message (`steer`): that message going out says so, not a `Stopped.`
     /// line drawn under it.

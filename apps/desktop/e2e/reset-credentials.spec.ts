@@ -21,7 +21,7 @@ test('Saved credentials › Reset asks twice, deletes the saved credentials, and
     await openGeneralSettings(page)
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('button', { name: 'Computers', exact: true }).click()
-    // This computer's resets sit together at the bottom, as red buttons. Reset everything asks twice too: cancel the second.
+    // This computer's resets sit together at the bottom. Reset everything asks twice too: cancel the second.
     const everything = dialog.locator('.settings-row', { hasText: 'All data' })
     await everything.getByRole('button', { name: 'Reset everything', exact: true }).click()
     await page.getByRole('alertdialog', { name: 'Reset all data?' }).getByRole('button', { name: 'Reset everything', exact: true }).click()
@@ -29,7 +29,7 @@ test('Saved credentials › Reset asks twice, deletes the saved credentials, and
     await erase.getByRole('button', { name: 'Cancel', exact: true }).click()
     await expect(erase).toBeHidden()
     const row = dialog.locator('.settings-row', { hasText: 'Saved credentials' }).first()
-    await expect(row.getByRole('button', { name: 'Reset', exact: true })).toHaveClass(/destructive/)
+    await expect(row.getByRole('button', { name: 'Reset', exact: true })).toHaveClass(/secondary/)
     await row.getByRole('button', { name: 'Reset', exact: true }).click()
     const ask = page.getByRole('alertdialog', { name: /^Reset saved credentials on / })
     await ask.getByRole('button', { name: 'Reset', exact: true }).click()

@@ -29,8 +29,9 @@ way open with a sentence or two, read aloud like any reply and part of the call 
   from Electron's window-drag region so the gear, mute and end buttons receive mouse clicks.
   The iPhone places its capsule below native navigation; the terminal has no call controls.
 - Speech → text with `SFSpeechRecognizer` (on-device when the language supports it) in the language
-  picked under Voice chat → Language (`callLanguage`; empty follows the system's first language,
-  which is often English on bilingual setups). A pause ends an
+  picked under Voice chat → Language (`callLanguage`; empty follows the system's first language the
+  recognizer has, from `Locale.preferredLanguages`; `SFSpeechRecognizer()` only when none is, since its
+  `Locale.current` is English in the app, whose only bundle localization is English, #321). A pause ends an
   utterance and sends it as the call's message (`BotStore.send` with the call's id), so it takes the normal
   path: queued while the bot works, folded into its next turn. It and the bot's replies show in the call's
   conversation, not in the chat (below).

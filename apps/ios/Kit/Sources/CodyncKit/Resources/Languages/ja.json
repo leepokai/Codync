@@ -1542,6 +1542,7 @@
   "Starting codync-host…": "codync-host を起動中…",
   "Couldn't install codync-host on {name}.": "{name} に codync-host をインストールできませんでした。",
   "codync-host isn't installed on {name}.": "codync-host は {name} にインストールされていません。",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "{name} に Codync アプリをインストールし、一度開いてください。codync-host も一緒に入ります。",
   "To keep codync-host running on {name} after you log out, run this there:": "ログアウト後も {name} で codync-host を動かし続けるには、そこで次を実行してください：",
   "Copy command": "コマンドをコピー",
   "Delete account": "アカウントを削除",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "次にスリープする前に Codync Cloud が更新します。",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync は無料で、一人で作っています。役に立ったら、Ko-fi で応援していただけます。",
   "Support on Ko-fi": "Ko-fi で応援する",
+  "Support Codync": "Codync を応援する",
   "What's new": "新機能",
   "seconds": "秒",
   "Timeout (seconds)": "タイムアウト（秒）",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "接続されるとボットが表示されます。接続の進行状況は「コンピュータの管理」で確認できます。",
   "Your cloud computer is updating…": "クラウドのコンピューターを更新中…",
   "Your remote computers": "リモートのコンピューター",
-  "ssh-agent / SSH config": "ssh-agent / SSH 設定"
+  "ssh-agent / SSH config": "ssh-agent / SSH 設定",
+  "{name} remembered it": "{name} が記憶しました",
+  "Codync {version} is available": "Codync {version} が利用可能です",
+  "You have {version}.": "現在のバージョンは {version} です。",
+  "Couldn't restore sign-in. Check your connection and retry.": "サインインを復元できませんでした。接続を確認して、もう一度お試しください。"
 }

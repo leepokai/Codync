@@ -296,8 +296,9 @@ A card that belongs to a task, case by case:
 | The user types a message | It answers the card, or ends it (`other_message`) | Nothing: in the chat the message is for the bot, and in the task's [thread](#talking-to-a-thread) it waits behind the card's turn. Only a press answers, so the card's text doesn't ask for a typed reply |
 | Stop in the chat | Ends it (`stopped`) | Nothing: the chat's Stop is the chat's turn. Stopping the item (`stopWork`, the bot's `steer_work stop`) ends it |
 | The item gives way or gets a new brief | | Ends it (`stopped`): its task is closed |
-| The turn ends | Ends it (`turn_ended`) | The task's turn, not the chat's: a card the task left open ends with the item |
-| Four and a half minutes | Ends it (`timeout`), the call returns | The same; the task goes on without an answer |
+| The turn ends | Ends it (`turn_ended`), unless its call already ran out (the card is open) | The task's turn, not the chat's: a card the task left open ends with the item |
+| Four and a half minutes | The call returns `answered: false` and the card stays open: a press or the user's next message answers it later as their next message ([choice cards](chat-messages.md)) | Ends it (`timeout`), the call returns an error; the task goes on without an answer, since a press there has no next message to become |
+| The bot asks again | Ends the open card (`asked_again`) | One card per task, as below |
 | Host restart | Ends it (`restart`) | The same: the resumed task has no call waiting |
 | One at a time | One card per bot | One card per task; two tasks may each have one open in the chat |
 | Alert | *needs you*, the bot's chat | The same, named for the bot |
@@ -327,7 +328,8 @@ prompt or the request as it is, not an item's brief, and **their result takes no
   `recipient finished without a text reply`, both as from a turn in the chat. Its title is the request's first line.
 
 What such a turn could and couldn't do in the chat holds in its task (`Actor::task_source`): `request_decision`,
-`send_message`, `send_file` and artifact cards are refused with the same words; the `routines` tools work, as the
+`send_message`, `send_file` and a request's artifact cards are refused with the same words (a run's artifact card
+goes into the bot's chat, as from a run there); the `routines` tools work, as the
 bot (a run saves its progress and sets follow-ups, an asked bot runs its own routine); `message_bot` works from a
 run and is refused in a request; `follow_up` is refused in a request. `add_work` is refused as in any task. A
 request from another computer under a network rule's `auto` or `ask` holds its task to that

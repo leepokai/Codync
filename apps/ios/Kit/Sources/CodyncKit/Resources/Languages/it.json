@@ -1462,6 +1462,7 @@
   "cloud assistants are off here": "gli assistenti cloud sono disattivati qui",
   "codync-host install keeps it running in the background.": "codync-host install lo mantiene in esecuzione in background.",
   "codync-host isn't installed on {name}.": "codync-host non è installato su {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Installa l'app Codync su {name} e aprila una volta: include codync-host.",
   "connected": "connesso",
   "day unit": "g",
   "e.g. Morning summary": "ad es. Riepilogo del mattino",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud lo aggiorna prima che vada di nuovo in stop.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync è gratuito e fatto da una sola persona. Se ti è utile, puoi sostenerlo su Ko-fi.",
   "Support on Ko-fi": "Sostieni su Ko-fi",
+  "Support Codync": "Sostieni Codync",
   "What's new": "Novità",
   "seconds": "secondi",
   "Timeout (seconds)": "Timeout (secondi)",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "I tuoi bot appariranno una volta connessi. Apri Gestisci computer per vedere lo stato della connessione.",
   "Your cloud computer is updating…": "Il tuo computer cloud si sta aggiornando…",
   "Your remote computers": "I tuoi computer remoti",
-  "ssh-agent / SSH config": "ssh-agent / configurazione SSH"
+  "ssh-agent / SSH config": "ssh-agent / configurazione SSH",
+  "{name} remembered it": "Ricordato da {name}",
+  "Codync {version} is available": "Codync {version} è disponibile",
+  "You have {version}.": "Hai la versione {version}.",
+  "Couldn't restore sign-in. Check your connection and retry.": "Impossibile ripristinare l'accesso. Controlla la connessione e riprova."
 }

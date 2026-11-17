@@ -1542,6 +1542,7 @@
   "Starting codync-host…": "codync-host 시작 중…",
   "Couldn't install codync-host on {name}.": "{name}에 codync-host를 설치하지 못했습니다.",
   "codync-host isn't installed on {name}.": "{name}에 codync-host가 설치되지 않았습니다.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "{name}에 Codync 앱을 설치하고 한 번 여세요. codync-host가 함께 설치됩니다.",
   "To keep codync-host running on {name} after you log out, run this there:": "로그아웃한 뒤에도 {name}에서 codync-host가 계속 실행되게 하려면 해당 컴퓨터에서 다음을 실행하세요:",
   "Copy command": "명령 복사",
   "Delete account": "계정 삭제",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "다음에 절전하기 전에 Codync Cloud가 업데이트합니다.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync는 무료이며 한 사람이 만들고 있습니다. 도움이 되었다면 Ko-fi에서 후원할 수 있습니다.",
   "Support on Ko-fi": "Ko-fi에서 후원하기",
+  "Support Codync": "Codync 후원하기",
   "What's new": "새로운 기능",
   "seconds": "초",
   "Timeout (seconds)": "제한 시간(초)",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "연결되면 봇이 표시됩니다. 연결 진행 상황은 컴퓨터 관리에서 확인하세요.",
   "Your cloud computer is updating…": "클라우드 컴퓨터를 업데이트하는 중…",
   "Your remote computers": "원격 컴퓨터",
-  "ssh-agent / SSH config": "ssh-agent / SSH 구성"
+  "ssh-agent / SSH config": "ssh-agent / SSH 구성",
+  "{name} remembered it": "{name}이(가) 기억함",
+  "Codync {version} is available": "Codync {version}을(를) 사용할 수 있습니다",
+  "You have {version}.": "현재 버전은 {version}입니다.",
+  "Couldn't restore sign-in. Check your connection and retry.": "로그인을 복원하지 못했습니다. 연결을 확인하고 다시 시도하세요."
 }

@@ -3,7 +3,7 @@
 
 use crate::agent::bot::Cmd;
 use crate::hub::Hub;
-use crate::store::Entry;
+use crate::store::{Entry, Store};
 use anyhow::{Result, anyhow, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -16,10 +16,16 @@ pub(crate) const WAIT: Duration = Duration::from_secs(270);
 const MAX_OPTIONS: usize = 12;
 
 pub const INSTRUCTIONS: &str = "When the user should pick among a few ways forward, use request_decision(question, \
-options, recommended?) instead of repeating the question in a message. One card waits at a time, for up to four and a \
-half minutes. The user's button, typed choice or own words answer this tool (their own words come back with \
-custom: true) and are recorded in the chat; it does not start a second turn. An expired card takes no answer. Do not \
-choose the suggested option on the user's behalf.";
+options, recommended?) instead of repeating the question in a message. One card waits at a time. The user's \
+button, typed choice or own words answer this tool (their own words come back with custom: true) and are recorded in \
+the chat; it does not start a second turn. Without an answer in four and a half minutes the call returns \
+answered: false and, in your own chat, the card stays open: the user's later choice comes as their next message. Do \
+not choose the suggested option on the user's behalf.";
+
+/// What a chat's call whose wait ran out is told; its card stays open (`agent::bot::decisions`).
+const LEFT_OPEN: &str = "No answer yet. The card stays open: when the user chooses, their choice comes as their next \
+message, quoting this question. Don't ask it again or choose for them; go on with what doesn't depend on it, or end \
+your turn.";
 
 /// A choice card's lifecycle, stored lowercase in `data.status`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +110,13 @@ pub fn is_card(card: &Entry) -> bool {
     card.kind == "notice" && card.data["decision"] == true
 }
 
+/// The choice card `id` while a press or reply can still answer it.
+pub fn pending_card(store: &Store, id: &str) -> Result<Entry> {
+    let card = store.entry(id).filter(is_card).ok_or_else(|| anyhow!("unknown decision card"))?;
+    ensure!(Status::of(&card.data) == Some(Status::Pending), "that card is already answered or expired");
+    Ok(card)
+}
+
 pub fn choices(card: &Entry) -> Vec<String> {
     card.data["choices"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
 }
@@ -131,6 +144,19 @@ pub enum Via {
     Text,
     /// The user's own words, typed instead of an option.
     Custom,
+    /// A press or typed reply after the call stopped waiting, sent as the user's next message.
+    Late,
+}
+
+impl Via {
+    /// Records the answer, content-free.
+    pub fn capture(self, hub: &Hub) {
+        crate::analytics::capture(
+            hub,
+            crate::analytics::Event::DecisionAnswered,
+            serde_json::Map::from_iter([("via".into(), json!(self))]),
+        );
+    }
 }
 
 /// A press must name an option. A typed reply may also give its number, or else is the user's own words,
@@ -153,19 +179,22 @@ pub async fn ask(hub: &Arc<Hub>, bot: &str, args: &Value) -> Result<Value> {
     // The actor reads the same deadline, so a call dropped by this timeout is reported as one.
     let deadline = Instant::now() + WAIT;
     hub.send_cmd(&cfg.id, Cmd::Ask { data: card_data(args)?, started_at, deadline, reply })?;
-    tokio::time::timeout_at(deadline.into(), answered)
-        .await
-        .map_err(|_| anyhow!("the card expired after four and a half minutes without an answer"))?
-        .map_err(|_| anyhow!("the turn is no longer waiting for this choice"))?
+    match tokio::time::timeout_at(deadline.into(), answered).await {
+        Ok(answer) => answer.map_err(|_| anyhow!("the turn is no longer waiting for this choice"))?,
+        // A task's card ends with its call: a press there has no next message to become.
+        Err(_) if cfg.is_task() => bail!("{}", Expiry::Timeout.text()),
+        Err(_) => Ok(left_open()),
+    }
+}
+
+/// What a chat's call gets when its wait runs out unanswered.
+pub fn left_open() -> Value {
+    json!({"answered": false, "note": LEFT_OPEN})
 }
 
 /// An API success means the actor delivered this answer to its live tool waiter.
 pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Value> {
-    let card = hub.store.entry(entry_id).ok_or_else(|| anyhow!("unknown card"))?;
-    ensure!(is_card(&card), "that entry is not a decision card");
-    if Status::of(&card.data) != Some(Status::Pending) {
-        bail!("that card is already answered or expired");
-    }
+    let card = pending_card(&hub.store, entry_id)?;
     let owner = crate::chat::tasks::card_actor(&card);
     let (reply, received) = tokio::sync::oneshot::channel();
     hub.send_cmd(owner, Cmd::Decision { entry_id: entry_id.to_owned(), choice: option.to_owned(), reply })?;
@@ -179,7 +208,7 @@ pub async fn respond(hub: &Arc<Hub>, entry_id: &str, option: &str) -> Result<Val
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Expiry {
-    /// Four and a half minutes passed without an answer.
+    /// A task's card waited four and a half minutes without an answer (a chat's own card stays open instead).
     Timeout,
     /// The agent cancelled its tool call.
     Cancelled,
@@ -192,6 +221,8 @@ pub enum Expiry {
     OtherMessage,
     /// The host restarted while the card waited.
     Restart,
+    /// The bot asked a new question while an open card waited.
+    AskedAgain,
 }
 
 impl Expiry {
@@ -204,6 +235,7 @@ impl Expiry {
             Self::TurnEnded => "the turn ended",
             Self::OtherMessage => "the user sent a different message",
             Self::Restart => "the host restarted",
+            Self::AskedAgain => "the bot asked again",
         }
     }
 

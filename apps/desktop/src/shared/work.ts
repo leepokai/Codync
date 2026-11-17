@@ -199,7 +199,7 @@ export interface RosterLine {
 }
 
 export function rosterLine(bot: { status: string; activity: string; work: WorkItem[] }, tr: Translate): RosterLine | null {
-  if (bot.status === 'needsInput') return { kind: 'needsYou', text: tr(bot.activity || 'Needs your approval') }
+  if (bot.status === 'needsInput') return { kind: 'needsYou', text: tr(bot.activity || 'Needs approval') }
   if (bot.work.some((i) => i.status === 'needsYou')) return { kind: 'needsYou', text: tr('Needs you') }
   if (bot.status === 'working') return { kind: 'working', text: tr(bot.activity || 'Working…') }
   const counts = workCounts(bot.work, tr)

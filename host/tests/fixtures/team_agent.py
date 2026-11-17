@@ -131,8 +131,9 @@ def prompt(request):
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ")):
+    if text.split("\n\n")[-1].startswith(("ASK ", "ASK_HOLD ", "ASK_AFTER_MESSAGE ", "ASK_PERMISSION ", "ASK_TWICE ")):
         # ASK <question>|<option>|<option>[|<recommended>]: one card, and its answer as this turn's reply.
+        # ASK_TWICE asks again when the first call comes back.
         command, body = text.split("\n\n")[-1].split(" ", 1)
         if command == "ASK_AFTER_MESSAGE":
             sent = mcp_call("chat", "send_message", {"text": "Here are your choices"})
@@ -147,6 +148,8 @@ def prompt(request):
         if len(fields) > 3:
             arguments["recommended"] = fields[-1]
         response = mcp_call("chat", "request_decision", arguments)
+        if command == "ASK_TWICE":
+            response = mcp_call("chat", "request_decision", {**arguments, "question": "Again?"})
         if command == "ASK_AFTER_MESSAGE" and not response.get("isError"):
             reacted = mcp_call("chat", "react", {"emoji": "👍"})
             assert not reacted.get("isError"), reacted

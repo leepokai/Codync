@@ -1,18 +1,55 @@
 import { win32 } from 'node:path'
-import type { SSHProfile } from '../shared/ssh.ts'
+import type { RemoteShell, SSHProfile } from '../shared/ssh.ts'
 import type { Resolved } from './ssh-parse.ts'
 
 // Preserve the login shell's PATH, then try the supported installers and the Mac app bundle.
 const REMOTE_PATH = '$PATH:/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:/Applications/Codync.app/Contents/Resources'
 
+/** Where the Windows installer puts the desktop app, with the bundled `codync-host.exe` in its resources. */
+const WINDOWS_RESOURCES = 'Programs\\codync-desktop\\resources'
+const WINDOWS_DEV_RESOURCES = 'Programs\\codync-desktop-dev\\resources'
+
+/**
+ * One probe every default shell answers: `cmd.exe` expands `%OS%`, PowerShell `$env:OS`, a POSIX shell
+ * neither. So the reply names the shell before anything is sent that only one of them understands.
+ */
+export const REMOTE_PROBE = 'echo %OS% $env:OS'
+
+/** The shell that answered the probe; a reply without Windows' `OS` is a POSIX shell's. */
+export const remoteShell = (stdout: string): RemoteShell =>
+  !stdout.includes('Windows_NT') ? 'posix' : stdout.includes('$env:OS') ? 'cmd' : 'powershell'
+
+/** A Mac or Linux computer: the login shell's PATH, or the development host's two fixed locations. */
+const posixInfoCommand = (port: number, dev: boolean) => dev
+  ? `sh -lc 'export CODYNC_HOME="$HOME/.codync-dev"; if [ -x "/Applications/Codync Dev.app/Contents/Resources/codync-host" ]; then exec "/Applications/Codync Dev.app/Contents/Resources/codync-host" info --json --port ${port}; elif [ -x "$HOME/.local/bin/codync-dev-host" ]; then exec "$HOME/.local/bin/codync-dev-host" info --json --port ${port}; else exit 127; fi'`
+  : `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${port}'`
+
+/** cmd.exe: the app's own folder after the user's PATH, and a missing host exits 127, as a POSIX shell's would. */
+const cmdInfoCommand = (port: number, dev: boolean) => {
+  if (!dev) return `set "PATH=%PATH%;%LOCALAPPDATA%\\${WINDOWS_RESOURCES}" && (where codync-host >nul 2>nul || exit 127) && codync-host info --json --port ${port}`
+  const exe = `%LOCALAPPDATA%\\${WINDOWS_DEV_RESOURCES}\\codync-host.exe`
+  return `set "CODYNC_HOME=%USERPROFILE%\\.codync-dev" && (if not exist "${exe}" exit 127) && "${exe}" info --json --port ${port}`
+}
+
+/** PowerShell: single quotes only, so the double quotes sshd puts around the command can't end a string of ours. */
+const powershellInfoCommand = (port: number, dev: boolean) => {
+  const report = `info --json --port ${port}; exit $LASTEXITCODE`
+  if (!dev) return `$env:PATH = $env:PATH + ';' + $env:LOCALAPPDATA + '\\${WINDOWS_RESOURCES}'; if (-not (Get-Command codync-host -ErrorAction SilentlyContinue)) { exit 127 }; codync-host ${report}`
+  return `$env:CODYNC_HOME = $env:USERPROFILE + '\\.codync-dev'; $exe = $env:LOCALAPPDATA + '\\${WINDOWS_DEV_RESOURCES}\\codync-host.exe'; if (-not (Test-Path $exe)) { exit 127 }; & $exe ${report}`
+}
+
 /** The caller validates the port before constructing the remote shell command. */
-export const remoteInfoCommand = (port: number, folder = '.codync') => {
+export const remoteInfoCommand = (port: number, folder = '.codync', shell: RemoteShell = 'posix') => {
   // Only the fixed development folder is accepted; no arbitrary input enters this shell command.
   const dev = folder === '.codync-dev'
-  if (dev) {
-    return `sh -lc 'export CODYNC_HOME="$HOME/.codync-dev"; if [ -x "/Applications/Codync Dev.app/Contents/Resources/codync-host" ]; then exec "/Applications/Codync Dev.app/Contents/Resources/codync-host" info --json --port ${port}; elif [ -x "$HOME/.local/bin/codync-dev-host" ]; then exec "$HOME/.local/bin/codync-dev-host" info --json --port ${port}; else exit 127; fi'`
+  switch (shell) {
+    case 'cmd':
+      return cmdInfoCommand(port, dev)
+    case 'powershell':
+      return powershellInfoCommand(port, dev)
+    case 'posix':
+      return posixInfoCommand(port, dev)
   }
-  return `sh -lc 'PATH="${REMOTE_PATH}" codync-host info --json --port ${port}'`
 }
 
 const INSTALL_SCRIPT = 'https://raw.githubusercontent.com/leepokai/Codync/main/packaging/install.sh'
@@ -27,6 +64,7 @@ export const installSteps = [
 export type InstallStep = typeof installSteps[number]['kind']
 
 /**
+ * POSIX only: Windows ships the host inside the desktop app, so there is nothing to install over SSH there.
  * The released host into `~/.local/bin` (where `remoteInfoCommand` looks), then its service on the profile's
  * validated port. Linux keeps a user's services running after logout only with linger, which usually needs
  * sudo: the service step tries without it and prints `LINGER_NEEDED` when that fails.
@@ -114,8 +152,10 @@ const commandArguments = (p: SSHProfile, h: string, dir: string | undefined, com
   '--', p.host, command,
 ]
 
-export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`) =>
-  commandArguments(p, h, dir, remoteInfoCommand(p.remotePort, folder))
+export const probeArguments = (p: SSHProfile, h: string, dir?: string) => commandArguments(p, h, dir, REMOTE_PROBE)
+
+export const infoArguments = (p: SSHProfile, h: string, folder = '.codync', dir = `${h}/${folder}`, shell: RemoteShell = 'posix') =>
+  commandArguments(p, h, dir, remoteInfoCommand(p.remotePort, folder, shell))
 
 export const installArguments = (p: SSHProfile, step: InstallStep, h: string, dir?: string) =>
   commandArguments(p, h, dir, remoteInstallCommand(step, p.remotePort))

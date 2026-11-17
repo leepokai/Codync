@@ -1542,6 +1542,7 @@
   "Starting codync-host…": "正在启动 codync-host…",
   "Couldn't install codync-host on {name}.": "无法在 {name} 上安装 codync-host。",
   "codync-host isn't installed on {name}.": "{name} 上还没有安装 codync-host。",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "在 {name} 上安装 Codync 应用并打开一次：它自带 codync-host。",
   "To keep codync-host running on {name} after you log out, run this there:": "要让 codync-host 在你退出登录后继续在 {name} 上运行，请在那里运行：",
   "Copy command": "复制命令",
   "Delete account": "删除账户",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud 会在它下次休眠前更新它。",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync 是免费的，由一个人开发。如果它对你有帮助，可以在 Ko-fi 上支持它。",
   "Support on Ko-fi": "在 Ko-fi 上支持",
+  "Support Codync": "支持 Codync",
   "What's new": "新功能",
   "seconds": "秒",
   "Timeout (seconds)": "超时（秒）",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "连上之后，你的 Bot 会显示在这里。打开“管理电脑”可以查看连接进度。",
   "Your cloud computer is updating…": "你的云端电脑正在升级…",
   "Your remote computers": "你的远程电脑",
-  "ssh-agent / SSH config": "ssh-agent / SSH 配置"
+  "ssh-agent / SSH config": "ssh-agent / SSH 配置",
+  "{name} remembered it": "{name} 记下的",
+  "Codync {version} is available": "Codync {version} 已推出",
+  "You have {version}.": "你目前是 {version}。",
+  "Couldn't restore sign-in. Check your connection and retry.": "无法恢复登录。检查网络后重试。"
 }

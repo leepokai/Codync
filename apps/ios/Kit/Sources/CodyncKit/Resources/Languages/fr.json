@@ -1542,6 +1542,7 @@
   "Starting codync-host…": "Démarrage de codync-host…",
   "Couldn't install codync-host on {name}.": "Impossible d’installer codync-host sur {name}.",
   "codync-host isn't installed on {name}.": "codync-host n’est pas installé sur {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Installez l’app Codync sur {name} et ouvrez-la une fois : elle apporte codync-host.",
   "To keep codync-host running on {name} after you log out, run this there:": "Pour que codync-host continue de tourner sur {name} après votre déconnexion, exécutez ceci là-bas :",
   "Copy command": "Copier la commande",
   "Delete account": "Supprimer le compte",
@@ -2008,6 +2009,7 @@
   "Codync Cloud updates it before it next sleeps.": "Codync Cloud le met à jour avant sa prochaine mise en veille.",
   "Codync is free and made by one person. If it helps you, you can support it on Ko-fi.": "Codync est gratuit et fait par une seule personne. S’il vous est utile, vous pouvez le soutenir sur Ko-fi.",
   "Support on Ko-fi": "Soutenir sur Ko-fi",
+  "Support Codync": "Soutenir Codync",
   "What's new": "Nouveautés",
   "seconds": "secondes",
   "Timeout (seconds)": "Délai (secondes)",
@@ -2204,5 +2206,9 @@
   "Your bots will appear once connected. Manage computers to see connection progress.": "Vos bots apparaîtront une fois connectés. Ouvrez Gérer les ordinateurs pour suivre la connexion.",
   "Your cloud computer is updating…": "Votre ordinateur cloud se met à jour…",
   "Your remote computers": "Vos ordinateurs distants",
-  "ssh-agent / SSH config": "ssh-agent / config SSH"
+  "ssh-agent / SSH config": "ssh-agent / config SSH",
+  "{name} remembered it": "Retenu par {name}",
+  "Codync {version} is available": "Codync {version} est disponible",
+  "You have {version}.": "Vous avez la version {version}.",
+  "Couldn't restore sign-in. Check your connection and retry.": "Impossible de restaurer la connexion. Vérifiez votre connexion réseau et réessayez."
 }

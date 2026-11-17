@@ -83,7 +83,7 @@ Anything with a background fill gets no extra drawn border. Use `Palette` and `M
 
 ## Motion and status
 
-`CharacterAvatar` identifies a bot. `ThinkingOrb` conveys working, searching, listening or connecting and needs adjacent text or an accessible outer label. In-app animation pauses off-screen, when inactive, or with Reduce Motion. Widgets/activities use static frames.
+`CharacterAvatar` identifies a bot. `ThinkingOrb` conveys working, searching, listening, connecting or shaping as a halftone disc (fixed dots that only change size) and needs adjacent text or an accessible outer label. In-app animation pauses off-screen, when inactive, or with Reduce Motion, on a still pose per state. Widgets/activities use those still poses.
 
 iPhone cold launch: the system launch screen is plain `Palette.background` (`LaunchBackground`), then `LaunchSplash` pops the app-icon bot (squircle, working mood) in while every paired computer connects and finishes its first catch-up (`BotStore.caughtUp`: the `hello` rev reached). It stays at least 0.7 s and at most 1.8 s, then zooms out over the cached list. Without a paired computer (first launch) it is skipped. Android does the same (`LaunchSplash.kt`). The desktop app and TUI reach their host over loopback at once, so they have no splash; while the desktop's own host is still starting, its "Starting the host…" screen (`HostStateView`, full and compact in `StartupRecovery`) shows the same bot popping in and bobbing above the text, still with Reduce Motion.
 

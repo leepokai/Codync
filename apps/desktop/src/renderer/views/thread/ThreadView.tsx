@@ -84,6 +84,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const [artifactId, setArtifactId] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
+  const chrome = useRef<HTMLDivElement>(null)
   const aside = useRef<HTMLDivElement>(null)
   const pill = useRef<HTMLButtonElement>(null)
   // The width is measured, not rendered: resizing re-renders only when `wide` flips, or while the
@@ -117,9 +118,14 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
     // The composer floats over the transcript; its height becomes the transcript's bottom padding.
     const docked = new ResizeObserver(([e]) => el.style.setProperty('--composer-height', `${Math.ceil(e!.borderBoxSize[0]!.blockSize)}px`))
     if (dock.current) docked.observe(dock.current)
+    // The title band grows when the pill carries the connection subtitle: the aside starts under
+    // the measured band, not under a fixed 60 px, so it never covers the pill's last row.
+    const band = new ResizeObserver(([e]) => el.style.setProperty('--chrome-height', `${Math.ceil(e!.borderBoxSize[0]!.blockSize)}px`))
+    if (chrome.current) band.observe(chrome.current)
     return () => {
       observer.disconnect()
       docked.disconnect()
+      band.disconnect()
     }
   }, [])
 
@@ -284,7 +290,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   return (
     <div className="thread-view" ref={root} data-details-aside={!wide && detailsOpen ? '' : undefined}>
       <div className="conversation">
-        <div className="top-chrome">
+        <div className="top-chrome" ref={chrome}>
           <TopFade />
           <div className="top-chrome-row">
             <Spacer />

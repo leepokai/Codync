@@ -443,7 +443,9 @@
    message is the point of the aside; the box has to stay whole. */
 .details-aside {
   position: absolute;
-  top: 60px;
+  /* The title band is 60 px without a subtitle and grows with one; `--chrome-height` is that
+     measured band, so the aside never covers the pill's last row. 60 px is the no-subtitle case. */
+  top: var(--chrome-height, 60px);
   right: 0;
   bottom: var(--composer-height, 0);
   z-index: 7;

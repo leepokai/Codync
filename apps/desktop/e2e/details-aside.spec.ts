@@ -74,7 +74,11 @@ test('the compact details sit beside the chat and close from the message box or 
     expect(await page.locator('.thread-view').evaluate((el) => el.closest('[inert]') === null)).toBe(true)
     const box = (await aside.boundingBox())!
     const composer = (await page.locator('.composer').boundingBox())!
-    expect(box.y).toBeGreaterThanOrEqual(59)
+    // The title band is 60 px only until the pill carries a connection subtitle: it grows then, and
+    // the aside starts under the band's own bottom, not under the old fixed 60 px, or it covers the
+    // pill's last row (3 px at the default size, 14 px at the largest).
+    const band = (await page.locator('.top-chrome').boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(band.y + band.height - 0.5)
     expect(box.y + box.height).toBeLessThanOrEqual(composer.y + 1)
 
     // Typing a reply keeps the details open; Escape closes them and leaves the draft.

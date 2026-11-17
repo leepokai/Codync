@@ -1,5 +1,5 @@
 use super::*;
-use crate::usage::{Provider, Window};
+use crate::usage::{LoginReading, Provider, Window};
 
 fn hub() -> std::sync::Arc<Hub> {
     let dir = std::env::temp_dir().join(format!("codync-goal-{}", uuid::Uuid::new_v4()));
@@ -60,7 +60,7 @@ fn corrupt_control_state_never_reports_a_successful_stop_or_starts_work() {
     let hub = hub();
     hub.store.kv_set(&key("b"), "not valid goal JSON").unwrap();
     assert!(stop(&hub, "b").is_err());
-    assert!(begin(&hub, &cfg("b", "custom"), "old-goal", "custom").is_err());
+    assert!(begin(&hub, &cfg("b", "custom"), "old-goal").is_err());
     assert_eq!(hub.store.kv_read(&key("b")).unwrap().as_deref(), Some("not valid goal JSON"));
 }
 
@@ -69,11 +69,11 @@ fn stopping_and_replacing_invalidates_queued_steps() {
     let hub = hub();
     let old = seed(&hub);
     let newer = seed(&hub);
-    assert!(begin(&hub, &cfg("b", "custom"), &old.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &old.id).unwrap().is_none());
     finish(&hub, "b", Some(&old.id), Stopped::Done);
     assert_eq!(get(&hub, "b").unwrap(), newer);
     user_spoke(&hub, "b").unwrap();
-    assert!(begin(&hub, &cfg("b", "custom"), &newer.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &newer.id).unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::User));
 }
 
@@ -81,14 +81,14 @@ fn stopping_and_replacing_invalidates_queued_steps() {
 fn turn_and_time_limits_prevent_another_step() {
     let hub = hub();
     let goal = seed(&hub);
-    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_some());
-    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_some());
-    assert!(begin(&hub, &cfg("b", "custom"), &goal.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id).unwrap().is_some());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id).unwrap().is_some());
+    assert!(begin(&hub, &cfg("b", "custom"), &goal.id).unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::Limit));
     let mut expired = seed(&hub);
     expired.started_at -= 61_000;
     save(&hub, "b", &expired).unwrap();
-    assert!(begin(&hub, &cfg("b", "custom"), &expired.id, "custom").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "custom"), &expired.id).unwrap().is_none());
 }
 
 #[test]
@@ -112,6 +112,49 @@ fn plan_usage_reserves_headroom() {
             text: None,
         }],
     });
-    assert!(begin(&hub, &cfg("b", "claude"), &goal.id, "claude").unwrap().is_none());
+    assert!(begin(&hub, &cfg("b", "claude"), &goal.id).unwrap().is_none());
     assert_eq!(get(&hub, "b").unwrap().stopped, Some(Stopped::Usage));
+}
+
+#[test]
+fn a_goal_checks_the_login_profile_it_will_run_on() {
+    let hub = hub();
+    crate::agent::login_profiles::tests::insert(&hub.store, &[("work", "claude")]);
+    let goal = seed(&hub);
+    let window = |percent| Window {
+        id: "week".into(),
+        label: "Week".into(),
+        percent,
+        resets_at: None,
+        resets_text: None,
+        text: None,
+    };
+    hub.usage.locked().providers.push(Provider {
+        id: "claude",
+        name: "Claude",
+        registry: None,
+        source: "agent",
+        updated_at: now_ms(),
+        default_login_profile: Some("Default".into()),
+        login_profiles: vec![LoginReading {
+            id: "work".into(),
+            name: "Work".into(),
+            windows: vec![window(10.0)],
+            updated_at: now_ms(),
+        }],
+        windows: vec![window(90.0)],
+    });
+    let base: BotConfig = serde_json::from_value(json!({
+        "id": "b",
+        "name": "B",
+        "backend": "custom",
+        "fallbacks": [{"backend": "claude", "loginProfile": "work"}]
+    }))
+    .unwrap();
+    let agent = crate::agent::fallback::effective(&base, 1);
+    assert_eq!(agent.login_profile.as_deref(), Some("work"));
+    assert!(
+        begin(&hub, &agent, &goal.id).unwrap().is_some(),
+        "the selected fallback's login has headroom even though the default login doesn't"
+    );
 }

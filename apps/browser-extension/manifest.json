@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Codync Browser",
+  "version": "0.1.0",
+  "description": "Lets a Codync bot operate a dedicated tab on this computer and return screenshots to the same chat.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxllhVhH6PZtsKAVmr4odGyaLwcNk++AzJFiGCRgtAS23+Pbey8DjGyThCbjaFNuBg9trmhKpDpXlAqj/RTP4IpAvGE6CO7jsKCddsOw2mx+sSsTHVq1WIUKmHVakjilYlD9N6A0RGnxLVQMlGSudv0Zd0I8/fTWVRg+0eOKwtKMSEv9zYZ7AgwkQ/Tq2i64Ev7UZg+I0J7Wn3U4yHWRdTzvW40Si0tBHIaZ4g72o6SuWf650KBX8NS+54n81xI2IKbIkzy69Vd2G08JScjnz3lwrWUWUEo919NimA+fXbNGvsT7dMF65ImicW/hvmMJNc9U6fi0L1myKV0vkMaSnPwIDAQAB",
+  "permissions": [
+    "debugger",
+    "nativeMessaging",
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Codync Browser",
+    "default_popup": "popup.html"
+  },
+  "minimum_chrome_version": "120"
+}

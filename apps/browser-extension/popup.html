@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codync Browser</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="mark" aria-hidden="true">C</span>
+        <div>
+          <h1>Codync Browser</h1>
+          <p>Dedicated tabs for your Codync bots.</p>
+        </div>
+      </header>
+      <section class="status">
+        <span id="dot" class="dot" aria-hidden="true"></span>
+        <div>
+          <strong id="title">Checking connection…</strong>
+          <p id="detail">Looking for Codync on this computer.</p>
+        </div>
+      </section>
+      <dl>
+        <div><dt>Extension</dt><dd id="version">—</dd></div>
+        <div><dt>Open tabs</dt><dd id="sessions">—</dd></div>
+      </dl>
+      <p class="note">The extension can use Chrome's debugging permission only on the dedicated tabs Codync creates. Stop a bot in the browser to close its tab.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

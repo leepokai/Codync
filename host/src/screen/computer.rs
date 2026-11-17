@@ -4,7 +4,7 @@
 
 #[cfg(target_os = "linux")]
 use super::helper_tools;
-use super::{AGENT_HOLD, Screen, cua};
+use super::{AGENT_HOLD, Screen, browser, cua};
 use crate::LockExt;
 use crate::hub::Hub;
 use anyhow::{Result, anyhow, bail};
@@ -69,6 +69,9 @@ pub async fn computer_tools(hub: &Arc<Hub>) -> Value {
     if cfg!(not(windows)) {
         tools.push(type_login_tool());
     }
+    if cfg!(windows) {
+        tools.extend(browser::tools());
+    }
     json!({"tools": tools})
 }
 
@@ -82,9 +85,15 @@ pub async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Res
     if !screen.computer_use() {
         bail!("Remote screen is turned off on this computer. Turn it on in Codync's menu there.");
     }
+    if cfg!(windows) && name == browser::STOP {
+        let result = screen.browser(hub, bot, name, args).await?;
+        return Ok(json!({"content": [{"type": "text", "text": result.to_string()}]}));
+    }
     let backend = backend();
+    let is_browser = cfg!(windows) && browser::offered(name);
     let read_only = match backend {
         _ if name == TYPE_LOGIN => false,
+        _ if is_browser => false,
         Backend::Driver if !cua::offered(name) => bail!("unknown computer tool `{name}`"),
         Backend::Driver => cua::read_only(name),
         #[cfg(target_os = "linux")]
@@ -106,6 +115,10 @@ pub async fn computer(hub: &Arc<Hub>, bot: &str, name: &str, args: Value) -> Res
     }
     if name == TYPE_LOGIN {
         return type_login(hub, bot, backend, args).await;
+    }
+    if is_browser {
+        let result = screen.browser(hub, bot, name, args).await?;
+        return Ok(json!({"content": [{"type": "text", "text": result.to_string()}]}));
     }
     match backend {
         Backend::Driver => cua::call(screen, bot, name, args).await,

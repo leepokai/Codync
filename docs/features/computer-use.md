@@ -46,6 +46,37 @@ Descriptions come from the running driver, so they match the platform; when it c
 
 `type_login {login, field, pid?}`: Codync Screen reads the focused control of that app (`focusedField`: app, page URL, secure field), the host checks it against the login, then types through the driver into that app in the background (macOS) or into the checked active window (Linux). The driver's reply is not passed on.
 
+## Browser extension
+
+On Windows, the same `computer` server offers `browser_start`, `browser_navigate`, `browser_click`,
+`browser_type`, `browser_screenshot` and `browser_stop`. Its Codync Browser extension creates one
+dedicated foreground tab in a separate Codync profile for the user message, uses Chrome's real mouse
+and keyboard input paths, and publishes screenshots through the chat's existing file card. A missing
+extension is an explicit error; the host never opens another browser, profile or computer as a
+fallback.
+
+The installer bundles the unpacked extension under Codync's `resources/browser-extension` directory
+and registers `codync.browser` (`codync.browser.dev` for Codync Dev) with Chrome and Edge. The two
+environments use different manifests, registry keys, profiles and host names, so neither install or
+uninstall overwrites the other. In the browser, open `chrome://extensions` (or
+`edge://extensions`), enable Developer mode, choose **Load unpacked**, and select that directory
+once. The fixed manifest key gives the extension ID `dgejialhpalhoigbkmgeabgpphlipiek`. Its first
+connection opens the dedicated Codync profile with the packaged extension and refuses the ordinary
+profile. The Codync Browser popup should say **Connected to Codync** while the matching host runs.
+Uninstalling Codync removes the native-messaging registration; removing the extension in the
+browser removes its local tab bindings and stored status.
+
+The extension asks for `debugger`, `nativeMessaging`, `storage` and `tabs`, with no web-origin host
+permission. Every operation carries the exact host, bot, user message, tab and generation. Existing
+tabs are never selected implicitly. Clicks and text insertion run once; a timeout, disconnected
+bridge or stale target is reported without a retry or fallback.
+
+The phone apps need no separate browser screen: a chat message sent from an iPhone or Android
+device over the encrypted channel reaches the fixed computer selected for that chat, and the
+existing working-step and shared-file rows show its progress and screenshot in the same chat. The
+iPhone and Android clients both present shared PNG files with the same image preview and download
+path as any other file card.
+
 ## Packaging
 
 `packaging/cua-driver/driver.json` pins the release and the SHA-256 of each archive; `fetch.mjs <target> <dir>` downloads, checks and copies the executables with `cua-driver.LICENSE`:

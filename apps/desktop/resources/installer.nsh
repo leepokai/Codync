@@ -13,6 +13,14 @@
     ; PowerShell to edit files is what antivirus heuristics flag. Fix it in the app if it matters.
     codyncAnalyticsChosen:
   ${endIf}
+
+  ; Chrome and Edge load the bundled extension through this per-user native-messaging host.
+  ; The helper serializes the Windows path as JSON and reads the normal loopback token itself,
+  ; so NSIS never assembles JSON by hand and extension JavaScript never receives the token.
+  ExecWait '"$INSTDIR\resources\codync-browser-native-host.exe" --install-native-messaging' $0
+  ${If} $0 != 0
+    Abort "Codync could not register its browser extension bridge (exit $0)."
+  ${EndIf}
 !macroend
 
 ; Removing Codync takes its background host with it (the sign-in entry and the running host).
@@ -20,5 +28,6 @@
 !macro customUnInstall
   ${ifNot} ${isUpdated}
     ExecWait '"$INSTDIR\resources\codync-host.exe" uninstall'
+    ExecWait '"$INSTDIR\resources\codync-browser-native-host.exe" --uninstall-native-messaging'
   ${endIf}
 !macroend

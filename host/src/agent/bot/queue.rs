@@ -215,6 +215,7 @@ impl Actor {
             return;
         }
         self.stop_requested = true;
+        self.hub.screen.cancel_browsers(&self.cfg.id).await;
         self.expire_decisions(crate::chat::decision::Expiry::Stopped);
         self.cancel_deadline.get_or_insert_with(|| Instant::now() + CANCEL_GRACE);
         self.files.cancel();

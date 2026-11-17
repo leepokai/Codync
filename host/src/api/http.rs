@@ -32,6 +32,7 @@ pub fn router(hub: Arc<Hub>) -> Router {
         .route("/term/{id}", get(term_stream))
         .route("/ingest/statusline", post(statusline))
         .route("/channel", get(channel))
+        .route("/browser-extension", get(browser_extension))
         .route("/oauth/callback", get(oauth_callback))
         .with_state(hub)
 }
@@ -212,6 +213,24 @@ async fn channel(
     }
     ws.max_message_size(crate::remote::channel::MAX_WS_MESSAGE)
         .on_upgrade(move |socket| crate::remote::channel::serve_direct(hub, socket, peer.ip()))
+}
+
+/// The native-messaging helper carries this authenticated loopback WebSocket for the browser
+/// extension. The helper reads the user's normal `~/.codync/token`; the extension never sees it.
+async fn browser_extension(
+    State(hub): State<Arc<Hub>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !authorized(&hub, &headers, peer) {
+        return unauthorized().into_response();
+    }
+    ws.max_message_size(32 * 1024 * 1024).on_upgrade(move |socket| async move {
+        if let Err(error) = hub.screen.serve_browser_extension(&hub, socket).await {
+            tracing::debug!(%error, "browser extension bridge closed");
+        }
+    })
 }
 
 async fn term_stream(

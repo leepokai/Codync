@@ -45,6 +45,14 @@ act on a control by its element_token, then look again. Use pixel coordinates on
 Never type a password yourself: use type_login with a saved login (request_login asks the user for one). \
 Don't approve payments: ask the user to do that from their phone.";
 
+#[cfg(windows)]
+const BROWSER_INSTRUCTIONS: &str = "For a web page, prefer the browser tools: browser_start binds one dedicated tab \
+to the user's message; then use browser_navigate, browser_click and browser_type with that exact binding. \
+browser_screenshot posts the picture to the same chat.";
+
+#[cfg(not(windows))]
+const BROWSER_INSTRUCTIONS: &str = "";
+
 /// Serves MCP on stdio until the agent closes it.
 pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
     let token = std::fs::read_to_string(crate::service::data_dir().join("token")).unwrap_or_default();
@@ -68,7 +76,15 @@ pub async fn serve(bot: String, port: u16, server: Server) -> Result<()> {
             ("codync-connectors", crate::market::requests::INSTRUCTIONS.to_owned(), crate::market::requests::tools())
         }
         // Listed by the host: they depend on this computer's driver.
-        Server::Computer => ("codync-computer", INSTRUCTIONS.to_owned(), Value::Null),
+        Server::Computer => (
+            "codync-computer",
+            [INSTRUCTIONS, BROWSER_INSTRUCTIONS]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" "),
+            Value::Null,
+        ),
         Server::Routines => ("codync-routines", crate::routines::INSTRUCTIONS.to_owned(), crate::routines::tools()),
         Server::Chat => ("codync-chat", crate::chat::outbox::instructions(), chat_tools()),
         Server::Team => ("codync-team", crate::chat::team::INSTRUCTIONS.to_owned(), crate::chat::team::tools()),

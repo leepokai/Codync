@@ -84,7 +84,10 @@ def build(name, frames, size, out):
     cmap.update({ord(str(i)): DIGITS[i] for i in range(10)})
     fb.setupCharacterMap(cmap)
     fb.setupGlyf(glyphs)
-    metrics = {g: (EM if g in DIGITS else 0, 0) for g in order}
+    # Text places a glyph by its left side bearing, not by its own coordinates: it has to be the
+    # glyph's xMin, or every frame slides left by its leftmost dot and the stacked layers drift apart.
+    glyf = fb.font["glyf"]
+    metrics = {g: (EM if g in DIGITS else 0, getattr(glyf[g], "xMin", 0)) for g in order}
     fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=EM, descent=0)
     fb.setupOS2(sTypoAscender=EM, sTypoDescender=0, sTypoLineGap=0, usWinAscent=EM, usWinDescent=0)

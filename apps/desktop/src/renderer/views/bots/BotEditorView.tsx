@@ -8,7 +8,7 @@ import { CharacterAvatar } from '../../components/Avatar'
 import { CardSection, DropdownMenu, IconButton, Pill, Spinner, Stepper, ValueRow } from '../../components/Controls'
 import { Icon } from '../../components/Icon'
 import { ModalHeader, Sheet, SheetPage, useDismiss } from '../../components/Overlay'
-import { HStack } from '../../components/Stack'
+import { HStack, VStack } from '../../components/Stack'
 import { Text } from '../../components/Text'
 import { controlReady } from '../../lib/screen-state'
 import { useStore } from '../../store/context'
@@ -24,6 +24,7 @@ import { SkillSheet, type SkillRef } from '../marketplace/SkillSheet'
 import { AnchoredPanel, AutoTextArea, AvatarPicker, Field, SwitchRow } from './parts'
 import { NetworkSwitches } from './NetworkSwitches'
 import { FolderPicker } from './FolderPicker'
+import { GitStateLine } from './GitStateLine'
 import './bots.css'
 import { useTr } from '../../lib/use-language'
 import { CustomIconEditor } from './CustomIconEditor'
@@ -124,9 +125,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const [viewingSkill, setViewingSkill] = useState<SkillRef | null>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const set = <K extends keyof BotDraft>(key: K, value: BotDraft[K]) => onChange((d) => ({ ...d, [key]: value }))
-  // Options belong to one model.
-  const setModel = useCallback((model: string | null) => onChange((d) => (d.model === model ? d : { ...d, model, modelOptions: {} })), [onChange])
-  const setModelOptions = useCallback((modelOptions: Record<string, string>) => onChange((d) => ({ ...d, modelOptions })), [onChange])
+  const setModel = useCallback((model: string | null, modelOptions: Record<string, string>) => onChange((d) => ({ ...d, model, modelOptions })), [onChange])
   const models = useAgentModels(draft.backend)
   const saved = draft.id ? (store.bots.get(draft.id) ?? null) : null
 
@@ -143,7 +142,7 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
   const ownRest = saved ? restOf(saved, draft, Date.now()) : null
   const agent = (
     <AgentModelPicker key="agent" backend={draft.backend} models={models} selection={draft.model}
-      onChange={setModel} options={draft.modelOptions ?? {}} onOptionsChange={setModelOptions}
+      onChange={setModel} options={draft.modelOptions ?? {}}
       agents={[...backends.map(agentChoice), { id: 'custom', label: 'Custom command', leading: <AgentIcon registry="custom" size={14} /> }]}
       onAgentChange={(id) => onChange((d) => withBackend(d, id))} fast={draft.fastMode ?? false}
       fastControl={((draft.backend !== 'custom' && models.catalog?.fastMode) || draft.fastMode || (saved?.backend === draft.backend && fastModeShown(saved))) ?
@@ -205,27 +204,31 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
           <ValueRow label="Computer">
             <Text truncate>{store.hostName}</Text>
           </ValueRow>
-          <ValueRow
-            label="Workspace"
-            detail={
-              draft.cwd
-                ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
-                : 'This bot has its own space for files. It can work in other folders when you ask.'
-            }
-          >
-            <DropdownMenu
-              title={draft.cwd || tr('A persistent workspace allocated for this bot')}
-              items={() => [
-                { title: 'Personal workspace', selected: !draft.cwd, action: () => set('cwd', '') },
-                { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
-              ]}
+          <VStack gap={6}>
+            <ValueRow
+              label="Workspace"
+              detail={
+                draft.cwd
+                  ? 'This project is the default starting folder. The bot can work elsewhere when you ask.'
+                  : 'This bot has its own space for files. It can work in other folders when you ask.'
+              }
             >
-              <Pill outlined className="workspace-pill">
-                <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr(`Personal`)}</Text>
-                <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
-              </Pill>
-            </DropdownMenu>
-          </ValueRow>
+              <DropdownMenu
+                title={draft.cwd || tr('A persistent workspace allocated for this bot')}
+                items={() => [
+                  { title: 'Own folder', selected: !draft.cwd, action: () => set('cwd', '') },
+                  { title: 'Choose project folder…', selected: !!draft.cwd, action: () => setPickingFolder(true) },
+                ]}
+              >
+                <Pill outlined className="workspace-pill">
+                  <Text truncate className="workspace-pill-label">{draft.cwd ? lastPathComponent(draft.cwd) : tr('Own folder')}</Text>
+                  <Icon name="chevron.down" size={10} weight="semibold" color="var(--secondary)" />
+                </Pill>
+              </DropdownMenu>
+            </ValueRow>
+            {/* Of the saved folder, from a host that says (one with worktrees). */}
+            {saved && saved.taskWorktrees !== null ? <GitStateLine bot={saved} /> : null}
+          </VStack>
           <ApprovalRow draft={draft} catalog={models.catalog} onChange={onChange} />
           {/* Only from a host that has the box (its bots say). */}
           {saved && saved.maxAgents !== null ? (
@@ -233,8 +236,9 @@ function BotSettingsForm({ draft, onChange, error, plugins, inspector = false }:
               <Stepper label="Agents at once" value={draft.maxAgents ?? saved.maxAgents} min={1} max={MAX_AGENTS} onChange={(count) => set('maxAgents', count)} />
             </ValueRow>
           ) : null}
-          {/* Only where it matters (the bot's folder is in a git repository), from a host that has it. */}
-          {saved?.gitRepo && saved.taskWorktrees !== null ? (
+          {/* Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in
+              one place), from a host that has it. */}
+          {saved?.gitRepo && !saved.managedWorkspace && saved.taskWorktrees !== null ? (
             <SwitchRow
               title="Worktree per agent"
               detail="Agents that work at once in this repository each get their own branch."

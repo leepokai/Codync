@@ -78,6 +78,10 @@ impl Actor {
         match u["sessionUpdate"].as_str().unwrap_or_default() {
             "agent_message_chunk" => {
                 let t = acp::content_text(&u["content"]);
+                if let Some(error) = super::pi_tools::turn_error_text(&self.cfg.backend, u, &t) {
+                    self.agent_error = Some(error.to_owned());
+                    return;
+                }
                 self.append(SegKind::Text, &t);
                 self.set_activity("Writing a reply…");
             }
@@ -238,14 +242,11 @@ impl Actor {
     /// An entry the user must see or act on, in the running turn: in its lane, or, from a task, where the user is,
     /// its bot's chat, named by the item it works on.
     pub(super) fn add_for_user(&self, kind: EntryKind, mut data: Value) -> Option<Entry> {
-        let Some(bot) = self.cfg.task_of.clone() else { return self.add(kind, self.turn.unwrap_or(0), data) };
-        // To the user it is the bot's; an answer finds this actor by the task (`tasks::card_actor`).
-        data["author"] = bot.clone().into();
-        // The item it works on: what the user knows it by.
-        let (item, title) = crate::chat::tasks::card_item(&self.hub.store, &self.cfg).unzip();
-        data["task"] = json!({"id": self.cfg.id, "title": title.unwrap_or_default()});
-        data["item"] = item.into();
-        self.hub.add_entry(&Lane::main(&bot), kind, self.hub.store.max_turn(&bot), &data)
+        let Some(mark) = crate::chat::tasks::mark(&self.hub.store, &self.cfg) else {
+            return self.add(kind, self.turn.unwrap_or(0), data);
+        };
+        mark.apply(&mut data);
+        self.hub.add_entry(&Lane::main(&mark.bot), kind, self.hub.store.max_turn(&mark.bot), &data)
     }
 
     /// The chat `entry` is in, for an alert that opens it: the group, for a room turn; its bot's chat, for a task.

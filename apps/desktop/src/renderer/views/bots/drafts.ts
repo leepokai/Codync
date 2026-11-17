@@ -29,7 +29,7 @@ export interface Plugins {
 
 const pick = <T>(list: T[]) => list[Math.floor(Math.random() * list.length)]!
 
-/** A fresh draft: a random look, Claude, a personal workspace, the agent's Auto mode asking about the rest. */
+/** A fresh draft: a random look, Claude, its own folder, the agent's Auto mode asking about the rest. */
 export function newDraft(): BotDraft {
   return { name: '', description: '', avatarColor: pick(AVATAR_COLORS).id, avatarShape: pick(AVATAR_SHAPES), backend: 'claude', cwd: '', permission: 'ask', mode: AUTO_MODE }
 }
@@ -42,7 +42,7 @@ export const normalized = (d: BotDraft): BotDraft => (d.backend === 'custom' ? d
 
 /**
  * Picks an installed agent we know (a registry agent nobody chose is never the default);
- * empty cwd requests a personal workspace from the host. Connectors and skills stay unset:
+ * empty cwd requests the bot's own folder from the host. Connectors and skills stay unset:
  * the host turns on every one it can run.
  */
 export function fillDefaults(store: BotStore, draft: BotDraft): BotDraft {

@@ -102,6 +102,43 @@ test('once the agent tells its window, Set a size lists sizes by 100K and takes 
   }
 })
 
+test('a zero context reading before the real one is no summary, a real fall still is', async () => {
+  const { browser, page } = await attach()
+  const name = `Zero usage e2e ${Date.now()}`
+  const notice = page.getByText('Earlier context was summarized to make room.')
+  type Entry = { data: { text?: string; final?: boolean; compaction?: unknown } }
+  const entries = async (botId: string) => (await api<{ entries: Entry[] }>(page, 'history', { botId, limit: 100 })).entries
+  let botId: string | undefined
+  try {
+    // An agent that never reports compactions itself, so Codync reads one from a fall in its context use.
+    const command = `python3 -X utf8 -u '${agent}' silent`
+    botId = (await api<{ bot: Bot }>(page, 'createBot', { name, backend: 'custom', command, connectors: [], skills: [], notify: false })).bot.id
+    await page.locator('.roster-row', { hasText: name }).click()
+    let replies = 0
+    const send = async (text: string) => {
+      await api(page, 'send', { botId, text })
+      replies += 1
+      await expect.poll(async () => (await entries(botId!)).filter((e) => e.data.final && e.data.text === 'ok').length,
+        { timeout: 20_000 }).toBe(replies)
+    }
+    // Issue #496: a gateway's stream opens with `used: 0`, then settles on the real, growing figure.
+    for (const used of [26_228, 27_466, 27_885, 32_537]) {
+      await send('USAGE 0')
+      await send(`USAGE ${used}`)
+    }
+    expect((await entries(botId)).filter((e) => e.data.compaction).length).toBe(0)
+    await expect(notice).toHaveCount(0)
+
+    // A real fall by more than half still counts; its notice stays out of the chat like every compaction line.
+    await send('USAGE 9000')
+    await expect.poll(async () => (await entries(botId!)).filter((e) => e.data.compaction).length).toBe(1)
+    await expect(notice).toHaveCount(0)
+  } finally {
+    if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
+    await browser.close()
+  }
+})
+
 test('a bot on an agent Codync does not summarize for has no Summarize long chats row', async () => {
   const { browser, page } = await attach()
   const name = `Summarize gemini e2e ${Date.now()}`

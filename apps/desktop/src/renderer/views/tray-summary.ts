@@ -72,7 +72,7 @@ function avatarIcon(bot: Bot) {
 
 /** A bot's line under its name in the tray menu and the notch island, in its roster row's order (`summaryLine`);
  * with nothing to say, where it works. */
-export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot)
+export const botDetail = (bot: Bot) => summaryLine(bot, tr) ?? folderName(bot, tr)
 
 /** One usage limit's bar in the provider's color: amber from 70%, red from 90%. */
 function barIcon(providerId: string, window: UsageWindow) {
@@ -165,11 +165,12 @@ function usageAgent(p: UsageProvider, iconStyle: 'character' | 'original'): Tray
   }
 }
 
-/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. */
+/** Every computer with usage limits to show, in the app's order; unnamed while the app has one computer. One that isn't
+ * connected (offline, or a cloud computer let go to sleep while the window is away) is left out: its readings are old. */
 function usageComputers(app: AppModel, iconStyle: 'character' | 'original'): TrayUsageComputer[] {
   return app.computers
     .flatMap((c) => app.store(c.id) ?? [])
-    .filter((store) => store.usage.providers.length > 0)
+    .filter((store) => store.connection.kind === 'online' && store.usage.providers.length > 0)
     .map((store) => ({
       name: app.computers.length > 1 ? store.computer.name : null,
       symbol: computerSymbol(store.computer.device),

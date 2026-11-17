@@ -24,6 +24,7 @@ test("a bot's Skills section lists names only; the info button shows the descrip
   } finally {
     if (botId) await api(page, 'deleteBot', { botId }).catch(() => {})
     if (skillId) await api(page, 'removeSkill', { id: skillId }).catch(() => {})
+    await page.reload().catch(() => {}) // Closes the skill's details and Edit Profile, which would cover the next spec.
     await browser.close()
   }
 })

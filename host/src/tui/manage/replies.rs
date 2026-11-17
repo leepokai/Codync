@@ -62,6 +62,7 @@ impl App {
                 self.call_entries.insert(call, entries_of(&v));
             }
             Reply::TaskEntries(task) => self.task_fetched(&task, Ok(&v)),
+            Reply::ThreadSent(item) => self.thread_sent(&item, Ok(())),
             Reply::DevServerLogs(id) => {
                 let text = v["text"].as_str().unwrap_or_default().to_owned();
                 self.dev_server_logs(&id, Ok(text));
@@ -327,6 +328,7 @@ impl App {
                 self.flash(&e);
             }
             Reply::TaskEntries(task) => self.task_fetched(task, Err(e)),
+            Reply::ThreadSent(item) => self.thread_sent(item, Err(e)),
             Reply::DevServerLogs(id) => self.dev_server_logs(id, Err(e)),
             Reply::BotChat { bot, peer } => {
                 for o in &mut self.overlays {

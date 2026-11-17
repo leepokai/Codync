@@ -150,6 +150,15 @@ fn fuzzy_is_a_subsequence_match() {
     assert!(fuzzy("web", &["Rex", "~/mycode/web"]));
 }
 
+#[test]
+fn a_path_starts_at_home_only_inside_the_home_folder() {
+    assert_eq!(tilde("/Users/me/code", "/Users/me"), "~/code");
+    assert_eq!(tilde("/Users/me", "/Users/me/"), "~");
+    assert_eq!(tilde(r"C:\Users\me\code", r"C:\Users\me"), r"~\code");
+    assert_eq!(tilde("/Users/me2/x", "/Users/me"), "/Users/me2/x", "another folder that only starts the same");
+    assert_eq!(tilde("/srv/app", ""), "/srv/app");
+}
+
 #[tokio::test]
 async fn the_chat_on_screen_is_marked_read() {
     let mut app = test_app();

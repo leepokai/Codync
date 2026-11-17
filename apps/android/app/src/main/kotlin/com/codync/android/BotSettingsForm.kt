@@ -22,6 +22,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codync.android.core.Bot
 import com.codync.android.core.BotDraft
+import com.codync.android.core.GitState
+import com.codync.android.core.gitState
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.codync.android.core.LinkState
 import com.codync.android.core.MAX_AGENTS
 import com.codync.android.core.login
@@ -160,33 +165,47 @@ private fun CardRows.agentRows(state: AppState, store: AppStore, draft: BotDraft
 private fun CardRows.placeRows(state: AppState, store: AppStore, draft: BotDraft, change: (BotDraft) -> Unit, modelReload: Int,
     chooseFolder: () -> Unit) {
     row {
-        ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
-            else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
-            DropdownMenu({ listOf(
-                MenuItem("Personal workspace", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
-                MenuItem("Choose project folder…", selected = draft.cwd.isNotEmpty(), action = chooseFolder),
-            ) }, label = "Workspace") {
-                Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(if (draft.cwd.isEmpty()) tr("Personal") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
-                        style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
+        Column {
+            ValueRow("Workspace", detail = if (draft.cwd.isEmpty()) "This bot has its own space for files. It can work in other folders when you ask."
+                else "This project is the default starting folder. The bot can work elsewhere when you ask.") {
+                DropdownMenu({ listOf(
+                    MenuItem("Own folder", selected = draft.cwd.isEmpty()) { change(draft.copy(cwd = "")) },
+                    MenuItem("Choose project folder…", selected = draft.cwd.isNotEmpty(), action = chooseFolder),
+                ) }, label = "Workspace") {
+                    Row(Modifier.outline().pill(androidx.compose.ui.graphics.Color.Transparent), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (draft.cwd.isEmpty()) tr("Own folder") else draft.cwd.trimEnd('/').substringAfterLast('/').ifEmpty { "/" },
+                            style = Type.body, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Symbol("chevron.down", size = 13.dp, tint = Palette.secondary)
+                    }
                 }
             }
+            // The folder as the computer has it saved: a new bot has none yet, and an older host doesn't say.
+            state.bots.firstOrNull { it.id == draft.id }?.let(::gitState)?.let { GitLine(it) }
         }
     }
     // Only from a host that has the box (its bots say).
     draft.maxAgents?.let { count ->
         row { ValueRow("Agents at once") { Stepper(count, 1..MAX_AGENTS, { change(draft.copy(maxAgents = it)) }) } }
     }
-    // Only where it matters (the bot's folder is in a git repository) and the host has it.
-    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.gitRepo == true }?.let { on ->
+    // Only where it matters (a project folder in a git repository: a bot's own folder keeps all its work in one
+    // place) and the host has it.
+    draft.taskWorktrees?.takeIf { state.bots.firstOrNull { it.id == draft.id }?.let { it.gitRepo && !it.managedWorkspace } == true }?.let { on ->
         row {
             SwitchRow("Worktree per agent", "Agents that work at once in this repository each get their own branch.", on,
                 { change(draft.copy(taskWorktrees = it)) })
         }
     }
     row { ApprovalRow(state, store::agentModels, draft, change, modelReload) }
+}
+
+/** Under the folder: whether it is a git repository, and the manual's page on what agents working at once do with and without git. */
+@Composable private fun GitLine(git: GitState) {
+    val uri = LocalUriHandler.current
+    Row(Modifier.semantics { testTagsAsResourceId = true }.testTag("git-state"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(tr(git.title), Modifier.weight(1f, fill = false), style = Type.caption, color = Palette.secondary)
+        IconButton("About working folders and git", "info.circle") { uri.open("https://codync.dev/docs/working-folders", OutboundLink.Docs) }
+    }
 }
 
 private fun CardRows.notifyRow(draft: BotDraft, change: (BotDraft) -> Unit) =

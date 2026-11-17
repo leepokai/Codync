@@ -4,12 +4,13 @@ import type { AddressInfo } from 'node:net'
 import { api, attach, openVoiceSettings, pick } from './sandbox.ts'
 
 const prefs = ['callEngine', 'callMode.openai', 'callMode.gemini', 'callServer.openai']
-type Status = { providers: { provider: string; server?: string }[] }
-const server = async (page: Page) => (await api<Status>(page, 'voiceStatus', {})).providers.find((p) => p.provider === 'openai')?.server
+type Status = { providers: { provider: string; configured: boolean; server?: string }[] }
+const openai = async (page: Page) => (await api<Status>(page, 'voiceStatus', {})).providers.find((p) => p.provider === 'openai')
+const server = async (page: Page) => (await openai(page))?.server
 
 // The OpenAI engine's Server row (docs/features/voice-call.md): an address saved on the computer shows on the row,
 // leaves Speech as the only mode for that engine alone, and clearing it goes back to OpenAI and the mode picked
-// before. A refused address keeps the saved one.
+// before, without the key saved with the server. A refused address keeps the saved one.
 test("the OpenAI engine's Server row saves an address on the computer, and Speech is then the only mode", async () => {
   const { browser, page } = await attach()
   const saved = await page.evaluate((keys) => keys.map((k) => localStorage.getItem(k)), prefs)
@@ -51,17 +52,22 @@ test("the OpenAI engine's Server row saves an address on the computer, and Speec
     await expect(page.getByText('Your own server works in Speech mode only.')).toBeVisible()
     expect(await page.evaluate(() => ['callMode.openai', 'callMode.gemini'].map((k) => localStorage.getItem(k)))).toEqual(['"realtime"', '"realtime"'])
 
-    // Kept on the computer: a reload shows it again.
+    // Kept on the computer: a reload shows it again, with a key the server took.
+    await api(page, 'setVoiceKey', { provider: 'openai', key: 'local-key' })
     await page.reload()
     await openVoiceSettings(page)
     await expect(page.getByRole('textbox', { name: 'Server' })).toHaveValue(address)
+    await expect(page.getByText('Key saved', { exact: true })).toBeVisible()
 
+    // Cleared: back to OpenAI, and that key goes with the server, so it never reaches OpenAI.
     await page.getByRole('textbox', { name: 'Server' }).fill('')
     await page.getByRole('textbox', { name: 'Server' }).press('Enter')
     await expect(page.locator('.choice-picker[title="Realtime"]')).toBeVisible()
-    expect(await server(page)).toBe('')
+    await expect(page.getByText('Key saved', { exact: true })).toHaveCount(0)
+    expect(await openai(page)).toMatchObject({ server: '', configured: false })
   } finally {
     await api(page, 'setVoiceServer', { provider: 'openai', url: '' })
+    await api(page, 'setVoiceKey', { provider: 'openai', key: '' })
     await page.evaluate(([keys, values]) => keys.forEach((k, i) => {
       if (values[i] === null) localStorage.removeItem(k)
       else localStorage.setItem(k, values[i]!)

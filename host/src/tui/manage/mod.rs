@@ -87,6 +87,9 @@ pub enum Reply {
     CallEntries(String),
     /// A task's transcript (`taskEntries`), by task id.
     TaskEntries(String),
+    /// `send` to an item's thread (the item's id; its task may change meanwhile): its draft leaves the composer once
+    /// the host has the message.
+    ThreadSent(String),
     /// A registry page: the search it lists and the cursor it was asked at (`None`: the first page).
     Registry {
         search: String,

@@ -1,0 +1,32 @@
+# The thinking orbs: a working bot's row, a needs-you row (amber) and the chat's working indicator. Both phones, already
+# paired to the isolated dev host, in English. Maestro can't read the orbs' dots: the screenshots, two per screen, show
+# the halftone discs and whether they move; run it again with Reduce Motion (iPhone) or Remove animations (Android) on
+# to see them hold their still pose.
+# Env: HOST_PORT, HOST_TOKEN, FAKE_AGENT (host/tests/fake_agent.py), STEER_AGENT (host/tests/fixtures/steer_agent.py).
+appId: com.pokai.Codync.ios.dev
+tags:
+  - thinking-orb
+onFlowComplete:
+  - runScript:
+      file: thinking-orb.js
+      env:
+        CLEANUP: "true"
+---
+- runScript: thinking-orb.js
+- runFlow: subflows/bot-list.yaml
+- runScript:
+    file: thinking-orb.js
+    env:
+      SEND: "true"
+- extendedWaitUntil:
+    visible: ".*Needs approval.*"
+    timeout: 20000
+- assertVisible: "${output.bot.name}.*"
+- takeScreenshot: orb-list-${maestro.platform}-a
+- takeScreenshot: orb-list-${maestro.platform}-b
+- tapOn: "${output.bot.name}.*"
+- extendedWaitUntil:
+    visible: "(Working|Writing a reply)….*"
+    timeout: 20000
+- takeScreenshot: orb-chat-${maestro.platform}-a
+- takeScreenshot: orb-chat-${maestro.platform}-b

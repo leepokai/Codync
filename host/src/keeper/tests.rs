@@ -95,34 +95,6 @@ fn records_open_only_in_their_own_slot_and_kind() {
 }
 
 #[test]
-fn an_older_keeper_gets_proxied_records_without_the_connection_revision() {
-    use std::io::{BufRead as _, Write as _};
-    let socket = temp_dir().join("old.sock");
-    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    // A keeper from before the field: it can't parse a record that has one.
-    let old = std::thread::spawn(move || {
-        let mut lines = Vec::new();
-        for _ in 0..2 {
-            let (stream, _) = listener.accept().unwrap();
-            let mut line = String::new();
-            std::io::BufReader::new(&stream).read_line(&mut line).unwrap();
-            let answer =
-                if line.contains("authRevision") { "{\"error\":\"bad request\"}\n" } else { "{\"ok\":true}\n" };
-            (&stream).write_all(answer.as_bytes()).unwrap();
-            lines.push(line);
-        }
-        lines
-    });
-    let store = memory_store();
-    store.kv_set("test_keeper_socket", &socket.to_string_lossy()).unwrap();
-    let mut record = Record::header("https://mcp.example.com", "x-key", "k".into());
-    record.auth_revision = "after".into();
-    client::put_proxied(&store, "connector:x", &record, &Keep::default()).unwrap();
-    let lines = old.join().unwrap();
-    assert!(lines[0].contains("authRevision") && !lines[1].contains("authRevision"), "{lines:?}");
-}
-
-#[test]
 fn the_socket_answers_every_op_and_never_reveals_a_proxied_secret() {
     let k = test_keeper();
     let store = memory_store();

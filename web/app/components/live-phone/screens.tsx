@@ -50,17 +50,42 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-/** Stand-in for ThinkingOrb: a small turning ring of dots in the given ink. */
-function Orb({ color, size = 16 }: { color: string; size?: number }) {
-  const dots = Array.from({ length: 10 }, (_, i) => {
-    const a = (i / 10) * 2 * Math.PI;
-    return { x: (8 + Math.cos(a) * 6).toFixed(3), y: (8 + Math.sin(a) * 6).toFixed(3), o: (0.25 + 0.75 * (i / 9)).toFixed(3) };
-  });
+const smooth = (x: number) => {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+};
+
+/** A 5 × 5 thinking orb's dots (lib/thinking-orb.ts), `fill` setting how full the dot at (u, w) on the unit disc is. */
+function halftone(fill: (u: number, w: number) => number) {
+  return Array.from({ length: 25 }, (_, i) => {
+    const col = i % 5, row = Math.floor(i / 5), u = (col - 2) / 2.5, w = (row - 2) / 2.5;
+    const v = Math.max(0, Math.min(1, fill(u, w)));
+    return { x: col + 0.5, y: row + 0.5, r: (0.14 + 0.36 * v).toFixed(3), o: (0.5 + 0.5 * v).toFixed(3), on: Math.hypot(u, w) <= 1.0001 };
+  }).filter((d) => d.on);
+}
+
+/** The app's still poses (ORB_REST): the working ball lit from the upper right, the listening rings. */
+const ORB_POSES = {
+  working: halftone((u, w) => {
+    const a = -0.3 * Math.PI, nz = Math.sqrt(Math.max(0, 1 - u * u - w * w));
+    return smooth((0.85 * (u * Math.cos(a) + w * Math.sin(a)) + 0.53 * nz - 0.3) / 0.62);
+  }),
+  listening: halftone((u, w) =>
+    Math.max(
+      ...[0, 0.5].map((k) => {
+        const phase = (0.55 / 1.9 + k) % 1;
+        return Math.exp(-((Math.hypot(u, w) - phase * 1.1) ** 2) / (2 * 0.22 ** 2)) * (1 - phase) ** 0.45;
+      }),
+    ),
+  ),
+};
+
+/** Stand-in for ThinkingOrb: its still pose in the given ink (dots never move). */
+function Orb({ color, size = 16, state = "working" }: { color: string; size?: number; state?: keyof typeof ORB_POSES }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden className="shrink-0 animate-[spin_1.4s_linear_infinite] motion-reduce:animate-none">
-      <circle cx={8} cy={8} r={1.6} fill={color} fillOpacity={0.6} />
-      {dots.map((d, i) => (
-        <circle key={i} cx={d.x} cy={d.y} r={1.15} fill={color} fillOpacity={d.o} />
+    <svg width={size} height={size} viewBox="0 0 5 5" aria-hidden className="shrink-0">
+      {ORB_POSES[state].map((d, i) => (
+        <circle key={i} cx={d.x} cy={d.y} r={d.r} fill={color} fillOpacity={d.o} />
       ))}
     </svg>
   );
@@ -99,7 +124,7 @@ function preview(chat: Chat, chats: Chat[]) {
   if (chat.activity?.needs)
     return (
       <span className="flex min-w-0 items-center gap-[6px]" style={{ color: palette.warning }}>
-        <Orb color={palette.warning} />
+        <Orb state="listening" color={palette.warning} />
         <span className="truncate">{chat.activity.text}</span>
       </span>
     );
@@ -294,7 +319,7 @@ function Working({ activity, since }: { activity: NonNullable<Chat["activity"]>;
   const ink = activity.needs ? palette.warning : palette.secondary;
   return (
     <div className="mr-[40px] flex w-fit items-center gap-[8px] rounded-[22px] px-[16px] py-[12px]" style={{ background: palette.bubbleAgent }} role="status">
-      <Orb color={ink} />
+      <Orb state={activity.needs ? "listening" : "working"} color={ink} />
       <span className="truncate text-[15px]" style={{ color: ink }}>
         {activity.text}
       </span>

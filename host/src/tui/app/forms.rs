@@ -47,7 +47,8 @@ impl App {
             self_fallbacks: b.self_fallbacks,
             cwd: if b.managed_workspace { String::new() } else { b.cwd.clone() },
             max_agents: b.max_agents,
-            task_worktrees: b.task_worktrees.filter(|_| b.git_repo),
+            // A bot's own folder keeps all its work in one place: no switch there.
+            task_worktrees: b.task_worktrees.filter(|_| b.git_repo && !b.managed_workspace),
             auto: b.auto,
             mode: b.mode.clone(),
             notify: b.notify,
@@ -526,7 +527,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn worktree_per_agent_shows_only_for_a_git_repository_on_a_host_that_has_it() {
+    async fn worktree_per_agent_shows_only_for_a_project_in_a_git_repository_on_a_host_that_has_it() {
         let mut app = test_app();
         let at = FIELDS.iter().position(|x| *x == Field::TaskWorktrees).expect("a worktrees field");
         let mut editor = |id: &str, more: Value| {
@@ -550,6 +551,31 @@ mod tests {
         );
         assert_eq!(editor("c", json!({"gitRepo": false, "taskWorktrees": true})), (false, json!({})), "no repository");
         assert_eq!(editor("d", json!({"gitRepo": true})), (false, json!({})), "a host before worktrees");
+        assert_eq!(
+            editor("e", json!({"gitRepo": true, "taskWorktrees": true, "managedWorkspace": true})),
+            (false, json!({})),
+            "the bot's own folder"
+        );
+    }
+
+    #[test]
+    fn the_line_under_the_folder_says_which_of_the_three_it_is() {
+        let line = |more: Value| {
+            let mut bot = json!({"id": "a", "name": "B", "backend": "claude"});
+            bot.as_object_mut().expect("an object").extend(more.as_object().cloned().unwrap_or_default());
+            Bot::parse(&bot).expect("a bot").git_line()
+        };
+        let on = json!({"taskWorktrees": true, "gitRepo": true});
+        assert_eq!(line(on), Some("Git repository"), "a host that doesn't say has git");
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": false, "gitInstalled": true})),
+            Some("Not a git repository")
+        );
+        assert_eq!(
+            line(json!({"taskWorktrees": true, "gitRepo": true, "gitInstalled": false})),
+            Some("Git isn't installed on this computer")
+        );
+        assert_eq!(line(json!({"gitRepo": true})), None, "a host before worktrees");
     }
 
     #[tokio::test]

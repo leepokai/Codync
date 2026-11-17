@@ -153,8 +153,7 @@ impl Host {
 
     /// A bot running `tests/fixtures/<fixture>` with `args`.
     pub async fn fixture_bot(&self, name: &str, fixture: &str, args: &str) -> String {
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(fixture);
-        let command = format!("{} {args}", super::python_agent(&script));
+        let command = super::fixture_command(fixture, args);
         let bot = json!({"name": name, "backend": "custom", "command": command, "connectors": [], "notify": false});
         self.call("createBot", bot).await["bot"]["id"].as_str().unwrap().to_owned()
     }
@@ -189,9 +188,14 @@ impl Host {
         }
     }
 
+    /// `bot`'s folder, where its fixture agent runs.
+    pub fn workspace(&self, bot: &str) -> PathBuf {
+        self.home.join("bots").join(bot).join("workspace")
+    }
+
     /// The JSON lines a fixture agent logged to `file` in a bot's workspace (none before it started).
     pub fn log(&self, bot: &str, file: &str) -> Vec<Value> {
-        let log = std::fs::read_to_string(self.home.join("bots").join(bot).join("workspace").join(file));
+        let log = std::fs::read_to_string(self.workspace(bot).join(file));
         log.unwrap_or_default().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
     }
 

@@ -7,35 +7,47 @@ released version's section; a version without one gets the PRs' "What's New: And
 else a generic "Bug fixes and improvements" line. Delete old sections.
 -->
 
-## 2.49.0
+## 2.49.3
 ### zh-Hant
-- Bot 把比較久的工作放到背景做，聊天照常回你。
-- 例行任務和其他 Bot 的請求也在背景進行，不再占住聊天。
-- Bot 列表的「工作」按鈕列出每個 Bot 的背景工作。
-- 背景工作要核准、要問你問題或傳檔案時，會出現在聊天裡。
-- 點輸入框上方的膠囊開啟 Bot 的「詳情」：Threads（正在跑的）和 Event Box（等待中的：先做、插隊、丟掉）。
-- 「同時幾個 agent」在 Bot 的「設定」。
-- 「每個 agent 一個 worktree」：agent 各有自己的分支。
-- 改用備援時，智慧體卡片會說明原因。
-- 備援的 ⋯ 選單新增「編輯」，順序不變。
-- 輸入 `/` 時會列出 Bot 所用智慧體自己的指令。
-- 網路規則新增「自動」與「詢問」等級。
-- 聽寫中按「傳送」會等說的話轉成文字再一起送出。
-- 等待核准的卡片會算在 Bot 的未讀數字裡（琥珀色），直到你回覆為止。
-- 長按 Bot 選「新會話」，讓智慧體從新的上下文開始，聊天記錄會保留。
-- Bot 也可以引用訊息，點一下引用會捲到那則訊息。
+- Bot 預設的工作區改名為「專屬資料夾」。
+- 電腦有安裝 Git 時，Codync 會在每一輪對話前後替 Bot 的專屬資料夾留一個版本：可以請 Bot 說明某一輪改了什麼，或把檔案還原成之前的樣子。「設定」的「工作區」下方會顯示 Git repository。
+- 在專屬資料夾裡，Bot 的背景工作都在同一個資料夾進行，所以那裡不再顯示「每個 agent 一個 worktree」開關。
+
+### en-US
+- A bot's default workspace is now called Own folder.
+- With Git installed, Codync keeps a version of a bot's own folder before and after each turn: ask the bot what a turn changed, or to bring a file back as it was. Settings show Git repository under Workspace.
+- In its own folder, a bot's background tasks all work in that one folder, so Settings no longer show Worktree per agent there.
+
+## 2.49.2
+### zh-Hant
+- 讀完聊天後，它的通知會自動消失，桌面圖示上的標記也會跟著消失。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
+
+### en-US
+- Reading a chat clears its notification, and the launcher badge with it.
+- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
+
+## 2.49.1
+### zh-Hant
+- Bot、例行任務和其他 Bot 的請求在背景工作，聊天照常回你。
+- 「工作」按鈕列出每個 Bot 的背景工作。
+- Bot 的「詳情」有 Threads 和 Event Box。
+- 點一個 thread 會開成一頁，可以像聊天一樣傳訊息；等待中的訊息可以「現在送」或「移除」。
+- 做完的 thread 也能再接著傳訊息。
+- 每個 thread 會顯示它的資料夾或分支。
+- 「設定」會說明資料夾是不是 git repository。
+- 背景工作可以問你問題或傳檔案。
+- 背景工作也會用備援；需要登入時會在聊天裡請你登入。
+- 轉寫中、雲端電腦更新等幾段介面文字，現在會以你選的語言顯示。
 
 ### en-US
 - Bots, routines and bot requests work in the background.
 - The Work button lists background work.
-- Approval cards stay in the badge until answered.
-- Background work can ask or send files.
 - Details: Threads, Event box.
-- Settings: Agents at once, Worktrees.
-- On a fallback, the Agent card says why.
-- Fallbacks have Edit.
-- `/` lists the agent's commands.
-- Network rules gain Auto and Ask.
-- Send while dictating keeps your words.
-- Hold a bot for New session.
-- Bots can quote messages.
+- Open a thread as a page and chat in it; Send now or Remove what waits.
+- A finished thread takes messages again.
+- Each thread shows its folder or branch.
+- Settings says whether the folder is a git repository.
+- Background work can ask or send files.
+- Background work uses fallbacks; sign-ins show in the chat.
+- More interface text shows in your language.

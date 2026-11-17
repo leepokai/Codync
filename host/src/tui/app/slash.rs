@@ -253,14 +253,15 @@ mod tests {
 
     #[tokio::test]
     async fn the_agents_own_commands_follow_the_skills_and_fill_in() {
-        let commands = json!([{"name": "review", "description": "Review the changes"}, {"name": "compact"}]);
+        let commands = json!([{"name": "review", "description": "Review the changes"}, {"name": "compact"},
+            {"name": "plan", "description": "", "hint": "what to plan"}]);
         let mut app = app_with(
             &json!({"id": "b", "name": "Bot", "backend": "custom", "skills": ["pdf"], "fastModeSupport": "unsupported", "agentCommands": commands}),
         );
         app.drafts.insert("b".into(), super::Editor::with("/"));
-        assert_eq!(names(&app), ["pdf", "review", "compact"]);
+        assert_eq!(names(&app), ["pdf", "review", "compact", "plan"]);
         let about: Vec<String> = app.slash_commands().iter().skip(1).map(super::SlashCommand::about).collect();
-        assert_eq!(about, ["custom · Review the changes", "custom"], "marked with the agent");
+        assert_eq!(about, ["custom · Review the changes", "custom", "custom · what to plan"], "marked with the agent");
         app.drafts.insert("b".into(), super::Editor::with("/cust"));
         assert!(names(&app).is_empty(), "the agent's name isn't a command's");
         app.drafts.insert("b".into(), super::Editor::with("/rev"));

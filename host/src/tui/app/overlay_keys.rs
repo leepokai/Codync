@@ -37,6 +37,7 @@ impl App {
             items.extend(
                 ACTIONS
                     .iter()
+                    .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(label, _, _)| {
                         let translated = super::super::l10n::tr(label);
                         fuzzy(q, &[label, translated.as_ref()])
@@ -150,6 +151,7 @@ impl App {
             Overlay::Analytics(s) => s.key(k),
             Overlay::Network(n) => self.network_key(n, k),
             Overlay::WhatsNew(s) => s.key(k),
+            Overlay::Kofi(s) => s.key(k),
             // A phone that scanned the code waits for this computer to let it in.
             o @ Overlay::Pair(_)
                 if !self.pairing_requests.is_empty() && matches!(k.code, KeyCode::Char('y' | 'w' | 'n')) =>

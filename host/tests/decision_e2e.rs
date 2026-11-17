@@ -381,28 +381,100 @@ async fn answering_a_choice_keeps_an_unanswered_permission_in_needs_input() {
 }
 
 #[tokio::test]
-async fn natural_270_second_expiry_takes_no_answer_and_the_next_call_recovers() {
+async fn a_card_outlives_its_270_second_call_and_a_later_press_becomes_the_next_message() {
     let host = Host::start().await;
     let bot = host.bot().await;
     host.call("send", json!({"botId":bot,"text":"ASK_HOLD Which?|Left|Right"})).await;
     let card = host.card(&bot).await;
     let started = std::time::Instant::now();
+    host.status(&bot, "needsInput").await;
+    // The call returns without an answer at its deadline; the card stays pending.
     common::eventually("the full choice deadline", Duration::from_secs(290), async || {
-        let history = host.call("history", json!({"botId":bot})).await;
-        history["entries"].as_array().unwrap().iter().any(|e| e["id"] == card["id"] && e["data"]["status"] == "expired")
+        common::snapshot(&host.base, &host.token).await["bots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["id"] == bot && b["status"] == "working")
     })
     .await;
     assert!(started.elapsed() >= Duration::from_secs(265), "did not reach the natural deadline");
-    host.status(&bot, "working").await;
-    assert!(!host.post("respondDecision", json!({"entryId":card["id"],"option":"Left"})).await.status().is_success());
-    let history = host.call("history", json!({"botId":bot})).await;
-    assert!(history["entries"].as_array().unwrap().iter().all(|e| e["data"]["from"] != "decision"));
+    let told =
+        host.wait_for(&bot, "agent", |e| e["data"]["text"].as_str().is_some_and(|t| t.starts_with("Asked:"))).await;
+    let told = told["data"]["text"].as_str().unwrap();
+    assert!(told.contains(r#""answered":false"#) && told.contains("The card stays open"), "{told}");
     std::fs::write(host.home.join("ada/release"), "continue").unwrap();
     host.status(&bot, "idle").await;
-    host.call("send", json!({"botId":bot,"text":"ASK Recovery?|Left|Right"})).await;
-    let next = host.card(&bot).await;
-    assert_ne!(next["id"], card["id"]);
-    host.call("respondDecision", json!({"entryId":next["id"],"option":"Right"})).await;
+    host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "pending").await;
+
+    host.call("respondDecision", json!({"entryId":card["id"],"option":"Left"})).await;
+    host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["selected"] == "Left").await;
+    let message = host.wait_for(&bot, "user", |e| e["data"]["decisionId"] == card["id"]).await;
+    assert_eq!(message["data"]["replyTo"]["text"], "Which?");
+    host.status(&bot, "idle").await;
+    let prompts = host.prompts();
+    assert_eq!(prompts.len(), 2);
+    assert!(prompts[1].contains("Left") && prompts[1].contains("Which?"), "{}", prompts[1]);
+    assert!(!host.post("respondDecision", json!({"entryId":card["id"],"option":"Right"})).await.status().is_success());
+}
+
+/// Asks, then waits past the call's 270-second deadline for the turn to end with the card still open.
+async fn open_card(host: &Host, bot: &str, ask: &str) -> Value {
+    host.call("send", json!({"botId":bot,"text":ask})).await;
+    let card = host.card(bot).await;
+    common::eventually("the full choice deadline", Duration::from_secs(290), async || {
+        let history = host.call("history", json!({"botId":bot})).await;
+        history["entries"].as_array().unwrap().iter().any(|e| e["kind"] == "agent" && e["data"]["final"] == true)
+    })
+    .await;
+    host.status(bot, "idle").await;
+    host.wait_for(bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "pending").await
+}
+
+#[tokio::test]
+async fn a_typed_reply_answers_the_open_card_and_reaches_the_bot_with_the_option() {
+    let host = Host::start().await;
+    let bot = host.bot().await;
+    let card = open_card(&host, &bot, "ASK Which?|2|4").await;
+    host.call("send", json!({"botId":bot,"text":"1"})).await;
+    host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["selected"] == "2").await;
+    let message = host.wait_for(&bot, "user", |e| e["data"]["text"] == "1").await;
+    assert_eq!((&message["data"]["decisionId"], &message["data"]["decisionChoice"]), (&card["id"], &json!("2")));
+    assert_eq!(message["data"]["replyTo"]["text"], "Which?");
+    host.status(&bot, "idle").await;
+    let prompts = host.prompts();
+    assert_eq!(prompts.len(), 2);
+    assert!(prompts[1].contains("[Selected: 2]") && prompts[1].contains("Which?"), "{}", prompts[1]);
+}
+
+#[tokio::test]
+async fn a_quoted_message_expires_the_open_card() {
+    let host = Host::start().await;
+    let bot = host.bot().await;
+    let card = open_card(&host, &bot, "ASK Which?|Left|Right").await;
+    let asked = host.wait_for(&bot, "user", |e| e["data"]["text"] == "ASK Which?|Left|Right").await;
+    host.call("send", json!({"botId":bot,"text":"Left","replyTo":asked["id"]})).await;
+    host.wait_for(&bot, "notice", |e| e["id"] == card["id"] && e["data"]["status"] == "expired").await;
     host.status(&bot, "idle").await;
     assert_eq!(host.prompts().len(), 2);
+    assert!(!host.post("respondDecision", json!({"entryId":card["id"],"option":"Left"})).await.status().is_success());
+}
+
+#[tokio::test]
+async fn asking_again_expires_the_open_card() {
+    let host = Host::start().await;
+    let bot = host.bot().await;
+    host.call("send", json!({"botId":bot,"text":"ASK_TWICE Which?|Left|Right"})).await;
+    let first = host.card(&bot).await;
+    common::eventually("the second card", Duration::from_secs(290), async || {
+        let history = host.call("history", json!({"botId":bot})).await;
+        history["entries"].as_array().unwrap().iter().any(|e| e["data"]["question"] == "Again?")
+    })
+    .await;
+    host.wait_for(&bot, "notice", |e| e["id"] == first["id"] && e["data"]["status"] == "expired").await;
+    let second = host.card(&bot).await;
+    assert_eq!(second["data"]["question"], "Again?");
+    host.call("respondDecision", json!({"entryId":second["id"],"option":"Right"})).await;
+    let done = host.wait_for(&bot, "agent", |e| e["data"]["final"] == true).await;
+    assert!(done["data"]["text"].as_str().unwrap().contains(r#"{"choice":"Right"}"#), "{done}");
+    assert_eq!(host.prompts().len(), 1);
 }

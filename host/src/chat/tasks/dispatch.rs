@@ -138,14 +138,21 @@ pub(super) fn task_state(hub: &Hub, task: &str, over: Option<&str>) -> TaskState
 
 /// What `cfg`'s waiting items can count on now. `items`: its box.
 pub(super) fn places(hub: &Hub, cfg: &BotConfig, items: &[Item], over: Option<&str>) -> Places {
-    let running = items::working(items);
+    // A task told to stop (its item stopped, gave way or was replaced) still works until its turn ends.
+    let stopping = of(&hub.store, &cfg.id)
+        .iter()
+        .filter(|task| items::of_task(items, &task.id).is_none() && turn_runs(hub, &task.id, over))
+        .count();
+    let running = items::working(items) + stopping;
     // A turn the last host process left cut off is resumed by the bot's actor: it runs, though nothing says so yet.
     let coordinator_free = over == Some(cfg.id.as_str())
         || !(turn_runs(hub, &cfg.id, None) || crate::agent::bot::resumable(&hub.store, &cfg.id));
+    // The limit of the agent a new task starts on: past a resting one, its fallback's.
+    let starts_on = crate::agent::fallback::starting(&hub.store, cfg, now_ms());
     Places {
         free: usize::from(cfg.max_agents).saturating_sub(running),
         running,
-        near_limit: crate::usage::near_limit(hub, cfg),
+        near_limit: crate::usage::near_limit(hub, &starts_on),
         coordinator_free,
     }
 }
@@ -186,19 +193,22 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
         }
     };
     for (task, item) in plan.start {
-        hub.spawn_bot(task.clone());
-        sources::watch(hub, bot, &task.id, &item);
-        begin(hub, &task, &item, true);
+        begin(hub, bot, &task, &item, true);
     }
     for (task, item) in plan.join {
         if let Ok(Some(row)) = hub.store.bot(&task) {
-            begin(hub, &row.config, &item, false);
+            begin(hub, bot, &row.config, &item, false);
         } else {
             tracing::error!(task, "a task that took more work is gone");
         }
     }
     for task in plan.end {
-        hub.stop_actor(&task);
+        // Looked at again under the box's lock: a message the user wrote to its thread since reopened its item
+        // (`thread::message`, which holds the lock from there to the actor).
+        let _g = hub.tasks.boxes.locked();
+        if items::of_task(&items::load(&hub.store, bot), &task).is_none() {
+            hub.stop_actor(&task);
+        }
     }
     for task in plan.delete {
         if let Err(error) = hub.delete_bot(&task) {
@@ -207,7 +217,7 @@ pub(super) fn run(hub: &Arc<Hub>, bot: &str, over: Option<&str>) {
     }
     for (item, left) in plan.settle {
         let bot = bot.to_owned();
-        worktree::settle_then(hub, &bot.clone(), &item, left, move |hub| hub.emit_bot(&bot));
+        worktree::settle_then(hub, &bot.clone(), &item, left, move |hub| dispatch(hub, &bot));
     }
     if plan.again {
         return run(hub, bot, over);
@@ -234,6 +244,10 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -
         // Another task of the bot works in its folder now: a new one beside it gets a worktree, in a repository.
         let side_by_side = items::working(items) > 0;
         let Some(at) = items.iter().position(|i| i.id == id) else { continue };
+        // Tried again while the worktree it had is looked over: it starts once that is done, which looks again.
+        if items[at].worktree.as_ref().is_some_and(|w| w.left == worktree::Left::Settling) {
+            continue;
+        }
         match sources::begin(hub, &cfg.id, &mut items[at])? {
             Begin::Go => {}
             Begin::Later => continue,
@@ -261,7 +275,12 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -
             item.fork_failed = false;
             // One it has from before (it gave way, or is tried again) is where its work is.
             item.worktree.take_if(|w| !worktree::usable(w));
-            let beside = cfg.task_worktrees && item.source.is_bot() && side_by_side && worktree::in_repo(&cfg.cwd);
+            // A bot's own folder keeps all its work in one place, with its versions (`agent::versions`).
+            let beside = cfg.task_worktrees
+                && !crate::agent::workspace::is_managed(cfg)
+                && item.source.is_bot()
+                && side_by_side
+                && worktree::in_repo(&cfg.cwd);
             item.place = if item.worktree.is_some() || beside { Place::Worktree } else { Place::Folder };
             // A routine's run starts as it did in the chat: a new session that knows only its own prompt.
             // ponytail: a task in a worktree starts from a brief, not a fork: a fork is taken in another folder
@@ -290,11 +309,23 @@ fn plan(hub: &Hub, cfg: &BotConfig, items: &mut Vec<Item>, over: Option<&str>) -
     Ok(plan)
 }
 
-/// Hands `item` to `task` as its next turn. `first`: the task is new. A routine run's prompt and another bot's
-/// request go as they are: they say themselves what the turn is and where its reply goes.
-fn begin(hub: &Arc<Hub>, task: &BotConfig, item: &Item, first: bool) {
-    let text = if item.source.is_bot() { prompts::item_prompt(item, first) } else { item.brief.clone() };
-    if let Err(error) = crate::chat::messages::post(hub, task, json!({"text": text, "from": "host"})) {
+/// Hands `item` of `bot` to `task` as its next turn. `first`: the task is new, and starts here. A routine run's
+/// prompt and another bot's request go as they are: they say themselves what the turn is and where its reply goes.
+/// Under the box's lock, and only while the item is still on that task: a Stop since the plan found no turn to stop.
+fn begin(hub: &Arc<Hub>, bot: &str, task: &BotConfig, item: &Item, first: bool) {
+    let posted = {
+        let _g = hub.tasks.boxes.locked();
+        if items::of_task(&items::load(&hub.store, bot), &task.id).is_none_or(|on| on.id != item.id) {
+            return;
+        }
+        if first {
+            hub.spawn_bot(task.clone());
+            sources::watch(hub, bot, &task.id, item);
+        }
+        let text = if item.source.is_bot() { prompts::item_prompt(item, first) } else { item.brief.clone() };
+        crate::chat::messages::post(hub, task, json!({"text": text, "from": "host"}))
+    };
+    if let Err(error) = posted {
         tracing::error!(task = %task.id, error = format!("{error:#}"), "couldn't hand work to a task");
         finished(hub, task, Outcome::not_started(&error));
     }
@@ -339,6 +370,7 @@ fn fork_source(hub: &Hub, bot: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::calls::context::tests::{bot, hub};
 
     fn item(id: &str, status: Status, order: i64) -> Item {
         serde_json::from_value(json!({
@@ -438,6 +470,50 @@ mod tests {
         let items = [on("t1", item("a", Status::Done, 0)), item("b", Status::Waiting, 1), after("c", 2, "a")];
         let standings = stand(&items, places(1, 0), TaskState::Idle);
         assert_eq!(of(&standings), [("b", &Standing::Wait(Wait::Next)), ("c", &Standing::Join("t1".into()))]);
+    }
+
+    #[test]
+    fn work_stopped_before_its_task_started_never_reaches_it() {
+        let hub = hub();
+        let cfg = bot("b1", "Mika", "/tmp");
+        hub.store.save_bot(&cfg).expect("saved");
+        crate::chat::tasks::put_working_for_test(&hub.store, "b1", "task-1");
+        let planned = items::load(&hub.store, "b1").remove(0);
+        // A Stop between the plan and the start: no actor yet to tell.
+        items::change(&hub, "b1", |items| {
+            items[0].status = Status::Stopped;
+            Ok(())
+        })
+        .expect("stopped");
+        let task = BotConfig { id: "task-1".into(), task_of: Some("b1".into()), ..cfg };
+        begin(&hub, "b1", &task, &planned, true);
+        assert!(!hub.has_actor("task-1"), "it never starts");
+    }
+
+    #[test]
+    fn work_tried_again_waits_while_its_worktree_is_looked_over() {
+        let hub = hub();
+        hub.store.save_bot(&BotConfig { max_agents: 2, ..bot("b1", "Mika", "/tmp") }).expect("saved");
+        let worktree = json!({"branch": "codync/t", "path": "/w", "cwd": "/w", "base": "abc", "left": "settling"});
+        let waiting = json!({"id": "i1", "title": "Work", "brief": "x", "status": "waiting", "order": 1,
+            "createdAt": 0, "worktree": worktree});
+        hub.store.kv_set(&format!("{}b1", items::PREFIX), &json!([waiting]).to_string()).expect("saved");
+        run(&hub, "b1", None);
+        assert_eq!(items::load(&hub.store, "b1")[0].status, Status::Waiting);
+    }
+
+    #[test]
+    fn a_task_still_stopping_keeps_its_place() {
+        let hub = hub();
+        let cfg = BotConfig { max_agents: 1, ..bot("b1", "Mika", "/tmp") };
+        hub.store.save_bot(&cfg).expect("saved");
+        let task = BotConfig { id: "task-1".into(), task_of: Some("b1".into()), ..cfg.clone() };
+        hub.store.save_bot(&task).expect("saved");
+        hub.set_runtime("task-1", |rt| rt.status = BotStatus::Working);
+        let replaced = [on("task-1", item("a", Status::Stopped, 0)), item("b", Status::Waiting, 1)];
+        let p = super::places(&hub, &cfg, &replaced, None);
+        assert_eq!((p.free, p.running), (0, 1), "the replacement waits for it");
+        assert_eq!(super::places(&hub, &cfg, &replaced, Some("task-1")).free, 1, "its turn is over");
     }
 
     #[test]

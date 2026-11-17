@@ -60,7 +60,7 @@ export function hasLibrary(hostVersion: string | undefined): boolean {
 }
 
 /** How a message about the artifact quotes its card (`chat::replies`) until the computer's own quote arrives; none
- * without a card (a routine published it). */
+ * without a card (a group chat or another bot's request published it). */
 export function artifactQuote(artifact: Artifact): ReplyQuote | null {
   return artifact.entryId ? { id: artifact.entryId, author: artifact.botId, text: `Artifact: ${artifact.title}`, artifact: artifact.id } : null
 }

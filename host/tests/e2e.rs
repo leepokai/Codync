@@ -466,7 +466,7 @@ async fn phone_pairs_and_chats_over_the_direct_channel() {
 }
 
 #[tokio::test]
-async fn personal_workspaces_are_unique_persistent_and_optional() {
+async fn own_folders_are_unique_persistent_and_optional() {
     let host = start_host().await;
     let agent = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/workspace_agent.py");
     let first = host

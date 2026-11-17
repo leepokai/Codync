@@ -71,7 +71,7 @@ ahead, `after` (it follows a working item), `usage`.
 | --- | --- |
 | The chat with the coordinator | As today: a message sent while it answers waits above the composer, and can be sent now or removed. |
 | The box | **First**: a waiting item moves to the front. Order only. |
-| A running task | A task's session is never written into by the user. To put an item on a busy bot **now**, a task gives way: its work is closed and a new session starts for the item. |
+| A running task | The user writes to the thread of the bot's own item as to a chat (stage 11; before it, a task's session was never written into). To put an item on a busy bot **now**, a task gives way: its work is closed and a new session starts for the item. |
 
 **Cutting in** (`now`), when every place is taken: the user picks which working item gives way (or the coordinator
 names it; with none named, the one that started last). That task is stopped and deleted, its item returns to the
@@ -131,12 +131,12 @@ the time, as today. It opens Details. Its Stop (one item working) asks once, the
 
 | Section | Rows |
 | --- | --- |
-| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Items that need you first (the attention mark, what the card asks; opens the chat at the card), then working items (a moving dot, the task's activity, elapsed time). Both kinds of row have Stop. A row opens the task's transcript. A place not in use is one faint row, `Free`, so the ceiling is visible. |
+| **Threads** | *(owner: the running sessions and the box are told apart.)* The agent sessions that run now. The heading carries `2 / 3`: how many run, of the most allowed. Items that need you first (the attention mark, what the card asks; opens the chat at the card), then working items (a moving dot, the task's activity, elapsed time). Both kinds of row have Stop. A working row opens its thread (stage 11; the task's transcript before it) and says where it works. A place not in use is one faint row, `Free`, so the ceiling is visible. |
 | **Event box** | What waits for a thread, numbered 1, 2, 3 in the order it will be taken, with why it waits. The heading carries how many. **First** on every row but the first; **Cut in** on the first row when every place of the bot is taken (not on a row that follows unfinished work or waits for usage), which asks which working item gives way; **Drop**. Left out when nothing waits. |
 | **Later** | Follow-ups the bot set (the dashed card, as today). |
 | **Routines** | As today, with **+**. |
 | **Dev servers** | As today, when the bot has some. |
-| **Recent** | Items ended in the last day: done (a ring, time taken; opens the transcript), stopped and failed (the danger mark, why; **Try again**). |
+| **Recent** | Items ended in the last day: done (a ring, time taken; opens its thread), stopped and failed (the danger mark, why; **Try again**). |
 
 **Settings** (the inspector's Settings tab; the phones' bot settings) gains what Details held: **Instructions** and
 **Agent** (the agent, model, fast mode, fallbacks) go first, then Profile, Workspace (with **Agents at once**, a
@@ -154,14 +154,15 @@ place is taken; the Threads section shows only while the bot has a live or waiti
 no row of free places), and its heading says what is true (`2 / 1` right after the ceiling was lowered).
 
 **Terminal**: the line over the composer says the same as the capsule; `B` opens the bot's Details page, which lists
-the same sections; on a row `↵` opens the transcript, `X` stops (asks), `F` moves first, `C` cuts in (asks which),
+the same sections; on a row `↵` opens the transcript (the terminal's thread view), `X` stops (asks), `F` moves first, `C` cuts in (asks which),
 `D` drops, `A` tries again. Agent and Instructions are on its Settings page. `E` from the roster opens the page of
 every bot's work (stage 4).
 
 **Words** (English key = Traditional Chinese): `Threads` Threads, `Event box` Event Box, `Free` 空位,
 `Later` 之後, `Recent` 最近,
 `{count} working` {count} 進行中, `{count} waiting` {count} 等待中, `Next up` 下一個, `{count} ahead` 前面還有
-{count} 件, `Follows what it works on` 接在進行中的事後面, `Waiting for usage` 等用量恢復, `Was cut in on; starts
+{count} 件, `Follows what it works on` 接在進行中的事後面, `Near the usage limit: one at a time` 用量接近上限，一次只跑一個
+(stage 11; `Waiting for usage` 等用量恢復 before it), `Was cut in on; starts
 again` 被插隊，會重新開始, `First` 先做, `Cut in` 插隊, `Drop` 丟掉, `Try again` 再試, `Agents at once` 同時幾個
 agent, `Let "{title}" cut in` 讓「{title}」插隊, `Every place is taken. Pick what gives way: its session closes and
 it starts again later.` 名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。 The strings of 2.48.0 that still
@@ -185,7 +186,7 @@ apply are reused; `{count} tasks running` goes.
 `work_added {outcome: added | elsewhere | invalid | full | hops | failed, after, source}`, `work_finished {outcome,
 start, forkFailed, minutes, error, source, worktree, kept, worktreeFailed}` (`source`: `bot`, `routine`, `request`), `work_steered {how, by: bot |
 user}`, replacing the `task_*` events. Screen `task`
-stays for a task's transcript.
+stays: it is the item's thread view (a task's transcript before stage 11).
 
 ## As built (host, stage 1)
 
@@ -229,7 +230,8 @@ from the text below:
   request starts like any item.
 - **A request answered with exactly `(pass)`** gives the asking bot those words, as a turn in the chat did.
 - **What those turns could do in the chat holds in their task**: `request_decision`, `send_message`, `send_file`
-  and artifact cards refused; the `routines` tools (and, from a run, `message_bot`) work as the bot. Stage 5's
+  and a request's artifact cards refused (a run's artifact card goes into the bot's chat); the `routines` tools
+  (and, from a run, `message_bot`) work as the bot. Stage 5's
   asking and sharing is for the bot's own items.
 - **A task's choice card is answered by a press only**: a message the user types is the coordinator's, so it neither
   answers the card nor ends it; the chat's Stop doesn't end it either (stopping the item does). The cases are
@@ -284,7 +286,8 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
 - **7.** **Worktree per agent** is a switch in Settings > Workspace, shown only when the host says the bot's folder
   is in a git repository and sends the setting, with the caption `Agents that work at once in this repository each
   get their own branch.` The item's branch is in its task's transcript header (terminal: `⎇ <branch>` after the
-  status; the desktop shows the folder on hover), not on its Details row.
+  status; the desktop shows the folder on hover), not on its Details row. Stage 11 put it on the row too
+  ([as built](#as-built-iphone-android-and-desktop-stage-11)).
 - **8.** Each client reads `bot.outside` (the chat's own `status` for a host that doesn't send it). On every
   client a bot's avatar follows it, its mood and its needs-you badge alike (terminal: the roster row's mark), so a
   bot whose chat is idle shows working while its items work and needing you while one waits on a card.
@@ -325,6 +328,10 @@ The same on iPhone, Android, desktop and terminal unless said; where it settles 
   advertise fork and passed, so they fork; Antigravity, Cursor, DeepSeek Harness, Grok Build and pi don't advertise
   it and start from a brief (Grok Build wasn't signed in, so only its `initialize` was read). The spikes ran
   without Codync's MCP servers: a fork with them attached was not checked for these agents.
+- [x] **11. Talking to a thread** ([below](#stage-11-talking-to-a-thread)), on the host and the four clients: the
+  host and the terminal ([as built](#as-built-host-and-terminal-stage-11)), then the iPhone, Android and desktop
+  thread views, the where line and the git state in Settings
+  ([as built](#as-built-iphone-android-and-desktop-stage-11), with what no test covers).
 
 ## Stages 3 to 10: what each builds
 
@@ -372,5 +379,167 @@ memory are credited to the task's own session, not the chat's.
 **10. Fork for other agents.** The fork spikes run for each installed agent other than Claude; one that passes
 forks, the others keep starting from a brief. Results go in the agent's page under `docs/upstream-agents/`.
 
+## Stage 11: talking to a thread
+
+Decided 2026-11-16 (the user: "右邊的 panel 變成 threads panel … 可以聊天 queue 和 steering", then "好幫我處理好" to
+the proposal below). It replaces the earlier rule that the user never writes into a task: the user writes to a
+thread directly, as to a chat. Demo of the desktop panel: https://claude.ai/artifact/ETxnJuT8uNLCLqWy6nkK5H.
+
+- **Opening a thread.** A row of the bot's own item opens the thread **in place of** what listed it, not in a dialog:
+  on the desktop the inspector's panel slides to the thread (a back button returns to Details; the chat stays beside
+  it); on iPhone and Android the row pushes a thread page inside the details sheet; in the terminal the transcript
+  page gains a composer. The Work view of all bots opens the same thread view.
+- **Its header.** Title, status and elapsed time, where it works (the folder, or the branch when it has a worktree:
+  the folder symbol or the branch symbol before it), and one Stop button. What it was told (the brief) is first in
+  the transcript, folded.
+- **Writing to it.** A composer like the chat's (text; files and voice are not in this stage). While the thread's
+  turn runs, a message waits in its queue and shows Send now and Remove, exactly as in the chat; Send now steers the
+  running turn where the agent can, else stops it for the message. With no turn running the message starts one.
+- **After it ended.** A done, failed or stopped item of the bot's own whose task still exists (kept seven days)
+  takes messages too: the first one reopens the item (`working` again, back under Threads, counted against Agents at
+  once even past the ceiling, since the user asked), in the same session where the agent can resume it, else in a new
+  one told what was done.
+- **The bot hears of it.** The item's report to the bot ends with what the user told the thread in between (their
+  words, shortened), so the chat's account of the work stays whole. A reopened item reports again when it ends.
+- **Read-only threads.** A routine's run and another bot's request can be read and stopped, not written to: their
+  result has an owner already. The composer is absent there, with one quiet line saying why.
+- **Wording.** A waiting item held back by usage reads `Near the usage limit: one at a time` instead of
+  `Waiting for usage`.
+
+**Where it works, shown** (decided 2026-11-16: "顯示資料夾並且顯示這是不是 git project … information button … 打開我的 docs
+網站"; review page https://claude.ai/artifact/AeeXyBAeQFpSB4MR1wSnhd):
+
+- Every row of an item a task has (Threads, and Recent while its task is kept) has one more quiet line on iPhone,
+  Android and desktop: the folder symbol and the folder (home as `~`) when the thread works in the bot's folder,
+  the branch symbol and the branch when it works in a worktree of its own. The row's line copies nothing: the row
+  is one button that opens the thread (the desktop shows the full path on hover). The terminal's rows don't have
+  the line.
+- The thread's header repeats the line, and there a click or tap copies the full path (`Copy path`; the line reads
+  `Path copied` for a moment). The terminal's heading shows it and copies nothing.
+- Settings > Workspace says under the folder whether it is a git repository: `Git repository`, `Not a git
+  repository`, or `Git isn't installed on this computer`, with one information button (`info.circle`, `About
+  working folders and git`) that opens the manual's page on working folders and git
+  (https://codync.dev/docs/working-folders: what agents working at once do with and without git, and how to install
+  git on macOS, Linux and Windows). The terminal has the words in dim text and no button. Only for a bot whose host
+  sends `taskWorktrees`, and for the folder the host has saved. `Worktree per agent` stays where it is for a
+  repository.
+- The host says which of the three it is (`bot.gitRepo`, `bot.gitInstalled`).
+
 Not in this version: an item given to a running task by the dispatcher (only `after`); priorities the user sets;
 preempting without being asked.
+
+## As built (host and terminal, stage 11)
+
+What is built is in [background tasks](../features/background-tasks.md#talking-to-a-thread); where it settles or
+differs from the text above:
+
+- **API**: no new method. `send`, `steer` and `unqueue` take `itemId` beside `botId`: the message is for the task
+  that has or had that item of that bot, and a task's own id as `botId` is refused. `send` answers `{entry,
+  reopened, queued}`. The thread's messages are user entries of the task's transcript (`taskEntries`, `taskEntry`),
+  with the chat's `status` (`queued`, `sent`, `cancelled`, `failed`) and `removed`; what the host told the task has
+  `from: "host"`.
+- **Wire**: `work[].talk` (the bot's own item whose task bot exists) and `work[].folder` (where its task works: the
+  task's own folder, which is the worktree's for one in a worktree; the bot's `cwd` alone would be wrong once the
+  bot's folder changed, and `worktree.path` is the worktree's top, not where the task is in it). A worktree removed
+  with nothing in it names no folder: the task row still points into the deleted checkout (`items::folder_of`).
+- **One report, not two.** A message that waits while the item's turn ends doesn't let the item end: it stays
+  `working` through the message's turn, whose last message is the result and the one report. Only a message to an
+  item that already ended reopens it and makes it report again.
+- **Send now** on an agent that can't take a message into its turn stops that turn; the item isn't `stopped` by
+  it, since the message's turn follows, and the thread gets no `Stopped.` line: drawn under the user's message, it
+  read as if their message was stopped (e2e). A Stop meanwhile, or a Remove that leaves nothing waiting, keeps it.
+- **Reopening** uses the task bot's saved session as a restart does: `session/load` or `session/resume` where the
+  agent has one, else a new session told the item, the user's words and notes and what it reported. The task's
+  agent process is started again either way (it stopped when the item ended).
+- **Cut in and replace**: the messages that waited in the thread go with the item as `notes` (the session that
+  starts it again reads them); the closed task's entries end `cancelled`. **Stop** drops them.
+- **A host restart** fails a waiting message, as in a chat. It is not sent on its own afterwards.
+- **Memory**: a task still only adds, also in a turn the user's message started.
+- **A message to an ended item whose task now works an item that followed it** goes to that session and waits
+  behind its turn; the ended item isn't reopened.
+- **Analytics**: `work_messaged {outcome, reopened, queued}`, or `{outcome: failed, error}` with the refusal's
+  category (`thread::Refused`: `read_only`, `not_started`, `gone`, `text_only`, else `other`); Send now and Remove
+  in a thread are `work_steered` with `how` `sendNow` / `remove` (`by: user`), and the agent-level
+  `message_steered` still says what became of a Send now.
+- **Wording**: the new key is in the ten catalogs, and all four clients read it. `Waiting for usage`, read by none
+  any more, left the catalogs.
+- **Terminal**: the transcript page has the composer under the steps. `i` or `↵` gives it the keys (so `q`, `T`,
+  `X` type), `↵` sends, `⇧↵` / `^j` is a new line, `esc` gives the keys back. What waits shows over the composer
+  as in the chat, with the chat's keys: `S` sends the next one now, `D` takes back the last. The heading has `⎇
+  <branch>` or the folder (home as `~`) after the status. A routine's run and another bot's request have no
+  composer and one dim line: `Read only: a routine's run`, `Read only: another bot's request`. The composer's
+  placeholder is `Message this thread`. What the task put in the bot's chat is one dim line among the steps where
+  it came (`app::shared_line`: `◆` while it waits on the user, `✓`, `×` or `·` once answered or not, `▤` a file or
+  an artifact, `♪` a voice note; a sign-in card `◆`, `✓` once signed in, `×` cancelled). `tab` picks the newest line and goes up, `⇧tab` down, `esc` lets go; `↵` on a
+  picked line closes the page for the bot's chat at that entry: a card still waiting is at the chat's end, where
+  the chat's keys answer it, and anything else is picked there (an answered card counts as a message for that),
+  which brings it on screen. The page (`view/task.rs`, `manage/tasks.rs`) still opens over Details as before, not
+  in its place.
+- **Where it works, shown (host, terminal, manual)**: `bot.gitInstalled` (bool, beside `bot.gitRepo`; absent =
+  installed) from a cached look for git that never holds a snapshot up, refreshed at most every five minutes, so
+  a git installed meanwhile shows after a restart or within that time. The terminal's Settings form has the state
+  in dim text under Workspace, for the folder the bot has (not one picked and not saved yet, and nothing from a
+  host before worktrees); it has no information button and names no URL. The nine words are in the ten catalogs.
+  The manual's page is `/docs/working-folders`, with `#without-git` for the two cases without copies.
+
+## As built (iPhone, Android and desktop, stage 11)
+
+The rules are one set, written three times: `apps/desktop/src/shared/work.ts` (`readOnlyReason`, `whereLine`,
+`wherePath`, `gitState`, `threadEntries`, `isThreadMessage`, `sharedLine`), the iPhone's
+`CodyncKit/Models/WorkThread.swift` and Android's `core/Work.kt`; whether a thread takes a message is the host's
+`talk`, read as it is. Where the three settle or differ from the text above:
+
+- **Opening.** Desktop: the inspector's panel slides from its pages to the thread (`DetailsPanel` → `WorkThread`);
+  the back button (`Back to details`), or Escape while the keyboard is in the panel, returns to the page as it was
+  left, and the keyboard goes back to the row; a thread whose item left the box closes. The dialog that showed a
+  task's transcript is gone. iPhone: the row
+  pushes `WorkThreadView` inside the details sheet; the system bar is hidden (`hidesSystemNavigationBar`, which keeps
+  the edge swipe back) and the page draws its own header, as Android's: a `Back to details` icon button, the title
+  over the status line, Stop. Android: `WorkThreadView` is pushed inside the sheet by the design module's
+  `NavStack`, with the same header. A row of the Work sheet opens the bot's chat with its
+  details on that thread.
+- **A row that needs you still opens the chat at its card**, not the thread. In the item's thread the card is one
+  line (below), which opens the chat at it; the thread has no card to answer.
+- **Header**: title, the status word with its mark and the time, the where line, Stop while the item is live (it
+  asks first).
+- **Transcript**: `What it was told` folded on top (the host's first words to the task); what the host told it
+  later (an item picked up again) is a quiet quote where it happened; the user's messages are the chat's bubbles;
+  the task's final replies (`isThreadMessage`: kind `agent` and `final`) are the chat's agent message, read only
+  (Copy; no reactions, reply or trace); the rest are the chat's working steps, the running turn's unfolded. A task's
+  own transcript holds no file or artifact (what it shares goes to the chat), so its replies are text on every
+  client. What the task put in the bot's chat (the entries whose `data.task.id` is the thread's task: approval and
+  choice cards, answered ones too, its agent's sign-in card, files, voice notes, artifact cards) joins the transcript in time order
+  (`createdAt`, each side kept in its order, the task's own first at the same moment) as one quiet line with a
+  symbol (`sharedLine`: `hand.raised` while it waits on the user, `checkmark`, `xmark` or `clock` once answered or
+  not, `doc`, `waveform`, `doc.richtext`; a sign-in card reads as the card stands: `Needs <agent> sign-in`, `Signed
+  in`, `Cancelled`, not `Asked in the chat to sign in to <agent>.`, which the task's own transcript already has
+  beside it). The full card, file or artifact stays in the chat, where the coordinator
+  shows it. A tap or click on the line opens the chat at that entry: the desktop scrolls the chat beside the panel
+  to it (`showInChat`, by `data-entry-id`); the phones close the details sheet and bring it into view, as a
+  needs-you row does (iPhone `BotDetailsView.openInChat`, Android `openCard`). Only the chat's loaded messages are
+  looked at, as for a needs-you row.
+- **Composer**: the chat's, text only (`Message this thread`): no files, dictation, commands, reply or call. Each
+  client keeps a draft per item, under the bot's (desktop `<bot>/thread/<item>`, phones `<bot>/item/<item>`), so it
+  goes with the bot. Off while the computer is offline.
+- **Messages that wait.** Desktop: the bubble stays in the transcript with `Queued`, **Send now** and **Remove**
+  under it. iPhone and Android: they leave the transcript for the chat's tray above the composer, with the same
+  two buttons. On the desktop a message that never arrived has Resend and Delete, and one dropped by Stop reads
+  `Not sent — stopped`; the phones show the chat's own lines for both.
+- **Read-only threads**: no composer and one quiet line, `Read only: a routine's run` or `Read only: another bot's
+  request`. An own item whose task is gone (`talk` false) has neither.
+- **Where line.** Every client writes the computer's home (`hello.home`) as `~`, with one rule (`homeRelative`,
+  the terminal's `tilde`): at a separator boundary only, `/` or `\`; any other path shows whole and is cut in the
+  middle.
+- **Git state** in Settings > Workspace as [above](#stage-11-talking-to-a-thread): `GitStateLine.tsx`,
+  `GitStateRow.swift`, `GitLine` in `BotSettingsForm.kt`. The button reports `link_opened` with `link: docs`.
+- **Analytics**: screen `task` is the thread view; the rest is the host's (`work_messaged`, `work_steered`). The
+  tap on a shared line is navigation and reports nothing of its own.
+
+**What no test covers.** The desktop's Playwright spec (`e2e/tasks.spec.ts`) and the phones' Maestro flow
+(`apps/maestro/tasks.yaml`) walk opening a thread from its row, writing to a working thread (the message waits,
+Send now and Remove show) and, on the desktop, reopening a done item, a card's line in an open thread that shows
+the card in the chat and turns `Answered` once it is answered there, and a routine run's read-only line. Neither
+has a step for: copying the path from the header, the git state line and its button, Escape, Resend of a failed
+message, a shared line on the phones, or a Windows path in the where line.
+Whether a real iPhone, a real Android phone, and the desktop on Linux and Windows were looked at is not recorded
+here.

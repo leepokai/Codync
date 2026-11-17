@@ -23,7 +23,7 @@ export interface Bot {
   /** The login profile it runs on; absent for the login the computer already has. */
   loginProfile?: string | null
   cwd: string
-  /** Host-allocated personal workspace rather than a user-selected project. */
+  /** The bot's own folder, which the host made and keeps versions of, rather than a project the user chose. */
   managedWorkspace: boolean
   /** `ask` or `auto`: whether Codync asks about what the agent asks, or approves it. */
   permission: string
@@ -101,6 +101,8 @@ export interface Bot {
   taskWorktrees: boolean | null
   /** The bot's folder is in a git repository: where `taskWorktrees` matters. */
   gitRepo: boolean
+  /** Git is on the bot's computer; a host that doesn't say counts as having it. */
+  gitInstalled: boolean
   /** How it stands outside its chat (`outsideStatus`); null from a host before it. `status` is the chat's alone. */
   outside: OutsideStatus | null
   unread: number
@@ -175,6 +177,7 @@ export function normalizeBot(raw: Partial<Bot> & { id: string }): Bot {
     maxAgents: normalizeMaxAgents(raw.maxAgents),
     taskWorktrees: raw.taskWorktrees ?? null,
     gitRepo: raw.gitRepo ?? false,
+    gitInstalled: raw.gitInstalled ?? true,
     outside: normalizeOutside(raw.outside),
     unread: raw.unread ?? 0,
     waiting: raw.waiting ?? 0,
@@ -231,8 +234,9 @@ export const isWorking = (b: Bot) => b.status === 'working' || b.status === 'nee
 export const needsInput = (b: Bot) => b.status === 'needsInput'
 /** Working right now in this chat (its own, or a group it's in). */
 export const isWorkingIn = (b: Bot, chat: string) => isWorking(b) && (b.workingChat ?? b.id) === chat
-export const folderName = (b: Bot) =>
-  b.managedWorkspace ? 'Personal workspace' : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
+/** Where the bot works, as a list shows it: its own folder, or its project folder's name. */
+export const folderName = (b: Bot, tr: (text: string) => string) =>
+  b.managedWorkspace ? tr('Own folder') : (b.cwd.split('/').filter(Boolean).pop() ?? b.cwd)
 
 export interface FileDiff {
   path: string

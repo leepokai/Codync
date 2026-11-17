@@ -108,6 +108,8 @@ pub struct Bot {
     pub task_worktrees: Option<bool>,
     /// Its folder is in a git repository: where `task_worktrees` matters.
     pub git_repo: bool,
+    /// The host can run git; true from a host that doesn't say.
+    pub git_installed: bool,
 }
 
 /// A login of a bot's chain (an agent on one of its login profiles, or none: its default one) that rests
@@ -201,7 +203,7 @@ impl Bot {
 
     /// Where it works, as the header shows it.
     pub fn folder(&self, home: &str) -> String {
-        if self.managed_workspace { "personal workspace".to_owned() } else { tilde(&self.cwd, home) }
+        if self.managed_workspace { "own folder".to_owned() } else { tilde(&self.cwd, home) }
     }
 
     pub(in crate::tui) fn parse(v: &Value) -> Option<Self> {
@@ -259,7 +261,9 @@ impl Bot {
                 .into_iter()
                 .flatten()
                 .filter_map(|c| {
-                    Some((c["name"].as_str()?.to_owned(), c["description"].as_str().unwrap_or_default().to_owned()))
+                    // What it says it does, else what it takes after its name, as the other apps show.
+                    let about = c["description"].as_str().filter(|d| !d.is_empty()).or(c["hint"].as_str());
+                    Some((c["name"].as_str()?.to_owned(), about.unwrap_or_default().to_owned()))
                 })
                 .collect(),
             status: status(&v["status"]).unwrap_or(Status::Idle),
@@ -277,6 +281,17 @@ impl Bot {
             max_agents: work::max_agents(&v["maxAgents"]),
             task_worktrees: v["taskWorktrees"].as_bool(),
             git_repo: v["gitRepo"] == true,
+            git_installed: v["gitInstalled"] != false,
+        })
+    }
+
+    /// What Settings says under its folder; nothing from a host before worktrees, which doesn't tell.
+    pub fn git_line(&self) -> Option<&'static str> {
+        self.task_worktrees?;
+        Some(match (self.git_installed, self.git_repo) {
+            (false, _) => "Git isn't installed on this computer",
+            (true, true) => "Git repository",
+            (true, false) => "Not a git repository",
         })
     }
 

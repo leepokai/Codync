@@ -209,6 +209,19 @@ impl Store {
         Ok(st.query_map(params![bot_id, limit], row_entry)?.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// The user's own messages in `bot_id`'s chat that still wait for their turn (not what the host wrote there),
+    /// oldest first.
+    pub fn queued_messages(&self, bot_id: &str) -> Result<Vec<Entry>> {
+        let c = self.db.locked();
+        let mut st = c.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries WHERE bot_id = ?1 AND kind = 'user'
+               AND json_extract(data, '$.status') = 'queued'
+               AND COALESCE(json_extract(data, '$.from'), '') != 'host'
+             ORDER BY seq"
+        ))?;
+        Ok(st.query_map([bot_id], row_entry)?.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Cards still waiting for the user to sign in to agent `backend`, oldest first.
     // ponytail: scans notices without an index; sign-ins are rare, add one if it shows up in profiles.
     pub fn pending_sign_ins(&self, backend: &str) -> Result<Vec<Entry>> {

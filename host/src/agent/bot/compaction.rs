@@ -150,6 +150,11 @@ impl Actor {
 
     /// The agent reported its context use.
     pub(super) fn track_usage(&mut self, used: u64, size: u64) {
+        // A stream's first report can carry no usage yet (a gateway's `message_start` before the final counts);
+        // that's no context size, so it neither replaces the last real reading nor reads as a compaction.
+        if used == 0 {
+            return;
+        }
         let Some(sid) = self.turn_session.clone() else { return };
         let Some(conn) = self.conn.as_mut() else { return };
         let before = conn.usage.insert(sid, (used, size)).map(|(used, _)| used);
@@ -389,6 +394,26 @@ mod tests {
         assert!(!compacted_by_usage(Some(90_000), 60_000), "ordinary churn");
         assert!(!compacted_by_usage(Some(8_000), 1_000), "too little to summarize");
         assert!(!compacted_by_usage(None, 1_000), "the session's first report");
+    }
+
+    #[test]
+    fn a_provisional_zero_is_not_a_compaction() {
+        // Gateway streams open with zero usage, then settle on the real, growing figure (issue #496).
+        let finals = [26_228u64, 27_466, 27_885, 32_537, 33_299, 33_447, 33_933, 34_189, 34_292];
+        let mut last = None;
+        let mut compactions = 0;
+        for used in finals {
+            for report in [0, used] {
+                // Mirrors `track_usage`: a zero is skipped, a real reading is compared then kept.
+                if report == 0 {
+                    continue;
+                }
+                compactions += compacted_by_usage(last, report) as u32;
+                last = Some(report);
+            }
+        }
+        assert_eq!(compactions, 0);
+        assert!(compacted_by_usage(Some(90_000), 12_000), "a genuine drop still counts");
     }
 
     #[test]

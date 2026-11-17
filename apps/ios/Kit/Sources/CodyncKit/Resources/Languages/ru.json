@@ -2188,5 +2188,21 @@
   "Sent a file: {name}": "Отправлен файл: {name}",
   "Sent a voice note": "Отправлено голосовое сообщение",
   "Made an artifact: {title}": "Создан артефакт: {title}",
-  "Show in the chat": "Показать в чате"
+  "Show in the chat": "Показать в чате",
+  "A bot": "Бот",
+  "Connecting to your computers…": "Подключение к вашим компьютерам…",
+  "Credential": "Учётные данные",
+  "Fast": "Быстрый",
+  "Finished.": "Готово.",
+  "Folders": "Папки",
+  "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.": "Сетевой адрес не найден, а «Доступ из любой точки» выключен. Подключитесь к Wi-Fi или включите эту функцию.",
+  "Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.": "Отсканируйте в приложении Codync или камерой iPhone. Ни Tailscale, ни открытые порты не нужны: в той же сети Wi-Fi iPhone подключается напрямую, а в любом другом месте — через зашифрованный ретранслятор.",
+  "Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.": "Выходит из всех аккаунтов и удаляет ботов, разговоры, ключи и настройки этого компьютера. Затем Codync начинает заново с экрана приветствия.",
+  "Transcribing…": "Расшифровка…",
+  "Update Codync to keep using it.": "Обновите Codync, чтобы продолжить им пользоваться.",
+  "Waiting for a computer": "Ждём компьютер",
+  "Your bots will appear once connected. Manage computers to see connection progress.": "Ваши боты появятся после подключения. Ход подключения можно посмотреть в разделе «Управление компьютерами».",
+  "Your cloud computer is updating…": "Ваш облачный компьютер обновляется…",
+  "Your remote computers": "Ваши удалённые компьютеры",
+  "ssh-agent / SSH config": "ssh-agent / конфигурация SSH"
 }

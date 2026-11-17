@@ -2188,5 +2188,21 @@
   "Sent a file: {name}": "파일 보냄: {name}",
   "Sent a voice note": "음성 메시지 보냄",
   "Made an artifact: {title}": "아티팩트 만듦: {title}",
-  "Show in the chat": "채팅에서 보기"
+  "Show in the chat": "채팅에서 보기",
+  "A bot": "봇",
+  "Connecting to your computers…": "컴퓨터에 연결 중…",
+  "Credential": "자격 증명",
+  "Fast": "빠름",
+  "Finished.": "완료되었습니다.",
+  "Folders": "폴더",
+  "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.": "네트워크 주소를 찾을 수 없고 \"어디서나 접근\"이 꺼져 있습니다. Wi-Fi에 연결하거나 이 옵션을 켜세요.",
+  "Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.": "Codync 앱 또는 iPhone 카메라로 스캔하세요. Tailscale이나 포트 개방이 필요 없습니다. 같은 Wi-Fi에서는 iPhone이 직접 연결하고, 그 밖의 곳에서는 암호화된 릴레이를 통해 연결합니다.",
+  "Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.": "모든 계정에서 로그아웃하고 이 컴퓨터의 봇, 대화, 키, 설정을 삭제합니다. 그런 다음 Codync가 시작 화면부터 다시 시작합니다.",
+  "Transcribing…": "받아쓰는 중…",
+  "Update Codync to keep using it.": "계속 사용하려면 Codync를 업데이트하세요.",
+  "Waiting for a computer": "컴퓨터를 기다리는 중",
+  "Your bots will appear once connected. Manage computers to see connection progress.": "연결되면 봇이 표시됩니다. 연결 진행 상황은 컴퓨터 관리에서 확인하세요.",
+  "Your cloud computer is updating…": "클라우드 컴퓨터를 업데이트하는 중…",
+  "Your remote computers": "원격 컴퓨터",
+  "ssh-agent / SSH config": "ssh-agent / SSH 구성"
 }

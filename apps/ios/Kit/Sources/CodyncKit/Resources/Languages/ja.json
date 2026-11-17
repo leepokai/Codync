@@ -2188,5 +2188,21 @@
   "Sent a file: {name}": "ファイルを送信：{name}",
   "Sent a voice note": "ボイスメッセージを送信",
   "Made an artifact: {title}": "アーティファクトを作成：{title}",
-  "Show in the chat": "チャットで表示"
+  "Show in the chat": "チャットで表示",
+  "A bot": "ボット",
+  "Connecting to your computers…": "コンピューターに接続中…",
+  "Credential": "認証情報",
+  "Fast": "高速",
+  "Finished.": "完了しました。",
+  "Folders": "フォルダー",
+  "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.": "ネットワークアドレスが見つからず、「どこからでもアクセス可能」がオフです。Wi-Fi に接続するか、オンにしてください。",
+  "Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.": "Codync アプリまたは iPhone のカメラでスキャンしてください。Tailscale もポート開放も不要です。同じ Wi-Fi では iPhone が直接接続し、それ以外の場所では暗号化されたリレー経由で接続します。",
+  "Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.": "すべてのアカウントからサインアウトし、このコンピューターのボット、会話、キー、設定を削除します。その後、Codync はようこそ画面から始まります。",
+  "Transcribing…": "文字起こし中…",
+  "Update Codync to keep using it.": "引き続き使用するには Codync をアップデートしてください。",
+  "Waiting for a computer": "コンピューターを待っています",
+  "Your bots will appear once connected. Manage computers to see connection progress.": "接続されるとボットが表示されます。接続の進行状況は「コンピュータの管理」で確認できます。",
+  "Your cloud computer is updating…": "クラウドのコンピューターを更新中…",
+  "Your remote computers": "リモートのコンピューター",
+  "ssh-agent / SSH config": "ssh-agent / SSH 設定"
 }

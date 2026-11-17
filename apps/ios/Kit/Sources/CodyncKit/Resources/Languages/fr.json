@@ -2188,5 +2188,21 @@
   "Sent a file: {name}": "Fichier envoyé : {name}",
   "Sent a voice note": "Message vocal envoyé",
   "Made an artifact: {title}": "Artefact créé : {title}",
-  "Show in the chat": "Afficher dans la discussion"
+  "Show in the chat": "Afficher dans la discussion",
+  "A bot": "Un bot",
+  "Connecting to your computers…": "Connexion à vos ordinateurs…",
+  "Credential": "Identifiant",
+  "Fast": "Rapide",
+  "Finished.": "Terminé.",
+  "Folders": "Dossiers",
+  "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.": "Aucune adresse réseau trouvée et « Accessible de partout » est désactivé. Connectez-vous au Wi-Fi ou activez-le.",
+  "Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.": "Scannez avec l'app Codync ou l'appareil photo de l'iPhone. Ni Tailscale ni ports ouverts : votre iPhone se connecte directement sur le même Wi-Fi, et via le relais chiffré partout ailleurs.",
+  "Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.": "Déconnecte tous les comptes et supprime les bots, conversations, clés et réglages de cet ordinateur. Codync recommence ensuite depuis l’écran d’accueil.",
+  "Transcribing…": "Transcription…",
+  "Update Codync to keep using it.": "Mettez à jour Codync pour continuer à l’utiliser.",
+  "Waiting for a computer": "En attente d’un ordinateur",
+  "Your bots will appear once connected. Manage computers to see connection progress.": "Vos bots apparaîtront une fois connectés. Ouvrez Gérer les ordinateurs pour suivre la connexion.",
+  "Your cloud computer is updating…": "Votre ordinateur cloud se met à jour…",
+  "Your remote computers": "Vos ordinateurs distants",
+  "ssh-agent / SSH config": "ssh-agent / config SSH"
 }

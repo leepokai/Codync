@@ -18,14 +18,16 @@ else a generic "Bug fixes and improvements" line. Delete old sections.
 - 「設定」會說明資料夾是不是 git repository。
 - 背景工作可以問你問題或傳檔案。
 - 背景工作也會用備援；需要登入時會在聊天裡請你登入。
+- 轉寫中、雲端電腦更新等幾段介面文字，現在會以你選的語言顯示。
 
 ### en-US
 - Bots, routines and bot requests work in the background.
 - The Work button lists background work.
 - Details: Threads, Event box.
-- Open a thread as a page and write to it like a chat: Send now or Remove what waits.
+- Open a thread as a page and chat in it; Send now or Remove what waits.
 - A finished thread takes messages again.
 - Each thread shows its folder or branch.
 - Settings says whether the folder is a git repository.
 - Background work can ask or send files.
-- Background work uses fallbacks too; sign-ins it needs show in the chat.
+- Background work uses fallbacks; sign-ins show in the chat.
+- More interface text shows in your language.

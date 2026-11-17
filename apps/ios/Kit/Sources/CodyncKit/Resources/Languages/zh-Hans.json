@@ -2188,5 +2188,21 @@
   "Sent a file: {name}": "发了文件：{name}",
   "Sent a voice note": "发了语音消息",
   "Made an artifact: {title}": "做了 Artifact：{title}",
-  "Show in the chat": "在对话中显示"
+  "Show in the chat": "在对话中显示",
+  "A bot": "某个 Bot",
+  "Connecting to your computers…": "正在连接你的电脑…",
+  "Credential": "凭证",
+  "Fast": "快速",
+  "Finished.": "已完成。",
+  "Folders": "文件夹",
+  "No network address found and “Reach from anywhere” is off. Connect to Wi-Fi or turn it on.": "找不到网络地址，且“随时随地连接”已关闭。请连接 Wi-Fi 或打开它。",
+  "Scan with the Codync app or the iPhone Camera. No Tailscale or open ports needed: your iPhone connects directly on the same Wi-Fi, and through the encrypted relay anywhere else.": "用 Codync App 或 iPhone 相机扫描。不需要 Tailscale，也不用开放端口：iPhone 在同一个 Wi-Fi 下直接连接，在其他地方则通过加密中继连接。",
+  "Signs out every account and deletes this computer's bots, conversations, keys and settings. Codync then starts over from the welcome screen.": "会退出所有账户，并删除这台电脑上的 Bot、对话、密钥和设置。之后 Codync 会从欢迎页重新开始。",
+  "Transcribing…": "正在转写…",
+  "Update Codync to keep using it.": "请更新 Codync 以继续使用。",
+  "Waiting for a computer": "正在等待电脑",
+  "Your bots will appear once connected. Manage computers to see connection progress.": "连上之后，你的 Bot 会显示在这里。打开“管理电脑”可以查看连接进度。",
+  "Your cloud computer is updating…": "你的云端电脑正在升级…",
+  "Your remote computers": "你的远程电脑",
+  "ssh-agent / SSH config": "ssh-agent / SSH 配置"
 }

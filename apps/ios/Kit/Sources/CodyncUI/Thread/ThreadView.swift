@@ -44,7 +44,8 @@ public struct ThreadView: View {
     private var chat: some View {
         let items = chatItems
         let matches = find.map { ConversationFind.matches(in: Self.findable(items), query: $0.query) } ?? []
-        let shown = find?.index(in: matches).map { matches[$0] }
+        // A card or quote brought into view since find's last step is what the chat shows, without find's match.
+        let shown = revealed?.step == findReveal ? nil : find?.index(in: matches).map { matches[$0] }
         return transcript(items, shown: shown)
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {
@@ -141,6 +142,9 @@ public struct ThreadView: View {
             .onChange(of: model.cardRequest?.item.id, initial: true) { _, _ in
                 if let item = model.takeCardRequest(for: botId) { showCard(item) }
             }
+            .onChange(of: model.threadRequest?.item.id, initial: true) { _, _ in
+                if let item = model.takeThreadRequest(for: botId) { details = DetailsRequest(thread: item) }
+            }
             .onChange(of: model.voiceCallRequest, initial: true) { _, _ in
                 if model.takeVoiceCallRequest(for: botId) { startShortcutCall() }
             }
@@ -161,7 +165,9 @@ public struct ThreadView: View {
             .codyncSheet(item: $openCall) { CallConversationView(line: $0) }
             .codyncSheet(item: $details) { request in
                 // A card is in this chat: another bot's details (a group member's) have none to go to.
-                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: (request.botId ?? botId) == botId ? { showCard($0) } : nil) { artifact in
+                let own = (request.botId ?? botId) == botId
+                BotDetailsView(botId: request.botId ?? botId, request: request, openCard: own ? { showCard($0) } : nil,
+                               openInChat: own ? { showInChat($0.id) } : nil) { artifact in
                     details = nil
                     openArtifact = artifact
                 }
@@ -191,9 +197,21 @@ public struct ThreadView: View {
     /// ponytail: only among the loaded messages, like a card; page back until it is found if `quote_opened`
     /// shows `found: false` often.
     private func showQuoted(_ id: String) {
-        let item = chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }
-        Analytics.shared.capture(.quoteOpened(found: item != nil))
-        if let item { reveal(item.id) }
+        let shown = rowId(of: id)
+        Analytics.shared.capture(.quoteOpened(found: shown != nil))
+        if let shown { reveal(shown) }
+    }
+
+    /// Closes the details over the chat and brings the entry `id` into view: what an item's thread says its task put
+    /// here. Only among the loaded messages, like a quote.
+    private func showInChat(_ id: String) {
+        details = nil
+        if let shown = rowId(of: id) { reveal(shown) }
+    }
+
+    /// The chat's row that shows the entry `id`.
+    private func rowId(of id: String) -> String? {
+        chatItems.first { if case .entry(let e, _) = $0.kind { e.id == id } else { false } }?.id
     }
 
     /// Open Live Mode from Shortcuts: closes whatever covers the chat, then starts the call.

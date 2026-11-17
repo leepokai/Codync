@@ -74,6 +74,9 @@ impl Hub {
             if crate::chat::memory::shared(&cfg) != crate::chat::memory::shared(&before) {
                 crate::chat::memory::changed(self, Some(&id));
             }
+            if cfg.fallbacks != before.fallbacks {
+                crate::chat::tasks::fallbacks_changed(self, &cfg);
+            }
             self.send_cmd(&id, Cmd::Reconfigure(Box::new(cfg)))?;
         }
         self.emit_bot(&id);

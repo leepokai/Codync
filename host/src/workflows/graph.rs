@@ -150,7 +150,7 @@ fn check_point(x: f64, y: f64) -> Result<()> {
 }
 
 fn check_size(value: f64) -> Result<()> {
-    if !value.is_finite() || value < 0.0 || value > MAX_SIZE {
+    if !value.is_finite() || !(0.0..=MAX_SIZE).contains(&value) {
         bail!(problem("limit", "A step is too large"));
     }
     Ok(())

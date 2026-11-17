@@ -49,9 +49,10 @@ const WIDE = 740
 /**
  * One endless conversation with a bot or a group chat. Only deliberate messages show here; tool
  * calls and thinking live in the "Full conversation" sheet. Replying to a message quotes it in the composer.
- * `request` is what something outside asks it to show, counted per asking: the card of `item`, else the bot's Details.
+ * `request` is what something outside asks it to show, counted per asking: the card of `item`, the thread of the
+ * item `thread`, else the bot's Details.
  */
-export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: { count: number; item?: string } | null }) {
+export const ThreadView = memo(function ThreadView({ botId, request = null }: { botId: string; request?: { count: number; item?: string; thread?: string } | null }) {
   const tr = useTr()
   const store = useStore()
   const bot = store.bots.get(botId) ?? null
@@ -65,6 +66,9 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const [templateDraft, setTemplateDraft] = useState<BotDraft | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [detailsTab, setDetailsTab] = useState<DetailsTab>('details')
+  // The item whose thread the inspector shows in place of its pages.
+  const [threadItem, setThreadItem] = useState<string | null>(null)
+  const closeThread = useCallback(() => setThreadItem(null), [])
   const [compactDetails, setCompactDetails] = useState(false)
   const [calling, setCalling] = useState(false)
   const [callSpeaking, setCallSpeaking] = useState(false)
@@ -142,6 +146,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
 
   const showDetails = useCallback((tab: DetailsTab) => {
     setDetailsTab(tab)
+    setThreadItem(null)
     setShowSettings(true)
     if (!wide) setCompactDetails(true)
   }, [wide])
@@ -156,18 +161,23 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
   const presentAgent = useCallback((id: string) => (id === botId ? showDetails('settings') : setEditingMember(id)), [botId, showDetails])
   // The capsule opens what the bot does.
   const openWork = useCallback(() => showDetails('details'), [showDetails])
-  // The chat at the approval card of an item that needs the user.
+  // The chat beside the panel at the card an item that needs the user waits on (the one its row reads), or at one of
+  // its entries: what an item's thread says its task put there.
+  const [reveal, setReveal] = useState<Reveal | null>(null)
   const openCard = useCallback((itemId: string) => {
     setCompactDetails(false)
-    // ponytail: looks among the loaded messages only; a card still waiting is among the newest. Load older pages
-    // until it is found if cards ever wait that long.
-    requestAnimationFrame(() => root.current?.querySelector(`[data-work-item="${CSS.escape(itemId)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+    setReveal({ itemId })
+  }, [])
+  const showInChat = useCallback((entryId: string) => {
+    setCompactDetails(false)
+    setReveal({ entryId })
   }, [])
   // The view of all bots' work asks for the same, each time: a bot's heading for its Details, a row for its card.
   useEffect(() => {
     if (!request) return
-    if (request.item) openCard(request.item)
-    else showDetails('details')
+    if (request.item) return openCard(request.item)
+    showDetails('details')
+    if (request.thread) setThreadItem(request.thread)
   }, [request?.count])
   const member = editingMember ? store.bots.get(editingMember) : undefined
 
@@ -178,9 +188,13 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       routineId={routineId}
       tab={detailsTab}
       setTab={setDetailsTab}
+      thread={threadItem}
+      openThread={setThreadItem}
+      closeThread={closeThread}
       editGroup={() => setEditingGroup(true)}
       openArtifact={openArtifact}
       openCard={openCard}
+      showInChat={showInChat}
       share={() => {
         setCompactDetails(false)
         if (bot) setTemplateDraft(draftOf(bot))
@@ -188,6 +202,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
       close={() => {
         setShowSettings(false)
         setCompactDetails(false)
+        setThreadItem(null)
       }}
     />
   )
@@ -218,7 +233,7 @@ export const ThreadView = memo(function ThreadView({ botId, request = null }: { 
           </button>
         </div>
         {/* An update card takes the composer's place, so there's nothing to reply with. */}
-        <Transcript botId={botId} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
+        <Transcript botId={botId} reveal={reveal} openTrace={openTrace} onReply={store.mismatch ? undefined : setReplyTo} openRoutine={presentRoutine} openAgent={presentAgent} openBotChat={setBotChat} openArtifact={openArtifact} openCall={setCallLine} />
         <div className="composer-dock" ref={dock}>
           <div className="composer-fade" />
           {store.mismatch ? (
@@ -321,7 +336,16 @@ function ConnectionSubtitle() {
 /** The messages: every loaded message, brought to the newest as it changes while the reader is at the bottom. */
 const PAGE = 40
 
-const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
+/** Where the shown rows start: at the row `first`, or with the newest `PAGE` rows. */
+function startOf(list: ChatItem[], first: string | null) {
+  const found = first ? list.findIndex((i) => i.id === first) : -1
+  return found >= 0 ? found : Math.max(0, list.length - PAGE)
+}
+
+/** Where the chat is brought to: an item's card (`itemId`), or an entry (`entryId`). */
+type Reveal = { itemId: string } | { entryId: string }
+
+const Transcript = memo(function Transcript({ botId, reveal, openTrace, onReply, openRoutine, openAgent, openBotChat, openArtifact, openCall }: { botId: string; reveal: Reveal | null; openTrace: () => void; onReply?: (quote: ReplyQuote) => void; openRoutine: (id: string | null) => void; openAgent: (botId: string) => void; openBotChat: (peerId: string) => void; openArtifact: (artifactId: string) => void; openCall: (lineId: string) => void }) {
   const store = useStore()
   const tr = useTr()
   const bot = store.bots.get(botId) ?? null
@@ -337,15 +361,18 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   // The newest 40 items first; older pages come in near the top.
   const [firstShown, setFirstShown] = useState<string | null>(null)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  const found = firstShown ? all.findIndex((i) => i.id === firstShown) : -1
-  const start = found >= 0 ? found : Math.max(0, all.length - PAGE)
+  const start = startOf(all, firstShown)
   const items = all.slice(start)
   const more = start > 0 || store.canLoadOlder(botId)
   // Following the newest message, or reading history: scrolling up releases the bottom,
   // arriving back at the end (or Jump to latest) restores it. Content growth alone never changes it.
-  const [following, setFollowing] = useState(true)
+  const [following, setFollowingState] = useState(true)
+  // Set with the state, not from it: a store change renders before a pending change to it, and would undo it.
   const followingRef = useRef(true)
-  followingRef.current = following
+  const setFollowing = (on: boolean) => {
+    followingRef.current = on
+    setFollowingState(on)
+  }
   const scroller = useRef<HTMLDivElement>(null)
   const lastScrollTop = useRef(0)
   const keepPlace = useRef<number | null>(null)
@@ -361,6 +388,34 @@ const Transcript = memo(function Transcript({ botId, openTrace, onReply, openRou
   useEffect(() => {
     if (!firstShown && items[0]) setFirstShown(items[0].id)
   }, [firstShown, items])
+
+  // `reveal`: the shown rows reach back to its entry (an item's card loads older pages until the chat has it), and it
+  // scrolls into the middle. One that can't be found leaves the chat where it was.
+  const [revealing, setRevealing] = useState<{ entryId: string } | null>(null)
+  useEffect(() => {
+    if (!reveal) return
+    let current = true
+    void (async () => {
+      const entryId = 'entryId' in reveal ? reveal.entryId : (await store.cardOf(botId, reveal.itemId))?.id
+      if (!current || !entryId) return
+      const list = chatOf(store.allEntries(botId))
+      const at = list.findIndex((i) => i.kind !== 'separator' && i.entry.id === entryId)
+      if (at < 0) return
+      setFirstShown((first) => list[Math.min(at, startOf(list, first))]!.id)
+      setRevealing({ entryId })
+    })()
+    return () => {
+      current = false
+    }
+  }, [reveal])
+  // At once, not smooth: a smooth scroll still at the end lets the follower take the chat back down. Brought up from
+  // the newest, the reader stops following it.
+  useEffect(() => {
+    const el = scroller.current
+    if (!el || !revealing) return
+    el.querySelector(`[data-entry-id="${CSS.escape(revealing.entryId)}"]`)?.scrollIntoView({ block: 'center' })
+    if (el.scrollHeight - el.scrollTop - el.clientHeight >= 8) setFollowing(false)
+  }, [revealing])
 
   const showEarlier = async () => {
     if (loadingEarlier) return

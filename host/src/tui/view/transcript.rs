@@ -19,7 +19,8 @@ pub(super) struct Built {
     pub(super) lines: Vec<Line<'static>>,
     /// (line index, x offset, width, click)
     pub(super) buttons: Vec<(usize, u16, u16, Click)>,
-    /// Each message's (entry id, first line, end line), for picking one to reply to.
+    /// Each message's (entry id, first line, end line), for picking one to reply to; an answered card's too, which an
+    /// item's thread picks to show it here.
     pub(super) messages: Vec<(String, usize, usize)>,
     /// The lines (first, end) that hold what a message says, the text find in the conversation searches.
     pub(super) texts: Vec<(usize, usize)>,
@@ -272,23 +273,28 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                 )));
             }
         }
+        // Pickable waiting too: Work's `↵` on an item that needs you picks its card, which brings it on screen.
         Kind::Permission => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 // A card in a group is its asking bot's.
                 permission_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 decided_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // A choice card is laid out like an approval card, the bot asking one of its own options.
         Kind::Decision => {
             gap(out);
+            let from = out.lines.len();
             if e.pending() {
                 decision_card(out, app, e, author.unwrap_or(b), width);
             } else {
                 chosen_line(out, e);
             }
+            out.messages.push((e.id.clone(), from, out.lines.len()));
         }
         // Of memory and context, only a fresh conversation gets a line: memory lives in the bot's memory settings, a
         // summary keeps the same conversation going, and a kept handoff changed nothing.
@@ -346,6 +352,11 @@ fn entry_lines(out: &mut Built, app: &App, b: &Bot, e: &Entry, info: &HashMap<i6
                     &[Span::styled(" · ", t.dim)],
                     &[Span::raw("   ")],
                 )),
+            }
+            // What a background task asks of the user here (a sign-in, a fallback) says where it comes from.
+            if let Some(from) = background_line(e) {
+                out.lines
+                    .push(Line::from(Span::styled(format!("   {}", truncate(&from, width.saturating_sub(4))), t.dim)));
             }
             let folded = unfoldable(e);
             if app.unfolded.contains(&e.id) {

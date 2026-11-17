@@ -37,6 +37,7 @@ impl App {
             items.extend(
                 ACTIONS
                     .iter()
+                    .filter(|(_, _, a)| *a != Action::ResetCredentials || self.credentials_reset)
                     .filter(|(label, _, _)| {
                         let translated = super::super::l10n::tr(label);
                         fuzzy(q, &[label, translated.as_ref()])

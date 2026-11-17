@@ -208,14 +208,15 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
   takes it into the running turn of the user's own chat, and the message joins that turn (its `turn`, its reply,
   memory, a fallback's retry). The turn's end waits for the agent's answer, at most 15 seconds, so a late `injected`
   still counts as joined and the bot stays working until then. Another agent's turn in the user's chat stops for it,
-  and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
+  with no `Stopped.` line (drawn under the message it would read as the message's), and behind a routine, a room or another bot's request it goes first in line. *Remove* (`unqueue`) takes it back: it
   never goes out, its files are deleted and the chat hides it (`removed`).
 - Bot-to-bot requests and the replies to them occupy separate turns in the same queue (replies waiting together are one turn); user messages are only folded together up to the next request or reply. Neither feeds dreaming. See [bot collaboration](bot-collaboration.md).
 - A request turn (the recipient's) doesn't set the restart marker: its pending notices become interrupted errors instead of automatically replaying work. A reply turn is the sender's own chat turn and sets it, so it resumes like a user turn.
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
   the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
-  that can't keeps its session, and its next new session gets them.
+  that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
+  that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).
 - *New session* (`newSession`) cancels the running turn as Stop does (a routine's run in the chat too; items that
   turn added to the event box are dropped) but keeps the queue: waiting messages and follow-ups run in the new
   session, waiting routines each in their own, and running tasks report into it. A handoff card still in draft is

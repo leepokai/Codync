@@ -222,6 +222,8 @@ internal object NotificationDisplay {
     const val RUN_ID = "codync:runId"
     const val NODE_ID = "codync:nodeId"
     const val STEP_ID = "codync:stepId"
+    /** A chat's alert, under its [alertTag]; a task's notification uses 2. */
+    private const val ALERT_ID = 1
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(ALERTS, "Bot updates", NotificationManager.IMPORTANCE_HIGH))
@@ -253,16 +255,17 @@ internal object NotificationDisplay {
     /** The alert's title, what happened and its text; with the chat's face, a conversation from the bot. */
     fun alert(context: Context, scope: String, computer: String, bot: String, alert: PushAlert, kind: String?, workflowId: String? = null, runId: String? = null, nodeId: String? = null, stepId: String? = null) {
         channels(context)
-        val tag = "$scope/$computer/$bot"
+        val tag = alertTag(scope, computer, bot)
         val builder = builder(context, scope, computer, bot, ALERTS, kind.orEmpty(), workflowId, runId, nodeId, stepId).setContentTitle(alert.title).setContentText(alert.body)
             .setSubText(alert.subtitle).setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
             .setAutoCancel(true).setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .addExtras(android.os.Bundle().apply { putString(ALERT_KIND, kind) })
         alert.copy(faces = alert.faces.withCustomIcons(notificationIcons(context, scope, computer))).conversation(bot)?.let { conversation ->
             // A system that refuses the conversation still shows the plain alert.
             try { AlertConversations.style(context, builder, tag, computer, open(context, scope, computer, bot, workflowId, runId, nodeId, stepId), alert.body, conversation) }
             catch (error: Exception) { android.util.Log.w("Codync", "Alert shown without its conversation", error) }
         }
-        try { context.getSystemService(NotificationManager::class.java).notify(tag, 1, builder.build()) } catch (_: SecurityException) { }
+        try { context.getSystemService(NotificationManager::class.java).notify(tag, ALERT_ID, builder.build()) } catch (_: SecurityException) { }
     }
     /**
      * A delegated task: on Android 16 a Live update (promoted ongoing notification) with its
@@ -270,7 +273,7 @@ internal object NotificationDisplay {
      */
     fun task(context: Context, scope: String, computer: String, watch: TaskWatch) {
         channels(context)
-        val text = when (watch.status) { "working" -> watch.activity.ifEmpty { "Working…" }; "needsInput" -> watch.activity.ifEmpty { "Needs your approval" }
+        val text = when (watch.status) { "working" -> watch.activity.ifEmpty { "Working…" }; "needsInput" -> watch.activity.ifEmpty { "Needs approval" }
             "error" -> "Could not finish"; else -> "Done" }
         val tag = "$scope/$computer/${watch.botId}"
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -312,6 +315,20 @@ internal object NotificationDisplay {
             .setShortCriticalText(when (watch.status) { "needsInput" -> "Needs you"; "error" -> "Failed"; "idle" -> "Done"; else -> null })
         return notification.build()
     }
+
+    /** A chat's alert; the launcher badge follows the alerts showing. */
+    fun cancelAlert(context: Context, scope: String, computer: String, bot: String) =
+        context.getSystemService(NotificationManager::class.java).cancel(alertTag(scope, computer, bot), ALERT_ID)
+
+    /** The chats of one computer showing an alert: bot → the alert's kind (`done`, `needsInput`, `failed`). */
+    fun alertKinds(context: Context, scope: String, computer: String): Map<String, String> {
+        val prefix = alertTag(scope, computer, "")
+        return context.getSystemService(NotificationManager::class.java).activeNotifications
+            .filter { it.id == ALERT_ID && it.tag.orEmpty().startsWith(prefix) }
+            .associate { it.tag.removePrefix(prefix) to it.notification.extras.getString(ALERT_KIND).orEmpty() }
+    }
+
+    private fun alertTag(scope: String, computer: String, bot: String) = "$scope/$computer/$bot"
 
     /** Notifications of one kind ([id]); with [prefix], only those whose tag starts with it (one computer's). */
     fun cancel(context: Context, id: Int, prefix: String = "") {

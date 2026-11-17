@@ -66,10 +66,12 @@ pub(super) fn sweep(hub: &Arc<Hub>, bot: &str) {
     dispatch::dispatch(hub, bot);
 }
 
-/// Whether nothing of `task` runs: no turn of its (however long and quiet a running one is), and none its actor
-/// is about to resume.
+/// Whether nothing of `task` runs: no turn of its (however long and quiet a running one is), none its actor is
+/// about to resume, and none about to start for what the user wrote to its thread (an item they just reopened).
 fn is_lost(hub: &Hub, task: &str) -> bool {
-    !matches!(dispatch::task_state(hub, task, None), TaskState::Busy) && !crate::agent::bot::resumable(&hub.store, task)
+    !matches!(dispatch::task_state(hub, task, None), TaskState::Busy)
+        && !crate::agent::bot::resumable(&hub.store, task)
+        && !super::thread::unheard(&hub.store, task)
 }
 
 #[cfg(test)]
@@ -99,5 +101,20 @@ mod tests {
         // Nothing left to look at: no next look is set.
         arm(&hub, "b1");
         assert!(hub.tasks.sweeps.locked().is_empty());
+    }
+
+    #[test]
+    fn an_item_the_user_just_wrote_to_is_not_lost_before_its_turn_begins() {
+        let hub = hub();
+        hub.store.save_bot(&bot("b1", "Mika", "/tmp")).expect("saved");
+        hub.set_runtime("b1", |rt| rt.status = crate::hub::BotStatus::Working);
+        crate::chat::tasks::put_working_for_test(&hub.store, "b1", "task-1");
+        let thread = crate::store::Lane::main("task-1");
+        let queued = json!({"text": "one more thing", "status": "queued"});
+        hub.store.insert_entry(&thread, crate::store::EntryKind::User, 1, &queued).expect("a message");
+
+        sweep(&hub, "b1");
+        let item = items::load(&hub.store, "b1").remove(0);
+        assert_eq!((item.status, item.restarted), (Status::Working, false), "its turn is about to start");
     }
 }

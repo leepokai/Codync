@@ -1,6 +1,8 @@
 package com.codync.android.core
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -198,5 +200,104 @@ class WorkTest {
         assertEquals(busy, HostClient.decode(Json.parseToJsonElement(WireJson.encodeToString(Bot.serializer(), busy)).jsonObject))
         // The widgets read it too: a bot whose items work after its chat's turn reads as working.
         assertEquals(listOf("working"), widgetBots(mapOf("c" to listOf(busy))).map { it.status })
+    }
+
+    @Test fun `the host says which items take a message`() {
+        val items = work("""[{"id":"a","status":"working","task":"t","talk":true,"folder":"/Users/kai/code/app"},
+            {"id":"b","status":"working","task":"t2","talk":false,"source":{"kind":"routine","id":"r"}}, {"id":"c","status":"waiting","folder":null}]""")
+        assertEquals(listOf(true, false, false), items.map { it.talk })
+        assertEquals(listOf("/Users/kai/code/app", null, null), items.map { it.folder })
+    }
+
+    @Test fun `an item says where it works, the branch for one in a worktree of its own`() {
+        val home = "/Users/kai"
+        val folder = WorkItem("a", status = WorkStatus.Working, folder = "/Users/kai/code/app")
+        assertEquals(WhereLine(WhereKind.Folder, "~/code/app", "/Users/kai/code/app"), whereLine(folder, home))
+        val tree = folder.copy(worktree = Worktree("codync/fix-login", "/w/a"), folder = "/w/a/server")
+        assertEquals(WhereLine(WhereKind.Branch, "codync/fix-login", "/w/a/server"), whereLine(tree, home))
+        // An older host names the worktree alone: its top is what copies; one with no path copies nothing.
+        assertEquals("/w/a", whereLine(tree.copy(folder = null), home)?.path)
+        assertNull(whereLine(tree.copy(folder = null, worktree = Worktree("codync/x")), home)?.path)
+        assertNull(whereLine(item("w", WorkStatus.Waiting), home))
+        assertEquals("folder" to "arrow.triangle.branch", WhereKind.Folder.symbol to WhereKind.Branch.symbol)
+    }
+
+    @Test fun `a folder starts at the computer's home`() {
+        assertEquals("~", homeRelative("/Users/kai", "/Users/kai/"))
+        assertEquals("~/code/app", homeRelative("/home/kai/code/app", "/home/kai"))
+        assertEquals("~/app", homeRelative("/root/app", "/root"))
+        assertEquals("""~\code\app""", homeRelative("""C:\Users\kai\code\app""", """C:\Users\kai"""))
+        // Another folder that only starts the same, anywhere else, and a computer that names no home: as it is.
+        assertEquals("/Users/kaito/site", homeRelative("/Users/kaito/site", "/Users/kai"))
+        assertEquals("/Users/Shared/site", homeRelative("/Users/Shared/site", "/Users/kai"))
+        assertEquals("/var/www/site", homeRelative("/var/www/site", "/Users/kai"))
+        assertEquals("/tmp", homeRelative("/tmp", ""))
+    }
+
+    @Test fun `a thread's draft goes with its bot`() {
+        assertEquals("b/item/i", threadDraftKey("b", "i"))
+        assertTrue(threadDraftKey("b", "i").startsWith("b/"))
+    }
+
+    @Test fun `a thread shows what its task put in the chat where it came`() {
+        fun entry(id: String, at: Long, task: String? = null, botId: String = "b") = Entry(id, 1, botId, 1, "agent", createdAt = at,
+            data = JsonObject(task?.let { mapOf("task" to JsonObject(mapOf("id" to JsonPrimitive(it)))) } ?: emptyMap()))
+        val own = listOf(entry("t1", 10, botId = "task-1"), entry("t2", 30, botId = "task-1"))
+        val chat = listOf(entry("c1", 5, "task-1"), entry("c2", 20, "task-1"), entry("c3", 21), entry("c4", 30, "task-1"), entry("c5", 31, "task-2"))
+        // The task's own first at the same moment; the chat's own and another task's stay in the chat.
+        assertEquals(listOf("c1", "t1", "c2", "t2", "c4"), sharing(own, chat, "task-1").map { it.id })
+        assertEquals(listOf("t1", "t2"), sharing(own, chat, "task-9").map { it.id })
+    }
+
+    @Test fun `what a task put in the chat is one line of its thread, saying how it stands`() {
+        fun line(kind: String, data: String) = sharedLine(Entry("c", 1, "b", 1, kind, data = Json.parseToJsonElement(data).jsonObject)) { it }
+        val options = """"options":[{"optionId":"ok","name":"Allow","kind":"allow_once"},{"optionId":"no","name":"Deny","kind":"reject_once"},{"optionId":"x","name":"Skip","kind":"other"}]"""
+        fun approval(status: String, selected: String = "") = line("permission", """{"status":"$status","title":"npm test",$options,"selected":"$selected"}""")
+        assertEquals(SharedLine("hand.raised", "Waiting for your approval: npm test"), approval("pending"))
+        assertEquals(SharedLine("checkmark", "Approved: npm test"), approval("answered", "ok"))
+        assertEquals(SharedLine("xmark", "Denied: npm test"), approval("answered", "no"))
+        assertEquals("Answered: Skip", approval("answered", "x")?.text)
+        assertEquals(SharedLine("clock", "Not answered: npm test"), approval("expired"))
+        fun choice(status: String, selected: String = "") = line("notice", """{"decision":true,"status":"$status","question":"Squash?","choices":["Yes","No"],"selected":"$selected"}""")
+        assertEquals("Asked: Squash?", choice("pending")?.text)
+        assertEquals("Answered: No", choice("answered", "No")?.text)
+        assertEquals("Not answered: Squash?", choice("expired")?.text)
+        fun signIn(status: String, kind: String = "agent") = line("notice", """{"text":"Needs you to sign in.","connectionRequest":{"kind":"$kind","status":"$status","title":"Kimi Code"}}""")
+        assertEquals(SharedLine("hand.raised", "Needs Kimi Code sign-in"), signIn("pending"))
+        assertEquals(SharedLine("checkmark", "Signed in"), signIn("ready"))
+        assertEquals(SharedLine("xmark", "Cancelled"), signIn("cancelled"))
+        assertNull("a connector's card is not a task's", line("notice", """{"connectionRequest":{"kind":"oauth","status":"pending","title":"Linear"}}"""))
+        val file = """{"id":"f","name":"log.txt","size":3,"sha256":""}"""
+        assertEquals(SharedLine("doc", "Sent a file: log.txt"), line("agent", """{"final":true,"files":[$file]}"""))
+        assertEquals(SharedLine("waveform", "Sent a voice note"), line("agent", """{"final":true,"files":[$file],"voiceNote":true,"text":"Hi"}"""))
+        assertEquals(SharedLine("doc.richtext", "Made an artifact: Plan"), line("agent", """{"final":true,"artifact":{"id":"a","title":"Plan","updatedAt":0}}"""))
+        assertNull(line("agent", """{"text":"Just words","final":true}"""))
+        assertNull(line("notice", """{"text":"A notice"}"""))
+    }
+
+    @Test fun `a bot's folder is a repository, isn't one, or the computer has no git`() {
+        assertEquals(GitState.Repo, gitState(bot(""","taskWorktrees":true,"gitRepo":true,"gitInstalled":true""")))
+        assertEquals(GitState.None, gitState(bot(""","taskWorktrees":true,"gitRepo":false,"gitInstalled":true""")))
+        assertEquals(GitState.Missing, gitState(bot(""","taskWorktrees":true,"gitInstalled":false""")))
+        // A host that doesn't say whether git is installed has it; one from before worktrees says nothing.
+        assertEquals(GitState.None, gitState(bot(""","taskWorktrees":false""")))
+        assertEquals(GitState.Repo, gitState(bot(""","taskWorktrees":false,"gitRepo":true,"gitInstalled":null""")))
+        assertNull(gitState(bot()))
+        assertEquals("Git isn't installed on this computer", GitState.Missing.title)
+    }
+
+    @Test fun `a thread's transcript is what the task was told first, then the rest without what was taken back`() {
+        fun entry(id: String, kind: String, data: String = "{}") =
+            Entry(id, id.drop(1).toLong(), "task-1", 1, kind, data = Json.parseToJsonElement(data).jsonObject)
+        val told = entry("e1", "user", """{"text":"Fix login","from":"host"}""")
+        val tool = entry("e2", "tool")
+        val mine = entry("e3", "user", """{"text":"Also the tests","status":"queued"}""")
+        val removed = entry("e4", "user", """{"text":"Never mind","status":"cancelled","removed":true}""")
+        // What the host told it later (a session that starts again) stays in its place.
+        val again = entry("e5", "user", """{"text":"Pick it up again","from":"host"}""")
+        assertEquals(ThreadEntries(told, listOf(tool, mine, again)), threadEntries(listOf(told, tool, mine, removed, again)))
+        assertEquals(listOf(true, false, false, true), listOf(told, tool, mine, again).map { it.isToldByHost })
+        assertEquals(ThreadEntries(null, listOf(tool)), threadEntries(listOf(tool)))
+        assertEquals(ThreadEntries(null, emptyList()), threadEntries(emptyList()))
     }
 }

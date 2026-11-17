@@ -246,7 +246,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(try bot("").rosterLine == .lastMessage)
         // The chat's own request says what it asks; an item's only that it needs the user, as on every client.
         #expect(try bot(#","status":"needsInput","activity":"Run the tests""# + asking).needsYouLine == "Run the tests")
-        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs your approval")
+        #expect(try bot(#","status":"needsInput""#).needsYouLine == "Needs approval")
         #expect(try bot(asking).needsYouLine == "Needs you")
     }
 
@@ -263,7 +263,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(item(wait: .init(.next)).waitLine(english) == "Next up")
         #expect(item(wait: .init(.behind, ahead: 2)).waitLine(english) == "2 ahead")
         #expect(item(wait: .init(.after)).waitLine(english) == "Follows what it works on")
-        #expect(item(wait: .init(.usage)).waitLine(english) == "Waiting for usage")
+        #expect(item(wait: .init(.usage)).waitLine(english) == "Near the usage limit: one at a time")
         #expect(item(wait: .init(.behind, ahead: 2), cutIn: true).waitLine(english) == "Was cut in on; starts again")
         // No reason given: it waits. None ahead after all: it is next.
         #expect(item().waitLine(english) == "Waiting")
@@ -281,7 +281,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         let words = [
             "Threads": "Threads", "Event box": "Event Box", "Free": "空位", "Waiting": "等待中", "Later": "之後", "Recent": "最近", "{count} working": "{count} 進行中",
             "{count} waiting": "{count} 等待中", "Next up": "下一個", "{count} ahead": "前面還有 {count} 件",
-            "Follows what it works on": "接在進行中的事後面", "Waiting for usage": "等用量恢復",
+            "Follows what it works on": "接在進行中的事後面", "Near the usage limit: one at a time": "用量接近上限，一次只跑一個",
             "Was cut in on; starts again": "被插隊，會重新開始", "First": "先做", "Cut in": "插隊", "Drop": "丟掉",
             "Agents at once": "同時幾個 agent", "Let \"{title}\" cut in": "讓「{title}」插隊",
             "Every place is taken. Pick what gives way: its session closes and it starts again later.": "名額滿了。選一個讓位：它的 session 會關掉，之後重新開始。",
@@ -303,7 +303,7 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
     @Test func theNewWordsAreInEveryLanguage() {
         for language in [AppLanguage.zh, .ja, .ko, .fr, .de, .es, .ptBR, .ru, .it] {
             for word in ["Free", "Later", "{count} waiting", "Next up", "{count} ahead", "Follows what it works on",
-                         "Waiting for usage", "Was cut in on; starts again", "First", "Cut in", "Drop", "Agents at once",
+                         "Near the usage limit: one at a time", "Was cut in on; starts again", "First", "Cut in", "Drop", "Agents at once",
                          "Let \"{title}\" cut in"] {
                 #expect(L10n.tr(word, preference: language) != word, "\(word) in \(language)")
             }
@@ -322,12 +322,6 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
         #expect(merged.map(\.id) == ["e1", "e2", "e3"])
         #expect(merged[0].data.text == "new")
         #expect(merged[2].rev == 6)
-    }
-
-    @Test func whatATaskWasToldIsNotTheUsersMessage() throws {
-        let told = try JSONDecoder().decode(Entry.self, from: Data(#"{"id":"e1","seq":1,"botId":"task-1","rev":1,"kind":"user","turn":1,"data":{"text":"Fix it","from":"host"},"createdAt":1,"updatedAt":1}"#.utf8))
-        #expect(told.isToldToTask)
-        #expect(try !entry("e2", seq: 2, rev: 1).isToldToTask)
     }
 
     @Test func aCardNamesItsTaskAndItemAndReadsWithoutThem() throws {
@@ -365,11 +359,22 @@ private let traditional: @Sendable (String) -> String = { L10n.tr($0, preference
             try card("e5", #"{"status":"pending","decision":true,"question":"Which branch?","item":"i5"}"#, kind: "notice"),
             try card("e6", #"{"status":"answered","decision":true,"question":"Done already","item":"i6"}"#, kind: "notice"),
             try card("e4", #"{"status":"pending","title":"not a card","item":"i4"}"#, kind: "notice"),
+            try card("e7", #"{"item":"i7","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b"}}"#, kind: "notice"),
+            try card("e8", #"{"item":"i8","connectionRequest":{"kind":"agent","status":"ready","title":"Codex","botId":"b"}}"#, kind: "notice"),
+            // The turn left Kimi Code signed out, and its fallback was too: Kimi Code's card holds the item's message.
+            try card("e9", #"{"item":"i9","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b","entryIds":["m9"]}}"#, kind: "notice"),
+            try card("e10", #"{"item":"i9","connectionRequest":{"kind":"agent","status":"pending","title":"Codex","botId":"b","entryIds":[]}}"#, kind: "notice"),
+            // A sign-in that holds the item's message, then an approval its running turn now waits on.
+            try card("e11", #"{"item":"i11","connectionRequest":{"kind":"agent","status":"pending","title":"Kimi Code","botId":"b","entryIds":["m11"]}}"#, kind: "notice"),
+            try card("e12", #"{"status":"pending","title":"npm run build","item":"i11"}"#),
         ]
-        // An approval's title, a choice's question.
+        // An approval's title, a choice's question, the agent a sign-in waits on.
         #expect(chat.card(for: item("i1", .needsYou))?.ask == "npm test")
         #expect(chat.card(for: item("i5", .needsYou))?.ask == "Which branch?")
-        for id in ["i2", "i4", "i6"] { #expect(chat.card(for: item(id, .needsYou)) == nil) }
+        #expect(chat.card(for: item("i7", .needsYou))?.ask == "Needs Kimi Code sign-in")
+        #expect(chat.card(for: item("i9", .needsYou))?.id == "e9", "the card whose sign-in sends the work again")
+        #expect(chat.card(for: item("i11", .needsYou))?.id == "e12", "the approval the running turn waits on")
+        for id in ["i2", "i4", "i6", "i8"] { #expect(chat.card(for: item(id, .needsYou)) == nil) }
     }
 
     @Test func whatATaskPutInTheChatSaysSo() throws {

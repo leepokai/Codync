@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub enum Cmd {
+    /// A connector the bot has on was edited or set up: its agent starts again for its next turn (`restart_stale`).
     RefreshTools,
     /// A cloud computer's keeper started again, forgetting the grants the agent was started with.
     KeeperRestarted,

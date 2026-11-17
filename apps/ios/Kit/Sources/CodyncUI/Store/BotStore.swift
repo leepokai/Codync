@@ -42,6 +42,11 @@ public final class BotStore {
     /// The first catch-up has arrived: everything up to the host's rev when this app connected.
     public internal(set) var caughtUp = false
     var catchUpRev = Int64.max
+    /// This events stream has delivered its whole catch-up; false again as soon as the stream stops or is replaced.
+    var streamCaughtUp = false
+    /// Online and caught up on this stream: the roster matches the host, so the icon badge stops using
+    /// the computer's alert counts.
+    var rosterIsCurrent: Bool { connection == .online && streamCaughtUp }
     /// The `since` this connection's events stream was opened with; the `hello` that opens its
     /// catch-up reads it (after a mirror reset `rev` no longer says what was requested).
     var requestedSince: Int64 = 0
@@ -110,6 +115,9 @@ public final class BotStore {
     /// An item whose card its bot's conversation should bring into view, consumed by it.
     public internal(set) var cardRequest: (botId: String, item: WorkItem)?
 
+    /// An item whose thread its bot's conversation should open, in the bot's details; consumed by it.
+    public internal(set) var threadRequest: (botId: String, item: WorkItem)?
+
     /// A Shortcuts request, consumed by the matching conversation.
     public internal(set) var voiceCallRequest: String?
     @ObservationIgnored var preparingVoiceCall: UUID?
@@ -123,7 +131,7 @@ public final class BotStore {
     public var onSent: (@MainActor (Bot, SendProgress) -> Void)?
     /// A prompt reached the computer or its mailbox.
     var onPromptSent: @MainActor () -> Void = { ReviewInvitation.shared.sent() }
-    /// A bot appeared, changed or went away.
+    /// A bot appeared, changed or went away, or this stream's catch-up finished (`rosterIsCurrent`).
     var onRosterChanged: (@MainActor () -> Void)?
     /// The computer's addresses or keys changed (merged from its `hello`); persist it.
     var onComputerChanged: (@MainActor (Computer) -> Void)?
@@ -143,7 +151,8 @@ public final class BotStore {
     var rev: Int64 = 0
     var hostId: String?
     var streamTask: Task<Void, Never>?
-    var eventsTask: Task<Void, Never>?
+    /// Replacing or dropping it clears `streamCaughtUp`: no new stream has caught up yet.
+    var eventsTask: Task<Void, Never>? { didSet { streamCaughtUp = false } }
     var isActive = true
     /// A call's audio: what the computer tells its voice (`CallCue`), and its end.
     struct VoiceCall {

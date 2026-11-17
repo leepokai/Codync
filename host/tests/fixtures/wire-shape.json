@@ -39,6 +39,7 @@
     "event:bot.bot.fastMode": "bool",
     "event:bot.bot.fastModeIssue": "null",
     "event:bot.bot.fastModeSupport": "string",
+    "event:bot.bot.gitInstalled": "bool",
     "event:bot.bot.gitRepo": "bool",
     "event:bot.bot.harnessMemory": "null",
     "event:bot.bot.harnessMemoryShared": "bool",

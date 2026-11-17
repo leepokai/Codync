@@ -14,7 +14,6 @@ import {
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import { mergeTaskEntries } from '@shared/tasks'
 import { HostError, type HostClient, type HostRoute, type HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import type { RunDetail, WorkflowDetail, WorkflowSummary } from '../views/workflows/workflow'
@@ -26,6 +25,7 @@ import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
+import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -86,8 +86,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
-  /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
-  private taskTranscripts = new Map<string, Entry[]>()
+  private taskTranscripts = new TaskTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -332,21 +331,17 @@ export class BotMirror extends Observable {
 
   /** Holds a task's transcript from now until the returned function is called: its details are open. */
   watchTask(taskId: string): () => void {
-    if (!this.taskTranscripts.has(taskId)) this.taskTranscripts.set(taskId, [])
-    return () => {
-      this.taskTranscripts.delete(taskId)
-    }
+    return this.taskTranscripts.watch(taskId)
   }
 
   /** A watched task's transcript, oldest first. */
   taskEntriesOf(taskId: string): Entry[] {
-    return this.taskTranscripts.get(taskId) ?? []
+    return this.taskTranscripts.of(taskId)
   }
 
-  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nobody watches the task. */
+  /** More of a task's transcript (fetched, or a live `taskEntry`). */
   protected mergeTask(taskId: string, entries: Entry[]) {
-    const held = this.taskTranscripts.get(taskId)
-    if (held) this.taskTranscripts.set(taskId, mergeTaskEntries(held, entries))
+    this.taskTranscripts.merge(taskId, entries)
   }
 
   setError(message: string | null) {

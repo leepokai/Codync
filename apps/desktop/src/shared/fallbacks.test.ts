@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepBannerPhrase, withBackend } from './fallbacks.ts'
+import { clockTime, freeLogins, mixesAgents, moveFallback, restLine, restOf, restPhrase, runningAgent, sameLogin, stepAgents, stepBannerPhrase, stepLogins, stepOn, withBackend } from './fallbacks.ts'
 import { fill } from './fill.ts'
 import { draftOf, normalizeBot, type Backend, type Bot } from './models.ts'
 
@@ -128,4 +128,21 @@ test('bots mix agents when they run more than one, counting a fallback and leavi
   assert.equal(runningAgent(onCodex), 'codex')
   assert.equal(mixesAgents([claude, normalizeBot({ id: 'c', backend: 'claude' }), group]), false)
   assert.equal(mixesAgents([claude, onCodex]), true)
+})
+
+test('a step picked in place takes a free login, and gets its own back on its own agent', () => {
+  const claude: Backend = { id: 'claude', name: 'Claude Code', available: true, command: '', installHint: '',
+    loginProfiles: [{ id: 'a1', kind: 'account', name: 'Work', signedIn: true }, { id: 'a2', kind: 'account', name: 'Home', signedIn: false }] }
+  const codex: Backend = { id: 'codex', name: 'Codex', available: true, command: '', installHint: '' }
+  const taken = [{ backend: 'claude' }, { backend: 'codex' }]
+  assert.deepEqual(stepOn(claude, taken), { backend: 'claude', loginProfile: 'a1', model: null, modelOptions: {} })
+  const own = { backend: 'claude', loginProfile: 'a2', model: 'opus', modelOptions: { effort: 'high' } }
+  assert.equal(stepOn(claude, taken, own), own, 'back on its own agent, its model and login come back')
+  assert.equal(stepOn(claude, [...taken, { backend: 'claude', loginProfile: 'a2' }], own).loginProfile, 'a1', 'unless another step has its login now')
+  // Its signed-out login stays a choice, and so does its agent.
+  assert.deepEqual(stepLogins(claude, own, taken), ['a1', 'a2'])
+  assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }]), [])
+  assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }], [own]), [claude])
+  // Once another step has the remembered login and no other is free, its agent can't be picked: it would land on the bot's own.
+  assert.deepEqual(stepAgents([claude, codex], [{ backend: 'claude' }, { backend: 'claude', loginProfile: 'a1' }, { backend: 'codex' }, { backend: 'claude', loginProfile: 'a2' }], [own]), [])
 })

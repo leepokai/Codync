@@ -318,7 +318,8 @@ struct BotListView: View {
         }
     }
 
-    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat.
+    /// All bots' work. Its heading opens the bot's chat with its details over it; a row that needs the user, the chat;
+    /// any other row, the details on its thread.
     private func workSheet(_ bots: [RosterItem]) -> some View {
         AllWorkView(bots: bots, many: grouped, store: { accounts.store(for: $0.ref.computerId) },
                     openDetails: { item in
@@ -327,6 +328,10 @@ struct BotListView: View {
                     },
                     openChat: { item, work in
                         accounts.store(for: item.ref.computerId)?.requestCard(of: item.bot.id, item: work)
+                        accounts.selection = item.ref
+                    },
+                    openThread: { item, work in
+                        accounts.store(for: item.ref.computerId)?.requestThread(of: item.bot.id, item: work)
                         accounts.selection = item.ref
                     })
     }

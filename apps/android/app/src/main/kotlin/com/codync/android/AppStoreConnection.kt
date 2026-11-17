@@ -193,6 +193,7 @@ private suspend fun AppStore.consumeEvents(active: EncryptedChannel, cursor: Lon
             receiveWorkflows(batch)
             hearCalls(batch)
             acknowledgeVisible(readAfter(batch, state.value.readingChats))
+            readChats(batch, NotificationDisplay.alertKinds(application, local.referenceId, id)).forEach { NotificationDisplay.cancelAlert(application, local.referenceId, id, it) }
             if (resync) throw Resync()
         }
     } finally { source.cancel() }

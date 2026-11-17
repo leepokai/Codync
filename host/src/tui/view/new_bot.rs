@@ -11,9 +11,6 @@ use super::buffer::{centered, frame_box, put, rput, u};
 use super::overlay::input_line;
 use super::style::{FACE, bot_color, face_style, theme};
 
-/// "Color " + "‹ " + the swatches (2 cells and a gap each) + "›".
-const LOOKS_W: usize = 6 + 2 + COLORS.len() * 3 + 1;
-
 pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     let t = theme();
     let r = centered(area, 56, 18);
@@ -32,9 +29,14 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     // ‹ › mark the row the arrows change.
     let label = |f: NewBotField| if n.field == f { t.bold } else { t.secondary }.patch(t.panel);
     let on_color = n.field == NewBotField::Color;
-    let x0 = mid(LOOKS_W);
+    // The label column holds "Color" in any language, and at least "Shape ".
+    let color = tr("Color");
+    let label_w = u((w(&color) + 1).max(6));
+    // Label, "‹ ", the swatches (2 cells and a gap each), then "›".
+    let x0 = mid(usize::from(label_w) + 2 + COLORS.len() * 3 + 1);
     let y = inner.y + 11;
-    let mut x = put(buf, x0, y, 6, tr("Color ").as_ref(), label(NewBotField::Color));
+    put(buf, x0, y, label_w, &color, label(NewBotField::Color));
+    let mut x = x0 + label_w;
     x = put(buf, x, y, 2, if on_color { "‹ " } else { "  " }, label(NewBotField::Color));
     for (ci, c) in COLORS.iter().enumerate() {
         let s = if t.color { Style::default().bg(bot_color(c)) } else { t.text };
@@ -44,7 +46,8 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     put(buf, x, y, 1, if on_color { "›" } else { " " }, label(NewBotField::Color));
     let shape = SHAPES[n.shape];
     let shape = if n.field == NewBotField::Shape { format!("‹ {shape} ›") } else { format!("  {shape}") };
-    let x = put(buf, x0, y + 1, 6, "Shape ", label(NewBotField::Shape));
+    put(buf, x0, y + 1, label_w, "Shape", label(NewBotField::Shape));
+    let x = x0 + label_w;
     put(buf, x, y + 1, u(w(&shape)), &shape, label(NewBotField::Shape));
     let by = inner.bottom() - 1;
     if let Some(e) = &n.error {
@@ -55,4 +58,52 @@ pub(super) fn new_bot_view(buf: &mut Buffer, area: Rect, n: &NewBot) {
     put(buf, x, by, 12, " esc Cancel ", t.text.patch(t.btn).add_modifier(Modifier::BOLD));
     let hint = if n.field == NewBotField::Name { "tab color and shape" } else { "←→ change · tab next" };
     rput(buf, inner.right(), by, hint, t.dim.patch(t.panel));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::app::Editor;
+    use super::super::super::l10n::set_language;
+    use super::*;
+    use crate::LockExt;
+
+    /// Keeps this module's tests from switching the shared language under each other.
+    static LANGUAGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The color row's cells in a 60x20 terminal, the new bot dialog on its color field.
+    fn color_row(language: &str) -> Vec<String> {
+        let area = Rect::new(0, 0, 60, 20);
+        let mut buf = Buffer::empty(area);
+        let n = NewBot {
+            name: Editor::default(),
+            color: 0,
+            shape: 0,
+            field: NewBotField::Color,
+            error: None,
+            saving: false,
+        };
+        let _serial = LANGUAGE.locked();
+        let previous = set_language(language);
+        new_bot_view(&mut buf, area, &n);
+        set_language(previous);
+        let y = centered(area, 56, 18).y + 12;
+        (area.left()..area.right()).map(|x| buf[(x, y)].symbol().to_owned()).collect()
+    }
+
+    fn arrow_x(language: &str) -> Option<usize> {
+        color_row(language).iter().position(|cell| cell == "‹")
+    }
+
+    #[test]
+    fn the_color_row_keeps_its_column_in_every_language() {
+        assert_eq!(arrow_x("en"), Some(15));
+        for language in ["es", "de", "ja", "zh-Hant"] {
+            assert_eq!(arrow_x(language), Some(15), "{language}");
+        }
+    }
+
+    #[test]
+    fn a_long_translation_widens_the_label_column() {
+        assert!(color_row("fr").concat().contains("Couleur ‹"));
+    }
 }

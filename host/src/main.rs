@@ -564,6 +564,8 @@ async fn serve(bind: Option<std::net::IpAddr>, port: u16) -> Result<()> {
     write_token_file(&token)?;
     let identity = identity::Identity::load_or_create(&service::data_dir())?;
     tokio::task::spawn_blocking(backends::hydrate_path).await?;
+    // Looked up now, so the first client already reads the real answer.
+    git::installed();
     let hub = hub::Hub::new(store, host_id, identity, token, port);
     hub.start()?;
     network::start(&hub).await;

@@ -15,6 +15,7 @@ import {
 import { AppLogo, Field, FormSheet, ServiceLogo } from './pieces'
 import { pluginsFor } from './plugins'
 import { useTr } from '../../lib/use-language'
+import { TaskLine } from '../thread/PermissionCard'
 
 
 /** Credentials go through the setup API; only the request's state is a chat entry. */
@@ -69,6 +70,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
 
   const pending = request.status === 'pending'
   return (
+    // A task's sign-in card: the item's row on the bot's Details finds it by this.
     <VStack gap={12} className="request-card">
       <HStack gap={14}>
         <RequestLogo request={request} />
@@ -90,6 +92,7 @@ export function ConnectionRequestCard({ entry }: { entry: Entry }) {
           </HStack>
         )}
       </HStack>
+      <TaskLine entry={entry} />
       {pending && isLogin ? (
         <>
           <Field value={username} onChange={setUsername} placeholder="Username or email" />

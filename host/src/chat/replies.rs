@@ -23,8 +23,7 @@ pub fn quote(store: &Store, chat: &str, id: &str, part: Option<&str>) -> Result<
     let user = e.kind == EntryKind::User.as_str();
     ensure!(e.is_message(), "only messages take replies");
     let author = if user { "user" } else { e.data["author"].as_str().unwrap_or(chat) };
-    let mut quote =
-        json!({"id": e.id, "author": author, "text": acp::truncate(message_text(&e.data).trim(), QUOTE_BYTES)});
+    let mut quote = quote_of(&e.id, author, message_text(&e.data).trim());
     if let Some(artifact) = e.data["artifact"]["id"].as_str() {
         // Quoted under the artifact's current title: the card's text keeps the one it was published with.
         if let Some(current) = crate::chat::artifacts::get(store, author, artifact) {
@@ -36,6 +35,11 @@ pub fn quote(store: &Store, chat: &str, id: &str, part: Option<&str>) -> Result<
         quote["part"] = true.into();
     }
     Ok(quote)
+}
+
+/// A `replyTo` quoting `text` of message `id` by `author`, as long as a quote keeps.
+pub fn quote_of(id: &str, author: &str, text: &str) -> Value {
+    json!({"id": id, "author": author, "text": acp::truncate(text, QUOTE_BYTES)})
 }
 
 /// A bot message's `data` with the message it quotes (`reply_to`, a `quote`), if any, as its `replyTo`.

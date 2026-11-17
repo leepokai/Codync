@@ -313,7 +313,7 @@ internal enum class PhoneSetting(override val wire: String) : CatalogValue { Pus
 /** What an outbound link leads to (`install_command`: an install command copied; `install_link`: the website link copied). */
 internal enum class OutboundLink(override val wire: String) : CatalogValue {
     Github("github"), Issues("issues"), AppStore("app_store"), Demo("demo"), Tailscale("tailscale"), Privacy("privacy"), InstallCommand("install_command"),
-    InstallLink("install_link"), WhatsNewFilm("whats_new_film"),
+    InstallLink("install_link"), WhatsNewFilm("whats_new_film"), Docs("docs"),
 }
 
 internal enum class DevServerUse(override val wire: String) : CatalogValue { Open("open"), Copy("copy") }

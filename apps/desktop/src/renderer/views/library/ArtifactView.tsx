@@ -68,7 +68,7 @@ export function ArtifactView({ botId, artifactId, close }: { botId: string; arti
       <div className="composer-dock">
         {error ? <Text as="div" size="caption" tone="danger" role="alert" className="artifact-error">{error}</Text> : null}
         {/* A message here replies to the artifact's card, so its bot knows which artifact (`chat::replies`); an artifact
-            published without one (a routine's) has nothing to reply to. */}
+            published without one (in a group chat or for another bot) has nothing to reply to. */}
         {artifact?.entryId ? <Composer botId={botId} about={artifact} /> : null}
       </div>
     </div>

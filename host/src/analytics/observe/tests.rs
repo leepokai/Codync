@@ -216,7 +216,7 @@ fn connectors_skills_and_agents() {
     );
     let (event, p) = published(json!({"path": "r.html", "artifact": "a1"}));
     let p = answered(event, p, &json!({"published": true, "card": "not posted"})).expect("published");
-    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a routine's has no card");
+    assert_eq!((p["change"].clone(), p["card"].clone()), (json!("update"), json!(false)), "a room's has no card");
     assert_eq!(props("connectorSignIn", &json!({"id": "c"})).map(|(e, _)| e), Some(Event::ConnectorSigninStarted));
     let setup = props("agentSetup", &json!({"backend": "claude-acp", "step": "install"}));
     assert_eq!(setup, Some((Event::AgentSetupStarted, json!({"agent": "claude-acp", "client": "local"}))));

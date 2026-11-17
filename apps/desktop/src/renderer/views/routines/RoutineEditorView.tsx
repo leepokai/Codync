@@ -160,10 +160,10 @@ export function RoutineEditorView({ botId, routine, saved }: {
         <VStack gap={24} className="routine-form-body">
           <VStack gap={16}>
             <Field label="Name">
-              <input className="routine-input" value={name} placeholder="e.g. Morning summary" onChange={(e) => setName(e.target.value)} />
+              <input className="routine-input" value={name} placeholder={tr('e.g. Morning summary')} onChange={(e) => setName(e.target.value)} />
             </Field>
             <Field label={tr('Instruction')}>
-              <textarea className="routine-input" value={instruction} placeholder="Describe what this bot should do each time it runs." onChange={(e) => setInstruction(e.target.value)} />
+              <textarea className="routine-input" value={instruction} placeholder={tr('Describe what this bot should do each time it runs.')} onChange={(e) => setInstruction(e.target.value)} />
             </Field>
           </VStack>
           <VStack gap={10}>
@@ -193,7 +193,7 @@ export function RoutineEditorView({ botId, routine, saved }: {
               <div className="routine-fade">
                 <CardSection footer="A run is stopped after this long. 1 second to 24 hours.">
                   <LabeledRow label="Timeout">
-                    <input className="schedule-input routine-timeout" aria-label="Timeout in seconds" value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
+                    <input className="schedule-input routine-timeout" aria-label={tr('Timeout in seconds')} value={timeout} placeholder="3600" onChange={(e) => setTimeoutText(e.target.value)} />
                     <Text size="callout" tone="secondary">{tr(`seconds`)}</Text>
                   </LabeledRow>
                 </CardSection>

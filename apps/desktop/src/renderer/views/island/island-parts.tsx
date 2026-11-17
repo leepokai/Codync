@@ -3,6 +3,7 @@ import type { IslandBot } from '@shared/island'
 import { CharacterAvatar, type Mood } from '../../components/Avatar'
 import { Icon } from '../../components/Icon'
 import { ThinkingOrb } from '../../components/ThinkingOrb'
+import { useTr } from '../../lib/use-language'
 import { useArrivals, useFlip } from './island-motion'
 import { avatarColor, palette, withAlpha } from '../../lib/theme'
 
@@ -45,6 +46,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   badge: Badge
   onOpen?: () => void
 }) {
+  const tr = useTr()
   const glow = glowOf(badge, bot.color)
   const inner = (
     <>
@@ -55,7 +57,7 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
   )
   const style = { width: size, height: size }
   return onOpen ? (
-    <button className="island-big" style={style} onClick={onOpen} title="Open conversation" aria-label="Open conversation">
+    <button className="island-big" style={style} onClick={onOpen} title={tr('Open conversation')} aria-label={tr('Open conversation')}>
       {inner}
     </button>
   ) : (
@@ -66,17 +68,18 @@ export function BigCharacter({ bot, size, mood, badge, onOpen }: {
 }
 
 export function StateBadge({ badge, small = false }: { badge: Badge; small?: boolean }) {
+  const tr = useTr()
   if (!badge) return null
   if (badge === 'working' && !small) {
     return (
-      <span className="island-badge orb" aria-label="Working">
+      <span className="island-badge orb" aria-label={tr('Working')}>
         <ThinkingOrb size={14} color="#F5F6F8" />
       </span>
     )
   }
   if (badge === 'working') {
     return (
-      <span className={`island-badge dots ${small ? 'small' : ''}`} aria-label="Working">
+      <span className={`island-badge dots ${small ? 'small' : ''}`} aria-label={tr('Working')}>
         <i />
         <i />
         <i />

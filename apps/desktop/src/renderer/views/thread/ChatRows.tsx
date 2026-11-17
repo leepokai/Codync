@@ -341,17 +341,18 @@ function MessageActions({ visible, className, reactions, reply, trace, copy }: {
   /** What its Copy is (`copyItems`). */
   copy: MenuItem[]
 }) {
+  const tr = useTr()
   const [menu, setMenu] = useState<'reactions' | 'more' | null>(null)
   const smile = useRef<HTMLButtonElement>(null)
   const more = useRef<HTMLButtonElement>(null)
   const shown = visible || menu !== null
   return (
     <div className={`message-actions ${className} ${shown ? 'shown' : ''}`} aria-hidden={!shown}>
-      <button ref={smile} className="message-action" title="Add reaction" aria-label="Add reaction" onClick={() => setMenu('reactions')}>
+      <button ref={smile} className="message-action" title={tr('Add reaction')} aria-label={tr('Add reaction')} onClick={() => setMenu('reactions')}>
         <Icon name="face.smiling" size={14} />
       </button>
       {reply ? <IconButton title="Reply" icon="arrowshape.turn.up.left" size={26} onClick={reply} /> : null}
-      <button ref={more} className="message-action" title="More message actions" aria-label="More message actions" onClick={() => setMenu('more')}>
+      <button ref={more} className="message-action" title={tr('More message actions')} aria-label={tr('More message actions')} onClick={() => setMenu('more')}>
         <Icon name="ellipsis" size={14} />
       </button>
       <AnchoredMenu open={menu === 'reactions'} onClose={() => setMenu(null)} anchor={smile} items={() => []} reactions={reactions} />

@@ -264,7 +264,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
             {providerName(session.provider)}
           </Text>
         ) : null}
-        <button className="call-round" title="Call settings" aria-label="Call settings" onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
+        <button className="call-round" title={tr('Call settings')} aria-label={tr('Call settings')} onClick={() => (openVoiceSettings ? openVoiceSettings() : setSettings(true))}>
           <Icon name="gearshape" size={16} weight="medium" scaled={false} />
         </button>
         <button
@@ -275,7 +275,7 @@ export function CallView({ botId, onSpeaking, interrupt, onEnd }: {
         >
           <Icon name={muted ? 'mic.slash' : 'mic'} size={16} weight="medium" scaled={false} />
         </button>
-        <button className="call-round end" title="End call" aria-label="End call" onClick={onEnd}>
+        <button className="call-round end" title={tr('End call')} aria-label={tr('End call')} onClick={onEnd}>
           <Icon name="xmark" size={16} weight="semibold" scaled={false} />
         </button>
       </div>

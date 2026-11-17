@@ -26,7 +26,7 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
     return (
       <span className="attachment-tile" aria-label={tr('Image attachment: {name}').replaceAll('{name}', () => file.name)} title={file.name}>
         <img src={url} alt="" onError={() => setBroken(true)} />
-        <button className="press attachment-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
+        <button className="press attachment-remove" aria-label={`Remove ${file.name}`} title={tr('Remove')} onClick={remove}>
           <Icon name="xmark" size={11} weight="bold" color="#fff" />
         </button>
       </span>
@@ -36,7 +36,7 @@ export function ComposerAttachment({ file, remove }: { file: OutgoingFile; remov
     <span className="file-chip">
       <Icon name={attachmentSymbol(file.name)} size={10} color="var(--secondary)" />
       <Text size="footnote" tone="text" truncate className="file-chip-name">{file.name}</Text>
-      <button className="file-chip-remove" aria-label={`Remove ${file.name}`} title="Remove" onClick={remove}>
+      <button className="file-chip-remove" aria-label={`Remove ${file.name}`} title={tr('Remove')} onClick={remove}>
         <Icon name="xmark" size={10} weight="bold" color="var(--secondary)" />
       </button>
     </span>

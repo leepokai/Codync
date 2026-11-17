@@ -65,7 +65,7 @@ function PaletteBody({ items, onPick, onClose }: { items: RosterItem[]; onPick: 
     <div className="palette" onKeyDown={onKey}>
       <div className="palette-field">
         <Icon name="magnifyingglass" size={15} color="var(--secondary)" />
-        <input autoFocus value={query} placeholder="Search" aria-label="Search bots" spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
+        <input autoFocus value={query} placeholder={tr('Search')} aria-label={tr('Search bots')} spellCheck={false} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="palette-list" ref={list} role="listbox">
         {results.map((item, i) => (

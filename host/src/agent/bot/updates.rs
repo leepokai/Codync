@@ -195,7 +195,10 @@ impl Actor {
             })
             .unwrap_or_else(|| "Use a tool".into());
         let asked = json!({"toolKind": tool["kind"].as_str().unwrap_or("other"), "title": title});
-        if let (Some(session), Some(conn)) = (session.as_deref(), &self.conn)
+        // A ceiling means this computer's rules ask the user: a saved "always allow" answers for a session on
+        // a trusted computer, and must not answer in the ceiling's place (Greptile P1 on #403).
+        if !self.hub.ceilings.holds(&self.cfg.id)
+            && let (Some(session), Some(conn)) = (session.as_deref(), &self.conn)
             && let Some(option) = self.always_allowed.pick(session, &asked, &options)
         {
             let _ = conn.acp.respond(rpc_id, acp::permission_answer(Some(option))).await;

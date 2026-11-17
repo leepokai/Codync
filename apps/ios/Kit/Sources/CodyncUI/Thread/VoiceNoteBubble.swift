@@ -33,12 +33,17 @@ struct VoiceNoteBubble: View {
     private var player: some View {
         let download = model.fileDownloads.states[file.id]
         let caption = FileDownloadCard.detail(download, play: audio.state, elapsed: audio.elapsed, duration: audio.duration, size: file.size)
+        let failed = audio.state == .failed
         // The 44 pt hit area overflows the 24 pt glyph, so the glyph lines up with the text under it, as on a card.
+        // A note that can't play hides the bar and puts the error in its place.
         return HStack(spacing: 12) {
             AudioPlayButton(state: audio.state, action: play).padding(-10)
-            if let duration = audio.duration { AudioProgress(elapsed: audio.elapsed, duration: duration, seek: audio.seek) }
-            // Steady digits, so the bar's end doesn't move as the clock runs.
-            Text(caption).font(.caption2.monospacedDigit()).foregroundStyle(audio.state == .failed ? Palette.danger : Palette.secondary)
+            if !failed, let duration = audio.duration { AudioProgress(elapsed: audio.elapsed, duration: duration, seek: audio.seek) }
+            // Steady digits, so the bar's end doesn't move as the clock runs. A failure's text fills the bar's
+            // slot and centres in it, the row's 12 pt gap on both sides of the text.
+            Text(caption).font(.caption2.monospacedDigit()).foregroundStyle(failed ? Palette.danger : Palette.secondary)
+                .frame(maxWidth: failed ? .infinity : nil, alignment: failed ? .center : .leading)
+                .padding(.trailing, failed ? 12 : 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // One element reads the whole player; its buttons become named actions.

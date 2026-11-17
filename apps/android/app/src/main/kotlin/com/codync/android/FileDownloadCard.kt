@@ -97,7 +97,7 @@ import kotlinx.coroutines.launch
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(file.name, style = Type.subheadline.semibold, color = Palette.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(caption, style = Type.caption2, color = if (audio?.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
-            if (audio != null && audio.duration > 0.0) AudioProgress(audio)
+            if (audio != null && audio.duration > 0.0 && audio.phase != AudioPhase.Failed) AudioProgress(audio)
         }
         Box(Modifier.size(48.dp).plainButton(action = save), contentAlignment = Alignment.Center) {
             Symbol(if (download is FileDownloadState.Downloading) "xmark" else "arrow.down.to.line", size = 20.dp, tint = Palette.text)

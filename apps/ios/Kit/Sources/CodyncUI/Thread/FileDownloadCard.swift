@@ -81,7 +81,7 @@ struct FileDownloadCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(file.name).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.text).lineLimit(2)
                 Text(caption).font(.caption2).foregroundStyle(audio.state == .failed ? Palette.danger : Palette.secondary)
-                if audio.duration != nil { progress }
+                if audio.duration != nil, audio.state != .failed { progress }
             }
             Spacer(minLength: 0)
             Button(action: download) {

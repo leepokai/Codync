@@ -108,8 +108,9 @@ tap (a tap during it shows the spinner and plays when the bytes arrive); a faile
 stays silent and the tap fetches again. The preload also reads the sound's length off those
 bytes' headers alone (desktop `preload = 'metadata'`, iOS `AVAudioPlayer` never prepared,
 Android `MediaMetadataRetriever`), so the bar and `0:00 / 0:04` show before the first play (a
-failed play keeps that length for its bar, its caption the failure); until then, and for a
-sound not preloaded, the caption shows its size. On a phone on an expensive or metered network
+failed play hides the bar and shows its error in its place; the length stays for the next
+try); until then, and for a sound not preloaded, the caption shows its size. On a phone on
+an expensive or metered network
 (iOS: also before the network's first report) only a sound under 2 MiB preloads; a bigger one
 is fetched on the tap. While a sound loads its button shows a spinner; once its length is
 known its caption reads elapsed / total time over a progress bar, the elapsed half written in the
@@ -146,7 +147,8 @@ sent: like `send_message`, the agent's own reply text then stays in the trace. i
 Android and desktop show the player at the top of
 the bubble on one centred row (play/pause with its spinner, the progress bar once the length is
 known, then elapsed / length, or the size before the first play, the same "Couldn't play"
-caption), its glyph on the text's edge, and the Markdown text under it; screen readers
+caption, which hides the bar and takes its place, centred there with the row's gap on both
+sides of the text), its glyph on the text's edge, and the Markdown text under it; screen readers
 get the player as one element, "Voice note, <caption>", with Play/Pause and Download as its
 actions, and the text as its own. The terminal UI shows the file line, then the text. A
 voice note sent without `text` keeps its own card. Older clients show the card alone.

@@ -37,8 +37,9 @@ export function VoiceNotePlayer({ entry, file, menu }: { entry: Entry; file: Sha
     <div className="voice-note" {...stop.props} aria-label={`${tr('Voice note')}, ${stop.detail}`}>
       <HStack gap={10} aria-hidden>
         <AudioIcon snapshot={snapshot} toggle={toggle} />
-        <AudioProgress snapshot={snapshot} seek={seek} />
-        <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
+        {stop.playFailed ? null : <AudioProgress snapshot={snapshot} seek={seek} />}
+        <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'}
+          className={stop.playFailed ? 'file-card-detail voice-note-error' : 'file-card-detail'}>{stop.detail}</Text>
       </HStack>
     </div>
     {stop.overlays}
@@ -68,7 +69,7 @@ function FileCard({ entry, file, menu, audio, toggle, seek, icon }: {
           <VStack grow>
             <Text as="div" size="subheadline" weight="semibold" truncate title={file.name}>{file.name}</Text>
             <Text as="div" size="caption2" tone={stop.failed ? 'danger' : 'secondary'} className="file-card-detail">{stop.detail}</Text>
-            {audio && seek ? <AudioProgress snapshot={audio} seek={seek} /> : null}
+            {audio && seek && audio.phase !== 'failed' ? <AudioProgress snapshot={audio} seek={seek} /> : null}
           </VStack>
           <IconButtonBase title={downloadAction(stop.state)} icon={stop.busy ? 'xmark' : 'arrow.down.to.line'} size={36} tabIndex={-1} onClick={stop.download} />
         </HStack>
@@ -106,6 +107,7 @@ function useFileStop(entry: Entry, file: SharedFile, message: MessageMenu, audio
     state,
     busy,
     failed: state?.kind === 'failed' || audio?.phase === 'failed',
+    playFailed: audio?.phase === 'failed',
     detail: cardDetail(state, file, audio, tr),
     image,
     view,

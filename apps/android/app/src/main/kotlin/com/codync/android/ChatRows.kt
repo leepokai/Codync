@@ -331,6 +331,7 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
     val play = { scope.launch { audio.toggle() }; Unit }
     Column(Modifier.background(Palette.bubbleAgent).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val failed = audio.phase == AudioPhase.Failed
         Row(Modifier.fillMaxWidth().clearAndSetSemantics {
             contentDescription = "${translate("Voice note")}, $caption"
             audioSeek(audio)
@@ -340,10 +341,14 @@ internal val Entry.reactions: List<String> get() = (data["reactions"] as? JsonAr
             onClick(label = translate(if (audio.phase == AudioPhase.Playing) "Pause" else "Play")) { play(); true }
         }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SharedAudioButton(audio, play)
-            if (audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
-            // Steady digits, so the bar's end doesn't move as the clock runs.
+            // A note that can't play hides the bar and puts the error in its place.
+            if (!failed && audio.duration > 0.0) AudioProgress(audio, Modifier.weight(1f))
+            // Steady digits, so the bar's end doesn't move as the clock runs. A failure's text fills the bar's
+            // slot and centres in it, the row's 12 dp gap on both sides of the text.
             Text(caption, style = Type.caption2.copy(fontFeatureSettings = "tnum"),
-                color = if (audio.phase == AudioPhase.Failed) Palette.danger else Palette.secondary)
+                color = if (failed) Palette.danger else Palette.secondary,
+                textAlign = if (failed) TextAlign.Center else null,
+                modifier = if (failed) Modifier.weight(1f).padding(end = 12.dp) else Modifier)
         }
         if (text.isNotEmpty()) MarkdownText(text, selectable)
     }

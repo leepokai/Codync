@@ -119,7 +119,13 @@ impl Actor {
         for name in builtin.into_iter().flatten() {
             // A thread's `memory` server is the thread's too: it reads and writes its bot's memory (`memory::tool_call`),
             // and what it writes is its own turn's.
-            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port));
+            // The team server's own words follow the bot's approvals; they travel with the server's start.
+            let env = if name == "team" {
+                vec![(crate::mcp::INSTRUCTIONS_ENV, crate::chat::team::instructions(self.cfg.permission))]
+            } else {
+                Vec::new()
+            };
+            servers.push(crate::mcp::acp_server(name, &exe, &[name, "--bot", &self.cfg.id], port, &env));
         }
         Ok(Value::Array(servers))
     }

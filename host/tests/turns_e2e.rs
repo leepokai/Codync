@@ -112,6 +112,61 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
     assert_stop_ends_the_turn(&host, &bot).await;
 }
 
+/// The saved mark of the turn a bot is running (`turn.inflight.<id>`), read from this test's database: what a
+/// restarted host would resume.
+fn inflight(host: &Host, bot: &str) -> Option<String> {
+    let db =
+        rusqlite::Connection::open_with_flags(host.home.join("codync.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    db.query_row("SELECT v FROM kv WHERE k = ?", [format!("turn.inflight.{bot}")], |r| r.get(0)).ok()
+}
+
+/// #483: the agent closed its connection mid-turn and nothing is left to answer it; a Stop ends that turn (Idle, its
+/// saved mark cleared, "Stopped." in the chat) instead of leaving the bot Working with nothing to wait for.
+#[tokio::test]
+async fn a_stop_ends_a_turn_whose_agent_went_away() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Gone", "tests/fixtures/gone_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "gone"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
+    // The agent closed its side of the connection: the host holds the turn, as it did in the report.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_ne!(common::bot(&sync, &bot)["status"], "idle", "the turn is still open");
+    assert!(inflight(&host, &bot).is_some_and(|mark| !mark.is_empty()), "its mark is still saved");
+
+    host.call("stop", json!({"botId": bot})).await;
+    host.wait_for(&bot, Duration::from_secs(30), |e| e["kind"] == "notice" && e["data"]["text"] == "Stopped.").await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, &bot)["status"], "idle", "the bot is free again");
+    assert!(inflight(&host, &bot).is_none_or(|mark| mark.is_empty()), "the mark is cleared");
+
+    // And it works: the next message starts a turn of its own.
+    host.call("send", json!({"botId": bot, "text": "carry on"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Back again: carry on").await;
+}
+
+/// #483 without a Stop: a message that arrives while the agent is already gone ends that turn, and the message runs.
+#[tokio::test]
+async fn a_message_sent_after_the_agent_went_away_ends_that_turn_and_runs() {
+    if common::python_missing() {
+        return;
+    }
+    let host = Host::start().await;
+    let bot = host.bot("Left", "tests/fixtures/gone_agent.py").await;
+    host.call("send", json!({"botId": bot, "text": "gone"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Working on it").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    host.call("send", json!({"botId": bot, "text": "still there?"})).await;
+    host.wait_for(&bot, Duration::from_mins(1), |e| e["data"]["text"] == "Back again: still there?").await;
+    let sync = common::snapshot(&host.base, &host.token).await;
+    assert_eq!(common::bot(&sync, &bot)["status"], "idle");
+}
+
 /// Ends the process the escaped-child agent left (its pid in `escaped.pid`), when the test is done with it.
 #[cfg(unix)]
 struct Escaped(PathBuf);

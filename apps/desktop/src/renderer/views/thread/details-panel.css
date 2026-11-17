@@ -51,8 +51,10 @@
 
 /* In a sheet the panel is a card, not the window's edge: there the band would take the card's top
    54px for moving the window, and whatever scrolled under it could not be clicked. The window keeps
-   the title band outside the card. */
-.modal-content > .details-panel > .details-drag {
+   the title band outside the card. The band and the column sit inside the panel's page layer (the one
+   a thread slides over), so these rules reach through it with a descendant combinator: a child
+   combinator named a parent the page layer is not. */
+.modal-content > .details-panel .details-drag {
   display: none;
 }
 /* With no band over it, the identity starts at the card's edge instead of 58px down. */
@@ -61,7 +63,7 @@
 }
 /* What scrolls away still fades at the card's top edge, as it did under the band; a mask paints the
    fade without taking the clicks the band took. */
-.modal-content > .details-panel > .details-scroll {
+.modal-content > .details-panel .details-scroll {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20px);
   mask-image: linear-gradient(to bottom, transparent, #000 20px);
 }
@@ -77,7 +79,7 @@
 /* The sheet opens with the focus in this column, so the keys scroll it. It is a scroller, not a
    control: a ring here would trace the whole card, so the sheet takes none. Scope it to the
    sheet: the docked panel keeps the browser's focus ring for keyboard users. */
-.modal-content > .details-panel > .details-scroll:focus {
+.modal-content > .details-panel .details-scroll:focus {
   outline: none;
 }
 

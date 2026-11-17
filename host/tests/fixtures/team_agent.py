@@ -1,8 +1,9 @@
 """Deterministic ACP agent for delegation tests; no provider or network access."""
 
 import json
-import re
+import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -31,8 +32,9 @@ def update(value):
 
 def mcp_call(server_name, tool, arguments):
     server = next(s for s in servers if s["name"] == server_name)
+    env = {**os.environ, **{v["name"]: v["value"] for v in server.get("env", [])}}
     with subprocess.Popen([server["command"], *server["args"]], stdin=subprocess.PIPE,
-                          stdout=subprocess.PIPE, encoding="utf-8") as mcp:
+                          stdout=subprocess.PIPE, encoding="utf-8", env=env) as mcp:
         def rpc(identifier, method, params):
             mcp.stdin.write(json.dumps({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params}) + "\n")
             mcp.stdin.flush()
@@ -161,8 +163,11 @@ def prompt(request):
             pass
         send({"id": request["id"], "result": {"stopReason": "end_turn"}})
         return
-    if text.split("\n\n")[-1].startswith(("MANAGE ", "TEAM ", "CHAT ")):
-        helper, tool, arguments = text.split("\n\n")[-1].split(" ", 2)
+    command = text.split("\n\n")[-1]
+    if not command.startswith(("MANAGE ", "TEAM ", "CHAT ")) and text.startswith("Scheduled routine: "):
+        command = next((part for part in text.split("\n\n") if part.startswith(("MANAGE ", "TEAM ", "CHAT "))), "")
+    if command.startswith(("MANAGE ", "TEAM ", "CHAT ")):
+        helper, tool, arguments = command.split(" ", 2)
         response = mcp_call(helper.lower(), tool, json.loads(arguments))
         reply = ("Refused: " if response.get("isError") else "Done: ") + response["content"][0]["text"]
         update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": reply}})

@@ -170,6 +170,19 @@ impl Analytics {
         *self.enabled.locked() = on;
         Ok(())
     }
+
+    #[cfg(test)]
+    pub(crate) fn drain_test_events(&self) -> Vec<Value> {
+        let mut guard = self.rx.locked();
+        let Some(rx) = guard.as_mut() else { return Vec::new() };
+        let mut out = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Msg::Event(event) = msg {
+                out.push(event);
+            }
+        }
+        out
+    }
 }
 
 /// Saves the owner's choice; a host that isn't running reads it when it starts (`Analytics::load`).

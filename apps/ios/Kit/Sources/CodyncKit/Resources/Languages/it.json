@@ -1462,6 +1462,7 @@
   "cloud assistants are off here": "gli assistenti cloud sono disattivati qui",
   "codync-host install keeps it running in the background.": "codync-host install lo mantiene in esecuzione in background.",
   "codync-host isn't installed on {name}.": "codync-host non è installato su {name}.",
+  "Install the Codync app on {name} and open it once: it brings codync-host with it.": "Installa l'app Codync su {name} e aprila una volta: include codync-host.",
   "connected": "connesso",
   "day unit": "g",
   "e.g. Morning summary": "ad es. Riepilogo del mattino",

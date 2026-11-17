@@ -211,7 +211,9 @@ async fn dreaming_keeps_only_what_the_user_typed() {
     host.call("newSession", json!({"botId": bot})).await;
     let view = loop {
         let view = host.memory(&bot).await;
-        if view["dreams"][0]["files"].as_array().is_some_and(|f| !f.is_empty()) {
+        // Waits for its added lines, logged with MEMORY.md's origins, not its files: the note is logged before MEMORY.md
+        // is written (#375).
+        if view["dreams"][0]["added"].as_array().is_some_and(|a| !a.is_empty()) {
             break view;
         }
         assert!(Instant::now() < deadline, "dreaming didn't run: {view}");

@@ -215,7 +215,8 @@ Claude Code's own memory; the rules live in the `codync-mem` crate, and `chat/me
 - Stop sends `session/cancel`; an agent still running 15 seconds later is stopped (it resumes its session on
   the next turn). `session/new`, `session/load`, `session/resume` and `session/fork` get three minutes before the agent is
   stopped. Connector or computer changes restart an agent that can resume sessions before its next turn; one
-  that can't keeps its session, and its next new session gets them.
+  that can't keeps its session, and its next new session gets them. An edit to a connector the bot has on restarts
+  that one too, once its turn ends, told the conversation so far ([connector credentials](connector-credentials.md)).
 - *New session* (`newSession`) cancels the running turn as Stop does (a routine's run in the chat too; items that
   turn added to the event box are dropped) but keeps the queue: waiting messages and follow-ups run in the new
   session, waiting routines each in their own, and running tasks report into it. A handoff card still in draft is

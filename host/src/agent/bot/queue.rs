@@ -18,9 +18,7 @@ use tokio::sync::mpsc;
 impl Actor {
     pub(super) async fn on_cmd(&mut self, cmd: Cmd, done_tx: &mpsc::UnboundedSender<Done>) -> bool {
         match cmd {
-            Cmd::RefreshTools => {
-                self.restart_before_turn = true;
-            }
+            Cmd::RefreshTools => self.restart_stale(),
             Cmd::KeeperRestarted => self.keeper_restarted().await,
             Cmd::Routine(id) => self.enqueue(Queued::Routine(id), done_tx).await,
             Cmd::FollowUp(id) => self.enqueue(Queued::FollowUp(id), done_tx).await,

@@ -125,14 +125,16 @@ struct Target {
     moved: bool,
 }
 
-/// What a request the edited connection can't carry answers.
-const SETTINGS_CHANGED: &str = "The connector connection settings changed. Restart its tools before continuing.";
+/// What a request the edited connection can't carry answers: the bot's agent starts again for its next turn
+/// (`Cmd::RefreshTools`), with a proxy on the new settings.
+const SETTINGS_CHANGED: &str =
+    "The connector connection settings changed. Its tools reconnect with the new settings from the next turn.";
 
 /// What a request does when the user edited the connector's connection since this proxy first used it.
 #[derive(Clone, Copy, PartialEq)]
 enum Edited {
     /// Streamable HTTP asks the host where to send every time: it goes there, without the old server's session (a
-    /// server that needs one refuses it, and the user restarts the tools).
+    /// server that needs one refuses it until the agent starts again for its next turn).
     Adopt,
     /// The older transport posts to an endpoint the old server named: never with the new credentials.
     Refuse,
@@ -185,7 +187,7 @@ impl Remote {
             let Target { url, headers, moved, .. } = self.target(stale, Edited::Adopt).await?;
             if moved {
                 // ponytail: the new server never saw this agent's `initialize`, so one that needs a session refuses
-                // (below); replay the agent's own one here if restarting the tools after an edit proves too blunt.
+                // (below) for the rest of the turn; replay the agent's own one here if that proves too blunt.
                 *session = None;
             }
             let mut req = crate::http()

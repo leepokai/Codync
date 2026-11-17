@@ -7,8 +7,9 @@ replaced). While `<name>.refusal` exists, every prompt answers `refusal` with th
 `_meta["codebuddy.ai/errorMessage"]`, the way CodeBuddy's CLI reports an error (an empty file: a plain refusal).
 While `<name>.errored` exists, every prompt ends the way pi-acp (0.0.33, 0.0.34) ends a turn whose model request
 failed: `end_turn` with no reply, with pi's error only in the notification Codync's pi extension sends.
-Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; every request goes to `<name>.jsonl` in its folder.
-While `<name>.nostart` exists, it quits as it starts, saying it needs signing in."""
+Sessions load (`<name>-s<n>`) unless `<name>.noload` exists; while `<name>.commands` exists, a new session lists the
+agent's `/review` command. Every request goes to `<name>.jsonl` in its folder. While `<name>.nostart` exists, it quits
+as it starts, saying it needs signing in."""
 
 import json
 import os
@@ -50,6 +51,9 @@ for line in sys.stdin:
     elif method == "session/new":
         sessions += 1
         send({"id": message["id"], "result": {"sessionId": f"{NAME}-s{sessions}"}})
+        if os.path.exists(f"{NAME}.commands"):
+            commands = [{"name": "review", "description": "Review the changes"}]
+            update(f"{NAME}-s{sessions}", {"sessionUpdate": "available_commands_update", "availableCommands": commands})
     elif method == "session/load" and os.path.exists(f"{NAME}.noload"):
         send({"id": message["id"], "error": {"code": -32603, "message": "Internal error: session not found"}})
     elif method == "session/load":

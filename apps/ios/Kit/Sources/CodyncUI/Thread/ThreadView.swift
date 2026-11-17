@@ -44,7 +44,8 @@ public struct ThreadView: View {
     private var chat: some View {
         let items = chatItems
         let matches = find.map { ConversationFind.matches(in: Self.findable(items), query: $0.query) } ?? []
-        let shown = find?.index(in: matches).map { matches[$0] }
+        // A card or quote brought into view since find's last step is what the chat shows, without find's match.
+        let shown = revealed?.step == findReveal ? nil : find?.index(in: matches).map { matches[$0] }
         return transcript(items, shown: shown)
         .background(Palette.background)
         .safeAreaInset(edge: .bottom) {

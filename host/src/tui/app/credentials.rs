@@ -45,4 +45,17 @@ mod tests {
         app.on_key(KeyEvent::from(KeyCode::Esc));
         assert!(app.overlays.is_empty(), "nothing is sent without the second Enter");
     }
+
+    #[tokio::test]
+    async fn the_palette_offers_reset_only_where_the_host_does() {
+        use crate::tui::app::{Action, Editor, Goto, GotoItem};
+        let mut app = test_app();
+        let offered = |app: &crate::tui::app::App| {
+            let g = Goto { query: Editor::with("reset saved"), filter: 0, cursor: 0 };
+            app.goto_items(&g).iter().any(|i| matches!(i, GotoItem::Action(Action::ResetCredentials)))
+        };
+        assert!(!offered(&app), "an older host or a cloud computer has none");
+        app.credentials_reset = true;
+        assert!(offered(&app));
+    }
 }

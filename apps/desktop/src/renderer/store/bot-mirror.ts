@@ -14,7 +14,6 @@ import {
   withoutRemoved,
 } from '@shared/models'
 import type { NetworkView, RecoveryCode } from '@shared/network'
-import { mergeTaskEntries } from '@shared/tasks'
 import type { HostClient, HostRoute, HostTransport } from '../client/host-client'
 import type { CloudPlacement } from '../lib/cloud-computer'
 import { rosterOrder } from '../lib/computer-roster'
@@ -25,6 +24,7 @@ import { ComposerDrafts } from '@shared/composer-drafts'
 import { canLoadHistory } from '@shared/mirror-window'
 import { loadIconCache, saveIconCache } from '../lib/icon-cache'
 import { trNow } from '../lib/l10n.ts'
+import { TaskTranscripts } from './task-transcripts'
 
 /** The first host where the user picks the lead and may delete it. */
 const LEAD_CHOICE_HOST = '2.33.0'
@@ -85,10 +85,7 @@ export class BotMirror extends Observable {
   hostUpdate: HostUpdate | null = null
   bots = new Map<string, Bot>()
   entries = new Map<string, Entry[]>()
-  /** Background tasks' transcripts by task id, held only while a task's details are open (`watchTask`). */
-  private taskTranscripts = new Map<string, Entry[]>()
-  /** How many views hold each of them open. */
-  private taskWatchers = new Map<string, number>()
+  private taskTranscripts = new TaskTranscripts()
   usage: Usage = { providers: [] }
   screen: ScreenState | null = null
   accessRequests: AccessRequest[] = []
@@ -323,26 +320,17 @@ export class BotMirror extends Observable {
 
   /** Holds a task's transcript from now until the returned function is called: its details are open. */
   watchTask(taskId: string): () => void {
-    if (!this.taskTranscripts.has(taskId)) this.taskTranscripts.set(taskId, [])
-    this.taskWatchers.set(taskId, (this.taskWatchers.get(taskId) ?? 0) + 1)
-    return () => {
-      // The inspector and its sheet for a narrow window can both show a thread for a moment.
-      const left = (this.taskWatchers.get(taskId) ?? 1) - 1
-      if (left > 0) return void this.taskWatchers.set(taskId, left)
-      this.taskWatchers.delete(taskId)
-      this.taskTranscripts.delete(taskId)
-    }
+    return this.taskTranscripts.watch(taskId)
   }
 
   /** A watched task's transcript, oldest first. */
   taskEntriesOf(taskId: string): Entry[] {
-    return this.taskTranscripts.get(taskId) ?? []
+    return this.taskTranscripts.of(taskId)
   }
 
-  /** More of a task's transcript (fetched, or a live `taskEntry`); dropped when nobody watches the task. */
+  /** More of a task's transcript (fetched, or a live `taskEntry`). */
   protected mergeTask(taskId: string, entries: Entry[]) {
-    const held = this.taskTranscripts.get(taskId)
-    if (held) this.taskTranscripts.set(taskId, mergeTaskEntries(held, entries))
+    this.taskTranscripts.merge(taskId, entries)
   }
 
   setError(message: string | null) {

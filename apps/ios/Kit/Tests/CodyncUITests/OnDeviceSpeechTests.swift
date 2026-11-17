@@ -51,6 +51,8 @@ import Testing
     #expect(heard([("OK", true, 0.1), ("now", false, 0.1)]) == "OK now")
     #expect(heard([("in the parser", true, 0.1), ("in the parser", true, 0.1)]) == "in the parser")
     #expect(heard([("in the", true, 0.1), ("in the parser", false, 0.1)]) == "in the parser")
+    // Only all of the closed words going on are the same segment: a phrase sharing its start is the next one.
+    #expect(heard([("run the tests", true, 0.1), ("run the build", false, 0.1)]) == "run the tests run the build")
     // The result that closes a segment, after the pause, is its last revision.
     #expect(heard([("Three hundred", false, 0.1), ("300", true, 1.5), ("now", false, 0.1)]) == "300 now")
 }

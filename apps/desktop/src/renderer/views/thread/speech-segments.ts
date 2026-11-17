@@ -29,9 +29,11 @@ export class SpeechSegments {
   }
 
   private startsOver(text: string, ends: boolean, gap: number) {
-    if (continues(this.current, text)) return false
-    // After a closed segment, other words are the next one; an empty result keeps the words before it.
-    if (this.ended || !text) return true
+    // After a closed segment, only all of its words going on are the same segment; other words are the next one.
+    if (this.ended) return !continues(this.current, text, 1)
+    if (continues(this.current, text, 0.5)) return false
+    // An empty result keeps the words before it.
+    if (!text) return true
     // A result that closes the segment is its last revision.
     if (ends) return false
     // ponytail: no end marker, so other words after a pause are a new segment; a revision of more than half
@@ -40,12 +42,12 @@ export class SpeechSegments {
   }
 }
 
-/** `text` starts with at least half of `current`, ignoring case, spaces and punctuation: the same words, revised or going on. */
-function continues(current: string, text: string) {
+/** `text` starts with at least `share` of `current`, ignoring case, spaces and punctuation: the same words, revised or going on. */
+function continues(current: string, text: string, share: number) {
   const [a, b] = [letters(current), letters(text)]
   let same = 0
   while (same < a.length && a[same] === b[same]) same++
-  return same * 2 >= a.length
+  return same >= a.length * share
 }
 
 const letters = (text: string) => [...text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')]

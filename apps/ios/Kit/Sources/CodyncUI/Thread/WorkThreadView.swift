@@ -27,11 +27,13 @@ struct WorkThreadView: View {
     @State private var following = true
     @State private var toldOpen = false
 
-    /// What reads the transcript again: Try again, a task taking the item, and the item ending.
+    /// What reads the transcript again: Try again, a task taking the item, the item ending, and the link coming back
+    /// (its catch-up carries no task entries).
     private struct Load: Hashable {
         var attempt: Int
         var task: String?
         var live: Bool
+        var online: Bool
     }
 
     var body: some View {
@@ -44,7 +46,7 @@ struct WorkThreadView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { footer(item, queued: entries.rest.queue(working: live)) }
             .environment(\.workThread, item.thread(of: botId))
             .hidesSystemNavigationBar()
-            .task(id: Load(attempt: attempt, task: item.task, live: live)) { await load(item.task) }
+            .task(id: Load(attempt: attempt, task: item.task, live: live, online: model.connection == .online)) { await load(item.task) }
             .stopWorkDialog(isPresented: $confirmingStop) { model.stopWork(botId, item: item.id) }
             .tracked(.screenViewed(.task))
     }

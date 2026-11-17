@@ -284,6 +284,13 @@ test('an item that needs the user is asked what its card in the chat asks', () =
   assert.equal(pendingCards(chat).get('i11')?.id, 'e12')
 })
 
+test('an item that needs the user opens at its newest waiting card', () => {
+  const card = (id: string, status: string): Entry => ({ id, seq: 1, botId: 'b', rev: 1, kind: 'permission', turn: 1, data: { status, item: 'i1' }, createdAt: 0, updatedAt: 0 })
+  const entries = [card('e1', 'pending'), card('e2', 'pending'), card('e3', 'allowed')]
+  assert.equal(pendingCards(entries).get('i1')?.id, 'e2', 'an answered card is not the one waiting')
+  assert.equal(pendingCards(entries).get('i2'), undefined)
+})
+
 test('the host says which threads take a message, and a read-only one says whose it is', () => {
   const [own, old] = normalizeWork([{ id: 'a', status: 'working', talk: true }, { id: 'b', status: 'working' }])
   assert.equal(own!.talk, true)

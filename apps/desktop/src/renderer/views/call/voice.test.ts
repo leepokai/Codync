@@ -101,3 +101,15 @@ test("a dictated piece on the computer's own speech server waits out its two min
   t.mock.timers.tick(121_000)
   assert.equal(await piece, 'slow but heard')
 })
+test("another server has other models: the ones picked for the server before go", async () => {
+  const settings = await import('../settings/voice-settings.ts')
+  const at = (server: string) => ({ call: async () => ({ providers: [{ provider: 'openai', configured: true, server }] }) }) as never
+  await settings.voiceStatus(at(''))
+  settings.saveModel('openai', 'speech', 'tts-9')
+  await settings.voiceStatus(at(''))
+  assert.equal(settings.chosenModel('openai', 'speech'), 'tts-9', 'the same server keeps them')
+  settings.modelsCache('openai').set({ models: [], transcribe: ['kokoro'], speech: ['kokoro'] })
+  await settings.voiceStatus(at('http://127.0.0.1:8890'))
+  assert.equal(settings.chosenModel('openai', 'speech'), settings.voiceDefaults('openai').speech)
+  assert.equal(settings.modelsCache('openai').get(), null)
+})

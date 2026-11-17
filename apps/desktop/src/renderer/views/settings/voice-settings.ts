@@ -184,11 +184,19 @@ export const voiceMinutes = (p: VoiceProvider, at = new Date()) => Math.floor((k
 
 // Host calls
 
-/** Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the mode. */
+/**
+ * Keeps what the computer says of each provider: its newest models become the defaults, and its server decides the
+ * mode. Another server has other models: the ones picked, and the list, for the one before go.
+ */
 function remember(status: VoiceStatus) {
   for (const entry of status.providers) {
-    rememberDefaults(entry.provider, entry.defaults)
-    server(entry.provider).set(entry.server ?? null)
+    const p = entry.provider
+    if ((server(p).get() ?? '') !== (entry.server ?? '')) {
+      for (const kind of Object.values(modelPrefs)) kind(p).set(null)
+      modelsCache(p).set(null)
+    }
+    rememberDefaults(p, entry.defaults)
+    server(p).set(entry.server ?? null)
   }
   return status
 }

@@ -356,7 +356,10 @@ fn end(items: &mut [Item], task: &str, outcome: Outcome) -> Option<Item> {
             return None;
         }
         Outcome::Done(text) => {
-            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), MAX_REPORT)).filter(|t| !t.is_empty());
+            // A report to the bot's own turn carries only so much; a routine run's or a request's result is posted
+            // whole, as its message.
+            let most = if item.source.is_bot() { MAX_REPORT } else { usize::MAX };
+            let text = text.map(|t| crate::agent::acp::truncate(t.trim(), most)).filter(|t| !t.is_empty());
             match text {
                 Some(text) => (Status::Done, Some(Ok(text)), None),
                 // A routine run with nothing to tell says nothing (`(pass)`).
@@ -478,6 +481,7 @@ fn pick_up(hub: &Arc<Hub>, bot: &str) -> Result<()> {
     let (resumed, failed, undelivered) = items::change(hub, bot, |items| {
         let now = now_ms();
         items.retain(|i| i.ended_at.is_none_or(|at| now - at <= KEEP_MS));
+        worktree::unsettled(items);
         // A request lived in the last process (its notices already say it was interrupted): it is never replayed.
         items.retain(|i| i.status.ended() || !matches!(i.source, Source::Request { .. }));
         // A task's actor resumes the turn the last process cut off; when it won't, nothing of the task runs.
@@ -554,6 +558,17 @@ mod tests {
         assert!(stopped.status == Status::Stopped && stopped.report.is_none(), "the user knows");
         assert!(end(&mut items, "t3", Outcome::Stopped).is_none(), "its task has no item any more");
         assert_eq!(json!(Failure::EndedEarly), "ended_early");
+    }
+
+    #[test]
+    fn only_the_bots_own_report_is_cut() {
+        let long = "x".repeat(MAX_REPORT + 10);
+        let mut items = [working("a", "t1"), working("b", "t2")];
+        items[1].source = Source::Routine { id: "r".into(), run: "1".into() };
+        let report = end(&mut items, "t1", Outcome::Done(Some(long.clone()))).expect("ended");
+        assert!(report.result.expect("a result").len() < long.len());
+        let routine = end(&mut items, "t2", Outcome::Done(Some(long.clone()))).expect("ended");
+        assert_eq!(routine.result, Some(long), "a routine's message is posted whole");
     }
 
     #[test]

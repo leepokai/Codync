@@ -46,9 +46,11 @@ const EXTENSION: &str = r#"export default function (pi) {
 /// Leads the notification the extension sends for a turn pi ended in an error.
 const TURN_ERROR: &str = "[codync: turn failed] ";
 
-/// The error an agent message chunk carries when it's the extension's notification, not reply text.
-pub(super) fn turn_error_text(text: &str) -> Option<&str> {
-    text.strip_prefix(TURN_ERROR)
+/// The error an agent message chunk (`update`, its `text`) carries when it's the extension's notification to pi
+/// (pi-acp marks it `level` `error`), not reply text: an agent quoting the notification is still talking.
+pub(super) fn turn_error_text<'a>(backend: &str, update: &Value, text: &'a str) -> Option<&'a str> {
+    let notified = backend == "pi" && update["_meta"]["piAcp"]["notify"]["level"] == "error";
+    text.strip_prefix(TURN_ERROR).filter(|_| notified)
 }
 
 /// The prompt's answer `done`, failed with `error` when pi ended the turn in one and pi-acp still answered `end_turn`.
@@ -184,8 +186,13 @@ mod tests {
     fn only_an_ended_turn_fails_with_pi_s_error() {
         let ended = || Ok(json!({ "stopReason": "end_turn" }));
         let error = || Some("503: busy".to_owned());
-        assert_eq!(turn_error_text(&format!("{TURN_ERROR}503: busy")), Some("503: busy"));
-        assert_eq!(turn_error_text("a reply"), None);
+        let notified = json!({ "_meta": { "piAcp": { "notify": { "level": "error" } } } });
+        let quoted = format!("{TURN_ERROR}503: busy");
+        assert_eq!(turn_error_text("pi", &notified, &quoted), Some("503: busy"));
+        assert_eq!(turn_error_text("pi", &notified, "a reply"), None);
+        // Quoted in a reply, by pi or another agent, it is the reply's text.
+        assert_eq!(turn_error_text("pi", &json!({}), &quoted), None);
+        assert_eq!(turn_error_text("claude", &notified, &quoted), None);
         assert!(turn_result(ended(), error()).is_err());
         assert!(turn_result(ended(), None).is_ok());
         let cancelled = json!({ "stopReason": "cancelled" });

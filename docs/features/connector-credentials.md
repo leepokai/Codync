@@ -34,7 +34,8 @@ its selected host.
 credentials…*) is the way out when the key is gone but sealed records remain (data moved to a new computer without its
 keychain, which otherwise fails every unlock with *the key … is missing*): it deletes every `vault:v1:` row,
 `vault.id` and `vault.initialized` and drops the cached key and a folder key; the next unlock makes a new key under a
-new id. The old keyring item stays, since a copy of this database elsewhere (a sandbox) may still use it. It answers
+new id. The old keyring item stays, since a copy of this database elsewhere (a sandbox) may still use it. API key
+login profiles lose their variable names and sign-in with their values (`login_profiles::keys::forget_all`). It answers
 with the agents checked again. A Codync Cloud computer refuses it (its keeper holds the records); `hello`'s
 `credentialsReset` says whether a computer offers it.
 
@@ -111,8 +112,10 @@ The saved connection is checked before and after verification; token refreshes m
 advance the same grant, but intervening edits cannot supply its readiness result.
 URL changes require explicit replacement headers,
 and clear the old OAuth grant. URL or header changes advance the revision and
-invalidate pending sign-ins and running proxies.
-On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it, so the host sends that keeper the record without it: it still retires grants when the origin or headers change, but not on a path-only or query-only edit.
+invalidate pending sign-ins; a running proxy moves to the edited connection without
+the old server's session (one on the older SSE transport stops instead, and so does one
+whose new server needs a session: both say to restart the connector's tools).
+On managed computers, the keeper record also carries this revision. A path-only or query-only URL edit retires old grants even when the origin and header values stay the same; metadata-only edits and unchanged URL retries keep them. A keeper from before the field refuses it. It still gets the revision already saved, without the field, as it always did (another connector saved, a 1Password reference resolved), but an edit to a new revision fails with "this computer's keeper is out of date: update Codync on this computer first": saved without the revision, that keeper's live grants could carry the new secret to the old URL.
 
 See [remote edit details](../guides/connector-verification.md#editing-a-custom-remote-connector).
 Registry connectors are still refused.

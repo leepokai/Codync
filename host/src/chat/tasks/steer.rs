@@ -121,9 +121,10 @@ pub fn cut_in(hub: &Arc<Hub>, bot: &str, id: &str, instead_of: Option<&str>) -> 
         let gives_way = gives_way.filter(|_| full);
         // Tried on a copy first: a session is only closed for an item that then starts.
         let mut freed = items.clone();
-        give_way(hub, &mut freed, id, gives_way.as_deref())?;
-        // The bot's own turn (it may be the one steering) only delays the start.
-        let places = Places { coordinator_free: true, ..dispatch::places(hub, &cfg, &freed, None) };
+        let closed = give_way(hub, &mut freed, id, gives_way.as_deref())?;
+        // The bot's own turn (it may be the one steering) only delays the start, and so does the closed task's
+        // while it stops.
+        let places = Places { coordinator_free: true, ..dispatch::places(hub, &cfg, &freed, closed.as_deref()) };
         let standings = dispatch::standings(&freed, &places, |task| dispatch::task_state(hub, task, None));
         let starts = standings.iter().any(|(item, standing)| item == id && *standing == Standing::Start);
         give_way(hub, items, id, gives_way.as_deref().filter(|_| starts))

@@ -114,10 +114,12 @@ function ServerRow({ server, disabled, save }: { server: string; disabled: boole
   return (
     <VStack gap={4}>
       <SavedField label="Server" placeholder={voice.serverLabel('')} saved={server} disabled={disabled} save={save} />
-      <Text size="footnote" tone="secondary" className="settings-row">{tr('An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI.')}</Text>
+      <Text size="footnote" tone="secondary" className="settings-row">{tr('An OpenAI-compatible server for Speech mode: https, or http on this computer. Empty uses OpenAI and removes the saved key.')}</Text>
     </VStack>
   )
 }
+
+const NO_MODELS: VoiceModels = { models: [], transcribe: [], speech: [] }
 
 /**
  * One provider: the key the computer keeps, the server its Speech mode goes to, models, voice and this month's
@@ -142,7 +144,7 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const [model, setModel] = useState(() => voice.chosenModel(provider, 'realtime'))
   const [transcribeModel, setTranscribeModel] = useState(() => voice.chosenModel(provider, 'transcribe'))
   const [speechModel, setSpeechModel] = useState(() => voice.chosenModel(provider, 'speech'))
-  const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? { models: [], transcribe: [], speech: [] })
+  const [models, setModels] = useState<VoiceModels>(() => voice.modelsCache(provider).get() ?? NO_MODELS)
   const busyRef = useRef(false)
   const speechMode = voice.speechOnly(server) || mode === 'speech'
   /** Speech mode and dictation with this provider both use its speech-to-text model. */
@@ -151,6 +153,14 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
   const canEditKey = store.client?.transport instanceof LoopbackTransport
   const notConnected = { ok: false, text: tr('Not connected to {name}.').replaceAll('{name}', () => store.hostName) }
 
+  /** `list` in the pickers, each with this device's choice. */
+  const showModels = (list: VoiceModels) => {
+    setModels(list)
+    setModel(voice.chosenModel(provider, 'realtime'))
+    setTranscribeModel(voice.chosenModel(provider, 'transcribe'))
+    setSpeechModel(voice.chosenModel(provider, 'speech'))
+  }
+
   const loadModels = async (client: HostClient) => {
     let list: VoiceModels
     try {
@@ -158,12 +168,9 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
     } catch {
       return
     }
-    setModels(list)
     // A newer default moves every choice the user hasn't made themselves.
     voice.rememberDefaults(provider, list.defaults)
-    setModel(voice.chosenModel(provider, 'realtime'))
-    setTranscribeModel(voice.chosenModel(provider, 'transcribe'))
-    setSpeechModel(voice.chosenModel(provider, 'speech'))
+    showModels(list)
     voice.modelsCache(provider).set(list)
   }
 
@@ -251,13 +258,18 @@ function ProviderVoiceSettings({ provider, dictationOnly = false }: { provider: 
       setResult(null)
     })
 
-  /** The computer checks a saved key with the new server before keeping the address; a refused one leaves the old. */
+  /**
+   * The computer checks a saved key with the new server before keeping the address; a refused one leaves the old.
+   * Clearing it also removes the key. Another server has other models: the picks made for the old one are gone.
+   */
   const saveServer = (typed: string) =>
     run(async (client) => {
       if (!(client.transport instanceof LoopbackTransport)) return
-      await voice.setVoiceServer(client, provider, typed)
+      const configured = voice.configured(await voice.setVoiceServer(client, provider, typed), provider)
+      setSaved(configured)
+      showModels(voice.modelsCache(provider).get() ?? NO_MODELS)
       setResult({ ok: true, text: tr('Saved') })
-      if (hasKey) await loadModels(client)
+      if (configured) await loadModels(client)
     })
 
   const picker = (selection: string, list: string[], onChange: (m: string) => void) => {

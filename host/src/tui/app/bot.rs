@@ -261,7 +261,9 @@ impl Bot {
                 .into_iter()
                 .flatten()
                 .filter_map(|c| {
-                    Some((c["name"].as_str()?.to_owned(), c["description"].as_str().unwrap_or_default().to_owned()))
+                    // What it says it does, else what it takes after its name, as the other apps show.
+                    let about = c["description"].as_str().filter(|d| !d.is_empty()).or(c["hint"].as_str());
+                    Some((c["name"].as_str()?.to_owned(), about.unwrap_or_default().to_owned()))
                 })
                 .collect(),
             status: status(&v["status"]).unwrap_or(Status::Idle),

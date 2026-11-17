@@ -133,7 +133,9 @@ pub(super) fn chat(buf: &mut Buffer, r: Rect, app: &mut App, narrow: bool) {
         // The apps' wording.
         let placeholder = if let Some(pick) = &app.pick {
             let picked = app.lane(&b.id).into_iter().find(|e| &e.id == pick);
-            let keys = if picked.as_ref().is_some_and(|e| e.artifact().is_some()) {
+            let keys = if picked.as_ref().is_some_and(|e| e.pending()) {
+                "its keys answer it"
+            } else if picked.as_ref().is_some_and(|e| e.artifact().is_some()) {
                 "j k pick · o open in the browser · f save as HTML · ↵ reply · 1–6 react · c copy"
             } else {
                 "j k pick · ↵ reply · 1–6 react · f save files · c copy"

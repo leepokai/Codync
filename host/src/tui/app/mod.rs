@@ -175,6 +175,8 @@ pub struct App {
     pub analytics: Option<bool>,
     /// Whether a bot with a new message moves to the top of the roster (`None`: before `hello`, or an older host).
     pub auto_order: Option<bool>,
+    /// Whether `resetCredentials` can be used here (`hello`): not on a Codync Cloud computer or an older host.
+    pub credentials_reset: bool,
     /// What usage analytics has reported this run (`app_opened`, `screen_viewed`).
     seen: analytics::Seen,
     kofi: kofi::Invite,
@@ -251,6 +253,7 @@ impl App {
             hint: None,
             analytics: None,
             auto_order: None,
+            credentials_reset: false,
             seen: analytics::Seen::default(),
             kofi: kofi::Invite::load(),
         }
@@ -295,15 +298,34 @@ impl App {
     }
 
     pub fn pending(&self) -> Option<&Entry> {
-        let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.pending())
+        self.to_answer(|_| true)
     }
 
     /// The newest pending card of one kind: F-keys answer the choice card and y/a/n/N the approval, even when a
     /// card of the other kind came after it.
     pub fn pending_of(&self, kind: Kind) -> Option<&Entry> {
+        self.to_answer(|e| e.kind == kind)
+    }
+
+    /// The selected chat's pending card that `wanted` takes and the keys answer: the picked one (Work's `↵` on an
+    /// item that needs you picks its card), else the newest.
+    fn to_answer(&self, wanted: impl Fn(&Entry) -> bool) -> Option<&Entry> {
         let id = self.selected.as_ref()?;
-        self.lane(id).into_iter().rev().find(|e| e.kind == kind && e.pending())
+        let cards: Vec<&Entry> = self.lane(id).into_iter().filter(|e| e.pending() && wanted(e)).collect();
+        cards.iter().find(|e| self.pick.as_ref() == Some(&e.id)).or(cards.last()).copied()
+    }
+
+    /// The card `item` waits on in `bot`'s chat (an approval, a choice, a sign-in): the newest one, or, when that is a
+    /// sign-in and another (the agent the turn left signed out, while its fallback was too) holds the item's message,
+    /// that one, whose sign-in sends it again.
+    pub fn card_of(&self, bot: &str, item: &WorkItem) -> Option<&Entry> {
+        let waits = |e: &&Entry| (e.pending() || e.waits_for_sign_in()) && e.data["item"] == item.id.as_str();
+        let cards: Vec<&Entry> = self.lane(bot).into_iter().filter(waits).collect();
+        let newest = *cards.last()?;
+        if !newest.waits_for_sign_in() {
+            return Some(newest);
+        }
+        Some(cards.into_iter().rfind(|e| e.holds_messages()).unwrap_or(newest))
     }
 
     /// The message the composer replies to, in the selected chat.

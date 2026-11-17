@@ -126,7 +126,10 @@ bot can say what it is doing and place an `after` without a tool call.
 - **Drop** (`dropWork`): a waiting or ended item leaves the box. A working one is refused: stop it first.
 - **Try again** (`retryWork`): a stopped or failed item goes back to waiting, last, and starts in a new task.
 
-A task that gives its item up is told to stop; when its turn has ended, the dispatcher clears it away.
+A task that gives its item up is told to stop; when its turn has ended, the dispatcher clears it away. Until then it
+keeps its place (`dispatch::places` counts a task whose turn runs with no item at work), so the item that replaces it
+waits rather than run beside it. The dispatcher starts a planned task, and hands work to one, under the box's lock and
+only while the item is still on it, so a Stop that came in between wins.
 
 ## Talking to a thread
 
@@ -389,7 +392,10 @@ of the bot's own items that starts **while another task of the bot is working** 
   `git branch -d`, neither forced), and the report says so. Anything else is kept, with its branch, and the
   item's report to the chat names the branch and the folder, for the bot to tell the user and merge when asked.
   An item the user stopped is looked over once its task's turn has ended; it reports nothing.
-- An item that gave way, got a new brief or is tried again starts again in the worktree it had.
+- An item that gave way, got a new brief or is tried again starts again in the worktree it had. While an ended
+  item's worktree is being looked over (`Left::Settling`) the item tried again waits; the look notes kept or removed
+  and runs the dispatcher again. A message to the item's thread meanwhile takes the worktree back as in use, which
+  the look then leaves as it is.
 - **Codync never merges, rebases, resets, forces or deletes a branch that has work on it**, and never touches a
   worktree it didn't make: what a box says is checked first (the folder is `~/.codync/worktrees/<id>/<id>`, the
   branch `codync/…`). Git runs with an argument list, never through a shell, each command for at most a minute.
@@ -478,7 +484,7 @@ code only: no agent is woken unless an item was lost.
 - A worktree is a new checkout: what git ignores in the bot's folder (installed packages, build output, local env
   files) isn't in it, and removing an untouched one deletes what its task left there ignored.
 - On Windows a worktree whose agent process is still in it can't be removed and stays (kept). A host that stops
-  while it looks a worktree over leaves it, marked kept.
+  while it looks a worktree over leaves it, marked kept at its next start (`worktree::unsettled`).
 - A turn of the chat that ends while items still work alerts as done with the bot's words; the Live Activity goes
   on.
 - A Live Activity or ongoing notification updated by a push shows the status only; the counts line needs the app

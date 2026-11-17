@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Entry } from './models.ts'
-import { isTold, localEntryId, mergeTaskEntries, parseTaskEntry } from './tasks.ts'
+import { isTold, localEntryId, mergeTaskEntries, parseTaskEntry, unsentEntries } from './tasks.ts'
 
 const entry = (id: string, seq: number, rev: number, text = id): Entry => ({ id, seq, botId: 'task-1', rev, kind: 'agent', turn: 1, data: { text }, createdAt: 0, updatedAt: 0 })
 
@@ -37,4 +37,11 @@ test("a message sent to a thread shows until the host's entry for it is in", () 
   const arrived: Entry = { ...entry('e9', 2, 9, 'hello'), kind: 'user', data: { text: 'hello', status: 'queued', clientNonce: 'n1' } }
   assert.deepEqual(mergeTaskEntries(held, [arrived]).map((e) => e.id), ['a', 'e9'])
   assert.deepEqual(mergeTaskEntries(held, [entry('b', 2, 2)]).map((e) => e.id), ['a', 'b', 'local-n1'], 'another entry leaves it')
+})
+
+test('a closed thread keeps only the messages that never reached it', () => {
+  const local = (nonce: string, status: string, removed?: boolean): Entry => ({ ...entry(localEntryId(nonce), Number.MAX_SAFE_INTEGER, 0), kind: 'user', data: { text: nonce, status, clientNonce: nonce, removed } })
+  const arrived: Entry = { ...entry('e9', 2, 9), kind: 'user', data: { text: 'hello', clientNonce: 'n0' } }
+  const held = [entry('a', 1, 1), arrived, local('n1', 'sending'), local('n2', 'failed'), local('n3', 'failed', true)]
+  assert.deepEqual(unsentEntries(held).map((e) => e.id), ['local-n1', 'local-n2'], 'the host\'s entries and a deleted one go')
 })

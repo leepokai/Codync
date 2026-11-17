@@ -24,10 +24,10 @@ export function freeLogins(backend: Backend, taken: Login[]): (string | null)[] 
   return all.filter((loginProfile) => !taken.some((t) => sameLogin(t, { backend: backend.id, loginProfile })))
 }
 
-/** The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on (a
- * step keeps its own login, even one that has signed out since). */
+/** The agents a step can use: each with a login the rest of the chain (`taken`) doesn't have, and the ones `keep` is on
+ * while no other step has that login (a step keeps its own login, even one that has signed out since). */
 export const stepAgents = (backends: Backend[], taken: Login[], keep: (Login | null)[] = []): Backend[] =>
-  backends.filter((b) => keep.some((k) => k?.backend === b.id) || freeLogins(b, taken).length > 0)
+  backends.filter((b) => keep.some((k) => k?.backend === b.id && !taken.some((t) => sameLogin(t, k))) || freeLogins(b, taken).length > 0)
 
 /** The logins `step` can pick on its agent: the free ones, and its own, even one that has signed out since. */
 export function stepLogins(agent: Backend, step: Login, taken: Login[]): (string | null)[] {

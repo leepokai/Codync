@@ -158,3 +158,16 @@ fn a_goal_checks_the_login_profile_it_will_run_on() {
         "the selected fallback's login has headroom even though the default login doesn't"
     );
 }
+
+#[test]
+fn deleting_a_bot_clears_its_goal_and_blocks_late_saves() {
+    let hub = hub();
+    let bot = cfg("b", "custom");
+    hub.store.save_bot(&bot).unwrap();
+    let goal = seed(&hub);
+    hub.store.delete_bot("b").unwrap();
+    assert!(get(&hub, "b").is_none());
+    finish(&hub, "b", Some(&goal.id), Stopped::Done);
+    assert!(begin(&hub, &bot, &goal.id).unwrap().is_none());
+    assert!(get(&hub, "b").is_none());
+}

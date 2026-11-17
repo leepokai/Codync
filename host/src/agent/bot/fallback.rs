@@ -111,11 +111,12 @@ impl Actor {
         self.relay.carried = None;
     }
 
-    /// The agent a fresh turn would start on. Goal checks consult this agent's usage before spending a turn.
-    pub(super) fn next_agent_backend(&mut self) -> String {
+    /// The agent a fresh turn would start on. Goal checks consult its full effective configuration before
+    /// spending a turn, including the login profile that step runs on.
+    pub(super) fn next_agent(&mut self) -> BotConfig {
         self.begin_new_attempt();
         let target = self.next_step(now_ms()).unwrap_or(0);
-        fallback::backend(&self.base, target).to_owned()
+        fallback::effective(&self.base, target)
     }
 
     /// `start_turn`, once the turn has its lane and number: picks the agent. Not for hidden turns.

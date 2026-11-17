@@ -156,15 +156,15 @@ fn reason(why: Stopped) -> &'static str {
 }
 
 /// Check at dequeue time: stale steps cost no turns and never start an agent.
-pub fn begin(hub: &Hub, cfg: &BotConfig, id: &str, backend: &str) -> Result<Option<String>> {
-    let bot = cfg.id.as_str();
+pub fn begin(hub: &Hub, agent: &BotConfig, id: &str) -> Result<Option<String>> {
+    let bot = agent.id.as_str();
     let lock = WRITE.locked();
     let Some(mut goal) = read(hub, bot)?.filter(|g| g.id == id && g.stopped.is_none()) else { return Ok(None) };
     let why = if goal.turns >= goal.max_turns
         || now_ms().saturating_sub(goal.started_at) >= i64::from(goal.max_minutes) * 60_000
     {
         Some(Stopped::Limit)
-    } else if crate::usage::near_limit_for(hub, cfg, backend) {
+    } else if crate::usage::near_limit(hub, agent) {
         Some(Stopped::Usage)
     } else {
         None

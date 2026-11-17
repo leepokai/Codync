@@ -36,9 +36,10 @@ its own context and compacts it itself.
   twice. A task that starts from a new session gets a fresh snapshot like any session.
 - **Compaction epoch:** Codync advertises `clientCapabilities.session.compaction`. Each completed
   `compaction_update` (deduplicated by `compactionId`) increments `context.epoch.<bot>`; for an agent that has
-  never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k. The
-  next turn re-renders the snapshot, and Claude's session is loaded again with the new system prompt. The adapter
-  rebuilds its query and resumes the same conversation.
+  never sent one, so does its `usage_update.used` falling below half of a previous value of at least 20k
+  (a `used: 0` reading, a stream's `message_start` before its counts arrive, is ignored: it neither replaces the
+  last reading nor counts as a fall, #496). The next turn re-renders the snapshot, and Claude's session is loaded
+  again with the new system prompt. The adapter rebuilds its query and resumes the same conversation.
 - **Profile edits mid-session** (name, description, skills, the lead role) are sent once as an `<agent_profile_update>` block
   appended to the next message. After that turn reaches the agent, the change is recorded in
   `snapshot.announced`. The next compaction folds it into the snapshot.

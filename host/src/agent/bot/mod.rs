@@ -219,7 +219,8 @@ pub(crate) struct Conn {
     mode_set: HashSet<String>,
     /// The agent reports compactions (`compaction_update`); until it does, a fall in usage stands in for them.
     reports_compaction: bool,
-    /// Each session's context use and window size at its last `usage_update`.
+    /// Each session's context use and window size at its last `usage_update` that reported use (a stream's
+    /// provisional zero is skipped, see `record_usage`).
     usage: HashMap<String, (u64, u64)>,
     /// Codync's MCP servers each session knows by another name (`codex_names`), as it was created or loaded with.
     renamed: HashMap<String, codex_names::Renamed>,

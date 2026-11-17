@@ -55,6 +55,22 @@ async fn a_full_conversation_is_compacted_with_its_keep_list() {
     assert!(host.prompts(&codex).iter().any(|p| p == "/compact"), "Codex's keep-list is in its config");
 }
 
+/// A gateway's Responses stream announces itself before the model answers, so the adapter reports zero use; an agent
+/// that never reports compactions must not have that zero read as one (issue #496).
+#[tokio::test]
+async fn a_stream_that_reports_zero_use_is_not_a_compaction() {
+    let host = Host::start().await;
+    let silent = host.fixture_bot("Silent", "instructions_agent.py", "silent").await;
+    host.reply(&silent, "USAGE 26247 SIZE 200000").await;
+    host.reply(&silent, "USAGE 0 SIZE 200000").await;
+    host.reply(&silent, "USAGE 27643 SIZE 200000").await;
+    let history = host.call("history", json!({"botId": silent})).await;
+    assert!(
+        !history["entries"].as_array().unwrap().iter().any(|e| e["data"]["compaction"].is_object()),
+        "a zero reading is not a compaction: {history}"
+    );
+}
+
 #[tokio::test]
 async fn the_users_threshold_decides_when_the_host_compacts() {
     let host = Host::start().await;

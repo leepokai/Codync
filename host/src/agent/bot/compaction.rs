@@ -2,12 +2,13 @@
 //! agent reports about its context and its own compactions, and the compactions and rollovers the host starts. The
 //! rules are `codync_mem::compaction`; this records what it needs and acts on what it decides.
 
+use std::collections::HashMap;
+
 use super::{Actor, Adapter, Done, Instructions, Queued};
 use crate::chat::{context, handoff, memory};
 use crate::store::{BotConfig, EntryKind, Lane, Store, now_ms};
 use codync_mem::compaction::{self as rules, CacheLife, Conversation, Decision, Threshold};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 
 /// Context use below which a fall isn't read as a compaction: a short session has little to summarize.
 const COMPACTED_FROM: u64 = 20_000;
@@ -153,8 +154,8 @@ impl Actor {
     pub(super) fn track_usage(&mut self, used: u64, size: u64) {
         let Some(sid) = self.turn_session.clone() else { return };
         let Some(conn) = self.conn.as_mut() else { return };
-        let fell = record_usage(&mut conn.usage, sid, used, size);
-        if !conn.reports_compaction && fell {
+        let inferred = record_usage(&mut conn.usage, &sid, used, size);
+        if !conn.reports_compaction && inferred {
             self.compacted(&format!("usage-{}", now_ms()), None);
         }
     }
@@ -375,14 +376,15 @@ fn learned_life(answer: &Value, gap_ms: i64) -> Option<CacheLife> {
     CacheLife::observed(gap_ms, read, input)
 }
 
-/// Keeps a session's reported context use and says whether it fell the way a compaction does. A stream's first report
-/// can carry no usage yet (a gateway's `message_start` before the final counts): that's no context size, so it neither
-/// replaces the last real reading nor reads as a compaction.
-fn record_usage(usage: &mut HashMap<String, (u64, u64)>, session: String, used: u64, size: u64) -> bool {
+/// Applies one `usage_update` to a session's last reading and says whether it reads as a compaction. A stream's first
+/// update can carry zeros before the model has answered (a gateway's `response.created`, issue #496): that zero is not
+/// a reading of the context, so it neither reads as a compaction nor becomes the baseline a later, real fall is
+/// measured against.
+fn record_usage(usage: &mut HashMap<String, (u64, u64)>, sid: &str, used: u64, size: u64) -> bool {
     if used == 0 {
         return false;
     }
-    let before = usage.insert(session, (used, size)).map(|(used, _)| used);
+    let before = usage.insert(sid.to_owned(), (used, size)).map(|(used, _)| used);
     compacted_by_usage(before, used)
 }
 
@@ -404,21 +406,23 @@ mod tests {
     }
 
     #[test]
-    fn a_provisional_zero_is_not_a_compaction() {
-        // Gateway streams open with zero usage, then settle on the real, growing figure (issue #496).
-        let finals = [26_228u64, 27_466, 27_885, 32_537, 33_299, 33_447, 33_933, 34_189, 34_292];
+    fn a_stream_starting_at_zero_usage_is_not_a_compaction() {
         let mut usage = HashMap::new();
-        let mut compactions = 0;
-        for used in finals {
-            for report in [0, used] {
-                compactions += u32::from(record_usage(&mut usage, "s".into(), report, 200_000));
-            }
-        }
-        assert_eq!(compactions, 0);
-        assert_eq!(usage["s"], (34_292, 200_000), "a zero never replaces the last real reading");
+        assert!(!record_usage(&mut usage, "s", 26_247, 200_000), "the first answer's reading");
+        assert!(!record_usage(&mut usage, "s", 0, 200_000), "a stream's start before the model has answered");
+        assert_eq!(usage["s"], (26_247, 200_000), "the zero isn't kept as the context's use");
+        assert!(!record_usage(&mut usage, "s", 27_643, 200_000), "the same answer's real reading");
+        assert!(!record_usage(&mut usage, "s", 0, 200_000), "the next stream starts at zero again");
+        assert!(!record_usage(&mut usage, "s", 28_089, 200_000));
+        assert_eq!(usage["s"], (28_089, 200_000));
+    }
 
-        let mut big = HashMap::from([("s".to_string(), (90_000, 200_000))]);
-        assert!(record_usage(&mut big, "s".into(), 12_000, 200_000), "a genuine drop still counts");
+    #[test]
+    fn a_real_fall_still_reads_as_a_compaction() {
+        let mut usage = HashMap::new();
+        assert!(!record_usage(&mut usage, "s", 90_000, 200_000));
+        assert!(record_usage(&mut usage, "s", 12_000, 200_000));
+        assert_eq!(usage["s"], (12_000, 200_000), "the compacted context is the new baseline");
     }
 
     #[test]

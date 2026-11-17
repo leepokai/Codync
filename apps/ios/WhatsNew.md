@@ -9,9 +9,11 @@ a version without one gets a generic "Bug fixes and improvements" line. Delete o
 ## 2.49.2
 ### zh-Hant
 - 主畫面的 Codync 圖示會顯示未讀數量，和 App 內各聊天的未讀數相加一致，讀完就會消失。
+- Bot 在做事時旁邊的小圖示換成跟頭像同一種點陣：工作中、搜尋、等你回覆、連線和編輯檔案各有自己的動作，小尺寸也看得清楚。
 
 ### en-US
 - The Codync icon on the Home Screen shows your unread count, the same number your chats' badges add up to, and clears as you read them.
+- The small icon beside a busy bot now uses the same dot grid as the avatars: working, searching, waiting for you, connecting and editing files each move their own way, and stay clear at small sizes.
 
 ## 2.49.1
 ### zh-Hant

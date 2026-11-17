@@ -6,8 +6,11 @@ export const DOT_RADIUS = 0.4
  * snapped grid can put an edge dot less than a radius from the box edge; that dot is cut to fit.
  */
 export function dotRadius(pitch: number, shade: number, x: number, y: number, size: number) {
-  return Math.min(pitch * DOT_RADIUS * (0.7 + 0.3 * shade), x, size - x, y, size - y)
+  return fitRadius(pitch * DOT_RADIUS * (0.7 + 0.3 * shade), x, y, size)
 }
+
+/** `r`, cut so the dot centered at (`x`, `y`) stays inside the `size` box. */
+export const fitRadius = (r: number, x: number, y: number, size: number) => Math.min(r, x, size - x, y, size - y)
 
 /**
  * Where a character's dots go in a `size` box drawn at `scale` device pixels per unit: `cells` per
@@ -16,12 +19,12 @@ export function dotRadius(pitch: number, shade: number, x: number, y: number, si
  * is whole pixels too (rounded, or rounded down when full dots would overflow the box by more than
  * a pixel), so every gap is equal. A dot is about a pixel narrower than the pitch: an even width
  * (odd pitch) stays crisp centered on a pixel corner, an odd width on a pixel center. Retina keeps
- * the exact grid.
+ * the exact grid. The thinking orb passes its own, coarser `cellCount`.
  */
-export function dotGrid(size: number, scale: number) {
+export function dotGrid(size: number, scale: number, cellCount?: number) {
   // The canvas is whole device pixels: rounding drops the float error of size × scale.
   const px = Math.round(size * scale)
-  const cells = size < 18 || px < 27 ? 7 : 9
+  const cells = cellCount ?? (size < 18 || px < 27 ? 7 : 9)
   const step = size / cells
   if (scale >= 2) return { cells, pitch: step, first: step / 2 }
   const exact = step * scale

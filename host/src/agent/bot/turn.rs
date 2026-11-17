@@ -296,6 +296,10 @@ impl Actor {
         }
         // The bot's own folder is saved as it is, so what this turn changes there is a version of its own.
         self.versions.before(&self.hub, &self.cfg, text).await;
+        if !self.goal_can_prompt() {
+            let _ = done_tx.send(Ok(json!({"stopReason": "cancelled"})));
+            return Ok(());
+        }
         // From here what changes in its memory folders is the bot's, however it changed them: a thread's too, as
         // its own turn's, in its own session. A thread only adds to memory, also in a turn the user's message to its
         // thread started: what the user wants forgotten, the bot does in the chat.

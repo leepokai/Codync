@@ -113,8 +113,8 @@ async fn stop_ends_a_turn_whose_agent_ignores_the_cancel() {
 }
 
 /// The saved mark of the turn a bot is running (`turn.inflight.<id>`), read from this test's database: what a
-/// restarted host would resume. A read-write handle, not a read-only one: the host keeps the database in WAL mode, and a
-/// read-only connection cannot build the wal-index it would have to read through.
+/// restarted host would resume.
+#[cfg(windows)]
 fn inflight(host: &Host, bot: &str) -> Option<String> {
     use rusqlite::OptionalExtension as _;
     let db = rusqlite::Connection::open(host.home.join("codync.db")).expect("open the test database");
@@ -125,6 +125,11 @@ fn inflight(host: &Host, bot: &str) -> Option<String> {
 
 /// #483: the agent closed its connection mid-turn and nothing is left to answer it; a Stop ends that turn (Idle, its
 /// saved mark cleared, "Stopped." in the chat) instead of leaving the bot Working with nothing to wait for.
+///
+/// Windows only: closing the agent's stdout is not the same event on every platform. On Linux the connection's end
+/// resolves the pending `session/prompt` with an error, so that host ends the turn itself and is never left holding one;
+/// here the turn stays open, which is the state the Stop has to recover.
+#[cfg(windows)]
 #[tokio::test]
 async fn a_stop_ends_a_turn_whose_agent_went_away() {
     if common::python_missing() {
@@ -152,6 +157,8 @@ async fn a_stop_ends_a_turn_whose_agent_went_away() {
 }
 
 /// #483 without a Stop: a message that arrives while the agent is already gone ends that turn, and the message runs.
+/// Windows only, for the same reason as the test above: elsewhere there is no turn left open to end.
+#[cfg(windows)]
 #[tokio::test]
 async fn a_message_sent_after_the_agent_went_away_ends_that_turn_and_runs() {
     if common::python_missing() {

@@ -43,7 +43,7 @@ Everything is installed for your Windows user only. Nothing needs administrator 
 The names differ from one product to the next, but the steps are the same three:
 
 1. **Restore anything it removed.** Open the product's quarantine or history, find the Codync files listed above and restore them. If a file is gone and can't be restored, install Codync again after the next step.
-2. **Trust the two folders.** Add `%LOCALAPPDATA%\Programs\codync-desktop` and `.codync` in your user folder to the product's exclusions, trusted list or allow list. Paste the first path into the File Explorer address bar to open the folder and see its full path.
+2. **Trust Codync's programs.** Add `%LOCALAPPDATA%\Programs\codync-desktop` (the app, the host and its helpers) and `.codync\agents` in your user folder (the agents Codync installed) to the product's exclusions, trusted list or allow list. Paste a path into the File Explorer address bar to open the folder and see its full path. Leave the rest of `.codync` scanned: it holds your bots' workspaces and the files you send them, which your security software should keep checking.
 3. **Allow the startup item.** If the product manages startup items, find the one that runs `codync-hostw.exe` and allow it. Products that ask before a program adds a startup item usually have a list of blocked items where you can change the answer.
 
 Then open Codync and choose **Try again**, or quit Codync from the tray menu and open it again.
@@ -52,7 +52,7 @@ Then open Codync and choose **Try again**, or quit Codync from the tray menu and
 
 1. Open **Windows Security**, then **Virus & threat protection**.
 2. Under **Protection history**, look for a Codync file. Open the item and choose **Actions**, then **Restore** or **Allow on device**.
-3. Under **Virus & threat protection settings**, choose **Manage settings**, scroll to **Exclusions** and choose **Add or remove exclusions**. Add both folders with **Add an exclusion**, then **Folder**.
+3. Under **Virus & threat protection settings**, choose **Manage settings**, scroll to **Exclusions** and choose **Add or remove exclusions**. Add both folders from step 2 above with **Add an exclusion**, then **Folder**.
 
 If **Controlled folder access** is on (**Virus & threat protection**, then **Ransomware protection**), bots can't write to protected folders such as Documents. Choose **Allow an app through Controlled folder access** and add `codync-host.exe`, and the agent's own program if Windows still blocks it.
 
@@ -78,5 +78,9 @@ To see whether the startup entry is still there:
 Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name CodyncHost
 ```
 
-If the second command finds nothing, security software removed the entry: allow the startup item as above, then open Codync again, which adds it back.
+If the second command finds nothing, security software removed the entry. Allow the startup item as above, then add the entry back and restart the host:
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\codync-desktop\resources\codync-host.exe" install
+```
 

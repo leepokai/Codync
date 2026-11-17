@@ -467,6 +467,12 @@ pub(in crate::tui) fn cycle_language() -> Cow<'static, str> {
     language_title()
 }
 
+/// Sets the language for a test; returns the previous choice's identifier to put back.
+#[cfg(test)]
+pub(in crate::tui) fn set_language(identifier: &str) -> &'static str {
+    std::mem::replace(&mut *PREFERENCE.locked(), AppLanguage::parse(identifier)).stored()
+}
+
 #[cfg(test)]
 #[path = "l10n_tests.rs"]
 mod registration_tests;

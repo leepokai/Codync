@@ -11,7 +11,7 @@ public struct Artifact: Codable, Hashable, Sendable, Identifiable {
     public var createdAt: Int64
     public var updatedAt: Int64
     /// Its newest card in the bot's chat: what a message about the artifact replies to. None when the artifact was
-    /// published from a routine run or another bot's request.
+    /// published in a group chat or for another bot's request.
     public var entryId: String?
 
     public var date: Date { Date(milliseconds: updatedAt) }

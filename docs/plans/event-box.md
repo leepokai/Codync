@@ -230,7 +230,8 @@ from the text below:
   request starts like any item.
 - **A request answered with exactly `(pass)`** gives the asking bot those words, as a turn in the chat did.
 - **What those turns could do in the chat holds in their task**: `request_decision`, `send_message`, `send_file`
-  and artifact cards refused; the `routines` tools (and, from a run, `message_bot`) work as the bot. Stage 5's
+  and a request's artifact cards refused (a run's artifact card goes into the bot's chat); the `routines` tools
+  (and, from a run, `message_bot`) work as the bot. Stage 5's
   asking and sharing is for the bot's own items.
 - **A task's choice card is answered by a press only**: a message the user types is the coordinator's, so it neither
   answers the card nor ends it; the chat's Stop doesn't end it either (stopping the item does). The cases are

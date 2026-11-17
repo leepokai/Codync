@@ -86,7 +86,7 @@ impl Actor {
 
     fn can_send_file(&self) -> Result<()> {
         self.turn_writes()?;
-        ensure!(self.in_own_chat(), "send_file and artifact cards are only available in the bot's own chat");
+        ensure!(self.in_own_chat(), "send_file is only available in the bot's own chat");
         Ok(())
     }
 
@@ -99,10 +99,10 @@ impl Actor {
 
     /// A published artifact's card (`chat::artifacts`, its entry's `data`): a message of the turn, like a shared file.
     /// A routine's run posts it too: its lane is the bot's own chat, and that is where the user reads what the run
-    /// published (`#380`). A room's or another bot's request keeps its card in the Library.
+    /// published (`#380`). A room's or another bot's request leaves the artifact in the Library with no card.
     pub(super) fn post_artifact(&mut self, data: Value) -> Result<String> {
         self.turn_writes()?;
-        ensure!(cards_in_chat(self.in_own_chat(), self.in_routine()), "artifact cards go only to the bot's own chat");
+        ensure!(self.in_own_chat() || self.in_routine(), "artifact cards go only to the bot's own chat");
         let text = data["text"].as_str().unwrap_or_default().to_owned();
         self.close_seg();
         let entry =
@@ -155,23 +155,5 @@ impl Actor {
         let saved = self.add_for_user(EntryKind::Agent, data);
         self.record_sent(saved, text.clone())?;
         Ok(text)
-    }
-}
-
-/// Whether an artifact's card may go into the chat this turn writes in: the bot's own, or a routine's run, whose lane is
-/// the bot's own chat. A room's or another bot's request keeps its card in the Library.
-const fn cards_in_chat(own_chat: bool, routine: bool) -> bool {
-    own_chat || routine
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_routine_posts_its_artifact_card_in_the_chat() {
-        assert!(cards_in_chat(true, false), "the bot's own turn");
-        assert!(cards_in_chat(false, true), "a routine's run writes in the bot's own chat");
-        assert!(!cards_in_chat(false, false), "a room or another bot's request keeps the card in the Library");
     }
 }

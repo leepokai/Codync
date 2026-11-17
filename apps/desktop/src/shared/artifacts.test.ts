@@ -43,7 +43,7 @@ test('the Library needs a host that has it, and only a card takes messages about
   assert.equal(hasLibrary('2.24.3'), false)
   assert.equal(hasLibrary(undefined), false)
   const { artifact } = version('x', 1)
-  assert.equal(artifactQuote(artifact), null, 'a routine published it')
+  assert.equal(artifactQuote(artifact), null, 'a group chat or another bot published it')
   assert.deepEqual(artifactQuote({ ...artifact, entryId: 'e' }), { id: 'e', author: 'b', text: 'Artifact: Report', artifact: 'a' })
 })
 
